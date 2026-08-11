@@ -72,6 +72,39 @@ class GoogleLoginTests(APITestCase):
             authenticate(username="teacher@example.com", password="S3cret-pass-123")
         )
 
+    def test_fills_empty_name_of_existing_account(self):
+        """Аккаунт, заведённый без имени, получает его из Google при входе."""
+        user = User.objects.create_user(
+            email="teacher@example.com", password="S3cret-pass-123"
+        )
+        EmailAddress.objects.create(
+            user=user, email=user.email, verified=True, primary=True
+        )
+
+        google_login()
+
+        user.refresh_from_db()
+        self.assertEqual(user.first_name, "Мария")
+        self.assertEqual(user.last_name, "Иванова")
+
+    def test_does_not_overwrite_edited_name(self):
+        """Отредактированное в профиле имя вход через Google не затирает."""
+        user = User.objects.create_user(
+            email="teacher@example.com",
+            password="S3cret-pass-123",
+            first_name="Маша",
+            last_name="Петрова",
+        )
+        EmailAddress.objects.create(
+            user=user, email=user.email, verified=True, primary=True
+        )
+
+        google_login()
+
+        user.refresh_from_db()
+        self.assertEqual(user.first_name, "Маша")
+        self.assertEqual(user.last_name, "Петрова")
+
     def test_unverified_email_does_not_hijack_account(self):
         """Неподтверждённый в Google адрес не должен давать доступ к чужому аккаунту."""
         User.objects.create_user(email="teacher@example.com", password="S3cret-pass-123")
@@ -112,6 +145,68 @@ class MeTests(APITestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["email"], "teacher@example.com")
         self.assertEqual(response.json()["first_name"], "Мария")
+
+    def test_patch_updates_name(self):
+        self.client.credentials(HTTP_AUTHORIZATION=f"Token {self.token.key}")
+
+        response = self.client.patch(
+            reverse("me"), {"first_name": "Мария", "last_name": "Иванова"}, format="json"
+        )
+
+        self.assertEqual(response.status_code, 200, response.content)
+        self.user.refresh_from_db()
+        self.assertEqual(self.user.first_name, "Мария")
+        self.assertEqual(self.user.last_name, "Иванова")
+
+    def test_patch_accepts_single_field(self):
+        self.client.credentials(HTTP_AUTHORIZATION=f"Token {self.token.key}")
+
+        response = self.client.patch(
+            reverse("me"), {"last_name": "Иванова"}, format="json"
+        )
+
+        self.assertEqual(response.status_code, 200, response.content)
+        self.user.refresh_from_db()
+        self.assertEqual(self.user.first_name, "Мария")  # не затёрлось
+        self.assertEqual(self.user.last_name, "Иванова")
+
+    def test_patch_ignores_email(self):
+        self.client.credentials(HTTP_AUTHORIZATION=f"Token {self.token.key}")
+
+        response = self.client.patch(
+            reverse("me"), {"email": "hacker@example.com"}, format="json"
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.user.refresh_from_db()
+        self.assertEqual(self.user.email, "teacher@example.com")
+
+    def test_patch_requires_authentication(self):
+        response = self.client.patch(
+            reverse("me"), {"first_name": "Кто-то"}, format="json"
+        )
+
+        self.assertEqual(response.status_code, 401)
+
+    def test_patch_touches_only_own_profile(self):
+        other = User.objects.create_user(
+            email="other@example.com", password="S3cret-pass-123", first_name="Пётр"
+        )
+        self.client.credentials(HTTP_AUTHORIZATION=f"Token {self.token.key}")
+
+        self.client.patch(reverse("me"), {"first_name": "Мария II"}, format="json")
+
+        other.refresh_from_db()
+        self.assertEqual(other.first_name, "Пётр")
+
+    def test_put_not_allowed(self):
+        self.client.credentials(HTTP_AUTHORIZATION=f"Token {self.token.key}")
+
+        response = self.client.put(
+            reverse("me"), {"first_name": "Мария"}, format="json"
+        )
+
+        self.assertEqual(response.status_code, 405)
 
     def test_logout_deletes_token(self):
         self.client.credentials(HTTP_AUTHORIZATION=f"Token {self.token.key}")

@@ -28,7 +28,10 @@ async function request(path, { method = 'GET', body, auth = true } = {}) {
   const data = await response.json().catch(() => null)
 
   if (!response.ok) {
-    const detail = data?.detail || data?.non_field_errors?.[0] || 'Запрос не удался'
+    // DRF отдаёт либо detail, либо ошибки по полям — берём первое понятное
+    const fieldError =
+      data && typeof data === 'object' ? Object.values(data).flat()[0] : null
+    const detail = data?.detail || fieldError || 'Запрос не удался'
     throw new ApiError(detail, response.status)
   }
 
@@ -43,5 +46,8 @@ export const loginWithGoogle = (idToken) =>
   })
 
 export const fetchMe = () => request('/api/me/')
+
+export const updateMe = (fields) =>
+  request('/api/me/', { method: 'PATCH', body: fields })
 
 export const logout = () => request('/api/auth/logout/', { method: 'POST' })

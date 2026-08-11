@@ -40,4 +40,5 @@ class UserSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
         fields = ("id", "email", "first_name", "last_name")
-        read_only_fields = fields
+        # email приходит от Google и служит идентификатором входа — менять нельзя
+        read_only_fields = ("id", "email")

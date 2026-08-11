@@ -41,6 +41,7 @@
 │       ├── models.py         # User(AbstractUser) + UserManager
 │       ├── admin.py          # UserAdmin без username
 │       ├── adapter.py        # SocialAccountAdapter: только верифицированные email
+│       ├── signals.py        # добор имени из Google, если поля пустые
 │       ├── serializers.py    # GoogleLoginSerializer, UserSerializer
 │       ├── views.py          # GoogleLoginView, MeView
 │       ├── urls.py
@@ -53,7 +54,8 @@
     └── src/
         ├── App.jsx           # выбор экрана по наличию токена
         ├── Login.jsx         # кнопка Google Identity Services
-        ├── Dashboard.jsx     # email из /api/me/ + выход
+        ├── Dashboard.jsx     # имя из /api/me/, переход в профиль, выход
+        ├── Profile.jsx       # форма правки имени и фамилии
         ├── api.js            # fetch-обёртка, токен в localStorage
         └── styles.css
 ```
@@ -138,6 +140,7 @@ id_token), см. `adapter.authenticate_by_email`.
 | POST | `/api/auth/google/` | `{"id_token": ...}` или `{"access_token": ...}` → `{"key": "<токен DRF>"}`; при первом входе пользователь создаётся по email |
 | POST | `/api/auth/logout/` | удаляет токен; требует заголовок `Authorization` |
 | GET | `/api/me/` | `id`, `email`, `first_name`, `last_name` |
+| PATCH | `/api/me/` | правка `first_name` и `last_name`; `email` только на чтение, `PUT` отключён |
 
 Запросы к API авторизуются заголовком `Authorization: Token <ключ>`.
 `DEFAULT_PERMISSION_CLASSES = IsAuthenticated` — все новые вьюхи закрыты
@@ -218,6 +221,13 @@ docker compose -f docker-compose.prod.yml down
   контейнера, а не compose.
 - `VITE_GOOGLE_CLIENT_ID` нужен **на этапе сборки** фронта: Vite вшивает его
   в бандл. Меняется — нужно пересобрать `frontend-build`.
+- **Адрес backend'а nginx держит в переменной** (`set $backend_addr backend:8000;`
+  плюс `resolver 127.0.0.11 valid=10s ipv6=off;`), а не в блоке `upstream`.
+  Имя в `upstream` резолвится один раз при старте: после пересоздания
+  контейнера backend получает новый IP, а nginx продолжает ходить на старый и
+  отдаёт 502 до перезапуска. С переменной имя перечитывается по TTL. Обратная
+  сторона — `proxy_pass` с переменной не делает подстановку URI, но у нас в
+  `proxy_pass` и не было пути, так что запрос уходит без изменений.
 - nginx объявлен `default_server`, поэтому отвечает на любой Host (это нужно
   для проверки по `http://localhost`). Django при этом свой `ALLOWED_HOSTS`
   проверяет: запрос к `/api/` с чужим Host получает 400.
@@ -228,9 +238,15 @@ docker compose -f docker-compose.prod.yml down
 
 ## Фронтенд
 
-Роутера нет: `App.jsx` держит токен в `useState` (инициализируется из
-`localStorage`) и по его наличию показывает `Login` либо `Dashboard`.
-`Dashboard` при 401 от `/api/me/` сбрасывает токен и возвращает на логин.
+Роутера нет: `App.jsx` держит в `useState` токен (инициализируется из
+`localStorage`) и текущий экран (`home` / `profile`). Нет токена — показывается
+`Login`. Любой экран при 401 от API сбрасывает токен и возвращает на логин,
+поэтому URL не меняется и перезагрузка страницы всегда открывает главную.
+
+Имя и фамилию при первом входе заполняет allauth при регистрации, а для уже
+существующих аккаунтов — обработчик сигнала `user_logged_in` в
+`accounts/signals.py`. Заполненные значения он не перезаписывает: иначе вход
+через Google затирал бы то, что пользователь поправил в профиле.
 
 Запросы идут на относительный `/api/...` — в dev их проксирует Vite, так что
 CORS в разработке фактически не задействован (настройки всё равно нужны для
