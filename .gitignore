@@ -1,6 +1,7 @@
 __pycache__/
 *.py[cod]
 .env
+.env.prod
 staticfiles/
 media/
 node_modules/

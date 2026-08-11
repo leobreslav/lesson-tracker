@@ -1,0 +1,70 @@
+# отдельное имя проекта: иначе compose взял бы имя каталога, как у dev-стека,
+# и prod переиспользовал бы его контейнеры и том с базой
+name: lesson-tracker-prod
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    # переменные берём из env_file, а не через ${...}: подстановка compose
+    # читает .env, а он в проде отсутствует
+    env_file: .env.prod
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      # $$ — экранирование для compose, переменную разворачивает шелл контейнера
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    # порт наружу не пробрасывается: до базы дотягивается только backend
+
+  backend:
+    build:
+      context: ./backend
+      target: prod
+    restart: unless-stopped
+    # код зашит в образ, bind-mount'а нет; наружу отдаёт только nginx
+    command: >
+      sh -c "python manage.py migrate --noinput &&
+             python manage.py collectstatic --noinput &&
+             gunicorn config.wsgi:application --bind 0.0.0.0:8000 --workers 2 --access-logfile -"
+    volumes:
+      - static_files:/app/staticfiles
+    env_file: .env.prod
+    depends_on:
+      db:
+        condition: service_healthy
+
+  frontend-build:
+    build:
+      context: ./frontend
+    # одноразовый: собирает бандл в том и завершается
+    command: sh -c "npm ci && npm run build"
+    # Vite подхватывает VITE_* из окружения процесса сборки
+    env_file: .env.prod
+    volumes:
+      - frontend_dist:/app/dist
+    restart: "no"
+
+  nginx:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./nginx/proxy_params.conf:/etc/nginx/proxy_params.conf:ro
+      - frontend_dist:/var/www/frontend:ro
+      - static_files:/var/www/static:ro
+    depends_on:
+      backend:
+        condition: service_started
+      frontend-build:
+        condition: service_completed_successfully
+
+volumes:
+  pgdata:
+  static_files:
+  frontend_dist:
