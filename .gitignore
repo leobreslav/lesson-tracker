@@ -1,0 +1,8 @@
+__pycache__/
+*.py[cod]
+.env
+staticfiles/
+media/
+node_modules/
+dist/
+.idea/
