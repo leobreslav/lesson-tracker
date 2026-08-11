@@ -1,0 +1,394 @@
+# Деплой на сервер
+
+Сервер: `194.67.111.40`, Ubuntu 24.04, пользователь `leobreslav`, вход по
+SSH-ключу. Домен `lbreslav.com` резолвится на этот IP. Docker установлен,
+в ufw открыты 22/80/443.
+
+Дальше предполагается, что репозиторий лежит в `/home/leobreslav/lesson-tracker`.
+Если выберете другой путь — поправьте его в `scripts/reload-nginx.sh`
+(переменная `REPO_DIR`) и в строке cron.
+
+Шаги идут строго по порядку: HTTPS настраивается только после того, как
+приложение заработало по HTTP, иначе certbot не сможет подтвердить домен.
+
+---
+
+## 1. Клонирование репозитория
+
+```bash
+ssh leobreslav@194.67.111.40
+
+# ключ для доступа к приватному репозиторию, если он ещё не заведён
+ssh-keygen -t ed25519 -C "lesson-tracker-server"
+cat ~/.ssh/id_ed25519.pub
+# добавьте вывод в GitHub -> Settings -> SSH and GPG keys (или Deploy keys)
+
+git clone git@github.com:leobreslav/lesson-tracker.git ~/lesson-tracker
+cd ~/lesson-tracker
+```
+
+Проверьте, что вы в группе `docker` (иначе `deploy.sh` откажется работать):
+
+```bash
+groups | grep -q docker && echo "ок" || sudo usermod -aG docker "$USER"
+# если группу добавляли — перелогиньтесь: exit, затем ssh заново
+```
+
+---
+
+## 2. Файл `.env.prod`
+
+```bash
+cd ~/lesson-tracker
+cp .env.prod.example .env.prod
+```
+
+Сгенерируйте два секрета — **не переиспользуйте dev-значения**:
+
+```bash
+# SECRET_KEY
+docker run --rm python:3.12-slim python -c "import secrets; print(secrets.token_urlsafe(64))"
+
+# пароль Postgres
+openssl rand -base64 30 | tr -d '/+=' | head -c 32; echo
+```
+
+```bash
+nano .env.prod
+```
+
+Заполните так:
+
+```ini
+DEBUG=False
+SECRET_KEY=<сгенерированный ключ>
+ALLOWED_HOSTS=lbreslav.com,www.lbreslav.com
+
+POSTGRES_DB=lessons
+POSTGRES_USER=lessons
+POSTGRES_PASSWORD=<сгенерированный пароль>
+POSTGRES_HOST=db
+POSTGRES_PORT=5432
+
+GOOGLE_CLIENT_ID=<из Google Cloud Console>
+GOOGLE_CLIENT_SECRET=<из Google Cloud Console>
+VITE_GOOGLE_CLIENT_ID=<тот же client_id>
+
+CORS_ALLOWED_ORIGINS=https://lbreslav.com,https://www.lbreslav.com
+CSRF_TRUSTED_ORIGINS=https://lbreslav.com,https://www.lbreslav.com
+
+# пока HTTPS нет — всё выключено
+SECURE_SSL_REDIRECT=False
+SESSION_COOKIE_SECURE=False
+CSRF_COOKIE_SECURE=False
+SECURE_HSTS_SECONDS=0
+SECURE_HSTS_INCLUDE_SUBDOMAINS=False
+NGINX_SSL=false
+```
+
+```bash
+chmod 600 .env.prod
+```
+
+`ALLOWED_HOSTS` и `CSRF_TRUSTED_ORIGINS` здесь **без** `localhost` — он нужен
+был только для локальной проверки.
+
+---
+
+## 3. Первый запуск
+
+```bash
+cd ~/lesson-tracker
+docker compose -f docker-compose.prod.yml up -d --build
+```
+
+Сборка фронтенда и установка зависимостей Python занимают несколько минут.
+Следите за логами:
+
+```bash
+docker compose -f docker-compose.prod.yml logs -f backend
+```
+
+Ждём строки `Listening at: http://0.0.0.0:8000`. Миграции и `collectstatic`
+выполняются автоматически при старте контейнера.
+
+Состояние сервисов:
+
+```bash
+docker compose -f docker-compose.prod.yml ps -a
+```
+
+`frontend-build` должен быть в статусе `Exited (0)` — это одноразовый сборщик,
+так и задумано. Остальные три — `Up`.
+
+---
+
+## 4. Суперпользователь
+
+```bash
+docker compose -f docker-compose.prod.yml exec backend python manage.py createsuperuser
+```
+
+Спросит только email и пароль — поля `username` в модели нет.
+
+**Важно:** сразу после этого заведите пользователю подтверждённый адрес,
+иначе первый вход через Google обнулит пароль от админки (allauth считает
+неподтверждённый локальный адрес небезопасным и вызывает `wipe_password`):
+
+```bash
+docker compose -f docker-compose.prod.yml exec backend python manage.py shell -c "
+from allauth.account.models import EmailAddress
+from django.contrib.auth import get_user_model
+u = get_user_model().objects.get(email='<ваш email>')
+EmailAddress.objects.update_or_create(
+    user=u, email=u.email, defaults={'verified': True, 'primary': True})
+print('готово')
+"
+```
+
+Миграция `accounts/0002` делает это автоматически, но только для пользователей,
+существовавших на момент её применения — а суперпользователя вы создаёте после.
+
+---
+
+## 5. Проверка по HTTP
+
+```bash
+curl -I http://lbreslav.com/
+curl -I http://lbreslav.com/admin/login/
+curl -s http://lbreslav.com/api/me/
+```
+
+Ожидаем `200`, `200` и `{"detail":"Authentication credentials were not provided."}`.
+
+Откройте `http://lbreslav.com` в браузере — должна открыться страница входа.
+Кнопка Google пока работать не будет: origin ещё не добавлен в консоли, и
+он должен быть `https`. Это делается после выпуска сертификата (шаг 8).
+
+Если что-то не так:
+
+```bash
+docker compose -f docker-compose.prod.yml logs --tail 100 backend nginx
+```
+
+---
+
+## 6. HTTPS: сертификат
+
+Certbot ставим **на хост**, а не в контейнер: пакет из apt сам заводит
+systemd-таймер продления, и отдельный планировщик не нужен.
+
+```bash
+sudo apt update
+sudo apt install -y certbot
+```
+
+Плагин `python3-certbot-nginx` не нужен: nginx живёт в контейнере, и certbot
+не должен править его конфиг. Используем режим `--webroot` — nginx уже отдаёт
+`/.well-known/acme-challenge/` из каталога `certbot/www` репозитория.
+
+Сначала прогон вхолостую, он не расходует лимиты Let's Encrypt:
+
+```bash
+sudo certbot certonly --webroot \
+  -w /home/leobreslav/lesson-tracker/certbot/www \
+  -d lbreslav.com -d www.lbreslav.com \
+  --email leobreslav@gmail.com --agree-tos --no-eff-email \
+  --dry-run
+```
+
+Если прошло без ошибок — выпускаем настоящий:
+
+```bash
+sudo certbot certonly --webroot \
+  -w /home/leobreslav/lesson-tracker/certbot/www \
+  -d lbreslav.com -d www.lbreslav.com \
+  --email leobreslav@gmail.com --agree-tos --no-eff-email
+```
+
+Проверка:
+
+```bash
+sudo certbot certificates
+sudo ls -l /etc/letsencrypt/live/lbreslav.com/
+```
+
+---
+
+## 7. HTTPS: переключение nginx
+
+Конфиг с TLS лежит в `nginx/ssl.conf` и подключается оверлеем
+`docker-compose.ssl.yml`. Руками ничего править не нужно — достаточно флага:
+
+```bash
+cd ~/lesson-tracker
+nano .env.prod
+```
+
+```ini
+NGINX_SSL=true
+```
+
+```bash
+./deploy.sh
+```
+
+`deploy.sh` увидит флаг и поднимет стек с двумя compose-файлами. Проверка:
+
+```bash
+curl -I http://lbreslav.com/            # 301 на https
+curl -I https://lbreslav.com/           # 200
+curl -I https://www.lbreslav.com/       # 200
+curl -I https://lbreslav.com/admin/login/
+```
+
+### Автопродление
+
+Таймер уже стоит после установки пакета:
+
+```bash
+systemctl list-timers certbot.timer
+sudo certbot renew --dry-run
+```
+
+Осталось добавить хук, который перечитает конфиг nginx в контейнере после
+обновления сертификата:
+
+```bash
+sudo cp ~/lesson-tracker/scripts/reload-nginx.sh \
+        /etc/letsencrypt/renewal-hooks/deploy/reload-nginx.sh
+sudo chmod +x /etc/letsencrypt/renewal-hooks/deploy/reload-nginx.sh
+```
+
+Без него nginx продолжит держать в памяти старый сертификат до перезапуска.
+
+---
+
+## 8. Ужесточение настроек
+
+Теперь, когда HTTPS работает:
+
+```bash
+nano .env.prod
+```
+
+```ini
+SECURE_SSL_REDIRECT=True
+SESSION_COOKIE_SECURE=True
+CSRF_COOKIE_SECURE=True
+```
+
+```bash
+./deploy.sh
+```
+
+Проверьте, что вход в админку по-прежнему работает — `https://lbreslav.com/admin/`.
+Если да, включайте HSTS **последним** (браузеры запоминают заголовок на год,
+откатить сложно):
+
+```ini
+SECURE_HSTS_SECONDS=31536000
+```
+
+```bash
+./deploy.sh
+curl -sI https://lbreslav.com/admin/login/ | grep -i strict-transport
+```
+
+Контрольная проверка:
+
+```bash
+docker compose -f docker-compose.prod.yml -f docker-compose.ssl.yml \
+  exec backend python manage.py check --deploy
+```
+
+Должны остаться только `W005` (`SECURE_HSTS_INCLUDE_SUBDOMAINS`) и `W021`
+(`SECURE_HSTS_PRELOAD`) — обе про поддомены и preload-список, включать их
+необязательно.
+
+---
+
+## 9. Google Cloud Console
+
+**Это нужно сделать руками, иначе кнопка входа не заработает.**
+
+APIs & Services → Credentials → ваш OAuth 2.0 Client ID → **Authorized
+JavaScript origins**, добавить:
+
+```
+https://lbreslav.com
+https://www.lbreslav.com
+```
+
+Redirect URI не нужны — вход идёт по frontend-flow с `id_token`.
+Изменения вступают в силу в течение нескольких минут.
+
+После этого зайдите на `https://lbreslav.com` и войдите через Google. Ваш
+аккаунт свяжется с существующим суперпользователем по email.
+
+---
+
+## 10. Бэкапы базы
+
+```bash
+mkdir -p ~/backups
+crontab -e
+```
+
+Добавьте строку:
+
+```cron
+30 3 * * * /home/leobreslav/lesson-tracker/scripts/backup-db.sh >> /home/leobreslav/backups/backup.log 2>&1
+```
+
+Дампы падают в `~/backups/lesson-tracker/`, хранятся 7 дней.
+
+Проверьте сразу, не дожидаясь ночи:
+
+```bash
+~/lesson-tracker/scripts/backup-db.sh
+ls -lh ~/backups/lesson-tracker/
+```
+
+Восстановление из дампа:
+
+```bash
+cd ~/lesson-tracker
+gunzip -c ~/backups/lesson-tracker/lessons_ГГГГ-ММ-ДД_ЧЧММ.sql.gz \
+  | docker compose -f docker-compose.prod.yml exec -T db \
+      psql -U lessons -d lessons
+```
+
+Дамп снимается с `--clean --if-exists`, поэтому заливается поверх
+существующей базы. Копии лежат на том же сервере — от потери диска они не
+спасают; если это важно, стоит настроить выгрузку наружу.
+
+---
+
+## Обновление кода потом
+
+```bash
+ssh leobreslav@194.67.111.40
+cd ~/lesson-tracker
+./deploy.sh
+```
+
+Скрипт откажется работать, если в рабочем дереве есть локальные правки —
+конфиги на сервере руками не редактируем, всё через git и `.env.prod`
+(он в `.gitignore`).
+
+## Полезные команды
+
+```bash
+cd ~/lesson-tracker
+C="docker compose -f docker-compose.prod.yml -f docker-compose.ssl.yml"
+
+$C ps -a
+$C logs -f backend
+$C exec backend python manage.py createsuperuser
+$C exec db psql -U lessons -d lessons
+$C restart backend
+$C down                    # погасить, данные в томах останутся
+```
+
+При `NGINX_SSL=false` второй `-f` не нужен.

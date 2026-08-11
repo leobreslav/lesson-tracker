@@ -58,6 +58,7 @@ services:
       - ./nginx/proxy_params.conf:/etc/nginx/proxy_params.conf:ro
       - frontend_dist:/var/www/frontend:ro
       - static_files:/var/www/static:ro
+      - ./certbot/www:/var/www/certbot:ro
     depends_on:
       backend:
         condition: service_started

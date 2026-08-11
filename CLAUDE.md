@@ -20,11 +20,19 @@
 .
 ├── docker-compose.yml        # dev: db + backend (runserver) + frontend (vite)
 ├── docker-compose.prod.yml   # prod: db + gunicorn + сборка фронта + nginx
+├── docker-compose.ssl.yml    # оверлей: подменяет конфиг nginx на ssl.conf
+├── deploy.sh                 # git pull + пересборка + перезапуск на сервере
+├── DEPLOY.md                 # пошаговая инструкция первого развёртывания
 ├── .env / .env.example       # dev-окружение
 ├── .env.prod / .env.prod.example
 ├── nginx/
-│   ├── default.conf          # server_name lbreslav.com, www.lbreslav.com
+│   ├── default.conf          # HTTP + отдача ACME-challenge
+│   ├── ssl.conf              # HTTPS + редирект с 80, включается флагом
 │   └── proxy_params.conf     # заголовки для проксирования на backend
+├── certbot/www/              # webroot для проверки домена certbot'ом
+├── scripts/
+│   ├── backup-db.sh          # ежедневный pg_dump, хранение 7 дней
+│   └── reload-nginx.sh       # хук certbot: reload nginx после продления
 ├── backend/
 │   ├── Dockerfile            # python:3.12-slim, стадии base/dev/prod
 │   ├── requirements.txt
@@ -168,8 +176,17 @@ id_token), см. `adapter.authenticate_by_email`.
 ## Боевая конфигурация
 
 `docker-compose.prod.yml`, переменные в `.env.prod` (шаблон —
-`.env.prod.example`). Проверена локально на `http://localhost`; на сервер ещё
-не выкатывалась, HTTPS не настроен.
+`.env.prod.example`). Первое развёртывание на сервер описано в
+[DEPLOY.md](DEPLOY.md), последующие обновления — `./deploy.sh` на сервере.
+
+HTTPS включается одним флагом `NGINX_SSL=true` в `.env.prod`: `deploy.sh`
+добавляет оверлей `docker-compose.ssl.yml`, который подменяет конфиг nginx
+на `nginx/ssl.conf` и прокидывает `/etc/letsencrypt`. Конфиг с TLS —
+отдельный файл, а не закомментированный блок, потому что правка
+`nginx/default.conf` руками на сервере сломала бы `git pull` в `deploy.sh`.
+Сертификаты выпускает certbot **на хосте** (`certonly --webroot`), продление
+делает его systemd-таймер, а `scripts/reload-nginx.sh` в
+`/etc/letsencrypt/renewal-hooks/deploy/` перечитывает конфиг в контейнере.
 
 ```bash
 docker compose -f docker-compose.prod.yml up -d --build
@@ -221,8 +238,5 @@ CORS в разработке фактически не задействован 
 
 ## Дальнейшие планы
 
-1. Деплой на VPS: раскомментировать 443-й server-блок в `nginx/default.conf`,
-   выпустить сертификаты certbot'ом, включить `SECURE_SSL_REDIRECT`,
-   `SESSION_COOKIE_SECURE`, `CSRF_COOKIE_SECURE`, затем `SECURE_HSTS_SECONDS`.
-   В консоли Google Cloud добавить origin `https://lbreslav.com`.
+1. Выполнить [DEPLOY.md](DEPLOY.md) на сервере `194.67.111.40`.
 2. Модели трекера уроков и API к ним.
