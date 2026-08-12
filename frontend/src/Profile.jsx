@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { fetchMe, updateMe } from './api'
 
-export default function Profile({ onBack, onLoggedOut }) {
+export default function Profile({ onLoggedOut, onSaved }) {
   const [user, setUser] = useState(null)
   const [form, setForm] = useState({ first_name: '', last_name: '' })
   const [saving, setSaving] = useState(false)
@@ -43,6 +43,8 @@ export default function Profile({ onBack, onLoggedOut }) {
       const updated = await updateMe(form)
       setUser(updated)
       setForm({ first_name: updated.first_name, last_name: updated.last_name })
+      // имя в баре меняется сразу вместе с профилем
+      onSaved?.(updated)
       setMessage({ type: 'ok', text: 'Сохранено' })
     } catch (err) {
       if (err.status === 401) onLoggedOut()
@@ -56,9 +58,6 @@ export default function Profile({ onBack, onLoggedOut }) {
     return (
       <main className="card">
         <p className="error">{loadError}</p>
-        <button type="button" onClick={onBack}>
-          Назад
-        </button>
       </main>
     )
   }
@@ -112,9 +111,6 @@ export default function Profile({ onBack, onLoggedOut }) {
         <div className="actions">
           <button type="submit" disabled={saving}>
             {saving ? 'Сохранение…' : 'Сохранить'}
-          </button>
-          <button type="button" className="secondary" onClick={onBack} disabled={saving}>
-            Назад
           </button>
         </div>
 

@@ -2,13 +2,16 @@ services:
   db:
     image: postgres:16-alpine
     environment:
-      POSTGRES_DB: ${POSTGRES_DB}
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      # значения по умолчанию — те же, что в settings.py: подстановка
+      # ${...} читает корневой .env, а его может и не быть
+      POSTGRES_DB: ${POSTGRES_DB:-lessons}
+      POSTGRES_USER: ${POSTGRES_USER:-lessons}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-lessons}
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
+      # $$ — разворачивает шелл контейнера, а не compose (как в prod-файле)
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
       interval: 5s
       timeout: 5s
       retries: 5

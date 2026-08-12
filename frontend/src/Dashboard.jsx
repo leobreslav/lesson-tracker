@@ -1,38 +1,14 @@
-import { useEffect, useState } from 'react'
-import { fetchMe, logout } from './api'
+import { Link } from 'react-router-dom'
 
-export default function Dashboard({ onOpenProfile, onLoggedOut }) {
-  const [user, setUser] = useState(null)
-  const [error, setError] = useState(null)
-
-  useEffect(() => {
-    let cancelled = false
-
-    fetchMe()
-      .then((data) => {
-        if (!cancelled) setUser(data)
-      })
-      .catch((err) => {
-        // токен протух или отозван — возвращаем на логин
-        if (err.status === 401) onLoggedOut()
-        else if (!cancelled) setError(err.message)
-      })
-
-    return () => {
-      cancelled = true
-    }
-  }, [onLoggedOut])
-
-  const handleLogout = async () => {
-    try {
-      await logout()
-    } finally {
-      onLoggedOut()
-    }
+/** Главная. Навигация живёт в верхнем баре, здесь только приветствие. */
+export default function Dashboard({ user }) {
+  if (!user) {
+    return (
+      <main className="card">
+        <p>Загрузка…</p>
+      </main>
+    )
   }
-
-  if (error) return <main className="card"><p className="error">{error}</p></main>
-  if (!user) return <main className="card"><p>Загрузка…</p></main>
 
   const name = [user.first_name, user.last_name].filter(Boolean).join(' ')
 
@@ -43,14 +19,11 @@ export default function Dashboard({ onOpenProfile, onLoggedOut }) {
         Вы вошли как <strong>{name || user.email}</strong>
         {name && <span className="hint"> ({user.email})</span>}
       </p>
-      <div className="actions">
-        <button type="button" onClick={onOpenProfile}>
-          Профиль
-        </button>
-        <button type="button" className="secondary" onClick={handleLogout}>
-          Выйти
-        </button>
-      </div>
+      <p className="hint">
+        Разделы — в верхнем баре. Начните с{' '}
+        <Link to="/schedule">своего расписания</Link>: там видно, что и когда
+        идёт по всем классам.
+      </p>
     </main>
   )
 }

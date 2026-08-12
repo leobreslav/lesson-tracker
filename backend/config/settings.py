@@ -48,6 +48,9 @@ INSTALLED_APPS = [
     'dj_rest_auth',
 
     'accounts',
+    'calendars',
+    'schedule',
+    'plans',
 ]
 
 AUTH_USER_MODEL = "accounts.User"
