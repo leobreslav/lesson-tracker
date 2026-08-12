@@ -1,16 +1,18 @@
 import { useState } from 'react'
-import { formatRange } from './calendarLogic'
+import { useTranslation } from 'react-i18next'
+import { dateRange } from './dates'
 import { termColorIndex } from './termColors'
 
 const EMPTY_FORM = { name: '', start_date: '', end_date: '' }
 
 /**
- * Термы года: список, добавление и правка.
+ * The terms of a year: the list, adding and editing.
  *
- * Термы не обязаны покрывать год целиком — дни между ними просто не входят
- * ни в один терм, и это нормальное состояние, а не ошибка.
+ * Terms need not cover the year completely — the days between them belong to
+ * no term, and that is a normal state rather than an error.
  */
 export default function TermsPanel({ terms, year, studyDays, busy, onCreate, onUpdate, onDelete }) {
+  const { t } = useTranslation()
   const [form, setForm] = useState(null) // {id?, name, start_date, end_date}
 
   const open = (term) =>
@@ -38,13 +40,9 @@ export default function TermsPanel({ terms, year, studyDays, busy, onCreate, onU
 
   return (
     <section className="panel">
-      <h3>Термы</h3>
+      <h3>{t('calendar.terms.title')}</h3>
 
-      {!terms.length && (
-        <p className="hint">
-          Четвертей пока нет. Без них раскладка считается по всему году сразу.
-        </p>
-      )}
+      {!terms.length && <p className="hint">{t('calendar.terms.empty')}</p>}
 
       <ul className="terms">
         {terms.map((term) => (
@@ -52,14 +50,14 @@ export default function TermsPanel({ terms, year, studyDays, busy, onCreate, onU
             <div>
               <strong>{term.name}</strong>
               <span className="hint">
-                {formatRange(term.start_date, term.end_date)} ·{' '}
-                {studyDays[term.id] ?? 0} учебных дней
+                {dateRange(term.start_date, term.end_date)} ·{' '}
+                {t('common.studyDayCount', { count: studyDays[term.id] ?? 0 })}
               </span>
             </div>
             <button
               type="button"
               className="link"
-              title="Изменить"
+              title={t('common.edit')}
               disabled={busy}
               onClick={() => open(term)}
             >
@@ -68,7 +66,7 @@ export default function TermsPanel({ terms, year, studyDays, busy, onCreate, onU
             <button
               type="button"
               className="link"
-              aria-label={`Удалить терм ${term.name}`}
+              aria-label={t('calendar.terms.delete', { name: term.name })}
               disabled={busy}
               onClick={() => onDelete(term)}
             >
@@ -84,13 +82,13 @@ export default function TermsPanel({ terms, year, studyDays, busy, onCreate, onU
             autoFocus
             value={form.name}
             maxLength={100}
-            placeholder="Например, 1 четверть"
-            aria-label="Название терма"
+            placeholder={t('calendar.terms.placeholder')}
+            aria-label={t('calendar.terms.nameLabel')}
             onChange={(event) => setForm({ ...form, name: event.target.value })}
           />
           <div className="row">
             <label>
-              с
+              {t('common.from')}
               <input
                 type="date"
                 value={form.start_date}
@@ -102,7 +100,7 @@ export default function TermsPanel({ terms, year, studyDays, busy, onCreate, onU
               />
             </label>
             <label>
-              по
+              {t('common.to')}
               <input
                 type="date"
                 value={form.end_date}
@@ -114,16 +112,16 @@ export default function TermsPanel({ terms, year, studyDays, busy, onCreate, onU
           </div>
           <div className="actions">
             <button type="submit" disabled={busy || !form.name.trim()}>
-              {form.id ? 'Сохранить' : 'Добавить'}
+              {form.id ? t('common.save') : t('common.add')}
             </button>
             <button type="button" className="secondary" onClick={() => setForm(null)}>
-              Отмена
+              {t('common.cancel')}
             </button>
           </div>
         </form>
       ) : (
         <button type="button" className="secondary" disabled={busy} onClick={() => open(null)}>
-          + терм
+          {t('calendar.terms.add')}
         </button>
       )}
     </section>

@@ -1,16 +1,16 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 /**
- * Выделение диапазона дней протягиванием мыши.
+ * Selecting a range of days by dragging the mouse.
  *
- * Одиночный клик диапазоном не считается: mouseup над другой ячейкой не
- * порождает click, поэтому onClick ячейки и это выделение не конфликтуют.
- * Обработчик mouseup висит на window постоянно и читает состояние из ref —
- * если подписываться в эффекте по состоянию, быстрый клик успевает пройти
- * до подписки и выделение залипает.
+ * A single click is not a range: releasing over another cell produces no
+ * click there, so a cell's onClick and this selection never collide. The
+ * mouseup handler sits on window permanently and reads the state from a ref —
+ * subscribing inside an effect keyed on state lets a fast click slip through
+ * before the subscription, and the selection sticks.
  */
 export default function useRangeSelection({ onSelectRange, disabled }) {
-  const [drag, setDrag] = useState(null) // {from, to} — обе даты в формате ISO
+  const [drag, setDrag] = useState(null) // {from, to}, both ISO dates
   const dragRef = useRef(null)
 
   const updateDrag = useCallback((value) => {
@@ -28,7 +28,7 @@ export default function useRangeSelection({ onSelectRange, disabled }) {
       if (from !== to) onSelectRange(from, to)
     }
 
-    // кнопку могут отпустить и за пределами сетки
+    // the button can be released outside the grid too
     window.addEventListener('mouseup', finish)
     return () => window.removeEventListener('mouseup', finish)
   }, [onSelectRange, updateDrag])

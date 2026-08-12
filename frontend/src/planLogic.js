@@ -1,15 +1,15 @@
 /**
- * Учебный план на клиенте: перестроение дерева и разбор точки сброса.
+ * The lesson plan on the client: rebuilding the tree and reading a drop.
  *
- * Повторяет plans/services.py в той части, что нужна для оптимистичного
- * перетаскивания: убрать узел, вставить на новое место, пересчитать сквозные
- * номера. Авторитет за сервером — после ответа дерево перечитывается.
- * Меняете нумерацию или правила вложенности там — правьте и здесь.
+ * A mirror of plans/services.py in the part needed for optimistic dragging:
+ * remove a node, insert it elsewhere, renumber the lessons. The server stays
+ * the authority — the tree is re-read once it answers. Change the numbering
+ * or the nesting rules there, change them here.
  */
 
 const clamp = (value, max) => Math.max(0, Math.min(value, max))
 
-/** Убрать узел из дерева. Возвращает [узел, дерево без него]. */
+/** Take a node out of the tree. Returns [node, tree without it]. */
 function extract(nodes, nodeId) {
   let found = null
   const rest = []
@@ -41,7 +41,7 @@ function insert(list, node, index) {
   return next
 }
 
-/** Проставить сквозные номера обходом в глубину; папки номеров не получают. */
+/** Number lessons depth-first; sections get no number. */
 export function renumber(nodes) {
   let number = 0
 
@@ -75,21 +75,11 @@ export function countPlan(nodes) {
   }
 }
 
-/** «1 урок» / «3 урока» / «12 уроков». */
-export function pluralLessons(count) {
-  const tail = count % 10
-  const hundred = count % 100
-
-  if (tail === 1 && hundred !== 11) return `${count} урок`
-  if (tail >= 2 && tail <= 4 && (hundred < 10 || hundred >= 20)) return `${count} урока`
-  return `${count} уроков`
-}
-
 /**
- * Строки плана в порядке отображения: заголовок блока, потом его уроки.
+ * Plan rows in display order: a block header, then its lessons.
  *
- * Тем самым дерево приводится к тому же плоскому виду, в котором считает
- * `countBlocks`, — одна и та же функция обслуживает и план, и раскладку.
+ * This flattens the tree into the same shape `countBlocks` counts over, so
+ * one function serves both the plan and the layout.
  */
 export function planRows(nodes) {
   return nodes.flatMap((node) =>
@@ -107,13 +97,13 @@ export function planRows(nodes) {
 }
 
 /**
- * Сколько уроков в каждом блоке и сколько их вне блоков.
+ * How many lessons each block holds, and how many sit outside every block.
  *
- * Строка-заголовок открывает блок. У урока блок берётся из его собственного
- * `section_id`: значение `null` означает «вне блоков» — в нашей модели урок
- * верхнего уровня лежит вне темы, даже если стоит после папки. Если поля
- * нет вовсе (плоский список без вложенности), работает позиционное правило:
- * урок относится к последнему заголовку выше.
+ * A header row opens a block. A lesson's block comes from its own
+ * `section_id`: `null` means "outside the blocks" — in this model a top-level
+ * lesson lies outside every section, even when it stands right after one. If
+ * the field is missing altogether (a flat list with no nesting), the
+ * positional rule applies: a lesson belongs to the last header above it.
  */
 export function countBlocks(rows) {
   const blocks = []
@@ -150,8 +140,8 @@ export function countBlocks(rows) {
 }
 
 /**
- * То же по записям раскладки плюс даты блока, непоместившиеся уроки и
- * термы, через которые блок проходит.
+ * The same over layout entries, plus the block's dates, the lessons that
+ * did not fit and the terms the block runs through.
  */
 export function layoutBlocks(entries) {
   const rows = entries
@@ -183,7 +173,7 @@ export function layoutBlocks(entries) {
         block.terms.push(entry.term_name)
       }
     } else {
-      // уроку блока не хватило слота — он не помещается в год
+      // a lesson of the block ran out of slots — it does not fit the year
       block.missing += 1
     }
   })
@@ -192,10 +182,10 @@ export function layoutBlocks(entries) {
 }
 
 /**
- * Перенести узел и пересчитать всё дерево.
+ * Move a node and recompute the whole tree.
  *
- * `index` — место в уровне БЕЗ перетаскиваемого узла: ровно так же считает
- * `place()` на сервере.
+ * `index` is the position in the level WITHOUT the dragged node — exactly
+ * how `place()` counts on the server.
  */
 export function applyMove(data, nodeId, parent, index) {
   const [node, rest] = extract(data.nodes, nodeId)
@@ -216,17 +206,17 @@ export function applyMove(data, nodeId, parent, index) {
 }
 
 /**
- * Куда попадёт сброс.
+ * Where a drop will land.
  *
- * `items` — Map<id перетаскивания, {node, parent, index}>. Возвращает
- * {parent, index} либо null, если бросать сюда нельзя или ничего не меняется.
+ * `items` is Map<drag id, {node, parent, index}>. Returns {parent, index}, or
+ * null when the drop is not allowed or would change nothing.
  */
 export function resolveDropTarget({ items, activeId, overId, below }) {
   const active = items.get(activeId)
   if (!active || !overId) return null
 
   if (typeof overId === 'string' && overId.startsWith('empty-')) {
-    // пустая папка: единственный способ положить в неё первый урок
+    // an empty section: the only way to put a first lesson into it
     if (active.node.is_section) return null
     return { parent: Number(overId.slice('empty-'.length)), index: 0 }
   }
@@ -236,11 +226,11 @@ export function resolveDropTarget({ items, activeId, overId, below }) {
 
   let parent
   if (over.node.is_section) {
-    // шапка папки — это место рядом с ней на верхнем уровне,
-    // внутрь кладут наведением на содержимое
+    // a section header means the place next to it on the top level;
+    // hovering over its contents is what puts a lesson inside
     parent = null
   } else if (active.node.is_section && over.parent !== null) {
-    return null // папку внутрь папки нельзя
+    return null // a section cannot go inside a section
   } else {
     parent = over.parent
   }
@@ -248,7 +238,7 @@ export function resolveDropTarget({ items, activeId, overId, below }) {
   let index = over.index + (below ? 1 : 0)
 
   if (parent === active.parent) {
-    // индекс считается без самого узла
+    // the index is counted without the node itself
     if (active.index < index) index -= 1
     if (index === active.index) return null
   }

@@ -1,14 +1,15 @@
+import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 
 export default function NotFound() {
+  const { t } = useTranslation()
+
   return (
     <main className="page narrow">
-      <h1>Страница не найдена</h1>
-      <p className="hint">
-        Такого адреса в трекере нет — возможно, ссылка устарела.
-      </p>
+      <h1>{t('notFound.title')}</h1>
+      <p className="hint">{t('notFound.hint')}</p>
       <p>
-        <Link to="/">На главную</Link>
+        <Link to="/">{t('notFound.home')}</Link>
       </p>
     </main>
   )

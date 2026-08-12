@@ -1,10 +1,13 @@
 /**
- * Разбор CSV учебного плана на клиенте — только ради предпросмотра.
+ * Client-side parsing of a plan CSV — purely for the preview.
  *
- * Зеркало `parse_plan_csv` из plans/services.py: показываем то же, что
- * увидит сервер. Импортирует всё равно сервер, он же и авторитет.
+ * A mirror of `parse_plan_csv` from plans/services.py: we show exactly what
+ * the server will see. The server still does the import and stays the
+ * authority. Warnings carry the same shape as the server's — {code, params} —
+ * so both are rendered through the same `warnings.*` keys.
  */
 
+// header words in both languages: this recognises the file, not the interface
 const HEADER_CELLS = new Set([
   'тема', 'темы', 'раздел', 'topic', 'section',
   'урок', 'уроки', 'название', 'тема урока', 'lesson',
@@ -14,7 +17,7 @@ const HEADER_CELLS = new Set([
 const TITLE_LIMIT = 200
 export const MAX_ROWS = 2000
 
-/** Байты файла в текст: UTF-8, иначе Windows-1251 (Excel на Windows). */
+/** File bytes into text: UTF-8, else Windows-1251 (Excel on Windows). */
 export function decodeCsv(buffer) {
   try {
     return new TextDecoder('utf-8', { fatal: true })
@@ -25,7 +28,7 @@ export function decodeCsv(buffer) {
   }
 }
 
-/** Разбор строк с учётом кавычек: "а, б" — одна ячейка. */
+/** Row parsing that respects quotes: "a, b" is one cell. */
 function readRows(text, delimiter) {
   const rows = []
   let row = ['']
@@ -98,15 +101,16 @@ export function parsePlanCsv(text) {
 
     if (!themeCell && !lessonCell) {
       if (raw.some((cell) => cell.trim())) {
-        warnings.push(`Строка ${number}: нет ни темы, ни урока — пропущена.`)
+        warnings.push({ code: 'csv_row_empty', params: { row: number } })
       }
       return
     }
 
     if (Math.max(themeCell.length, lessonCell.length) > TITLE_LIMIT) {
-      warnings.push(
-        `Строка ${number}: название длиннее ${TITLE_LIMIT} символов — пропущена.`,
-      )
+      warnings.push({
+        code: 'csv_row_too_long',
+        params: { row: number, limit: TITLE_LIMIT },
+      })
       return
     }
 

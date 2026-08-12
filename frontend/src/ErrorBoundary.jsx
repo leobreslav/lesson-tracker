@@ -1,13 +1,17 @@
 import { Component } from 'react'
+import { withTranslation } from 'react-i18next'
 
 /**
- * Ловушка ошибок отрисовки.
+ * A trap for render errors.
  *
- * Без неё исключение в одной функции размонтирует всё дерево: страница
- * белеет, и даже кнопки, которые работали, исчезают. Бар остаётся снаружи
- * ловушки, поэтому уйти в другой раздел можно всегда.
+ * Without it an exception in a single function unmounts the whole tree: the
+ * page goes white and even the buttons that worked disappear. The bar stays
+ * outside the trap, so another section is always reachable.
+ *
+ * A class component cannot call hooks, so the translator arrives as a prop
+ * through withTranslation.
  */
-export default class ErrorBoundary extends Component {
+class ErrorBoundary extends Component {
   state = { error: null }
 
   static getDerivedStateFromError(error) {
@@ -15,27 +19,26 @@ export default class ErrorBoundary extends Component {
   }
 
   componentDidCatch(error, info) {
-    // в консоль — стек, пользователю ниже показываем текст
-    console.error('Ошибка отрисовки страницы:', error, info)
+    // the stack goes to the console, the person below sees the text
+    console.error(this.props.t('boundary.consoleError'), error, info)
   }
 
   render() {
     const { error } = this.state
+    const { t } = this.props
     if (!error) return this.props.children
 
     return (
       <main className="page narrow">
-        <h1>Страница не отрисовалась</h1>
+        <h1>{t('boundary.title')}</h1>
         <p className="error">{error.message}</p>
-        <p className="hint">
-          Это ошибка в приложении, а не в ваших данных — они не пострадали.
-          Попробуйте открыть раздел заново; если повторится, покажите это
-          сообщение разработчику.
-        </p>
+        <p className="hint">{t('boundary.hint')}</p>
         <button type="button" onClick={() => this.setState({ error: null })}>
-          Попробовать снова
+          {t('common.retry')}
         </button>
       </main>
     )
   }
 }
+
+export default withTranslation()(ErrorBoundary)

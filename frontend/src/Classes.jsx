@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
+import EmptyState from './EmptyState'
 import {
   createClass,
   deleteClass,
@@ -10,6 +12,7 @@ import {
 } from './api'
 
 export default function Classes({ onLoggedOut }) {
+  const { t, i18n } = useTranslation()
   const navigate = useNavigate()
   const [years, setYears] = useState(null)
   const [yearId, setYearId] = useState(null)
@@ -18,10 +21,10 @@ export default function Classes({ onLoggedOut }) {
   const [editing, setEditing] = useState(null) // {id, value}
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
-  // счётчики уроков по классам: {id: {total, past, remaining, cancelled}}
+  // lesson counters per class: {id: {total, past, remaining, cancelled}}
   const [stats, setStats] = useState({})
 
-  // Escape закрывает редактирование сам, повторное сохранение по blur не нужно
+  // Escape closes the editor itself; blur must not save a second time
   const skipBlur = useRef(false)
 
   const handleError = useCallback(
@@ -39,7 +42,7 @@ export default function Classes({ onLoggedOut }) {
       .then((list) => {
         if (cancelled) return
         setYears(list)
-        // год всего один — выбирать нечего
+        // a single year needs no picking
         setYearId((current) => current ?? list[0]?.id ?? null)
       })
       .catch((err) => {
@@ -52,10 +55,10 @@ export default function Classes({ onLoggedOut }) {
   }, [handleError])
 
   /**
-   * Счётчики уроков по каждому классу.
+   * Lesson counters for every class.
    *
-   * Эндпоинт статистики работает по одному классу, а классов в году
-   * единицы — проще спросить всех разом, чем городить новый API.
+   * The stats endpoint works one class at a time, and a year holds a handful
+   * of them — asking for all of them is simpler than inventing a new API.
    */
   const loadStats = useCallback((list) => {
     if (!list.length) {
@@ -108,7 +111,7 @@ export default function Classes({ onLoggedOut }) {
     try {
       const created = await createClass({ year: yearId, name: value })
       setItems((list) =>
-        [...list, created].sort((a, b) => a.name.localeCompare(b.name, 'ru')),
+        [...list, created].sort((a, b) => a.name.localeCompare(b.name, i18n.language)),
       )
       setName('')
     } catch (err) {
@@ -142,7 +145,7 @@ export default function Classes({ onLoggedOut }) {
       setItems((list) =>
         list
           .map((item) => (item.id === id ? updated : item))
-          .sort((a, b) => a.name.localeCompare(b.name, 'ru')),
+          .sort((a, b) => a.name.localeCompare(b.name, i18n.language)),
       )
     } catch (err) {
       handleError(err)
@@ -164,7 +167,7 @@ export default function Classes({ onLoggedOut }) {
   }
 
   const handleDelete = async (item) => {
-    if (!window.confirm(`Удалить класс «${item.name}»?`)) return
+    if (!window.confirm(t('classes.deleteConfirm', { name: item.name }))) return
 
     setBusy(true)
     setError(null)
@@ -182,7 +185,7 @@ export default function Classes({ onLoggedOut }) {
   if (years === null) {
     return (
       <main className="page narrow">
-        <p>{error ? <span className="error">{error}</span> : 'Загрузка…'}</p>
+        <p>{error ? <span className="error">{error}</span> : t('common.loading')}</p>
       </main>
     )
   }
@@ -190,16 +193,20 @@ export default function Classes({ onLoggedOut }) {
   return (
     <main className="page narrow">
       <header className="page-header">
-        <h1>Классы</h1>
+        <h1>{t('classes.title')}</h1>
       </header>
 
       {!years.length ? (
-        <div className="panel">
-          <p>Классы заводятся внутри учебного года, а его пока нет.</p>
-          <button type="button" onClick={() => navigate('/year')}>
-            Создать учебный год
-          </button>
-        </div>
+        <EmptyState
+          title={t('classes.needYear.title')}
+          actions={
+            <button type="button" onClick={() => navigate('/year')}>
+              {t('classes.needYear.action')}
+            </button>
+          }
+        >
+          {t('classes.needYear.hint')}
+        </EmptyState>
       ) : (
         <>
           <div className="year-picker">
@@ -216,17 +223,17 @@ export default function Classes({ onLoggedOut }) {
           </div>
 
           <form className="add-form" onSubmit={handleAdd}>
-            {/* submit по Enter даёт форма, отдельный обработчик не нужен */}
+            {/* the form submits on Enter; no separate handler needed */}
             <input
               value={name}
               maxLength={20}
-              placeholder="Название класса, например 9Б"
-              aria-label="Название класса"
+              placeholder={t('classes.placeholder')}
+              aria-label={t('classes.nameLabel')}
               disabled={busy}
               onChange={(event) => setName(event.target.value)}
             />
             <button type="submit" disabled={busy || !name.trim()}>
-              Добавить
+              {t('common.add')}
             </button>
           </form>
 
@@ -236,13 +243,12 @@ export default function Classes({ onLoggedOut }) {
             </p>
           )}
 
-          {items === null && <p>Загрузка…</p>}
+          {items === null && <p>{t('common.loading')}</p>}
 
           {items !== null && !items.length && (
-            <p className="hint">
-              В этом году ещё нет классов. Заведите первый — введите название
-              выше и нажмите Enter.
-            </p>
+            <EmptyState title={t('classes.empty.title')}>
+              {t('classes.empty.hint')}
+            </EmptyState>
           )}
 
           {items !== null && items.length > 0 && (
@@ -254,7 +260,7 @@ export default function Classes({ onLoggedOut }) {
                       autoFocus
                       value={editing.value}
                       maxLength={20}
-                      aria-label="Новое название класса"
+                      aria-label={t('classes.newNameLabel')}
                       onChange={(event) =>
                         setEditing({ ...editing, value: event.target.value })
                       }
@@ -268,7 +274,7 @@ export default function Classes({ onLoggedOut }) {
                       <button
                         type="button"
                         className="link name"
-                        title="Переименовать"
+                        title={t('classes.rename')}
                         disabled={busy}
                         onClick={() => startEdit(item)}
                       >
@@ -276,10 +282,7 @@ export default function Classes({ onLoggedOut }) {
                       </button>
                       {stats[item.id] && (
                         <span className="class-stats hint">
-                          уроков {stats[item.id].total} · прошло{' '}
-                          {stats[item.id].past} · осталось{' '}
-                          {stats[item.id].remaining} · отменено{' '}
-                          {stats[item.id].cancelled}
+                          {t('classes.stats', stats[item.id])}
                         </span>
                       )}
                     </>
@@ -288,7 +291,7 @@ export default function Classes({ onLoggedOut }) {
                   <button
                     type="button"
                     className="link"
-                    aria-label={`Удалить класс ${item.name}`}
+                    aria-label={t('classes.delete', { name: item.name })}
                     disabled={busy}
                     onClick={() => handleDelete(item)}
                   >

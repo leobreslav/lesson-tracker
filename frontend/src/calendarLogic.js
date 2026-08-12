@@ -1,15 +1,18 @@
 /**
- * Разметка учебного календаря на клиенте.
+ * Calendar markup on the client.
  *
- * Повторяет calendars/services.py на бэкенде: нужна, чтобы правка дня
- * отражалась в сетке и в счётчике сразу, не дожидаясь ответа сервера.
- * Авторитетным остаётся сервер — после успешного запроса дни
- * перечитываются из /days/. Меняете приоритет видов — правьте оба места.
+ * A mirror of calendars/services.py: it exists so that editing a day shows up
+ * in the grid and in the counters at once, without waiting for the server.
+ * The server stays the authority — after a successful request the days are
+ * re-read from /days/. Change the priority of kinds there, change it here.
  *
- * Приоритет (подробное обоснование — в шапке services.py):
- * перенос → выходной → праздник → каникулы → учебный день.
- * У дня ровно один статус, поэтому сумма счётчиков по статусам всегда
- * равна числу календарных дней периода.
+ * Priority (the long reasoning lives at the top of services.py):
+ * moved workday → weekend → holiday → break → study day.
+ * A day holds exactly one status, so the per-status counters always add up to
+ * the number of calendar days in the period.
+ *
+ * No wording lives here: statuses and kinds are codes, and the interface
+ * looks them up in `dayStatus.*` / `calendar.kind.*`.
  */
 
 export const KIND_HOLIDAY = 'holiday'
@@ -21,30 +24,11 @@ export const STATUS_HOLIDAY = 'holiday'
 export const STATUS_VACATION = 'vacation'
 export const STATUS_WEEKEND = 'weekend'
 
-export const KIND_LABELS = {
-  [KIND_HOLIDAY]: 'Праздник',
-  [KIND_VACATION]: 'Каникулы',
-  [KIND_WORKDAY]: 'Рабочий день',
-}
-
-export const STATUS_LABELS = {
-  [STATUS_STUDY]: 'Учебный день',
-  [STATUS_HOLIDAY]: 'Праздник',
-  [STATUS_VACATION]: 'Каникулы',
-  [STATUS_WEEKEND]: 'Выходной',
-}
-
-// понедельник — 0, как в date.weekday() на бэкенде
-export const WEEKDAY_SHORT = ['пн', 'вт', 'ср', 'чт', 'пт', 'сб', 'вс']
-
-const MONTH_NAMES = [
-  'январь', 'февраль', 'март', 'апрель', 'май', 'июнь',
-  'июль', 'август', 'сентябрь', 'октябрь', 'ноябрь', 'декабрь',
-]
+export const WEEKDAYS = 7
 
 export const STATUSES = [STATUS_STUDY, STATUS_HOLIDAY, STATUS_VACATION, STATUS_WEEKEND]
 
-/** Дата вида YYYY-MM-DD -> Date на полдень (полдень спасает от сдвигов при переводе часов). */
+/** A YYYY-MM-DD date into a Date at noon (noon survives DST shifts). */
 export function parseDate(iso) {
   const [year, month, day] = iso.split('-').map(Number)
   return new Date(year, month - 1, day, 12)
@@ -56,7 +40,7 @@ export function formatDate(date) {
   return `${date.getFullYear()}-${month}-${day}`
 }
 
-/** Номер дня недели: понедельник — 0. */
+/** Weekday number: Monday is 0, the same as on the backend. */
 export function weekdayOf(iso) {
   return (parseDate(iso).getDay() + 6) % 7
 }
@@ -67,7 +51,7 @@ export function addDays(iso, count) {
   return formatDate(date)
 }
 
-/** Сколько суток от одной даты до другой (полдень спасает от перевода часов). */
+/** How many days from one date to another (noon survives DST shifts). */
 export function daysBetween(fromIso, toIso) {
   return Math.round((parseDate(toIso) - parseDate(fromIso)) / 86400000)
 }
@@ -85,13 +69,50 @@ export function eachDate(startIso, endIso) {
   return dates
 }
 
-/** Понедельник недели, в которую попадает дата. */
-export function startOfWeek(iso) {
-  return addDays(iso, -weekdayOf(iso))
+/**
+ * Typical breaks for a year starting in September of the given year.
+ *
+ * The dates are deliberately approximate: one button offers them and the
+ * teacher then moves them to fit their school. The same values are created by
+ * the demo set on the server (onboarding/services.py).
+ *
+ * The titles arrive from the caller: they are saved into the database, so
+ * they are written in the teacher's language, not in the module's.
+ */
+export function suggestVacations(startYear, titles = {}) {
+  return [
+    {
+      title: titles.autumn ?? 'Autumn break',
+      start_date: `${startYear}-10-26`,
+      end_date: `${startYear}-11-03`,
+    },
+    {
+      title: titles.winter ?? 'Winter break',
+      start_date: `${startYear}-12-28`,
+      end_date: `${startYear + 1}-01-08`,
+    },
+    {
+      title: titles.spring ?? 'Spring break',
+      start_date: `${startYear + 1}-03-23`,
+      end_date: `${startYear + 1}-03-31`,
+    },
+  ]
 }
 
-export function endOfWeek(iso) {
-  return addDays(startOfWeek(iso), 6)
+/**
+ * First day of the week the date falls into.
+ *
+ * `firstDay` is the weekday a week starts on in the current language, in our
+ * numbering (Monday is 0). It defaults to Monday, which is what the backend
+ * counts from; the schedule passes the language's own value so an American
+ * week runs Sunday to Saturday.
+ */
+export function startOfWeek(iso, firstDay = 0) {
+  return addDays(iso, -((weekdayOf(iso) - firstDay + WEEKDAYS) % WEEKDAYS))
+}
+
+export function endOfWeek(iso, firstDay = 0) {
+  return addDays(startOfWeek(iso, firstDay), WEEKDAYS - 1)
 }
 
 export function startOfMonth(iso) {
@@ -100,7 +121,7 @@ export function startOfMonth(iso) {
 
 export function endOfMonth(iso) {
   const date = parseDate(iso)
-  // нулевой день следующего месяца — последний день текущего
+  // day zero of the next month is the last day of this one
   return formatDate(new Date(date.getFullYear(), date.getMonth() + 1, 0, 12))
 }
 
@@ -108,13 +129,6 @@ export function today() {
   return formatDate(new Date())
 }
 
-/** Человекочитаемый интервал: «4 ноября» или «26 октября — 3 ноября». */
-export function formatRange(startIso, endIso) {
-  const options = { day: 'numeric', month: 'long' }
-  const start = parseDate(startIso).toLocaleDateString('ru-RU', options)
-  if (startIso === endIso) return start
-  return `${start} — ${parseDate(endIso).toLocaleDateString('ru-RU', options)}`
-}
 
 function covering(exceptions, iso) {
   return exceptions.filter((item) => item.start_date <= iso && iso <= item.end_date)
@@ -132,7 +146,7 @@ function makeDay(date, weekday, status, source, term) {
   }
 }
 
-/** Терм, накрывающий дату, или null: дни между четвертями — это норма. */
+/** The term covering the date, or null: days between quarters are normal. */
 export function findTerm(iso, terms) {
   return terms.find((term) => term.start_date <= iso && iso <= term.end_date) ?? null
 }
@@ -144,7 +158,7 @@ export function buildDays(year, exceptions, terms = []) {
     const weekday = weekdayOf(iso)
     const found = covering(exceptions, iso)
     const of = (kind) => found.find((item) => item.kind === kind)
-    // null — день между четвертями, это нормальное состояние
+    // null is a day between quarters, which is a normal state
     const term = findTerm(iso, terms)
 
     const workday = of(KIND_WORKDAY)
@@ -153,7 +167,7 @@ export function buildDays(year, exceptions, terms = []) {
     const holiday = of(KIND_HOLIDAY)
     const vacation = of(KIND_VACATION)
 
-    // выходной сильнее праздника и каникул, но пометку на дне сохраняем
+    // a weekend outranks a holiday and a break, but the note is kept
     if (weekend.has(weekday)) {
       return makeDay(iso, weekday, STATUS_WEEKEND, holiday || vacation || null, term)
     }
@@ -166,7 +180,7 @@ export function buildDays(year, exceptions, terms = []) {
 }
 
 export function buildStats(days) {
-  const byWeekday = WEEKDAY_SHORT.map(() => 0)
+  const byWeekday = Array.from({ length: WEEKDAYS }, () => 0)
   const byStatus = Object.fromEntries(STATUSES.map((status) => [status, 0]))
 
   days.forEach((day) => {
@@ -174,7 +188,7 @@ export function buildStats(days) {
     if (day.status === STATUS_STUDY) byWeekday[day.weekday] += 1
   })
 
-  // разбивка по термам: дни вне термов идут записью с id === null
+  // split by term: days outside every term go into the id === null row
   const byTerm = new Map()
   days.forEach((day) => {
     const key = day.term_id ?? null
@@ -200,20 +214,25 @@ export function buildStats(days) {
   }
 }
 
-/** Дни, разложенные по месяцам, с отступом до первого дня недели. */
-export function groupByMonth(days) {
+/**
+ * Days grouped by month, with the blank cells before the first one.
+ *
+ * `firstDay` is the weekday a week starts on in the current language (in our
+ * numbering, Monday is 0): the number of leading blanks depends on it, which
+ * is why the grid shifts as a whole for a Sunday-first locale. The month
+ * heading is not built here — `dates.monthTitle` knows the language.
+ */
+export function groupByMonth(days, firstDay = 0) {
   const months = []
 
   days.forEach((day) => {
-    const date = parseDate(day.date)
     const key = day.date.slice(0, 7)
 
     if (months.at(-1)?.key !== key) {
       months.push({
         key,
-        label: `${MONTH_NAMES[date.getMonth()]} ${date.getFullYear()}`,
-        // сколько пустых клеток до первого дня месяца в сетке пн–вс
-        leading: day.weekday,
+        first: day.date,
+        leading: (day.weekday - firstDay + WEEKDAYS) % WEEKDAYS,
         days: [],
       })
     }

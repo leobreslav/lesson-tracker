@@ -1,21 +1,20 @@
-import {
-  STATUS_LABELS,
-  STATUS_WEEKEND,
-  WEEKDAY_SHORT,
-  groupByMonth,
-  parseDate,
-} from './calendarLogic'
+import { useTranslation } from 'react-i18next'
+import { STATUS_WEEKEND, groupByMonth, parseDate } from './calendarLogic'
+import { firstWeekday, monthTitle, weekdayHeadings } from './dates'
 import { termColorIndex } from './termColors'
 import useRangeSelection from './useRangeSelection'
 
 const LEGEND = ['study', 'holiday', 'vacation', 'weekend']
 
 /**
- * Сетка календаря на все месяцы года.
+ * The calendar grid across every month of the year.
  *
- * Клик по дню переключает его статус, протягивание мышью выделяет диапазон.
- * Одиночный клик диапазоном не считается: mouseup на другой ячейке не
- * порождает click, поэтому обработчики не конфликтуют.
+ * A click toggles the status of a day, dragging selects a range. A single
+ * click is not a range: releasing over another cell produces no click there,
+ * so the two handlers never collide.
+ *
+ * The column order follows the language — Monday first in Russian, Sunday in
+ * American English — while the weekday numbers stay ours.
  */
 export default function CalendarGrid({
   days,
@@ -25,10 +24,12 @@ export default function CalendarGrid({
   onSelectRange,
   disabled,
 }) {
+  const { t } = useTranslation()
   const { isSelected, dayProps } = useRangeSelection({ onSelectRange, disabled })
+  const headings = weekdayHeadings()
 
   const highlighted = (date) =>
-    // пока диалог спрашивает название, выделение остаётся видимым
+    // while the dialog asks for a name, the selection stays visible
     (pending && pending.start_date <= date && date <= pending.end_date) ||
     isSelected(date)
 
@@ -38,12 +39,12 @@ export default function CalendarGrid({
         {LEGEND.map((status) => (
           <li key={status}>
             <span className={`swatch ${status}`} aria-hidden="true" />
-            {STATUS_LABELS[status]}
+            {t(`dayStatus.${status}`)}
           </li>
         ))}
         <li>
           <span className="swatch noted" aria-hidden="true" />
-          пометка на выходном
+          {t('calendar.legend.noted')}
         </li>
       </ul>
 
@@ -60,19 +61,19 @@ export default function CalendarGrid({
           ))}
           <li>
             <span className="swatch no-term" aria-hidden="true" />
-            вне термов
+            {t('calendar.legend.noTerm')}
           </li>
         </ul>
       )}
 
       <div className="months">
-        {groupByMonth(days).map((month) => (
+        {groupByMonth(days, firstWeekday()).map((month) => (
           <section className="month" key={month.key}>
-            <h3>{month.label}</h3>
+            <h3>{monthTitle(month.first)}</h3>
             <div className="month-grid">
-              {WEEKDAY_SHORT.map((name) => (
-                <div className="weekday" key={name}>
-                  {name}
+              {headings.map((heading) => (
+                <div className="weekday" key={heading.weekday}>
+                  {heading.label}
                 </div>
               ))}
               {Array.from({ length: month.leading }, (_, index) => (
@@ -88,14 +89,14 @@ export default function CalendarGrid({
                       ? ` term-${termColorIndex(terms, day.term_id)}`
                       : ' no-term') +
                     (highlighted(day.date) ? ' selected' : '') +
-                    // выходной с пометкой красится как выходной, но точка
-                    // показывает, что исключение на нём всё-таки есть
+                    // a marked weekend is still painted as a weekend, but the
+                    // dot shows the markup is there
                     (day.exception && day.status === STATUS_WEEKEND ? ' noted' : '')
                   }
                   title={
                     day.title
-                      ? `${day.title} (${STATUS_LABELS[day.status].toLowerCase()})`
-                      : STATUS_LABELS[day.status]
+                      ? `${day.title} (${t(`dayStatus.${day.status}`).toLowerCase()})`
+                      : t(`dayStatus.${day.status}`)
                   }
                   disabled={disabled}
                   {...dayProps(day.date)}

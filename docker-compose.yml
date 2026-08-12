@@ -37,6 +37,9 @@ services:
       - ./frontend:/app
       # node_modules живут в томе: сборка под alpine, а не под хостовой WSL2
       - node_modules:/app/node_modules
+      # список кодов ошибок — его сверяет tests/locales.test.js; путь такой
+      # же, как из frontend/tests на хосте (../../backend/config/errors.py)
+      - ./backend/config/errors.py:/backend/config/errors.py:ro
     ports:
       - "5173:5173"
     depends_on:

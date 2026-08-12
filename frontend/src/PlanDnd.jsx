@@ -1,20 +1,22 @@
 import { useDroppable } from '@dnd-kit/core'
 import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
+import { useTranslation } from 'react-i18next'
 
-/** Идентификатор узла в терминах dnd-kit. */
+/** The id of a node in dnd-kit terms. */
 export const dragId = (id) => `node-${id}`
 export const emptyZoneId = (sectionId) => `empty-${sectionId}`
 
 /**
- * Строка плана, которую можно перетащить.
+ * A plan row that can be dragged.
  *
- * Ручка отдаётся наружу через children-функцию: у папки она живёт в шапке,
- * у урока — в начале строки. Тянуть можно только за ручку — иначе клики по
- * названию и кнопкам конфликтовали бы с перетаскиванием, а на телефоне
- * пропала бы прокрутка списка.
+ * The handle is handed outwards through a children function: a section keeps
+ * it in its header, a lesson at the start of the row. Only the handle drags —
+ * otherwise clicks on the title and the buttons would fight the drag, and on
+ * a phone the list would stop scrolling.
  */
 export function SortableRow({ id, className = '', indicator, children }) {
+  const { t } = useTranslation()
   const {
     attributes,
     listeners,
@@ -35,8 +37,8 @@ export function SortableRow({ id, className = '', indicator, children }) {
       type="button"
       className="link handle"
       ref={setActivatorNodeRef}
-      title="Перетащить"
-      aria-label="Перетащить"
+      title={t('plan.drag')}
+      aria-label={t('plan.drag')}
       {...attributes}
       {...listeners}
     >
@@ -59,8 +61,9 @@ export function SortableRow({ id, className = '', indicator, children }) {
   )
 }
 
-/** Зона сброса для пустой папки — иначе в неё нечем попасть. */
+/** A drop zone for an empty section — otherwise nothing can reach inside. */
 export function EmptyDropZone({ sectionId, active }) {
+  const { t } = useTranslation()
   const { setNodeRef } = useDroppable({ id: emptyZoneId(sectionId) })
 
   return (
@@ -68,7 +71,7 @@ export function EmptyDropZone({ sectionId, active }) {
       ref={setNodeRef}
       className={active ? 'plan-empty-zone over' : 'plan-empty-zone'}
     >
-      Перетащите урок сюда
+      {t('plan.dropHere')}
     </li>
   )
 }

@@ -1,3 +1,5 @@
+import i18n from './i18n'
+
 const TOKEN_KEY = 'authToken'
 
 export const getToken = () => localStorage.getItem(TOKEN_KEY)
@@ -5,22 +7,47 @@ export const setToken = (token) => localStorage.setItem(TOKEN_KEY, token)
 export const clearToken = () => localStorage.removeItem(TOKEN_KEY)
 
 class ApiError extends Error {
-  constructor(message, status) {
+  constructor(message, status, code = null, params = null) {
     super(message)
     this.status = status
+    // the machine-readable half of the answer, kept for callers that branch
+    // on the code instead of showing the text
+    this.code = code
+    this.params = params
   }
+}
+
+/**
+ * The message a person should see.
+ *
+ * The backend answers with a code, an English detail and params; the code is
+ * looked up in the dictionary and an unknown one falls back to the detail, so
+ * a server error added tomorrow still arrives readable today.
+ */
+function humanMessage(data) {
+  if (data?.code) {
+    return i18n.t(`errors.${data.code}`, {
+      defaultValue: data.detail || i18n.t('errors.unknown'),
+      ...(data.params || {}),
+    })
+  }
+
+  // plain DRF answers: either detail or field errors
+  const fieldError =
+    data && typeof data === 'object' ? Object.values(data).flat()[0] : null
+  return data?.detail || fieldError || i18n.t('errors.unknown')
 }
 
 async function request(path, { method = 'GET', body, auth = true } = {}) {
   const headers = {}
-  // у FormData свой Content-Type с границей блоков — его ставит браузер
+  // FormData has its own Content-Type with a boundary; the browser sets it
   const isForm = body instanceof FormData
   if (body && !isForm) headers['Content-Type'] = 'application/json'
 
   const token = getToken()
   if (auth && token) headers['Authorization'] = `Token ${token}`
 
-  // /api проксируется Vite на backend:8000, поэтому путь относительный
+  // Vite proxies /api to backend:8000, so the path stays relative
   const response = await fetch(path, {
     method,
     headers,
@@ -30,11 +57,12 @@ async function request(path, { method = 'GET', body, auth = true } = {}) {
   const data = await response.json().catch(() => null)
 
   if (!response.ok) {
-    // DRF отдаёт либо detail, либо ошибки по полям — берём первое понятное
-    const fieldError =
-      data && typeof data === 'object' ? Object.values(data).flat()[0] : null
-    const detail = data?.detail || fieldError || 'Запрос не удался'
-    throw new ApiError(detail, response.status)
+    throw new ApiError(
+      humanMessage(data),
+      response.status,
+      data?.code ?? null,
+      data?.params ?? null,
+    )
   }
 
   return data
@@ -54,7 +82,18 @@ export const updateMe = (fields) =>
 
 export const logout = () => request('/api/auth/logout/', { method: 'POST' })
 
-// --- учебные годы и календарь ---
+// --- onboarding ---
+
+export const fetchOnboarding = () => request('/api/onboarding/status/')
+
+export const createDemoData = () =>
+  request('/api/onboarding/demo/', { method: 'POST' })
+
+/** Removes ALL of the user's data, not only the example. */
+export const wipeAllData = () =>
+  request('/api/onboarding/demo/', { method: 'DELETE' })
+
+// --- school years and the calendar ---
 
 export const fetchSchoolYears = () => request('/api/calendar/years/')
 
@@ -88,9 +127,9 @@ export const createException = (fields) =>
 export const deleteException = (id) =>
   request(`/api/calendar/exceptions/${id}/`, { method: 'DELETE' })
 
-// --- классы ---
+// --- classes ---
 
-// без года — все классы владельца, они нужны сводному расписанию
+// without a year: every class of the owner, which the agenda needs
 export const fetchClasses = (yearId) =>
   request(
     yearId ? `/api/classes/?year=${encodeURIComponent(yearId)}` : '/api/classes/',
@@ -105,7 +144,7 @@ export const renameClass = (id, name) =>
 export const deleteClass = (id) =>
   request(`/api/classes/${id}/`, { method: 'DELETE' })
 
-// --- учебный план ---
+// --- the lesson plan ---
 
 export const fetchPlan = (classId) =>
   request(`/api/plan/?class=${encodeURIComponent(classId)}`)
@@ -133,10 +172,10 @@ export const importPlanCsv = (classId, file, mode) => {
 }
 
 /**
- * Скачивание плана.
+ * Downloading the plan.
  *
- * Простая ссылка не подойдёт: эндпоинт требует токен в заголовке, поэтому
- * тянем файл запросом и отдаём браузеру как blob.
+ * A plain link will not do: the endpoint wants a token in the header, so the
+ * file is fetched and handed to the browser as a blob.
  */
 export const downloadPlanCsv = async (classId) => {
   const token = getToken()
@@ -146,7 +185,7 @@ export const downloadPlanCsv = async (classId) => {
   )
 
   if (!response.ok) {
-    throw new ApiError('Не удалось выгрузить план', response.status)
+    throw new ApiError(i18n.t('errors.downloadFailed'), response.status)
   }
 
   const disposition = response.headers.get('Content-Disposition') || ''
@@ -166,7 +205,7 @@ export const downloadPlanCsv = async (classId) => {
 export const fetchLayout = (classId, period = {}) =>
   request(`/api/plan/layout/?${new URLSearchParams({ class: classId, ...period })}`)
 
-/** Темы уроков по всем классам за период: slot_id → урок плана. */
+/** Topics across every class for a period: slot_id → the plan lesson. */
 export const fetchLayoutAgenda = (start, end) =>
   request(`/api/plan/layout/agenda/?${new URLSearchParams({ start, end })}`)
 
@@ -188,7 +227,7 @@ export const movePlanSection = (id, direction) =>
     body: { direction },
   })
 
-// --- уроки расписания ---
+// --- schedule lessons ---
 
 export const fetchSlots = (classId) =>
   request(`/api/slots/?class=${encodeURIComponent(classId)}`)
@@ -212,7 +251,7 @@ export const copySlots = (payload) =>
   request('/api/slots/copy/', { method: 'POST', body: payload })
 
 export const clearSlots = ({ classId, start, end, onlyRegular }) => {
-  // параметры массового удаления идут в строке запроса, тела у DELETE нет
+  // bulk delete takes its parameters in the query string; DELETE has no body
   const query = new URLSearchParams({
     class: classId,
     start,

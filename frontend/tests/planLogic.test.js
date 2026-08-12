@@ -8,7 +8,6 @@ import {
   countBlocks,
   layoutBlocks,
   planRows,
-  pluralLessons,
 } from '../src/planLogic.js'
 
 const section = (id, title, children = []) => ({
@@ -33,15 +32,6 @@ const counts = (nodes) => {
   return { blocks: blocks.map((b) => [b.title, b.lessons]), loose }
 }
 
-describe('pluralLessons', () => {
-  it('склоняет по числу', () => {
-    assert.equal(pluralLessons(1), '1 урок')
-    assert.equal(pluralLessons(3), '3 урока')
-    assert.equal(pluralLessons(12), '12 уроков')
-    assert.equal(pluralLessons(21), '21 урок')
-    assert.equal(pluralLessons(0), '0 уроков')
-  })
-})
 
 describe('countBlocks по дереву плана', () => {
   it('считает уроки каждого блока', () => {

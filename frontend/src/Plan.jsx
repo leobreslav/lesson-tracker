@@ -1,4 +1,5 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Trans, useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
 import {
   DndContext,
@@ -16,6 +17,7 @@ import {
   sortableKeyboardCoordinates,
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable'
+import EmptyState from './EmptyState'
 import ImportDialog from './ImportDialog'
 import Modal from './Modal'
 import { EmptyDropZone, SortableRow, dragId, emptyZoneId } from './PlanDnd'
@@ -23,7 +25,6 @@ import {
   applyMove,
   countBlocks,
   planRows,
-  pluralLessons,
   resolveDropTarget,
 } from './planLogic'
 import {
@@ -40,15 +41,11 @@ import {
   updatePlanNode,
 } from './api'
 
-const DND_INSTRUCTIONS = {
-  draggable:
-    'Нажмите пробел, чтобы взять элемент. Стрелками вверх и вниз выберите ' +
-    'новое место, пробелом отпустите, Escape отменит перенос. То же самое ' +
-    'делают кнопки со стрелками в строке.',
-}
-
 export default function Plan({ onLoggedOut }) {
+  const { t } = useTranslation()
   const navigate = useNavigate()
+  // the screen-reader script for dragging: dnd-kit reads it out on pick-up
+  const dndInstructions = { draggable: t('plan.dndInstructions') }
   const [classes, setClasses] = useState(null)
   const [years, setYears] = useState([])
   const [classId, setClassId] = useState(null)
@@ -58,14 +55,14 @@ export default function Plan({ onLoggedOut }) {
   const [error, setError] = useState(null)
   const [editing, setEditing] = useState(null) // {id, title, note}
   const [adding, setAdding] = useState(null) // {parent, after, is_section, title}
-  const [deleting, setDeleting] = useState(null) // папка, которую сносим
+  const [deleting, setDeleting] = useState(null) // the section being removed
   const [importing, setImporting] = useState(false)
   const [notice, setNotice] = useState(null)
   const [collapsed, setCollapsed] = useState(() => new Set())
 
-  const [dragged, setDragged] = useState(null) // {node} — что тащим сейчас
+  const [dragged, setDragged] = useState(null) // {node} — what is being dragged
   const [drop, setDrop] = useState(null) // {overId, side, parent, index}
-  // узлы, чей перенос ещё не подтверждён сервером: повторный сброс игнорируем
+  // nodes whose move the server has not confirmed: a repeat drop is ignored
   const pending = useRef(new Set())
 
   const handleError = useCallback(
@@ -119,7 +116,7 @@ export default function Plan({ onLoggedOut }) {
     }
   }, [classId, load, handleError])
 
-  /** Любая правка структуры: сделать и перечитать дерево целиком. */
+  /** Any structural edit: do it and re-read the whole tree. */
   const run = async (request) => {
     setBusy(true)
     setError(null)
@@ -134,26 +131,26 @@ export default function Plan({ onLoggedOut }) {
     }
   }
 
-  // --- перетаскивание ---
+  // --- dragging ---
 
   const sensors = useSensors(
-    // небольшой сдвиг мышью, иначе клик по названию считался бы перетаскиванием
+    // a small mouse shift, otherwise clicking a title would count as a drag
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
-    // задержка на тач: без неё прокрутка списка пальцем превращается в drag
+    // a delay on touch: without it scrolling the list turns into a drag
     useSensor(TouchSensor, {
       activationConstraint: { delay: 200, tolerance: 6 },
     }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   )
 
-  /** Вложенные droppable: сначала спрашиваем, что под курсором. */
+  /** Nested droppables: ask what sits under the cursor first. */
   const collisionDetection = useCallback((args) => {
     const withinPointer = pointerWithin(args)
-    // у клавиатурного перетаскивания курсора нет — там работает closestCenter
+    // keyboard dragging has no cursor — closestCenter answers there
     return withinPointer.length ? withinPointer : closestCenter(args)
   }, [])
 
-  /** Счётчики блоков считаются из уже загруженного дерева, без запросов. */
+  /** Block counters come from the tree already loaded, with no requests. */
   const blocks = useMemo(
     () => countBlocks(planRows(data?.nodes ?? [])),
     [data],
@@ -172,7 +169,7 @@ export default function Plan({ onLoggedOut }) {
     return map
   }, [data])
 
-  /** Ниже ли середины наведённого элемента находится перетаскиваемый. */
+  /** Whether the dragged node sits below the middle of the hovered one. */
   const isBelow = (event) => {
     const active = event.active.rect.current.translated
     const over = event.over?.rect
@@ -216,11 +213,11 @@ export default function Plan({ onLoggedOut }) {
   }
 
   /**
-   * Один запрос на завершённое перетаскивание.
+   * One request per finished drag.
    *
-   * Дерево перестраивается сразу, кнопки не блокируются: пока запрос летит,
-   * можно тащить другой узел. Повторный сброс того же узла игнорируется,
-   * иначе сервер получил бы два переноса из одного исходного состояния.
+   * The tree is rebuilt at once and the buttons stay live: another node can
+   * be dragged while the request is in flight. A repeat drop of the same node
+   * is ignored, or the server would get two moves from one starting state.
    */
   const dropNode = async (nodeId, parent, index) => {
     if (pending.current.has(nodeId)) return
@@ -237,7 +234,7 @@ export default function Plan({ onLoggedOut }) {
       handleError(err)
     } finally {
       pending.current.delete(nodeId)
-      // перечитываем, только когда все переносы отгремели
+      // re-read only once every move has settled
       if (!pending.current.size) load(classId).catch(handleError)
     }
   }
@@ -260,7 +257,7 @@ export default function Plan({ onLoggedOut }) {
       return next
     })
 
-  // --- правка ---
+  // --- editing ---
 
   const startEdit = (node) =>
     setEditing({
@@ -287,7 +284,7 @@ export default function Plan({ onLoggedOut }) {
     if (event.key === 'Escape') setEditing(null)
   }
 
-  // --- добавление ---
+  // --- adding ---
 
   const openAdd = (options) => {
     setEditing(null)
@@ -299,8 +296,8 @@ export default function Plan({ onLoggedOut }) {
     const { title, parent, after, is_section } = adding
     if (!title.trim()) return
 
-    // при вставке «после строки» форму закрываем, иначе следующий узел
-    // встал бы перед только что созданным
+    // an "insert after" form closes, otherwise the next node would land
+    // before the one just created
     if (after) setAdding(null)
     else setAdding({ ...adding, title: '' })
 
@@ -327,10 +324,18 @@ export default function Plan({ onLoggedOut }) {
       const result = await importPlanCsv(classId, file, mode)
       await load(classId)
       setNotice(
-        `Создано строк: ${result.created_rows} ` +
-          `(тем ${result.created_headers}, уроков ${result.created_lessons}).` +
+        t('plan.imported', {
+          rows: result.created_rows,
+          sections: result.created_headers,
+          lessons: result.created_lessons,
+        }) +
           (result.warnings.length
-            ? ` Пропущено: ${result.warnings.length}. ${result.warnings.join(' ')}`
+            ? t('plan.importedSkipped', {
+                count: result.warnings.length,
+                details: result.warnings
+                  .map((warning) => t(`warnings.${warning.code}`, warning.params))
+                  .join(' '),
+              })
             : ''),
       )
     } catch (err) {
@@ -349,10 +354,10 @@ export default function Plan({ onLoggedOut }) {
     }
   }
 
-  // --- удаление ---
+  // --- deleting ---
 
   const removeLesson = (node) => {
-    if (!window.confirm(`Удалить «${node.title}»?`)) return
+    if (!window.confirm(t('plan.deleteConfirm', { title: node.title }))) return
     run(() => deletePlanNode(node.id, true))
   }
 
@@ -362,7 +367,7 @@ export default function Plan({ onLoggedOut }) {
     run(() => deletePlanNode(section.id, keepChildren))
   }
 
-  // --- отрисовка ---
+  // --- rendering ---
 
   const editForm = (node) => (
     <form className="plan-edit" onSubmit={submitEdit}>
@@ -370,7 +375,7 @@ export default function Plan({ onLoggedOut }) {
         autoFocus
         value={editing.title}
         maxLength={200}
-        aria-label="Название"
+        aria-label={t('plan.titleLabel')}
         onChange={(event) => setEditing({ ...editing, title: event.target.value })}
         onKeyDown={editKeyDown}
       />
@@ -379,18 +384,18 @@ export default function Plan({ onLoggedOut }) {
           <input
             value={editing.note}
             maxLength={500}
-            placeholder="заметка"
-            aria-label="Заметка"
+            placeholder={t('plan.notePlaceholder')}
+            aria-label={t('plan.noteLabel')}
             onChange={(event) => setEditing({ ...editing, note: event.target.value })}
             onKeyDown={editKeyDown}
           />
         </>
       )}
       <button type="submit" disabled={busy}>
-        Сохранить
+        {t('common.save')}
       </button>
       <button type="button" className="secondary" onClick={() => setEditing(null)}>
-        Отмена
+        {t('common.cancel')}
       </button>
     </form>
   )
@@ -401,18 +406,20 @@ export default function Plan({ onLoggedOut }) {
         autoFocus
         value={adding.title}
         maxLength={200}
-        placeholder={adding.is_section ? 'Название папки' : 'Название урока'}
-        aria-label="Название"
+        placeholder={t(
+          adding.is_section ? 'plan.sectionPlaceholder' : 'plan.lessonPlaceholder',
+        )}
+        aria-label={t('plan.titleLabel')}
         onChange={(event) => setAdding({ ...adding, title: event.target.value })}
         onKeyDown={(event) => {
           if (event.key === 'Escape') setAdding(null)
         }}
       />
       <button type="submit" disabled={busy || !adding.title.trim()}>
-        Добавить
+        {t('common.add')}
       </button>
       <button type="button" className="secondary" onClick={() => setAdding(null)}>
-        Готово
+        {t('plan.done')}
       </button>
     </form>
   )
@@ -425,7 +432,7 @@ export default function Plan({ onLoggedOut }) {
       <button
         type="button"
         className="link"
-        title="Выше"
+        title={t('plan.up')}
         disabled={busy}
         onClick={() => run(() => mover(node.id, 'up'))}
       >
@@ -434,7 +441,7 @@ export default function Plan({ onLoggedOut }) {
       <button
         type="button"
         className="link"
-        title="Ниже"
+        title={t('plan.down')}
         disabled={busy}
         onClick={() => run(() => mover(node.id, 'down'))}
       >
@@ -466,7 +473,7 @@ export default function Plan({ onLoggedOut }) {
           <button
             type="button"
             className="link title"
-            title="Переименовать"
+            title={t('plan.rename')}
             disabled={busy}
             onClick={() => startEdit(node)}
           >
@@ -479,7 +486,7 @@ export default function Plan({ onLoggedOut }) {
             <button
               type="button"
               className="link"
-              title="Вставить урок после"
+              title={t('plan.insertAfter')}
               disabled={busy}
               onClick={() => openAdd({ parent, after: node.id })}
             >
@@ -488,7 +495,7 @@ export default function Plan({ onLoggedOut }) {
             <button
               type="button"
               className="link"
-              title="Удалить"
+              title={t('common.delete')}
               disabled={busy}
               onClick={() => removeLesson(node)}
             >
@@ -504,7 +511,7 @@ export default function Plan({ onLoggedOut }) {
   const renderSection = (node) => {
     const hidden = collapsed.has(node.id)
     const childIds = node.children.map((child) => dragId(child.id))
-    // папка подсвечивается, когда урок наведён на неё как на контейнер
+    // the section lights up when a lesson hovers over it as a container
     const isTarget = drop?.parent === node.id
 
     return (
@@ -521,7 +528,7 @@ export default function Plan({ onLoggedOut }) {
           <button
             type="button"
             className="link toggle"
-            title={hidden ? 'Развернуть' : 'Свернуть'}
+            title={t(hidden ? 'plan.expand' : 'plan.collapse')}
             onClick={() => toggleSection(node.id)}
           >
             {hidden ? '▸' : '▾'}
@@ -534,14 +541,16 @@ export default function Plan({ onLoggedOut }) {
               <button
                 type="button"
                 className="link title"
-                title="Переименовать"
+                title={t('plan.rename')}
                 disabled={busy}
                 onClick={() => startEdit(node)}
               >
                 {node.title}
               </button>
               <span className="hint block-count">
-                {pluralLessons(blocks.byId.get(node.id)?.lessons ?? 0)}
+                {t('common.lessonCount', {
+                  count: blocks.byId.get(node.id)?.lessons ?? 0,
+                })}
               </span>
 
               <span className="row-actions">
@@ -549,7 +558,7 @@ export default function Plan({ onLoggedOut }) {
                 <button
                   type="button"
                   className="link"
-                  title="Добавить урок в папку"
+                  title={t('plan.addToSection')}
                   disabled={busy}
                   onClick={() => openAdd({ parent: node.id })}
                 >
@@ -558,7 +567,7 @@ export default function Plan({ onLoggedOut }) {
                 <button
                   type="button"
                   className="link"
-                  title="Удалить папку"
+                  title={t('plan.deleteSection')}
                   disabled={busy}
                   onClick={() => setDeleting(node)}
                 >
@@ -597,7 +606,7 @@ export default function Plan({ onLoggedOut }) {
   if (classes === null) {
     return (
       <main className="page narrow">
-        <p>{error ? <span className="error">{error}</span> : 'Загрузка…'}</p>
+        <p>{error ? <span className="error">{error}</span> : t('common.loading')}</p>
       </main>
     )
   }
@@ -605,16 +614,20 @@ export default function Plan({ onLoggedOut }) {
   return (
     <main className="page narrow">
       <header className="page-header">
-        <h1>Учебный план</h1>
+        <h1>{t('plan.title')}</h1>
       </header>
 
       {!classes.length ? (
-        <div className="panel">
-          <p>План составляется для класса, а классов пока нет.</p>
-          <button type="button" onClick={() => navigate('/classes')}>
-            Завести класс
-          </button>
-        </div>
+        <EmptyState
+          title={t('plan.needClass.title')}
+          actions={
+            <button type="button" onClick={() => navigate('/classes')}>
+              {t('plan.needClass.action')}
+            </button>
+          }
+        >
+          {t('plan.needClass.hint')}
+        </EmptyState>
       ) : (
         <>
           <div className="year-picker">
@@ -632,9 +645,16 @@ export default function Plan({ onLoggedOut }) {
 
           {data && (
             <p className="hint plan-counts">
-              Уроков: <strong>{data.counts.lessons}</strong>. Папок:{' '}
-              {data.counts.sections}.
-              {blocks.loose > 0 && <> Вне блоков: {blocks.loose}.</>}
+              <Trans
+                i18nKey="plan.counts"
+                values={{
+                  lessons: data.counts.lessons,
+                  sections: data.counts.sections,
+                }}
+              >
+                <strong>{data.counts.lessons}</strong>
+              </Trans>
+              {blocks.loose > 0 && t('plan.loose', { count: blocks.loose })}
             </p>
           )}
 
@@ -650,13 +670,13 @@ export default function Plan({ onLoggedOut }) {
           )}
 
           {!data ? (
-            <p>Загрузка…</p>
+            <p>{t('common.loading')}</p>
           ) : (
             <>
               <DndContext
                 sensors={sensors}
                 collisionDetection={collisionDetection}
-                accessibility={{ screenReaderInstructions: DND_INSTRUCTIONS }}
+                accessibility={{ screenReaderInstructions: dndInstructions }}
                 onDragStart={handleDragStart}
                 onDragOver={handleDragOver}
                 onDragEnd={handleDragEnd}
@@ -693,9 +713,9 @@ export default function Plan({ onLoggedOut }) {
               </DndContext>
 
               {!data.nodes.length && (
-                <p className="hint">
-                  План пуст. Добавьте первый урок или соберите тему в папку.
-                </p>
+                <EmptyState title={t('plan.empty.title')}>
+                  {t('plan.empty.hint')}
+                </EmptyState>
               )}
 
               <div className="actions">
@@ -704,7 +724,7 @@ export default function Plan({ onLoggedOut }) {
                   disabled={busy}
                   onClick={() => openAdd({ parent: null })}
                 >
-                  + урок
+                  {t('plan.addLesson')}
                 </button>
                 <button
                   type="button"
@@ -712,7 +732,7 @@ export default function Plan({ onLoggedOut }) {
                   disabled={busy}
                   onClick={() => openAdd({ parent: null, is_section: true })}
                 >
-                  + папка
+                  {t('plan.addSection')}
                 </button>
 
                 <button
@@ -721,7 +741,7 @@ export default function Plan({ onLoggedOut }) {
                   disabled={busy}
                   onClick={() => setImporting(true)}
                 >
-                  Импорт CSV
+                  {t('plan.importCsv')}
                 </button>
                 <button
                   type="button"
@@ -729,7 +749,7 @@ export default function Plan({ onLoggedOut }) {
                   disabled={busy}
                   onClick={handleExport}
                 >
-                  Экспорт CSV
+                  {t('plan.exportCsv')}
                 </button>
               </div>
             </>
@@ -747,14 +767,15 @@ export default function Plan({ onLoggedOut }) {
 
       {deleting && (
         <Modal onClose={() => setDeleting(null)}>
-          <h3>Удалить папку «{deleting.title}»?</h3>
+          <h3>{t('plan.removeSection.title', { title: deleting.title })}</h3>
           <p className="hint">
-            В ней {deleting.children.length} уроков. Их можно вынуть на верхний
-            уровень — они встанут на место папки и сохранят порядок.
+            {t('plan.removeSection.hint', {
+              count: t('common.lessonCount', { count: deleting.children.length }),
+            })}
           </p>
           <div className="actions">
             <button type="button" disabled={busy} onClick={() => removeSection(true)}>
-              Удалить, уроки оставить
+              {t('plan.removeSection.keep')}
             </button>
             <button
               type="button"
@@ -762,10 +783,10 @@ export default function Plan({ onLoggedOut }) {
               disabled={busy}
               onClick={() => removeSection(false)}
             >
-              Удалить вместе с уроками
+              {t('plan.removeSection.withChildren')}
             </button>
             <button type="button" className="secondary" onClick={() => setDeleting(null)}>
-              Отмена
+              {t('common.cancel')}
             </button>
           </div>
         </Modal>

@@ -15,6 +15,7 @@ import {
   buildDays,
   buildStats,
   findTerm,
+  suggestVacations,
 } from '../src/calendarLogic.js'
 
 const YEAR = {
@@ -128,5 +129,33 @@ describe('buildStats', () => {
     const byStatus = Object.values(stats.by_status).reduce((a, b) => a + b, 0)
 
     assert.equal(byStatus, stats.calendar_days)
+  })
+})
+
+describe('suggestVacations', () => {
+  it('даёт три периода внутри учебного года', () => {
+    const vacations = suggestVacations(2026, {
+      autumn: 'Осенние каникулы',
+      winter: 'Зимние каникулы',
+      spring: 'Весенние каникулы',
+    })
+
+    assert.equal(vacations.length, 3)
+    assert.deepEqual(
+      vacations.map((item) => item.title),
+      ['Осенние каникулы', 'Зимние каникулы', 'Весенние каникулы'],
+    )
+    vacations.forEach((item) => {
+      assert.ok(item.start_date <= item.end_date, item.title)
+      assert.ok(item.start_date >= '2026-09-01', item.title)
+      assert.ok(item.end_date <= '2027-05-31', item.title)
+    })
+  })
+
+  it('периоды не пересекаются между собой', () => {
+    const [autumn, winter, spring] = suggestVacations(2026)
+
+    assert.ok(autumn.end_date < winter.start_date)
+    assert.ok(winter.end_date < spring.start_date)
   })
 })

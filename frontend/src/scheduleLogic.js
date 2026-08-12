@@ -1,25 +1,25 @@
 /**
- * Расписание на клиенте: раскладка копирования и счётчики.
+ * The schedule on the client: the copy layout and the counters.
  *
- * Повторяет schedule/services.py и schedule/views.py::stats — нужно для
- * предпросмотра «сколько создастся» и для мгновенного пересчёта панели
- * после правки. Авторитет за сервером: после запроса состояние
- * перечитывается. Меняете правила там — правьте и здесь.
+ * A mirror of schedule/services.py and schedule/views.py::stats — needed for
+ * the "how many will be created" preview and for recomputing the panel right
+ * after an edit. The server stays the authority: the state is re-read once it
+ * answers. Change the rules there, change them here.
  */
 
 import { addDays, daysBetween, eachDate, formatDate } from './calendarLogic'
 
 export const MAX_LESSON_NUMBER = 10
 
-/** Длина цикла источника в днях, округлённая вверх до целых недель. */
+/** The source cycle in days, rounded up to whole weeks. */
 export function cycleDays(startIso, endIso) {
   return Math.ceil((daysBetween(startIso, endIso) + 1) / 7) * 7
 }
 
-/** Какой день источника отвечает за целевую дату. */
+/** Which source day answers for a target date. */
 export function sourceDateFor(targetIso, sourceStartIso, cycle) {
   const delta = daysBetween(sourceStartIso, targetIso)
-  // остаток в JS может быть отрицательным, приводим к неотрицательному
+  // a JS remainder can be negative, bring it back to non-negative
   return addDays(sourceStartIso, ((delta % cycle) + cycle) % cycle)
 }
 
@@ -36,10 +36,10 @@ export function groupByDate(slots) {
 export const isRegular = (slot) => !slot.is_extra && !slot.is_cancelled
 
 /**
- * Предпросмотр копирования: сколько уроков создастся и сколько пропустим.
+ * A copy preview: how many lessons appear and how many are skipped.
  *
- * Пропуск — неучебный день цели или занятый номер (в режиме merge и на
- * уцелевших дополнительных/отменённых уроках в режиме replace).
+ * A skip is a non-study target day or a taken number (in merge mode, and on
+ * the surviving extra/cancelled lessons in replace mode).
  */
 export function planCopy({
   slots,
@@ -51,8 +51,8 @@ export function planCopy({
   mode,
   classIds = null,
 }) {
-  // копируем только выбранные классы, а занятость смотрим по всем:
-  // чужой урок на этом номере всё равно не даст поставить свой
+  // only the chosen classes are copied, but occupancy is read across all of
+  // them: another class's lesson on that number still blocks ours
   const byDate = groupByDate(
     slots.filter(isRegular).filter((slot) => !classIds || classIds.has(slot.class_id)),
   )
@@ -84,24 +84,29 @@ export function planCopy({
   return { created, skipped }
 }
 
-/** Человеческий итог копирования: числа плюс первые конфликты занятости. */
-export function describeCopyResult(result) {
+/**
+ * A readable summary of a copy: the numbers plus the first conflicts.
+ *
+ * The translator comes in as an argument — this module stays free of any
+ * wording, exactly like its counterpart on the server.
+ */
+export function describeCopyResult(result, t) {
   const conflicts = result.conflicts ?? []
   const shown = conflicts.slice(0, 3).map((item) => item.message)
   const rest = conflicts.length - shown.length
 
   return (
-    `Создано уроков: ${result.created}, пропущено: ${result.skipped}` +
-    (result.deleted ? `, удалено при замене: ${result.deleted}` : '') +
+    t('copy.summary', { created: result.created, skipped: result.skipped }) +
+    (result.deleted ? t('copy.summaryDeleted', { deleted: result.deleted }) : '') +
     '.' +
     (shown.length
-      ? ` Уже занято другими классами: ${shown.join('; ')}` +
-        (rest > 0 ? ` и ещё ${rest}.` : '.')
+      ? t('copy.summaryConflicts', { list: shown.join('; ') }) +
+        (rest > 0 ? t('copy.summaryMore', { count: rest }) : '.')
       : '')
   )
 }
 
-/** Сколько уроков снесёт очистка периода. */
+/** How many lessons clearing the period would remove. */
 export function planClear({ slots, start, end, onlyRegular, classIds = null }) {
   return slots.filter(
     (slot) =>
@@ -122,12 +127,12 @@ export function buildStats(slots, today = formatDate(new Date())) {
     counted[slot.reason] = (counted[slot.reason] || 0) + 1
   })
 
-  // сервер отдаёт причины от частых к редким — держим тот же порядок,
-  // иначе список в панели прыгает между локальным и серверным ответом
+  // the server sorts reasons from frequent to rare — keep the same order, or
+  // the panel list jumps between the local and the server answer
   const byReason = Object.fromEntries(
     Object.entries(counted).sort(
       ([leftReason, left], [rightReason, right]) =>
-        right - left || leftReason.localeCompare(rightReason, 'ru'),
+        right - left || leftReason.localeCompare(rightReason),
     ),
   )
 

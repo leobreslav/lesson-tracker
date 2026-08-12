@@ -1,18 +1,12 @@
 import { useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import Modal from './Modal'
-import { eachDate, formatRange } from './calendarLogic'
+import { eachDate } from './calendarLogic'
+import { dateRange } from './dates'
 
-function pluralDays(count) {
-  const tail = count % 10
-  const hundred = count % 100
-
-  if (tail === 1 && hundred !== 11) return 'день'
-  if (tail >= 2 && tail <= 4 && (hundred < 10 || hundred >= 20)) return 'дня'
-  return 'дней'
-}
-
-/** Ввод названия каникул для выделенного диапазона. */
+/** Asking for the name of a break over the selected range. */
 export default function RangeDialog({ range, busy, onSubmit, onCancel }) {
+  const { t } = useTranslation()
   const [title, setTitle] = useState('')
 
   const handleSubmit = (event) => {
@@ -25,26 +19,26 @@ export default function RangeDialog({ range, busy, onSubmit, onCancel }) {
   return (
     <Modal onClose={onCancel}>
       <form onSubmit={handleSubmit}>
-        <h3>Новые каникулы</h3>
+        <h3>{t('rangeDialog.title')}</h3>
         <p className="hint">
-          {formatRange(range.start_date, range.end_date)} — {length}{' '}
-          {pluralDays(length)}
+          {dateRange(range.start_date, range.end_date)} —{' '}
+          {t('common.dayCount', { count: length })}
         </p>
 
         <input
           autoFocus
           value={title}
           maxLength={120}
-          placeholder="Название, например «Осенние каникулы»"
+          placeholder={t('rangeDialog.placeholder')}
           onChange={(event) => setTitle(event.target.value)}
         />
 
         <div className="actions">
           <button type="submit" disabled={busy}>
-            Добавить
+            {t('common.add')}
           </button>
           <button type="button" className="secondary" onClick={onCancel}>
-            Отмена
+            {t('common.cancel')}
           </button>
         </div>
       </form>

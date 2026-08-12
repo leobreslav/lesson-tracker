@@ -1,14 +1,16 @@
 import { useEffect, useRef, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import ClassPicker from './ClassPicker'
 import Modal from './Modal'
-import { addDays, daysBetween, formatRange } from './calendarLogic'
+import { addDays, daysBetween } from './calendarLogic'
+import { dateRange } from './dates'
 import { planCopy } from './scheduleLogic'
 
 /**
- * Копирование раскладки выделенного периода на другой период.
+ * Copying the layout of the selected period onto another period.
  *
- * `onTargetChange` зовётся при каждой смене целевых дат — страница может
- * подгрузить, что там уже стоит, и предпросмотр станет точным.
+ * `onTargetChange` fires on every change of the target dates — the page can
+ * load what already sits there, which makes the preview exact.
  */
 export default function CopyDialog({
   source,
@@ -16,12 +18,13 @@ export default function CopyDialog({
   studyDates,
   classes,
   busy,
-  title = 'Скопировать расписание',
+  title,
   note,
   onTargetChange,
   onSubmit,
   onClose,
 }) {
+  const { t } = useTranslation()
   const span = daysBetween(source.start, source.end) + 1
   const [target, setTarget] = useState({
     start: addDays(source.end, 1),
@@ -30,8 +33,8 @@ export default function CopyDialog({
   const [mode, setMode] = useState('merge')
   const [picked, setPicked] = useState(() => new Set(classes.map((item) => item.id)))
 
-  // колбэк держим в ref: инлайновая функция родителя не должна
-  // перезапускать эффект на каждой перерисовке
+  // the callback lives in a ref: an inline function from the parent must not
+  // restart the effect on every render
   const notify = useRef(onTargetChange)
   useEffect(() => {
     notify.current = onTargetChange
@@ -70,15 +73,17 @@ export default function CopyDialog({
   return (
     <Modal onClose={onClose}>
       <form onSubmit={handleSubmit}>
-        <h3>{title}</h3>
+        <h3>{title ?? t('copy.title')}</h3>
         <p className="hint">
-          Источник: {formatRange(source.start, source.end)} — {span} дн.
-          Дни недели совпадут: понедельники поедут на понедельники.
+          {t('copy.source', {
+            range: dateRange(source.start, source.end),
+            days: t('common.dayCount', { count: span }),
+          })}
         </p>
 
         <div className="row">
           <label>
-            С
+            {t('common.from')}
             <input
               type="date"
               value={target.start}
@@ -86,7 +91,7 @@ export default function CopyDialog({
             />
           </label>
           <label>
-            по
+            {t('common.to')}
             <input
               type="date"
               value={target.end}
@@ -103,7 +108,7 @@ export default function CopyDialog({
               checked={mode === 'merge'}
               onChange={() => setMode('merge')}
             />
-            добавить к существующим
+            {t('copy.modeMerge')}
           </label>
           <label className="checkbox">
             <input
@@ -112,7 +117,7 @@ export default function CopyDialog({
               checked={mode === 'replace'}
               onChange={() => setMode('replace')}
             />
-            заменить обычные уроки
+            {t('copy.modeReplace')}
           </label>
         </div>
 
@@ -120,19 +125,21 @@ export default function CopyDialog({
 
         <p className="hint">
           {preview
-            ? `Будет создано примерно ${preview.created} уроков, пропущено ` +
-              `${preview.skipped} (неучебные дни и занятые номера).`
-            : 'Проверьте период и выбор классов.'}
+            ? t('copy.preview', {
+                created: preview.created,
+                skipped: preview.skipped,
+              })
+            : t('copy.checkPeriod')}
         </p>
 
         {note && <p className="hint">{note}</p>}
 
         <div className="actions">
           <button type="submit" disabled={busy || !valid}>
-            Скопировать
+            {t('copy.submit')}
           </button>
           <button type="button" className="secondary" onClick={onClose}>
-            Отмена
+            {t('common.cancel')}
           </button>
         </div>
       </form>

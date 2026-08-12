@@ -1,9 +1,9 @@
 /**
- * Цвета термов.
+ * Term colours.
  *
- * Цвет привязан к порядковому номеру терма в году, а не к его id: так
- * первая четверть всегда одного цвета, сколько бы термов ни удаляли.
- * Классов пять, дальше цикл — больше пяти четвертей не бывает.
+ * The colour follows the term's position in the year, not its id: the first
+ * quarter keeps its colour however many terms get deleted around it. There
+ * are five classes and then it wraps — nobody has more than five quarters.
  */
 export const TERM_COLORS = 5
 

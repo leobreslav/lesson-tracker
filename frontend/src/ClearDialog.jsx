@@ -1,11 +1,13 @@
 import { useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import ClassPicker from './ClassPicker'
 import Modal from './Modal'
-import { formatRange } from './calendarLogic'
+import { dateRange } from './dates'
 import { planClear } from './scheduleLogic'
 
-/** Массовое удаление уроков за выделенный период. */
+/** Bulk removal of the lessons inside the selected period. */
 export default function ClearDialog({ range, slots, classes, busy, onSubmit, onClose }) {
+  const { t } = useTranslation()
   const [onlyRegular, setOnlyRegular] = useState(true)
   const [picked, setPicked] = useState(() => new Set(classes.map((item) => item.id)))
 
@@ -25,8 +27,8 @@ export default function ClearDialog({ range, slots, classes, busy, onSubmit, onC
   return (
     <Modal onClose={onClose}>
       <form onSubmit={handleSubmit}>
-        <h3>Очистить период</h3>
-        <p className="hint">{formatRange(range.start, range.end)}</p>
+        <h3>{t('clear.title')}</h3>
+        <p className="hint">{dateRange(range.start, range.end)}</p>
 
         <ClassPicker classes={classes} picked={picked} onChange={setPicked} />
 
@@ -36,17 +38,17 @@ export default function ClearDialog({ range, slots, classes, busy, onSubmit, onC
             checked={onlyRegular}
             onChange={(event) => setOnlyRegular(event.target.checked)}
           />
-          не трогать дополнительные и отменённые
+          {t('clear.keepSpecial')}
         </label>
 
-        <p className="hint">Будет удалено уроков: {count}.</p>
+        <p className="hint">{t('clear.willDelete', { count })}</p>
 
         <div className="actions">
           <button type="submit" disabled={busy || !count}>
-            Удалить
+            {t('common.delete')}
           </button>
           <button type="button" className="secondary" onClick={onClose}>
-            Отмена
+            {t('common.cancel')}
           </button>
         </div>
       </form>

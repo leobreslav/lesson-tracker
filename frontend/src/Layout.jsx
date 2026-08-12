@@ -1,32 +1,19 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
+import EmptyState from './EmptyState'
 import {
   fetchClasses,
   fetchLayout,
   fetchLayoutSummary,
   fetchSchoolYears,
 } from './api'
-import { WEEKDAY_SHORT, parseDate, today, weekdayOf } from './calendarLogic'
-import { layoutBlocks, pluralLessons } from './planLogic'
-
-function formatDate(iso) {
-  return parseDate(iso).toLocaleDateString('ru-RU', {
-    day: 'numeric',
-    month: 'short',
-  })
-}
-
-function formatLong(iso) {
-  return iso
-    ? parseDate(iso).toLocaleDateString('ru-RU', {
-        day: 'numeric',
-        month: 'long',
-        year: 'numeric',
-      })
-    : '—'
-}
+import { today } from './calendarLogic'
+import { longDate, shortDate, shortWeekday } from './dates'
+import { layoutBlocks } from './planLogic'
 
 export default function Layout({ onLoggedOut }) {
+  const { t } = useTranslation()
   const navigate = useNavigate()
   const [classes, setClasses] = useState(null)
   const [years, setYears] = useState([])
@@ -73,7 +60,7 @@ export default function Layout({ onLoggedOut }) {
     setEntries(null)
     setError(null)
 
-    // раскладка нигде не хранится: каждый заход считает её заново
+    // the layout is stored nowhere: every visit computes it again
     Promise.all([fetchLayout(classId), fetchLayoutSummary(classId)])
       .then(([layout, counters]) => {
         if (cancelled) return
@@ -108,14 +95,14 @@ export default function Layout({ onLoggedOut }) {
     [entries],
   )
 
-  /** Перед каким индексом рисовать черту «сегодня». */
+  /** The index the "today" line goes in front of. */
   const todayIndex = useMemo(() => {
     const now = today()
     const index = placed.findIndex((entry) => entry.slot.date >= now)
     return index === -1 ? placed.length : index
   }, [placed])
 
-  /** Записи, разложенные по термам в порядке ленты. */
+  /** Entries grouped into terms, in feed order. */
   const blocks = useMemo(() => {
     const result = []
 
@@ -124,7 +111,7 @@ export default function Layout({ onLoggedOut }) {
       if (result.at(-1)?.key !== key) {
         result.push({
           key,
-          name: entry.term_name ?? 'вне термов',
+          name: entry.term_name || t('layout.outsideTerms'),
           entries: [],
           firstIndex: index,
         })
@@ -133,23 +120,22 @@ export default function Layout({ onLoggedOut }) {
     })
 
     return result
-  }, [placed])
+  }, [placed, t])
 
-  /** Счётчики тематических блоков: считаются из уже загруженной раскладки. */
+  /** Counters per section block, computed from the layout already loaded. */
   const themeBlocks = useMemo(() => layoutBlocks(entries ?? []), [entries])
 
-  /** Подпись блока: уроки, даты, непоместившиеся и переход в другой терм. */
+  /** A block's note: lessons, dates, leftovers and a crossing into a term. */
   const blockNote = (sectionId) => {
     const block = themeBlocks.byId.get(sectionId)
     if (!block) return null
 
-    const parts = [pluralLessons(block.lessons)]
-    if (block.missing) parts.push(`${block.missing} не помещаются`)
+    const parts = [t('common.lessonCount', { count: block.lessons })]
+    if (block.missing) parts.push(t('layout.blockMissing', { count: block.missing }))
 
-    const dates =
-      block.first && `${formatDate(block.first)} — ${formatDate(block.last)}`
+    const dates = block.first && `${shortDate(block.first)} — ${shortDate(block.last)}`
     const crossing =
-      block.terms.length > 1 && `переходит в ${block.terms.at(-1)}`
+      block.terms.length > 1 && t('layout.blockCrossing', { term: block.terms.at(-1) })
 
     return [parts.join(', '), dates, crossing].filter(Boolean).join(' · ')
   }
@@ -160,14 +146,14 @@ export default function Layout({ onLoggedOut }) {
   )
 
   const renderRows = (items) => {
-    let theme // тема предыдущего урока: разделитель ставим при смене
+    let theme // the previous lesson's section: a divider goes in on change
     const rows = []
 
     items.forEach(({ entry, index }) => {
       if (index === todayIndex) {
         rows.push(
           <li className="layout-today" key="today">
-            сегодня
+            {t('layout.today')}
           </li>,
         )
       }
@@ -179,7 +165,7 @@ export default function Layout({ onLoggedOut }) {
           theme = next
           rows.push(
             <li className="layout-theme" key={`theme-${entry.slot.id}`}>
-              {next ?? 'без темы'}
+              {next ?? t('layout.noTheme')}
               {lesson.section_id != null && (
                 <span className="hint block-count">
                   {blockNote(lesson.section_id)}
@@ -201,8 +187,7 @@ export default function Layout({ onLoggedOut }) {
           key={entry.slot.id}
         >
           <span className="layout-date">
-            {formatDate(entry.slot.date)}{' '}
-            <em>{WEEKDAY_SHORT[weekdayOf(entry.slot.date)]}</em>
+            {shortDate(entry.slot.date)} <em>{shortWeekday(entry.slot.date)}</em>
           </span>
           <span className="slot">{entry.slot.lesson_number}</span>
           <span className="layout-title">
@@ -211,10 +196,10 @@ export default function Layout({ onLoggedOut }) {
                 <span className="plan-number">{lesson.number}.</span> {lesson.title}
               </>
             ) : (
-              'свободный урок'
+              t('layout.freeSlot')
             )}
           </span>
-          {entry.slot.is_extra && <span className="badge">дополнительный</span>}
+          {entry.slot.is_extra && <span className="badge">{t('layout.extra')}</span>}
         </li>,
       )
     })
@@ -225,7 +210,7 @@ export default function Layout({ onLoggedOut }) {
   if (classes === null) {
     return (
       <main className="page">
-        <p>{error ? <span className="error">{error}</span> : 'Загрузка…'}</p>
+        <p>{error ? <span className="error">{error}</span> : t('common.loading')}</p>
       </main>
     )
   }
@@ -233,16 +218,20 @@ export default function Layout({ onLoggedOut }) {
   return (
     <main className="page">
       <header className="page-header">
-        <h1>Раскладка</h1>
+        <h1>{t('layout.title')}</h1>
       </header>
 
       {!classes.length ? (
-        <div className="panel">
-          <p>Раскладка считается для класса, а классов пока нет.</p>
-          <button type="button" onClick={() => navigate('/plan')}>
-            К учебному плану
-          </button>
-        </div>
+        <EmptyState
+          title={t('layout.needClass.title')}
+          actions={
+            <button type="button" onClick={() => navigate('/classes')}>
+              {t('layout.needClass.action')}
+            </button>
+          }
+        >
+          {t('layout.needClass.hint')}
+        </EmptyState>
       ) : (
         <>
           <div className="year-picker">
@@ -268,11 +257,11 @@ export default function Layout({ onLoggedOut }) {
             <div className="cards">
               <section className="panel card-stat">
                 <h2>{summary.remaining_slots}</h2>
-                <p className="hint">слотов осталось</p>
+                <p className="hint">{t('layout.remainingSlots')}</p>
               </section>
               <section className="panel card-stat">
                 <h2>{summary.remaining_lessons}</h2>
-                <p className="hint">уроков по плану осталось</p>
+                <p className="hint">{t('layout.remainingLessons')}</p>
               </section>
               <section
                 className={`panel card-stat ${summary.balance < 0 ? 'bad' : 'good'}`}
@@ -282,32 +271,54 @@ export default function Layout({ onLoggedOut }) {
                   {summary.balance}
                 </h2>
                 <p className="hint">
-                  {summary.balance < 0 ? 'уроков не помещается' : 'запас слотов'}
+                  {t(summary.balance < 0 ? 'layout.balanceShort' : 'layout.balanceSpare')}
                 </p>
               </section>
               <section className="panel card-stat">
-                <h2 className="small">{formatLong(summary.last_lesson_date)}</h2>
-                <p className="hint">
+                <h2 className="small">
                   {summary.last_lesson_date
-                    ? 'последний урок по плану'
-                    : 'план не помещается в год'}
+                    ? longDate(summary.last_lesson_date)
+                    : '—'}
+                </h2>
+                <p className="hint">
+                  {t(
+                    summary.last_lesson_date
+                      ? 'layout.lastLesson'
+                      : 'layout.planDoesNotFit',
+                  )}
                 </p>
               </section>
             </div>
           )}
 
           {entries === null ? (
-            <p>Загрузка…</p>
+            <p>{t('common.loading')}</p>
           ) : (
             <>
               {themeBlocks.loose > 0 && (
-                <p className="hint">Вне блоков: {themeBlocks.loose}.</p>
+                <p className="hint">{t('layout.loose', { count: themeBlocks.loose })}</p>
               )}
 
               {!placed.length && !leftovers.length && (
-                <p className="hint">
-                  Пока нечего раскладывать: нужен учебный план и расписание.
-                </p>
+                <EmptyState
+                  title={t('layout.nothing.title')}
+                  actions={
+                    <>
+                      <button type="button" onClick={() => navigate('/plan')}>
+                        {t('layout.nothing.fillPlan')}
+                      </button>
+                      <button
+                        type="button"
+                        className="secondary"
+                        onClick={() => navigate('/schedule')}
+                      >
+                        {t('layout.nothing.buildSchedule')}
+                      </button>
+                    </>
+                  }
+                >
+                  {t('layout.nothing.hint')}
+                </EmptyState>
               )}
 
               {blocks.map((block) => {
@@ -319,12 +330,15 @@ export default function Layout({ onLoggedOut }) {
                       <strong>{block.name}</strong>
                       {counters?.start && (
                         <span className="hint">
-                          {formatDate(counters.start)} — {formatDate(counters.end)}
+                          {shortDate(counters.start)} — {shortDate(counters.end)}
                         </span>
                       )}
                       {counters && (
                         <span className="term-counters">
-                          слотов {counters.slots} · уроков {counters.lessons} ·{' '}
+                          {t('layout.termCounters', {
+                            slots: counters.slots,
+                            lessons: counters.lessons,
+                          })}{' '}
                           <b className={counters.balance < 0 ? 'bad' : 'good'}>
                             {counters.balance > 0 ? '+' : ''}
                             {counters.balance}
@@ -340,17 +354,14 @@ export default function Layout({ onLoggedOut }) {
 
               {todayIndex === placed.length && placed.length > 0 && (
                 <ul className="layout-feed">
-                  <li className="layout-today">сегодня</li>
+                  <li className="layout-today">{t('layout.today')}</li>
                 </ul>
               )}
 
               {leftovers.length > 0 && (
                 <section className="panel leftovers">
-                  <h3>Не помещаются в год</h3>
-                  <p className="hint">
-                    Этим урокам плана не хватило слотов — добавьте занятия или
-                    сократите план.
-                  </p>
+                  <h3>{t('layout.leftovers.title')}</h3>
+                  <p className="hint">{t('layout.leftovers.hint')}</p>
                   <ul className="layout-feed">
                     {leftovers.map((entry) => (
                       <li className="layout-row leftover" key={entry.plan_row.id}>
@@ -369,10 +380,12 @@ export default function Layout({ onLoggedOut }) {
 
               {summary && (
                 <p className="hint">
-                  Всего слотов {summary.slots_total}, уроков плана{' '}
-                  {summary.lessons_total}; отменено {summary.cancelled_count},
-                  дополнительных {summary.extra_count}. Раскладка считается на
-                  лету и меняется сама вслед за планом и расписанием.
+                  {t('layout.total', {
+                    slots: summary.slots_total,
+                    lessons: summary.lessons_total,
+                    cancelled: summary.cancelled_count,
+                    extra: summary.extra_count,
+                  })}
                 </p>
               )}
             </>

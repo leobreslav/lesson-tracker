@@ -11,19 +11,37 @@ import NavBar from './NavBar'
 import NotFound from './NotFound'
 import Plan from './Plan'
 import Profile from './Profile'
-import { clearToken, fetchMe, getToken } from './api'
+import { clearToken, fetchMe, fetchOnboarding, getToken, updateMe } from './api'
+import i18n, { normalizeLanguage } from './i18n'
 
 export default function App() {
   const [token, setTokenState] = useState(getToken)
-  // имя для бара: страницы за своими данными ходят сами
+  // the name for the bar: pages fetch their own data themselves
   const [user, setUser] = useState(null)
+  // what is filled in already: the main page builds steps out of it and the
+  // bar dims the sections that are not usable yet
+  const [status, setStatus] = useState(null)
 
   const handleLoggedIn = useCallback(() => setTokenState(getToken()), [])
+
+  /**
+   * Switching the language applies at once and is saved to the profile.
+   *
+   * The interface must not wait for the request: a failed save is not worth
+   * bouncing the language back, the next sign-in will simply read the old one.
+   */
+  const handleLanguageChange = useCallback((code) => {
+    const language = normalizeLanguage(code)
+    i18n.changeLanguage(language)
+    setUser((prev) => (prev ? { ...prev, language } : prev))
+    updateMe({ language }).catch(() => {})
+  }, [])
 
   const handleLoggedOut = useCallback(() => {
     clearToken()
     setTokenState(null)
     setUser(null)
+    setStatus(null)
     window.google?.accounts?.id?.disableAutoSelect()
   }, [])
 
@@ -33,10 +51,14 @@ export default function App() {
     let cancelled = false
     fetchMe()
       .then((data) => {
-        if (!cancelled) setUser(data)
+        if (cancelled) return
+        setUser(data)
+        // the profile is the source of truth for the language: the same
+        // account reads the same way on any device
+        i18n.changeLanguage(normalizeLanguage(data.language))
       })
       .catch((err) => {
-        // токен протух — возвращаемся на логин
+        // the token has expired — back to the login page
         if (err.status === 401) handleLoggedOut()
       })
 
@@ -45,18 +67,34 @@ export default function App() {
     }
   }, [token, handleLoggedOut])
 
-  // на логине бара нет: показывать в нём нечего и некому
+  // no bar on the login page: there is nothing and nobody to show it to
   if (!token) return <Login onLoggedIn={handleLoggedIn} />
 
   const guarded = (Page, props) => <Page onLoggedOut={handleLoggedOut} {...props} />
 
   return (
     <BrowserRouter>
-      <NavBar user={user} onLoggedOut={handleLoggedOut} />
+      <NavBar
+        user={user}
+        status={status}
+        onLoggedOut={handleLoggedOut}
+        onLanguageChange={handleLanguageChange}
+      />
+      <StatusWatcher onChange={setStatus} />
 
       <PageBoundary>
         <Routes>
-          <Route path="/" element={<Dashboard user={user} />} />
+          <Route
+            path="/"
+            element={
+              <Dashboard
+                user={user}
+                status={status}
+                onStatusChange={setStatus}
+                onLoggedOut={handleLoggedOut}
+              />
+            }
+          />
           <Route path="/schedule" element={guarded(Agenda)} />
           <Route path="/layout" element={guarded(Layout)} />
           <Route path="/plan" element={guarded(Plan)} />
@@ -71,8 +109,36 @@ export default function App() {
 }
 
 /**
- * Ловушка вокруг содержимого страницы. Бар снаружи, поэтому после падения
- * можно уйти в другой раздел; смена адреса сбрасывает ловушку по key.
+ * The onboarding status is re-read on every navigation: data changes on other
+ * pages, and the bar and the main page have to tell the truth. The request is
+ * small — a dedicated sync mechanism would cost more than it saves.
+ */
+function StatusWatcher({ onChange }) {
+  const location = useLocation()
+
+  useEffect(() => {
+    let cancelled = false
+
+    fetchOnboarding()
+      .then((data) => {
+        if (!cancelled) onChange(data)
+      })
+      .catch(() => {
+        // no answer — the bar simply dims nothing
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [location.pathname, onChange])
+
+  return null
+}
+
+/**
+ * A trap around the page content. The bar lives outside it, so after a crash
+ * another section is still reachable; changing the address resets the trap
+ * through its key.
  */
 function PageBoundary({ children }) {
   const location = useLocation()

@@ -114,6 +114,37 @@ body {
   background: #f1f5fd;
 }
 
+/* переключатель языка: строка меню, но кнопки в ней — чипы в ряд, а не
+   пункты во всю ширину, как остальное содержимое выпадающего списка */
+.dropdown-languages {
+  padding: 0.45rem 0.6rem;
+  border-top: 1px solid #eee;
+}
+
+.dropdown-languages .hint {
+  display: block;
+  margin-bottom: 0.35rem;
+  font-size: 0.75rem;
+}
+
+.dropdown-languages .actions {
+  display: flex;
+  gap: 0.35rem;
+  margin: 0;
+}
+
+.dropdown-languages button.chip {
+  display: inline-block;
+  width: auto;
+  padding: 0.2rem 0.7rem;
+  font-size: 0.85rem;
+  border: 1px solid #c6c6c6;
+}
+
+.dropdown-languages button.chip.active {
+  border-color: #1a73e8;
+}
+
 @media (max-width: 48rem) {
   .burger {
     display: block;
@@ -275,6 +306,151 @@ form .error,
 form .success {
   margin: 1rem 0 0;
   font-size: 0.9375rem;
+}
+
+/* --- главная: шаги первого входа --- */
+
+.steps {
+  margin: 0 0 1.5rem;
+  padding: 0;
+  list-style: none;
+  counter-reset: step;
+}
+
+.step {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
+  background: #fff;
+  border: 1px solid #e6e6e6;
+  border-radius: 8px;
+}
+
+.step + .step {
+  margin-top: 0.5rem;
+}
+
+.step-mark {
+  display: flex;
+  flex: 0 0 1.6rem;
+  align-items: center;
+  justify-content: center;
+  height: 1.6rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #777;
+  background: #f0f0f0;
+  border-radius: 50%;
+}
+
+.step.done .step-mark {
+  color: #fff;
+  background: #4caf50;
+}
+
+.step.next {
+  border-color: #1a73e8;
+  box-shadow: 0 0 0 1px #1a73e8;
+}
+
+.step.next .step-mark {
+  color: #fff;
+  background: #1a73e8;
+}
+
+/* предыдущий шаг не сделан: пункт бледный и объясняет причину */
+.step.blocked {
+  opacity: 0.6;
+  background: #fafafa;
+}
+
+.step-body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+}
+
+.step-body a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.step-body a:hover {
+  color: #1a73e8;
+}
+
+.step-body .hint {
+  margin: 0;
+}
+
+.step-action {
+  align-self: center;
+  padding: 0.35rem 0.75rem;
+  font-size: 0.85rem;
+  color: #fff;
+  text-decoration: none;
+  background: #1a73e8;
+  border-radius: 4px;
+  white-space: nowrap;
+}
+
+.step-action:hover {
+  background: #1765cc;
+}
+
+.class-summary {
+  margin: 0 0 1.5rem;
+  padding: 0;
+  list-style: none;
+}
+
+.class-summary li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.5rem;
+}
+
+.class-summary li + li {
+  margin-top: 0.5rem;
+}
+
+.class-summary .hint {
+  margin: 0;
+}
+
+.class-summary .balance {
+  margin-left: auto;
+  font-weight: 600;
+}
+
+.class-summary .balance.good {
+  color: #1c7a34;
+}
+
+.class-summary .balance.bad {
+  color: #b00020;
+}
+
+.demo-panel {
+  margin-top: 1.5rem;
+}
+
+.empty-state {
+  margin: 1rem 0;
+}
+
+.empty-state .hint {
+  margin: 0 0 0.75rem;
+  font-size: 0.9rem;
+}
+
+/* раздел, для которого ещё нет данных: приглушён, но кликается */
+.nav-link.unavailable {
+  opacity: 0.45;
 }
 
 /* --- широкая страница --- */

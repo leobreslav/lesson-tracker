@@ -1,11 +1,13 @@
 import { useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import Modal from './Modal'
 import { decodeCsv, parsePlanCsv } from './planCsv'
 
 const PREVIEW_LIMIT = 20
 
-/** Импорт плана из CSV: файл, режим и предпросмотр разбора. */
+/** Importing a plan from CSV: the file, the mode and a parse preview. */
 export default function ImportDialog({ busy, onSubmit, onClose }) {
+  const { t } = useTranslation()
   const [file, setFile] = useState(null)
   const [mode, setMode] = useState('replace')
   const [parsed, setParsed] = useState(null) // {rows, warnings}
@@ -19,10 +21,10 @@ export default function ImportDialog({ busy, onSubmit, onClose }) {
     if (!chosen) return
 
     try {
-      // разбираем прямо здесь: пользователь должен увидеть, что распозналось
+      // parsed right here: the person has to see what was recognised
       setParsed(parsePlanCsv(decodeCsv(await chosen.arrayBuffer())))
     } catch {
-      setError('Не удалось прочитать файл — нужен текстовый CSV.')
+      setError(t('csv.unreadable'))
     }
   }
 
@@ -42,11 +44,8 @@ export default function ImportDialog({ busy, onSubmit, onClose }) {
   return (
     <Modal onClose={onClose}>
       <form onSubmit={handleSubmit}>
-        <h3>Импорт плана из CSV</h3>
-        <p className="hint">
-          Два столбца: тема и урок, третий — заметка. Тема может стоять
-          отдельной строкой или повторяться в каждой строке урока.
-        </p>
+        <h3>{t('csv.title')}</h3>
+        <p className="hint">{t('csv.hint')}</p>
 
         <label
           className={dragging ? 'drop-zone over' : 'drop-zone'}
@@ -62,7 +61,7 @@ export default function ImportDialog({ busy, onSubmit, onClose }) {
             accept=".csv,text/csv"
             onChange={(event) => take(event.target.files?.[0] ?? null)}
           />
-          {file ? file.name : 'Перетащите файл сюда или выберите'}
+          {file ? file.name : t('csv.dropZone')}
         </label>
 
         <div className="row">
@@ -73,7 +72,7 @@ export default function ImportDialog({ busy, onSubmit, onClose }) {
               checked={mode === 'replace'}
               onChange={() => setMode('replace')}
             />
-            заменить план
+            {t('csv.modeReplace')}
           </label>
           <label className="checkbox">
             <input
@@ -82,12 +81,12 @@ export default function ImportDialog({ busy, onSubmit, onClose }) {
               checked={mode === 'append'}
               onChange={() => setMode('append')}
             />
-            добавить в конец
+            {t('csv.modeAppend')}
           </label>
         </div>
 
         {mode === 'replace' && (
-          <p className="error">Текущий план класса будет удалён целиком.</p>
+          <p className="error">{t('csv.replaceWarning')}</p>
         )}
 
         {error && <p className="error">{error}</p>}
@@ -95,11 +94,13 @@ export default function ImportDialog({ busy, onSubmit, onClose }) {
         {parsed && (
           <>
             <p className="hint">
-              Распознано строк: {parsed.rows.length} (тем{' '}
-              {parsed.rows.filter((row) => row.is_section).length}, уроков{' '}
-              {parsed.rows.filter((row) => !row.is_section).length}).
+              {t('csv.parsed', {
+                rows: parsed.rows.length,
+                sections: parsed.rows.filter((row) => row.is_section).length,
+                lessons: parsed.rows.filter((row) => !row.is_section).length,
+              })}
               {parsed.rows.length > PREVIEW_LIMIT &&
-                ` Ниже первые ${PREVIEW_LIMIT}.`}
+                t('csv.previewLimit', { limit: PREVIEW_LIMIT })}
             </p>
 
             <ul className="csv-preview">
@@ -108,7 +109,9 @@ export default function ImportDialog({ busy, onSubmit, onClose }) {
                   key={`${index}-${row.title}`}
                   className={row.is_section ? 'section' : 'lesson'}
                 >
-                  <span className="badge">{row.is_section ? 'тема' : 'урок'}</span>
+                  <span className="badge">
+                    {row.is_section ? t('csv.section') : t('csv.lesson')}
+                  </span>
                   {row.title}
                   {row.note && <span className="hint">{row.note}</span>}
                 </li>
@@ -118,8 +121,8 @@ export default function ImportDialog({ busy, onSubmit, onClose }) {
             {parsed.warnings.length > 0 && (
               <ul className="csv-warnings">
                 {parsed.warnings.slice(0, 5).map((warning) => (
-                  <li key={warning} className="hint">
-                    {warning}
+                  <li key={`${warning.code}-${warning.params.row}`} className="hint">
+                    {t(`warnings.${warning.code}`, warning.params)}
                   </li>
                 ))}
               </ul>
@@ -129,10 +132,10 @@ export default function ImportDialog({ busy, onSubmit, onClose }) {
 
         <div className="actions">
           <button type="submit" disabled={busy || !file || !parsed?.rows.length}>
-            Импортировать
+            {t('csv.submit')}
           </button>
           <button type="button" className="secondary" onClick={onClose}>
-            Отмена
+            {t('common.cancel')}
           </button>
         </div>
       </form>

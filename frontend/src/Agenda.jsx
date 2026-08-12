@@ -1,6 +1,9 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useTranslation } from 'react-i18next'
+import { useNavigate } from 'react-router-dom'
 import { AddLessonDialog, LessonMenu } from './AgendaDialogs'
 import ClearDialog from './ClearDialog'
+import EmptyState from './EmptyState'
 import CopyDialog from './CopyDialog'
 import {
   clearSlots,
@@ -14,14 +17,12 @@ import {
   updateSlot,
 } from './api'
 import {
-  WEEKDAY_SHORT,
   addDays,
   eachDate,
   endOfMonth,
   endOfWeek,
   formatDate,
   daysBetween,
-  formatRange,
   groupByMonth,
   parseDate,
   startOfMonth,
@@ -29,14 +30,21 @@ import {
   today,
   weekdayOf,
 } from './calendarLogic'
+import {
+  dateRange,
+  firstWeekday,
+  monthTitle,
+  shortWeekday,
+  weekdayHeadings,
+} from './dates'
 import { MAX_LESSON_NUMBER, describeCopyResult } from './scheduleLogic'
 
 const NUMBERS = Array.from({ length: MAX_LESSON_NUMBER }, (_, index) => index + 1)
 
 const EMPTY = { lessons: {}, days: {} }
 
-// чекбокс «Темы уроков» переживает перезагрузку: это обычное веб-приложение,
-// localStorage здесь уместен и ничего не стоит
+// the "lesson topics" checkbox survives a reload: this is an ordinary web
+// application, localStorage fits here and costs nothing
 const TOPICS_KEY = 'agendaShowTopics'
 
 function readTopicsFlag() {
@@ -51,11 +59,11 @@ function saveTopicsFlag(value) {
   try {
     localStorage.setItem(TOPICS_KEY, value ? '1' : '0')
   } catch {
-    // приватный режим — просто не запоминаем
+    // private mode — we simply do not remember
   }
 }
 
-/** Уроки из ответа agenda — плоским списком, с датой внутри каждого. */
+/** Lessons from the agenda answer as a flat list, each carrying its date. */
 function flatten(lessons) {
   return Object.entries(lessons).flatMap(([date, list]) =>
     list.map((item) => ({ ...item, date })),
@@ -82,6 +90,8 @@ function lessonClassName(lesson) {
 }
 
 export default function Agenda({ onLoggedOut }) {
+  const { t } = useTranslation()
+  const navigate = useNavigate()
   const [anchor, setAnchor] = useState(today)
   const [mode, setMode] = useState('week')
   const [data, setData] = useState(EMPTY)
@@ -94,12 +104,12 @@ export default function Agenda({ onLoggedOut }) {
   const [error, setError] = useState(null)
   const [notice, setNotice] = useState(null)
   const [dialog, setDialog] = useState(null) // {type:'add'|'lesson'|'copy'|'clear', ...}
-  // что уже стоит в целевом периоде — только ради точного предпросмотра
+  // what already sits in the target period — purely for an exact preview
   const [targetPeriod, setTargetPeriod] = useState(EMPTY)
-  // выделенные в сетке дни: {start, end}; Shift+клик тянет диапазон
+  // days selected in the grid: {start, end}; Shift+click drags a range
   const [selection, setSelection] = useState(null)
-  // темы уроков по плану: slot_id → {title, section_title};
-  // null — ещё не загружены, чтобы не подписывать «тема не назначена» зря
+  // plan topics per lesson: slot_id → {title, section_title};
+  // null means not loaded yet, so "no topic" is not printed for nothing
   const [topics, setTopics] = useState(null)
   const [showTopics, setShowTopics] = useState(readTopicsFlag)
 
@@ -113,12 +123,15 @@ export default function Agenda({ onLoggedOut }) {
     [onLoggedOut],
   )
 
+  // the week runs from the language's first weekday: Monday in Russian,
+  // Sunday in American English
+  const weekStart = firstWeekday()
   const period = useMemo(
     () =>
       mode === 'week'
-        ? { start: startOfWeek(anchor), end: endOfWeek(anchor) }
+        ? { start: startOfWeek(anchor, weekStart), end: endOfWeek(anchor, weekStart) }
         : { start: startOfMonth(anchor), end: endOfMonth(anchor) },
-    [anchor, mode],
+    [anchor, mode, weekStart],
   )
 
   useEffect(() => {
@@ -162,7 +175,7 @@ export default function Agenda({ onLoggedOut }) {
     }
   }, [load, handleError])
 
-  // темы тянем только когда их показывают: иначе лишний запрос на каждую неделю
+  // topics are fetched only while shown: otherwise every week costs a request
   useEffect(() => {
     if (!showTopics) {
       setTopics(null)
@@ -175,14 +188,14 @@ export default function Agenda({ onLoggedOut }) {
         if (!cancelled) setTopics(payload.slots)
       })
       .catch(() => {
-        // молча: тема — приятное дополнение, ради неё сетку не ломаем
+        // silently: a topic is a bonus, the grid must not break over it
         if (!cancelled) setTopics(null)
       })
 
     return () => {
       cancelled = true
     }
-    // data в зависимостях не случайно: после правки урока темы сдвигаются
+    // data is in the deps on purpose: editing a lesson shifts the topics
   }, [showTopics, period, data])
 
   const toggleTopics = (value) => {
@@ -200,7 +213,7 @@ export default function Agenda({ onLoggedOut }) {
     [years],
   )
 
-  /** Классы, чей учебный год накрывает эту дату — только их можно ставить. */
+  /** Classes whose school year covers this date — only they can be placed. */
   const classesFor = useCallback(
     (date) =>
       classes.filter((item) => {
@@ -211,11 +224,11 @@ export default function Agenda({ onLoggedOut }) {
   )
 
   /**
-   * Кому можно поставить этот урок.
+   * Who this lesson can be given to.
    *
-   * Класс, у которого на этом номере уже что-то стоит, отсекаем: даже
-   * отменённый урок занимает пару (класс, номер) в unique_together, а вот
-   * другому классу отмена не мешает — место считается свободным.
+   * A class that already has something on this number is dropped: even a
+   * cancelled lesson occupies the (class, number) pair in unique_together.
+   * Another class is not blocked by that cancellation — the slot is free.
    */
   const freeClassesFor = useCallback(
     (date, number) => {
@@ -254,7 +267,7 @@ export default function Agenda({ onLoggedOut }) {
     return { total: live.length, cancelled: visible.length - live.length, byClass }
   }, [dates, lessonsOn])
 
-  /** Оптимистичная правка: рисуем сразу, при ошибке возвращаем прежний ответ. */
+  /** An optimistic edit: draw at once, restore the old answer on failure. */
   const mutate = useCallback(
     async (lessons, request) => {
       const snapshot = data
@@ -332,7 +345,7 @@ export default function Agenda({ onLoggedOut }) {
     )
   }
 
-  /** Подтянуть целевой период, чтобы предпросмотр знал про занятые номера. */
+  /** Load the target period so the preview knows which numbers are taken. */
   const loadTarget = useCallback(
     ({ start, end }) => {
       if (!start || !end || end < start) return
@@ -345,8 +358,8 @@ export default function Agenda({ onLoggedOut }) {
   )
 
   const copySource = useMemo(() => {
-    // источник — весь показанный период, все классы: фильтр показа на
-    // копирование не влияет, отменённые и дополнительные не едут
+    // the source is the whole shown period across every class: the display
+    // filter does not affect copying, cancelled and extra lessons stay put
     const seen = new Set()
     const merged = []
 
@@ -365,7 +378,7 @@ export default function Agenda({ onLoggedOut }) {
     }
   }, [data, targetPeriod])
 
-  /** Массовая операция: сделать, перечитать период, отчитаться. */
+  /** A bulk operation: run it, re-read the period, report. */
   const runBulk = async (request, describe) => {
     setDialog(null)
     setBusy(true)
@@ -383,7 +396,7 @@ export default function Agenda({ onLoggedOut }) {
     }
   }
 
-  /** Копирование: все классы — один запрос, часть — по запросу на класс. */
+  /** Copying: every class in one request, a subset one request per class. */
   const handleCopy = ({ target_start, target_end, mode, classIds }) => {
     const source = copyRange
     const everyClass = classIds.length === visibleClasses.length
@@ -408,10 +421,10 @@ export default function Agenda({ onLoggedOut }) {
         totals.conflicts.push(...part.conflicts)
       }
       return totals
-    }, describeCopyResult)
+    }, (result) => describeCopyResult(result, t))
   }
 
-  /** Очистка: эндпоинт работает по одному классу, поэтому запрос на каждый. */
+  /** Clearing: the endpoint takes one class, so one request per class. */
   const handleClear = ({ only_regular, classIds }) => {
     const range = selection
 
@@ -429,7 +442,7 @@ export default function Agenda({ onLoggedOut }) {
         }
         return { deleted }
       },
-      (result) => `Удалено уроков: ${result.deleted}.`,
+      (result) => t('agenda.cleared', { count: result.deleted }),
     )
   }
 
@@ -446,7 +459,7 @@ export default function Agenda({ onLoggedOut }) {
       mode === 'week' ? addDays(current, 7 * direction) : shiftMonth(current, direction),
     )
 
-  /** Клик по заголовку дня выделяет его, Shift+клик — тянет диапазон. */
+  /** A click on a day heading selects it, Shift+click drags a range. */
   const pickDay = (date, event) => {
     setNotice(null)
     setSelection((current) => {
@@ -463,22 +476,22 @@ export default function Agenda({ onLoggedOut }) {
     ? daysBetween(selection.start, selection.end) + 1
     : 0
 
-  // без выделения копируем весь показанный период
+  // with nothing selected we copy the whole shown period
   const copyRange = selection ?? { start: period.start, end: period.end }
 
   /**
-   * Тема урока из плана.
+   * The lesson topic from the plan.
    *
-   * Пока темы не загрузились — ничего не рисуем. Когда загрузились, а урока
-   * плана на этот слот нет (слотов больше, чем уроков), честно подписываем:
-   * иначе непонятно, то ли тема не назначена, то ли просто не показана.
+   * Nothing is drawn until the topics load. Once they have, and no plan
+   * lesson reached this slot (there are more slots than lessons), we say so
+   * plainly: otherwise "no topic" and "not shown" look the same.
    */
   const topicOf = (lesson) => {
     if (!showTopics || !topics) return null
 
     const topic = topics[lesson.id]
     if (!topic) {
-      return <span className="cell-topic missing">(тема не назначена)</span>
+      return <span className="cell-topic missing">{t('agenda.noTopic')}</span>
     }
 
     return (
@@ -518,12 +531,14 @@ export default function Agenda({ onLoggedOut }) {
             type="button"
             key={date}
             className={dayHeadClass(date)}
-            title={`${day.title || 'Выделить день'} — Shift+клик выделит диапазон`}
+            title={t('agenda.selectHint', {
+              title: day.title || t('agenda.selectDay'),
+            })}
             onClick={(event) => pickDay(date, event)}
           >
-            <span>{WEEKDAY_SHORT[weekdayOf(date)]}</span>
+            <span>{shortWeekday(date)}</span>
             <strong>{parseDate(date).getDate()}</strong>
-            {!day.is_study && <em>{day.title || 'не учебный'}</em>}
+            {!day.is_study && <em>{day.title || t('agenda.notStudy')}</em>}
           </button>
         )
       })}
@@ -532,8 +547,8 @@ export default function Agenda({ onLoggedOut }) {
         <Fragment key={number}>
           <div className="row-head">{number}</div>
           {dates.map((date) => {
-            // отменённый урок место не занимает, но с глаз не пропадает:
-            // в ячейке может лежать и отмена, и поставленный вместо неё урок
+            // a cancelled lesson frees the slot without leaving the screen:
+            // a cell can hold both the cancellation and its replacement
             const inCell = lessonsOn(date)
               .filter((item) => item.lesson_number === number)
               .sort((a, b) => Number(a.is_cancelled) - Number(b.is_cancelled))
@@ -548,7 +563,7 @@ export default function Agenda({ onLoggedOut }) {
               <button
                 type="button"
                 className={inCell.length ? 'cell free add-more' : 'cell free'}
-                aria-label={`Добавить урок ${number}`}
+                aria-label={t('agenda.addLesson', { number })}
                 disabled={busy}
                 onClick={() => openFreeCell(date, number)}
               >
@@ -576,7 +591,7 @@ export default function Agenda({ onLoggedOut }) {
                     {topicOf(lesson)}
                   </button>
                 ))}
-                {/* место свободно: остались одни отмены */}
+                {/* the slot is free: only cancellations are left */}
                 {!taken && !locked && addButton}
               </div>
             )
@@ -595,13 +610,13 @@ export default function Agenda({ onLoggedOut }) {
 
     return (
       <div className="months agenda-months">
-        {groupByMonth(grid).map((month) => (
+        {groupByMonth(grid, firstWeekday()).map((month) => (
           <section className="month" key={month.key}>
-            <h3>{month.label}</h3>
+            <h3>{monthTitle(month.first)}</h3>
             <div className="month-grid">
-              {WEEKDAY_SHORT.map((name) => (
-                <div className="weekday" key={name}>
-                  {name}
+              {weekdayHeadings().map((heading) => (
+                <div className="weekday" key={heading.weekday}>
+                  {heading.label}
                 </div>
               ))}
               {Array.from({ length: month.leading }, (_, index) => (
@@ -620,7 +635,7 @@ export default function Agenda({ onLoggedOut }) {
                   <button
                     type="button"
                     className="link date"
-                    title="Открыть неделю"
+                    title={t('agenda.openWeek')}
                     onClick={() => {
                       setAnchor(day.date)
                       setMode('week')
@@ -654,7 +669,7 @@ export default function Agenda({ onLoggedOut }) {
   return (
     <main className="page">
       <header className="page-header">
-        <h1>Моё расписание</h1>
+        <h1>{t('agenda.title')}</h1>
       </header>
 
       <div className="agenda-bar">
@@ -662,18 +677,18 @@ export default function Agenda({ onLoggedOut }) {
           ←
         </button>
         <button type="button" className="secondary" onClick={() => setAnchor(today())}>
-          Сегодня
+          {t('agenda.today')}
         </button>
         <button type="button" className="secondary" onClick={() => step(1)}>
           →
         </button>
 
-        <strong>{formatRange(period.start, period.end)}</strong>
+        <strong>{dateRange(period.start, period.end)}</strong>
 
         <input
           type="date"
           value={anchor}
-          aria-label="Перейти к дате"
+          aria-label={t('agenda.goToDate')}
           onChange={(event) => event.target.value && setAnchor(event.target.value)}
         />
 
@@ -683,34 +698,37 @@ export default function Agenda({ onLoggedOut }) {
             className={mode === 'week' ? 'chip active' : 'chip'}
             onClick={() => setMode('week')}
           >
-            Неделя
+            {t('agenda.week')}
           </button>
           <button
             type="button"
             className={mode === 'month' ? 'chip active' : 'chip'}
             onClick={() => setMode('month')}
           >
-            Месяц
+            {t('agenda.month')}
           </button>
         </span>
 
         <button
           type="button"
           disabled={busy || loading || !!selection}
-          title={selection ? 'Снимите выделение дней' : undefined}
+          title={selection ? t('agenda.clearSelectionFirst') : undefined}
           onClick={() => {
             setTargetPeriod(EMPTY)
             setDialog({ type: 'copy' })
           }}
         >
-          Скопировать {mode === 'week' ? 'неделю' : 'месяц'}…
+          {t(mode === 'week' ? 'agenda.copyWeek' : 'agenda.copyMonth')}
         </button>
       </div>
 
       {selection && (
         <div className="selection-bar">
           <span>
-            Выбрано {selectedDays} дн.: {formatRange(selection.start, selection.end)}
+            {t('agenda.selected', {
+              days: t('common.dayCount', { count: selectedDays }),
+              range: dateRange(selection.start, selection.end),
+            })}
           </span>
           <button
             type="button"
@@ -720,7 +738,7 @@ export default function Agenda({ onLoggedOut }) {
               setDialog({ type: 'copy' })
             }}
           >
-            Скопировать на период
+            {t('agenda.copyToPeriod')}
           </button>
           <button
             type="button"
@@ -728,12 +746,12 @@ export default function Agenda({ onLoggedOut }) {
             disabled={busy}
             onClick={() => setDialog({ type: 'clear' })}
           >
-            Очистить период
+            {t('agenda.clearPeriod')}
           </button>
           <button
             type="button"
             className="link"
-            aria-label="Снять выделение"
+            aria-label={t('common.cancel')}
             onClick={() => setSelection(null)}
           >
             ✕
@@ -741,9 +759,22 @@ export default function Agenda({ onLoggedOut }) {
         </div>
       )}
 
+      {!loading && !visibleClasses.length && (
+        <EmptyState
+          title={t('agenda.empty.title')}
+          actions={
+            <button type="button" onClick={() => navigate('/classes')}>
+              {t('agenda.empty.action')}
+            </button>
+          }
+        >
+          {t('agenda.empty.hint')}
+        </EmptyState>
+      )}
+
       {visibleClasses.length > 0 && (
         <div className="class-filter">
-          <span className="hint">Показывать:</span>
+          <span className="hint">{t('agenda.show')}</span>
           {visibleClasses.map((item) => (
             <label key={item.id} className="checkbox">
               <input
@@ -761,7 +792,7 @@ export default function Agenda({ onLoggedOut }) {
               checked={showTopics}
               onChange={(event) => toggleTopics(event.target.checked)}
             />
-            Темы уроков
+            {t('agenda.topics')}
           </label>
         </div>
       )}
@@ -778,7 +809,7 @@ export default function Agenda({ onLoggedOut }) {
       )}
 
       {loading ? (
-        <p>Загрузка…</p>
+        <p>{t('common.loading')}</p>
       ) : mode === 'week' ? (
         renderWeek()
       ) : (
@@ -787,17 +818,22 @@ export default function Agenda({ onLoggedOut }) {
 
       <section className="panel agenda-summary">
         <strong>
-          {mode === 'week' ? 'За неделю' : 'За месяц'}: {summary.total} уроков
+          {t('agenda.summary', {
+            period: t(mode === 'week' ? 'agenda.forWeek' : 'agenda.forMonth'),
+            count: t('common.lessonCount', { count: summary.total }),
+          })}
         </strong>
         {summary.cancelled > 0 && (
-          <span className="hint">отменено: {summary.cancelled}</span>
+          <span className="hint">
+            {t('agenda.summaryCancelled', { count: summary.cancelled })}
+          </span>
         )}
         {Object.entries(summary.byClass).map(([name, count]) => (
           <span key={name} className="hint">
             {name}: {count}
           </span>
         ))}
-        {!summary.total && <span className="hint">уроков нет</span>}
+        {!summary.total && <span className="hint">{t('agenda.noLessons')}</span>}
       </section>
 
       {dialog?.type === 'add' && (
@@ -820,13 +856,14 @@ export default function Agenda({ onLoggedOut }) {
           busy={busy}
           title={
             selection
-              ? 'Скопировать выделенные дни'
-              : `Скопировать ${mode === 'week' ? 'неделю' : 'месяц'} целиком`
+              ? t('agenda.copySelected')
+              : t(
+                  mode === 'week'
+                    ? 'agenda.copyWholeWeek'
+                    : 'agenda.copyWholeMonth',
+                )
           }
-          note={
-            'Отменённые и дополнительные уроки не копируются, фильтр показа ' +
-            'на копирование не влияет.'
-          }
+          note={t('agenda.copyNote')}
           onTargetChange={loadTarget}
           onSubmit={handleCopy}
           onClose={() => setDialog(null)}

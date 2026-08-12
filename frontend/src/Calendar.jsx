@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import CalendarGrid from './CalendarGrid'
+import EmptyState from './EmptyState'
 import TermsPanel from './TermsPanel'
 import RangeDialog from './RangeDialog'
 import {
@@ -18,20 +20,18 @@ import {
 } from './api'
 import {
   KIND_HOLIDAY,
-  KIND_LABELS,
   KIND_VACATION,
   KIND_WORKDAY,
-  STATUS_LABELS,
   STATUS_STUDY,
   STATUS_WEEKEND,
   STATUSES,
-  WEEKDAY_SHORT,
   buildDays,
   buildStats,
-  formatRange,
+  suggestVacations,
 } from './calendarLogic'
+import { dateRange, weekdayHeadings } from './dates'
 
-/** Учебный год по умолчанию: сентябрь ближайшего начала — май следующего. */
+/** The default school year: September of the nearest start to May after. */
 function suggestYear() {
   const today = new Date()
   const start = today.getMonth() >= 5 ? today.getFullYear() : today.getFullYear() - 1
@@ -43,21 +43,27 @@ function suggestYear() {
   }
 }
 
+/** Short label of a weekday by our number (Monday is 0). */
+function weekdayLabel(weekday) {
+  return weekdayHeadings().find((item) => item.weekday === weekday)?.label ?? ''
+}
+
 export default function Calendar({ onLoggedOut }) {
+  const { t } = useTranslation()
   const [years, setYears] = useState(null)
   const [yearId, setYearId] = useState(null)
-  const [year, setYear] = useState(null) // с полем exceptions
+  const [year, setYear] = useState(null) // carries an `exceptions` field
   const [days, setDays] = useState([])
   const [stats, setStats] = useState(null)
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState(null)
   const [notice, setNotice] = useState(null)
-  const [yearForm, setYearForm] = useState(null) // форма нового года, null — закрыта
+  const [yearForm, setYearForm] = useState(null) // new-year form; null is closed
   const [rangeForm, setRangeForm] = useState(null) // {start_date, end_date, title}
   const [terms, setTerms] = useState([])
 
-  // id для оптимистично добавленного исключения, пока сервер не ответил
+  // id of an optimistically added exception until the server answers
   const tempId = useRef(0)
 
   const handleError = useCallback(
@@ -127,9 +133,9 @@ export default function Calendar({ onLoggedOut }) {
     }
   }, [yearId, load, handleError])
 
-  /** Пересчитать сетку и счётчики по списку исключений, не спрашивая сервер. */
+  /** Recompute the grid and counters from a list of exceptions, offline. */
   const applyLocally = useCallback((source, list, termList = terms) => {
-    // сервер отдаёт исключения по дате начала — держим тот же порядок
+    // the server sorts exceptions by start date — keep the same order
     const exceptions = [...list].sort((a, b) => a.start_date.localeCompare(b.start_date))
     const next = buildDays(source, exceptions, termList)
     setYear({ ...source, exceptions })
@@ -138,8 +144,8 @@ export default function Calendar({ onLoggedOut }) {
   }, [terms])
 
   /**
-   * Оптимистичная правка: сразу рисуем результат, потом подтверждаем ответом
-   * сервера, а при ошибке возвращаем прежнюю разметку.
+   * An optimistic edit: draw the result at once, confirm it with the
+   * server's answer, and roll back to the previous markup on failure.
    */
   const mutate = useCallback(
     async (exceptions, request) => {
@@ -199,8 +205,9 @@ export default function Calendar({ onLoggedOut }) {
       if (exception) {
         if (exception.start_date !== exception.end_date) {
           setNotice(
-            `«${exception.title || KIND_LABELS[exception.kind]}» — период целиком, ` +
-              'удалите его в списке справа.',
+            t('calendar.exceptions.wholePeriod', {
+              title: exception.title || t(`calendar.kind.${exception.kind}`),
+            }),
           )
           return
         }
@@ -208,16 +215,18 @@ export default function Calendar({ onLoggedOut }) {
         return
       }
 
-      // выходной делаем рабочим (перенос), обычный учебный — праздником
+      // a weekend becomes a working day (a moved lesson), a study day a holiday
       const kind = day.status === STATUS_WEEKEND ? KIND_WORKDAY : KIND_HOLIDAY
       addException({
         start_date: date,
         end_date: date,
         kind,
-        title: KIND_LABELS[kind],
+        // the title is saved to the database, so it is written in the
+        // teacher's language, like every other piece of their content
+        title: t(`calendar.kind.${kind}`),
       })
     },
-    [saving, dayByDate, year, addException, removeException],
+    [saving, dayByDate, year, addException, removeException, t],
   )
 
   const handleSelectRange = useCallback(
@@ -236,11 +245,11 @@ export default function Calendar({ onLoggedOut }) {
       start_date,
       end_date,
       kind: KIND_VACATION,
-      title: title || KIND_LABELS[KIND_VACATION],
+      title: title || t(`calendar.kind.${KIND_VACATION}`),
     })
   }
 
-  /** Правки термов не оптимистичны: их мало, проще перечитать год. */
+  /** Term edits are not optimistic: there are few, re-reading is simpler. */
   const runTerm = async (request) => {
     setError(null)
     setNotice(null)
@@ -257,7 +266,7 @@ export default function Calendar({ onLoggedOut }) {
   }
 
   const handleDeleteTerm = (term) => {
-    if (!window.confirm(`Удалить терм «${term.name}»?`)) return
+    if (!window.confirm(t('calendar.terms.deleteConfirm', { name: term.name }))) return
     runTerm(() => deleteTerm(term.id))
   }
 
@@ -268,6 +277,34 @@ export default function Calendar({ onLoggedOut }) {
       ),
     [stats],
   )
+
+  /**
+   * Typical breaks behind one button.
+   *
+   * They are not created silently: every school has its own dates, so we
+   * offer them and show what came out — from there it edits like any markup.
+   */
+  const addTypicalVacations = () => {
+    const startYear = Number(year.start_date.slice(0, 4))
+    const titles = {
+      autumn: t('calendar.typicalVacations.autumn'),
+      winter: t('calendar.typicalVacations.winter'),
+      spring: t('calendar.typicalVacations.spring'),
+    }
+    const wanted = suggestVacations(startYear, titles).filter(
+      (item) => item.start_date >= year.start_date && item.end_date <= year.end_date,
+    )
+
+    runTerm(async () => {
+      for (const vacation of wanted) {
+        await createException({
+          ...vacation,
+          kind: KIND_VACATION,
+          year: year.id,
+        })
+      }
+    })
+  }
 
   const handleCreateYear = async (event) => {
     event.preventDefault()
@@ -287,7 +324,7 @@ export default function Calendar({ onLoggedOut }) {
   }
 
   const handleDeleteYear = async () => {
-    if (!window.confirm(`Удалить учебный год «${year.name}» вместе с разметкой?`)) return
+    if (!window.confirm(t('calendar.deleteYearConfirm', { name: year.name }))) return
 
     setSaving(true)
     try {
@@ -305,7 +342,7 @@ export default function Calendar({ onLoggedOut }) {
   if (years === null) {
     return (
       <main className="page">
-        <p>{error ? <span className="error">{error}</span> : 'Загрузка…'}</p>
+        <p>{error ? <span className="error">{error}</span> : t('common.loading')}</p>
       </main>
     )
   }
@@ -313,7 +350,7 @@ export default function Calendar({ onLoggedOut }) {
   return (
     <main className="page">
       <header className="page-header">
-        <h1>Учебный год</h1>
+        <h1>{t('calendar.title')}</h1>
       </header>
 
       <div className="year-picker">
@@ -332,14 +369,14 @@ export default function Calendar({ onLoggedOut }) {
           className="chip"
           onClick={() => setYearForm(yearForm ? null : suggestYear())}
         >
-          {yearForm ? 'Отмена' : '+ Новый год'}
+          {yearForm ? t('common.cancel') : t('calendar.newYear')}
         </button>
       </div>
 
       {yearForm && (
         <form className="inline-form" onSubmit={handleCreateYear}>
           <div className="field">
-            <label htmlFor="year-name">Название</label>
+            <label htmlFor="year-name">{t('calendar.nameLabel')}</label>
             <input
               id="year-name"
               value={yearForm.name}
@@ -349,7 +386,7 @@ export default function Calendar({ onLoggedOut }) {
             />
           </div>
           <div className="field">
-            <label htmlFor="year-start">Начало</label>
+            <label htmlFor="year-start">{t('calendar.startLabel')}</label>
             <input
               id="year-start"
               type="date"
@@ -359,7 +396,7 @@ export default function Calendar({ onLoggedOut }) {
             />
           </div>
           <div className="field">
-            <label htmlFor="year-end">Конец</label>
+            <label htmlFor="year-end">{t('calendar.endLabel')}</label>
             <input
               id="year-end"
               type="date"
@@ -369,7 +406,7 @@ export default function Calendar({ onLoggedOut }) {
             />
           </div>
           <button type="submit" disabled={saving}>
-            Создать
+            {t('calendar.create')}
           </button>
         </form>
       )}
@@ -378,10 +415,19 @@ export default function Calendar({ onLoggedOut }) {
       {notice && <p className="hint" role="status">{notice}</p>}
 
       {!years.length && !yearForm && (
-        <p className="hint">Пока нет ни одного учебного года — создайте первый.</p>
+        <EmptyState
+          title={t('calendar.empty.title')}
+          actions={
+            <button type="button" onClick={() => setYearForm(suggestYear())}>
+              {t('calendar.empty.action')}
+            </button>
+          }
+        >
+          {t('calendar.empty.hint')}
+        </EmptyState>
       )}
 
-      {loading && <p>Загрузка календаря…</p>}
+      {loading && <p>{t('calendar.loadingCalendar')}</p>}
 
       {year && !loading && (
         <div className="calendar-layout">
@@ -397,7 +443,12 @@ export default function Calendar({ onLoggedOut }) {
           <aside className="calendar-side">
             <section className="panel">
               <h2>{stats ? stats.total : '—'}</h2>
-              <p className="hint">учебных дней с {year.start_date} по {year.end_date}</p>
+              <p className="hint">
+                {t('calendar.studyDaysOf', {
+                  start: year.start_date,
+                  end: year.end_date,
+                })}
+              </p>
               {stats && (
                 <>
                   <table className="weekday-stats">
@@ -406,14 +457,14 @@ export default function Calendar({ onLoggedOut }) {
                         .filter((row) => row.count > 0)
                         .map((row) => (
                           <tr key={row.weekday}>
-                            <th scope="row">{WEEKDAY_SHORT[row.weekday]}</th>
+                            <th scope="row">{weekdayLabel(row.weekday)}</th>
                             <td>{row.count}</td>
                           </tr>
                         ))}
                     </tbody>
                   </table>
 
-                  {/* каждый день года попадает ровно в одну строку */}
+                  {/* every day of the year lands in exactly one row */}
                   <table className="weekday-stats status-stats">
                     <tbody>
                       {STATUSES.filter((status) => status !== STATUS_STUDY).map(
@@ -421,14 +472,14 @@ export default function Calendar({ onLoggedOut }) {
                           <tr key={status}>
                             <th scope="row">
                               <span className={`swatch ${status}`} aria-hidden="true" />
-                              {STATUS_LABELS[status]}
+                              {t(`dayStatus.${status}`)}
                             </th>
                             <td>{stats.by_status[status]}</td>
                           </tr>
                         ),
                       )}
                       <tr>
-                        <th scope="row">всего дней</th>
+                        <th scope="row">{t('calendar.totalDays')}</th>
                         <td>{stats.calendar_days}</td>
                       </tr>
                     </tbody>
@@ -448,21 +499,33 @@ export default function Calendar({ onLoggedOut }) {
             />
 
             <section className="panel">
-              <h3>Исключения</h3>
+              <h3>{t('calendar.exceptions.title')}</h3>
               {!year.exceptions.length && (
                 <p className="hint">
-                  Кликните по дню, чтобы отметить праздник, или протяните мышью
-                  по нескольким дням — получатся каникулы.
+                  <button
+                    type="button"
+                    className="secondary"
+                    disabled={saving}
+                    onClick={addTypicalVacations}
+                  >
+                    {t('calendar.exceptions.typical')}
+                  </button>{' '}
+                  {t('calendar.exceptions.typicalHint')}
                 </p>
+              )}
+              {!year.exceptions.length && (
+                <p className="hint">{t('calendar.exceptions.hint')}</p>
               )}
               <ul className="exceptions">
                 {year.exceptions.map((exception) => (
                   <li key={exception.id} className={exception.kind}>
                     <div>
-                      <strong>{exception.title || KIND_LABELS[exception.kind]}</strong>
+                      <strong>
+                        {exception.title || t(`calendar.kind.${exception.kind}`)}
+                      </strong>
                       <span className="hint">
-                        {KIND_LABELS[exception.kind]},{' '}
-                        {formatRange(exception.start_date, exception.end_date)}
+                        {t(`calendar.kind.${exception.kind}`)},{' '}
+                        {dateRange(exception.start_date, exception.end_date)}
                       </span>
                     </div>
                     <button
@@ -470,7 +533,7 @@ export default function Calendar({ onLoggedOut }) {
                       className="link"
                       disabled={saving}
                       onClick={() => removeException(exception)}
-                      aria-label="Удалить исключение"
+                      aria-label={t('calendar.exceptions.delete')}
                     >
                       ✕
                     </button>
@@ -485,7 +548,7 @@ export default function Calendar({ onLoggedOut }) {
               disabled={saving}
               onClick={handleDeleteYear}
             >
-              Удалить год
+              {t('calendar.deleteYear')}
             </button>
           </aside>
         </div>

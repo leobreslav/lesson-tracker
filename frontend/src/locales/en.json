@@ -1,0 +1,406 @@
+{
+  "app": {
+    "name": "Lesson Tracker"
+  },
+  "common": {
+    "loading": "Loading…",
+    "save": "Save",
+    "saving": "Saving…",
+    "saved": "Saved",
+    "cancel": "Cancel",
+    "delete": "Delete",
+    "retry": "Try again",
+    "lessonCount_one": "{{count}} lesson",
+    "lessonCount_other": "{{count}} lessons",
+    "classCount_one": "{{count}} class",
+    "classCount_other": "{{count}} classes",
+    "termCount_one": "{{count}} term",
+    "termCount_other": "{{count}} terms",
+    "breakCount_one": "{{count}} break",
+    "breakCount_other": "{{count}} breaks",
+    "add": "Add",
+    "edit": "Edit",
+    "from": "From",
+    "to": "to",
+    "dayCount_one": "{{count}} day",
+    "dayCount_other": "{{count}} days",
+    "studyDayCount_one": "{{count}} study day",
+    "studyDayCount_other": "{{count}} study days"
+  },
+  "language": {
+    "label": "Language"
+  },
+  "nav": {
+    "menu": "Sections menu",
+    "schedule": "My schedule",
+    "layout": "Layout",
+    "plan": "Lesson plan",
+    "classes": "Classes",
+    "year": "School year",
+    "profile": "Profile",
+    "logout": "Sign out",
+    "needYear": "create a school year first",
+    "needClass": "add a class first"
+  },
+  "auth": {
+    "prompt": "Sign in to continue.",
+    "missingClientId": "VITE_GOOGLE_CLIENT_ID is not set in frontend/.env"
+  },
+  "notFound": {
+    "title": "Page not found",
+    "hint": "There is no such address in the tracker — the link may be out of date.",
+    "home": "Go to the main page"
+  },
+  "boundary": {
+    "title": "The page failed to render",
+    "hint": "This is a bug in the application, not in your data — nothing was lost. Try opening the section again; if it keeps happening, show this message to the developer.",
+    "consoleError": "Page render error:"
+  },
+  "profile": {
+    "title": "Profile",
+    "email": "Email",
+    "emailHint": "The address comes from your Google account and cannot be changed.",
+    "firstName": "First name",
+    "lastName": "Last name"
+  },
+  "dashboard": {
+    "greeting": "Hello, {{name}}",
+    "intro": "The sections build on each other: the year sets the boundaries, classes live inside it, and each class has a schedule and a plan. The list below walks you through it.",
+    "allDone": "Everything is set up. Here is how your classes are doing.",
+    "classLine": "lessons {{slots}} · past {{past}} · left {{remaining}} · plan {{plan}}",
+    "balanceHint": "slots minus plan lessons",
+    "more": "More detail: <0>schedule</0> and <1>layout</1>.",
+    "steps": {
+      "year": {
+        "title": "School year",
+        "action": "Create a school year",
+        "missing": "not created yet"
+      },
+      "calendar": {
+        "title": "Breaks and terms",
+        "action": "Mark up the calendar",
+        "summary": "{{terms}}, {{breaks}}",
+        "missing": "nothing marked up yet"
+      },
+      "classes": {
+        "title": "Classes",
+        "action": "Add a class",
+        "missing": "none yet"
+      },
+      "schedule": {
+        "title": "Schedule",
+        "action": "Build the schedule",
+        "missing": "no lessons yet"
+      },
+      "plan": {
+        "title": "Lesson plan",
+        "action": "Fill in the plan",
+        "summary": "{{withPlan}} of {{total}} classes have a plan",
+        "missing": "empty"
+      }
+    },
+    "demo": {
+      "title": "Nothing to start from?",
+      "hint": "Let's build an example: a year with breaks and quarters, two classes, a schedule for the whole year and a plan for one of the classes. See how it all fits together, then remove it with one button.",
+      "action": "Show me an example",
+      "busy": "Creating…"
+    },
+    "wipe": {
+      "title": "Start over",
+      "hint": "Removes all your data: years, classes, schedules and plans.",
+      "action": "Delete all data",
+      "busy": "Deleting…",
+      "confirm": "Delete all your data: the year, classes, schedule and plans? This cannot be undone."
+    }
+  },
+  "dayStatus": {
+    "study": "Study day",
+    "holiday": "Public holiday",
+    "vacation": "School break",
+    "weekend": "Weekend"
+  },
+  "warnings": {
+    "slot_not_study_day": "{{date}} is not a study day ({{statusLabel}}{{titleSuffix}}) — the lesson sits outside the school calendar.",
+    "csv_row_empty": "Row {{row}}: neither a section nor a lesson — skipped.",
+    "csv_row_too_long": "Row {{row}}: the title is longer than {{limit}} characters — skipped."
+  },
+  "errors": {
+    "unknown": "The request failed",
+    "downloadFailed": "The plan could not be downloaded",
+    "year_dates_reversed": "The end of the year is earlier than its start.",
+    "year_name_taken": "You already have a school year with this name.",
+    "year_weekend_invalid": "A weekday number must be between 0 (Monday) and 6 (Sunday).",
+    "year_weekend_full": "At least one weekday has to stay a study day.",
+    "year_shrink_cuts_exceptions": "The new boundaries cut off calendar markup that already exists.",
+    "exception_dates_reversed": "The end date is earlier than the start date.",
+    "exception_outside_year": "The period does not fit inside the school year.",
+    "exception_overlap": "Overlaps with «{{title}}» ({{start}} — {{end}}).",
+    "term_dates_reversed": "The end date is earlier than the start date.",
+    "term_outside_year": "The term does not fit inside the school year.",
+    "term_overlap": "Overlaps with «{{name}}» ({{start}} — {{end}}).",
+    "class_name_taken": "A class with this name already exists in this year.",
+    "slot_outside_year": "The date is outside the school year ({{start}} — {{end}}).",
+    "slot_year_mismatch": "The lesson year must match the year of its class.",
+    "slot_number_taken": "{{date}}: lesson {{number}} is already taken by {{class_name}}.",
+    "slot_duplicate": "This class already has a lesson with this number on that day.",
+    "period_reversed": "The end date is earlier than the start date.",
+    "period_required": "Both a start and an end date are required.",
+    "mode_invalid": "The mode must be either «replace» or «append».",
+    "section_inside_section": "A section can only live at the top level.",
+    "parent_not_section": "A node can only be nested into a section.",
+    "parent_other_class": "That section belongs to another class.",
+    "anchor_other_class": "That node belongs to another class.",
+    "anchor_other_level": "The node to insert after sits on another level.",
+    "position_taken": "Another node already occupies this position.",
+    "class_required": "Pick a class first.",
+    "file_required": "Choose a CSV file.",
+    "file_too_large": "The file is larger than {{limit_mb}} MB.",
+    "file_unreadable": "The file could not be read: a plain CSV in UTF-8 or Windows-1251 is expected.",
+    "file_too_many_rows": "The file has too many rows — split it into parts.",
+    "token_required": "An id_token or access_token is required.",
+    "token_invalid": "The Google token is invalid or expired.",
+    "email_not_verified": "Google has not verified this email address."
+  },
+  "classPicker": {
+    "label": "Classes:",
+    "all": "select all"
+  },
+  "clear": {
+    "title": "Clear the period",
+    "keepSpecial": "leave extra and cancelled lessons alone",
+    "willDelete_one": "{{count}} lesson will be deleted.",
+    "willDelete_other": "{{count}} lessons will be deleted."
+  },
+  "copy": {
+    "title": "Copy the schedule",
+    "source": "Source: {{range}} — {{days}}. Weekdays line up: Mondays land on Mondays.",
+    "modeMerge": "add to what is already there",
+    "modeReplace": "replace regular lessons",
+    "preview": "About {{created}} lessons will be created, {{skipped}} skipped (non-study days and taken numbers).",
+    "checkPeriod": "Check the period and the selected classes.",
+    "submit": "Copy",
+    "summary": "Created {{created}} lessons, skipped {{skipped}}",
+    "summaryDeleted": ", deleted while replacing {{deleted}}",
+    "summaryConflicts": " Already taken by other classes: {{list}}",
+    "summaryMore": " and {{count}} more."
+  },
+  "csv": {
+    "title": "Import a plan from CSV",
+    "hint": "Two columns: the section and the lesson, a third one for a note. The section can stand on its own row or repeat on every lesson row.",
+    "dropZone": "Drag a file here or choose one",
+    "unreadable": "The file could not be read — a plain text CSV is expected.",
+    "modeReplace": "replace the plan",
+    "modeAppend": "append to the end",
+    "replaceWarning": "The current plan of this class will be deleted entirely.",
+    "parsed": "Recognised {{rows}} rows ({{sections}} sections, {{lessons}} lessons).",
+    "previewLimit": " The first {{limit}} are shown below.",
+    "section": "section",
+    "lesson": "lesson",
+    "submit": "Import"
+  },
+  "rangeDialog": {
+    "title": "New break",
+    "placeholder": "Name, for example «Autumn break»"
+  },
+  "plan": {
+    "drag": "Drag",
+    "dropHere": "Drop a lesson here",
+    "title": "Lesson plan",
+    "counts": "Lessons: <0>{{lessons}}</0>. Sections: {{sections}}.",
+    "loose": " Outside the blocks: {{count}}.",
+    "titleLabel": "Title",
+    "noteLabel": "Note",
+    "notePlaceholder": "note",
+    "sectionPlaceholder": "Section title",
+    "lessonPlaceholder": "Lesson title",
+    "done": "Done",
+    "up": "Up",
+    "down": "Down",
+    "rename": "Rename",
+    "insertAfter": "Insert a lesson after",
+    "addToSection": "Add a lesson to the section",
+    "deleteSection": "Delete the section",
+    "expand": "Expand",
+    "collapse": "Collapse",
+    "deleteConfirm": "Delete «{{title}}»?",
+    "addLesson": "+ lesson",
+    "addSection": "+ section",
+    "importCsv": "Import CSV",
+    "exportCsv": "Export CSV",
+    "imported": "Created {{rows}} rows ({{sections}} sections, {{lessons}} lessons).",
+    "importedSkipped": " Skipped: {{count}}. {{details}}",
+    "dndInstructions": "Press space to pick the item up. Choose a new place with the up and down arrows, press space to drop it, Escape cancels the move. The arrow buttons in the row do the same.",
+    "needClass": {
+      "title": "A class first",
+      "hint": "A plan is written for a particular class — each one has its own list of sections and lessons.",
+      "action": "Add a class"
+    },
+    "empty": {
+      "title": "The plan is empty",
+      "hint": "A list of sections and lessons in order. It will be laid onto the dates of the schedule, and you will see whether the hours last until the end of the year. Add a lesson with the button below or load a ready list from CSV."
+    },
+    "removeSection": {
+      "title": "Delete the section «{{title}}»?",
+      "hint": "It holds {{count}}. They can be lifted to the top level — they will take the section's place and keep their order.",
+      "keep": "Delete, keep the lessons",
+      "withChildren": "Delete with the lessons"
+    }
+  },
+  "calendar": {
+    "title": "School year",
+    "newYear": "+ New year",
+    "nameLabel": "Name",
+    "startLabel": "Start",
+    "endLabel": "End",
+    "create": "Create",
+    "loadingCalendar": "Loading the calendar…",
+    "studyDaysOf": "study days between {{start}} and {{end}}",
+    "totalDays": "days in total",
+    "deleteYear": "Delete the year",
+    "deleteYearConfirm": "Delete the school year «{{name}}» together with its markup?",
+    "empty": {
+      "title": "No school year yet",
+      "hint": "A school year sets the boundaries lessons are counted inside. Breaks, holidays and terms are marked up here too.",
+      "action": "Create a school year"
+    },
+    "kind": {
+      "holiday": "Public holiday",
+      "vacation": "School break",
+      "workday": "Working day"
+    },
+    "legend": {
+      "noted": "a note on a weekend",
+      "noTerm": "outside the terms"
+    },
+    "exceptions": {
+      "title": "Markup",
+      "typical": "Add typical breaks",
+      "typicalHint": "autumn, winter and spring — you can move the dates later.",
+      "hint": "Click a day to mark a holiday, or drag across several days to make a break.",
+      "delete": "Delete the markup",
+      "wholePeriod": "«{{title}}» covers a whole period — delete it in the list on the right."
+    },
+    "typicalVacations": {
+      "autumn": "Autumn break",
+      "winter": "Winter break",
+      "spring": "Spring break"
+    },
+    "terms": {
+      "title": "Terms",
+      "empty": "No quarters yet. Without them the layout is counted over the whole year at once.",
+      "placeholder": "For example, 1st quarter",
+      "nameLabel": "Term name",
+      "add": "+ term",
+      "delete": "Delete the term {{name}}",
+      "deleteConfirm": "Delete the term «{{name}}»?"
+    }
+  },
+  "classes": {
+    "title": "Classes",
+    "placeholder": "Class name, for example 9B",
+    "nameLabel": "Class name",
+    "newNameLabel": "New class name",
+    "rename": "Rename",
+    "delete": "Delete the class {{name}}",
+    "deleteConfirm": "Delete the class «{{name}}»?",
+    "stats": "lessons {{total}} · past {{past}} · left {{remaining}} · cancelled {{cancelled}}",
+    "needYear": {
+      "title": "A school year first",
+      "hint": "A class lives inside a school year: next year 9B becomes 10B, and that is a different class with its own schedule.",
+      "action": "Create a school year"
+    },
+    "empty": {
+      "title": "No classes yet",
+      "hint": "A class is what you teach: the group and the subject together, for example «9B Algebra». Each one has its own schedule and its own plan. Type a name above and press Enter."
+    }
+  },
+  "layout": {
+    "title": "Layout",
+    "today": "today",
+    "noTheme": "no section",
+    "freeSlot": "free slot",
+    "extra": "extra",
+    "outsideTerms": "outside the terms",
+    "remainingSlots": "slots left",
+    "remainingLessons": "plan lessons left",
+    "balanceShort": "lessons do not fit",
+    "balanceSpare": "spare slots",
+    "lastLesson": "last lesson of the plan",
+    "planDoesNotFit": "the plan does not fit into the year",
+    "loose": "Outside the blocks: {{count}}.",
+    "blockMissing": "{{count}} do not fit",
+    "blockCrossing": "runs into {{term}}",
+    "termCounters": "slots {{slots}} · lessons {{lessons}} ·",
+    "total": "{{slots}} slots in total, {{lessons}} plan lessons; {{cancelled}} cancelled, {{extra}} extra. The layout is computed on the fly and follows the plan and the schedule by itself.",
+    "needClass": {
+      "title": "A class first",
+      "hint": "The layout joins the plan to the schedule, and both of them belong to a class.",
+      "action": "Add a class"
+    },
+    "nothing": {
+      "title": "Nothing to lay out",
+      "hint": "This is where the plan meets the schedule: you see which date every lesson lands on and whether there is enough time. Both halves are needed.",
+      "fillPlan": "Fill in the plan",
+      "buildSchedule": "Build the schedule"
+    },
+    "leftovers": {
+      "title": "Do not fit into the year",
+      "hint": "These plan lessons ran out of slots — add lessons or shorten the plan."
+    }
+  },
+  "agenda": {
+    "title": "My schedule",
+    "today": "Today",
+    "goToDate": "Go to a date",
+    "week": "Week",
+    "month": "Month",
+    "copyWeek": "Copy the week…",
+    "copyMonth": "Copy the month…",
+    "copySelected": "Copy the selected days",
+    "copyWholeWeek": "Copy the whole week",
+    "copyWholeMonth": "Copy the whole month",
+    "copyNote": "Cancelled and extra lessons are not copied, and the display filter does not affect copying.",
+    "clearSelectionFirst": "Clear the day selection",
+    "selected": "Selected {{days}}: {{range}}",
+    "copyToPeriod": "Copy onto a period",
+    "clearPeriod": "Clear the period",
+    "cleared": "{{count}} lessons deleted.",
+    "show": "Show:",
+    "topics": "Lesson topics",
+    "noTopic": "(no topic assigned)",
+    "selectDay": "Select the day",
+    "selectHint": "{{title}} — Shift+click selects a range",
+    "notStudy": "not a study day",
+    "addLesson": "Add lesson {{number}}",
+    "openWeek": "Open the week",
+    "forWeek": "This week",
+    "forMonth": "This month",
+    "summary": "{{period}}: {{count}}",
+    "summaryCancelled": "cancelled: {{count}}",
+    "noLessons": "no lessons",
+    "empty": {
+      "title": "The schedule is empty",
+      "hint": "Mark up one week of lessons and copy it across the year — breaks and holidays are skipped automatically. But a class comes first: lessons belong to a class.",
+      "action": "Add a class first"
+    },
+    "add": {
+      "title": "{{date}}, lesson {{number}}",
+      "nobody": "Nobody can take this lesson: every suitable class already has that number taken, the date is outside the school year, or no classes exist yet.",
+      "classLabel": "Class",
+      "extra": "an extra lesson",
+      "reasonPlaceholder": "Why: a substitution, a club…",
+      "reasonLabel": "Explanation"
+    },
+    "menu": {
+      "title": "{{className}}, lesson {{number}}",
+      "extra": "An extra lesson.",
+      "cancelled": "Cancelled{{reason}}.",
+      "cancelReason": "Reason for cancelling",
+      "cancelSubmit": "Cancel the lesson",
+      "cancelAbort": "Never mind",
+      "restore": "Restore",
+      "cancel": "Cancel the lesson",
+      "close": "Close"
+    }
+  }
+}

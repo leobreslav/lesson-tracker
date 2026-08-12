@@ -1,12 +1,13 @@
 import { useEffect, useRef } from 'react'
 
 /**
- * Обёртка над нативным <dialog> в режиме showModal.
+ * A wrapper around the native <dialog> in showModal mode.
  *
- * Диалог рисуется в top layer и центрируется по области просмотра, поэтому
- * виден при любой прокрутке страницы. Escape и затемнение фона браузер
- * берёт на себя; клик мимо содержимого приходит на сам dialog (у .modal
- * нулевой padding, так что попасть в него можно только через фон).
+ * The dialog is painted in the top layer and centred on the viewport, so it
+ * is visible however far the page is scrolled. Escape and the backdrop are
+ * the browser's job; a click outside the content lands on the dialog itself
+ * (.modal has zero padding, so the only way to hit it is through the
+ * backdrop).
  */
 export default function Modal({ onClose, children }) {
   const dialogRef = useRef(null)

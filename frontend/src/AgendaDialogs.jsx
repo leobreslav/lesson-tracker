@@ -1,17 +1,11 @@
 import { useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import Modal from './Modal'
-import { parseDate } from './calendarLogic'
+import { weekdayWithDate } from './dates'
 
-function formatDay(iso) {
-  return parseDate(iso).toLocaleDateString('ru-RU', {
-    day: 'numeric',
-    month: 'long',
-    weekday: 'long',
-  })
-}
-
-/** Новый урок в свободном окне. */
+/** A new lesson in a free window. */
 export function AddLessonDialog({ date, number, classes, busy, onSubmit, onClose }) {
+  const { t } = useTranslation()
   const [classId, setClassId] = useState(classes[0]?.id ?? null)
   const [isExtra, setIsExtra] = useState(false)
   const [reason, setReason] = useState('')
@@ -30,19 +24,14 @@ export function AddLessonDialog({ date, number, classes, busy, onSubmit, onClose
   return (
     <Modal onClose={onClose}>
       <form onSubmit={handleSubmit}>
-        <h3>
-          {formatDay(date)}, {number}-й урок
-        </h3>
+        <h3>{t('agenda.add.title', { date: weekdayWithDate(date), number })}</h3>
 
         {!classes.length ? (
-          <p className="hint">
-            Некому поставить этот урок: у всех подходящих классов номер уже
-            занят, дата вне границ учебного года или классы ещё не заведены.
-          </p>
+          <p className="hint">{t('agenda.add.nobody')}</p>
         ) : (
           <>
             <label>
-              Класс
+              {t('agenda.add.classLabel')}
               <select
                 autoFocus
                 value={classId ?? ''}
@@ -64,15 +53,15 @@ export function AddLessonDialog({ date, number, classes, busy, onSubmit, onClose
                 disabled={busy}
                 onChange={(event) => setIsExtra(event.target.checked)}
               />
-              дополнительный урок
+              {t('agenda.add.extra')}
             </label>
 
             {isExtra && (
               <input
                 value={reason}
                 maxLength={200}
-                placeholder="Пояснение: замена, кружок…"
-                aria-label="Пояснение"
+                placeholder={t('agenda.add.reasonPlaceholder')}
+                aria-label={t('agenda.add.reasonLabel')}
                 disabled={busy}
                 onChange={(event) => setReason(event.target.value)}
               />
@@ -82,10 +71,10 @@ export function AddLessonDialog({ date, number, classes, busy, onSubmit, onClose
 
         <div className="actions">
           <button type="submit" disabled={busy || !classes.length}>
-            Добавить
+            {t('common.add')}
           </button>
           <button type="button" className="secondary" onClick={onClose}>
-            Отмена
+            {t('common.cancel')}
           </button>
         </div>
       </form>
@@ -93,8 +82,9 @@ export function AddLessonDialog({ date, number, classes, busy, onSubmit, onClose
   )
 }
 
-/** Что можно сделать с уже стоящим уроком. */
+/** What can be done with a lesson that is already there. */
 export function LessonMenu({ lesson, date, busy, onCancel, onRestore, onDelete, onClose }) {
+  const { t } = useTranslation()
   const [reason, setReason] = useState('')
   const [cancelling, setCancelling] = useState(false)
 
@@ -106,14 +96,19 @@ export function LessonMenu({ lesson, date, busy, onCancel, onRestore, onDelete, 
   return (
     <Modal onClose={onClose}>
       <h3>
-        {lesson.class_name}, {lesson.lesson_number}-й урок
+        {t('agenda.menu.title', {
+          className: lesson.class_name,
+          number: lesson.lesson_number,
+        })}
       </h3>
-      <p className="hint">{formatDay(date)}</p>
+      <p className="hint">{weekdayWithDate(date)}</p>
 
-      {lesson.is_extra && <p className="hint">Дополнительный урок.</p>}
+      {lesson.is_extra && <p className="hint">{t('agenda.menu.extra')}</p>}
       {lesson.is_cancelled && (
         <p className="hint">
-          Отменён{lesson.reason ? `: ${lesson.reason}` : ''}.
+          {t('agenda.menu.cancelled', {
+            reason: lesson.reason ? `: ${lesson.reason}` : '',
+          })}
         </p>
       )}
       {!lesson.is_cancelled && lesson.reason && (
@@ -126,20 +121,20 @@ export function LessonMenu({ lesson, date, busy, onCancel, onRestore, onDelete, 
             autoFocus
             value={reason}
             maxLength={200}
-            placeholder="Причина отмены"
-            aria-label="Причина отмены"
+            placeholder={t('agenda.menu.cancelReason')}
+            aria-label={t('agenda.menu.cancelReason')}
             onChange={(event) => setReason(event.target.value)}
           />
           <div className="actions">
             <button type="submit" disabled={busy}>
-              Отменить урок
+              {t('agenda.menu.cancelSubmit')}
             </button>
             <button
               type="button"
               className="secondary"
               onClick={() => setCancelling(false)}
             >
-              Не надо
+              {t('agenda.menu.cancelAbort')}
             </button>
           </div>
         </form>
@@ -147,18 +142,18 @@ export function LessonMenu({ lesson, date, busy, onCancel, onRestore, onDelete, 
         <div className="actions">
           {lesson.is_cancelled ? (
             <button type="button" disabled={busy} onClick={onRestore}>
-              Вернуть
+              {t('agenda.menu.restore')}
             </button>
           ) : (
             <button type="button" disabled={busy} onClick={() => setCancelling(true)}>
-              Отменить
+              {t('agenda.menu.cancel')}
             </button>
           )}
           <button type="button" className="secondary" disabled={busy} onClick={onDelete}>
-            Удалить
+            {t('common.delete')}
           </button>
           <button type="button" className="secondary" onClick={onClose}>
-            Закрыть
+            {t('agenda.menu.close')}
           </button>
         </div>
       )}

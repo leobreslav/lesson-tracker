@@ -1,16 +1,31 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Link, NavLink, useLocation } from 'react-router-dom'
 import { logout } from './api'
+import { LANGUAGES } from './i18n'
 
 const SECTIONS = [
-  { to: '/schedule', label: 'Моё расписание' },
-  { to: '/layout', label: 'Раскладка' },
-  { to: '/plan', label: 'Учебный план' },
-  { to: '/classes', label: 'Классы' },
-  { to: '/year', label: 'Учебный год' },
+  { to: '/schedule', key: 'schedule', needs: 'classes' },
+  { to: '/layout', key: 'layout', needs: 'classes' },
+  { to: '/plan', key: 'plan', needs: 'classes' },
+  { to: '/classes', key: 'classes', needs: 'year' },
+  { to: '/year', key: 'year', needs: null },
 ]
 
-/** Закрытие по клику мимо и по Escape — общее для обоих меню бара. */
+/**
+ * Why a section is not usable yet, as a translation key.
+ *
+ * The item still navigates: forbidding the click buys nothing, the page
+ * explains what is missing. Dimming is a hint, not a barrier.
+ */
+function reasonKeyFor(needs, status) {
+  if (!status || !needs) return null
+  if (!status.year.exists) return 'nav.needYear'
+  if (needs === 'classes' && !status.classes.count) return 'nav.needClass'
+  return null
+}
+
+/** Closing on an outside click and on Escape — shared by both bar menus. */
 function useDismissable(open, close) {
   const ref = useRef(null)
 
@@ -35,7 +50,8 @@ function useDismissable(open, close) {
   return ref
 }
 
-export default function NavBar({ user, onLoggedOut }) {
+export default function NavBar({ user, status, onLoggedOut, onLanguageChange }) {
+  const { t, i18n } = useTranslation()
   const [menuOpen, setMenuOpen] = useState(false)
   const [userOpen, setUserOpen] = useState(false)
   const location = useLocation()
@@ -46,7 +62,7 @@ export default function NavBar({ user, onLoggedOut }) {
   const menuRef = useDismissable(menuOpen, closeMenu)
   const userRef = useDismissable(userOpen, closeUser)
 
-  // переход по пункту закрывает и гамбургер, и меню пользователя
+  // following a link closes both the burger and the user menu
   useEffect(() => {
     setMenuOpen(false)
     setUserOpen(false)
@@ -68,13 +84,13 @@ export default function NavBar({ user, onLoggedOut }) {
     <header className="topbar">
       <div className="topbar-inner">
         <Link to="/" className="brand">
-          Трекер уроков
+          {t('app.name')}
         </Link>
 
         <button
           type="button"
           className="burger secondary"
-          aria-label="Меню разделов"
+          aria-label={t('nav.menu')}
           aria-expanded={menuOpen}
           onClick={() => setMenuOpen((open) => !open)}
         >
@@ -85,15 +101,25 @@ export default function NavBar({ user, onLoggedOut }) {
           ref={menuRef}
           className={menuOpen ? 'topbar-nav open' : 'topbar-nav'}
         >
-          {SECTIONS.map((section) => (
-            <NavLink
-              key={section.to}
-              to={section.to}
-              className={({ isActive }) => (isActive ? 'nav-link active' : 'nav-link')}
-            >
-              {section.label}
-            </NavLink>
-          ))}
+          {SECTIONS.map((section) => {
+            const reasonKey = reasonKeyFor(section.needs, status)
+            const reason = reasonKey ? t(reasonKey) : null
+
+            return (
+              <NavLink
+                key={section.to}
+                to={section.to}
+                title={reason ?? undefined}
+                className={({ isActive }) =>
+                  'nav-link' +
+                  (isActive ? ' active' : '') +
+                  (reason ? ' unavailable' : '')
+                }
+              >
+                {t(`nav.${section.key}`)}
+              </NavLink>
+            )
+          })}
         </nav>
 
         <div className="user-menu" ref={userRef}>
@@ -111,12 +137,30 @@ export default function NavBar({ user, onLoggedOut }) {
             <ul className="dropdown" role="menu">
               <li role="none">
                 <Link role="menuitem" to="/profile">
-                  Профиль
+                  {t('nav.profile')}
                 </Link>
+              </li>
+              <li className="dropdown-languages" role="none">
+                <span className="hint">{t('language.label')}</span>
+                <div className="actions">
+                  {LANGUAGES.map((language) => (
+                    <button
+                      key={language.code}
+                      type="button"
+                      role="menuitem"
+                      className={
+                        language.code === i18n.language ? 'chip active' : 'chip'
+                      }
+                      onClick={() => onLanguageChange(language.code)}
+                    >
+                      {language.label}
+                    </button>
+                  ))}
+                </div>
               </li>
               <li role="none">
                 <button type="button" role="menuitem" onClick={handleLogout}>
-                  Выйти
+                  {t('nav.logout')}
                 </button>
               </li>
             </ul>
