@@ -115,7 +115,7 @@ class SchoolYearApiTests(CalendarApiTestCase):
         )
 
         self.assertEqual(response.status_code, 400)
-        self.assertIn("end_date", response.json())
+        self.assertEqual(response.json()["code"], "year_dates_reversed")
 
     def test_weekend_days_are_validated(self):
         response = self.client.patch(
@@ -183,7 +183,7 @@ class DayExceptionApiTests(CalendarApiTestCase):
         response = self.post_exception("2026-11-05", "2026-11-04", services.KIND_VACATION)
 
         self.assertEqual(response.status_code, 400)
-        self.assertIn("end_date", response.json())
+        self.assertEqual(response.json()["code"], "exception_dates_reversed")
 
     def test_overlap_of_the_same_kind_is_rejected(self):
         self.make_exception(
@@ -204,9 +204,11 @@ class DayExceptionApiTests(CalendarApiTestCase):
         )
 
         self.assertEqual(response.status_code, 400, response.content)
-        message = response.json()["non_field_errors"][0]
-        self.assertIn("Осенние", message)
-        self.assertIn("26 октября — 3 ноября", message)
+        body = response.json()
+        self.assertEqual(body["code"], "exception_overlap")
+        self.assertEqual(body["params"]["title"], "Осенние")
+        self.assertEqual(body["params"]["start"], "2026-10-26")
+        self.assertIn("Осенние", body["detail"])
 
     def test_same_title_on_other_dates_is_fine(self):
         """Двое «Каникул» в разные даты — норма, имена не уникальны."""

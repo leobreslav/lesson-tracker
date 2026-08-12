@@ -208,6 +208,29 @@ class MeTests(APITestCase):
 
         self.assertEqual(response.status_code, 405)
 
+    def test_language_defaults_to_english(self):
+        self.client.credentials(HTTP_AUTHORIZATION=f"Token {self.token.key}")
+
+        self.assertEqual(self.client.get(reverse("me")).json()["language"], "en")
+
+    def test_language_can_be_changed(self):
+        self.client.credentials(HTTP_AUTHORIZATION=f"Token {self.token.key}")
+
+        response = self.client.patch(reverse("me"), {"language": "ru"}, format="json")
+
+        self.assertEqual(response.status_code, 200, response.content)
+        self.user.refresh_from_db()
+        self.assertEqual(self.user.language, "ru")
+
+    def test_unknown_language_is_rejected(self):
+        self.client.credentials(HTTP_AUTHORIZATION=f"Token {self.token.key}")
+
+        response = self.client.patch(reverse("me"), {"language": "kl"}, format="json")
+
+        self.assertEqual(response.status_code, 400)
+        self.user.refresh_from_db()
+        self.assertEqual(self.user.language, "en")
+
     def test_logout_deletes_token(self):
         self.client.credentials(HTTP_AUTHORIZATION=f"Token {self.token.key}")
 

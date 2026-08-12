@@ -138,7 +138,9 @@ class TermApiTests(CalendarApiTestCase):
         response = self.post_term("2 четверть", "2026-10-20", "2026-12-27")
 
         self.assertEqual(response.status_code, 400, response.content)
-        self.assertIn("1 четверть", response.json()["non_field_errors"][0])
+        body = response.json()
+        self.assertEqual(body["code"], "term_overlap")
+        self.assertEqual(body["params"]["name"], "1 четверть")
         self.assertEqual(Term.objects.count(), 1)
 
     def test_touching_terms_are_rejected(self):
@@ -153,13 +155,13 @@ class TermApiTests(CalendarApiTestCase):
         response = self.post_term("Лишняя", "2026-08-01", "2026-09-10")
 
         self.assertEqual(response.status_code, 400, response.content)
-        self.assertIn("границы", response.json()["non_field_errors"][0])
+        self.assertEqual(response.json()["code"], "term_outside_year")
 
     def test_end_before_start_is_rejected(self):
         response = self.post_term("Кривая", "2026-10-25", "2026-09-01")
 
         self.assertEqual(response.status_code, 400)
-        self.assertIn("end_date", response.json())
+        self.assertEqual(response.json()["code"], "term_dates_reversed")
 
     def test_editing_a_term_does_not_conflict_with_itself(self):
         self.post_term("1 четверть", "2026-09-01", "2026-10-25")

@@ -1,5 +1,6 @@
 from allauth.socialaccount.providers.oauth2.client import OAuth2Error
 from dj_rest_auth.registration.serializers import SocialLoginSerializer
+from config.errors import Codes, api_error
 from rest_framework import serializers
 
 from .adapter import EmailNotVerifiedError
@@ -20,7 +21,7 @@ class GoogleLoginSerializer(SocialLoginSerializer):
         id_token = attrs.get("id_token")
 
         if not (id_token or attrs.get("access_token") or attrs.get("code")):
-            raise serializers.ValidationError("Требуется id_token или access_token.")
+            api_error(Codes.TOKEN_REQUIRED, "An id_token or access_token is required.")
 
         if id_token and not attrs.get("access_token") and not attrs.get("code"):
             attrs["access_token"] = id_token
@@ -28,17 +29,18 @@ class GoogleLoginSerializer(SocialLoginSerializer):
         try:
             return super().validate(attrs)
         except OAuth2Error as exc:
-            # битый или просроченный id_token — это ошибка клиента, а не 500
-            raise serializers.ValidationError(str(exc)) from exc
+            # a broken or expired id_token is a client error, not a 500
+            api_error(Codes.TOKEN_INVALID, "The Google token is invalid or expired.")
         except EmailNotVerifiedError as exc:
-            raise serializers.ValidationError(
-                "Google не подтвердил этот адрес электронной почты."
-            ) from exc
+            api_error(
+                Codes.EMAIL_NOT_VERIFIED,
+                "Google has not verified this email address.",
+            )
 
 
 class UserSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
-        fields = ("id", "email", "first_name", "last_name")
-        # email приходит от Google и служит идентификатором входа — менять нельзя
+        fields = ("id", "email", "first_name", "last_name", "language")
+        # the email comes from Google and identifies the login — not editable
         read_only_fields = ("id", "email")

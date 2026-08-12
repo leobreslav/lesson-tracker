@@ -16,7 +16,7 @@ class PlanNode(models.Model):
         "schedule.SchoolClass",
         related_name="plan_nodes",
         on_delete=models.CASCADE,
-        verbose_name="класс",
+        verbose_name="class",
     )
     parent = models.ForeignKey(
         "self",
@@ -24,16 +24,16 @@ class PlanNode(models.Model):
         blank=True,
         related_name="children",
         on_delete=models.CASCADE,
-        verbose_name="папка",
+        verbose_name="section",
     )
-    position = models.PositiveIntegerField("порядок", default=0)
-    is_section = models.BooleanField("папка", default=False)
-    title = models.CharField("название", max_length=200)
-    note = models.TextField("заметка", blank=True)
+    position = models.PositiveIntegerField("position", default=0)
+    is_section = models.BooleanField("is a section", default=False)
+    title = models.CharField("title", max_length=200)
+    note = models.TextField("note", blank=True)
 
     class Meta:
-        verbose_name = "узел плана"
-        verbose_name_plural = "учебный план"
+        verbose_name = "plan node"
+        verbose_name_plural = "lesson plan"
         ordering = ("position", "id")
         indexes = [
             models.Index(
@@ -52,12 +52,13 @@ class PlanNode(models.Model):
             parent=self.parent,
             is_section=self.is_section,
         )
+        messages = {field: message for field, (_, message) in problems.items()}
 
         if self._position_taken():
-            problems["position"] = "На этом месте уровня уже стоит другой узел."
+            messages["position"] = "Another node already occupies this position."
 
-        if problems:
-            raise ValidationError(problems)
+        if messages:
+            raise ValidationError(messages)
 
     def _position_taken(self) -> bool:
         if self.position is None or self.school_class_id is None:

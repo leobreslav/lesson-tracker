@@ -1,0 +1,111 @@
+"""
+Machine-readable validation errors.
+
+Every user-facing validation failure carries a stable ``code`` next to an
+English ``detail``. The frontend looks the code up in its dictionary and
+renders a localised message from ``params``; unknown codes fall back to
+``detail``, so a new server error never shows up as a blank screen.
+
+Response body::
+
+    {"code": "term_overlap",
+     "detail": "Term overlaps with «1st quarter» (1 September — 25 October).",
+     "params": {"name": "1st quarter", "start": "2026-09-01", "end": "2026-10-25"},
+     "field": "start_date"}
+
+``field`` is optional and only says which input caused the failure.
+"""
+
+from rest_framework.exceptions import APIException
+
+
+class Codes:
+    """All error codes in one place: the frontend dictionary mirrors this."""
+
+    # school year
+    YEAR_DATES_REVERSED = "year_dates_reversed"
+    YEAR_NAME_TAKEN = "year_name_taken"
+    YEAR_WEEKEND_INVALID = "year_weekend_invalid"
+    YEAR_WEEKEND_FULL = "year_weekend_full"
+    YEAR_SHRINK_CUTS_EXCEPTIONS = "year_shrink_cuts_exceptions"
+
+    # calendar markup
+    EXCEPTION_DATES_REVERSED = "exception_dates_reversed"
+    EXCEPTION_OUTSIDE_YEAR = "exception_outside_year"
+    EXCEPTION_OVERLAP = "exception_overlap"
+
+    # terms
+    TERM_DATES_REVERSED = "term_dates_reversed"
+    TERM_OUTSIDE_YEAR = "term_outside_year"
+    TERM_OVERLAP = "term_overlap"
+
+    # classes
+    CLASS_NAME_TAKEN = "class_name_taken"
+
+    # lesson slots
+    SLOT_OUTSIDE_YEAR = "slot_outside_year"
+    SLOT_YEAR_MISMATCH = "slot_year_mismatch"
+    SLOT_NUMBER_TAKEN = "slot_number_taken"
+    SLOT_DUPLICATE = "slot_duplicate"
+
+    # bulk operations over the schedule
+    PERIOD_REVERSED = "period_reversed"
+    PERIOD_REQUIRED = "period_required"
+    MODE_INVALID = "mode_invalid"
+
+    # plan tree
+    SECTION_INSIDE_SECTION = "section_inside_section"
+    PARENT_NOT_SECTION = "parent_not_section"
+    PARENT_OTHER_CLASS = "parent_other_class"
+    ANCHOR_OTHER_CLASS = "anchor_other_class"
+    ANCHOR_OTHER_LEVEL = "anchor_other_level"
+    POSITION_TAKEN = "position_taken"
+
+    # warnings: not failures, the request goes through
+    SLOT_NOT_STUDY_DAY = "slot_not_study_day"
+    CSV_ROW_EMPTY = "csv_row_empty"
+    CSV_ROW_TOO_LONG = "csv_row_too_long"
+
+    # CSV import
+    CLASS_REQUIRED = "class_required"
+    FILE_REQUIRED = "file_required"
+    FILE_TOO_LARGE = "file_too_large"
+    FILE_UNREADABLE = "file_unreadable"
+    FILE_TOO_MANY_ROWS = "file_too_many_rows"
+
+    # sign-in
+    TOKEN_REQUIRED = "token_required"
+    TOKEN_INVALID = "token_invalid"
+    EMAIL_NOT_VERIFIED = "email_not_verified"
+
+
+def error_payload(code: str, detail: str, *, field: str | None = None, **params) -> dict:
+    """Build the body of a coded validation error."""
+    payload = {"code": code, "detail": detail}
+    if params:
+        payload["params"] = params
+    if field:
+        payload["field"] = field
+    return payload
+
+
+class ApiError(APIException):
+    """
+    A coded validation failure, rendered as the payload and nothing else.
+
+    Deliberately not a DRF ``ValidationError``: raising one inside
+    ``validate()`` sends it through ``as_serializer_error``, which treats the
+    body as a field→errors mapping and wraps every value in a list — the
+    payload would arrive as ``{"code": ["term_overlap"]}``. This one flies
+    straight to the exception handler, so ``params`` keep their own types too.
+    """
+
+    status_code = 400
+
+    def __init__(self, payload: dict):
+        self.detail = payload
+
+
+def api_error(code: str, detail: str, *, field: str | None = None, **params):
+    """Raise a coded validation error (HTTP 400)."""
+    raise ApiError(error_payload(code, detail, field=field, **params))

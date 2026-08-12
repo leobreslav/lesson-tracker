@@ -1,3 +1,4 @@
+from config.errors import Codes, api_error
 from django.core.exceptions import ValidationError as DjangoValidationError
 from rest_framework import serializers
 from schedule.models import SchoolClass
@@ -127,16 +128,21 @@ class PlanNodeCreateSerializer(serializers.ModelSerializer):
             parent=attrs.get("parent"),
             is_section=attrs.get("is_section", False),
         )
-        if problems:
-            raise serializers.ValidationError(problems)
+        raise_structure_error(problems)
 
         after = attrs.get("after")
         if after is not None:
             if after.school_class_id != attrs["school_class"].pk:
-                raise serializers.ValidationError({"after": "Узел из другого класса."})
+                api_error(
+                    Codes.ANCHOR_OTHER_CLASS,
+                    "That node belongs to another class.",
+                    field="after",
+                )
             if after.parent_id != (attrs.get("parent").pk if attrs.get("parent") else None):
-                raise serializers.ValidationError(
-                    {"after": "Узел «после» лежит на другом уровне."}
+                api_error(
+                    Codes.ANCHOR_OTHER_LEVEL,
+                    "The node to insert after sits on another level.",
+                    field="after",
                 )
 
         return attrs
@@ -184,19 +190,21 @@ class MoveToSerializer(serializers.Serializer):
         return fields
 
 
+def raise_structure_error(problems):
+    """Turn the first tree problem into a coded API error."""
+    for field, (code, message) in problems.items():
+        api_error(code, message, field=field)
+
+
 def check_structure(node, parent):
-    """Проверка правил дерева при переносе — та же, что в модели."""
-    problems = services.structure_problems(
-        school_class_id=node.school_class_id,
-        parent=parent,
-        is_section=node.is_section,
-    )
-    if problems:
-        # список на каждое поле: так же выглядят ошибки сериализатора,
-        # клиенту не приходится разбирать два формата
-        raise serializers.ValidationError(
-            {field: [message] for field, message in problems.items()}
+    """The same tree rules as in the model, applied when moving a node."""
+    raise_structure_error(
+        services.structure_problems(
+            school_class_id=node.school_class_id,
+            parent=parent,
+            is_section=node.is_section,
         )
+    )
 
 
 def to_drf_error(error: DjangoValidationError) -> serializers.ValidationError:

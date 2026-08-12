@@ -22,7 +22,7 @@ class SchoolClass(models.Model):
         settings.AUTH_USER_MODEL,
         related_name="classes",
         on_delete=models.CASCADE,
-        verbose_name="владелец",
+        verbose_name="owner",
     )
     # снос учебного года уносит и его классы; будущие слоты расписания
     # точно так же вешаются на класс через on_delete=CASCADE
@@ -30,14 +30,14 @@ class SchoolClass(models.Model):
         "calendars.SchoolYear",
         related_name="classes",
         on_delete=models.CASCADE,
-        verbose_name="учебный год",
+        verbose_name="school year",
     )
-    name = models.CharField("название", max_length=20)
+    name = models.CharField("name", max_length=20)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
-        verbose_name = "класс"
-        verbose_name_plural = "классы"
+        verbose_name = "class"
+        verbose_name_plural = "classes"
         ordering = ("name",)
         constraints = [
             models.UniqueConstraint(
@@ -64,27 +64,27 @@ class LessonSlot(models.Model):
         "calendars.SchoolYear",
         related_name="slots",
         on_delete=models.CASCADE,
-        verbose_name="учебный год",
+        verbose_name="school year",
     )
     school_class = models.ForeignKey(
         SchoolClass,
         related_name="slots",
         on_delete=models.CASCADE,
-        verbose_name="класс",
+        verbose_name="class",
     )
-    date = models.DateField("дата")
+    date = models.DateField("date")
     lesson_number = models.PositiveSmallIntegerField(
-        "номер урока",
+        "lesson number",
         validators=[MinValueValidator(1), MaxValueValidator(MAX_LESSON_NUMBER)],
     )
-    is_cancelled = models.BooleanField("отменён", default=False)
-    is_extra = models.BooleanField("сверх расписания", default=False)
-    reason = models.CharField("причина", max_length=200, blank=True)
+    is_cancelled = models.BooleanField("cancelled", default=False)
+    is_extra = models.BooleanField("extra lesson", default=False)
+    reason = models.CharField("reason", max_length=200, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
-        verbose_name = "урок"
-        verbose_name_plural = "уроки"
+        verbose_name = "lesson slot"
+        verbose_name_plural = "lesson slots"
         ordering = ("date", "lesson_number")
         indexes = [
             models.Index(fields=("school_class", "date"), name="slot_class_date_idx"),

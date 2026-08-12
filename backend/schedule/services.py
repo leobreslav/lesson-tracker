@@ -15,8 +15,8 @@ from calendars.services import format_day, iter_dates
 
 
 def occupied_message(day: date, lesson_number: int, class_name: str) -> str:
-    """Текст про занятый номер урока: учитель не ведёт два класса разом."""
-    return f"{format_day(day)} {lesson_number}-й урок занят: {class_name}"
+    """A teacher cannot run two classes at once — say which one is in the way."""
+    return f"{day.isoformat()}, lesson {lesson_number} is taken by {class_name}"
 
 
 def cycle_days(start_date: date, end_date: date) -> int:

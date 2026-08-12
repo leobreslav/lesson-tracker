@@ -1,5 +1,6 @@
 from urllib.parse import quote
 
+from config.errors import Codes, api_error
 from django.db import transaction
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
@@ -75,7 +76,11 @@ class PlanNodeViewSet(viewsets.ModelViewSet):
     def requested_class(self):
         raw = self.request.query_params.get("class")
         if not raw or not raw.isdigit():
-            raise ValidationError({"class": ["Нужен параметр class с id класса."]})
+            api_error(
+                Codes.CLASS_REQUIRED,
+                "The «class» query parameter with a class id is required.",
+                field="class",
+            )
 
         return get_object_or_404(
             SchoolClass.objects.filter(owner=self.request.user), pk=raw
@@ -140,9 +145,17 @@ class PlanNodeViewSet(viewsets.ModelViewSet):
         start = read_date(request.query_params.get("start"))
         end = read_date(request.query_params.get("end"))
         if start is None or end is None:
-            raise ValidationError({"start": ["Нужны параметры start и end."]})
+            api_error(
+                Codes.PERIOD_REQUIRED,
+                "Both «start» and «end» query parameters are required.",
+                field="start",
+            )
         if end < start:
-            raise ValidationError({"end": ["Дата окончания раньше даты начала."]})
+            api_error(
+                Codes.PERIOD_REVERSED,
+                "The end date is earlier than the start date.",
+                field="end",
+            )
 
         # классы, у которых в периоде вообще что-то стоит
         classes = SchoolClass.objects.filter(
@@ -180,22 +193,29 @@ class PlanNodeViewSet(viewsets.ModelViewSet):
 
         upload = request.FILES.get("file")
         if upload is None:
-            raise ValidationError({"file": ["Нужен файл CSV."]})
+            api_error(Codes.FILE_REQUIRED, "A CSV file is required.", field="file")
         if upload.size > MAX_IMPORT_BYTES:
-            raise ValidationError(
-                {"file": [f"Файл больше {MAX_IMPORT_BYTES // 1024 // 1024} МБ."]}
+            api_error(
+                Codes.FILE_TOO_LARGE,
+                f"The file is larger than {MAX_IMPORT_BYTES // 1024 // 1024} MB.",
+                field="file",
+                limit_mb=MAX_IMPORT_BYTES // 1024 // 1024,
             )
 
         mode = request.data.get("mode", "replace")
         if mode not in ("replace", "append"):
-            raise ValidationError({"mode": ["Режим — replace или append."]})
+            api_error(
+                Codes.MODE_INVALID,
+                "Mode must be either «replace» or «append».",
+                field="mode",
+            )
 
         try:
             rows, warnings = services.parse_plan_csv(
                 services.decode_csv(upload.read())
             )
         except services.PlanImportError as error:
-            raise ValidationError({"file": [str(error)]}) from error
+            api_error(Codes.FILE_UNREADABLE, str(error), field="file")
 
         with transaction.atomic():
             if mode == "replace":
@@ -278,7 +298,11 @@ class PlanNodeViewSet(viewsets.ModelViewSet):
         parent = form.validated_data["parent"]
 
         if parent is not None and parent.school_class_id != node.school_class_id:
-            raise ValidationError({"parent": "Папка принадлежит другому классу."})
+            api_error(
+                Codes.PARENT_OTHER_CLASS,
+                "That section belongs to another class.",
+                field="parent",
+            )
         check_structure(node, parent)
 
         with transaction.atomic():

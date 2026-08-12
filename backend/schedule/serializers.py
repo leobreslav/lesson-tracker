@@ -1,4 +1,5 @@
 from calendars import services as calendar_services
+from config.errors import Codes, api_error, error_payload
 from calendars.models import SchoolYear
 from rest_framework import serializers
 from rest_framework.validators import UniqueTogetherValidator
@@ -29,7 +30,7 @@ class SchoolClassSerializer(serializers.ModelSerializer):
             UniqueTogetherValidator(
                 queryset=SchoolClass.objects.all(),
                 fields=("owner", "year", "name"),
-                message="Класс с таким названием в этом году уже есть.",
+                message="A class with this name already exists in this year.",
             ),
         ]
 
@@ -72,7 +73,7 @@ class LessonSlotSerializer(serializers.ModelSerializer):
             UniqueTogetherValidator(
                 queryset=LessonSlot.objects.all(),
                 fields=("school_class", "date", "lesson_number"),
-                message="В этот день у класса уже есть урок с таким номером.",
+                message="This class already has a lesson with this number on that day.",
             ),
         ]
 
@@ -87,8 +88,8 @@ class LessonSlotSerializer(serializers.ModelSerializer):
 
     def get_warning(self, obj):
         """
-        Урок в неучебный день не запрещаем — бывают отработки и субботники, —
-        но говорим об этом в ответе.
+        A lesson on a non-study day is allowed — catch-up days happen — but
+        the answer says so, coded like an error so the UI can localise it.
         """
         day = calendar_services.resolve_day(
             obj.date, obj.year.weekend_days, obj.year.periods()
@@ -98,7 +99,13 @@ class LessonSlotSerializer(serializers.ModelSerializer):
 
         label = calendar_services.STATUS_LABELS[day.status]
         note = f" «{day.title}»" if day.title else ""
-        return f"{obj.date:%d.%m.%Y} — {label}{note}. Урок стоит вне учебных дней."
+        return error_payload(
+            Codes.SLOT_NOT_STUDY_DAY,
+            f"{obj.date.isoformat()} is a {label}{note}: the lesson falls outside study days.",
+            date=obj.date.isoformat(),
+            status=day.status,
+            title=day.title,
+        )
 
     def validate(self, attrs):
         def value(name):
@@ -109,18 +116,20 @@ class LessonSlotSerializer(serializers.ModelSerializer):
         slot_date = value("date")
 
         if year != school_class.year:
-            raise serializers.ValidationError(
-                {"year": "Год урока должен совпадать с годом класса."}
+            api_error(
+                Codes.SLOT_YEAR_MISMATCH,
+                "The lesson year must match the year of its class.",
+                field="year",
             )
 
         if not year.start_date <= slot_date <= year.end_date:
-            raise serializers.ValidationError(
-                {
-                    "date": (
-                        "Дата вне границ учебного года "
-                        f"({year.start_date} — {year.end_date})."
-                    )
-                }
+            api_error(
+                Codes.SLOT_OUTSIDE_YEAR,
+                "The date is outside the school year "
+                f"({year.start_date} — {year.end_date}).",
+                field="date",
+                start=str(year.start_date),
+                end=str(year.end_date),
             )
 
         if not value("is_cancelled"):
@@ -132,12 +141,15 @@ class LessonSlotSerializer(serializers.ModelSerializer):
                 exclude_pk=self.instance.pk if self.instance else None,
             )
             if busy is not None:
-                raise serializers.ValidationError(
-                    {
-                        "lesson_number": services.occupied_message(
-                            slot_date, value("lesson_number"), busy.school_class.name
-                        )
-                    }
+                api_error(
+                    Codes.SLOT_NUMBER_TAKEN,
+                    services.occupied_message(
+                        slot_date, value("lesson_number"), busy.school_class.name
+                    ),
+                    field="lesson_number",
+                    date=str(slot_date),
+                    number=value("lesson_number"),
+                    class_name=busy.school_class.name,
                 )
 
         attrs["year"] = year
@@ -173,8 +185,10 @@ class CopySerializer(serializers.Serializer):
     def validate(self, attrs):
         for start, end in (("source_start", "source_end"), ("target_start", "target_end")):
             if attrs[end] < attrs[start]:
-                raise serializers.ValidationError(
-                    {end: "Дата окончания раньше даты начала."}
+                api_error(
+                    Codes.PERIOD_REVERSED,
+                    "The end date is earlier than the start date.",
+                    field=end,
                 )
         return attrs
 
@@ -187,8 +201,10 @@ class PeriodSerializer(serializers.Serializer):
 
     def validate(self, attrs):
         if attrs["end"] < attrs["start"]:
-            raise serializers.ValidationError(
-                {"end": "Дата окончания раньше даты начала."}
+            api_error(
+                Codes.PERIOD_REVERSED,
+                "The end date is earlier than the start date.",
+                field="end",
             )
         return attrs
 
@@ -210,7 +226,9 @@ class BulkDeleteSerializer(serializers.Serializer):
 
     def validate(self, attrs):
         if attrs["end"] < attrs["start"]:
-            raise serializers.ValidationError(
-                {"end": "Дата окончания раньше даты начала."}
+            api_error(
+                Codes.PERIOD_REVERSED,
+                "The end date is earlier than the start date.",
+                field="end",
             )
         return attrs

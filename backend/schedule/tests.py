@@ -74,7 +74,7 @@ class SchoolClassApiTests(APITestCase):
         self.assertEqual(response.status_code, 400)
         self.assertEqual(
             response.json()["non_field_errors"],
-            ["Класс с таким названием в этом году уже есть."],
+            ["A class with this name already exists in this year."],
         )
         self.assertEqual(SchoolClass.objects.count(), 1)
 

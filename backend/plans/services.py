@@ -21,6 +21,12 @@ from typing import Iterable, Sequence
 
 from calendars.services import find_term
 
+from config.errors import Codes, error_payload
+
+SECTION_INSIDE_SECTION = Codes.SECTION_INSIDE_SECTION
+PARENT_NOT_SECTION = Codes.PARENT_NOT_SECTION
+PARENT_OTHER_CLASS = Codes.PARENT_OTHER_CLASS
+
 UP = "up"
 DOWN = "down"
 DIRECTIONS = (UP, DOWN)
@@ -225,23 +231,26 @@ def layout_summary(
     }
 
 
-def structure_problems(*, school_class_id, parent, is_section) -> dict[str, str]:
+def structure_problems(*, school_class_id, parent, is_section) -> dict:
     """
-    Нарушения правил дерева. Пустой словарь — всё в порядке.
+    Tree rule violations as ``{field: (code, message)}``; empty means fine.
 
-    Одна проверка на всех: её зовут и `PlanNode.clean`, и сериализаторы.
+    One check for everybody: both ``PlanNode.clean`` and the serializers call
+    it, so the admin and the API always agree.
     """
     if parent is None:
         return {}
 
     if is_section:
-        return {"parent": "Папка может лежать только на верхнем уровне."}
+        return {
+            "parent": (SECTION_INSIDE_SECTION, "A section can only live at the top level.")
+        }
 
     if not parent.is_section:
-        return {"parent": "Вложить узел можно только в папку."}
+        return {"parent": (PARENT_NOT_SECTION, "A node can only be nested into a section.")}
 
     if parent.school_class_id != school_class_id:
-        return {"parent": "Папка принадлежит другому классу."}
+        return {"parent": (PARENT_OTHER_CLASS, "That section belongs to another class.")}
 
     return {}
 
@@ -294,8 +303,8 @@ def decode_csv(data: bytes) -> str:
         return text
 
     raise PlanImportError(
-        "Не удалось прочитать файл: нужен текстовый CSV в кодировке "
-        "UTF-8 или Windows-1251."
+        "The file could not be read: a plain CSV in UTF-8 or Windows-1251 "
+        "is expected."
     )
 
 
@@ -333,13 +342,13 @@ def parse_plan_csv(text: str, *, max_rows: int = CSV_MAX_ROWS):
     reader = csv.reader(io.StringIO(text), delimiter=sniff_delimiter(text))
 
     rows: list[ImportedRow] = []
-    warnings: list[str] = []
+    warnings: list[dict] = []
     current_theme: str | None = None
 
     for number, raw in enumerate(reader, start=1):
         if number > max_rows:
             raise PlanImportError(
-                f"В файле больше {max_rows} строк — разбейте его на части."
+                f"The file has more than {max_rows} rows — split it into parts."
             )
 
         # лишние столбцы справа игнорируем, недостающие дополняем
@@ -352,13 +361,22 @@ def parse_plan_csv(text: str, *, max_rows: int = CSV_MAX_ROWS):
         if not theme and not lesson:
             if any(cell.strip() for cell in raw):
                 warnings.append(
-                    f"Строка {number}: нет ни темы, ни урока — пропущена."
+                    error_payload(
+                        Codes.CSV_ROW_EMPTY,
+                        f"Row {number}: neither a section nor a lesson — skipped.",
+                        row=number,
+                    )
                 )
             continue
 
         if max(len(theme), len(lesson)) > TITLE_LIMIT:
             warnings.append(
-                f"Строка {number}: название длиннее {TITLE_LIMIT} символов — пропущена."
+                error_payload(
+                    Codes.CSV_ROW_TOO_LONG,
+                    f"Row {number}: the title is longer than {TITLE_LIMIT} characters — skipped.",
+                    row=number,
+                    limit=TITLE_LIMIT,
+                )
             )
             continue
 

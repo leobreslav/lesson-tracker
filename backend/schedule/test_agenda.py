@@ -24,9 +24,10 @@ class OccupiedSlotTests(SlotTestCase):
         response = self.post_slot("2026-09-07", 3, school_class=self.second)
 
         self.assertEqual(response.status_code, 400, response.content)
-        self.assertEqual(
-            response.json()["lesson_number"], ["7 сентября 3-й урок занят: 9Б"]
-        )
+        body = response.json()
+        self.assertEqual(body["code"], "slot_number_taken")
+        self.assertEqual(body["params"]["class_name"], "9Б")
+        self.assertEqual(body["params"]["number"], 3)
         self.assertEqual(LessonSlot.objects.count(), 1)
 
     def test_another_number_on_the_same_day_is_free(self):
@@ -60,7 +61,7 @@ class OccupiedSlotTests(SlotTestCase):
         )
 
         self.assertEqual(response.status_code, 400, response.content)
-        self.assertIn("10А", response.json()["lesson_number"][0])
+        self.assertEqual(response.json()["params"]["class_name"], "10А")
 
     def test_editing_a_lesson_does_not_conflict_with_itself(self):
         slot = self.make_slot(MONDAY, 3)
@@ -161,7 +162,7 @@ class CopyConflictTests(SlotTestCase):
                 "date": (MONDAY + days(7)).isoformat(),
                 "lesson_number": 1,
                 "class_name": "10А",
-                "message": "14 сентября 1-й урок занят: 10А",
+                "message": "2026-09-14, lesson 1 is taken by 10А",
             },
         )
         self.assertEqual(self.slots_on(MONDAY + days(7)), [2])

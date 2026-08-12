@@ -123,7 +123,7 @@ class TreeApiTests(PlanTestCase):
         response = self.client.get(reverse("plannode-list"))
 
         self.assertEqual(response.status_code, 400)
-        self.assertIn("class", response.json())
+        self.assertEqual(response.json()["code"], "class_required")
 
     def test_tree_is_nested_and_numbered(self):
         data = self.tree().json()
@@ -224,7 +224,7 @@ class CreateTests(PlanTestCase):
         response = self.post(title="Вставка", after=inside.pk)
 
         self.assertEqual(response.status_code, 400, response.content)
-        self.assertIn("after", response.json())
+        self.assertEqual(response.json()["code"], "anchor_other_level")
 
     def test_section_inside_section_is_forbidden(self):
         trig, _, _ = self.build_sample()
@@ -232,7 +232,7 @@ class CreateTests(PlanTestCase):
         response = self.post(title="Вложенная", is_section=True, parent=trig.pk)
 
         self.assertEqual(response.status_code, 400, response.content)
-        self.assertIn("parent", response.json())
+        self.assertEqual(response.json()["code"], "section_inside_section")
 
     def test_lesson_inside_lesson_is_forbidden(self):
         self.build_sample()
@@ -240,7 +240,7 @@ class CreateTests(PlanTestCase):
         response = self.post(title="Вложенный", parent=self.node("Повторение").pk)
 
         self.assertEqual(response.status_code, 400, response.content)
-        self.assertIn("parent", response.json())
+        self.assertEqual(response.json()["code"], "parent_not_section")
 
     def test_cannot_create_in_another_users_class(self):
         response = self.client.post(
@@ -583,15 +583,13 @@ class MoveToTests(PlanTestCase):
         response = self.move_to(self.vectors, self.trig, 0)
 
         self.assertEqual(response.status_code, 400, response.content)
-        self.assertIn("parent", response.json())
+        self.assertEqual(response.json()["code"], "section_inside_section")
 
     def test_lesson_cannot_be_nested_into_a_lesson(self):
         response = self.move_to(self.node("Повторение"), self.node("Аксиомы"), 0)
 
         self.assertEqual(response.status_code, 400, response.content)
-        self.assertEqual(
-            response.json()["parent"], ["Вложить узел можно только в папку."]
-        )
+        self.assertEqual(response.json()["code"], "parent_not_section")
 
     def test_every_position_inside_a_section_is_accepted(self):
         lesson = self.node("Повторение")

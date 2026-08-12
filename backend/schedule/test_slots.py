@@ -103,20 +103,23 @@ class SlotCrudTests(SlotTestCase):
 
         self.assertEqual(response.status_code, 201, response.content)
         warning = response.json()["warning"]
-        self.assertIn("каникулы", warning)
-        self.assertIn("Осенние каникулы", warning)
+        self.assertEqual(warning["code"], "slot_not_study_day")
+        self.assertEqual(warning["params"]["status"], "vacation")
+        self.assertEqual(warning["params"]["title"], "Осенние каникулы")
 
     def test_weekend_slot_warns_too(self):
         response = self.post_slot("2026-09-12", 1)  # суббота
 
         self.assertEqual(response.status_code, 201, response.content)
-        self.assertIn("выходной", response.json()["warning"])
+        self.assertEqual(
+            response.json()["warning"]["params"]["status"], "weekend"
+        )
 
     def test_date_outside_the_year_is_rejected(self):
         response = self.post_slot("2026-08-31", 1)
 
         self.assertEqual(response.status_code, 400, response.content)
-        self.assertIn("date", response.json())
+        self.assertEqual(response.json()["code"], "slot_outside_year")
 
     def test_year_must_match_the_class(self):
         other_year = SchoolYear.objects.create(
@@ -128,6 +131,8 @@ class SlotCrudTests(SlotTestCase):
 
         response = self.post_slot("2026-09-07", 1, year=other_year.pk)
 
+        # a year without classes is not even in the field queryset,
+        # so this is a plain field error and never reaches validate()
         self.assertEqual(response.status_code, 400, response.content)
         self.assertIn("year", response.json())
 
@@ -145,7 +150,7 @@ class SlotCrudTests(SlotTestCase):
         self.assertEqual(response.status_code, 400)
         self.assertEqual(
             response.json()["non_field_errors"],
-            ["В этот день у класса уже есть урок с таким номером."],
+            ["This class already has a lesson with this number on that day."],
         )
         self.assertEqual(LessonSlot.objects.count(), 1)
 

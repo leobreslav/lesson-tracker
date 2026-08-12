@@ -115,13 +115,14 @@ class ParseTests(SimpleTestCase):
 
         self.assertEqual(len(rows), 1)
         self.assertEqual(len(warnings), 1)
-        self.assertIn("Строка 2", warnings[0])
+        self.assertEqual(warnings[0]["code"], "csv_row_empty")
+        self.assertEqual(warnings[0]["params"]["row"], 2)
 
     def test_too_long_title_is_skipped_with_a_warning(self):
         rows, warnings = self.parse(f",{'о' * 201},\n")
 
         self.assertEqual(rows, [])
-        self.assertIn("длиннее", warnings[0])
+        self.assertEqual(warnings[0]["code"], "csv_row_too_long")
 
     def test_row_limit_is_reported(self):
         text = "\n".join(f",Урок {index}," for index in range(2100))
@@ -272,7 +273,7 @@ class ImportApiTests(PlanTestCase):
         )
 
         self.assertEqual(response.status_code, 400)
-        self.assertIn("file", response.json())
+        self.assertEqual(response.json()["code"], "file_unreadable")
         self.assertEqual(self.titles(), before)
 
     def test_row_limit_gives_a_clear_error(self):
@@ -281,7 +282,8 @@ class ImportApiTests(PlanTestCase):
         response = self.upload(text)
 
         self.assertEqual(response.status_code, 400)
-        self.assertIn("2000", response.json()["file"][0])
+        self.assertEqual(response.json()["code"], "file_unreadable")
+        self.assertIn("2000", response.json()["detail"])
         self.assertFalse(PlanNode.objects.filter(school_class=self.school_class).exists())
 
     def test_missing_file_is_rejected(self):

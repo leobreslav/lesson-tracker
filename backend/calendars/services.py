@@ -67,11 +67,12 @@ STATUS_WEEKEND = "weekend"
 
 STATUSES = (STATUS_STUDY, STATUS_HOLIDAY, STATUS_VACATION, STATUS_WEEKEND)
 
+# fallback wording for API payloads; the UI localises by status code
 STATUS_LABELS = {
-    STATUS_STUDY: "учебный день",
-    STATUS_HOLIDAY: "праздник",
-    STATUS_VACATION: "каникулы",
-    STATUS_WEEKEND: "выходной",
+    STATUS_STUDY: "study day",
+    STATUS_HOLIDAY: "public holiday",
+    STATUS_VACATION: "school break",
+    STATUS_WEEKEND: "weekend",
 }
 
 

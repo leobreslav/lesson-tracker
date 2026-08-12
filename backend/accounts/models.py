@@ -4,13 +4,13 @@ from django.utils.translation import gettext_lazy as _
 
 
 class UserManager(BaseUserManager):
-    """Менеджер пользователей, где идентификатор — email вместо username."""
+    """User manager keyed by email instead of username."""
 
     use_in_migrations = True
 
     def _create_user(self, email, password, **extra_fields):
         if not email:
-            raise ValueError("Email обязателен")
+            raise ValueError("An email address is required")
         email = self.normalize_email(email)
         user = self.model(email=email, **extra_fields)
         user.set_password(password)
@@ -27,16 +27,29 @@ class UserManager(BaseUserManager):
         extra_fields.setdefault("is_superuser", True)
 
         if extra_fields.get("is_staff") is not True:
-            raise ValueError("Суперпользователь должен иметь is_staff=True")
+            raise ValueError("A superuser must have is_staff=True")
         if extra_fields.get("is_superuser") is not True:
-            raise ValueError("Суперпользователь должен иметь is_superuser=True")
+            raise ValueError("A superuser must have is_superuser=True")
 
         return self._create_user(email, password, **extra_fields)
+
+
+class Language(models.TextChoices):
+    """UI languages. English is the default; the value is a plain ISO code."""
+
+    EN = "en", "English"
+    RU = "ru", "Русский"
 
 
 class User(AbstractUser):
     username = None
     email = models.EmailField(_("email address"), unique=True)
+    language = models.CharField(
+        _("interface language"),
+        max_length=5,
+        choices=Language,
+        default=Language.EN,
+    )
 
     USERNAME_FIELD = "email"
     REQUIRED_FIELDS = []

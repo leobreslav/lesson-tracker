@@ -31,7 +31,7 @@ class LayoutAgendaTests(LayoutApiTestCase):
         response = self.client.get(reverse("plannode-layout-agenda"))
 
         self.assertEqual(response.status_code, 400)
-        self.assertIn("start", response.json())
+        self.assertEqual(response.json()["code"], "period_required")
 
     def test_reversed_period_is_rejected(self):
         response = self.agenda(start=MONDAY + timedelta(days=5), end=MONDAY)
