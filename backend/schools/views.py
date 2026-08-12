@@ -4,6 +4,8 @@ from config.access import (
     IsSchoolMember,
     IsSuperuser,
 )
+from collections import Counter
+
 from config.errors import Codes, api_error
 from django.contrib.auth import get_user_model
 from django.db.models import ProtectedError
@@ -22,6 +24,14 @@ from .serializers import (
 )
 
 User = get_user_model()
+
+
+def describe(blocked: ProtectedError) -> str:
+    """«2 members, 3 files» — what a ProtectedError is actually about."""
+    counts = Counter(
+        obj._meta.verbose_name_plural for obj in blocked.protected_objects
+    )
+    return ", ".join(f"{count} {name}" for name, count in sorted(counts.items()))
 
 
 class MySchoolView(RetrieveUpdateAPIView):
@@ -61,20 +71,25 @@ class SchoolViewSet(viewsets.ModelViewSet):
 
     def perform_destroy(self, instance):
         """
-        A school with people in it stays. PROTECT on User.school says so.
+        A school with anything in it stays. Several PROTECTs say so.
 
-        Deleting it would strand their calendar, courses and lessons, so the
-        answer names how many members are in the way instead.
+        People are the usual blocker — deleting the school would strand their
+        calendar, courses and lessons — but not the only one: subjects and
+        stored files hold it too, and a school can outlive its last member.
+        So the answer names what is actually in the way rather than assuming
+        it is people; a message that says «2 members» about three files sends
+        somebody looking in the wrong place.
         """
         try:
             instance.delete()
-        except ProtectedError:
+        except ProtectedError as blocked:
             api_error(
                 Codes.SCHOOL_IN_USE,
-                f"«{instance.name}» still has {instance.members.count()} members. "
-                "Move them out first.",
+                f"«{instance.name}» is still in use: {describe(blocked)}. "
+                "Clear it first.",
                 name=instance.name,
                 members=instance.members.count(),
+                blocked_by=describe(blocked),
             )
 
     @action(detail=True, methods=["post"])

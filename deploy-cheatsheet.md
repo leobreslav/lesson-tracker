@@ -72,6 +72,23 @@ docker compose exec backend python manage.py migrate   # применить ми
 sudo chown -R $USER:$USER backend
 ```
 
+Либо сразу от своего имени, и тогда `chown` не нужен:
+
+```bash
+docker compose exec --user "$(id -u):$(id -g)" backend \
+  python manage.py makemigrations
+```
+
+Файлы уроков лежат в R2, а не на диске. Что там осталось лишнего:
+
+```bash
+docker compose exec backend python manage.py cleanup_orphaned_files
+docker compose exec backend python manage.py cleanup_orphaned_files --delete
+```
+
+Штатно она не находит ничего. `seed_demo --flush` чистит dev-бакет сам, а
+тесты в R2 не ходят вовсе — хранилище им подменяет `config/testing.py`.
+
 ## Выкатка
 
 ```bash

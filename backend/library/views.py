@@ -2,6 +2,7 @@ from config.access import IsSchoolMember, SchoolScopedViewSet
 from config.errors import Codes, api_denied, api_error
 from django.db import transaction
 from plans import services as plan_services
+from plans.content import CONTENT_FIELDS
 from plans.models import PlanNode
 from rest_framework.decorators import action
 from rest_framework.permissions import SAFE_METHODS, BasePermission, IsAuthenticated
@@ -190,11 +191,21 @@ class PlanTemplateViewSet(SchoolScopedViewSet):
         form = TemplateRowSerializer(data=request.data, many=True)
         form.is_valid(raise_exception=True)
 
+        # a line that names the row it came from keeps that row's files: the
+        # write replaces every row, and without this the attachments would go
+        # with them
+        carried = {
+            row.pk: list(row.attachments.all())
+            for row in template.rows.prefetch_related("attachments")
+        }
+
         rows = [
             plan_services.ImportedRow(
                 is_section=row["is_header"],
                 title=row["title"],
                 note=row.get("note", ""),
+                content={field: row.get(field, "") for field in CONTENT_FIELDS},
+                attachments=carried.get(row.get("id"), ()),
             )
             for row in form.validated_data
         ]

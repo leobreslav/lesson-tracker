@@ -3,9 +3,10 @@ from django.core.exceptions import ValidationError
 from django.db import models
 
 from . import services
+from .content import CONTENT_FIELDS, LessonContent, content_problems
 
 
-class PlanNode(models.Model):
+class PlanNode(LessonContent):
     """
     A node of a lesson plan: a top-level section or a lesson.
 
@@ -14,7 +15,9 @@ class PlanNode(models.Model):
     `services.number_lessons` counts it by walking the tree.
 
     The plan is personal, like the schedule: two teachers sharing a course
-    keep their own plans inside it.
+    keep their own plans inside it. Its content (see `LessonContent`) is
+    personal for the same reason: a colleague teaching the same course writes
+    their own lesson, even under the same title.
     """
 
     teacher = models.ForeignKey(
@@ -67,6 +70,12 @@ class PlanNode(models.Model):
             is_section=self.is_section,
         )
         messages = {field: message for field, (_, message) in problems.items()}
+        messages.update(
+            content_problems(
+                is_section=self.is_section,
+                values={field: getattr(self, field) for field in CONTENT_FIELDS},
+            )
+        )
 
         if self._position_taken():
             messages["position"] = "Another node already occupies this position."

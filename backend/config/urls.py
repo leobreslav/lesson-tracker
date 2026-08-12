@@ -16,5 +16,6 @@ urlpatterns = [
     path('api/onboarding/', include('onboarding.urls')),
     path('api/school/', include('schools.urls')),
     path('api/library/', include('library.urls')),
+    path('api/', include('files.urls')),
     path('api/schools/', include('schools.admin_urls')),
 ]

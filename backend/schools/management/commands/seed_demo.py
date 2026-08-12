@@ -20,10 +20,16 @@ from calendars.models import DayException, SchoolYear, Term
 from calendars.services import KIND_HOLIDAY, KIND_VACATION
 from django.conf import settings
 from django.contrib.auth import get_user_model
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
+from files import services as file_services
+from files import storage as file_storage
+from files.models import KIND_FILE, KIND_LINK, Attachment, StoredFile
 from onboarding.services import typical_terms, typical_vacations
 from plans.models import PlanNode
+from plans.services import PlanOwner
+from library import services as library_services
 from library.models import PlanTemplate, PlanTemplateRow
 from schedule.models import Course, LessonSlot, MasterSlot, Subject
 from schools.models import Invitation, School
@@ -153,6 +159,85 @@ PARTIAL_PLAN = (
     ("Треугольники", ("Первый признак равенства", "Второй признак", "Третий признак")),
 )
 
+# Lesson content on three lessons out of forty — enough to see the panel with
+# something in it and the paperclip on some rows but not all.
+#
+# Markdown with maths in $…$ and $$…$$, which is the point: the panel has to
+# render it and the export has to hand it over to LaTeX unharmed.
+LESSON_CONTENT = {
+    "Признаки делимости на 3 и 9": {
+        "objectives": (
+            "**A. Знание и понимание** — применять признаки делимости.\n\n"
+            "**B. Исследование закономерностей** — сформулировать признак "
+            "самостоятельно, проверив гипотезу на примерах.\n"
+        ),
+        "body": (
+            "## Признак делимости на 3\n\n"
+            "Число делится на 3 тогда и только тогда, когда на 3 делится "
+            "сумма его цифр.\n\n"
+            "Для $N = \\overline{a_k a_{k-1} \\ldots a_0}$ верно\n\n"
+            "$$N = \\sum_{i=0}^{k} a_i \\cdot 10^i "
+            "\\equiv \\sum_{i=0}^{k} a_i \\pmod 3,$$\n\n"
+            "поскольку $10 \\equiv 1 \\pmod 3$, а значит и "
+            "$10^i \\equiv 1 \\pmod 3$ при любом $i$.\n\n"
+            "### Разбор у доски\n\n"
+            "1. $4\\,725$: сумма цифр $18$, делится на 9 — значит и на 3.\n"
+            "2. $1\\,003$: сумма цифр $4$ — не делится ни на 3, ни на 9.\n"
+        ),
+        "formative": (
+            "Пять чисел на карточке. Для каждого ответить, делится ли оно "
+            "на 3 и на 9, и **назвать сумму цифр** как обоснование:\n\n"
+            "$2\\,331$, $50\\,004$, $7\\,777$, $123\\,456$, $999\\,000$\n"
+        ),
+        "homework": "№ 84–89, а также № 93 (со звёздочкой) — доказать признак для 9.\n",
+    },
+    "Сложение и вычитание": {
+        "objectives": "**A. Знание и понимание** — складывать дроби с разными знаменателями.\n",
+        "body": (
+            "Общий знаменатель — это НОК знаменателей:\n\n"
+            "$$\\frac{a}{b} + \\frac{c}{d} = \\frac{a \\cdot \\frac{m}{b} + "
+            "c \\cdot \\frac{m}{d}}{m}, \\qquad m = \\mathrm{НОК}(b, d).$$\n\n"
+            "Например, $\\frac{5}{12} + \\frac{7}{18} = \\frac{15 + 14}{36} "
+            "= \\frac{29}{36}$.\n"
+        ),
+        "formative": "Три примера на доске, два в тетради. Проверка в парах.\n",
+        "homework": "№ 265–270.\n",
+    },
+    "Длина окружности": {
+        "objectives": "**D. Применение математики в реальном контексте.**\n",
+        "body": (
+            "$$C = 2\\pi R = \\pi D$$\n\n"
+            "Измеряем нитью крышку банки и колесо самоката, считаем "
+            "отношение $C / D$ и сравниваем с $\\pi \\approx 3{,}1416$.\n"
+        ),
+        "formative": "",
+        "homework": "Измерить дома три круглых предмета, заполнить таблицу.\n",
+    },
+}
+
+# Files and links on those same lessons. The bytes are made up here rather
+# than shipped in the repository: a seeder that needs binary fixtures is a
+# seeder nobody can read.
+DEMO_FILES = (
+    (
+        "Признаки делимости на 3 и 9",
+        "Карточка — делимость.txt",
+        "text/plain",
+        "2331  50004  7777  123456  999000\n"
+        "Для каждого числа: сумма цифр, делится ли на 3, делится ли на 9.\n",
+    ),
+    (
+        "Сложение и вычитание",
+        "Тренажёр — дроби.txt",
+        "text/plain",
+        "5/12 + 7/18 =\n3/8 + 5/6 =\n7/15 - 2/9 =\n",
+    ),
+)
+
+DEMO_LINKS = (
+    ("Длина окружности", "GeoGebra: окружность и её длина", "https://www.geogebra.org/"),
+)
+
 # a handful of lessons marked by hand, so the schedule is not uniform
 CANCELLED = (("Grade 6 Algebra", 12, "Болезнь"), ("Grade 6 Algebra", 30, "Карантин"),
              ("Grade 9 Algebra", 18, "Актированный день"))
@@ -203,7 +288,7 @@ class Command(BaseCommand):
             if not options["minimal"]:
                 self.schedule(year, courses, people)
                 self.plans(courses, people)
-                self.library(school, subjects, people)
+                self.library(school, subjects, people, courses)
 
             attached = self.attach(school, options["email"])
 
@@ -222,6 +307,11 @@ class Command(BaseCommand):
         """
         PlanTemplate.objects.all().delete()
         PlanNode.objects.all().delete()
+        # the two deletes above took every attachment with them, so nothing
+        # points at a file any more. The signal that empties the bucket runs
+        # on commit and would find the rows already gone by then (schools
+        # cascade into them), so the objects are removed here instead
+        self.flush_files()
         LessonSlot.objects.all().delete()
         MasterSlot.objects.all().delete()
         Course.objects.all().update(subject=None)
@@ -232,6 +322,21 @@ class Command(BaseCommand):
         User.objects.filter(is_superuser=True).update(school=None, is_school_admin=False)
         School.objects.all().delete()
         self.stdout.write(self.style.WARNING("  очищено: всё, кроме суперпользователей"))
+
+    def flush_files(self):
+        """Empty the dev bucket of what this seed put there."""
+        gone = 0
+        for stored in StoredFile.objects.all():
+            try:
+                file_storage.delete(stored.key)
+            except file_storage.StorageUnavailable as error:
+                self.stdout.write(self.style.WARNING(f"  {stored.key}: {error}"))
+                continue
+            gone += 1
+
+        StoredFile.objects.all().delete()
+        if gone:
+            self.stdout.write(self.style.WARNING(f"  очищено файлов: {gone}"))
 
     def school(self):
         school, _ = School.objects.get_or_create(name=SCHOOL_NAME)
@@ -457,17 +562,25 @@ class Command(BaseCommand):
         self.write_plan(courses["Grade 6 Algebra"], people["ivanova@example.com"], FULL_PLAN)
         self.write_plan(courses["Grade 9 Algebra"], people["petrov@example.com"], PARTIAL_PLAN)
 
-    def library(self, school, subjects, people):
+    def library(self, school, subjects, people, courses):
         """
         A shelf with something on it: two published plans and one draft.
 
         The draft belongs to a fictional teacher on purpose — that is the
         entry the developer must *not* see until they log in as its author,
         which is the visibility rule worth eyeballing.
+
+        The first entry is **snapshotted from a real course plan** instead of
+        being written out here, and that is the point of it: only that path
+        carries the lesson content and the attachments across. Taking it into
+        another course then leads to the same object in R2 rather than to a
+        copy — the shareability worth checking by hand.
         """
+        source = courses["Grade 6 Algebra"], people["ivanova@example.com"]
+
         shelf = (
             ("Алгебра 6, по учебнику", subjects["Алгебра"], 6,
-             people["ivanova@example.com"], True, FULL_PLAN),
+             people["ivanova@example.com"], True, source),
             ("Геометрия 9, базовая", subjects["Геометрия"], 9,
              people["petrov@example.com"], True, PARTIAL_PLAN),
             ("Алгебра 9, черновик", subjects["Алгебра"], 9,
@@ -487,6 +600,16 @@ class Command(BaseCommand):
                 author=author,
                 is_published=published,
             )
+
+            if blocks is source:
+                course, teacher = blocks
+                library_services.write_rows(
+                    template,
+                    library_services.plan_as_rows(
+                        PlanOwner(teacher_id=teacher.pk, course_id=course.pk)
+                    ),
+                )
+                continue
 
             rows, position = [], 0
             for header, lessons in blocks:
@@ -527,8 +650,60 @@ class Command(BaseCommand):
                     position=index,
                     is_section=False,
                     title=lesson,
+                    **LESSON_CONTENT.get(lesson, {}),
                 )
                 for index, lesson in enumerate(lessons)
+            )
+
+        self.attachments(course, teacher)
+
+    # --- files -------------------------------------------------------------------
+
+    def storage_ready(self) -> bool:
+        """
+        Whether uploading is even worth trying.
+
+        The browser-test stack and a fresh clone have no R2 keys, and a
+        seeder that dies because of that is a seeder that stops being run.
+        Content and links still land; only the uploads are skipped, loudly.
+        """
+        return bool(settings.R2_BUCKET_NAME and settings.R2_ENDPOINT_URL)
+
+    def attachments(self, course, teacher):
+        """Files and links on the lessons that have content."""
+        lessons = {
+            node.title: node
+            for node in PlanNode.objects.filter(
+                teacher=teacher, course=course, is_section=False
+            )
+        }
+
+        for title, name, kind, text in DEMO_FILES:
+            node = lessons.get(title)
+            if node is None or node.attachments.filter(kind=KIND_FILE).exists():
+                continue
+            if not self.storage_ready():
+                continue
+
+            upload = SimpleUploadedFile(name, text.encode("utf-8"), content_type=kind)
+            try:
+                stored, _ = file_services.store_upload(
+                    upload=upload, school=course.school, user=teacher
+                )
+            except (file_storage.StorageUnavailable, file_services.UploadRefused) as error:
+                self.stdout.write(self.style.WARNING(f"  файл {name}: {error}"))
+                continue
+
+            Attachment.objects.create(
+                plan_row=node, kind=KIND_FILE, stored_file=stored, title=name
+            )
+
+        for title, label, address in DEMO_LINKS:
+            node = lessons.get(title)
+            if node is None or node.attachments.filter(kind=KIND_LINK).exists():
+                continue
+            Attachment.objects.create(
+                plan_row=node, kind=KIND_LINK, url=address, title=label
             )
 
     def attach(self, school, email):
@@ -598,6 +773,18 @@ class Command(BaseCommand):
                 f"{LessonSlot.objects.filter(is_extra=True).count()} дополнительных)"
             )
             self.stdout.write(f"  план:      {lessons} уроков в планах")
+            self.stdout.write(
+                f"  содержание: {PlanNode.objects.exclude(body='').count()} уроков, "
+                f"{Attachment.objects.count()} вложений "
+                f"({StoredFile.objects.count()} файлов в хранилище)"
+            )
+            if not self.storage_ready():
+                self.stdout.write(
+                    self.style.WARNING(
+                        "  R2 не настроен (R2_BUCKET_NAME/R2_ENDPOINT_URL пусты) — "
+                        "файлы пропущены, ссылки на месте"
+                    )
+                )
 
         self.stdout.write(
             f"  библиотека: {PlanTemplate.objects.count()} шаблонов "

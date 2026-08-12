@@ -1840,3 +1840,285 @@ button.day-head:hover {
 .exceptions .hint {
   margin: 0;
 }
+
+/* --- содержание урока: боковая панель --- */
+
+/* Тот же <dialog>, что и остальные окна проекта (top layer, Escape и
+   затемнение — от браузера), но прижатый к правому краю во всю высоту:
+   урок — это страница текста, и её неудобно читать в коробочке по центру. */
+.modal.sheet {
+  margin: 0 0 0 auto;
+  max-height: 100vh;
+  height: 100vh;
+  border-radius: 8px 0 0 8px;
+}
+
+.modal-body.sheet {
+  width: min(46rem, calc(100vw - 2rem));
+  max-height: 100vh;
+  height: 100vh;
+  box-sizing: border-box;
+  gap: 0.6rem;
+}
+
+.lesson-head {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+  position: sticky;
+  top: -1.25rem;
+  z-index: 1;
+  margin: -1.25rem -1.25rem 0;
+  padding: 1rem 1.25rem 0.75rem;
+  background: #fff;
+  border-bottom: 1px solid #eee;
+}
+
+.lesson-title {
+  flex: 1;
+  min-width: 0;
+  padding: 0.4rem 0.5rem;
+  font: inherit;
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: inherit;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: transparent;
+}
+
+.lesson-title:hover {
+  border-color: #ddd;
+}
+
+.lesson-title:focus {
+  outline: 2px solid #1a73e8;
+  outline-offset: -1px;
+  background: #fff;
+}
+
+.lesson-note {
+  padding: 0.4rem 0.5rem;
+  font: inherit;
+  color: #555;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+}
+
+.lesson-status {
+  margin: 0;
+  font-size: 0.8125rem;
+  min-height: 1.2em;
+}
+
+.lesson-status .unsaved {
+  color: #b26a00;
+  font-weight: 600;
+}
+
+.lesson-field {
+  border: 1px solid #e6e6e6;
+  border-radius: 6px;
+  background: #fafafa;
+}
+
+.lesson-field-head {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  width: 100%;
+  padding: 0.5rem 0.65rem;
+  font: inherit;
+  text-align: left;
+  color: inherit;
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+
+.lesson-field-head:hover {
+  background: #f0f0f0;
+}
+
+.lesson-field-name {
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+.lesson-field-head .caret {
+  color: #888;
+  width: 1em;
+}
+
+.lesson-field-head .dot {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  background: #1a73e8;
+}
+
+.lesson-field-head .hint {
+  margin: 0;
+}
+
+.lesson-field textarea {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0.6rem 0.7rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.85rem;
+  line-height: 1.5;
+  color: inherit;
+  border: none;
+  border-top: 1px solid #e6e6e6;
+  border-radius: 0 0 6px 6px;
+  background: #fff;
+  resize: vertical;
+}
+
+.lesson-field textarea:focus {
+  outline: 2px solid #1a73e8;
+  outline-offset: -2px;
+}
+
+.lesson-field .markdown {
+  padding: 0.3rem 0.7rem 0.7rem;
+  border-top: 1px solid #e6e6e6;
+  background: #fff;
+  border-radius: 0 0 6px 6px;
+}
+
+/* --- отрисованный markdown --- */
+
+.markdown {
+  font-size: 0.95rem;
+  line-height: 1.55;
+  overflow-x: auto;
+}
+
+.markdown h1,
+.markdown h2,
+.markdown h3 {
+  margin: 0.9rem 0 0.4rem;
+  font-size: 1.05rem;
+}
+
+.markdown p,
+.markdown ul,
+.markdown ol {
+  margin: 0.5rem 0;
+}
+
+.markdown code {
+  padding: 0.1rem 0.25rem;
+  font-size: 0.85em;
+  background: #f0f0f0;
+  border-radius: 3px;
+}
+
+.markdown pre {
+  padding: 0.6rem;
+  overflow-x: auto;
+  background: #f5f5f5;
+  border-radius: 4px;
+}
+
+.markdown pre code {
+  padding: 0;
+  background: none;
+}
+
+.markdown table {
+  border-collapse: collapse;
+}
+
+.markdown th,
+.markdown td {
+  padding: 0.3rem 0.5rem;
+  border: 1px solid #ddd;
+}
+
+.markdown blockquote {
+  margin: 0.5rem 0;
+  padding-left: 0.75rem;
+  border-left: 3px solid #ddd;
+  color: #555;
+}
+
+/* формула шире панели должна прокручиваться, а не растягивать окно */
+.markdown .katex-display {
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 0.2rem 0;
+}
+
+/* --- вложения --- */
+
+.lesson-files h3 {
+  margin: 0.5rem 0 0;
+  font-size: 1rem;
+}
+
+.attachments {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.attachment {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  padding: 0.35rem 0.25rem;
+  border-bottom: 1px solid #eee;
+}
+
+.attachment .title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
+}
+
+.attachment .hint {
+  margin: 0;
+  white-space: nowrap;
+}
+
+.attachment .remove {
+  color: #b00020;
+}
+
+.dropzone {
+  padding: 0.9rem;
+  text-align: center;
+  font-size: 0.85rem;
+  color: #777;
+  border: 2px dashed #d0d0d0;
+  border-radius: 6px;
+}
+
+.dropzone.over {
+  color: #1a73e8;
+  border-color: #1a73e8;
+  background: #eaf2fe;
+}
+
+.lesson-foot {
+  position: sticky;
+  bottom: -1.25rem;
+  margin: 0 -1.25rem -1.25rem;
+  padding: 0.75rem 1.25rem;
+  background: #fff;
+  border-top: 1px solid #eee;
+}
+
+/* значки в таблице плана: содержание и вложения — разные вещи */
+.plan-row .mark {
+  font-size: 0.8rem;
+  line-height: 1;
+  opacity: 0.75;
+}

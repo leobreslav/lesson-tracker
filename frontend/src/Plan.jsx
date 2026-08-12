@@ -1,4 +1,13 @@
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import {
+  Fragment,
+  Suspense,
+  lazy,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react'
 import { Trans, useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
 import {
@@ -46,6 +55,15 @@ import {
   updatePlanNode,
 } from './api'
 
+/**
+ * Loaded only when a lesson is opened.
+ *
+ * KaTeX and the Markdown renderer are two thirds of a megabyte, and the plan
+ * table needs neither — a teacher who only reorders lessons should never pay
+ * for them.
+ */
+const LessonPanel = lazy(() => import('./LessonPanel'))
+
 export default function Plan({ onLoggedOut }) {
   const { t } = useTranslation()
   const navigate = useNavigate()
@@ -58,7 +76,8 @@ export default function Plan({ onLoggedOut }) {
 
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
-  const [editing, setEditing] = useState(null) // {id, title, note}
+  const [editing, setEditing] = useState(null) // {id, title} — folders only
+  const [opened, setOpened] = useState(null) // the lesson whose panel is open
   const [adding, setAdding] = useState(null) // {parent, after, is_section, title}
   const [deleting, setDeleting] = useState(null) // the section being removed
   const [importing, setImporting] = useState(false)
@@ -302,25 +321,22 @@ export default function Plan({ onLoggedOut }) {
 
   // --- editing ---
 
-  const startEdit = (node) =>
-    setEditing({
-      id: node.id,
-      title: node.title,
-      note: node.note,
-      is_section: node.is_section,
-    })
+  /**
+   * Renaming, for folders.
+   *
+   * A lesson is not renamed here: clicking it opens the panel, where the
+   * title sits above its content. A folder has no content, so a folder is
+   * just a name and an inline field is the shortest way to change it.
+   */
+  const startEdit = (node) => setEditing({ id: node.id, title: node.title })
 
   const submitEdit = (event) => {
     event.preventDefault()
-    const { id, title, note, is_section } = editing
+    const { id, title } = editing
     setEditing(null)
 
     if (!title.trim()) return
-    const fields = is_section
-      ? { title: title.trim() }
-      : { title: title.trim(), note }
-
-    run(() => updatePlanNode(id, fields))
+    run(() => updatePlanNode(id, { title: title.trim() }))
   }
 
   const editKeyDown = (event) => {
@@ -412,7 +428,7 @@ export default function Plan({ onLoggedOut }) {
 
   // --- rendering ---
 
-  const editForm = (node) => (
+  const editForm = () => (
     <form className="plan-edit" onSubmit={submitEdit}>
       <input
         autoFocus
@@ -422,18 +438,6 @@ export default function Plan({ onLoggedOut }) {
         onChange={(event) => setEditing({ ...editing, title: event.target.value })}
         onKeyDown={editKeyDown}
       />
-      {!node.is_section && (
-        <>
-          <input
-            value={editing.note}
-            maxLength={500}
-            placeholder={t('plan.notePlaceholder')}
-            aria-label={t('plan.noteLabel')}
-            onChange={(event) => setEditing({ ...editing, note: event.target.value })}
-            onKeyDown={editKeyDown}
-          />
-        </>
-      )}
       <button type="submit" disabled={busy}>
         {t('common.save')}
       </button>
@@ -502,26 +506,37 @@ export default function Plan({ onLoggedOut }) {
       className="plan-row lesson"
       indicator={indicatorFor(node.id)}
     >
-      {(handle) =>
-        editing?.id === node.id ? (
-        <>
-          {handle}
-          <span className="plan-number">{node.number}</span>
-          {editForm(node)}
-        </>
-      ) : (
+      {(handle) => (
         <>
           {handle}
           <span className="plan-number">{node.number}</span>
           <button
             type="button"
             className="link title"
-            title={t('plan.rename')}
+            title={t('plan.openLesson')}
             disabled={busy}
-            onClick={() => startEdit(node)}
+            onClick={() => setOpened(node.id)}
           >
             {node.title}
           </button>
+
+          {/* two separate marks: one says there is a lesson written, the
+              other that something comes with it */}
+          {node.has_content && (
+            <span className="mark" title={t('plan.hasContent')} aria-label={t('plan.hasContent')}>
+              📝
+            </span>
+          )}
+          {node.attachments > 0 && (
+            <span
+              className="mark"
+              title={t('plan.hasAttachments', { count: node.attachments })}
+              aria-label={t('plan.hasAttachments', { count: node.attachments })}
+            >
+              📎
+            </span>
+          )}
+
           {node.note && <span className="hint">{node.note}</span>}
 
           <span className="row-actions">
@@ -546,8 +561,7 @@ export default function Plan({ onLoggedOut }) {
             </button>
           </span>
         </>
-        )
-      }
+      )}
     </SortableRow>
   )
 
@@ -578,7 +592,7 @@ export default function Plan({ onLoggedOut }) {
           </button>
 
           {editing?.id === node.id ? (
-            editForm(node)
+            editForm()
           ) : (
             <>
               <button
@@ -814,6 +828,18 @@ export default function Plan({ onLoggedOut }) {
             </>
           )}
         </>
+      )}
+
+      {opened && (
+        <Suspense fallback={null}>
+          <LessonPanel
+            nodeId={opened}
+            onClose={() => setOpened(null)}
+            // the marks in the table come from the tree, so a save has to be
+            // followed by a re-read — the paperclip appears the moment a file does
+            onSaved={() => load(classId).catch(handleError)}
+          />
+        </Suspense>
       )}
 
       {importing && (

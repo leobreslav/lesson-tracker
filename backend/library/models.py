@@ -1,7 +1,9 @@
 from django.conf import settings
+from django.core.exceptions import ValidationError
 from django.db import models
 from schedule.models import MAX_GRADE, MIN_GRADE
 from django.core.validators import MaxValueValidator, MinValueValidator
+from plans.content import CONTENT_FIELDS, LessonContent, content_problems
 
 
 class PlanTemplate(models.Model):
@@ -64,7 +66,7 @@ class PlanTemplate(models.Model):
         return self.rows.filter(is_header=False).count()
 
 
-class PlanTemplateRow(models.Model):
+class PlanTemplateRow(LessonContent):
     """
     One line of a template: a block header or a lesson.
 
@@ -101,3 +103,13 @@ class PlanTemplateRow(models.Model):
 
     def __str__(self):
         return self.title
+
+    def clean(self):
+        super().clean()
+
+        problems = content_problems(
+            is_section=self.is_header,
+            values={field: getattr(self, field) for field in CONTENT_FIELDS},
+        )
+        if problems:
+            raise ValidationError(problems)

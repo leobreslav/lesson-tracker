@@ -190,6 +190,13 @@ test('keys built at runtime exist for every value they take', () => {
     ...['year', 'calendar', 'classes', 'schedule', 'plan'].flatMap((step) =>
       ['title', 'action', 'missing'].map((part) => `dashboard.steps.${step}.${part}`),
     ),
+    // the lesson panel builds these from the field name and from the unit
+    // `fileKind.formatSize` picked
+    ...['objectives', 'body', 'formative', 'homework'].flatMap((field) => [
+      `lesson.fields.${field}`,
+      `lesson.placeholders.${field}`,
+    ]),
+    ...['b', 'kb', 'mb'].map((unit) => `lesson.size.${unit}`),
   ]
 
   assert.deepEqual(

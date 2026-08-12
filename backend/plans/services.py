@@ -20,8 +20,11 @@ from dataclasses import dataclass
 from typing import Iterable, NamedTuple, Sequence
 
 from calendars.services import find_term
+from django.db.models import Count
 
 from config.errors import Codes, error_payload
+
+from .content import CONTENT_FIELDS
 
 SECTION_INSIDE_SECTION = Codes.SECTION_INSIDE_SECTION
 PARENT_NOT_SECTION = Codes.PARENT_NOT_SECTION
@@ -275,11 +278,22 @@ class PlanImportError(Exception):
 
 @dataclass(frozen=True)
 class ImportedRow:
-    """Строка файла, уже понятая: заголовок темы или урок."""
+    """
+    Строка файла, уже понятая: заголовок темы или урок.
+
+    Та же форма служит и библиотеке, поэтому кроме названия она умеет нести
+    содержание урока и его вложения. CSV ни того, ни другого не выражает и
+    оставляет пустыми — способ заполнить план от этого не меняется.
+
+    `attachments` — существующие объекты `files.Attachment`, а не их копии:
+    перенос делает `files.services.copy_attachments`, и он не трогает байты.
+    """
 
     is_section: bool
     title: str
     note: str = ""
+    content: dict | None = None
+    attachments: Sequence = ()
 
 
 def decode_csv(data: bytes) -> str:
@@ -568,15 +582,21 @@ def apply_import(owner: PlanOwner, rows: Iterable[ImportedRow], *, append: bool)
 
     A lesson lands in the last header seen; until a header appears it stays
     on the top level.
+
+    `pairs` in the result lines every row up with the node it became. The
+    caller needs it to carry attachments across — those live in another app,
+    and the plan does not have to know about it to write a plan.
     """
     from .models import PlanNode
 
     top_position = len(level(owner, None)) if append else 0
     section = None
     section_position = 0
-    created = {"headers": 0, "lessons": 0}
+    created = {"headers": 0, "lessons": 0, "pairs": []}
 
     for row in rows:
+        content = row.content or {}
+
         if row.is_section:
             section = PlanNode.objects.create(
                 teacher_id=owner.teacher_id,
@@ -590,9 +610,10 @@ def apply_import(owner: PlanOwner, rows: Iterable[ImportedRow], *, append: bool)
             top_position += 1
             section_position = 0
             created["headers"] += 1
+            created["pairs"].append((row, section))
             continue
 
-        PlanNode.objects.create(
+        node = PlanNode.objects.create(
             teacher_id=owner.teacher_id,
             course_id=owner.course_id,
             parent=section,
@@ -600,24 +621,35 @@ def apply_import(owner: PlanOwner, rows: Iterable[ImportedRow], *, append: bool)
             is_section=False,
             title=row.title,
             note=row.note,
+            **{field: content.get(field, "") for field in CONTENT_FIELDS},
         )
         if section:
             section_position += 1
         else:
             top_position += 1
         created["lessons"] += 1
+        created["pairs"].append((row, node))
 
     return created
 
 
-def get_tree(owner: PlanOwner) -> list[Branch]:
+def plan_nodes(owner: PlanOwner):
+    """
+    A teacher's nodes in a course, with the attachment count alongside.
+
+    Counting here rather than per row: the plan page draws a paperclip on
+    every lesson that has one, and asking the database once beats asking it
+    two hundred times.
+    """
     from .models import PlanNode
 
-    return build_tree(
-        PlanNode.objects.filter(
-            teacher_id=owner.teacher_id, course_id=owner.course_id
-        )
-    )
+    return PlanNode.objects.filter(
+        teacher_id=owner.teacher_id, course_id=owner.course_id
+    ).annotate(attachment_count=Count("attachments"))
+
+
+def get_tree(owner: PlanOwner) -> list[Branch]:
+    return build_tree(plan_nodes(owner))
 
 
 def flatten_lessons(owner: PlanOwner) -> list[Lesson]:

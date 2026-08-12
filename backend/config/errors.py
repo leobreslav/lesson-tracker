@@ -94,6 +94,16 @@ class Codes:
     FILE_UNREADABLE = "file_unreadable"
     FILE_TOO_MANY_ROWS = "file_too_many_rows"
 
+    # lesson content and attachments
+    CONTENT_ON_SECTION = "content_on_section"
+    ATTACHMENT_OWNER_REQUIRED = "attachment_owner_required"
+    ATTACHMENT_KIND_MISMATCH = "attachment_kind_mismatch"
+    ATTACHMENT_FORBIDDEN = "attachment_forbidden"
+    URL_REQUIRED = "url_required"
+    FILE_TYPE_NOT_ALLOWED = "file_type_not_allowed"
+    SCHOOL_QUOTA_EXCEEDED = "school_quota_exceeded"
+    STORAGE_UNAVAILABLE = "storage_unavailable"
+
     # sign-in
     TOKEN_REQUIRED = "token_required"
     TOKEN_INVALID = "token_invalid"
@@ -132,6 +142,17 @@ class ApiError(APIException):
 def api_error(code: str, detail: str, *, field: str | None = None, **params):
     """Raise a coded validation error (HTTP 400)."""
     raise ApiError(error_payload(code, detail, field=field, **params))
+
+
+def api_unavailable(code: str, detail: str, **params):
+    """
+    Raise a coded "not now" (HTTP 503).
+
+    Kept apart from `api_error` on purpose: a file store that is down is not
+    a mistake the person made, and retyping will not help. The interface says
+    "try again later" instead of pointing at a field.
+    """
+    raise ApiError(error_payload(code, detail, **params), status_code=503)
 
 
 def api_denied(code: str, detail: str, **params):

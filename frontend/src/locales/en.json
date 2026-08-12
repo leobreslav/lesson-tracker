@@ -27,7 +27,8 @@
     "studyDayCount_one": "{{count}} study day",
     "studyDayCount_other": "{{count}} study days",
     "memberCount_one": "{{count}} member",
-    "memberCount_other": "{{count}} members"
+    "memberCount_other": "{{count}} members",
+    "close": "Close"
   },
   "language": {
     "label": "Language"
@@ -175,14 +176,22 @@
     "already_member": "«{{email}}» already belongs to a school.",
     "last_admin": "This is the only administrator of the school. Give the role to somebody else first.",
     "superuser_required": "Only a superuser can manage the list of schools.",
-    "school_in_use": "«{{name}}» still has {{members}} members. Move them out first.",
+    "school_in_use": "«{{name}}» is still in use: {{blocked_by}}. Clear it first.",
     "year_required": "Pick a school year first.",
     "not_template_author": "Only the author can change this plan. Take a copy and edit that.",
     "subject_required": "Pick a subject: the library is searched by subject and grade.",
     "grade_required": "Pick a grade: the library is searched by subject and grade.",
     "plan_empty": "There is nothing to publish: the plan of this course is empty.",
     "subject_name_taken": "This school already has a subject with that name.",
-    "subject_in_use": "«{{name}}» is used by {{courses}} courses."
+    "subject_in_use": "«{{name}}» is used by {{courses}} courses.",
+    "content_on_section": "A section header holds no lesson content — only a lesson does.",
+    "attachment_owner_required": "An attachment belongs to exactly one lesson.",
+    "attachment_kind_mismatch": "Send either a file or a link, not both.",
+    "attachment_forbidden": "This attachment belongs to somebody else's lesson.",
+    "url_required": "A link needs an address.",
+    "file_type_not_allowed": "This kind of file cannot be attached: «{{extension}}». Allowed: images, pdf, docx, xlsx, pptx, txt, zip.",
+    "school_quota_exceeded": "The school has used up its storage quota ({{quota_mb}} MB). Remove some files to make room.",
+    "storage_unavailable": "The file store is not answering. Everything else works; try the file again in a moment."
   },
   "classPicker": {
     "label": "Classes:",
@@ -273,7 +282,11 @@
     "publishHint": "The plan of this course goes on the shelf as your draft — nobody else sees it until you publish it.",
     "refreshTemplate": "Update the library entry",
     "refreshHint": "«{{title}}» will be overwritten with the current plan of this course. Colleagues who already took a copy keep theirs.",
-    "published": "«{{title}}» is on the shelf."
+    "published": "«{{title}}» is on the shelf.",
+    "openLesson": "Open the lesson",
+    "hasContent": "The lesson has content",
+    "hasAttachments_one": "{{count}} attachment",
+    "hasAttachments_other": "{{count}} attachments"
   },
   "calendar": {
     "title": "School year",
@@ -552,6 +565,42 @@
     "empty": {
       "title": "The library is empty",
       "hint": "Nothing has been put on the shelf yet. Publish one of your plans, or write a new one."
+    }
+  },
+  "lesson": {
+    "fields": {
+      "objectives": "Objectives",
+      "body": "Lesson",
+      "formative": "Formative check",
+      "homework": "Homework"
+    },
+    "placeholders": {
+      "objectives": "MYP objectives this lesson works towards",
+      "body": "Theory and problems. Markdown, maths in $…$ and $$…$$",
+      "formative": "A short check done in the lesson",
+      "homework": "What is set for home"
+    },
+    "filled": "Filled in",
+    "blank": "empty",
+    "preview": "Preview",
+    "edit": "Edit",
+    "unsaved": "Unsaved changes",
+    "allSaved": "Everything saved",
+    "discard": "The lesson has unsaved changes. Close and lose them?",
+    "attachments": "Attachments",
+    "dropHere": "Drop files here",
+    "addFile": "Add a file…",
+    "addLink": "Add a link…",
+    "linkUrl": "Address",
+    "linkTitle": "Title",
+    "download": "Download",
+    "removeAttachment": "Remove «{{title}}» from this lesson?",
+    "shared": "from the library",
+    "sharedHint": "The same file is used by another lesson. Removing it here leaves it there.",
+    "size": {
+      "b": "{{value}} B",
+      "kb": "{{value}} KB",
+      "mb": "{{value}} MB"
     }
   }
 }

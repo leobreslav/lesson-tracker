@@ -16,6 +16,7 @@ reach.
 from datetime import date
 
 from django.contrib.auth import get_user_model
+from django.core.files.uploadedfile import SimpleUploadedFile
 from rest_framework.authtoken.models import Token
 
 from .models import School
@@ -190,6 +191,47 @@ def make_template(school, author, *, subject=None, grade=9, title="Шаблон"
         for position, (header, name) in enumerate(rows)
     )
     return template
+
+
+# --- files ---------------------------------------------------------------------
+
+# Nothing here swaps the storage: `config.testing.Runner` does it for the
+# whole run, so a test that uploads without meaning to (running `seed_demo`,
+# say) cannot reach R2 either.
+
+
+def make_upload(name="worksheet.pdf", content=b"%PDF-1.4 demo", kind="application/pdf"):
+    return SimpleUploadedFile(name, content, content_type=kind)
+
+
+def make_stored_file(school, uploader=None, **kwargs):
+    """
+    A file that is really in the store, put there the way the API puts it.
+
+    Going through `store_upload` rather than `objects.create` on purpose: a
+    row whose object does not exist is a state the product cannot reach, and
+    a fixture that can express it would quietly make the deletion tests pass
+    for the wrong reason.
+    """
+    from files.services import store_upload
+
+    return store_upload(upload=make_upload(**kwargs), school=school, user=uploader)[0]
+
+
+def make_attachment(row, stored=None, *, title="Worksheet", url=""):
+    """A reference from a plan lesson or a template row. Files are not copied."""
+    from files.models import KIND_FILE, KIND_LINK, Attachment
+
+    owner = "template_row" if hasattr(row, "is_header") else "plan_row"
+
+    return Attachment.objects.create(
+        **{owner: row},
+        kind=KIND_LINK if stored is None else KIND_FILE,
+        stored_file=stored,
+        url=url,
+        title=title,
+        position=0,
+    )
 
 
 class SchoolTestMixin:

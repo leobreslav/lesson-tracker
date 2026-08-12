@@ -10,7 +10,9 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/5.1/ref/settings/
 """
 from pathlib import Path
+
 import environ
+from botocore.config import Config
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -57,6 +59,7 @@ INSTALLED_APPS = [
     'schedule',
     'plans',
     'library',
+    'files',
     'onboarding',
 ]
 
@@ -155,6 +158,68 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 STATIC_ROOT = BASE_DIR / "staticfiles"
 
 
+# Файлы пользователей: Cloudflare R2
+#
+# В R2 едут только вложения к урокам. Статика Django остаётся на диске и
+# раздаётся nginx — она пересобирается на каждой выкатке, класть её в
+# объектное хранилище незачем.
+
+# Ключи объектов строит files/storage.py; здесь только подключение.
+R2_BUCKET_NAME = env("R2_BUCKET_NAME", default="")
+R2_ENDPOINT_URL = env("R2_ENDPOINT_URL", default="")
+
+# Клиент собирается здесь целиком, а не по частям: если передать
+# client_config, django-storages перестаёт читать signature_version и
+# addressing_style из настроек — они должны лежать внутри Config.
+R2_CLIENT_CONFIG = Config(
+    # R2 понимает только virtual-hosted style и подпись v4
+    s3={"addressing_style": "virtual"},
+    signature_version="s3v4",
+    # хранилище лежит за сетью: без таймаутов недоступный R2 подвесил бы
+    # воркер gunicorn, а не вернул ошибку
+    connect_timeout=5,
+    read_timeout=20,
+    retries={"max_attempts": 2, "mode": "standard"},
+)
+
+# сколько живёт ссылка на скачивание
+FILE_URL_TTL = env.int("FILE_URL_TTL", default=300)
+# 20 МБ на файл; nginx пропускает 25m, запас на оболочку multipart
+FILE_MAX_BYTES = env.int("FILE_MAX_BYTES", default=20 * 1024 * 1024)
+# квота школы: сумма размеров её уникальных файлов
+SCHOOL_FILE_QUOTA_BYTES = env.int(
+    "SCHOOL_FILE_QUOTA_BYTES", default=5 * 1024 * 1024 * 1024
+)
+
+STORAGES = {
+    "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
+    "staticfiles": {
+        "BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"
+    },
+    # именованное хранилище: обращаться к нему нужно явно, случайно положить
+    # что-то в R2 через FileField нельзя
+    "files": {
+        "BACKEND": "storages.backends.s3.S3Storage",
+        "OPTIONS": {
+            "bucket_name": R2_BUCKET_NAME,
+            "endpoint_url": R2_ENDPOINT_URL,
+            "access_key": env("R2_ACCESS_KEY_ID", default=""),
+            "secret_key": env("R2_SECRET_ACCESS_KEY", default=""),
+            "region_name": "auto",
+            "client_config": R2_CLIENT_CONFIG,
+            # R2 не поддерживает ACL: любой параметр вроде default_acl
+            # приводит к ошибке подписи, поэтому его здесь и нет
+            "querystring_auth": True,
+            "querystring_expire": FILE_URL_TTL,
+            # в ключе есть uuid, так что столкнуться два объекта не могут;
+            # без этого флага django-storages делал бы лишний HEAD перед
+            # каждой загрузкой, чтобы подобрать свободное имя
+            "file_overwrite": True,
+        },
+    },
+}
+
+
 # Аутентификация
 
 AUTHENTICATION_BACKENDS = [
@@ -163,6 +228,10 @@ AUTHENTICATION_BACKENDS = [
     # вход через социальные провайдеры
     "allauth.account.auth_backends.AuthenticationBackend",
 ]
+
+# Свой раннер ровно ради одного: под тестами хранилище файлов подменяется
+# на память, и ни один тест не может случайно постучаться в R2.
+TEST_RUNNER = "config.testing.Runner"
 
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": [

@@ -4,7 +4,14 @@ from rest_framework import serializers
 from schedule.serializers import school_courses
 
 from . import services
+from .content import CONTENT_EXTRA_KWARGS, CONTENT_FIELDS, content_problems
 from .models import PlanNode
+
+
+def raise_content_error(*, is_section: bool, values):
+    """Content on a section header, said the same way the model says it."""
+    for field, message in content_problems(is_section=is_section, values=values).items():
+        api_error(Codes.CONTENT_ON_SECTION, message, field=field)
 
 
 def requester(serializer):
@@ -35,6 +42,11 @@ def node_payload(node, number=None) -> dict:
         "note": node.note,
         # сквозной номер считается на лету, у папок его нет
         "number": number,
+        # в дереве едут только пометки: само содержание может быть длинным,
+        # а таблица плана показывает лишь значок. Текст берётся детально,
+        # запросом на конкретный урок
+        "has_content": node.has_content,
+        "attachments": getattr(node, "attachment_count", 0),
     }
 
 
@@ -113,7 +125,17 @@ class PlanNodeCreateSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = PlanNode
-        fields = ("id", "course", "parent", "is_section", "title", "note", "after")
+        fields = (
+            "id",
+            "course",
+            "parent",
+            "is_section",
+            "title",
+            "note",
+            "after",
+            *CONTENT_FIELDS,
+        )
+        extra_kwargs = CONTENT_EXTRA_KWARGS
 
     def get_fields(self):
         fields = super().get_fields()
@@ -123,6 +145,10 @@ class PlanNodeCreateSerializer(serializers.ModelSerializer):
         return fields
 
     def validate(self, attrs):
+        raise_content_error(
+            is_section=attrs.get("is_section", False), values=attrs
+        )
+
         problems = services.structure_problems(
             course_id=attrs["course"].pk,
             parent=attrs.get("parent"),
@@ -165,12 +191,49 @@ class PlanNodeCreateSerializer(serializers.ModelSerializer):
 
 
 class PlanNodeUpdateSerializer(serializers.ModelSerializer):
-    """Editing a node's content. Structure moves through move/move_to."""
+    """
+    Editing a node. Structure moves through move/move_to.
+
+    The four content fields are Markdown and are stored exactly as typed —
+    see `plans.content` for why nothing here ever turns them into HTML.
+    """
 
     class Meta:
         model = PlanNode
-        fields = ("id", "parent", "position", "is_section", "title", "note")
+        fields = (
+            "id",
+            "parent",
+            "position",
+            "is_section",
+            "title",
+            "note",
+            *CONTENT_FIELDS,
+        )
         read_only_fields = ("parent", "position", "is_section")
+        extra_kwargs = CONTENT_EXTRA_KWARGS
+
+    def validate(self, attrs):
+        raise_content_error(
+            is_section=self.instance.is_section if self.instance else False,
+            values=attrs,
+        )
+        return attrs
+
+
+class PlanNodeDetailSerializer(PlanNodeUpdateSerializer):
+    """One lesson with everything the side panel needs, attachments included."""
+
+    attachments = serializers.SerializerMethodField()
+
+    class Meta(PlanNodeUpdateSerializer.Meta):
+        fields = PlanNodeUpdateSerializer.Meta.fields + ("attachments",)
+
+    def get_attachments(self, obj):
+        from files.serializers import AttachmentSerializer, with_sharing
+
+        return AttachmentSerializer(
+            with_sharing(obj.attachments.all()), many=True
+        ).data
 
 
 class MoveSerializer(serializers.Serializer):

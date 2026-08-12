@@ -275,6 +275,51 @@ export const downloadPlanCsv = async (classId) => {
   URL.revokeObjectURL(url)
 }
 
+// --- one lesson: content and attachments ---
+
+/** The whole of one lesson, content included — the tree only carries flags. */
+export const fetchPlanNode = (id) => request(`/api/plan/${id}/`)
+
+export const fetchAttachments = (params) =>
+  request(`/api/attachments/?${new URLSearchParams(params)}`)
+
+export const uploadAttachment = ({ planRow, templateRow, file, title }) => {
+  const form = new FormData()
+  if (planRow) form.append('plan_row', planRow)
+  if (templateRow) form.append('template_row', templateRow)
+  form.append('file', file)
+  if (title) form.append('title', title)
+
+  return request('/api/attachments/', { method: 'POST', body: form })
+}
+
+export const addLinkAttachment = ({ planRow, templateRow, url, title }) =>
+  request('/api/attachments/', {
+    method: 'POST',
+    body: {
+      ...(planRow ? { plan_row: planRow } : { template_row: templateRow }),
+      url,
+      title,
+    },
+  })
+
+export const deleteAttachment = (id) =>
+  request(`/api/attachments/${id}/`, { method: 'DELETE' })
+
+/**
+ * Download a file.
+ *
+ * Two steps rather than following the endpoint's redirect: the request needs
+ * an Authorization header, and a header does not survive a redirect to
+ * another origin. So the address is asked for as JSON and the browser is
+ * pointed at it — the response carries Content-Disposition: attachment, so
+ * the page stays where it is and the file arrives.
+ */
+export const openAttachment = async (id) => {
+  const { url } = await request(`/api/attachments/${id}/download/?json=1`)
+  window.location.assign(url)
+}
+
 export const fetchLayout = (classId, period = {}) =>
   request(`/api/plan/layout/?${new URLSearchParams({ course: classId, ...period })}`)
 

@@ -1,4 +1,5 @@
 from config.errors import Codes, api_error
+from plans.content import CONTENT_EXTRA_KWARGS, CONTENT_FIELDS, content_problems
 from rest_framework import serializers
 from schedule.models import Course, Subject
 from schedule.serializers import school_courses
@@ -15,10 +16,46 @@ def school_subjects(serializer):
 
 
 class TemplateRowSerializer(serializers.ModelSerializer):
+    """
+    One line of a template, both ways.
+
+    `id` is writable on the way in, and only for one reason: the rows are
+    rewritten as a whole list (see `services.write_rows`), which would
+    otherwise drop the attachments of every row on every save. A line that
+    names the row it came from keeps its files.
+    """
+
+    id = serializers.IntegerField(required=False)
+    attachments = serializers.SerializerMethodField()
+
     class Meta:
         model = PlanTemplateRow
-        fields = ("id", "position", "is_header", "title", "note")
-        read_only_fields = ("id", "position")
+        fields = (
+            "id",
+            "position",
+            "is_header",
+            "title",
+            "note",
+            *CONTENT_FIELDS,
+            "attachments",
+        )
+        read_only_fields = ("position",)
+        extra_kwargs = CONTENT_EXTRA_KWARGS
+
+    def get_attachments(self, obj):
+        from files.serializers import AttachmentSerializer, with_sharing
+
+        return AttachmentSerializer(
+            with_sharing(obj.attachments.all()), many=True
+        ).data
+
+    def validate(self, attrs):
+        problems = content_problems(
+            is_section=attrs.get("is_header", False), values=attrs
+        )
+        for field, message in problems.items():
+            api_error(Codes.CONTENT_ON_SECTION, message, field=field)
+        return attrs
 
 
 class PlanTemplateSerializer(serializers.ModelSerializer):

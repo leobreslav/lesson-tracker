@@ -21,6 +21,7 @@ from .serializers import (
     MoveSerializer,
     MoveToSerializer,
     PlanNodeCreateSerializer,
+    PlanNodeDetailSerializer,
     PlanNodeUpdateSerializer,
     check_structure,
     flat_payload,
@@ -66,6 +67,10 @@ class PlanNodeViewSet(TeacherScopedViewSet):
     def get_serializer_class(self):
         if self.action == "create":
             return PlanNodeCreateSerializer
+        # the panel opens one lesson at a time, and only then is the content
+        # worth sending — the tree carries a flag instead
+        if self.action in ("retrieve", "update", "partial_update"):
+            return PlanNodeDetailSerializer
         return PlanNodeUpdateSerializer
 
     def requested_course(self):

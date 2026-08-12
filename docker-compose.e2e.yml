@@ -48,6 +48,19 @@ services:
       CSRF_TRUSTED_ORIGINS: http://localhost:8080
     volumes:
       - static_files:/app/staticfiles
+    healthcheck:
+      # «gunicorn отвечает» значит и «migrate с seed_demo прошли»: команда
+      # выше выполняет их последовательно. Без этой проверки nginx считался
+      # здоровым сам по себе, и первый тест успевал получить 502 — при
+      # retries: 0 это падение всего прогона на пустом месте
+      test:
+        - CMD-SHELL
+        - >
+          python -c "import urllib.request;
+          urllib.request.urlopen('http://127.0.0.1:8000/admin/login/')"
+      interval: 2s
+      timeout: 5s
+      retries: 60
     depends_on:
       db:
         condition: service_healthy
@@ -83,7 +96,7 @@ services:
       retries: 30
     depends_on:
       backend:
-        condition: service_started
+        condition: service_healthy
       frontend-build:
         condition: service_completed_successfully
 
