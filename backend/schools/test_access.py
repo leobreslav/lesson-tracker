@@ -19,50 +19,36 @@ from plans.models import PlanNode
 from rest_framework.test import APITestCase
 from schedule.models import Course, LessonSlot
 
+from .matrix import AccessRulesMixin
 from .models import Invitation, School
-from .testing import SchoolTestMixin, make_user
+from .testing import (
+    MONDAY,
+    YEAR_START,
+    SchoolTestMixin,
+    make_course,
+    make_exception,
+    make_node,
+    make_slot,
+    make_term,
+    make_year,
+)
 
-YEAR_START = date(2026, 9, 1)
-YEAR_END = date(2027, 5, 31)
-MONDAY = date(2026, 9, 7)
 
-
-class AccessTestCase(SchoolTestMixin, APITestCase):
+class AccessTestCase(AccessRulesMixin, SchoolTestMixin, APITestCase):
     """One school with everything in it, plus the same shape next door."""
 
     def setUp(self):
         super().setUp()
 
-        self.year = SchoolYear.objects.create(
-            school=self.school, name="2026/2027",
-            start_date=YEAR_START, end_date=YEAR_END,
-        )
-        self.course = Course.objects.create(
-            school=self.school, year=self.year, name="9Б"
-        )
-        self.term = Term.objects.create(
-            year=self.year, name="1 четверть",
-            start_date=YEAR_START, end_date=date(2026, 10, 25),
-        )
-        self.exception = DayException.objects.create(
-            year=self.year, start_date=date(2026, 11, 4), end_date=date(2026, 11, 4),
-            kind="holiday", title="Праздник",
-        )
-        self.slot = LessonSlot.objects.create(
-            year=self.year, teacher=self.user, course=self.course,
-            date=MONDAY, lesson_number=1,
-        )
-        self.node = PlanNode.objects.create(
-            teacher=self.user, course=self.course, position=0, title="Урок"
-        )
+        self.year = make_year(self.school)
+        self.course = make_course(self.school, self.year)
+        self.term = make_term(self.year)
+        self.exception = make_exception(self.year)
+        self.slot = make_slot(self.user, self.course)
+        self.node = make_node(self.user, self.course)
 
-        self.alien_year = SchoolYear.objects.create(
-            school=self.alien_school, name="2026/2027",
-            start_date=YEAR_START, end_date=YEAR_END,
-        )
-        self.alien_course = Course.objects.create(
-            school=self.alien_school, year=self.alien_year, name="9А"
-        )
+        self.alien_year = make_year(self.alien_school)
+        self.alien_course = make_course(self.alien_school, self.alien_year, "9А")
 
     def assertCode(self, response, status, code=None):
         self.assertEqual(response.status_code, status, response.content)
@@ -70,161 +56,90 @@ class AccessTestCase(SchoolTestMixin, APITestCase):
             self.assertEqual(response.json().get("code"), code, response.content)
 
 
-class SchoolObjectReadTests(AccessTestCase):
-    """Rule 1: a school object is readable by everybody in that school."""
+class MatrixTests(AccessTestCase):
+    """
+    The whole matrix, one call per model.
 
-    URLS = ("schoolyear-list", "term-list", "dayexception-list", "course-list")
+    A model added later needs five lines here — and if these lines are
+    missing, that is the only thing left to notice, which is what
+    `test_wiring.py` watches for.
+    """
 
-    def test_own_teacher_reads_everything(self):
-        for name in self.URLS:
-            with self.subTest(name):
-                response = self.client.get(reverse(name))
-                self.assertEqual(response.status_code, 200, response.content)
-                self.assertEqual(len(response.json()), 1)
-
-    def test_own_admin_reads_everything(self):
-        self.sign_in(self.admin)
-
-        for name in self.URLS:
-            with self.subTest(name):
-                self.assertEqual(self.client.get(reverse(name)).status_code, 200)
-
-    def test_another_school_sees_only_its_own(self):
-        """Not an error — their own list, with no trace of ours in it."""
-        self.sign_in(self.stranger)
-        ours = {
-            "schoolyear-list": self.year.pk,
-            "term-list": self.term.pk,
-            "dayexception-list": self.exception.pk,
-            "course-list": self.course.pk,
-        }
-
-        for name, hidden in ours.items():
-            with self.subTest(name):
-                response = self.client.get(reverse(name))
-                self.assertEqual(response.status_code, 200, response.content)
-                self.assertNotIn(hidden, [item["id"] for item in response.json()])
-
-    def test_another_schools_admin_cannot_open_our_object(self):
-        self.sign_in(self.alien_admin)
-
-        for name, obj in (
-            ("schoolyear-detail", self.year),
-            ("term-detail", self.term),
-            ("dayexception-detail", self.exception),
-            ("course-detail", self.course),
-        ):
-            with self.subTest(name):
-                url = reverse(name, args=[obj.pk])
-                self.assertEqual(self.client.get(url).status_code, 404)
-                self.assertEqual(self.client.delete(url).status_code, 404)
-
-    def test_user_without_a_school_is_told_why(self):
-        self.sign_in(self.outsider)
-
-        for name in self.URLS:
-            with self.subTest(name):
-                self.assertCode(self.client.get(reverse(name)), 403, "no_school")
-
-
-class SchoolObjectWriteTests(AccessTestCase):
-    """Rule 2: writing a school object needs the administrator role."""
-
-    def payloads(self):
-        return (
-            (
-                "schoolyear-list",
-                "schoolyear-detail",
-                self.year,
-                {"name": "2027/2028", "start_date": "2027-09-01",
-                 "end_date": "2028-05-31"},
-                {"name": "переименован"},
-            ),
-            (
-                "course-list",
-                "course-detail",
-                self.course,
-                {"name": "10А", "year": self.year.pk},
-                {"name": "9В"},
-            ),
-            (
-                "term-list",
-                "term-detail",
-                self.term,
-                {"year": self.year.pk, "name": "2 четверть",
-                 "start_date": "2026-11-05", "end_date": "2026-12-27"},
-                {"name": "2 четверть"},
-            ),
-            (
-                "dayexception-list",
-                "dayexception-detail",
-                self.exception,
-                {"year": self.year.pk, "start_date": "2026-12-01",
-                 "end_date": "2026-12-02", "kind": "vacation", "title": "Каникулы"},
-                {"title": "Другое название"},
-            ),
+    def test_school_year(self):
+        self.assertSchoolObjectRules(
+            list_url="schoolyear-list",
+            detail_url="schoolyear-detail",
+            obj=self.year,
+            create={
+                "name": "2027/2028",
+                "start_date": "2027-09-01",
+                "end_date": "2028-05-31",
+            },
+            patch={"name": "переименован"},
         )
 
-    def test_teacher_of_the_same_school_may_not_write(self):
-        for create_url, detail_url, obj, create, patch in self.payloads():
-            with self.subTest(create_url):
-                self.assertCode(
-                    self.client.post(reverse(create_url), create, format="json"),
-                    403,
-                    "school_admin_required",
-                )
-                self.assertCode(
-                    self.client.patch(
-                        reverse(detail_url, args=[obj.pk]), patch, format="json"
-                    ),
-                    403,
-                    "school_admin_required",
-                )
-                self.assertCode(
-                    self.client.delete(reverse(detail_url, args=[obj.pk])),
-                    403,
-                    "school_admin_required",
-                )
+    def test_course(self):
+        self.assertSchoolObjectRules(
+            list_url="course-list",
+            detail_url="course-detail",
+            obj=self.course,
+            create={"name": "10А", "year": self.year.pk},
+            patch={"name": "9В"},
+        )
 
-    def test_admin_of_the_same_school_may_write(self):
-        self.sign_in(self.admin)
+    def test_term(self):
+        self.assertSchoolObjectRules(
+            list_url="term-list",
+            detail_url="term-detail",
+            obj=self.term,
+            create={
+                "year": self.year.pk,
+                "name": "2 четверть",
+                "start_date": "2026-11-05",
+                "end_date": "2026-12-27",
+            },
+            patch={"name": "2 четверть"},
+        )
 
-        for create_url, detail_url, obj, create, patch in self.payloads():
-            with self.subTest(create_url):
-                self.assertEqual(
-                    self.client.post(reverse(create_url), create, format="json").status_code,
-                    201,
-                )
-                self.assertEqual(
-                    self.client.patch(
-                        reverse(detail_url, args=[obj.pk]), patch, format="json"
-                    ).status_code,
-                    200,
-                )
+    def test_calendar_exception(self):
+        self.assertSchoolObjectRules(
+            list_url="dayexception-list",
+            detail_url="dayexception-detail",
+            obj=self.exception,
+            create={
+                "year": self.year.pk,
+                "start_date": "2026-12-01",
+                "end_date": "2026-12-02",
+                "kind": "vacation",
+                "title": "Каникулы",
+            },
+            patch={"title": "Другое название"},
+        )
 
-    def test_admin_of_another_school_gets_a_404_not_a_403(self):
-        """The role is real, the object is not theirs — it must not exist."""
-        self.sign_in(self.alien_admin)
+    def test_lesson_slot(self):
+        self.assertPersonalObjectRules(
+            list_url="lessonslot-list",
+            detail_url="lessonslot-detail",
+            obj=self.slot,
+            patch={"is_cancelled": True},
+        )
 
-        for _, detail_url, obj, _, patch in self.payloads():
-            with self.subTest(detail_url):
-                self.assertEqual(
-                    self.client.patch(
-                        reverse(detail_url, args=[obj.pk]), patch, format="json"
-                    ).status_code,
-                    404,
-                )
+    def test_plan_node(self):
+        self.assertPersonalObjectRules(
+            list_url="lessonslot-list",
+            detail_url="plannode-detail",
+            obj=self.node,
+            patch={"title": "Правка"},
+        )
 
-    def test_user_without_a_school_may_not_write(self):
-        self.sign_in(self.outsider)
 
-        for create_url, _, _, create, _ in self.payloads():
-            with self.subTest(create_url):
-                self.assertCode(
-                    self.client.post(reverse(create_url), create, format="json"),
-                    403,
-                    "no_school",
-                )
+class ForeignKeyDoorTests(AccessTestCase):
+    """
+    The body of a request is a second door into the same room.
+
+    The viewset filters what you can reach by URL; these check that naming
+    somebody else's object in a foreign key does not get you there either.
+    """
 
     def test_a_year_of_another_school_cannot_be_named_in_the_body(self):
         """The body is a second door: the field queryset closes it too."""
@@ -259,18 +174,6 @@ class PersonalObjectTests(AccessTestCase):
         tree = self.client.get(reverse("plannode-list"), {"course": self.course.pk})
         self.assertEqual(tree.json()["nodes"], [])
 
-    def test_a_colleague_cannot_open_or_change_my_lesson(self):
-        self.sign_in(self.colleague)
-        url = reverse("lessonslot-detail", args=[self.slot.pk])
-
-        self.assertEqual(self.client.get(url).status_code, 404)
-        self.assertEqual(
-            self.client.patch(url, {"is_cancelled": True}, format="json").status_code,
-            404,
-        )
-        self.assertEqual(self.client.delete(url).status_code, 404)
-        self.assertTrue(LessonSlot.objects.filter(pk=self.slot.pk).exists())
-
     def test_an_administrator_has_no_power_over_my_lessons(self):
         """The role governs the school's shared objects, not people's work."""
         self.sign_in(self.admin)
@@ -279,24 +182,6 @@ class PersonalObjectTests(AccessTestCase):
         self.assertEqual(self.client.get(url).status_code, 404)
         self.assertEqual(self.client.delete(url).status_code, 404)
         self.assertTrue(LessonSlot.objects.filter(pk=self.slot.pk).exists())
-
-    def test_an_administrator_has_no_power_over_my_plan(self):
-        self.sign_in(self.admin)
-        url = reverse("plannode-detail", args=[self.node.pk])
-
-        self.assertEqual(self.client.get(url).status_code, 404)
-        self.assertEqual(
-            self.client.patch(url, {"title": "Правка"}, format="json").status_code, 404
-        )
-        self.assertTrue(PlanNode.objects.filter(pk=self.node.pk).exists())
-
-    def test_another_school_cannot_reach_my_lesson(self):
-        self.sign_in(self.stranger)
-
-        self.assertEqual(
-            self.client.get(reverse("lessonslot-detail", args=[self.slot.pk])).status_code,
-            404,
-        )
 
     def test_lessons_cannot_be_put_into_another_schools_course(self):
         response = self.client.post(
@@ -323,16 +208,6 @@ class PersonalObjectTests(AccessTestCase):
         )
 
         self.assertEqual(response.status_code, 404)
-
-    def test_user_without_a_school_reaches_nothing(self):
-        self.sign_in(self.outsider)
-
-        self.assertCode(self.client.get(reverse("lessonslot-list")), 403, "no_school")
-        self.assertCode(
-            self.client.get(reverse("plannode-list"), {"course": self.course.pk}),
-            403,
-            "no_school",
-        )
 
     def test_two_teachers_keep_separate_schedules_in_one_course(self):
         """The same number on the same day, two people — both are fine."""
@@ -569,10 +444,7 @@ class SuperuserSchoolTests(AccessTestCase):
 
     def setUp(self):
         super().setUp()
-        self.root = make_user(self.school, "root@example.com")
-        self.root.is_superuser = True
-        self.root.is_staff = True
-        self.root.save(update_fields=["is_superuser", "is_staff"])
+        self.root = self.make_root()
 
     def test_a_superuser_sees_every_school(self):
         self.sign_in(self.root)

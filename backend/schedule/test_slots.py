@@ -6,13 +6,16 @@ from calendars.models import DayException, SchoolYear
 from django.urls import reverse
 from django.utils import timezone
 from rest_framework.test import APITestCase
-from schools.testing import SchoolTestMixin
+from schools.testing import (
+    MONDAY,
+    YEAR_END,
+    YEAR_START,
+    SchoolTestMixin,
+    make_course,
+    make_year,
+)
 
 from .models import Course, LessonSlot
-
-YEAR_START = date(2026, 9, 1)
-YEAR_END = date(2027, 5, 31)
-MONDAY = date(2026, 9, 7)  # первый полный понедельник года
 
 
 def days(count):
@@ -23,25 +26,11 @@ class SlotTestCase(SchoolTestMixin, APITestCase):
     def setUp(self):
         super().setUp()
 
-        self.year = SchoolYear.objects.create(
-            school=self.school,
-            name="2026/2027",
-            start_date=YEAR_START,
-            end_date=YEAR_END,
-        )
-        self.course = Course.objects.create(
-            school=self.school, year=self.year, name="9Б"
-        )
+        self.year = make_year(self.school)
+        self.course = make_course(self.school, self.year)
 
-        self.alien_year = SchoolYear.objects.create(
-            school=self.alien_school,
-            name="2026/2027",
-            start_date=YEAR_START,
-            end_date=YEAR_END,
-        )
-        self.alien_class = Course.objects.create(
-            school=self.alien_school, year=self.alien_year, name="9А"
-        )
+        self.alien_year = make_year(self.alien_school)
+        self.alien_class = make_course(self.alien_school, self.alien_year, "9А")
 
     def make_slot(self, slot_date, number, course=None, teacher=None, **flags):
         course = course or self.course

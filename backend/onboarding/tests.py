@@ -8,7 +8,7 @@ from django.utils import timezone
 from plans.models import PlanNode
 from rest_framework.test import APITestCase
 from schedule.models import Course, LessonSlot
-from schools.testing import SchoolTestMixin
+from schools.testing import SchoolTestMixin, make_course, make_year
 
 from . import services
 
@@ -25,15 +25,10 @@ class OnboardingTestCase(SchoolTestMixin, APITestCase):
         return self.client.get(reverse("onboarding-status")).json()
 
     def make_year(self, school=None, name="2026/2027"):
-        return SchoolYear.objects.create(
-            school=school or self.school,
-            name=name,
-            start_date=date(2026, 9, 1),
-            end_date=date(2027, 5, 31),
-        )
+        return make_year(school or self.school, name)
 
     def make_class(self, year, name="9Б"):
-        return Course.objects.create(school=year.school, year=year, name=name)
+        return make_course(year.school, year, name)
 
 
 class StatusTests(OnboardingTestCase):

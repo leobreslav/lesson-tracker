@@ -4,8 +4,7 @@ from calendars.models import SchoolYear
 from django.core.exceptions import ValidationError
 from django.urls import reverse
 from rest_framework.test import APITestCase
-from schedule.models import Course
-from schools.testing import SchoolTestMixin
+from schools.testing import SchoolTestMixin, make_course, make_node
 
 from . import services
 from .models import PlanNode
@@ -24,23 +23,17 @@ class PlanTestCase(SchoolTestMixin, APITestCase):
         )
 
     def make_course(self, school, name):
-        year = SchoolYear.objects.create(
-            school=school,
-            name=f"2026/2027 {name}",
-            start_date=date(2026, 9, 1),
-            end_date=date(2027, 5, 31),
-        )
-        return Course.objects.create(school=school, year=year, name=name)
+        return make_course(school, name=name)
 
     def add(self, title, parent=None, position=0, is_section=False, course=None,
             teacher=None):
-        return PlanNode.objects.create(
-            teacher=teacher or self.user,
-            course=course or self.course,
+        return make_node(
+            teacher or self.user,
+            course or self.course,
+            title,
             parent=parent,
             position=position,
-            is_section=is_section,
-            title=title,
+            section=is_section,
         )
 
     def build_sample(self):

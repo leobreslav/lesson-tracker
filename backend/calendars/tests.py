@@ -3,14 +3,10 @@ from datetime import date
 
 from django.urls import reverse
 from rest_framework.test import APITestCase
-from schools.testing import SchoolTestMixin
+from schools.testing import YEAR_END, YEAR_START, SchoolTestMixin, make_year
 
 from . import services
 from .models import DayException, SchoolYear
-
-YEAR_START = date(2026, 9, 1)  # вторник
-YEAR_END = date(2027, 5, 31)
-
 
 class CalendarApiTestCase(SchoolTestMixin, APITestCase):
     """The calendar belongs to the school, so an admin is signed in here."""
@@ -20,12 +16,7 @@ class CalendarApiTestCase(SchoolTestMixin, APITestCase):
         # editing the calendar is an administrator's job; the access tests
         # sign in as somebody else on purpose
         self.sign_in(self.admin)
-        self.year = SchoolYear.objects.create(
-            school=self.school,
-            name="2026/2027",
-            start_date=YEAR_START,
-            end_date=YEAR_END,
-        )
+        self.year = make_year(self.school)
 
     def make_exception(self, start, end, kind, title="", year=None):
         return DayException.objects.create(

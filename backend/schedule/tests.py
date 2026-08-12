@@ -3,12 +3,9 @@ from datetime import date
 from calendars.models import SchoolYear
 from django.urls import reverse
 from rest_framework.test import APITestCase
-from schools.testing import SchoolTestMixin
+from schools.testing import YEAR_END, YEAR_START, SchoolTestMixin, make_year
 
 from .models import Course
-
-YEAR_START = date(2026, 9, 1)
-YEAR_END = date(2027, 5, 31)
 
 
 class CourseApiTests(SchoolTestMixin, APITestCase):
@@ -21,9 +18,7 @@ class CourseApiTests(SchoolTestMixin, APITestCase):
         self.alien_year = self.make_year(self.alien_school, "2026/2027")
 
     def make_year(self, school, name, start=YEAR_START, end=YEAR_END):
-        return SchoolYear.objects.create(
-            school=school, name=name, start_date=start, end_date=end
-        )
+        return make_year(school, name, start, end)
 
     def post_class(self, name, year=None, **extra):
         return self.client.post(
