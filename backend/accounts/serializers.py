@@ -58,10 +58,17 @@ class UserSerializer(serializers.ModelSerializer):
             "language",
             "school",
             "is_school_admin",
+            "is_superuser",
         )
         # the email comes from Google and identifies the login — not editable;
         # the role is granted by an administrator, not claimed in a profile
-        read_only_fields = ("id", "email", "school", "is_school_admin")
+        read_only_fields = (
+            "id",
+            "email",
+            "school",
+            "is_school_admin",
+            "is_superuser",
+        )
 
     def get_school(self, obj):
         if obj.school_id is None:

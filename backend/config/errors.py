@@ -24,6 +24,8 @@ class Codes:
 
     # school membership and roles
     NO_SCHOOL = "no_school"
+    SUPERUSER_REQUIRED = "superuser_required"
+    SCHOOL_IN_USE = "school_in_use"
     SCHOOL_ADMIN_REQUIRED = "school_admin_required"
     OTHER_SCHOOL = "other_school"
     COURSE_IN_USE = "course_in_use"

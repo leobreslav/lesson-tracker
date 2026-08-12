@@ -25,7 +25,9 @@
     "dayCount_one": "{{count}} day",
     "dayCount_other": "{{count}} days",
     "studyDayCount_one": "{{count}} study day",
-    "studyDayCount_other": "{{count}} study days"
+    "studyDayCount_other": "{{count}} study days",
+    "memberCount_one": "{{count}} member",
+    "memberCount_other": "{{count}} members"
   },
   "language": {
     "label": "Language"
@@ -41,7 +43,8 @@
     "logout": "Sign out",
     "needYear": "create a school year first",
     "needClass": "add a class first",
-    "school": "School"
+    "school": "School",
+    "schools": "Schools"
   },
   "auth": {
     "prompt": "Sign in to continue.",
@@ -169,7 +172,9 @@
     "course_name_taken": "A course with this name already exists in this year.",
     "invitation_exists": "«{{email}}» has already been invited to this school.",
     "already_member": "«{{email}}» already belongs to a school.",
-    "last_admin": "This is the only administrator of the school. Give the role to somebody else first."
+    "last_admin": "This is the only administrator of the school. Give the role to somebody else first.",
+    "superuser_required": "Only a superuser can manage the list of schools.",
+    "school_in_use": "«{{name}}» still has {{members}} members. Move them out first."
   },
   "classPicker": {
     "label": "Classes:",
@@ -423,7 +428,8 @@
   },
   "noSchool": {
     "title": "You do not belong to a school yet",
-    "hint": "The tracker works inside a school: the calendar and the courses come from it. Ask your school administrator to invite this address — they need it exactly as it is written below."
+    "hint": "The tracker works inside a school: the calendar and the courses come from it. Ask your school administrator to invite this address — they need it exactly as it is written below.",
+    "superuser": "You are a superuser: create a school and add yourself to it in the «Schools» section."
   },
   "school": {
     "title": "School: {{name}}",
@@ -450,6 +456,29 @@
       "pending": "waiting for the first sign-in",
       "accepted": "accepted",
       "withdraw": "Withdraw the invitation"
+    },
+    "profile": {
+      "title": "Name of the school",
+      "nameLabel": "School name"
+    }
+  },
+  "schools": {
+    "title": "Schools",
+    "hint": "Every school in this installation. Creating one and handing it its first administrator cannot be done from inside a school — that is what this section is for.",
+    "placeholder": "Name of the new school",
+    "create": "Create",
+    "rename": "Rename",
+    "newName": "New name of the school",
+    "delete": "Delete the school {{name}}",
+    "deleteConfirm": "Delete the school «{{name}}»?",
+    "mine": "yours",
+    "admins": "administrators",
+    "noAdmin": "no administrator yet",
+    "inviteAdmin": "Invite an administrator",
+    "invited": "«{{email}}» is invited to {{name}} as an administrator — they will get in through Google on that address.",
+    "empty": {
+      "title": "No schools yet",
+      "hint": "Create the first one and invite its administrator: everything else — the calendar, the courses, the teachers — they set up themselves."
     }
   }
 }

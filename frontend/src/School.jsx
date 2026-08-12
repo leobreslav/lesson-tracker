@@ -12,6 +12,7 @@ import {
   fetchMembers,
   fetchSchoolYears,
   renameCourse,
+  renameMySchool,
   setMemberRole,
 } from './api'
 
@@ -23,8 +24,10 @@ import {
  * it is a whole screen of its own — this page links to it instead of copying
  * it.
  */
-export default function School({ user, onLoggedOut }) {
+export default function School({ user, onLoggedOut, onSchoolChange }) {
   const { t } = useTranslation()
+  const [schoolName, setSchoolName] = useState(user?.school?.name ?? '')
+  const [renaming, setRenaming] = useState(false)
   const [years, setYears] = useState(null)
   const [yearId, setYearId] = useState(null)
   const [courses, setCourses] = useState(null)
@@ -157,6 +160,43 @@ export default function School({ user, onLoggedOut }) {
           {error}
         </p>
       )}
+
+      <section className="panel">
+        <h3>{t('school.profile.title')}</h3>
+        <form
+          className="add-form"
+          onSubmit={(event) => {
+            event.preventDefault()
+            const value = schoolName.trim()
+            if (!value || value === user?.school?.name) return
+            setRenaming(true)
+            renameMySchool(value)
+              .then((updated) => {
+                // the name lives in the bar's copy of the profile too
+                onSchoolChange?.(updated)
+                setError(null)
+              })
+              .catch(handleError)
+              .finally(() => setRenaming(false))
+          }}
+        >
+          <input
+            value={schoolName}
+            maxLength={200}
+            aria-label={t('school.profile.nameLabel')}
+            disabled={renaming}
+            onChange={(event) => setSchoolName(event.target.value)}
+          />
+          <button
+            type="submit"
+            disabled={
+              renaming || !schoolName.trim() || schoolName.trim() === user?.school?.name
+            }
+          >
+            {renaming ? t('common.saving') : t('common.save')}
+          </button>
+        </form>
+      </section>
 
       <section className="panel">
         <h3>{t('school.year.title')}</h3>

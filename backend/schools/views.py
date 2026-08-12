@@ -1,23 +1,109 @@
-from config.access import IsSchoolAdmin, IsSchoolAdminForWrite, IsSchoolMember
+from config.access import (
+    IsSchoolAdmin,
+    IsSchoolAdminForWrite,
+    IsSchoolMember,
+    IsSuperuser,
+)
+from config.errors import Codes, api_error
 from django.contrib.auth import get_user_model
+from django.db.models import ProtectedError
 from rest_framework import mixins, viewsets
-from rest_framework.generics import RetrieveAPIView
+from rest_framework.decorators import action
+from rest_framework.generics import RetrieveUpdateAPIView
 from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
 
-from .models import Invitation
-from .serializers import InvitationSerializer, MemberSerializer, SchoolSerializer
+from .models import Invitation, School
+from .serializers import (
+    InvitationSerializer,
+    MemberSerializer,
+    SchoolInviteSerializer,
+    SchoolSerializer,
+)
 
 User = get_user_model()
 
 
-class MySchoolView(RetrieveAPIView):
-    """The school of the requester. Read-only: renaming is an admin job."""
+class MySchoolView(RetrieveUpdateAPIView):
+    """
+    The school of the requester: everybody reads it, its admins rename it.
+
+    A school object like any other, so it goes through the same permission
+    as the calendar and the courses.
+    """
 
     serializer_class = SchoolSerializer
-    permission_classes = [IsAuthenticated, IsSchoolMember]
+    permission_classes = [IsAuthenticated, IsSchoolMember, IsSchoolAdminForWrite]
+    http_method_names = ["get", "patch", "head", "options"]
 
     def get_object(self):
         return self.request.user.school
+
+
+class SchoolViewSet(viewsets.ModelViewSet):
+    """
+    Every school, for a superuser.
+
+    This is the one section where `is_superuser` means something inside the
+    app. Creating a school cannot come from within a school, and the first
+    administrator cannot invite themselves, so somebody outside the schools
+    has to do both — otherwise every new school would need a trip to
+    /admin/.
+
+    A superuser is still an ordinary member of their own school everywhere
+    else: this viewset hands out schools, not power over the work inside
+    them.
+    """
+
+    serializer_class = SchoolSerializer
+    permission_classes = [IsAuthenticated, IsSuperuser]
+    queryset = School.objects.prefetch_related("members").order_by("name")
+
+    def perform_destroy(self, instance):
+        """
+        A school with people in it stays. PROTECT on User.school says so.
+
+        Deleting it would strand their calendar, courses and lessons, so the
+        answer names how many members are in the way instead.
+        """
+        try:
+            instance.delete()
+        except ProtectedError:
+            api_error(
+                Codes.SCHOOL_IN_USE,
+                f"«{instance.name}» still has {instance.members.count()} members. "
+                "Move them out first.",
+                name=instance.name,
+                members=instance.members.count(),
+            )
+
+    @action(detail=True, methods=["post"])
+    def invite(self, request, pk=None):
+        """
+        Invite the first administrator of a school.
+
+        The same invitation a school admin would write, only from outside:
+        the person signs in through Google on that address and arrives with
+        the role already granted.
+        """
+        school = self.get_object()
+        form = SchoolInviteSerializer(data=request.data)
+        form.is_valid(raise_exception=True)
+        email = form.validated_data["email"]
+
+        invitation, created = Invitation.objects.get_or_create(
+            school=school,
+            email=email,
+            defaults={"is_school_admin": True, "created_by": request.user},
+        )
+        if not created and not invitation.is_school_admin:
+            # the address was already invited as a plain teacher — promote it
+            invitation.is_school_admin = True
+            invitation.save(update_fields=["is_school_admin"])
+
+        return Response(
+            InvitationSerializer(invitation).data, status=201 if created else 200
+        )
 
 
 class MemberViewSet(

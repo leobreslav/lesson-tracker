@@ -13,6 +13,7 @@ import NotFound from './NotFound'
 import Plan from './Plan'
 import Profile from './Profile'
 import School from './School'
+import Schools from './Schools'
 import { clearToken, fetchMe, fetchOnboarding, getToken, updateMe } from './api'
 import i18n, { normalizeLanguage } from './i18n'
 
@@ -73,8 +74,10 @@ export default function App() {
   if (!token) return <Login onLoggedIn={handleLoggedIn} />
 
   // signed in but invited by nobody: every section would answer 403, so one
-  // honest screen replaces five identical refusals
-  if (user && !user.school) {
+  // honest screen replaces five identical refusals. A superuser is the
+  // exception — they are the one who creates the schools, and locking them
+  // out of that screen is how an installation ends up with no way in.
+  if (user && !user.school && !user.is_superuser) {
     return <NoSchool user={user} onLoggedOut={handleLoggedOut} />
   }
 
@@ -107,7 +110,15 @@ export default function App() {
           <Route path="/layout" element={guarded(Layout)} />
           <Route path="/plan" element={guarded(Plan)} />
           <Route path="/classes" element={guarded(Classes, { user })} />
-          <Route path="/school" element={guarded(School, { user })} />
+          <Route
+            path="/school"
+            element={guarded(School, {
+              user,
+              onSchoolChange: (school) =>
+                setUser((prev) => (prev ? { ...prev, school } : prev)),
+            })}
+          />
+          <Route path="/schools" element={guarded(Schools, { user })} />
           <Route path="/year" element={guarded(Calendar, { user })} />
           <Route path="/profile" element={guarded(Profile, { onSaved: setUser })} />
           <Route path="*" element={<NotFound />} />

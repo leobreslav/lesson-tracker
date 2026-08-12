@@ -78,6 +78,25 @@ class IsSchoolAdmin(BasePermission):
         return True
 
 
+class IsSuperuser(BasePermission):
+    """
+    The one place where being a Django superuser means something in the app.
+
+    Everywhere else a superuser is an ordinary member of their school — the
+    role that governs a school lives on the school, not on the account. But
+    somebody has to create the schools themselves, and that cannot come from
+    inside a school that does not exist yet.
+    """
+
+    def has_permission(self, request, view):
+        if not request.user.is_superuser:
+            api_denied(
+                Codes.SUPERUSER_REQUIRED,
+                "Only a superuser can manage the list of schools.",
+            )
+        return True
+
+
 class SchoolScopedViewSet(viewsets.ModelViewSet):
     """
     A school object: everybody in the school reads it, admins change it.

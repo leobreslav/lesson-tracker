@@ -13,6 +13,8 @@ const SECTIONS = [
   // the school section exists only for its administrators; a teacher has
   // nothing to do there and the server would refuse anyway
   { to: '/school', key: 'school', needs: null, adminOnly: true },
+  // the only place a Django superuser is visible in the ordinary interface
+  { to: '/schools', key: 'schools', needs: null, superuserOnly: true },
 ]
 
 /**
@@ -105,7 +107,9 @@ export default function NavBar({ user, status, onLoggedOut, onLanguageChange }) 
           className={menuOpen ? 'topbar-nav open' : 'topbar-nav'}
         >
           {SECTIONS.filter(
-            (section) => !section.adminOnly || user?.is_school_admin,
+            (section) =>
+              (!section.adminOnly || user?.is_school_admin) &&
+              (!section.superuserOnly || user?.is_superuser),
           ).map((section) => {
             const reasonKey = reasonKeyFor(section.needs, status)
             const reason = reasonKey ? t(reasonKey) : null

@@ -87,6 +87,25 @@ export default function Dashboard({ user, status, onStatusChange, onLoggedOut })
   }
 
   const name = [user.first_name, user.last_name].filter(Boolean).join(' ')
+
+  // only a superuser gets this far without a school: everybody else is sent
+  // to the NoSchool screen before the router runs
+  if (!status.school) {
+    return (
+      <main className="page narrow">
+        <header className="page-header">
+          <h1>{t('noSchool.title')}</h1>
+        </header>
+        <section className="panel">
+          <p className="hint">{t('noSchool.superuser')}</p>
+          <p>
+            <Link to="/schools">{t('nav.schools')}</Link>
+          </p>
+        </section>
+      </main>
+    )
+  }
+
   const steps = buildSteps(status, t)
   const nextIndex = steps.findIndex((step) => !step.done && !step.blocked)
   const everythingDone = steps.every((step) => step.done)

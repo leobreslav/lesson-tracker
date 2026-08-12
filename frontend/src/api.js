@@ -148,6 +148,26 @@ export const deleteCourse = (id) =>
 
 export const fetchSchool = () => request('/api/school/')
 
+export const renameMySchool = (name) =>
+  request('/api/school/', { method: 'PATCH', body: { name } })
+
+// --- every school at once: superuser only ---
+
+export const fetchSchools = () => request('/api/schools/')
+
+export const createSchool = (name) =>
+  request('/api/schools/', { method: 'POST', body: { name } })
+
+export const renameSchool = (id, name) =>
+  request(`/api/schools/${id}/`, { method: 'PATCH', body: { name } })
+
+export const deleteSchool = (id) =>
+  request(`/api/schools/${id}/`, { method: 'DELETE' })
+
+/** Invite the first administrator of a school that has none yet. */
+export const inviteSchoolAdmin = (id, email) =>
+  request(`/api/schools/${id}/invite/`, { method: 'POST', body: { email } })
+
 export const fetchMembers = () => request('/api/school/members/')
 
 export const setMemberRole = (id, isAdmin) =>
