@@ -184,6 +184,39 @@ export const createInvitation = (fields) =>
 export const deleteInvitation = (id) =>
   request(`/api/school/invitations/${id}/`, { method: 'DELETE' })
 
+// --- the plan library: templates shared inside the school ---
+
+export const fetchTemplates = (params = {}) =>
+  request(`/api/library/templates/?${new URLSearchParams(params)}`)
+
+export const fetchTemplate = (id) => request(`/api/library/templates/${id}/`)
+
+export const updateTemplate = (id, fields) =>
+  request(`/api/library/templates/${id}/`, { method: 'PATCH', body: fields })
+
+export const deleteTemplate = (id) =>
+  request(`/api/library/templates/${id}/`, { method: 'DELETE' })
+
+/** Put the plan of a course on the shelf. Starts as the author's draft. */
+export const publishPlan = (fields) =>
+  request('/api/library/templates/from-plan/', { method: 'POST', body: fields })
+
+/** Refresh a shelf entry from a course plan. Nobody who copied is affected. */
+export const refreshTemplate = (id, courseId) =>
+  request(`/api/library/templates/${id}/update-from-plan/`, {
+    method: 'POST',
+    body: { course: courseId },
+  })
+
+/** Take a template into a course plan — a copy, not a link. */
+export const importTemplate = (payload) =>
+  request('/api/plan/import-from-template/', { method: 'POST', body: payload })
+
+export const fetchSubjects = () => request('/api/school/subjects/')
+
+export const createSubject = (name) =>
+  request('/api/school/subjects/', { method: 'POST', body: { name } })
+
 // --- the lesson plan ---
 
 export const fetchPlan = (classId) =>

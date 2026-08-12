@@ -7,7 +7,7 @@ from rest_framework import serializers
 from rest_framework.validators import UniqueTogetherValidator
 
 from . import services
-from .models import Course, LessonSlot, MasterSlot
+from .models import Course, LessonSlot, MasterSlot, Subject
 
 User = get_user_model()
 
@@ -33,13 +33,41 @@ def school_courses(serializer):
     return Course.objects.filter(school_id=user.school_id)
 
 
+class SubjectSerializer(serializers.ModelSerializer):
+    """A subject of the school. Administrators keep the list."""
+
+    school = serializers.HiddenField(default=CurrentSchoolDefault())
+    courses = serializers.IntegerField(source="courses.count", read_only=True)
+
+    class Meta:
+        model = Subject
+        fields = ("id", "school", "name", "courses")
+        validators = [
+            UniqueTogetherValidator(
+                queryset=Subject.objects.all(),
+                fields=("school", "name"),
+                message="This school already has a subject with that name.",
+            ),
+        ]
+
+
 class CourseSerializer(serializers.ModelSerializer):
     # the school comes from the requester, never from the body
     school = serializers.HiddenField(default=CurrentSchoolDefault())
+    subject_name = serializers.CharField(source="subject.name", read_only=True)
 
     class Meta:
         model = Course
-        fields = ("id", "school", "year", "name", "created_at")
+        fields = (
+            "id",
+            "school",
+            "year",
+            "subject",
+            "subject_name",
+            "grade",
+            "name",
+            "created_at",
+        )
         read_only_fields = ("created_at",)
         validators = [
             # school is not in the request body, so DRF cannot check
@@ -55,6 +83,9 @@ class CourseSerializer(serializers.ModelSerializer):
         fields = super().get_fields()
         # a course can only live in a year of its own school
         fields["year"].queryset = school_years(self)
+        fields["subject"].queryset = Subject.objects.filter(
+            school_id=getattr(self.context.get("request").user, "school_id", None)
+        )
         return fields
 
 

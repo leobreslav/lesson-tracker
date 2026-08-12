@@ -6,6 +6,7 @@ import Calendar from './Calendar'
 import Classes from './Classes'
 import Dashboard from './Dashboard'
 import Layout from './Layout'
+import Library from './Library'
 import Login from './Login'
 import NavBar from './NavBar'
 import NoSchool from './NoSchool'
@@ -110,6 +111,7 @@ export default function App() {
           <Route path="/schedule" element={guarded(Agenda)} />
           <Route path="/layout" element={guarded(Layout)} />
           <Route path="/plan" element={guarded(Plan)} />
+          <Route path="/library" element={guarded(Library)} />
           <Route path="/classes" element={guarded(Classes, { user })} />
           <Route
             path="/school"

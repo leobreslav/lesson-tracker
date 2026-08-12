@@ -44,7 +44,8 @@
     "needYear": "create a school year first",
     "needClass": "add a class first",
     "school": "School",
-    "schools": "Schools"
+    "schools": "Schools",
+    "library": "Library"
   },
   "auth": {
     "prompt": "Sign in to continue.",
@@ -175,7 +176,13 @@
     "last_admin": "This is the only administrator of the school. Give the role to somebody else first.",
     "superuser_required": "Only a superuser can manage the list of schools.",
     "school_in_use": "«{{name}}» still has {{members}} members. Move them out first.",
-    "year_required": "Pick a school year first."
+    "year_required": "Pick a school year first.",
+    "not_template_author": "Only the author can change this plan. Take a copy and edit that.",
+    "subject_required": "Pick a subject: the library is searched by subject and grade.",
+    "grade_required": "Pick a grade: the library is searched by subject and grade.",
+    "plan_empty": "There is nothing to publish: the plan of this course is empty.",
+    "subject_name_taken": "This school already has a subject with that name.",
+    "subject_in_use": "«{{name}}» is used by {{courses}} courses."
   },
   "classPicker": {
     "label": "Classes:",
@@ -260,7 +267,13 @@
       "hint": "It holds {{count}}. They can be lifted to the top level — they will take the section's place and keep their order.",
       "keep": "Delete, keep the lessons",
       "withChildren": "Delete with the lessons"
-    }
+    },
+    "importLibrary": "Import from the library",
+    "publish": "Publish to the library",
+    "publishHint": "The plan of this course goes on the shelf as your draft — nobody else sees it until you publish it.",
+    "refreshTemplate": "Update the library entry",
+    "refreshHint": "«{{title}}» will be overwritten with the current plan of this course. Colleagues who already took a copy keep theirs.",
+    "published": "«{{title}}» is on the shelf."
   },
   "calendar": {
     "title": "School year",
@@ -444,7 +457,11 @@
       "hint": "A course is a group and a subject together, «9B Algebra». Teachers pick from this list; their lessons and plans inside a course stay their own.",
       "placeholder": "Course name, for example 9B Algebra",
       "needYear": "Create a school year first",
-      "deleteConfirm": "Delete the course «{{name}}»?"
+      "deleteConfirm": "Delete the course «{{name}}»?",
+      "pickSubject": "subject…",
+      "gradePlaceholder": "grade",
+      "newSubject": "New subject name",
+      "addSubject": "Add a subject"
     },
     "people": {
       "title": "Teachers",
@@ -513,5 +530,28 @@
     "submit": "Load",
     "done": "{{created}} added, {{skipped}} skipped.",
     "nothing": "The school timetable has nothing for you in this period."
+  },
+  "library": {
+    "title": "Plan library",
+    "hint": "Plans colleagues have put on the shelf. Taking one gives you a copy: later changes to the template will not follow it.",
+    "subject": "Subject:",
+    "grade": "Grade:",
+    "anySubject": "any subject",
+    "anyGrade": "any grade",
+    "onlyMine": "only mine",
+    "draft": "draft",
+    "line": "{{subject}}, grade {{grade}} · {{author}} · {{lessons}}",
+    "use": "Use in a course",
+    "useTitle": "Use «{{title}}»",
+    "once": "The plan is copied into the course. Later changes to the template will not affect your copy.",
+    "preview": "{{lessons}} in {{blocks}} blocks will be added",
+    "imported": "Added {{lessons}} in {{blocks}} blocks.",
+    "publish": "Publish",
+    "unpublish": "Return to drafts",
+    "deleteConfirm": "Delete «{{title}}» from the library?",
+    "empty": {
+      "title": "The library is empty",
+      "hint": "Nothing has been put on the shelf yet. Publish one of your plans, or write a new one."
+    }
   }
 }

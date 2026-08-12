@@ -5,12 +5,14 @@ import EmptyState from './EmptyState'
 import {
   createCourse,
   createInvitation,
+  createSubject,
   deleteCourse,
   deleteInvitation,
   fetchCourses,
   fetchInvitations,
   fetchMembers,
   fetchSchoolYears,
+  fetchSubjects,
   renameCourse,
   renameMySchool,
   setMemberRole,
@@ -34,6 +36,12 @@ export default function School({ user, onLoggedOut, onSchoolChange }) {
   const [members, setMembers] = useState([])
   const [invitations, setInvitations] = useState([])
   const [name, setName] = useState('')
+  // a course now carries a subject and a grade: that is what the library
+  // searches by, and the name keeps only the letter («9Б»)
+  const [subjects, setSubjects] = useState([])
+  const [subjectId, setSubjectId] = useState('')
+  const [grade, setGrade] = useState('')
+  const [newSubject, setNewSubject] = useState('')
   const [email, setEmail] = useState('')
   const [inviteAdmin, setInviteAdmin] = useState(false)
   const [editing, setEditing] = useState(null) // {id, value}
@@ -62,6 +70,12 @@ export default function School({ user, onLoggedOut, onSchoolChange }) {
       .then((list) => {
         setYears(list)
         setYearId((current) => current ?? list[0]?.id ?? null)
+      })
+      .catch(handleError)
+    fetchSubjects()
+      .then((list) => {
+        setSubjects(list)
+        setSubjectId((current) => current || list[0]?.id || '')
       })
       .catch(handleError)
     loadPeople()
@@ -94,11 +108,29 @@ export default function School({ user, onLoggedOut, onSchoolChange }) {
   const addCourse = (event) => {
     event.preventDefault()
     const value = name.trim()
+    if (!value || !subjectId || !grade || busy) return
+
+    run(
+      () =>
+        createCourse({
+          year: yearId,
+          name: value,
+          subject: subjectId,
+          grade: Number(grade),
+        }),
+      reloadCourses,
+    ).then(() => setName(''))
+  }
+
+  /** A subject that is not in the list yet: added without leaving the form. */
+  const addSubject = () => {
+    const value = newSubject.trim()
     if (!value || busy) return
 
-    run(() => createCourse({ year: yearId, name: value }), reloadCourses).then(() =>
-      setName(''),
-    )
+    run(
+      () => createSubject(value).then((created) => setSubjectId(created.id)),
+      () => fetchSubjects().then(setSubjects),
+    ).then(() => setNewSubject(''))
   }
 
   const commitRename = () => {
@@ -246,10 +278,52 @@ export default function School({ user, onLoggedOut, onSchoolChange }) {
                 disabled={busy}
                 onChange={(event) => setName(event.target.value)}
               />
-              <button type="submit" disabled={busy || !name.trim()}>
+              <select
+                value={subjectId}
+                aria-label={t('library.subject')}
+                disabled={busy}
+                onChange={(event) => setSubjectId(Number(event.target.value))}
+              >
+                <option value="">{t('school.courses.pickSubject')}</option>
+                {subjects.map((subject) => (
+                  <option key={subject.id} value={subject.id}>
+                    {subject.name}
+                  </option>
+                ))}
+              </select>
+              <input
+                type="number"
+                min={1}
+                max={11}
+                value={grade}
+                placeholder={t('school.courses.gradePlaceholder')}
+                aria-label={t('library.grade')}
+                disabled={busy}
+                onChange={(event) => setGrade(event.target.value)}
+              />
+              <button type="submit" disabled={busy || !name.trim() || !subjectId || !grade}>
                 {t('common.add')}
               </button>
             </form>
+
+            <div className="add-form">
+              <input
+                value={newSubject}
+                maxLength={100}
+                placeholder={t('school.courses.newSubject')}
+                aria-label={t('school.courses.newSubject')}
+                disabled={busy}
+                onChange={(event) => setNewSubject(event.target.value)}
+              />
+              <button
+                type="button"
+                className="secondary"
+                disabled={busy || !newSubject.trim()}
+                onClick={addSubject}
+              >
+                {t('school.courses.addSubject')}
+              </button>
+            </div>
 
             {courses === null ? (
               <p>{t('common.loading')}</p>
@@ -273,15 +347,25 @@ export default function School({ user, onLoggedOut, onSchoolChange }) {
                         onBlur={commitRename}
                       />
                     ) : (
-                      <button
-                        type="button"
-                        className="link name"
-                        title={t('classes.rename')}
-                        disabled={busy}
-                        onClick={() => setEditing({ id: course.id, value: course.name })}
-                      >
-                        {course.name}
-                      </button>
+                      <>
+                        <button
+                          type="button"
+                          className="link name"
+                          title={t('classes.rename')}
+                          disabled={busy}
+                          onClick={() =>
+                            setEditing({ id: course.id, value: course.name })
+                          }
+                        >
+                          {course.name}
+                        </button>
+                        {course.subject_name && (
+                          <span className="hint">
+                            {course.subject_name}
+                            {course.grade ? `, ${course.grade}` : ''}
+                          </span>
+                        )}
+                      </>
                     )}
                     <button
                       type="button"

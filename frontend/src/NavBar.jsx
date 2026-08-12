@@ -8,6 +8,7 @@ const SECTIONS = [
   { to: '/schedule', key: 'schedule', needs: 'classes' },
   { to: '/layout', key: 'layout', needs: 'classes' },
   { to: '/plan', key: 'plan', needs: 'classes' },
+  { to: '/library', key: 'library', needs: null },
   { to: '/classes', key: 'classes', needs: 'year' },
   { to: '/year', key: 'year', needs: null },
   // the school section exists only for its administrators; a teacher has

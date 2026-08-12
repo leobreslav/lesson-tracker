@@ -8,6 +8,45 @@ from . import services
 # уроков в дне: больше десятого номера в школьном расписании не бывает
 MAX_LESSON_NUMBER = 10
 
+# школьные параллели: ниже пятой и выше одиннадцатой предметники не ведут
+MIN_GRADE = 1
+MAX_GRADE = 11
+
+
+class Subject(models.Model):
+    """
+    A subject of the school: «Алгебра», «Геометрия».
+
+    Until now the subject lived inside the course name and could not be
+    searched on. The library needs it as a field — a plan is looked for by
+    subject and grade, not by the label «9Б Алгебра» somebody typed.
+
+    The list belongs to the school: two schools name their subjects
+    differently and neither should see the other's spelling.
+    """
+
+    school = models.ForeignKey(
+        "schools.School",
+        related_name="subjects",
+        on_delete=models.CASCADE,
+        verbose_name="school",
+    )
+    name = models.CharField("name", max_length=100)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = "subject"
+        verbose_name_plural = "subjects"
+        ordering = ("name",)
+        constraints = [
+            models.UniqueConstraint(
+                fields=("school", "name"), name="unique_subject_name_per_school"
+            ),
+        ]
+
+    def __str__(self):
+        return self.name
+
 
 class Course(models.Model):
     """
@@ -35,6 +74,22 @@ class Course(models.Model):
         related_name="courses",
         on_delete=models.CASCADE,
         verbose_name="school year",
+    )
+    # the subject and the grade are what the library searches on; the name
+    # keeps the letter and any local wording («9Б», «9Б углублённая»)
+    subject = models.ForeignKey(
+        Subject,
+        related_name="courses",
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        verbose_name="subject",
+    )
+    grade = models.PositiveSmallIntegerField(
+        "grade",
+        null=True,
+        blank=True,
+        validators=[MinValueValidator(MIN_GRADE), MaxValueValidator(MAX_GRADE)],
     )
     name = models.CharField("name", max_length=20)
     created_at = models.DateTimeField(auto_now_add=True)

@@ -151,6 +151,47 @@ def make_node(teacher, course, title="Урок", *, parent=None, position=0, sec
     )
 
 
+def make_subject(school, name="Алгебра"):
+    """
+    A subject of the school. Reused rather than duplicated.
+
+    get_or_create because a subject is reference data: a test that asks for
+    «Алгебра» twice means the same one, and the model's unique constraint
+    agrees.
+    """
+    from schedule.models import Subject
+
+    return Subject.objects.get_or_create(school=school, name=name)[0]
+
+
+def make_template(school, author, *, subject=None, grade=9, title="Шаблон",
+                  published=True, rows=()):
+    """
+    A shelf entry. `rows` are (is_header, title) pairs in display order.
+
+    Published by default: a draft is the special case worth spelling out at
+    the call site, since «who can see it» is what most of these tests are
+    about.
+    """
+    from library.models import PlanTemplate, PlanTemplateRow
+
+    template = PlanTemplate.objects.create(
+        school=school,
+        subject=subject or make_subject(school),
+        grade=grade,
+        title=title,
+        author=author,
+        is_published=published,
+    )
+    PlanTemplateRow.objects.bulk_create(
+        PlanTemplateRow(
+            template=template, position=position, is_header=header, title=name
+        )
+        for position, (header, name) in enumerate(rows)
+    )
+    return template
+
+
 class SchoolTestMixin:
     """
     One school, one teacher signed in, and the cast for the access tests.

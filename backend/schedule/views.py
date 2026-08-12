@@ -16,9 +16,10 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.views import APIView
 
 from . import importing, services
-from .models import Course, LessonSlot, MasterSlot
+from .models import Course, LessonSlot, MasterSlot, Subject
 from .serializers import (
     BulkDeleteSerializer,
+    SubjectSerializer,
     CopySerializer,
     CourseSerializer,
     ImportFromSchoolSerializer,
@@ -35,6 +36,30 @@ def read_date(value):
     except ValueError:
         # parse_date raises on «2026-13-45»: the shape fits, the date does not
         return None
+
+
+class SubjectViewSet(SchoolScopedViewSet):
+    """
+    The school's list of subjects: «Алгебра», «Геометрия».
+
+    Everybody reads it — a teacher searching the library needs the names —
+    and administrators keep it, like the courses next to it.
+    """
+
+    serializer_class = SubjectSerializer
+    queryset = Subject.objects.all()
+
+    def perform_destroy(self, instance):
+        """A subject a course still points at stays: PROTECT says so."""
+        try:
+            instance.delete()
+        except ProtectedError:
+            api_error(
+                Codes.SUBJECT_IN_USE,
+                f"«{instance.name}» is used by {instance.courses.count()} courses.",
+                name=instance.name,
+                courses=instance.courses.count(),
+            )
 
 
 class CourseViewSet(SchoolScopedViewSet):

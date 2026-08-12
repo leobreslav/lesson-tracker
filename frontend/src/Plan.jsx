@@ -29,6 +29,11 @@ import {
 } from './planLogic'
 import {
   createPlanNode,
+  fetchSubjects,
+  fetchTemplates,
+  importTemplate,
+  publishPlan,
+  refreshTemplate,
   deletePlanNode,
   downloadPlanCsv,
   fetchCourses,
@@ -57,6 +62,11 @@ export default function Plan({ onLoggedOut }) {
   const [adding, setAdding] = useState(null) // {parent, after, is_section, title}
   const [deleting, setDeleting] = useState(null) // the section being removed
   const [importing, setImporting] = useState(false)
+  // the library, only as far as this page needs it: what can be taken, and
+  // whether this plan is already on the shelf under my name
+  const [dialog, setDialog] = useState(null)
+  const [templates, setTemplates] = useState([])
+  const [subjects, setSubjects] = useState([])
   const [notice, setNotice] = useState(null)
   const [collapsed, setCollapsed] = useState(() => new Set())
 
@@ -243,6 +253,39 @@ export default function Plan({ onLoggedOut }) {
     () => new Map(years.map((year) => [year.id, year])),
     [years],
   )
+
+  /**
+   * My own shelf entries and the subjects, for the two library buttons.
+   *
+   * Loaded once: the list is short and the page needs it only to decide
+   * between «publish» and «refresh», and to fill the import dialog.
+   */
+  useEffect(() => {
+    Promise.all([fetchTemplates(), fetchSubjects()])
+      .then(([shelf, list]) => {
+        setTemplates(shelf)
+        setSubjects(list)
+      })
+      .catch(() => {
+        // the library is an extra here: a failure must not break the plan
+      })
+  }, [])
+
+  const course = useMemo(
+    () => classes?.find((item) => item.id === classId) ?? null,
+    [classes, classId],
+  )
+
+  /** A template of mine matching this course's subject and grade, if any. */
+  const mineOnShelf = useMemo(() => {
+    if (!course?.subject) return null
+    return (
+      templates.find(
+        (item) =>
+          item.mine && item.subject === course.subject && item.grade === course.grade,
+      ) ?? null
+    )
+  }, [templates, course])
 
   const classLabel = (item) => {
     const year = yearById.get(item.year)
@@ -747,6 +790,22 @@ export default function Plan({ onLoggedOut }) {
                   type="button"
                   className="secondary"
                   disabled={busy}
+                  onClick={() => setDialog({ type: 'library' })}
+                >
+                  {t('plan.importLibrary')}
+                </button>
+                <button
+                  type="button"
+                  className="secondary"
+                  disabled={busy}
+                  onClick={() => setDialog({ type: 'publish' })}
+                >
+                  {t(mineOnShelf ? 'plan.refreshTemplate' : 'plan.publish')}
+                </button>
+                <button
+                  type="button"
+                  className="secondary"
+                  disabled={busy}
                   onClick={handleExport}
                 >
                   {t('plan.exportCsv')}
@@ -762,6 +821,49 @@ export default function Plan({ onLoggedOut }) {
           busy={busy}
           onSubmit={handleImport}
           onClose={() => setImporting(false)}
+        />
+      )}
+
+      {dialog?.type === 'library' && (
+        <UseLibraryDialog
+          templates={templates.filter(
+            (item) => !course?.subject || item.subject === course.subject,
+          )}
+          busy={busy}
+          onSubmit={({ template, mode }) =>
+            run(() => importTemplate({ course: classId, template, mode })).then(() =>
+              setDialog(null),
+            )
+          }
+          onClose={() => setDialog(null)}
+        />
+      )}
+
+      {dialog?.type === 'publish' && (
+        <PublishDialog
+          course={course}
+          subjects={subjects}
+          existing={mineOnShelf}
+          busy={busy}
+          onSubmit={(fields) => {
+            const request = mineOnShelf
+              ? refreshTemplate(mineOnShelf.id, classId)
+              : publishPlan({ course: classId, ...fields })
+
+            setBusy(true)
+            request
+              .then((template) => {
+                setTemplates((current) => [
+                  ...current.filter((item) => item.id !== template.id),
+                  template,
+                ])
+                setNotice(t('plan.published', { title: template.title }))
+                setDialog(null)
+              })
+              .catch(handleError)
+              .finally(() => setBusy(false))
+          }}
+          onClose={() => setDialog(null)}
         />
       )}
 
@@ -792,5 +894,186 @@ export default function Plan({ onLoggedOut }) {
         </Modal>
       )}
     </main>
+  )
+}
+
+
+/** Taking a plan off the shelf into this course. */
+function UseLibraryDialog({ templates, busy, onSubmit, onClose }) {
+  const { t } = useTranslation()
+  const [template, setTemplate] = useState(templates[0]?.id ?? null)
+  const [mode, setMode] = useState('replace')
+
+  return (
+    <Modal onClose={onClose}>
+      <form
+        onSubmit={(event) => {
+          event.preventDefault()
+          if (template) onSubmit({ template, mode })
+        }}
+      >
+        <h3>{t('plan.importLibrary')}</h3>
+
+        {!templates.length ? (
+          <p className="hint">{t('library.empty.hint')}</p>
+        ) : (
+          <>
+            <label>
+              {t('library.title')}
+              <select
+                autoFocus
+                value={template ?? ''}
+                disabled={busy}
+                onChange={(event) => setTemplate(Number(event.target.value))}
+              >
+                {templates.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.title} — {item.subject_name}, {item.grade}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <div className="row">
+              <label className="checkbox">
+                <input
+                  type="radio"
+                  name="library-mode"
+                  checked={mode === 'replace'}
+                  onChange={() => setMode('replace')}
+                />
+                {t('csv.modeReplace')}
+              </label>
+              <label className="checkbox">
+                <input
+                  type="radio"
+                  name="library-mode"
+                  checked={mode === 'append'}
+                  onChange={() => setMode('append')}
+                />
+                {t('csv.modeAppend')}
+              </label>
+            </div>
+
+            {mode === 'replace' && <p className="error">{t('csv.replaceWarning')}</p>}
+            <p className="hint">{t('library.once')}</p>
+          </>
+        )}
+
+        <div className="actions">
+          <button type="submit" disabled={busy || !templates.length}>
+            {t('library.use')}
+          </button>
+          <button type="button" className="secondary" onClick={onClose}>
+            {t('common.cancel')}
+          </button>
+        </div>
+      </form>
+    </Modal>
+  )
+}
+
+/**
+ * Putting this plan on the shelf, or refreshing what is already there.
+ *
+ * Refreshing asks nothing: the entry already knows its title and subject,
+ * and the only question — «take the current plan?» — is the button itself.
+ */
+function PublishDialog({ course, subjects, existing, busy, onSubmit, onClose }) {
+  const { t } = useTranslation()
+  const [title, setTitle] = useState(
+    course ? `${course.subject_name ?? ''} ${course.grade ?? ''}`.trim() : '',
+  )
+  const [description, setDescription] = useState('')
+  const [subject, setSubject] = useState(course?.subject ?? subjects[0]?.id ?? null)
+  const [grade, setGrade] = useState(course?.grade ?? '')
+
+  if (existing) {
+    return (
+      <Modal onClose={onClose}>
+        <h3>{t('plan.refreshTemplate')}</h3>
+        <p className="hint">{t('plan.refreshHint', { title: existing.title })}</p>
+        <div className="actions">
+          <button type="button" disabled={busy} onClick={() => onSubmit({})}>
+            {t('plan.refreshTemplate')}
+          </button>
+          <button type="button" className="secondary" onClick={onClose}>
+            {t('common.cancel')}
+          </button>
+        </div>
+      </Modal>
+    )
+  }
+
+  return (
+    <Modal onClose={onClose}>
+      <form
+        onSubmit={(event) => {
+          event.preventDefault()
+          if (title.trim()) {
+            onSubmit({ title: title.trim(), description, subject, grade })
+          }
+        }}
+      >
+        <h3>{t('plan.publish')}</h3>
+        <p className="hint">{t('plan.publishHint')}</p>
+
+        <div className="field">
+          <label htmlFor="template-title">{t('plan.titleLabel')}</label>
+          <input
+            id="template-title"
+            autoFocus
+            value={title}
+            maxLength={200}
+            onChange={(event) => setTitle(event.target.value)}
+          />
+        </div>
+
+        <div className="row">
+          <label>
+            {t('library.subject')}
+            <select
+              value={subject ?? ''}
+              onChange={(event) => setSubject(Number(event.target.value))}
+            >
+              {subjects.map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            {t('library.grade')}
+            <input
+              type="number"
+              min={1}
+              max={11}
+              value={grade}
+              onChange={(event) => setGrade(Number(event.target.value))}
+            />
+          </label>
+        </div>
+
+        <div className="field">
+          <label htmlFor="template-note">{t('plan.noteLabel')}</label>
+          <input
+            id="template-note"
+            value={description}
+            maxLength={500}
+            onChange={(event) => setDescription(event.target.value)}
+          />
+        </div>
+
+        <div className="actions">
+          <button type="submit" disabled={busy || !title.trim()}>
+            {t('plan.publish')}
+          </button>
+          <button type="button" className="secondary" onClick={onClose}>
+            {t('common.cancel')}
+          </button>
+        </div>
+      </form>
+    </Modal>
   )
 }

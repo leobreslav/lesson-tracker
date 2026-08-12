@@ -64,6 +64,14 @@ class Codes:
     PERIOD_REVERSED = "period_reversed"
     PERIOD_REQUIRED = "period_required"
     YEAR_REQUIRED = "year_required"
+
+    # plan library
+    NOT_TEMPLATE_AUTHOR = "not_template_author"
+    SUBJECT_REQUIRED = "subject_required"
+    GRADE_REQUIRED = "grade_required"
+    PLAN_EMPTY = "plan_empty"
+    SUBJECT_NAME_TAKEN = "subject_name_taken"
+    SUBJECT_IN_USE = "subject_in_use"
     MODE_INVALID = "mode_invalid"
 
     # plan tree

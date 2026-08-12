@@ -24,7 +24,8 @@ from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
 from onboarding.services import typical_terms, typical_vacations
 from plans.models import PlanNode
-from schedule.models import LessonSlot, MasterSlot
+from library.models import PlanTemplate, PlanTemplateRow
+from schedule.models import Course, LessonSlot, MasterSlot, Subject
 from schools.models import Invitation, School
 
 User = get_user_model()
@@ -58,13 +59,16 @@ PEOPLE = (
 # no personal schedule, so importing it visibly does something
 IMPORTABLE_COURSE = "Grade 9 Geometry"
 
+# (course name, subject, grade, teacher email, weekly slots)
 COURSES = (
-    ("Grade 6 Algebra", "ivanova@example.com", ((0, 1), (2, 1), (4, 2))),
-    ("Grade 6 Geometry", "ivanova@example.com", ((1, 2), (3, 1))),
-    ("Grade 9 Algebra", "petrov@example.com", ((0, 3), (2, 3), (4, 4))),
-    # deliberately without a timetable: the empty states need a subject
-    ("Grade 9 Geometry", "petrov@example.com", ()),
+    ("Grade 6 Algebra", "Алгебра", 6, "ivanova@example.com", ((0, 1), (2, 1), (4, 2))),
+    ("Grade 6 Geometry", "Геометрия", 6, "ivanova@example.com", ((1, 2), (3, 1))),
+    ("Grade 9 Algebra", "Алгебра", 9, "petrov@example.com", ((0, 3), (2, 3), (4, 4))),
+    # deliberately without a personal timetable: empty states need a course
+    ("Grade 9 Geometry", "Геометрия", 9, "petrov@example.com", ()),
 )
+
+SUBJECTS = ("Алгебра", "Геометрия")
 
 # a plan of ~40 lessons in blocks — the one that fills a year
 FULL_PLAN = (
@@ -191,13 +195,15 @@ class Command(BaseCommand):
             people = self.people(school)
             year = self.year(school)
             self.markup(year)
-            courses = self.courses(school, year)
+            subjects = self.subjects(school)
+            courses = self.courses(school, year, subjects)
 
             self.timetable(year, courses, people)
 
             if not options["minimal"]:
                 self.schedule(year, courses, people)
                 self.plans(courses, people)
+                self.library(school, subjects, people)
 
             attached = self.attach(school, options["email"])
 
@@ -214,9 +220,12 @@ class Command(BaseCommand):
         the schools themselves. Superusers survive: wiping the account you
         administer the box with is never what you meant.
         """
+        PlanTemplate.objects.all().delete()
         PlanNode.objects.all().delete()
         LessonSlot.objects.all().delete()
         MasterSlot.objects.all().delete()
+        Course.objects.all().update(subject=None)
+        Subject.objects.all().delete()
         SchoolYear.objects.all().delete()  # carries courses, terms, markup
         Invitation.objects.all().delete()
         User.objects.filter(is_superuser=False).delete()
@@ -296,14 +305,26 @@ class Command(BaseCommand):
                 },
             )
 
-    def courses(self, school, year):
-        from schedule.models import Course
+    def subjects(self, school):
+        return {
+            name: Subject.objects.get_or_create(school=school, name=name)[0]
+            for name in SUBJECTS
+        }
 
+    def courses(self, school, year, subjects):
         courses = {}
-        for name, _, _ in COURSES:
+        for name, subject, grade, _, _ in COURSES:
             course, _ = Course.objects.get_or_create(
-                school=school, year=year, name=name
+                school=school,
+                year=year,
+                name=name,
+                defaults={"subject": subjects[subject], "grade": grade},
             )
+            # a course made before subjects existed gets them now
+            if course.subject_id is None:
+                course.subject = subjects[subject]
+                course.grade = grade
+                course.save(update_fields=["subject", "grade"])
             courses[name] = course
         return courses
 
@@ -320,7 +341,7 @@ class Command(BaseCommand):
         study_days = [day.date for day in year.build_days() if day.is_study]
         rows = []
 
-        for name, email, week in COURSES:
+        for name, _, _, email, week in COURSES:
             course = courses[name]
             # the importable course waits for a real account to claim it
             teacher = None if name == IMPORTABLE_COURSE else people[email]
@@ -357,7 +378,7 @@ class Command(BaseCommand):
         """
         study_days = [day.date for day in year.build_days() if day.is_study]
 
-        for name, email, week in COURSES:
+        for name, _, _, email, week in COURSES:
             if not week:
                 continue
 
@@ -382,7 +403,7 @@ class Command(BaseCommand):
 
     def mark_by_hand(self, courses, people):
         """Cancellations and extra lessons — the states a uniform seed lacks."""
-        teachers = {name: email for name, email, _ in COURSES}
+        teachers = {name: email for name, _, _, email, _ in COURSES}
 
         for name, index, reason in CANCELLED:
             slot = self.nth_slot(courses[name], index)
@@ -435,6 +456,55 @@ class Command(BaseCommand):
         """
         self.write_plan(courses["Grade 6 Algebra"], people["ivanova@example.com"], FULL_PLAN)
         self.write_plan(courses["Grade 9 Algebra"], people["petrov@example.com"], PARTIAL_PLAN)
+
+    def library(self, school, subjects, people):
+        """
+        A shelf with something on it: two published plans and one draft.
+
+        The draft belongs to a fictional teacher on purpose — that is the
+        entry the developer must *not* see until they log in as its author,
+        which is the visibility rule worth eyeballing.
+        """
+        shelf = (
+            ("Алгебра 6, по учебнику", subjects["Алгебра"], 6,
+             people["ivanova@example.com"], True, FULL_PLAN),
+            ("Геометрия 9, базовая", subjects["Геометрия"], 9,
+             people["petrov@example.com"], True, PARTIAL_PLAN),
+            ("Алгебра 9, черновик", subjects["Алгебра"], 9,
+             people["petrov@example.com"], False, PARTIAL_PLAN),
+        )
+
+        for title, subject, grade, author, published, blocks in shelf:
+            if PlanTemplate.objects.filter(school=school, title=title).exists():
+                continue
+
+            template = PlanTemplate.objects.create(
+                school=school,
+                subject=subject,
+                grade=grade,
+                title=title,
+                description="Демонстрационный шаблон из seed_demo.",
+                author=author,
+                is_published=published,
+            )
+
+            rows, position = [], 0
+            for header, lessons in blocks:
+                rows.append(
+                    PlanTemplateRow(
+                        template=template, position=position, is_header=True, title=header
+                    )
+                )
+                position += 1
+                for lesson in lessons:
+                    rows.append(
+                        PlanTemplateRow(
+                            template=template, position=position, title=lesson
+                        )
+                    )
+                    position += 1
+
+            PlanTemplateRow.objects.bulk_create(rows)
 
     def write_plan(self, course, teacher, blocks):
         if PlanNode.objects.filter(teacher=teacher, course=course).exists():
@@ -529,6 +599,10 @@ class Command(BaseCommand):
             )
             self.stdout.write(f"  план:      {lessons} уроков в планах")
 
+        self.stdout.write(
+            f"  библиотека: {PlanTemplate.objects.count()} шаблонов "
+            f"({PlanTemplate.objects.filter(is_published=False).count()} черновик)"
+        )
         self.stdout.write(
             f"  расписание школы: {MasterSlot.objects.count()} уроков "
             f"({MasterSlot.objects.filter(teacher__isnull=True).count()} без учителя)"

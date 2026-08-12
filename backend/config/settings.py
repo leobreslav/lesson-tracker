@@ -52,6 +52,7 @@ INSTALLED_APPS = [
     'calendars',
     'schedule',
     'plans',
+    'library',
     'onboarding',
 ]
 
