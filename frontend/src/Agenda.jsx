@@ -283,6 +283,22 @@ export default function Agenda({ onLoggedOut }) {
     [classes, yearById, period],
   )
 
+  /**
+   * Courses to offer in the «show» filter.
+   *
+   * Only the ones with lessons in the shown period — since courses became
+   * the school's, `classes` holds every course in the building, and a filter
+   * listing colleagues' courses would be noise a teacher cannot act on.
+   * The dialogs keep using `visibleClasses`: copying and clearing are about
+   * the year, not about this week.
+   */
+  const filterClasses = useMemo(() => {
+    const present = new Set(
+      Object.values(data.lessons).flat().map((item) => item.course_id),
+    )
+    return visibleClasses.filter((item) => present.has(item.id))
+  }, [data, visibleClasses])
+
   const lessonsOn = useCallback(
     (date) => (data.lessons[date] || []).filter((item) => !hidden.has(item.course_id)),
     [data, hidden],
@@ -764,7 +780,7 @@ export default function Agenda({ onLoggedOut }) {
       {visibleClasses.length > 0 && (
         <div className="class-filter">
           <span className="hint">{t('agenda.show')}</span>
-          {visibleClasses.map((item) => (
+          {filterClasses.map((item) => (
             <label key={item.id} className="checkbox">
               <input
                 type="checkbox"

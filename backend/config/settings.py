@@ -23,6 +23,10 @@ environ.Env.read_env(BASE_DIR / ".env")
 
 SECRET_KEY = env("SECRET_KEY", default="dev-insecure-key-change-me")
 DEBUG = env("DEBUG")
+
+# A door for browser tests: a token by email, and a database reset. Never on
+# in production — see accounts/e2e.py for why it is closed three times over.
+E2E_TEST_LOGIN = env.bool("E2E_TEST_LOGIN", default=False)
 ALLOWED_HOSTS = env.list("ALLOWED_HOSTS", default=["localhost", "127.0.0.1"])
 
 

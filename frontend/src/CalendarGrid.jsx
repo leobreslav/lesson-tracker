@@ -83,6 +83,9 @@ export default function CalendarGrid({
                 <button
                   type="button"
                   key={day.date}
+                  // браузерные тесты целятся по дате: по тексту числа
+                  // попасть в нужный месяц нельзя
+                  data-date={day.date}
                   className={
                     `day ${day.status}` +
                     (day.term_id

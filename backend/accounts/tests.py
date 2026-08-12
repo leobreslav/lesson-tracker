@@ -2,10 +2,11 @@ from unittest.mock import patch
 
 from allauth.account.models import EmailAddress
 from allauth.socialaccount.models import SocialAccount
+from django.conf import settings
 from django.contrib.auth import authenticate, get_user_model
 from django.urls import reverse
 from rest_framework.authtoken.models import Token
-from rest_framework.test import APITestCase
+from rest_framework.test import APIRequestFactory, APITestCase
 
 User = get_user_model()
 
@@ -230,3 +231,41 @@ class MeTests(APITestCase):
 
         self.assertEqual(self.client.post(reverse("rest_logout")).status_code, 200)
         self.assertFalse(Token.objects.filter(user=self.user).exists())
+
+
+class E2EDoorTests(APITestCase):
+    """
+    The browser-test door must be shut unless the environment opens it.
+
+    Checked as a routing fact rather than a permission one: with the flag
+    off the path is not registered at all, so `reverse` cannot even name it.
+    """
+
+    def test_the_routes_do_not_exist_by_default(self):
+        from django.urls import NoReverseMatch, reverse
+
+        self.assertFalse(settings.E2E_TEST_LOGIN, "флаг не должен быть включён")
+
+        for name in ("e2e-login", "e2e-reset"):
+            with self.subTest(name), self.assertRaises(NoReverseMatch):
+                reverse(name)
+
+    def test_the_paths_answer_404(self):
+        for path in ("/api/test/login/", "/api/test/reset/"):
+            with self.subTest(path):
+                self.assertEqual(self.client.post(path).status_code, 404)
+
+    def test_the_view_refuses_even_if_wired_by_hand(self):
+        """
+        A second lock: the check is in the view, not only in the routing.
+
+        DRF turns the Http404 into a response rather than letting it fly, so
+        the status is what there is to look at.
+        """
+        from accounts.e2e import TestLoginView
+
+        request = APIRequestFactory().post("/", {"email": "teacher@example.com"})
+
+        response = TestLoginView.as_view()(request)
+
+        self.assertEqual(response.status_code, 404)

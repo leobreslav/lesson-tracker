@@ -1,6 +1,8 @@
 from dj_rest_auth.views import LogoutView
+from django.conf import settings
 from django.urls import path
 
+from .e2e import TestLoginView, TestResetView
 from .views import GoogleLoginView, MeView
 
 urlpatterns = [
@@ -8,3 +10,11 @@ urlpatterns = [
     path("auth/logout/", LogoutView.as_view(), name="rest_logout"),
     path("me/", MeView.as_view(), name="me"),
 ]
+
+if settings.E2E_TEST_LOGIN:
+    # not merely permission-checked — absent from the routing table, so the
+    # path answers 404 like any other misspelling
+    urlpatterns += [
+        path("test/login/", TestLoginView.as_view(), name="e2e-login"),
+        path("test/reset/", TestResetView.as_view(), name="e2e-reset"),
+    ]

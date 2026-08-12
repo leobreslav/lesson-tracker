@@ -58,6 +58,7 @@ export default function WeekGrid({
           <button
             type="button"
             key={date}
+            data-day-head={date}
             className={dayHeadClass(date)}
             title={t('agenda.selectHint', {
               title: day.title || t('agenda.selectDay'),
@@ -87,6 +88,7 @@ export default function WeekGrid({
             const addButton = (
               <button
                 type="button"
+                data-add={`${date}:${number}`}
                 className={inCell.length ? 'cell free add-more' : 'cell free'}
                 aria-label={t('agenda.addLesson', { number })}
                 disabled={busy}
@@ -107,6 +109,7 @@ export default function WeekGrid({
                   <button
                     type="button"
                     key={lesson.id}
+                    data-lesson={`${date}:${number}`}
                     className={lessonClassName(lesson)}
                     title={lessonTitle(lesson)}
                     disabled={busy}
