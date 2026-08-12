@@ -118,6 +118,26 @@ def make_slot(teacher, course, day=MONDAY, number=1, **flags):
     )
 
 
+def make_master_slot(course, teacher=None, day=MONDAY, number=1):
+    """
+    A row of the school timetable. `teacher=None` is «not assigned yet».
+
+    The school and the year follow the course, like everywhere else: a row
+    naming a course of one school and a year of another is a state the API
+    refuses, so the fixture cannot express it either.
+    """
+    from schedule.models import MasterSlot
+
+    return MasterSlot.objects.create(
+        school=course.school,
+        year=course.year,
+        course=course,
+        teacher=teacher,
+        date=day,
+        lesson_number=number,
+    )
+
+
 def make_node(teacher, course, title="Урок", *, parent=None, position=0, section=False):
     from plans.models import PlanNode
 

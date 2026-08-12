@@ -267,6 +267,41 @@ export const movePlanSection = (id, direction) =>
     body: { direction },
   })
 
+// --- the school-wide timetable: read by all, written by admins ---
+
+export const fetchMasterSlots = (params) =>
+  request(`/api/school/master-slots/?${new URLSearchParams(params)}`)
+
+export const fetchMasterSummary = (params) =>
+  request(`/api/school/master-slots/summary/?${new URLSearchParams(params)}`)
+
+export const createMasterSlot = (fields) =>
+  request('/api/school/master-slots/', { method: 'POST', body: fields })
+
+export const deleteMasterSlot = (id) =>
+  request(`/api/school/master-slots/${id}/`, { method: 'DELETE' })
+
+export const copyMasterSlots = (payload) =>
+  request('/api/school/master-slots/copy/', { method: 'POST', body: payload })
+
+export const clearMasterSlots = ({ start, end, courseId }) =>
+  request(
+    `/api/school/master-slots/bulk/?${new URLSearchParams({
+      start,
+      end,
+      ...(courseId ? { course: courseId } : {}),
+    })}`,
+    { method: 'DELETE' },
+  )
+
+/** What the school timetable would bring me — nothing is written. */
+export const fetchImportPreview = (params) =>
+  request(`/api/schedule/import-preview/?${new URLSearchParams(params)}`)
+
+/** Copy my rows of the timetable into my own schedule. Once, not a sync. */
+export const importFromSchool = (payload) =>
+  request('/api/schedule/import-from-school/', { method: 'POST', body: payload })
+
 // --- schedule lessons ---
 
 export const fetchSlots = (classId) =>

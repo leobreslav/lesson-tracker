@@ -13,6 +13,7 @@ import NotFound from './NotFound'
 import Plan from './Plan'
 import Profile from './Profile'
 import School from './School'
+import SchoolSchedule from './SchoolSchedule'
 import Schools from './Schools'
 import { clearToken, fetchMe, fetchOnboarding, getToken, updateMe } from './api'
 import i18n, { normalizeLanguage } from './i18n'
@@ -119,6 +120,7 @@ export default function App() {
             })}
           />
           <Route path="/schools" element={guarded(Schools, { user })} />
+          <Route path="/school/schedule" element={guarded(SchoolSchedule)} />
           <Route path="/year" element={guarded(Calendar, { user })} />
           <Route path="/profile" element={guarded(Profile, { onSaved: setUser })} />
           <Route path="*" element={<NotFound />} />

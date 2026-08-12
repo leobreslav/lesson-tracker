@@ -14,6 +14,53 @@ from typing import Iterable, Mapping, Sequence
 from calendars.services import format_day, iter_dates
 
 
+def place_copies(*, plan, skipped, occupied, busy, make) -> dict:
+    """
+    Turn a copy plan into objects, refusing the places already taken.
+
+    The plan itself comes from `plan_copy`, which knows nothing about the
+    database. This is the other half: it walks the plan once and decides what
+    each slot meets.
+
+    Two kinds of obstacle, told apart on purpose:
+
+    * `occupied` — the same course already has that number that day. Nothing
+      to report: repeating a copy should be quiet, not alarming.
+    * `busy` — a **different** course holds the number, mapped to its name.
+      Physically impossible for one teacher, so it is skipped *and* named,
+      because the person needs to know what got in the way.
+
+    `make(date, number)` builds the unsaved object; the caller keeps its own
+    model. Both the personal schedule and the school-wide one go through
+    here, so the accounting cannot drift between them.
+    """
+    created, conflicts = [], []
+    taken = set(occupied)
+
+    for day, number in plan:
+        if (day, number) in taken:
+            skipped += 1
+            continue
+
+        name = busy.get((day, number))
+        if name is not None:
+            skipped += 1
+            conflicts.append(
+                {
+                    "date": day,
+                    "lesson_number": number,
+                    "class_name": name,
+                    "message": occupied_message(day, number, name),
+                }
+            )
+            continue
+
+        taken.add((day, number))
+        created.append(make(day, number))
+
+    return {"created": created, "skipped": skipped, "conflicts": conflicts}
+
+
 def occupied_message(day: date, lesson_number: int, class_name: str) -> str:
     """A teacher cannot run two classes at once — say which one is in the way."""
     return f"{day.isoformat()}, lesson {lesson_number} is taken by {class_name}"

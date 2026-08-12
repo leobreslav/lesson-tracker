@@ -27,6 +27,7 @@ from .testing import (
     SchoolTestMixin,
     make_course,
     make_exception,
+    make_master_slot,
     make_node,
     make_slot,
     make_term,
@@ -46,6 +47,7 @@ class AccessTestCase(AccessRulesMixin, SchoolTestMixin, APITestCase):
         self.exception = make_exception(self.year)
         self.slot = make_slot(self.user, self.course)
         self.node = make_node(self.user, self.course)
+        self.master_slot = make_master_slot(self.course, self.user, number=2)
 
         self.alien_year = make_year(self.alien_school)
         self.alien_course = make_course(self.alien_school, self.alien_year, "9А")
@@ -114,6 +116,21 @@ class MatrixTests(AccessTestCase):
                 "title": "Каникулы",
             },
             patch={"title": "Другое название"},
+        )
+
+    def test_master_slot(self):
+        self.assertSchoolObjectRules(
+            list_url="masterslot-list",
+            detail_url="masterslot-detail",
+            obj=self.master_slot,
+            create={
+                "year": self.year.pk,
+                "course": self.course.pk,
+                "teacher": self.user.pk,
+                "date": "2026-09-08",
+                "lesson_number": 4,
+            },
+            patch={"lesson_number": 6},
         )
 
     def test_lesson_slot(self):

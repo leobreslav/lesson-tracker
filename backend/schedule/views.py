@@ -2,7 +2,7 @@ from collections import defaultdict
 
 from calendars import services as calendar_services
 from calendars.models import SchoolYear
-from config.access import SchoolScopedViewSet, TeacherScopedViewSet
+from config.access import IsSchoolMember, SchoolScopedViewSet, TeacherScopedViewSet
 from config.errors import Codes, api_error
 from django.db import transaction
 from django.db.models import Count
@@ -12,13 +12,18 @@ from django.utils.dateparse import parse_date
 from rest_framework.decorators import action
 from rest_framework.response import Response
 
-from . import services
-from .models import Course, LessonSlot
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.views import APIView
+
+from . import importing, services
+from .models import Course, LessonSlot, MasterSlot
 from .serializers import (
     BulkDeleteSerializer,
     CopySerializer,
     CourseSerializer,
+    ImportFromSchoolSerializer,
     LessonSlotSerializer,
+    MasterSlotSerializer,
     PeriodSerializer,
 )
 
@@ -182,45 +187,26 @@ class LessonSlotViewSet(TeacherScopedViewSet):
             .select_related("course")
         }
 
-        created, conflicts = [], []
-        for slot_date, number in plan:
-            if (slot_date, number) in occupied:
-                skipped += 1
-                continue
-
-            class_name = busy.get((slot_date, number))
-            if class_name is not None:
-                skipped += 1
-                conflicts.append(
-                    {
-                        "date": slot_date,
-                        "lesson_number": number,
-                        "class_name": class_name,
-                        "message": services.occupied_message(
-                            slot_date, number, class_name
-                        ),
-                    }
-                )
-                continue
-
-            occupied.add((slot_date, number))
-            created.append(
-                LessonSlot(
-                    year=year,
-                    teacher=teacher,
-                    course=course,
-                    date=slot_date,
-                    lesson_number=number,
-                )
-            )
-
-        LessonSlot.objects.bulk_create(created)
+        result = services.place_copies(
+            plan=plan,
+            skipped=skipped,
+            occupied=occupied,
+            busy=busy,
+            make=lambda day, number: LessonSlot(
+                year=year,
+                teacher=teacher,
+                course=course,
+                date=day,
+                lesson_number=number,
+            ),
+        )
+        LessonSlot.objects.bulk_create(result["created"])
 
         return {
-            "created": len(created),
-            "skipped": skipped,
+            "created": len(result["created"]),
+            "skipped": result["skipped"],
             "deleted": deleted,
-            "conflicts": conflicts,
+            "conflicts": result["conflicts"],
         }
 
     @action(detail=False, methods=["post"])
@@ -383,5 +369,281 @@ class LessonSlotViewSet(TeacherScopedViewSet):
                     .annotate(count=Count("id"))
                     .order_by("-count", "reason")
                 },
+            }
+        )
+
+
+class MasterSlotViewSet(SchoolScopedViewSet):
+    """
+    The school-wide timetable: who teaches what, and when.
+
+    Everybody in the school reads it — a teacher needs to see what they are
+    down for before importing — and only an administrator writes.
+
+    Copying a period and clearing one work exactly as they do for a personal
+    schedule, through the same `place_copies`: an administrator who has
+    learnt one of the two screens has learnt both.
+    """
+
+    serializer_class = MasterSlotSerializer
+    queryset = MasterSlot.objects.select_related("course", "teacher", "year")
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        params = self.request.query_params
+
+        for param, lookup in (
+            ("year", "year_id"),
+            ("teacher", "teacher_id"),
+            ("course", "course_id"),
+        ):
+            raw = params.get(param)
+            if not raw:
+                continue
+            queryset = (
+                queryset.filter(**{lookup: raw}) if raw.isdigit() else queryset.none()
+            )
+
+        for param, lookup in (("start", "date__gte"), ("end", "date__lte")):
+            raw = params.get(param)
+            if not raw:
+                continue
+            parsed = read_date(raw)
+            queryset = queryset.filter(**{lookup: parsed}) if parsed else queryset.none()
+
+        return queryset
+
+    def school_slots(self):
+        return MasterSlot.objects.filter(school_id=self.request.user.school_id)
+
+    def copy_one_course(self, course, data, study_dates):
+        """One course of the timetable. Inside the caller's transaction."""
+        target = (data["target_start"], data["target_end"])
+        year = course.year
+
+        source_numbers = defaultdict(list)
+        for slot in self.school_slots().filter(
+            course=course, date__range=(data["source_start"], data["source_end"])
+        ):
+            source_numbers[slot.date].append(slot.lesson_number)
+
+        plan, skipped = services.plan_copy(
+            source_start=data["source_start"],
+            source_end=data["source_end"],
+            target_start=data["target_start"],
+            target_end=data["target_end"],
+            source_numbers=source_numbers,
+            study_dates=study_dates,
+        )
+
+        deleted = 0
+        if data["mode"] == "replace":
+            deleted, _ = self.school_slots().filter(
+                course=course, date__range=target
+            ).delete()
+
+        occupied = set(
+            self.school_slots()
+            .filter(course=course, date__range=target)
+            .values_list("date", "lesson_number")
+        )
+
+        # the teacher of this course cannot be in two rooms at once, so their
+        # other courses block the hour and say so
+        teacher_id = (
+            self.school_slots()
+            .filter(course=course)
+            .exclude(teacher__isnull=True)
+            .values_list("teacher_id", flat=True)
+            .first()
+        )
+        busy = {}
+        if teacher_id is not None:
+            busy = {
+                (slot.date, slot.lesson_number): slot.course.name
+                for slot in self.school_slots()
+                .filter(teacher_id=teacher_id, date__range=target)
+                .exclude(course=course)
+                .select_related("course")
+            }
+
+        result = services.place_copies(
+            plan=plan,
+            skipped=skipped,
+            occupied=occupied,
+            busy=busy,
+            make=lambda day, number: MasterSlot(
+                school_id=self.request.user.school_id,
+                year=year,
+                course=course,
+                teacher_id=teacher_id,
+                date=day,
+                lesson_number=number,
+            ),
+        )
+        MasterSlot.objects.bulk_create(result["created"])
+
+        return {
+            "created": len(result["created"]),
+            "skipped": result["skipped"],
+            "deleted": deleted,
+            "conflicts": result["conflicts"],
+        }
+
+    @action(detail=False, methods=["post"])
+    def copy(self, request):
+        """Repeat a period of the timetable onto another period."""
+        form = CopySerializer(data=request.data, context=self.get_serializer_context())
+        form.is_valid(raise_exception=True)
+        data = form.validated_data
+
+        one = data.get("course")
+        if one is not None:
+            courses = [one]
+        else:
+            courses = list(
+                Course.objects.filter(
+                    pk__in=self.school_slots().values("course_id"),
+                    year__start_date__lte=data["target_end"],
+                    year__end_date__gte=data["target_start"],
+                ).select_related("year")
+            )
+
+        totals = {"created": 0, "skipped": 0, "deleted": 0, "conflicts": []}
+        study_by_year = {}
+
+        with transaction.atomic():
+            for course in courses:
+                year = course.year
+                if year.pk not in study_by_year:
+                    study_by_year[year.pk] = {
+                        day.date for day in year.build_days() if day.is_study
+                    }
+
+                result = self.copy_one_course(course, data, study_by_year[year.pk])
+                for key in ("created", "skipped", "deleted"):
+                    totals[key] += result[key]
+                totals["conflicts"].extend(result["conflicts"])
+
+        return Response(totals)
+
+    @action(detail=False, methods=["delete"])
+    def bulk(self, request):
+        """Clear a period of the timetable, optionally for one course."""
+        params = request.query_params
+        start, end = (read_date(params.get(name)) for name in ("start", "end"))
+        if start is None or end is None:
+            api_error(
+                Codes.PERIOD_REQUIRED,
+                "Both «start» and «end» query parameters are required.",
+                field="start",
+            )
+        if end < start:
+            api_error(
+                Codes.PERIOD_REVERSED,
+                "The end date is earlier than the start date.",
+                field="end",
+            )
+
+        queryset = self.school_slots().filter(date__range=(start, end))
+
+        course = params.get("course")
+        if course:
+            queryset = (
+                queryset.filter(course_id=course) if course.isdigit() else queryset.none()
+            )
+
+        deleted, _ = queryset.delete()
+        return Response({"deleted": deleted})
+
+    @action(detail=False, methods=["get"])
+    def summary(self, request):
+        """How much is laid out, and how much of it has nobody yet."""
+        queryset = self.get_queryset()
+        total = queryset.count()
+
+        return Response(
+            {
+                "total": total,
+                "unassigned": queryset.filter(teacher__isnull=True).count(),
+                "teachers": queryset.exclude(teacher__isnull=True)
+                .values("teacher_id")
+                .distinct()
+                .count(),
+            }
+        )
+
+
+class ImportFromSchoolView(APIView):
+    """
+    Copy my rows of the school timetable into my own schedule.
+
+    Any teacher of the school may do it for themselves; nobody can do it for
+    anybody else, because the rows are selected by `teacher == request.user`
+    and the lessons are created with the same user.
+
+    It happens once. Afterwards the copies are ordinary lessons and the
+    timetable has no hold on them.
+    """
+
+    permission_classes = [IsAuthenticated, IsSchoolMember]
+
+    def post(self, request):
+        form = ImportFromSchoolSerializer(
+            data=request.data, context={"request": request}
+        )
+        form.is_valid(raise_exception=True)
+        data = form.validated_data
+
+        result = importing.run_import(
+            teacher=request.user,
+            year=data["year"],
+            courses=data.get("courses") or None,
+            start=data["start"],
+            end=data["end"],
+            mode=data["mode"],
+        )
+        return Response(result)
+
+
+class ImportPreviewView(APIView):
+    """
+    What an import would bring, before anybody presses anything.
+
+    Same planning code as the import, so the numbers shown are the numbers
+    that will happen — computed in merge mode, the cautious one: replace can
+    only turn conflicts into replacements, never add new ones.
+    """
+
+    permission_classes = [IsAuthenticated, IsSchoolMember]
+
+    def get(self, request):
+        params = request.query_params
+        year = SchoolYear.objects.filter(
+            school_id=request.user.school_id, pk=params.get("year", 0) or 0
+        ).first()
+        if year is None:
+            api_error(
+                Codes.YEAR_REQUIRED,
+                "The «year» query parameter with a school year id is required.",
+                field="year",
+            )
+
+        start = read_date(params.get("start")) or year.start_date
+        end = read_date(params.get("end")) or year.end_date
+
+        plan = importing.plan_import(
+            teacher=request.user, year=year, start=start, end=end
+        )
+
+        return Response(
+            {
+                "start": start,
+                "end": end,
+                "available": sum(item["available"] for item in plan["courses"]),
+                "created": len(plan["slots"]),
+                "skipped": plan["skipped"],
+                "courses": plan["courses"],
+                "conflicts": plan["conflicts"],
             }
         )

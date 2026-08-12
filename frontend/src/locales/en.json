@@ -174,7 +174,8 @@
     "already_member": "«{{email}}» already belongs to a school.",
     "last_admin": "This is the only administrator of the school. Give the role to somebody else first.",
     "superuser_required": "Only a superuser can manage the list of schools.",
-    "school_in_use": "«{{name}}» still has {{members}} members. Move them out first."
+    "school_in_use": "«{{name}}» still has {{members}} members. Move them out first.",
+    "year_required": "Pick a school year first."
   },
   "classPicker": {
     "label": "Classes:",
@@ -480,5 +481,37 @@
       "title": "No schools yet",
       "hint": "Create the first one and invite its administrator: everything else — the calendar, the courses, the teachers — they set up themselves."
     }
+  },
+  "schoolSchedule": {
+    "title": "School timetable",
+    "hint": "Who teaches what and when. Teachers read it and may copy their own lessons into their schedule once; only an administrator edits it.",
+    "open": "Open the timetable",
+    "summary": "{{total}} lessons laid out, {{teachers}} teachers involved",
+    "unassigned": "{{count}} with no teacher yet",
+    "byTeacher": "Teacher:",
+    "byCourse": "Course:",
+    "everyone": "everyone",
+    "allCourses": "all courses",
+    "nobody": "not assigned",
+    "teacher": "Teacher",
+    "addTitle": "Lesson {{number}}",
+    "deleteConfirm": "Remove «{{name}}» from the timetable?",
+    "copyTitle": "Copy the timetable week",
+    "copyNote": "Teachers who have already imported their lessons keep them: a copy is not a sync.",
+    "copied": "Created {{created}}, skipped {{skipped}}."
+  },
+  "import": {
+    "action": "Load from the school timetable",
+    "title": "Load from the school timetable",
+    "once": "The lessons are copied to you once. Later changes to the school timetable will not affect your copy, and your edits will not affect the timetable.",
+    "preview": "{{lessons}} across {{courses}} will be added",
+    "skipped": "{{count}} will be skipped: the hour is already taken in your schedule.",
+    "conflicts": "{{count}} lessons clash with what you already have",
+    "modeMerge": "add to my schedule",
+    "modeReplace": "replace my schedule for this period",
+    "replaceWarning": "Your lessons in these courses over this period will be deleted, including cancellations and extra lessons.",
+    "submit": "Load",
+    "done": "{{created}} added, {{skipped}} skipped.",
+    "nothing": "The school timetable has nothing for you in this period."
   }
 }

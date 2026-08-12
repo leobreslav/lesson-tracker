@@ -63,6 +63,7 @@ class Codes:
     # bulk operations over the schedule
     PERIOD_REVERSED = "period_reversed"
     PERIOD_REQUIRED = "period_required"
+    YEAR_REQUIRED = "year_required"
     MODE_INVALID = "mode_invalid"
 
     # plan tree

@@ -207,6 +207,14 @@ export default function School({ user, onLoggedOut, onSchoolChange }) {
       </section>
 
       <section className="panel">
+        <h3>{t('schoolSchedule.title')}</h3>
+        <p className="hint">{t('schoolSchedule.hint')}</p>
+        <p>
+          <Link to="/school/schedule">{t('schoolSchedule.open')}</Link>
+        </p>
+      </section>
+
+      <section className="panel">
         <h3>{t('school.courses.title')}</h3>
         <p className="hint">{t('school.courses.hint')}</p>
 
