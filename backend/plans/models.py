@@ -12,11 +12,6 @@ class PlanNode(models.Model):
     Сквозного номера у урока нет: его считает `services.number_lessons`.
     """
 
-    class Kind(models.TextChoices):
-        LESSON = services.KIND_LESSON, "урок"
-        CONTROL = services.KIND_CONTROL, "контрольная"
-        RESERVE = services.KIND_RESERVE, "резерв"
-
     school_class = models.ForeignKey(
         "schedule.SchoolClass",
         related_name="plan_nodes",
@@ -34,10 +29,6 @@ class PlanNode(models.Model):
     position = models.PositiveIntegerField("порядок", default=0)
     is_section = models.BooleanField("папка", default=False)
     title = models.CharField("название", max_length=200)
-    # у папки вид не используется
-    kind = models.CharField(
-        "вид", max_length=16, choices=Kind, default=Kind.LESSON
-    )
     note = models.TextField("заметка", blank=True)
 
     class Meta:

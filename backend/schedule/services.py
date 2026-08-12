@@ -10,17 +10,8 @@ from __future__ import annotations
 from datetime import date, timedelta
 from typing import Iterable, Mapping, Sequence
 
-from calendars.services import iter_dates
-
-MONTHS_GENITIVE = (
-    "января", "февраля", "марта", "апреля", "мая", "июня",
-    "июля", "августа", "сентября", "октября", "ноября", "декабря",
-)
-
-
-def format_day(day: date) -> str:
-    """«14 октября» — для сообщений пользователю."""
-    return f"{day.day} {MONTHS_GENITIVE[day.month - 1]}"
+# форматирование дат общее для приложений и живёт в календаре
+from calendars.services import format_day, iter_dates
 
 
 def occupied_message(day: date, lesson_number: int, class_name: str) -> str:

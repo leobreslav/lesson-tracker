@@ -71,10 +71,124 @@ export function countPlan(nodes) {
 
   return {
     lessons: lessons.length,
-    control: lessons.filter((item) => item.kind === 'control').length,
-    reserve: lessons.filter((item) => item.kind === 'reserve').length,
     sections: nodes.filter((node) => node.is_section).length,
   }
+}
+
+/** «1 урок» / «3 урока» / «12 уроков». */
+export function pluralLessons(count) {
+  const tail = count % 10
+  const hundred = count % 100
+
+  if (tail === 1 && hundred !== 11) return `${count} урок`
+  if (tail >= 2 && tail <= 4 && (hundred < 10 || hundred >= 20)) return `${count} урока`
+  return `${count} уроков`
+}
+
+/**
+ * Строки плана в порядке отображения: заголовок блока, потом его уроки.
+ *
+ * Тем самым дерево приводится к тому же плоскому виду, в котором считает
+ * `countBlocks`, — одна и та же функция обслуживает и план, и раскладку.
+ */
+export function planRows(nodes) {
+  return nodes.flatMap((node) =>
+    node.is_section
+      ? [
+          { is_section: true, id: node.id, title: node.title },
+          ...(node.children ?? []).map((child) => ({
+            is_section: false,
+            section_id: node.id,
+            section_title: node.title,
+          })),
+        ]
+      : [{ is_section: false, section_id: null, section_title: null }],
+  )
+}
+
+/**
+ * Сколько уроков в каждом блоке и сколько их вне блоков.
+ *
+ * Строка-заголовок открывает блок. У урока блок берётся из его собственного
+ * `section_id`: значение `null` означает «вне блоков» — в нашей модели урок
+ * верхнего уровня лежит вне темы, даже если стоит после папки. Если поля
+ * нет вовсе (плоский список без вложенности), работает позиционное правило:
+ * урок относится к последнему заголовку выше.
+ */
+export function countBlocks(rows) {
+  const blocks = []
+  const byId = new Map()
+  let current = null
+  let loose = 0
+
+  const open = (id, title) => {
+    if (byId.has(id)) return byId.get(id)
+    const block = { id, title, lessons: 0 }
+    byId.set(id, block)
+    blocks.push(block)
+    return block
+  }
+
+  rows.forEach((row) => {
+    if (row.is_section) {
+      current = open(row.id, row.title)
+      return
+    }
+
+    let block
+    if ('section_id' in row) {
+      block = row.section_id != null ? open(row.section_id, row.section_title ?? '') : null
+    } else {
+      block = current
+    }
+
+    if (block) block.lessons += 1
+    else loose += 1
+  })
+
+  return { blocks, byId, loose }
+}
+
+/**
+ * То же по записям раскладки плюс даты блока, непоместившиеся уроки и
+ * термы, через которые блок проходит.
+ */
+export function layoutBlocks(entries) {
+  const rows = entries
+    .filter((entry) => entry.plan_row)
+    .map((entry) => ({
+      is_section: false,
+      section_id: entry.plan_row.section_id ?? null,
+      section_title: entry.plan_row.section_title ?? null,
+    }))
+
+  const { blocks, byId, loose } = countBlocks(rows)
+
+  blocks.forEach((block) => {
+    block.first = null
+    block.last = null
+    block.missing = 0
+    block.terms = []
+  })
+
+  entries.forEach((entry) => {
+    const id = entry.plan_row?.section_id ?? null
+    const block = id != null ? byId.get(id) : null
+    if (!block) return
+
+    if (entry.slot) {
+      block.first ??= entry.slot.date
+      block.last = entry.slot.date
+      if (entry.term_name && !block.terms.includes(entry.term_name)) {
+        block.terms.push(entry.term_name)
+      }
+    } else {
+      // уроку блока не хватило слота — он не помещается в год
+      block.missing += 1
+    }
+  })
+
+  return { blocks, byId, loose }
 }
 
 /**

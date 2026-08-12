@@ -13,7 +13,9 @@ class ApiError extends Error {
 
 async function request(path, { method = 'GET', body, auth = true } = {}) {
   const headers = {}
-  if (body) headers['Content-Type'] = 'application/json'
+  // у FormData свой Content-Type с границей блоков — его ставит браузер
+  const isForm = body instanceof FormData
+  if (body && !isForm) headers['Content-Type'] = 'application/json'
 
   const token = getToken()
   if (auth && token) headers['Authorization'] = `Token ${token}`
@@ -22,7 +24,7 @@ async function request(path, { method = 'GET', body, auth = true } = {}) {
   const response = await fetch(path, {
     method,
     headers,
-    body: body ? JSON.stringify(body) : undefined,
+    body: body ? (isForm ? body : JSON.stringify(body)) : undefined,
   })
 
   const data = await response.json().catch(() => null)
@@ -68,6 +70,18 @@ export const fetchYearDays = (id) => request(`/api/calendar/years/${id}/days/`)
 
 export const fetchYearStats = (id) => request(`/api/calendar/years/${id}/stats/`)
 
+export const fetchTerms = (yearId) =>
+  request(`/api/calendar/terms/?year=${encodeURIComponent(yearId)}`)
+
+export const createTerm = (fields) =>
+  request('/api/calendar/terms/', { method: 'POST', body: fields })
+
+export const updateTerm = (id, fields) =>
+  request(`/api/calendar/terms/${id}/`, { method: 'PATCH', body: fields })
+
+export const deleteTerm = (id) =>
+  request(`/api/calendar/terms/${id}/`, { method: 'DELETE' })
+
 export const createException = (fields) =>
   request('/api/calendar/exceptions/', { method: 'POST', body: fields })
 
@@ -107,8 +121,54 @@ export const deletePlanNode = (id, keepChildren) =>
     method: 'DELETE',
   })
 
+export const importPlanCsv = (classId, file, mode) => {
+  const form = new FormData()
+  form.append('file', file)
+  form.append('mode', mode)
+
+  return request(`/api/plan/import/?class=${encodeURIComponent(classId)}`, {
+    method: 'POST',
+    body: form,
+  })
+}
+
+/**
+ * Скачивание плана.
+ *
+ * Простая ссылка не подойдёт: эндпоинт требует токен в заголовке, поэтому
+ * тянем файл запросом и отдаём браузеру как blob.
+ */
+export const downloadPlanCsv = async (classId) => {
+  const token = getToken()
+  const response = await fetch(
+    `/api/plan/export/?class=${encodeURIComponent(classId)}`,
+    { headers: token ? { Authorization: `Token ${token}` } : {} },
+  )
+
+  if (!response.ok) {
+    throw new ApiError('Не удалось выгрузить план', response.status)
+  }
+
+  const disposition = response.headers.get('Content-Disposition') || ''
+  const encoded = /filename\*=UTF-8''([^;]+)/i.exec(disposition)
+  const name = encoded ? decodeURIComponent(encoded[1]) : 'plan.csv'
+
+  const url = URL.createObjectURL(await response.blob())
+  const link = document.createElement('a')
+  link.href = url
+  link.download = name
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+  URL.revokeObjectURL(url)
+}
+
 export const fetchLayout = (classId, period = {}) =>
   request(`/api/plan/layout/?${new URLSearchParams({ class: classId, ...period })}`)
+
+/** Темы уроков по всем классам за период: slot_id → урок плана. */
+export const fetchLayoutAgenda = (start, end) =>
+  request(`/api/plan/layout/agenda/?${new URLSearchParams({ start, end })}`)
 
 export const fetchLayoutSummary = (classId) =>
   request(`/api/plan/layout/summary/?class=${encodeURIComponent(classId)}`)

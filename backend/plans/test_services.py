@@ -16,7 +16,6 @@ class FakeNode:
     is_section: bool = False
     parent_id: int | None = None
     title: str = ""
-    kind: str = services.KIND_LESSON
     school_class_id: int = 1
 
 
@@ -24,8 +23,8 @@ def section(pk, position, title=""):
     return FakeNode(pk=pk, position=position, is_section=True, title=title)
 
 
-def lesson(pk, position, parent_id=None, kind=services.KIND_LESSON, title=""):
-    return FakeNode(pk=pk, position=position, parent_id=parent_id, kind=kind, title=title)
+def lesson(pk, position, parent_id=None, title=""):
+    return FakeNode(pk=pk, position=position, parent_id=parent_id, title=title)
 
 
 # папка, папка, урок, урок, папка — как в примере из задания
@@ -37,7 +36,7 @@ MIXED = [
     lesson(21, 0, parent_id=2, title="Понятие вектора"),
     lesson(22, 1, parent_id=2, title="Сложение векторов"),
     lesson(3, 2, title="Повторение"),
-    lesson(4, 3, title="Контрольная работа", kind=services.KIND_CONTROL),
+    lesson(4, 3, title="Контрольная работа"),
     section(5, 4, "Стереометрия"),
     lesson(51, 0, parent_id=5, title="Аксиомы"),
 ]
@@ -118,12 +117,12 @@ class NumberingTests(SimpleTestCase):
 
 
 class CountsTests(SimpleTestCase):
-    def test_counts_split_by_kind(self):
-        nodes = MIXED + [lesson(6, 5, kind=services.KIND_RESERVE, title="Резерв")]
+    def test_counts_lessons_and_sections(self):
+        nodes = MIXED + [lesson(6, 5, title="Ещё урок")]
 
         self.assertEqual(
             services.counts(services.build_tree(nodes)),
-            {"lessons": 8, "control": 1, "reserve": 1, "sections": 3},
+            {"lessons": 8, "sections": 3},
         )
 
 

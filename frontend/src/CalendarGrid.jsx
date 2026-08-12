@@ -5,6 +5,7 @@ import {
   groupByMonth,
   parseDate,
 } from './calendarLogic'
+import { termColorIndex } from './termColors'
 import useRangeSelection from './useRangeSelection'
 
 const LEGEND = ['study', 'holiday', 'vacation', 'weekend']
@@ -18,6 +19,7 @@ const LEGEND = ['study', 'holiday', 'vacation', 'weekend']
  */
 export default function CalendarGrid({
   days,
+  terms = [],
   pending,
   onToggleDay,
   onSelectRange,
@@ -39,7 +41,29 @@ export default function CalendarGrid({
             {STATUS_LABELS[status]}
           </li>
         ))}
+        <li>
+          <span className="swatch noted" aria-hidden="true" />
+          пометка на выходном
+        </li>
       </ul>
+
+      {terms.length > 0 && (
+        <ul className="legend">
+          {terms.map((term) => (
+            <li key={term.id}>
+              <span
+                className={`swatch term-${termColorIndex(terms, term.id)}`}
+                aria-hidden="true"
+              />
+              {term.name}
+            </li>
+          ))}
+          <li>
+            <span className="swatch no-term" aria-hidden="true" />
+            вне термов
+          </li>
+        </ul>
+      )}
 
       <div className="months">
         {groupByMonth(days).map((month) => (
@@ -60,6 +84,9 @@ export default function CalendarGrid({
                   key={day.date}
                   className={
                     `day ${day.status}` +
+                    (day.term_id
+                      ? ` term-${termColorIndex(terms, day.term_id)}`
+                      : ' no-term') +
                     (highlighted(day.date) ? ' selected' : '') +
                     // выходной с пометкой красится как выходной, но точка
                     // показывает, что исключение на нём всё-таки есть

@@ -1,5 +1,6 @@
 from django.conf import settings
 from django.contrib.postgres.fields import ArrayField
+from django.core.exceptions import ValidationError
 from django.db import models
 
 from . import services
@@ -53,8 +54,87 @@ class SchoolYear(models.Model):
 
     def build_days(self) -> list[services.Day]:
         return services.build_days(
-            self.start_date, self.end_date, self.weekend_days, self.periods()
+            self.start_date,
+            self.end_date,
+            self.weekend_days,
+            self.periods(),
+            self.terms.all(),
         )
+
+    def term_for_date(self, day):
+        """Терм, накрывающий дату, или None — мост к services.find_term."""
+        return services.find_term(day, self.terms.all())
+
+
+class Term(models.Model):
+    """
+    Четверть или семестр.
+
+    Термы не обязаны покрывать год целиком: дни между ними (каникулы)
+    не входят ни в один терм, и это нормальное состояние.
+    """
+
+    year = models.ForeignKey(
+        SchoolYear,
+        related_name="terms",
+        on_delete=models.CASCADE,
+        verbose_name="учебный год",
+    )
+    name = models.CharField("название", max_length=100)
+    start_date = models.DateField("начало")
+    end_date = models.DateField("конец")
+    position = models.PositiveIntegerField("порядок", default=0)
+
+    class Meta:
+        verbose_name = "терм"
+        verbose_name_plural = "термы"
+        ordering = ("start_date", "id")
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(end_date__gte=models.F("start_date")),
+                name="term_dates_ordered",
+            ),
+        ]
+
+    def __str__(self):
+        return self.name
+
+    def overlapping(self):
+        """Терм того же года, пересекающийся с этим по датам."""
+        return (
+            Term.objects.filter(
+                year_id=self.year_id,
+                start_date__lte=self.end_date,
+                end_date__gte=self.start_date,
+            )
+            .exclude(pk=self.pk)
+            .first()
+        )
+
+    def clean(self):
+        super().clean()
+
+        if self.start_date and self.end_date and self.end_date < self.start_date:
+            raise ValidationError({"end_date": "Дата окончания раньше даты начала."})
+
+        if not (self.year_id and self.start_date and self.end_date):
+            return
+
+        if not (
+            self.year.start_date <= self.start_date
+            and self.end_date <= self.year.end_date
+        ):
+            raise ValidationError(
+                "Терм должен помещаться в границы учебного года "
+                f"({self.year.start_date} — {self.year.end_date})."
+            )
+
+        busy = self.overlapping()
+        if busy is not None:
+            raise ValidationError(
+                f"Пересекается с термом «{busy.name}» "
+                f"({busy.start_date} — {busy.end_date})."
+            )
 
 
 class DayException(models.Model):

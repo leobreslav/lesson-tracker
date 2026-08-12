@@ -2,7 +2,7 @@ from rest_framework import serializers
 from rest_framework.validators import UniqueTogetherValidator
 
 from . import services
-from .models import DayException, SchoolYear
+from .models import DayException, SchoolYear, Term
 
 
 class DayExceptionSerializer(serializers.ModelSerializer):
@@ -49,12 +49,68 @@ class DayExceptionSerializer(serializers.ModelSerializer):
                 f"({year.start_date} — {year.end_date})."
             )
 
+        # одинаковые названия разрешены: две «Каникулы» в разные даты —
+        # обычное дело, конфликтом считается только пересечение дат
         conflicts = services.find_conflicts(period, year.periods())
         if conflicts:
             first = conflicts[0]
+            label = services.STATUS_LABELS.get(first.kind, "исключение")
             raise serializers.ValidationError(
-                f"Пересекается с исключением того же вида: "
-                f"{first.title or 'без названия'} ({first.start_date} — {first.end_date})."
+                f"Эти даты уже заняты: {label} "
+                f"«{first.title or 'без названия'}», "
+                f"{services.format_span(first.start_date, first.end_date)}. "
+                "Удалите или подвиньте прежнюю разметку."
+            )
+
+        return attrs
+
+
+class TermSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Term
+        fields = ("id", "year", "name", "start_date", "end_date", "position")
+
+    def get_fields(self):
+        fields = super().get_fields()
+        request = self.context.get("request")
+        user = getattr(request, "user", None)
+        fields["year"].queryset = (
+            SchoolYear.objects.filter(owner=user)
+            if user is not None and user.is_authenticated
+            else SchoolYear.objects.none()
+        )
+        return fields
+
+    def validate(self, attrs):
+        def value(name):
+            return attrs.get(name, getattr(self.instance, name, None))
+
+        year = value("year")
+        start_date, end_date = value("start_date"), value("end_date")
+
+        if end_date < start_date:
+            raise serializers.ValidationError(
+                {"end_date": "Дата окончания раньше даты начала."}
+            )
+
+        if not (year.start_date <= start_date and end_date <= year.end_date):
+            raise serializers.ValidationError(
+                "Терм должен помещаться в границы учебного года "
+                f"({year.start_date} — {year.end_date})."
+            )
+
+        # проверку пересечений держим в модели: она же работает в админке
+        probe = Term(
+            pk=self.instance.pk if self.instance else None,
+            year=year,
+            start_date=start_date,
+            end_date=end_date,
+        )
+        busy = probe.overlapping()
+        if busy is not None:
+            raise serializers.ValidationError(
+                f"Пересекается с термом «{busy.name}»: "
+                f"{services.format_span(busy.start_date, busy.end_date)}."
             )
 
         return attrs

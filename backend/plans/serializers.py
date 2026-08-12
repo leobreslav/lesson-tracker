@@ -31,7 +31,6 @@ def node_payload(node, number=None) -> dict:
         "position": node.position,
         "is_section": node.is_section,
         "title": node.title,
-        "kind": node.kind,
         "note": node.note,
         # сквозной номер считается на лету, у папок его нет
         "number": number,
@@ -85,9 +84,9 @@ def layout_payload(entries) -> dict:
         return lesson and {
             "id": lesson.node.pk,
             "title": lesson.node.title,
-            "kind": lesson.node.kind,
             "number": lesson.number,
             # тема — папка, в которой лежит урок; у уроков верхнего уровня её нет
+            "section_id": lesson.section.pk if lesson.section else None,
             "section_title": lesson.section.title if lesson.section else None,
         }
 
@@ -97,6 +96,8 @@ def layout_payload(entries) -> dict:
                 "status": entry.status,
                 "slot": slot_payload(entry.slot),
                 "plan_row": lesson_payload(entry.lesson),
+                "term_id": entry.term.pk if entry.term else None,
+                "term_name": entry.term.name if entry.term else None,
             }
             for entry in entries
         ]
@@ -111,7 +112,7 @@ class PlanNodeCreateSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = PlanNode
-        fields = ("id", "school_class", "parent", "is_section", "title", "kind", "note", "after")
+        fields = ("id", "school_class", "parent", "is_section", "title", "note", "after")
 
     def get_fields(self):
         fields = super().get_fields()
@@ -163,7 +164,7 @@ class PlanNodeUpdateSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = PlanNode
-        fields = ("id", "parent", "position", "is_section", "title", "kind", "note")
+        fields = ("id", "parent", "position", "is_section", "title", "note")
         read_only_fields = ("parent", "position", "is_section")
 
 

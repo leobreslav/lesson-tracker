@@ -7,8 +7,7 @@ import {
   fetchSchoolYears,
 } from './api'
 import { WEEKDAY_SHORT, parseDate, today, weekdayOf } from './calendarLogic'
-
-const KIND_LABELS = { control: 'контрольная', reserve: 'резерв' }
+import { layoutBlocks, pluralLessons } from './planLogic'
 
 function formatDate(iso) {
   return parseDate(iso).toLocaleDateString('ru-RU', {
@@ -116,11 +115,55 @@ export default function Layout({ onLoggedOut }) {
     return index === -1 ? placed.length : index
   }, [placed])
 
-  const renderFeed = () => {
+  /** Записи, разложенные по термам в порядке ленты. */
+  const blocks = useMemo(() => {
+    const result = []
+
+    placed.forEach((entry, index) => {
+      const key = entry.term_id ?? null
+      if (result.at(-1)?.key !== key) {
+        result.push({
+          key,
+          name: entry.term_name ?? 'вне термов',
+          entries: [],
+          firstIndex: index,
+        })
+      }
+      result.at(-1).entries.push({ entry, index })
+    })
+
+    return result
+  }, [placed])
+
+  /** Счётчики тематических блоков: считаются из уже загруженной раскладки. */
+  const themeBlocks = useMemo(() => layoutBlocks(entries ?? []), [entries])
+
+  /** Подпись блока: уроки, даты, непоместившиеся и переход в другой терм. */
+  const blockNote = (sectionId) => {
+    const block = themeBlocks.byId.get(sectionId)
+    if (!block) return null
+
+    const parts = [pluralLessons(block.lessons)]
+    if (block.missing) parts.push(`${block.missing} не помещаются`)
+
+    const dates =
+      block.first && `${formatDate(block.first)} — ${formatDate(block.last)}`
+    const crossing =
+      block.terms.length > 1 && `переходит в ${block.terms.at(-1)}`
+
+    return [parts.join(', '), dates, crossing].filter(Boolean).join(' · ')
+  }
+
+  const termSummary = useMemo(
+    () => new Map((summary?.terms ?? []).map((row) => [row.id, row])),
+    [summary],
+  )
+
+  const renderRows = (items) => {
     let theme // тема предыдущего урока: разделитель ставим при смене
     const rows = []
 
-    placed.forEach((entry, index) => {
+    items.forEach(({ entry, index }) => {
       if (index === todayIndex) {
         rows.push(
           <li className="layout-today" key="today">
@@ -137,6 +180,11 @@ export default function Layout({ onLoggedOut }) {
           rows.push(
             <li className="layout-theme" key={`theme-${entry.slot.id}`}>
               {next ?? 'без темы'}
+              {lesson.section_id != null && (
+                <span className="hint block-count">
+                  {blockNote(lesson.section_id)}
+                </span>
+              )}
             </li>,
           )
         }
@@ -166,21 +214,10 @@ export default function Layout({ onLoggedOut }) {
               'свободный урок'
             )}
           </span>
-          {lesson && KIND_LABELS[lesson.kind] && (
-            <span className={`badge ${lesson.kind}`}>{KIND_LABELS[lesson.kind]}</span>
-          )}
           {entry.slot.is_extra && <span className="badge">дополнительный</span>}
         </li>,
       )
     })
-
-    if (todayIndex === placed.length) {
-      rows.push(
-        <li className="layout-today" key="today">
-          сегодня
-        </li>,
-      )
-    }
 
     return rows
   }
@@ -263,13 +300,49 @@ export default function Layout({ onLoggedOut }) {
             <p>Загрузка…</p>
           ) : (
             <>
+              {themeBlocks.loose > 0 && (
+                <p className="hint">Вне блоков: {themeBlocks.loose}.</p>
+              )}
+
               {!placed.length && !leftovers.length && (
                 <p className="hint">
                   Пока нечего раскладывать: нужен учебный план и расписание.
                 </p>
               )}
 
-              <ul className="layout-feed">{renderFeed()}</ul>
+              {blocks.map((block) => {
+                const counters = termSummary.get(block.key)
+
+                return (
+                  <section className="term-block" key={block.key ?? 'outside'}>
+                    <header className="term-head">
+                      <strong>{block.name}</strong>
+                      {counters?.start && (
+                        <span className="hint">
+                          {formatDate(counters.start)} — {formatDate(counters.end)}
+                        </span>
+                      )}
+                      {counters && (
+                        <span className="term-counters">
+                          слотов {counters.slots} · уроков {counters.lessons} ·{' '}
+                          <b className={counters.balance < 0 ? 'bad' : 'good'}>
+                            {counters.balance > 0 ? '+' : ''}
+                            {counters.balance}
+                          </b>
+                        </span>
+                      )}
+                    </header>
+
+                    <ul className="layout-feed">{renderRows(block.entries)}</ul>
+                  </section>
+                )
+              })}
+
+              {todayIndex === placed.length && placed.length > 0 && (
+                <ul className="layout-feed">
+                  <li className="layout-today">сегодня</li>
+                </ul>
+              )}
 
               {leftovers.length > 0 && (
                 <section className="panel leftovers">

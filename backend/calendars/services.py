@@ -34,7 +34,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date, timedelta
 from typing import Iterable, Iterator, Sequence
 
@@ -100,6 +100,9 @@ class Day:
     status: str
     title: str = ""
     exception_id: int | None = None
+    # терм, в который попал день; вне термов — None, это нормально
+    term_id: int | None = None
+    term_name: str = ""
 
     @property
     def weekday(self) -> int:
@@ -108,6 +111,41 @@ class Day:
     @property
     def is_study(self) -> bool:
         return self.status == STATUS_STUDY
+
+
+MONTHS_GENITIVE = (
+    "января", "февраля", "марта", "апреля", "мая", "июня",
+    "июля", "августа", "сентября", "октября", "ноября", "декабря",
+)
+
+
+def format_day(day: date) -> str:
+    """«14 октября» — для сообщений пользователю."""
+    return f"{day.day} {MONTHS_GENITIVE[day.month - 1]}"
+
+
+def format_span(start_date: date, end_date: date) -> str:
+    """«14 октября» либо «26 октября — 3 ноября»."""
+    if start_date == end_date:
+        return format_day(start_date)
+    return f"{format_day(start_date)} — {format_day(end_date)}"
+
+
+def spans_overlap(start_a: date, end_a: date, start_b: date, end_b: date) -> bool:
+    """Пересекаются ли два отрезка дат (границы включительно)."""
+    return start_a <= end_b and start_b <= end_a
+
+
+def find_term(day: date, terms: Iterable):
+    """
+    Терм, накрывающий дату, или None.
+
+    Термы не обязаны покрывать год целиком: каникулы между четвертями
+    в терм не входят, и это не ошибка.
+    """
+    return next(
+        (term for term in terms if term.start_date <= day <= term.end_date), None
+    )
 
 
 def iter_dates(start_date: date, end_date: date) -> Iterator[date]:
@@ -163,13 +201,29 @@ def build_days(
     end_date: date,
     weekend_days: Iterable[int] = DEFAULT_WEEKEND_DAYS,
     periods: Iterable[Period] = (),
+    terms: Iterable = (),
 ) -> list[Day]:
     """Развёрнутый календарь учебного года: по одной записи на каждую дату."""
     weekend = set(weekend_days)
     # исключения за границами года на календарь не влияют
     inside = [p for p in periods if p.end_date >= start_date and p.start_date <= end_date]
+    terms = list(terms)
 
-    return [resolve_day(day, weekend, inside) for day in iter_dates(start_date, end_date)]
+    days = []
+    for day in iter_dates(start_date, end_date):
+        resolved = resolve_day(day, weekend, inside)
+        term = find_term(day, terms)
+        days.append(
+            replace(
+                resolved,
+                term_id=term.pk if term is not None else None,
+                term_name=term.name if term is not None else "",
+            )
+            if term is not None
+            else resolved
+        )
+
+    return days
 
 
 def study_days(days: Iterable[Day]) -> list[Day]:
@@ -197,8 +251,29 @@ def count_by_status(days: Iterable[Day]) -> dict[str, int]:
     return counts
 
 
+def count_by_term(days: Iterable[Day]) -> list[dict]:
+    """
+    Учебные дни по термам, в порядке появления в календаре.
+
+    Дни вне термов идут отдельной записью с `id: None` — их наличие
+    нормально: между четвертями каникулы.
+    """
+    buckets: dict[int | None, dict] = {}
+
+    for day in days:
+        bucket = buckets.setdefault(
+            day.term_id,
+            {"id": day.term_id, "name": day.term_name, "study": 0, "calendar_days": 0},
+        )
+        bucket["calendar_days"] += 1
+        if day.is_study:
+            bucket["study"] += 1
+
+    return list(buckets.values())
+
+
 def build_stats(days: Sequence[Day]) -> dict:
-    """Итоги: учебные дни всего, по дням недели и разбивка по статусам."""
+    """Итоги: учебные дни всего, по дням недели, статусам и термам."""
     by_weekday = count_by_weekday(days)
     by_status = count_by_status(days)
 
@@ -210,6 +285,7 @@ def build_stats(days: Sequence[Day]) -> dict:
             {"weekday": weekday, "name": WEEKDAY_NAMES[weekday], "count": count}
             for weekday, count in sorted(by_weekday.items())
         ],
+        "by_term": count_by_term(days),
     }
 
 

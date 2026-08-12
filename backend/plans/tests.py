@@ -34,14 +34,13 @@ class PlanTestCase(APITestCase):
         )
         return SchoolClass.objects.create(owner=owner, year=year, name=name)
 
-    def add(self, title, parent=None, position=0, is_section=False, kind=None, school_class=None):
+    def add(self, title, parent=None, position=0, is_section=False, school_class=None):
         return PlanNode.objects.create(
             school_class=school_class or self.school_class,
             parent=parent,
             position=position,
             is_section=is_section,
             title=title,
-            kind=kind or services.KIND_LESSON,
         )
 
     def build_sample(self):
@@ -55,7 +54,7 @@ class PlanTestCase(APITestCase):
         self.add("Сложение векторов", parent=vectors, position=1)
 
         self.add("Повторение", position=2)
-        self.add("Контрольная работа", position=3, kind=services.KIND_CONTROL)
+        self.add("Контрольная работа", position=3)
 
         stereo = self.add("Стереометрия", position=4, is_section=True)
         self.add("Аксиомы", parent=stereo, position=0)
@@ -79,6 +78,16 @@ class PlanTestCase(APITestCase):
         for branch in services.get_tree(self.school_class):
             rows.append(branch.node.title)
             rows.extend(f"  {child.title}" for child in branch.children)
+        return rows
+
+    def titles_with_notes(self):
+        """Срез плана вместе с заметками — для сверки после кругового CSV."""
+        rows = []
+        for branch in services.get_tree(self.school_class):
+            rows.append((branch.node.title, branch.node.note, branch.node.is_section))
+            rows.extend(
+                (child.title, child.note, child.is_section) for child in branch.children
+            )
         return rows
 
     def positions(self, parent=None):
@@ -138,7 +147,7 @@ class TreeApiTests(PlanTestCase):
     def test_counts(self):
         self.assertEqual(
             self.tree().json()["counts"],
-            {"lessons": 7, "control": 1, "reserve": 0, "sections": 3},
+            {"lessons": 7, "sections": 3},
         )
 
     def test_flat_endpoint_lists_lessons_in_order(self):
@@ -280,14 +289,13 @@ class UpdateAndDeleteTests(PlanTestCase):
 
         response = self.client.patch(
             reverse("plannode-detail", args=[node.pk]),
-            {"title": "Повторение курса", "kind": services.KIND_RESERVE, "note": "две пары"},
+            {"title": "Повторение курса", "note": "две пары"},
             format="json",
         )
 
         self.assertEqual(response.status_code, 200, response.content)
         node.refresh_from_db()
         self.assertEqual(node.title, "Повторение курса")
-        self.assertEqual(node.kind, services.KIND_RESERVE)
         self.assertEqual(node.note, "две пары")
 
     def test_patch_cannot_reparent(self):

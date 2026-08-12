@@ -120,39 +120,48 @@ function covering(exceptions, iso) {
   return exceptions.filter((item) => item.start_date <= iso && iso <= item.end_date)
 }
 
-function makeDay(date, weekday, status, source) {
+function makeDay(date, weekday, status, source, term) {
   return {
     date,
     weekday,
     status,
     title: source ? source.title : '',
     exception: source ? source.id : null,
+    term_id: term ? term.id : null,
+    term_name: term ? term.name : '',
   }
 }
 
-export function buildDays(year, exceptions) {
+/** Терм, накрывающий дату, или null: дни между четвертями — это норма. */
+export function findTerm(iso, terms) {
+  return terms.find((term) => term.start_date <= iso && iso <= term.end_date) ?? null
+}
+
+export function buildDays(year, exceptions, terms = []) {
   const weekend = new Set(year.weekend_days)
 
   return eachDate(year.start_date, year.end_date).map((iso) => {
     const weekday = weekdayOf(iso)
     const found = covering(exceptions, iso)
     const of = (kind) => found.find((item) => item.kind === kind)
+    // null — день между четвертями, это нормальное состояние
+    const term = findTerm(iso, terms)
 
     const workday = of(KIND_WORKDAY)
-    if (workday) return makeDay(iso, weekday, STATUS_STUDY, workday)
+    if (workday) return makeDay(iso, weekday, STATUS_STUDY, workday, term)
 
     const holiday = of(KIND_HOLIDAY)
     const vacation = of(KIND_VACATION)
 
     // выходной сильнее праздника и каникул, но пометку на дне сохраняем
     if (weekend.has(weekday)) {
-      return makeDay(iso, weekday, STATUS_WEEKEND, holiday || vacation || null)
+      return makeDay(iso, weekday, STATUS_WEEKEND, holiday || vacation || null, term)
     }
 
-    if (holiday) return makeDay(iso, weekday, STATUS_HOLIDAY, holiday)
-    if (vacation) return makeDay(iso, weekday, STATUS_VACATION, vacation)
+    if (holiday) return makeDay(iso, weekday, STATUS_HOLIDAY, holiday, term)
+    if (vacation) return makeDay(iso, weekday, STATUS_VACATION, vacation, term)
 
-    return makeDay(iso, weekday, STATUS_STUDY, null)
+    return makeDay(iso, weekday, STATUS_STUDY, null, term)
   })
 }
 
@@ -165,11 +174,29 @@ export function buildStats(days) {
     if (day.status === STATUS_STUDY) byWeekday[day.weekday] += 1
   })
 
+  // разбивка по термам: дни вне термов идут записью с id === null
+  const byTerm = new Map()
+  days.forEach((day) => {
+    const key = day.term_id ?? null
+    if (!byTerm.has(key)) {
+      byTerm.set(key, {
+        id: key,
+        name: day.term_name ?? '',
+        study: 0,
+        calendar_days: 0,
+      })
+    }
+    const bucket = byTerm.get(key)
+    bucket.calendar_days += 1
+    if (day.status === STATUS_STUDY) bucket.study += 1
+  })
+
   return {
     calendar_days: days.length,
     total: byStatus[STATUS_STUDY],
     by_status: byStatus,
     by_weekday: byWeekday.map((count, weekday) => ({ weekday, count })),
+    by_term: [...byTerm.values()],
   }
 }
 

@@ -5,6 +5,7 @@ import CopyDialog from './CopyDialog'
 import {
   clearSlots,
   copySlots,
+  fetchLayoutAgenda,
   createSlot,
   deleteSlot,
   fetchAgenda,
@@ -33,6 +34,26 @@ import { MAX_LESSON_NUMBER, describeCopyResult } from './scheduleLogic'
 const NUMBERS = Array.from({ length: MAX_LESSON_NUMBER }, (_, index) => index + 1)
 
 const EMPTY = { lessons: {}, days: {} }
+
+// чекбокс «Темы уроков» переживает перезагрузку: это обычное веб-приложение,
+// localStorage здесь уместен и ничего не стоит
+const TOPICS_KEY = 'agendaShowTopics'
+
+function readTopicsFlag() {
+  try {
+    return localStorage.getItem(TOPICS_KEY) === '1'
+  } catch {
+    return false
+  }
+}
+
+function saveTopicsFlag(value) {
+  try {
+    localStorage.setItem(TOPICS_KEY, value ? '1' : '0')
+  } catch {
+    // приватный режим — просто не запоминаем
+  }
+}
 
 /** Уроки из ответа agenda — плоским списком, с датой внутри каждого. */
 function flatten(lessons) {
@@ -77,6 +98,10 @@ export default function Agenda({ onLoggedOut }) {
   const [targetPeriod, setTargetPeriod] = useState(EMPTY)
   // выделенные в сетке дни: {start, end}; Shift+клик тянет диапазон
   const [selection, setSelection] = useState(null)
+  // темы уроков по плану: slot_id → {title, section_title};
+  // null — ещё не загружены, чтобы не подписывать «тема не назначена» зря
+  const [topics, setTopics] = useState(null)
+  const [showTopics, setShowTopics] = useState(readTopicsFlag)
 
   const tempId = useRef(0)
 
@@ -136,6 +161,34 @@ export default function Agenda({ onLoggedOut }) {
       cancelled = true
     }
   }, [load, handleError])
+
+  // темы тянем только когда их показывают: иначе лишний запрос на каждую неделю
+  useEffect(() => {
+    if (!showTopics) {
+      setTopics(null)
+      return undefined
+    }
+
+    let cancelled = false
+    fetchLayoutAgenda(period.start, period.end)
+      .then((payload) => {
+        if (!cancelled) setTopics(payload.slots)
+      })
+      .catch(() => {
+        // молча: тема — приятное дополнение, ради неё сетку не ломаем
+        if (!cancelled) setTopics(null)
+      })
+
+    return () => {
+      cancelled = true
+    }
+    // data в зависимостях не случайно: после правки урока темы сдвигаются
+  }, [showTopics, period, data])
+
+  const toggleTopics = (value) => {
+    setShowTopics(value)
+    saveTopicsFlag(value)
+  }
 
   const dates = useMemo(
     () => eachDate(period.start, period.end),
@@ -413,6 +466,28 @@ export default function Agenda({ onLoggedOut }) {
   // без выделения копируем весь показанный период
   const copyRange = selection ?? { start: period.start, end: period.end }
 
+  /**
+   * Тема урока из плана.
+   *
+   * Пока темы не загрузились — ничего не рисуем. Когда загрузились, а урока
+   * плана на этот слот нет (слотов больше, чем уроков), честно подписываем:
+   * иначе непонятно, то ли тема не назначена, то ли просто не показана.
+   */
+  const topicOf = (lesson) => {
+    if (!showTopics || !topics) return null
+
+    const topic = topics[lesson.id]
+    if (!topic) {
+      return <span className="cell-topic missing">(тема не назначена)</span>
+    }
+
+    return (
+      <span className="cell-topic" title={topic.title}>
+        {topic.title}
+      </span>
+    )
+  }
+
   const openLesson = (date, lesson) => setDialog({ type: 'lesson', date, lesson })
 
   const openFreeCell = (date, number) => {
@@ -498,6 +573,7 @@ export default function Agenda({ onLoggedOut }) {
                     onClick={() => openLesson(date, lesson)}
                   >
                     {lesson.class_name}
+                    {topicOf(lesson)}
                   </button>
                 ))}
                 {/* место свободно: остались одни отмены */}
@@ -563,6 +639,7 @@ export default function Agenda({ onLoggedOut }) {
                     >
                       <span className="slot">{lesson.lesson_number}</span>{' '}
                       {lesson.class_name}
+                      {topicOf(lesson)}
                     </button>
                   ))}
                 </div>
@@ -677,6 +754,15 @@ export default function Agenda({ onLoggedOut }) {
               {item.name}
             </label>
           ))}
+
+          <label className="checkbox topics-toggle">
+            <input
+              type="checkbox"
+              checked={showTopics}
+              onChange={(event) => toggleTopics(event.target.checked)}
+            />
+            Темы уроков
+          </label>
         </div>
       )}
 

@@ -1,4 +1,7 @@
+from urllib.parse import quote
+
 from django.db import transaction
+from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from django.utils.dateparse import parse_date
@@ -21,6 +24,10 @@ from .serializers import (
     layout_payload,
     tree_payload,
 )
+
+
+# файл плана крупнее мегабайта — это уже не учебный план
+MAX_IMPORT_BYTES = 1024 * 1024
 
 
 def read_date(value):
@@ -68,7 +75,7 @@ class PlanNodeViewSet(viewsets.ModelViewSet):
     def requested_class(self):
         raw = self.request.query_params.get("class")
         if not raw or not raw.isdigit():
-            raise ValidationError({"class": "Нужен параметр class с id класса."})
+            raise ValidationError({"class": ["Нужен параметр class с id класса."]})
 
         return get_object_or_404(
             SchoolClass.objects.filter(owner=self.request.user), pk=raw
@@ -89,7 +96,9 @@ class PlanNodeViewSet(viewsets.ModelViewSet):
         ).order_by("date", "lesson_number")
 
         return services.build_layout(
-            services.flatten_lessons(school_class), list(slots)
+            services.flatten_lessons(school_class),
+            list(slots),
+            school_class.year.terms.all(),
         )
 
     @action(detail=False, methods=["get"])
@@ -114,6 +123,112 @@ class PlanNodeViewSet(viewsets.ModelViewSet):
 
         return Response(layout_payload(entries))
 
+    @action(
+        detail=False,
+        methods=["get"],
+        url_path="layout/agenda",
+        url_name="layout-agenda",
+    )
+    def layout_agenda(self, request):
+        """
+        Темы уроков сразу по всем классам за период: slot_id → урок плана.
+
+        Сводному расписанию иначе пришлось бы спрашивать раскладку по
+        каждому классу отдельно. Сопоставление, как и всегда, считается по
+        всему плану и всему расписанию класса, а период только режет ответ.
+        """
+        start = read_date(request.query_params.get("start"))
+        end = read_date(request.query_params.get("end"))
+        if start is None or end is None:
+            raise ValidationError({"start": ["Нужны параметры start и end."]})
+        if end < start:
+            raise ValidationError({"end": ["Дата окончания раньше даты начала."]})
+
+        # классы, у которых в периоде вообще что-то стоит
+        classes = SchoolClass.objects.filter(
+            owner=request.user,
+            slots__date__range=(start, end),
+            slots__is_cancelled=False,
+        ).distinct()
+
+        slots = {}
+        for school_class in classes:
+            for entry in self.layout_entries(school_class):
+                if entry.slot is None or entry.lesson is None:
+                    continue
+                if not start <= entry.slot.date <= end:
+                    continue
+
+                lesson = entry.lesson
+                slots[entry.slot.pk] = {
+                    "plan_row_id": lesson.node.pk,
+                    "title": lesson.node.title,
+                    "section_title": lesson.section.title if lesson.section else None,
+                }
+
+        return Response({"start": start, "end": end, "slots": slots})
+
+    @action(detail=False, methods=["post"], url_path="import", url_name="import")
+    def import_csv(self, request):
+        """
+        Импорт плана из CSV. Либо файл заезжает целиком, либо ничего.
+
+        Разбор идёт до транзакции: непригодный файл не должен успеть снести
+        существующий план в режиме replace.
+        """
+        school_class = self.requested_class()
+
+        upload = request.FILES.get("file")
+        if upload is None:
+            raise ValidationError({"file": ["Нужен файл CSV."]})
+        if upload.size > MAX_IMPORT_BYTES:
+            raise ValidationError(
+                {"file": [f"Файл больше {MAX_IMPORT_BYTES // 1024 // 1024} МБ."]}
+            )
+
+        mode = request.data.get("mode", "replace")
+        if mode not in ("replace", "append"):
+            raise ValidationError({"mode": ["Режим — replace или append."]})
+
+        try:
+            rows, warnings = services.parse_plan_csv(
+                services.decode_csv(upload.read())
+            )
+        except services.PlanImportError as error:
+            raise ValidationError({"file": [str(error)]}) from error
+
+        with transaction.atomic():
+            if mode == "replace":
+                PlanNode.objects.filter(school_class=school_class).delete()
+
+            created = services.apply_import(
+                school_class, rows, append=(mode == "append")
+            )
+
+        return Response(
+            {
+                "created_rows": created["headers"] + created["lessons"],
+                "created_headers": created["headers"],
+                "created_lessons": created["lessons"],
+                "warnings": warnings,
+            }
+        )
+
+    @action(detail=False, methods=["get"], url_path="export", url_name="export")
+    def export_csv(self, request):
+        """Выгрузка плана в CSV — формат тот же, что понимает импорт."""
+        school_class = self.requested_class()
+        content = services.build_plan_csv(services.get_tree(school_class))
+
+        name = f"план_{school_class.name}_{timezone.localdate()}.csv"
+        response = HttpResponse(content, content_type="text/csv; charset=utf-8")
+        # имя с кириллицей — только через RFC 5987, плюс ascii-запасное
+        response["Content-Disposition"] = (
+            'attachment; filename="plan.csv"; '
+            f"filename*=UTF-8''{quote(name)}"
+        )
+        return response
+
     @action(detail=False, methods=["get"], url_path="layout/summary", url_name="layout-summary")
     def layout_summary(self, request):
         school_class = self.requested_class()
@@ -126,6 +241,7 @@ class PlanNodeViewSet(viewsets.ModelViewSet):
                 self.layout_entries(school_class),
                 today=timezone.localdate(),
                 cancelled_count=cancelled,
+                terms=school_class.year.terms.all(),
             )
         )
 

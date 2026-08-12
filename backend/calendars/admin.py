@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import DayException, SchoolYear
+from .models import DayException, SchoolYear, Term
 
 
 class DayExceptionInline(admin.TabularInline):
@@ -20,3 +20,9 @@ class SchoolYearAdmin(admin.ModelAdmin):
 class DayExceptionAdmin(admin.ModelAdmin):
     list_display = ("title", "kind", "start_date", "end_date", "year")
     list_filter = ("kind", "year")
+
+
+@admin.register(Term)
+class TermAdmin(admin.ModelAdmin):
+    list_display = ("name", "year", "start_date", "end_date", "position")
+    list_filter = ("year",)

@@ -16,26 +16,29 @@ import {
   sortableKeyboardCoordinates,
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable'
+import ImportDialog from './ImportDialog'
 import Modal from './Modal'
 import { EmptyDropZone, SortableRow, dragId, emptyZoneId } from './PlanDnd'
-import { applyMove, resolveDropTarget } from './planLogic'
+import {
+  applyMove,
+  countBlocks,
+  planRows,
+  pluralLessons,
+  resolveDropTarget,
+} from './planLogic'
 import {
   createPlanNode,
   deletePlanNode,
+  downloadPlanCsv,
   fetchClasses,
   fetchPlan,
   fetchSchoolYears,
+  importPlanCsv,
   movePlanNode,
   movePlanNodeTo,
   movePlanSection,
   updatePlanNode,
 } from './api'
-
-const KIND_LABELS = {
-  lesson: 'урок',
-  control: 'контрольная',
-  reserve: 'резерв',
-}
 
 const DND_INSTRUCTIONS = {
   draggable:
@@ -53,9 +56,11 @@ export default function Plan({ onLoggedOut }) {
 
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
-  const [editing, setEditing] = useState(null) // {id, title, kind, note}
+  const [editing, setEditing] = useState(null) // {id, title, note}
   const [adding, setAdding] = useState(null) // {parent, after, is_section, title}
   const [deleting, setDeleting] = useState(null) // папка, которую сносим
+  const [importing, setImporting] = useState(false)
+  const [notice, setNotice] = useState(null)
   const [collapsed, setCollapsed] = useState(() => new Set())
 
   const [dragged, setDragged] = useState(null) // {node} — что тащим сейчас
@@ -147,6 +152,12 @@ export default function Plan({ onLoggedOut }) {
     // у клавиатурного перетаскивания курсора нет — там работает closestCenter
     return withinPointer.length ? withinPointer : closestCenter(args)
   }, [])
+
+  /** Счётчики блоков считаются из уже загруженного дерева, без запросов. */
+  const blocks = useMemo(
+    () => countBlocks(planRows(data?.nodes ?? [])),
+    [data],
+  )
 
   const items = useMemo(() => {
     const map = new Map()
@@ -255,20 +266,19 @@ export default function Plan({ onLoggedOut }) {
     setEditing({
       id: node.id,
       title: node.title,
-      kind: node.kind,
       note: node.note,
       is_section: node.is_section,
     })
 
   const submitEdit = (event) => {
     event.preventDefault()
-    const { id, title, kind, note, is_section } = editing
+    const { id, title, note, is_section } = editing
     setEditing(null)
 
     if (!title.trim()) return
     const fields = is_section
       ? { title: title.trim() }
-      : { title: title.trim(), kind, note }
+      : { title: title.trim(), note }
 
     run(() => updatePlanNode(id, fields))
   }
@@ -305,6 +315,40 @@ export default function Plan({ onLoggedOut }) {
     )
   }
 
+  // --- CSV ---
+
+  const handleImport = async ({ file, mode }) => {
+    setImporting(false)
+    setBusy(true)
+    setError(null)
+    setNotice(null)
+
+    try {
+      const result = await importPlanCsv(classId, file, mode)
+      await load(classId)
+      setNotice(
+        `Создано строк: ${result.created_rows} ` +
+          `(тем ${result.created_headers}, уроков ${result.created_lessons}).` +
+          (result.warnings.length
+            ? ` Пропущено: ${result.warnings.length}. ${result.warnings.join(' ')}`
+            : ''),
+      )
+    } catch (err) {
+      handleError(err)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const handleExport = async () => {
+    setError(null)
+    try {
+      await downloadPlanCsv(classId)
+    } catch (err) {
+      handleError(err)
+    }
+  }
+
   // --- удаление ---
 
   const removeLesson = (node) => {
@@ -332,17 +376,6 @@ export default function Plan({ onLoggedOut }) {
       />
       {!node.is_section && (
         <>
-          <select
-            value={editing.kind}
-            aria-label="Вид"
-            onChange={(event) => setEditing({ ...editing, kind: event.target.value })}
-          >
-            {Object.entries(KIND_LABELS).map(([value, label]) => (
-              <option key={value} value={value}>
-                {label}
-              </option>
-            ))}
-          </select>
           <input
             value={editing.note}
             maxLength={500}
@@ -416,7 +449,7 @@ export default function Plan({ onLoggedOut }) {
     <SortableRow
       key={node.id}
       id={dragId(node.id)}
-      className={`plan-row lesson ${node.kind}`}
+      className="plan-row lesson"
       indicator={indicatorFor(node.id)}
     >
       {(handle) =>
@@ -439,9 +472,6 @@ export default function Plan({ onLoggedOut }) {
           >
             {node.title}
           </button>
-          {node.kind !== 'lesson' && (
-            <span className={`badge ${node.kind}`}>{KIND_LABELS[node.kind]}</span>
-          )}
           {node.note && <span className="hint">{node.note}</span>}
 
           <span className="row-actions">
@@ -510,7 +540,9 @@ export default function Plan({ onLoggedOut }) {
               >
                 {node.title}
               </button>
-              <span className="hint">{node.children.length} уроков</span>
+              <span className="hint block-count">
+                {pluralLessons(blocks.byId.get(node.id)?.lessons ?? 0)}
+              </span>
 
               <span className="row-actions">
                 {moveButtons(node, movePlanSection)}
@@ -600,15 +632,20 @@ export default function Plan({ onLoggedOut }) {
 
           {data && (
             <p className="hint plan-counts">
-              Уроков: <strong>{data.counts.lessons}</strong>, из них контрольных{' '}
-              {data.counts.control} и резервных {data.counts.reserve}. Папок:{' '}
+              Уроков: <strong>{data.counts.lessons}</strong>. Папок:{' '}
               {data.counts.sections}.
+              {blocks.loose > 0 && <> Вне блоков: {blocks.loose}.</>}
             </p>
           )}
 
           {error && (
             <p className="error" role="alert">
               {error}
+            </p>
+          )}
+          {notice && (
+            <p className="hint" role="status">
+              {notice}
             </p>
           )}
 
@@ -677,10 +714,35 @@ export default function Plan({ onLoggedOut }) {
                 >
                   + папка
                 </button>
+
+                <button
+                  type="button"
+                  className="secondary"
+                  disabled={busy}
+                  onClick={() => setImporting(true)}
+                >
+                  Импорт CSV
+                </button>
+                <button
+                  type="button"
+                  className="secondary"
+                  disabled={busy}
+                  onClick={handleExport}
+                >
+                  Экспорт CSV
+                </button>
               </div>
             </>
           )}
         </>
+      )}
+
+      {importing && (
+        <ImportDialog
+          busy={busy}
+          onSubmit={handleImport}
+          onClose={() => setImporting(false)}
+        />
       )}
 
       {deleting && (

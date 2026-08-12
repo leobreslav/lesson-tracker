@@ -1,8 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import CalendarGrid from './CalendarGrid'
+import TermsPanel from './TermsPanel'
 import RangeDialog from './RangeDialog'
 import {
   createException,
+  createTerm,
+  deleteTerm,
+  fetchTerms,
+  updateTerm,
   createSchoolYear,
   deleteException,
   deleteSchoolYear,
@@ -50,6 +55,7 @@ export default function Calendar({ onLoggedOut }) {
   const [notice, setNotice] = useState(null)
   const [yearForm, setYearForm] = useState(null) // форма нового года, null — закрыта
   const [rangeForm, setRangeForm] = useState(null) // {start_date, end_date, title}
+  const [terms, setTerms] = useState([])
 
   // id для оптимистично добавленного исключения, пока сервер не ответил
   const tempId = useRef(0)
@@ -82,13 +88,17 @@ export default function Calendar({ onLoggedOut }) {
 
   const load = useCallback(
     (id) =>
-      Promise.all([fetchSchoolYear(id), fetchYearDays(id), fetchYearStats(id)]).then(
-        ([detail, calendar, counters]) => {
-          setYear(detail)
-          setDays(calendar.days)
-          setStats(counters)
-        },
-      ),
+      Promise.all([
+        fetchSchoolYear(id),
+        fetchYearDays(id),
+        fetchYearStats(id),
+        fetchTerms(id),
+      ]).then(([detail, calendar, counters, termList]) => {
+        setYear(detail)
+        setDays(calendar.days)
+        setStats(counters)
+        setTerms(termList)
+      }),
     [],
   )
 
@@ -118,14 +128,14 @@ export default function Calendar({ onLoggedOut }) {
   }, [yearId, load, handleError])
 
   /** Пересчитать сетку и счётчики по списку исключений, не спрашивая сервер. */
-  const applyLocally = useCallback((source, list) => {
+  const applyLocally = useCallback((source, list, termList = terms) => {
     // сервер отдаёт исключения по дате начала — держим тот же порядок
     const exceptions = [...list].sort((a, b) => a.start_date.localeCompare(b.start_date))
-    const next = buildDays(source, exceptions)
+    const next = buildDays(source, exceptions, termList)
     setYear({ ...source, exceptions })
     setDays(next)
     setStats(buildStats(next))
-  }, [])
+  }, [terms])
 
   /**
    * Оптимистичная правка: сразу рисуем результат, потом подтверждаем ответом
@@ -229,6 +239,35 @@ export default function Calendar({ onLoggedOut }) {
       title: title || KIND_LABELS[KIND_VACATION],
     })
   }
+
+  /** Правки термов не оптимистичны: их мало, проще перечитать год. */
+  const runTerm = async (request) => {
+    setError(null)
+    setNotice(null)
+    setSaving(true)
+
+    try {
+      await request()
+      await load(yearId)
+    } catch (err) {
+      handleError(err)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const handleDeleteTerm = (term) => {
+    if (!window.confirm(`Удалить терм «${term.name}»?`)) return
+    runTerm(() => deleteTerm(term.id))
+  }
+
+  const studyDaysByTerm = useMemo(
+    () =>
+      Object.fromEntries(
+        (stats?.by_term ?? []).map((row) => [row.id, row.study]),
+      ),
+    [stats],
+  )
 
   const handleCreateYear = async (event) => {
     event.preventDefault()
@@ -348,6 +387,7 @@ export default function Calendar({ onLoggedOut }) {
         <div className="calendar-layout">
           <CalendarGrid
             days={days}
+            terms={terms}
             pending={rangeForm}
             onToggleDay={handleToggleDay}
             onSelectRange={handleSelectRange}
@@ -396,6 +436,16 @@ export default function Calendar({ onLoggedOut }) {
                 </>
               )}
             </section>
+
+            <TermsPanel
+              terms={terms}
+              year={year}
+              studyDays={studyDaysByTerm}
+              busy={saving}
+              onCreate={(fields) => runTerm(() => createTerm({ ...fields, year: year.id }))}
+              onUpdate={(id, fields) => runTerm(() => updateTerm(id, fields))}
+              onDelete={handleDeleteTerm}
+            />
 
             <section className="panel">
               <h3>Исключения</h3>

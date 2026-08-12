@@ -194,6 +194,54 @@ class DayExceptionApiTests(CalendarApiTestCase):
 
         self.assertEqual(response.status_code, 400, response.content)
 
+    def test_overlap_message_names_the_conflict(self):
+        self.make_exception(
+            date(2026, 10, 26), date(2026, 11, 3), services.KIND_VACATION, "Осенние"
+        )
+
+        response = self.post_exception(
+            "2026-11-02", "2026-11-08", services.KIND_VACATION, title="Осенние"
+        )
+
+        self.assertEqual(response.status_code, 400, response.content)
+        message = response.json()["non_field_errors"][0]
+        self.assertIn("Осенние", message)
+        self.assertIn("26 октября — 3 ноября", message)
+
+    def test_same_title_on_other_dates_is_fine(self):
+        """Двое «Каникул» в разные даты — норма, имена не уникальны."""
+        self.make_exception(
+            date(2026, 10, 26), date(2026, 11, 3), services.KIND_VACATION, "Каникулы"
+        )
+
+        response = self.post_exception(
+            "2026-12-28", "2027-01-11", services.KIND_VACATION, title="Каникулы"
+        )
+
+        self.assertEqual(response.status_code, 201, response.content)
+        self.assertEqual(DayException.objects.filter(title="Каникулы").count(), 2)
+
+    def test_failed_creation_leaves_the_calendar_workable(self):
+        """После отказа прежняя разметка цела и удаляется как обычно."""
+        existing = self.make_exception(
+            date(2026, 10, 26), date(2026, 11, 3), services.KIND_VACATION, "Осенние"
+        )
+
+        rejected = self.post_exception(
+            "2026-11-02", "2026-11-08", services.KIND_VACATION
+        )
+        self.assertEqual(rejected.status_code, 400)
+        self.assertEqual(DayException.objects.count(), 1)
+
+        days = self.client.get(reverse("schoolyear-days", args=[self.year.pk]))
+        self.assertEqual(days.status_code, 200)
+
+        removed = self.client.delete(
+            reverse("dayexception-detail", args=[existing.pk])
+        )
+        self.assertEqual(removed.status_code, 204)
+        self.assertFalse(DayException.objects.exists())
+
     def test_overlap_of_a_different_kind_is_allowed(self):
         self.make_exception(
             date(2026, 10, 26), date(2026, 11, 3), services.KIND_VACATION, "Осенние"

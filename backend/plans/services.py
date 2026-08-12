@@ -13,20 +13,13 @@ ORM и переписывают позиции.
 
 from __future__ import annotations
 
+import csv
+import io
 from collections import defaultdict
 from dataclasses import dataclass
 from typing import Iterable, Sequence
 
-# виды узлов-уроков
-KIND_LESSON = "lesson"
-KIND_CONTROL = "control"
-KIND_RESERVE = "reserve"
-
-KIND_CHOICES = (
-    (KIND_LESSON, "урок"),
-    (KIND_CONTROL, "контрольная"),
-    (KIND_RESERVE, "резерв"),
-)
+from calendars.services import find_term
 
 UP = "up"
 DOWN = "down"
@@ -101,8 +94,6 @@ def counts(tree: Iterable[Branch]) -> dict:
 
     return {
         "lessons": len(lessons),
-        "control": sum(1 for item in lessons if item.node.kind == KIND_CONTROL),
-        "reserve": sum(1 for item in lessons if item.node.kind == KIND_RESERVE),
         "sections": sum(1 for branch in branches if branch.node.is_section),
     }
 
@@ -120,9 +111,13 @@ class LayoutEntry:
     status: str
     slot: object | None = None
     lesson: Lesson | None = None
+    # терм, в который попала дата слота; у записей без слота его нет
+    term: object | None = None
 
 
-def build_layout(lessons: Sequence[Lesson], slots: Sequence) -> list[LayoutEntry]:
+def build_layout(
+    lessons: Sequence[Lesson], slots: Sequence, terms: Iterable = ()
+) -> list[LayoutEntry]:
     """
     Позиционное сопоставление плана и расписания: i-й урок в i-й слот.
 
@@ -135,11 +130,14 @@ def build_layout(lessons: Sequence[Lesson], slots: Sequence) -> list[LayoutEntry
     `slots` — неотменённые слоты по (дате, номеру). Запросы делаются
     снаружи, функция чистая.
     """
+    terms = list(terms)
+
     entries = [
         LayoutEntry(
             status=STATUS_MATCHED if index < len(lessons) else STATUS_NO_PLAN,
             slot=slot,
             lesson=lessons[index] if index < len(lessons) else None,
+            term=find_term(slot.date, terms),
         )
         for index, slot in enumerate(slots)
     ]
@@ -152,7 +150,50 @@ def build_layout(lessons: Sequence[Lesson], slots: Sequence) -> list[LayoutEntry
     return entries
 
 
-def layout_summary(entries: Iterable[LayoutEntry], today, cancelled_count: int = 0) -> dict:
+def summary_by_term(entries: Sequence[LayoutEntry], terms: Iterable = ()) -> list[dict]:
+    """
+    Слоты и уроки плана по термам плюс отдельная запись «вне термов».
+
+    Баланс терма — `slots - lessons`. Раскладка позиционная, поэтому внутри
+    заполненного терма он нулевой; минус появляется там, где плану не хватило
+    слотов (такие уроки дат не имеют и попадают в «вне термов»), плюс — там,
+    где слоты остались свободными.
+    """
+    def bucket(name, items, term=None):
+        slots = sum(1 for entry in items if entry.slot is not None)
+        lessons = sum(1 for entry in items if entry.lesson is not None)
+        return {
+            "id": term.pk if term is not None else None,
+            "name": name,
+            "start": term.start_date if term is not None else None,
+            "end": term.end_date if term is not None else None,
+            "slots": slots,
+            "lessons": lessons,
+            "balance": slots - lessons,
+        }
+
+    rows = [
+        bucket(
+            term.name,
+            [e for e in entries if e.term is not None and e.term.pk == term.pk],
+            term,
+        )
+        for term in terms
+    ]
+
+    outside = [entry for entry in entries if entry.term is None]
+    if outside:
+        rows.append(bucket("вне термов", outside))
+
+    return rows
+
+
+def layout_summary(
+    entries: Iterable[LayoutEntry],
+    today,
+    cancelled_count: int = 0,
+    terms: Iterable = (),
+) -> dict:
     """
     Итоги раскладки. `today` влияет только на счётчики «прошло/осталось»,
     но не на само сопоставление.
@@ -180,6 +221,7 @@ def layout_summary(entries: Iterable[LayoutEntry], today, cancelled_count: int =
         "last_lesson_date": last_lesson_date,
         "cancelled_count": cancelled_count,
         "extra_count": sum(1 for entry in with_slot if entry.slot.is_extra),
+        "terms": summary_by_term(entries, terms),
     }
 
 
@@ -202,6 +244,159 @@ def structure_problems(*, school_class_id, parent, is_section) -> dict[str, str]
         return {"parent": "Папка принадлежит другому классу."}
 
     return {}
+
+
+# --- CSV: разбор и выгрузка, тоже без ORM ---
+
+CSV_HEADER = ("Тема", "Урок", "Заметка")
+CSV_MAX_ROWS = 2000
+TITLE_LIMIT = 200
+
+# слова шапки: строка считается шапкой, только если ВСЕ её ячейки такие
+HEADER_CELLS = {
+    "тема", "темы", "раздел", "topic", "section",
+    "урок", "уроки", "название", "тема урока", "lesson",
+    "заметка", "заметки", "примечание", "комментарий", "note",
+}
+
+
+class PlanImportError(Exception):
+    """Файл целиком непригоден: пользователю показывается как есть."""
+
+
+@dataclass(frozen=True)
+class ImportedRow:
+    """Строка файла, уже понятая: заголовок темы или урок."""
+
+    is_section: bool
+    title: str
+    note: str = ""
+
+
+def decode_csv(data: bytes) -> str:
+    """
+    Текст файла независимо от того, чем его сохранили.
+
+    UTF-8 (в том числе с BOM) пробуем первым: cp1251 «читает» почти любые
+    байты и молча превратил бы кириллицу в кракозябры.
+    """
+    for encoding in ("utf-8-sig", "cp1251"):
+        try:
+            text = data.decode(encoding)
+        except UnicodeDecodeError:
+            continue
+
+        # cp1251 «читает» и двоичный мусор: нулевые байты выдают его с головой
+        # (Postgres такую строку всё равно не примет)
+        if "\x00" in text:
+            break
+
+        return text
+
+    raise PlanImportError(
+        "Не удалось прочитать файл: нужен текстовый CSV в кодировке "
+        "UTF-8 или Windows-1251."
+    )
+
+
+def sniff_delimiter(text: str) -> str:
+    """
+    Русский Excel сохраняет с точкой с запятой, остальные — с запятой.
+
+    Считать вхождения бесполезно: запятые бывают внутри названий. Смотрим,
+    какой разделитель даёт одинаковое число столбцов в строках.
+    """
+    head = [line for line in text.splitlines()[:5] if line.strip()]
+    if not head:
+        return ","
+
+    def score(candidate):
+        widths = [len(row) for row in csv.reader(head, delimiter=candidate)]
+        return (len(set(widths)) == 1 and min(widths) > 1, min(widths))
+
+    return ";" if score(";") > score(",") else ","
+
+
+def looks_like_header(cells: Sequence[str]) -> bool:
+    filled = [cell.strip().lower() for cell in cells if cell.strip()]
+    return bool(filled) and all(cell in HEADER_CELLS for cell in filled)
+
+
+def parse_plan_csv(text: str, *, max_rows: int = CSV_MAX_ROWS):
+    """
+    Разбор плана построчно. Возвращает (строки, предупреждения).
+
+    Тема в первом столбце, урок во втором, заметка в третьем. Если тема
+    указана в каждой строке урока («протягивание»), новый заголовок
+    создаётся при её смене. Уроки до первого заголовка остаются вне темы.
+    """
+    reader = csv.reader(io.StringIO(text), delimiter=sniff_delimiter(text))
+
+    rows: list[ImportedRow] = []
+    warnings: list[str] = []
+    current_theme: str | None = None
+
+    for number, raw in enumerate(reader, start=1):
+        if number > max_rows:
+            raise PlanImportError(
+                f"В файле больше {max_rows} строк — разбейте его на части."
+            )
+
+        # лишние столбцы справа игнорируем, недостающие дополняем
+        cells = [cell.strip() for cell in raw[:3]] + [""] * max(0, 3 - len(raw))
+        theme, lesson, note = cells[0], cells[1], cells[2]
+
+        if number == 1 and looks_like_header(cells):
+            continue
+
+        if not theme and not lesson:
+            if any(cell.strip() for cell in raw):
+                warnings.append(
+                    f"Строка {number}: нет ни темы, ни урока — пропущена."
+                )
+            continue
+
+        if max(len(theme), len(lesson)) > TITLE_LIMIT:
+            warnings.append(
+                f"Строка {number}: название длиннее {TITLE_LIMIT} символов — пропущена."
+            )
+            continue
+
+        if theme and not lesson:
+            current_theme = theme
+            rows.append(ImportedRow(is_section=True, title=theme, note=note))
+            continue
+
+        if theme and theme != current_theme:
+            # формат с протягиванием: тема сменилась — сначала заголовок
+            current_theme = theme
+            rows.append(ImportedRow(is_section=True, title=theme))
+
+        rows.append(ImportedRow(is_section=False, title=lesson, note=note))
+
+    return rows, warnings
+
+
+def build_plan_csv(tree: Iterable[Branch]) -> str:
+    """
+    План в CSV, симметрично разбору.
+
+    BOM в начале — чтобы Excel открыл файл как UTF-8, а не как cp1251.
+    """
+    buffer = io.StringIO()
+    writer = csv.writer(buffer, delimiter=",", lineterminator="\r\n")
+    writer.writerow(CSV_HEADER)
+
+    for branch in tree:
+        if branch.node.is_section:
+            writer.writerow([branch.node.title, "", branch.node.note])
+            for child in branch.children:
+                writer.writerow(["", child.title, child.note])
+        else:
+            writer.writerow(["", branch.node.title, branch.node.note])
+
+    # \ufeff — тот самый BOM, в исходнике он невидим, поэтому кодом
+    return "\ufeff" + buffer.getvalue()
 
 
 # --- дальше работа с базой: порядок узлов приходится хранить ---
@@ -326,6 +521,52 @@ def dissolve_section(section) -> None:
     PlanNode.objects.bulk_update(order, ["position", "parent"])
     # детей уже отвязали, каскад их не заденет
     section.delete()
+
+
+def apply_import(school_class, rows: Iterable[ImportedRow], *, append: bool) -> dict:
+    """
+    Создать узлы по разобранным строкам. Зовётся внутри транзакции.
+
+    Уроки ложатся в последний встреченный заголовок; пока заголовка не
+    было — остаются на верхнем уровне.
+    """
+    from .models import PlanNode
+
+    top_position = len(level(school_class, None)) if append else 0
+    section = None
+    section_position = 0
+    created = {"headers": 0, "lessons": 0}
+
+    for row in rows:
+        if row.is_section:
+            section = PlanNode.objects.create(
+                school_class=school_class,
+                parent=None,
+                position=top_position,
+                is_section=True,
+                title=row.title,
+                note=row.note,
+            )
+            top_position += 1
+            section_position = 0
+            created["headers"] += 1
+            continue
+
+        PlanNode.objects.create(
+            school_class=school_class,
+            parent=section,
+            position=section_position if section else top_position,
+            is_section=False,
+            title=row.title,
+            note=row.note,
+        )
+        if section:
+            section_position += 1
+        else:
+            top_position += 1
+        created["lessons"] += 1
+
+    return created
 
 
 def get_tree(school_class) -> list[Branch]:

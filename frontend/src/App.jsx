@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
-import { BrowserRouter, Route, Routes } from 'react-router-dom'
+import { BrowserRouter, Route, Routes, useLocation } from 'react-router-dom'
+import ErrorBoundary from './ErrorBoundary'
 import Agenda from './Agenda'
 import Calendar from './Calendar'
 import Classes from './Classes'
@@ -53,16 +54,27 @@ export default function App() {
     <BrowserRouter>
       <NavBar user={user} onLoggedOut={handleLoggedOut} />
 
-      <Routes>
-        <Route path="/" element={<Dashboard user={user} />} />
-        <Route path="/schedule" element={guarded(Agenda)} />
-        <Route path="/layout" element={guarded(Layout)} />
-        <Route path="/plan" element={guarded(Plan)} />
-        <Route path="/classes" element={guarded(Classes)} />
-        <Route path="/year" element={guarded(Calendar)} />
-        <Route path="/profile" element={guarded(Profile, { onSaved: setUser })} />
-        <Route path="*" element={<NotFound />} />
-      </Routes>
+      <PageBoundary>
+        <Routes>
+          <Route path="/" element={<Dashboard user={user} />} />
+          <Route path="/schedule" element={guarded(Agenda)} />
+          <Route path="/layout" element={guarded(Layout)} />
+          <Route path="/plan" element={guarded(Plan)} />
+          <Route path="/classes" element={guarded(Classes)} />
+          <Route path="/year" element={guarded(Calendar)} />
+          <Route path="/profile" element={guarded(Profile, { onSaved: setUser })} />
+          <Route path="*" element={<NotFound />} />
+        </Routes>
+      </PageBoundary>
     </BrowserRouter>
   )
+}
+
+/**
+ * Ловушка вокруг содержимого страницы. Бар снаружи, поэтому после падения
+ * можно уйти в другой раздел; смена адреса сбрасывает ловушку по key.
+ */
+function PageBoundary({ children }) {
+  const location = useLocation()
+  return <ErrorBoundary key={location.pathname}>{children}</ErrorBoundary>
 }

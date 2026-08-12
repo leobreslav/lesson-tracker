@@ -639,6 +639,160 @@ button.link:hover:not(:disabled) {
   cursor: progress;
 }
 
+/* --- термы --- */
+
+/* цвет привязан к порядку терма в году, см. termColors.js */
+.swatch.term-1, .day.term-1 { --term: #cfe3ff; }
+.swatch.term-2, .day.term-2 { --term: #d6f0d8; }
+.swatch.term-3, .day.term-3 { --term: #ffe6c7; }
+.swatch.term-4, .day.term-4 { --term: #e8d9f7; }
+.swatch.term-5, .day.term-5 { --term: #ffd6e0; }
+
+.swatch.term-1,
+.swatch.term-2,
+.swatch.term-3,
+.swatch.term-4,
+.swatch.term-5 {
+  background: var(--term);
+}
+
+.swatch.no-term {
+  background: repeating-linear-gradient(
+    45deg,
+    #eee,
+    #eee 3px,
+    #fff 3px,
+    #fff 6px
+  );
+}
+
+.swatch.noted {
+  position: relative;
+  background: #e6e6e6;
+}
+
+.swatch.noted::after {
+  content: '';
+  position: absolute;
+  right: 1px;
+  bottom: 1px;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: #e57373;
+}
+
+/* полоса терма сверху ячейки: сам день красится по статусу */
+.day.term-1,
+.day.term-2,
+.day.term-3,
+.day.term-4,
+.day.term-5 {
+  box-shadow: inset 0 3px 0 var(--term);
+}
+
+.day.no-term:not(.blank) {
+  /* вне термов — приглушаем: это каникулы между четвертями */
+  opacity: 0.75;
+}
+
+.terms {
+  margin: 0 0 0.5rem;
+  padding: 0;
+  list-style: none;
+}
+
+.terms li {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.35rem 0 0.35rem 0.5rem;
+  border-left: 4px solid #ccc;
+}
+
+.terms li.term-1 { border-left-color: #7aa8ea; }
+.terms li.term-2 { border-left-color: #7fbe86; }
+.terms li.term-3 { border-left-color: #e0a75c; }
+.terms li.term-4 { border-left-color: #a98bd4; }
+.terms li.term-5 { border-left-color: #e08098; }
+
+.terms strong {
+  display: block;
+  font-size: 0.9rem;
+}
+
+.terms .hint {
+  margin: 0;
+}
+
+.terms li > div {
+  flex: 1;
+}
+
+.term-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.term-form input[type='text'],
+.term-form input:not([type]) {
+  padding: 0.35rem 0.5rem;
+  font: inherit;
+  border: 1px solid #c6c6c6;
+  border-radius: 4px;
+}
+
+.term-form .row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+  font-size: 0.85rem;
+}
+
+.term-form input[type='date'] {
+  padding: 0.3rem 0.4rem;
+  font: inherit;
+  border: 1px solid #c6c6c6;
+  border-radius: 4px;
+}
+
+/* блок терма в раскладке */
+.term-block {
+  margin-bottom: 1.5rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 2px solid #e0e0e0;
+}
+
+.term-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.75rem;
+  padding: 0.4rem 0.5rem;
+  background: #f4f6f9;
+  border-radius: 6px;
+}
+
+.term-head .hint {
+  margin: 0;
+}
+
+.term-counters {
+  margin-left: auto;
+  font-size: 0.85rem;
+  color: #555;
+}
+
+.term-counters .good {
+  color: #1c7a34;
+}
+
+.term-counters .bad {
+  color: #b00020;
+}
+
 /* --- раскладка --- */
 
 .cards {
@@ -718,6 +872,16 @@ button.link:hover:not(:disabled) {
 .layout-title .plan-number {
   min-width: 0;
   color: #999;
+}
+
+/* счётчик блока: приглушён и мельче названия, чтобы не спорить с ним */
+.block-count {
+  margin: 0 0 0 0.5rem;
+  font-size: 0.78rem;
+  font-weight: 400;
+  color: #8a8a8a;
+  text-transform: none;
+  letter-spacing: normal;
 }
 
 .layout-theme {
@@ -844,14 +1008,6 @@ button.link:hover:not(:disabled) {
   font-size: 0.85rem;
 }
 
-.plan-row.control {
-  background: #fdeceb;
-}
-
-.plan-row.reserve {
-  background: #f3f0fb;
-}
-
 .badge {
   padding: 0.05rem 0.35rem;
   font-size: 0.7rem;
@@ -860,19 +1016,108 @@ button.link:hover:not(:disabled) {
   color: #444;
 }
 
-.badge.control {
-  background: #f6c6c2;
-  color: #7a1f1a;
-}
-
-.badge.reserve {
-  background: #ddd6f3;
-  color: #402c73;
-}
-
 button.link.toggle {
   min-width: 1rem;
   color: #555;
+}
+
+/* --- импорт CSV --- */
+
+.drop-zone {
+  display: block;
+  padding: 1rem;
+  font-size: 0.9rem;
+  color: #666;
+  text-align: center;
+  background: #fafafa;
+  border: 1px dashed #c6c6c6;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.drop-zone.over {
+  color: #1a73e8;
+  background: #eef3fd;
+  border-color: #1a73e8;
+  border-style: solid;
+}
+
+.drop-zone input[type='file'] {
+  display: block;
+  max-width: 100%;
+  margin: 0 auto 0.6rem;
+  font: inherit;
+  font-size: 0.85rem;
+  color: #666;
+}
+
+/* нативная кнопка выбора файла серая и чужая — приводим её к виду
+   вторичной кнопки приложения; для старых WebKit правило продублировано */
+.drop-zone input[type='file']::file-selector-button {
+  margin-right: 0.6rem;
+  padding: 0.35rem 0.9rem;
+  font: inherit;
+  font-size: 0.85rem;
+  color: #1a73e8;
+  background: #fff;
+  border: 1px solid #c6c6c6;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.drop-zone input[type='file']::-webkit-file-upload-button {
+  margin-right: 0.6rem;
+  padding: 0.35rem 0.9rem;
+  font: inherit;
+  font-size: 0.85rem;
+  color: #1a73e8;
+  background: #fff;
+  border: 1px solid #c6c6c6;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.drop-zone input[type='file']::file-selector-button:hover {
+  background: #f1f5fd;
+  border-color: #1a73e8;
+}
+
+.drop-zone input[type='file']::-webkit-file-upload-button:hover {
+  background: #f1f5fd;
+  border-color: #1a73e8;
+}
+
+.drop-zone.over input[type='file']::file-selector-button {
+  border-color: #1a73e8;
+}
+
+.csv-preview,
+.csv-warnings {
+  margin: 0;
+  padding: 0;
+  max-height: 14rem;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.csv-preview li {
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+  padding: 0.15rem 0;
+  font-size: 0.85rem;
+}
+
+.csv-preview li.lesson {
+  padding-left: 1rem;
+}
+
+.csv-preview li.section {
+  font-weight: 600;
+}
+
+.csv-preview .hint {
+  margin: 0;
 }
 
 /* --- перетаскивание --- */
@@ -1207,9 +1452,38 @@ button.day-head:hover {
 }
 
 .cell.lesson {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-width: 0;
   font-weight: 600;
   color: #1b5e20;
   background: #d7ecd9;
+}
+
+/* тема из плана: мельче, приглушённее и в одну строку с обрезкой */
+.cell-topic {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  font-size: 0.68rem;
+  font-weight: 400;
+  line-height: 1.2;
+  opacity: 0.75;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* слоту не досталось урока плана — говорим об этом прямо */
+.cell-topic.missing {
+  font-style: italic;
+  opacity: 0.55;
+}
+
+.topics-toggle {
+  margin-left: 0.5rem;
+  padding-left: 0.75rem;
+  border-left: 1px solid #ddd;
 }
 
 .cell.lesson:hover:not(:disabled) {

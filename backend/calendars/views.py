@@ -3,8 +3,12 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 
 from . import services
-from .models import DayException, SchoolYear
-from .serializers import DayExceptionSerializer, SchoolYearSerializer
+from .models import DayException, SchoolYear, Term
+from .serializers import (
+    DayExceptionSerializer,
+    SchoolYearSerializer,
+    TermSerializer,
+)
 
 
 def serialize_day(day: services.Day) -> dict:
@@ -14,6 +18,8 @@ def serialize_day(day: services.Day) -> dict:
         "status": day.status,
         "title": day.title,
         "exception": day.exception_id,
+        "term_id": day.term_id,
+        "term_name": day.term_name,
     }
 
 
@@ -55,6 +61,22 @@ class DayExceptionViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         queryset = DayException.objects.filter(year__owner=self.request.user)
+
+        year = self.request.query_params.get("year")
+        if year:
+            # нечисловой параметр не должен ронять запрос ошибкой приведения
+            queryset = queryset.filter(year_id=year) if year.isdigit() else queryset.none()
+
+        return queryset.select_related("year")
+
+
+class TermViewSet(viewsets.ModelViewSet):
+    """Четверти и семестры. Список фильтруется параметром ?year=<id>."""
+
+    serializer_class = TermSerializer
+
+    def get_queryset(self):
+        queryset = Term.objects.filter(year__owner=self.request.user)
 
         year = self.request.query_params.get("year")
         if year:

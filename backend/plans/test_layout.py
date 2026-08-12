@@ -2,6 +2,8 @@
 
 from datetime import date, timedelta
 
+from calendars import services as calendar_services
+from calendars.models import DayException, Term
 from django.test import SimpleTestCase
 from django.urls import reverse
 from django.utils import timezone
@@ -350,6 +352,126 @@ class LayoutApiTests(LayoutApiTestCase):
         self.assertEqual(
             [entry[0] for entry in self.pairs()], ["no_slot"] * 7
         )
+
+
+class LayoutTermTests(LayoutApiTestCase):
+    """Группировка раскладки по четвертям."""
+
+    def setUp(self):
+        super().setUp()
+        self.first = Term.objects.create(
+            year=self.school_class.year,
+            name="1 четверть",
+            start_date=MONDAY,
+            end_date=MONDAY + timedelta(days=4),
+        )
+        self.second = Term.objects.create(
+            year=self.school_class.year,
+            name="2 четверть",
+            start_date=MONDAY + timedelta(days=7),
+            end_date=MONDAY + timedelta(days=11),
+        )
+
+    def test_entries_carry_the_term(self):
+        self.fill_slots(9)
+
+        entries = self.layout().json()["entries"]
+
+        by_date = {entry["slot"]["date"]: entry for entry in entries if entry["slot"]}
+        self.assertEqual(by_date["2026-09-07"]["term_name"], "1 четверть")
+        self.assertEqual(by_date["2026-09-14"]["term_name"], "2 четверть")
+        # выходные между четвертями ни в один терм не входят
+        self.assertIsNone(by_date["2026-09-12"]["term_id"])
+
+    def test_summary_counts_each_term(self):
+        self.fill_slots(9)
+
+        rows = self.summary().json()["terms"]
+
+        self.assertEqual(
+            [(row["name"], row["slots"], row["lessons"], row["balance"]) for row in rows],
+            [
+                ("1 четверть", 5, 5, 0),
+                ("2 четверть", 2, 0, 2),
+                ("вне термов", 2, 2, 0),
+            ],
+        )
+        self.assertEqual(rows[0]["start"], MONDAY.isoformat())
+
+    def test_term_counters_add_up_to_the_totals(self):
+        self.fill_slots(9)
+
+        data = self.summary().json()
+
+        self.assertEqual(
+            sum(row["slots"] for row in data["terms"]), data["slots_total"]
+        )
+        self.assertEqual(
+            sum(row["lessons"] for row in data["terms"]), data["lessons_total"]
+        )
+        self.assertEqual(
+            sum(row["balance"] for row in data["terms"]), data["balance"]
+        )
+
+    def test_lessons_without_slots_land_outside_terms(self):
+        self.fill_slots(3)
+
+        rows = self.summary().json()["terms"]
+
+        first, outside = rows[0], rows[-1]
+        self.assertEqual((first["slots"], first["lessons"]), (3, 3))
+        self.assertEqual(outside["name"], "вне термов")
+        # четырём урокам плана слотов не хватило — это и есть дефицит
+        self.assertEqual((outside["slots"], outside["lessons"], outside["balance"]), (0, 4, -4))
+
+    def test_empty_term_is_still_reported(self):
+        self.fill_slots(3)
+
+        rows = self.summary().json()["terms"]
+
+        second = next(row for row in rows if row["name"] == "2 четверть")
+        self.assertEqual((second["slots"], second["lessons"], second["balance"]), (0, 0, 0))
+
+    def test_year_without_terms_puts_everything_outside(self):
+        Term.objects.all().delete()
+        self.fill_slots(3)
+
+        rows = self.summary().json()["terms"]
+
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["name"], "вне термов")
+        self.assertEqual(rows[0]["slots"], 3)
+
+    def test_vacation_inside_a_term_only_removes_slots(self):
+        """Каникулы убирают слоты, но терм остаётся термом."""
+        DayException.objects.create(
+            year=self.school_class.year,
+            start_date=MONDAY + timedelta(days=1),
+            end_date=MONDAY + timedelta(days=2),
+            kind=calendar_services.KIND_VACATION,
+            title="Каникулы",
+        )
+        self.fill_slots(5)
+
+        rows = self.summary().json()["terms"]
+
+        # слоты в каникулы никто не удалял — раскладка их учитывает как есть
+        self.assertEqual(rows[0]["slots"], 5)
+        self.assertEqual(rows[0]["lessons"], 5)
+
+    def test_terms_of_another_users_year_are_not_used(self):
+        alien_year = self.alien_class.year
+        Term.objects.create(
+            year=alien_year,
+            name="Чужая четверть",
+            start_date=MONDAY,
+            end_date=MONDAY + timedelta(days=30),
+        )
+        self.fill_slots(3)
+
+        names = [row["name"] for row in self.summary().json()["terms"]]
+
+        self.assertNotIn("Чужая четверть", names)
 
 
 class LayoutSummaryApiTests(LayoutApiTestCase):
