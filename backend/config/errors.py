@@ -22,6 +22,16 @@ from rest_framework.exceptions import APIException
 class Codes:
     """All error codes in one place: the frontend dictionary mirrors this."""
 
+    # school membership and roles
+    NO_SCHOOL = "no_school"
+    SCHOOL_ADMIN_REQUIRED = "school_admin_required"
+    OTHER_SCHOOL = "other_school"
+    COURSE_IN_USE = "course_in_use"
+    COURSE_NAME_TAKEN = "course_name_taken"
+    INVITATION_EXISTS = "invitation_exists"
+    ALREADY_MEMBER = "already_member"
+    LAST_ADMIN = "last_admin"
+
     # school year
     YEAR_DATES_REVERSED = "year_dates_reversed"
     YEAR_NAME_TAKEN = "year_name_taken"
@@ -91,7 +101,7 @@ def error_payload(code: str, detail: str, *, field: str | None = None, **params)
 
 class ApiError(APIException):
     """
-    A coded validation failure, rendered as the payload and nothing else.
+    A coded failure, rendered as the payload and nothing else.
 
     Deliberately not a DRF ``ValidationError``: raising one inside
     ``validate()`` sends it through ``as_serializer_error``, which treats the
@@ -102,10 +112,22 @@ class ApiError(APIException):
 
     status_code = 400
 
-    def __init__(self, payload: dict):
+    def __init__(self, payload: dict, status_code: int | None = None):
         self.detail = payload
+        if status_code is not None:
+            self.status_code = status_code
 
 
 def api_error(code: str, detail: str, *, field: str | None = None, **params):
     """Raise a coded validation error (HTTP 400)."""
     raise ApiError(error_payload(code, detail, field=field, **params))
+
+
+def api_denied(code: str, detail: str, **params):
+    """
+    Raise a coded refusal (HTTP 403).
+
+    Same shape as a validation error, so the frontend reads both through one
+    dictionary — a refusal is just an error retyping cannot fix.
+    """
+    raise ApiError(error_payload(code, detail), status_code=403)

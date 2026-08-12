@@ -1,54 +1,57 @@
 from calendars import services as calendar_services
+from calendars.serializers import CurrentSchoolDefault, school_years
 from config.errors import Codes, api_error, error_payload
 from calendars.models import SchoolYear
 from rest_framework import serializers
 from rest_framework.validators import UniqueTogetherValidator
 
 from . import services
-from .models import LessonSlot, SchoolClass
+from .models import Course, LessonSlot
 
 
-def own_classes(serializer):
-    """Классы владельца запроса — чужой в поле не подставить."""
+def school_courses(serializer):
+    """
+    Courses of the requester's school — another school's cannot be referenced.
+
+    A foreign key in the body bypasses the viewset's filter, so the choices
+    are narrowed here as well.
+    """
     user = getattr(serializer.context.get("request"), "user", None)
-    if user is None or not user.is_authenticated:
-        return SchoolClass.objects.none()
-    return SchoolClass.objects.filter(owner=user)
+    if user is None or not user.is_authenticated or user.school_id is None:
+        return Course.objects.none()
+    return Course.objects.filter(school_id=user.school_id)
 
 
-class SchoolClassSerializer(serializers.ModelSerializer):
-    # владелец берётся из токена: из тела запроса его не подставить
-    owner = serializers.HiddenField(default=serializers.CurrentUserDefault())
+class CourseSerializer(serializers.ModelSerializer):
+    # the school comes from the requester, never from the body
+    school = serializers.HiddenField(default=CurrentSchoolDefault())
 
     class Meta:
-        model = SchoolClass
-        fields = ("id", "owner", "year", "name", "created_at")
+        model = Course
+        fields = ("id", "school", "year", "name", "created_at")
         read_only_fields = ("created_at",)
         validators = [
-            # owner в теле запроса нет, поэтому unique_together DRF сам не
-            # проверит — без валидатора дубль падал бы с 500
+            # school is not in the request body, so DRF cannot check
+            # unique_together on its own — a duplicate would give a 500
             UniqueTogetherValidator(
-                queryset=SchoolClass.objects.all(),
-                fields=("owner", "year", "name"),
-                message="A class with this name already exists in this year.",
+                queryset=Course.objects.all(),
+                fields=("school", "year", "name"),
+                message="A course with this name already exists in this year.",
             ),
         ]
 
     def get_fields(self):
         fields = super().get_fields()
-        request = self.context.get("request")
-        # класс можно завести только в своём учебном году
-        user = getattr(request, "user", None)
-        fields["year"].queryset = (
-            SchoolYear.objects.filter(owner=user)
-            if user is not None and user.is_authenticated
-            else SchoolYear.objects.none()
-        )
+        # a course can only live in a year of its own school
+        fields["year"].queryset = school_years(self)
         return fields
 
 
 class LessonSlotSerializer(serializers.ModelSerializer):
-    # год выводится из класса, в теле запроса его можно не присылать
+    # the teacher comes from the token: the body cannot name somebody else,
+    # and unique_together needs the field to exist on the serializer
+    teacher = serializers.HiddenField(default=serializers.CurrentUserDefault())
+    # the year follows from the course and need not be sent
     year = serializers.PrimaryKeyRelatedField(
         queryset=SchoolYear.objects.none(), required=False
     )
@@ -58,8 +61,9 @@ class LessonSlotSerializer(serializers.ModelSerializer):
         model = LessonSlot
         fields = (
             "id",
+            "teacher",
             "year",
-            "school_class",
+            "course",
             "date",
             "lesson_number",
             "is_cancelled",
@@ -70,19 +74,20 @@ class LessonSlotSerializer(serializers.ModelSerializer):
         )
         read_only_fields = ("created_at",)
         validators = [
+            # teacher is not in the body either — it comes from the token
             UniqueTogetherValidator(
                 queryset=LessonSlot.objects.all(),
-                fields=("school_class", "date", "lesson_number"),
-                message="This class already has a lesson with this number on that day.",
+                fields=("teacher", "course", "date", "lesson_number"),
+                message="You already have a lesson with this number in this course that day.",
             ),
         ]
 
     def get_fields(self):
         fields = super().get_fields()
-        classes = own_classes(self)
-        fields["school_class"].queryset = classes
+        courses = school_courses(self)
+        fields["course"].queryset = courses
         fields["year"].queryset = SchoolYear.objects.filter(
-            pk__in=classes.values("year_id")
+            pk__in=courses.values("year_id")
         )
         return fields
 
@@ -111,14 +116,14 @@ class LessonSlotSerializer(serializers.ModelSerializer):
         def value(name):
             return attrs.get(name, getattr(self.instance, name, None))
 
-        school_class = value("school_class")
-        year = attrs.get("year") or school_class.year
+        course = value("course")
+        year = attrs.get("year") or course.year
         slot_date = value("date")
 
-        if year != school_class.year:
+        if year != course.year:
             api_error(
                 Codes.SLOT_YEAR_MISMATCH,
-                "The lesson year must match the year of its class.",
+                "The lesson year must match the year of its course.",
                 field="year",
             )
 
@@ -133,8 +138,9 @@ class LessonSlotSerializer(serializers.ModelSerializer):
             )
 
         if not value("is_cancelled"):
-            # два класса на одном номере в один день учитель не потянет
+            # one teacher cannot run two courses on the same number
             busy = LessonSlot.find_conflict(
+                teacher_id=self.context["request"].user.pk,
                 year=year,
                 date=slot_date,
                 lesson_number=value("lesson_number"),
@@ -144,12 +150,12 @@ class LessonSlotSerializer(serializers.ModelSerializer):
                 api_error(
                     Codes.SLOT_NUMBER_TAKEN,
                     services.occupied_message(
-                        slot_date, value("lesson_number"), busy.school_class.name
+                        slot_date, value("lesson_number"), busy.course.name
                     ),
                     field="lesson_number",
                     date=str(slot_date),
                     number=value("lesson_number"),
-                    class_name=busy.school_class.name,
+                    class_name=busy.course.name,
                 )
 
         attrs["year"] = year
@@ -158,16 +164,15 @@ class LessonSlotSerializer(serializers.ModelSerializer):
 
 class CopySerializer(serializers.Serializer):
     """
-    Вход для /api/slots/copy/.
+    Input for /api/slots/copy/.
 
-    Без `class_id` копируется расписание целиком — все классы владельца,
-    чей учебный год задевает целевой период.
+    Without `course_id` the whole schedule is copied — every course this
+    teacher works in whose year touches the target period.
     """
 
-    # имя class_id — из тела запроса; class в Python зарезервировано
-    class_id = serializers.PrimaryKeyRelatedField(
-        queryset=SchoolClass.objects.none(),
-        source="school_class",
+    course_id = serializers.PrimaryKeyRelatedField(
+        queryset=Course.objects.none(),
+        source="course",
         required=False,
         allow_null=True,
     )
@@ -179,7 +184,7 @@ class CopySerializer(serializers.Serializer):
 
     def get_fields(self):
         fields = super().get_fields()
-        fields["class_id"].queryset = own_classes(self)
+        fields["course_id"].queryset = school_courses(self)
         return fields
 
     def validate(self, attrs):
@@ -194,7 +199,7 @@ class CopySerializer(serializers.Serializer):
 
 
 class PeriodSerializer(serializers.Serializer):
-    """Границы периода для /api/slots/agenda/."""
+    """Period boundaries for /api/slots/agenda/."""
 
     start = serializers.DateField()
     end = serializers.DateField()
@@ -210,18 +215,16 @@ class PeriodSerializer(serializers.Serializer):
 
 
 class BulkDeleteSerializer(serializers.Serializer):
-    """Вход для DELETE /api/slots/bulk/ — приходит параметрами запроса."""
+    """Input for DELETE /api/slots/bulk/ — it arrives as query parameters."""
 
-    school_class = serializers.PrimaryKeyRelatedField(
-        queryset=SchoolClass.objects.none()
-    )
+    course = serializers.PrimaryKeyRelatedField(queryset=Course.objects.none())
     start = serializers.DateField()
     end = serializers.DateField()
     only_regular = serializers.BooleanField(default=False)
 
     def get_fields(self):
         fields = super().get_fields()
-        fields["school_class"].queryset = own_classes(self)
+        fields["course"].queryset = school_courses(self)
         return fields
 
     def validate(self, attrs):

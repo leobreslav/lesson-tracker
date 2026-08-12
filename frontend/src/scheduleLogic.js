@@ -54,7 +54,7 @@ export function planCopy({
   // only the chosen classes are copied, but occupancy is read across all of
   // them: another class's lesson on that number still blocks ours
   const byDate = groupByDate(
-    slots.filter(isRegular).filter((slot) => !classIds || classIds.has(slot.class_id)),
+    slots.filter(isRegular).filter((slot) => !classIds || classIds.has(slot.course_id)),
   )
   const occupied = new Set(
     slots
@@ -112,7 +112,7 @@ export function planClear({ slots, start, end, onlyRegular, classIds = null }) {
     (slot) =>
       slot.date >= start &&
       slot.date <= end &&
-      (!classIds || classIds.has(slot.class_id)) &&
+      (!classIds || classIds.has(slot.course_id)) &&
       (!onlyRegular || isRegular(slot)),
   ).length
 }

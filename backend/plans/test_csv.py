@@ -162,10 +162,10 @@ class DecodeTests(SimpleTestCase):
 
 
 class ImportApiTests(PlanTestCase):
-    def upload(self, text, mode="replace", school_class=None, encoding="utf-8"):
+    def upload(self, text, mode="replace", course=None, encoding="utf-8"):
         payload = text.encode(encoding)
         return self.client.post(
-            f"{reverse('plannode-import')}?class={(school_class or self.school_class).pk}",
+            f"{reverse('plannode-import')}?course={(course or self.course).pk}",
             {
                 "file": SimpleUploadedFile("plan.csv", payload, content_type="text/csv"),
                 "mode": mode,
@@ -262,7 +262,7 @@ class ImportApiTests(PlanTestCase):
         before = self.titles()
 
         response = self.client.post(
-            f"{reverse('plannode-import')}?class={self.school_class.pk}",
+            f"{reverse('plannode-import')}?course={self.course.pk}",
             {
                 "file": SimpleUploadedFile(
                     "plan.csv", b"\xff\xfe\x00\x00\xd8\x00", content_type="text/csv"
@@ -284,11 +284,11 @@ class ImportApiTests(PlanTestCase):
         self.assertEqual(response.status_code, 400)
         self.assertEqual(response.json()["code"], "file_unreadable")
         self.assertIn("2000", response.json()["detail"])
-        self.assertFalse(PlanNode.objects.filter(school_class=self.school_class).exists())
+        self.assertFalse(PlanNode.objects.filter(teacher=self.user, course=self.course).exists())
 
     def test_missing_file_is_rejected(self):
         response = self.client.post(
-            f"{reverse('plannode-import')}?class={self.school_class.pk}",
+            f"{reverse('plannode-import')}?course={self.course.pk}",
             {"mode": "replace"},
             format="multipart",
         )
@@ -299,10 +299,10 @@ class ImportApiTests(PlanTestCase):
         self.assertEqual(self.upload(PLAIN, mode="wipe").status_code, 400)
 
     def test_cannot_import_into_another_users_class(self):
-        response = self.upload(PLAIN, school_class=self.alien_class)
+        response = self.upload(PLAIN, course=self.alien_class)
 
         self.assertEqual(response.status_code, 404)
-        self.assertFalse(PlanNode.objects.filter(school_class=self.alien_class).exists())
+        self.assertFalse(PlanNode.objects.filter(course=self.alien_class).exists())
 
     def test_requires_authentication(self):
         self.client.credentials()
@@ -311,10 +311,10 @@ class ImportApiTests(PlanTestCase):
 
 
 class ExportApiTests(PlanTestCase):
-    def export(self, school_class=None):
+    def export(self, course=None):
         return self.client.get(
             reverse("plannode-export"),
-            {"class": (school_class or self.school_class).pk},
+            {"course": (course or self.course).pk},
         )
 
     def text(self, response):
@@ -359,13 +359,13 @@ class ExportApiTests(PlanTestCase):
         self.build_sample()
         # уроки вне темы формат держит только до первого заголовка
         PlanNode.objects.filter(title__in=("Повторение", "Контрольная работа")).delete()
-        services.reindex(self.school_class, None)
+        services.reindex(self.owner(), None)
         before = self.titles_with_notes()
 
         exported = self.export().content
 
         response = self.client.post(
-            f"{reverse('plannode-import')}?class={self.school_class.pk}",
+            f"{reverse('plannode-import')}?course={self.course.pk}",
             {
                 "file": SimpleUploadedFile("plan.csv", exported, content_type="text/csv"),
                 "mode": "replace",
@@ -384,7 +384,7 @@ class ExportApiTests(PlanTestCase):
 
         exported = self.export().content
         self.client.post(
-            f"{reverse('plannode-import')}?class={self.school_class.pk}",
+            f"{reverse('plannode-import')}?course={self.course.pk}",
             {
                 "file": SimpleUploadedFile("plan.csv", exported, content_type="text/csv"),
                 "mode": "replace",

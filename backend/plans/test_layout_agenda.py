@@ -3,7 +3,7 @@
 from datetime import timedelta
 
 from django.urls import reverse
-from schedule.models import LessonSlot, SchoolClass
+from schedule.models import Course, LessonSlot
 
 from .models import PlanNode
 from .test_layout import MONDAY, LayoutApiTestCase
@@ -101,16 +101,18 @@ class LayoutAgendaTests(LayoutApiTestCase):
         self.assertEqual(payload[str(created[3].pk)]["title"], "Сложение векторов")
 
     def test_covers_every_class_at_once(self):
-        second = SchoolClass.objects.create(
-            owner=self.user, year=self.school_class.year, name="10А"
+        second = Course.objects.create(
+            school=self.school, year=self.course.year, name="10А"
         )
         PlanNode.objects.create(
-            school_class=second, parent=None, position=0, is_section=False,
+            teacher=self.user, course=second, parent=None, position=0, is_section=False,
             title="Своя тема",
         )
         mine = self.fill_slots(1)[0]
         other = LessonSlot.objects.create(
-            year=second.year, school_class=second, date=MONDAY, lesson_number=2
+            teacher=self.user,
+            year=second.year, course=second, date=MONDAY,
+            lesson_number=2
         )
 
         payload = self.agenda().json()["slots"]
@@ -120,12 +122,13 @@ class LayoutAgendaTests(LayoutApiTestCase):
 
     def test_another_users_slots_are_invisible(self):
         PlanNode.objects.create(
-            school_class=self.alien_class, parent=None, position=0,
+            teacher=self.stranger, course=self.alien_class, parent=None, position=0,
             is_section=False, title="Чужой урок",
         )
         alien_slot = LessonSlot.objects.create(
+            teacher=self.stranger,
             year=self.alien_class.year,
-            school_class=self.alien_class,
+            course=self.alien_class,
             date=MONDAY,
             lesson_number=1,
         )

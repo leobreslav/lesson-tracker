@@ -1,4 +1,3 @@
-from django.conf import settings
 from django.contrib.postgres.fields import ArrayField
 from django.core.exceptions import ValidationError
 from django.db import models
@@ -11,13 +10,20 @@ def default_weekend_days():
 
 
 class SchoolYear(models.Model):
-    """Учебный год одного учителя: границы периода и разметка календаря."""
+    """
+    A school year: its boundaries and the calendar markup on top of them.
 
-    owner = models.ForeignKey(
-        settings.AUTH_USER_MODEL,
+    The year belongs to the school, not to a teacher: everybody in the
+    building lives through the same holidays and the same quarters, and a
+    per-teacher calendar would only let two colleagues disagree about when
+    the autumn break starts.
+    """
+
+    school = models.ForeignKey(
+        "schools.School",
         related_name="school_years",
         on_delete=models.CASCADE,
-        verbose_name="owner",
+        verbose_name="school",
     )
     name = models.CharField("name", max_length=64)
     start_date = models.DateField("start date")
@@ -37,7 +43,7 @@ class SchoolYear(models.Model):
         ordering = ("-start_date", "name")
         constraints = [
             models.UniqueConstraint(
-                fields=("owner", "name"), name="unique_school_year_name_per_owner"
+                fields=("school", "name"), name="unique_school_year_name_per_school"
             ),
             models.CheckConstraint(
                 condition=models.Q(end_date__gte=models.F("start_date")),

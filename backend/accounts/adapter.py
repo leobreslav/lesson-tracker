@@ -2,17 +2,19 @@ from allauth.socialaccount.adapter import DefaultSocialAccountAdapter
 
 
 class EmailNotVerifiedError(Exception):
-    """Google отдал адрес с email_verified=false."""
+    """Google returned the address with email_verified=false."""
 
 
 class SocialAccountAdapter(DefaultSocialAccountAdapter):
     """
-    Принимаем только подтверждённые провайдером адреса.
+    Only addresses the provider verified are accepted.
 
-    Иначе allauth не может выполнить auto signup и уводит на HTML-форму
-    socialaccount_signup, которой в SPA нет — получается NoReverseMatch и 500.
-    Заодно это условие, при котором SOCIALACCOUNT_EMAIL_AUTHENTICATION
-    безопасно связывает вход с существующим локальным аккаунтом.
+    Otherwise allauth cannot auto-signup and redirects to the HTML form
+    socialaccount_signup, which an SPA does not have — that gives a
+    NoReverseMatch and a 500. It is also the condition under which
+    SOCIALACCOUNT_EMAIL_AUTHENTICATION safely links a sign-in to an existing
+    local account, and the condition invitations rely on: an unverified
+    address must never be enough to walk into a school.
     """
 
     def pre_social_login(self, request, sociallogin):

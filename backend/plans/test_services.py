@@ -16,7 +16,7 @@ class FakeNode:
     is_section: bool = False
     parent_id: int | None = None
     title: str = ""
-    school_class_id: int = 1
+    course_id: int = 1
 
 
 def section(pk, position, title=""):
@@ -129,30 +129,30 @@ class CountsTests(SimpleTestCase):
 class StructureTests(SimpleTestCase):
     def test_root_level_is_always_fine(self):
         self.assertEqual(
-            services.structure_problems(school_class_id=1, parent=None, is_section=True),
+            services.structure_problems(course_id=1, parent=None, is_section=True),
             {},
         )
 
     def test_section_inside_section_is_forbidden(self):
         problems = services.structure_problems(
-            school_class_id=1, parent=section(1, 0), is_section=True
+            course_id=1, parent=section(1, 0), is_section=True
         )
 
         self.assertIn("parent", problems)
 
     def test_lesson_cannot_be_nested_into_a_lesson(self):
         problems = services.structure_problems(
-            school_class_id=1, parent=lesson(1, 0), is_section=False
+            course_id=1, parent=lesson(1, 0), is_section=False
         )
 
         self.assertIn("parent", problems)
 
     def test_parent_from_another_class_is_forbidden(self):
         alien = section(1, 0)
-        alien.school_class_id = 2
+        alien.course_id = 2
 
         problems = services.structure_problems(
-            school_class_id=1, parent=alien, is_section=False
+            course_id=1, parent=alien, is_section=False
         )
 
         self.assertIn("parent", problems)
@@ -160,7 +160,7 @@ class StructureTests(SimpleTestCase):
     def test_lesson_inside_a_section_is_allowed(self):
         self.assertEqual(
             services.structure_problems(
-                school_class_id=1, parent=section(1, 0), is_section=False
+                course_id=1, parent=section(1, 0), is_section=False
             ),
             {},
         )

@@ -12,7 +12,7 @@ import {
   createSlot,
   deleteSlot,
   fetchAgenda,
-  fetchClasses,
+  fetchCourses,
   fetchSchoolYears,
   updateSlot,
 } from './api'
@@ -137,7 +137,7 @@ export default function Agenda({ onLoggedOut }) {
   useEffect(() => {
     let cancelled = false
 
-    Promise.all([fetchSchoolYears(), fetchClasses()])
+    Promise.all([fetchSchoolYears(), fetchCourses()])
       .then(([yearList, classList]) => {
         if (cancelled) return
         setYears(yearList)
@@ -235,7 +235,7 @@ export default function Agenda({ onLoggedOut }) {
       const busyClasses = new Set(
         (data.lessons[date] || [])
           .filter((item) => item.lesson_number === number)
-          .map((item) => item.class_id),
+          .map((item) => item.course_id),
       )
       return classesFor(date).filter((item) => !busyClasses.has(item.id))
     },
@@ -252,7 +252,7 @@ export default function Agenda({ onLoggedOut }) {
   )
 
   const lessonsOn = useCallback(
-    (date) => (data.lessons[date] || []).filter((item) => !hidden.has(item.class_id)),
+    (date) => (data.lessons[date] || []).filter((item) => !hidden.has(item.course_id)),
     [data, hidden],
   )
 
@@ -261,7 +261,7 @@ export default function Agenda({ onLoggedOut }) {
     const live = visible.filter((item) => !item.is_cancelled)
     const byClass = {}
     live.forEach((item) => {
-      byClass[item.class_name] = (byClass[item.class_name] || 0) + 1
+      byClass[item.course_name] = (byClass[item.course_name] || 0) + 1
     })
 
     return { total: live.length, cancelled: visible.length - live.length, byClass }
@@ -288,7 +288,7 @@ export default function Agenda({ onLoggedOut }) {
     [data, load, handleError],
   )
 
-  const handleAdd = ({ school_class, is_extra, reason }) => {
+  const handleAdd = ({ course, is_extra, reason }) => {
     const { date, number } = dialog
     setDialog(null)
     tempId.current -= 1
@@ -296,8 +296,8 @@ export default function Agenda({ onLoggedOut }) {
     const optimistic = {
       id: tempId.current,
       lesson_number: number,
-      class_id: school_class,
-      class_name: classes.find((item) => item.id === school_class)?.name ?? '',
+      course_id: course,
+      course_name: classes.find((item) => item.id === course)?.name ?? '',
       is_cancelled: false,
       is_extra,
       reason,
@@ -312,7 +312,7 @@ export default function Agenda({ onLoggedOut }) {
       },
       () =>
         createSlot({
-          school_class,
+          course,
           date,
           lesson_number: number,
           is_extra,
@@ -414,7 +414,7 @@ export default function Agenda({ onLoggedOut }) {
 
       const totals = { created: 0, skipped: 0, deleted: 0, conflicts: [] }
       for (const classId of classIds) {
-        const part = await copySlots({ ...common, class_id: classId })
+        const part = await copySlots({ ...common, course_id: classId })
         totals.created += part.created
         totals.skipped += part.skipped
         totals.deleted += part.deleted
@@ -587,7 +587,7 @@ export default function Agenda({ onLoggedOut }) {
                     disabled={busy}
                     onClick={() => openLesson(date, lesson)}
                   >
-                    {lesson.class_name}
+                    {lesson.course_name}
                     {topicOf(lesson)}
                   </button>
                 ))}
@@ -653,7 +653,7 @@ export default function Agenda({ onLoggedOut }) {
                       onClick={() => openLesson(day.date, lesson)}
                     >
                       <span className="slot">{lesson.lesson_number}</span>{' '}
-                      {lesson.class_name}
+                      {lesson.course_name}
                       {topicOf(lesson)}
                     </button>
                   ))}

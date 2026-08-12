@@ -8,9 +8,11 @@ import Dashboard from './Dashboard'
 import Layout from './Layout'
 import Login from './Login'
 import NavBar from './NavBar'
+import NoSchool from './NoSchool'
 import NotFound from './NotFound'
 import Plan from './Plan'
 import Profile from './Profile'
+import School from './School'
 import { clearToken, fetchMe, fetchOnboarding, getToken, updateMe } from './api'
 import i18n, { normalizeLanguage } from './i18n'
 
@@ -70,6 +72,12 @@ export default function App() {
   // no bar on the login page: there is nothing and nobody to show it to
   if (!token) return <Login onLoggedIn={handleLoggedIn} />
 
+  // signed in but invited by nobody: every section would answer 403, so one
+  // honest screen replaces five identical refusals
+  if (user && !user.school) {
+    return <NoSchool user={user} onLoggedOut={handleLoggedOut} />
+  }
+
   const guarded = (Page, props) => <Page onLoggedOut={handleLoggedOut} {...props} />
 
   return (
@@ -98,8 +106,9 @@ export default function App() {
           <Route path="/schedule" element={guarded(Agenda)} />
           <Route path="/layout" element={guarded(Layout)} />
           <Route path="/plan" element={guarded(Plan)} />
-          <Route path="/classes" element={guarded(Classes)} />
-          <Route path="/year" element={guarded(Calendar)} />
+          <Route path="/classes" element={guarded(Classes, { user })} />
+          <Route path="/school" element={guarded(School, { user })} />
+          <Route path="/year" element={guarded(Calendar, { user })} />
           <Route path="/profile" element={guarded(Profile, { onSaved: setUser })} />
           <Route path="*" element={<NotFound />} />
         </Routes>

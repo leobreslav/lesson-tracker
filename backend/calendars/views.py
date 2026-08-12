@@ -1,4 +1,4 @@
-from rest_framework import viewsets
+from config.access import SchoolScopedViewSet
 from rest_framework.decorators import action
 from rest_framework.response import Response
 
@@ -23,20 +23,20 @@ def serialize_day(day: services.Day) -> dict:
     }
 
 
-class SchoolYearViewSet(viewsets.ModelViewSet):
-    """Свои учебные годы: CRUD, развёрнутый календарь и статистика."""
+class SchoolYearViewSet(SchoolScopedViewSet):
+    """
+    The school's years: CRUD, the expanded calendar and the statistics.
+
+    Everybody in the school reads them — the calendar is shared — and only an
+    administrator changes them.
+    """
 
     serializer_class = SchoolYearSerializer
-
-    def get_queryset(self):
-        # чужие годы недоступны на любом действии, включая detail-роуты
-        return SchoolYear.objects.filter(owner=self.request.user).prefetch_related(
-            "exceptions"
-        )
+    queryset = SchoolYear.objects.prefetch_related("exceptions")
 
     @action(detail=True, methods=["get"])
     def days(self, request, pk=None):
-        """Календарь по дням. Считается на лету, в базе не хранится."""
+        """The calendar day by day. Computed on the fly, never stored."""
         year = self.get_object()
         return Response(
             {
@@ -49,38 +49,43 @@ class SchoolYearViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=["get"])
     def stats(self, request, pk=None):
-        """Учебных дней всего и по дням недели."""
+        """Study days in total and per weekday."""
         year = self.get_object()
         return Response(services.build_stats(year.build_days()))
 
 
-class DayExceptionViewSet(viewsets.ModelViewSet):
-    """Исключения календаря. Список фильтруется параметром ?year=<id>."""
+class DayExceptionViewSet(SchoolScopedViewSet):
+    """Calendar markup. The list is filtered by ?year=<id>."""
 
     serializer_class = DayExceptionSerializer
+    queryset = DayException.objects.all()
+    # the markup has no school of its own: it hangs off a year
+    school_path = "year__school"
 
     def get_queryset(self):
-        queryset = DayException.objects.filter(year__owner=self.request.user)
+        queryset = super().get_queryset()
 
         year = self.request.query_params.get("year")
         if year:
-            # нечисловой параметр не должен ронять запрос ошибкой приведения
+            # a non-numeric value must not blow up on a cast
             queryset = queryset.filter(year_id=year) if year.isdigit() else queryset.none()
 
         return queryset.select_related("year")
 
 
-class TermViewSet(viewsets.ModelViewSet):
-    """Четверти и семестры. Список фильтруется параметром ?year=<id>."""
+class TermViewSet(SchoolScopedViewSet):
+    """Quarters and semesters. The list is filtered by ?year=<id>."""
 
     serializer_class = TermSerializer
+    queryset = Term.objects.all()
+    school_path = "year__school"
 
     def get_queryset(self):
-        queryset = Term.objects.filter(year__owner=self.request.user)
+        queryset = super().get_queryset()
 
         year = self.request.query_params.get("year")
         if year:
-            # нечисловой параметр не должен ронять запрос ошибкой приведения
+            # a non-numeric value must not blow up on a cast
             queryset = queryset.filter(year_id=year) if year.isdigit() else queryset.none()
 
         return queryset.select_related("year")

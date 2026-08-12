@@ -15,7 +15,7 @@ export function AddLessonDialog({ date, number, classes, busy, onSubmit, onClose
     if (!classId) return
 
     onSubmit({
-      school_class: classId,
+      course: classId,
       is_extra: isExtra,
       reason: isExtra ? reason.trim() : '',
     })
@@ -97,7 +97,7 @@ export function LessonMenu({ lesson, date, busy, onCancel, onRestore, onDelete, 
     <Modal onClose={onClose}>
       <h3>
         {t('agenda.menu.title', {
-          className: lesson.class_name,
+          className: lesson.course_name,
           number: lesson.lesson_number,
         })}
       </h3>

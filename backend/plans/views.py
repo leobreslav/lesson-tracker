@@ -1,17 +1,19 @@
 from urllib.parse import quote
 
+from config.access import IsSchoolMember, TeacherScopedViewSet
 from config.errors import Codes, api_error
 from django.db import transaction
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from django.utils.dateparse import parse_date
-from rest_framework import status, viewsets
+from rest_framework import status
+from rest_framework.permissions import IsAuthenticated
 from rest_framework.decorators import action
 from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from schedule.models import LessonSlot, SchoolClass
+from schedule.models import Course, LessonSlot
 
 from . import services
 from .models import PlanNode
@@ -27,23 +29,17 @@ from .serializers import (
 )
 
 
-# файл плана крупнее мегабайта — это уже не учебный план
+# a plan file over a megabyte is not a lesson plan any more
 MAX_IMPORT_BYTES = 1024 * 1024
 
 
 def read_date(value):
-    """Дата из параметра запроса. Мусор — это None, а не 500."""
+    """A date from a query parameter. Garbage is None, not a 500."""
     try:
         return parse_date(value or "")
     except ValueError:
-        # parse_date падает на «2026-13-45»: формат похож, даты не существует
+        # parse_date raises on «2026-13-45»: the shape fits, the date does not
         return None
-
-
-def own_nodes(user):
-    return PlanNode.objects.filter(school_class__owner=user).select_related(
-        "school_class", "parent"
-    )
 
 
 def perform_move(node, data) -> Response:
@@ -53,57 +49,68 @@ def perform_move(node, data) -> Response:
     with transaction.atomic():
         moved = services.move(node, form.validated_data["direction"])
 
-    # False — узел упёрся в край дерева, это не ошибка
+    # False means the node hit the edge of the tree; that is not an error
     return Response({"moved": moved})
 
 
-class PlanNodeViewSet(viewsets.ModelViewSet):
+class PlanNodeViewSet(TeacherScopedViewSet):
     """
-    Учебный план класса.
+    A teacher's plan inside a course.
 
-    Список отдаёт дерево целиком, а не плоский набор узлов: без порядка и
-    вложенности он бесполезен.
+    The list returns the whole tree rather than a flat set of nodes: without
+    order and nesting it is useless.
     """
 
-    def get_queryset(self):
-        return own_nodes(self.request.user)
+    queryset = PlanNode.objects.select_related("course", "parent")
 
     def get_serializer_class(self):
         if self.action == "create":
             return PlanNodeCreateSerializer
         return PlanNodeUpdateSerializer
 
-    def requested_class(self):
-        raw = self.request.query_params.get("class")
+    def requested_course(self):
+        """
+        The course from ?course=, limited to the requester's school.
+
+        A course of another school is a 404 — the plan inside it is personal
+        anyway, but the course itself must not even be namable.
+        """
+        raw = self.request.query_params.get("course")
         if not raw or not raw.isdigit():
             api_error(
                 Codes.CLASS_REQUIRED,
-                "The «class» query parameter with a class id is required.",
-                field="class",
+                "The «course» query parameter with a course id is required.",
+                field="course",
             )
 
         return get_object_or_404(
-            SchoolClass.objects.filter(owner=self.request.user), pk=raw
+            Course.objects.filter(school_id=self.request.user.school_id), pk=raw
+        )
+
+    def owner_of(self, course):
+        """Whose plan in which course — everything below needs the pair."""
+        return services.PlanOwner(
+            teacher_id=self.request.user.pk, course_id=course.pk
         )
 
     def list(self, request, *args, **kwargs):
-        return Response(tree_payload(self.requested_class()))
+        return Response(tree_payload(self.owner_of(self.requested_course())))
 
     @action(detail=False, methods=["get"])
     def flat(self, request):
-        """Только уроки, по порядку — последовательность для расписания."""
-        return Response(flat_payload(self.requested_class()))
+        """Only the lessons, in order — the sequence the schedule will get."""
+        return Response(flat_payload(self.owner_of(self.requested_course())))
 
-    def layout_entries(self, school_class):
-        """Сопоставление плана и расписания. Запросы здесь, расчёт — в services."""
+    def layout_entries(self, course):
+        """Matching the plan to the schedule. Queries here, maths in services."""
         slots = LessonSlot.objects.filter(
-            school_class=school_class, is_cancelled=False
+            teacher=self.request.user, course=course, is_cancelled=False
         ).order_by("date", "lesson_number")
 
         return services.build_layout(
-            services.flatten_lessons(school_class),
+            services.flatten_lessons(self.owner_of(course)),
             list(slots),
-            school_class.year.terms.all(),
+            course.year.terms.all(),
         )
 
     @action(detail=False, methods=["get"])
@@ -114,7 +121,7 @@ class PlanNodeViewSet(viewsets.ModelViewSet):
         Период режет уже посчитанную раскладку: сопоставление всегда идёт по
         всему плану и всему расписанию, иначе номера поехали бы.
         """
-        entries = self.layout_entries(self.requested_class())
+        entries = self.layout_entries(self.requested_course())
 
         start, end = (read_date(request.query_params.get(name)) for name in ("from", "to"))
         if start or end:
@@ -157,16 +164,16 @@ class PlanNodeViewSet(viewsets.ModelViewSet):
                 field="end",
             )
 
-        # классы, у которых в периоде вообще что-то стоит
-        classes = SchoolClass.objects.filter(
-            owner=request.user,
+        # courses where this teacher has anything at all in the period
+        courses = Course.objects.filter(
+            slots__teacher=request.user,
             slots__date__range=(start, end),
             slots__is_cancelled=False,
         ).distinct()
 
         slots = {}
-        for school_class in classes:
-            for entry in self.layout_entries(school_class):
+        for course in courses:
+            for entry in self.layout_entries(course):
                 if entry.slot is None or entry.lesson is None:
                     continue
                 if not start <= entry.slot.date <= end:
@@ -189,7 +196,7 @@ class PlanNodeViewSet(viewsets.ModelViewSet):
         Разбор идёт до транзакции: непригодный файл не должен успеть снести
         существующий план в режиме replace.
         """
-        school_class = self.requested_class()
+        course = self.requested_course()
 
         upload = request.FILES.get("file")
         if upload is None:
@@ -219,10 +226,12 @@ class PlanNodeViewSet(viewsets.ModelViewSet):
 
         with transaction.atomic():
             if mode == "replace":
-                PlanNode.objects.filter(school_class=school_class).delete()
+                PlanNode.objects.filter(
+                    teacher=request.user, course=course
+                ).delete()
 
             created = services.apply_import(
-                school_class, rows, append=(mode == "append")
+                self.owner_of(course), rows, append=(mode == "append")
             )
 
         return Response(
@@ -237,10 +246,10 @@ class PlanNodeViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=["get"], url_path="export", url_name="export")
     def export_csv(self, request):
         """Выгрузка плана в CSV — формат тот же, что понимает импорт."""
-        school_class = self.requested_class()
-        content = services.build_plan_csv(services.get_tree(school_class))
+        course = self.requested_course()
+        content = services.build_plan_csv(services.get_tree(self.owner_of(course)))
 
-        name = f"план_{school_class.name}_{timezone.localdate()}.csv"
+        name = f"план_{course.name}_{timezone.localdate()}.csv"
         response = HttpResponse(content, content_type="text/csv; charset=utf-8")
         # имя с кириллицей — только через RFC 5987, плюс ascii-запасное
         response["Content-Disposition"] = (
@@ -251,23 +260,23 @@ class PlanNodeViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=["get"], url_path="layout/summary", url_name="layout-summary")
     def layout_summary(self, request):
-        school_class = self.requested_class()
+        course = self.requested_course()
         cancelled = LessonSlot.objects.filter(
-            school_class=school_class, is_cancelled=True
+            teacher=request.user, course=course, is_cancelled=True
         ).count()
 
         return Response(
             services.layout_summary(
-                self.layout_entries(school_class),
+                self.layout_entries(course),
                 today=timezone.localdate(),
                 cancelled_count=cancelled,
-                terms=school_class.year.terms.all(),
+                terms=course.year.terms.all(),
             )
         )
 
     def destroy(self, request, *args, **kwargs):
         node = self.get_object()
-        # по умолчанию бережём содержимое: уроки всплывают на верхний уровень
+        # by default the content survives: lessons surface to the top level
         keep_children = request.query_params.get("keep_children", "true").lower() not in (
             "false",
             "0",
@@ -277,30 +286,31 @@ class PlanNodeViewSet(viewsets.ModelViewSet):
             if node.is_section and keep_children:
                 services.dissolve_section(node)
             else:
-                school_class, parent_id = node.school_class, node.parent_id
+                parent_id = node.parent_id
+                # the node is needed as the (teacher, course) pair afterwards
                 node.delete()
-                services.reindex(school_class, parent_id)
+                services.reindex(node, parent_id)
 
         return Response(status=status.HTTP_204_NO_CONTENT)
 
     @action(detail=True, methods=["post"])
     def move(self, request, pk=None):
-        """Шаг вверх или вниз: с заходом в папки и выходом из них."""
+        """One step up or down, entering sections and leaving them."""
         return perform_move(self.get_object(), request.data)
 
     @action(detail=True, methods=["post"])
     def move_to(self, request, pk=None):
-        """Явный перенос, когда пошаговое движение неудобно."""
+        """An explicit move, for when stepping is inconvenient."""
         node = self.get_object()
 
         form = MoveToSerializer(data=request.data, context=self.get_serializer_context())
         form.is_valid(raise_exception=True)
         parent = form.validated_data["parent"]
 
-        if parent is not None and parent.school_class_id != node.school_class_id:
+        if parent is not None and parent.course_id != node.course_id:
             api_error(
                 Codes.PARENT_OTHER_CLASS,
-                "That section belongs to another class.",
+                "That section belongs to another course.",
                 field="parent",
             )
         check_structure(node, parent)
@@ -312,8 +322,12 @@ class PlanNodeViewSet(viewsets.ModelViewSet):
 
 
 class SectionMoveView(APIView):
-    """Перемещение папки целиком относительно соседей верхнего уровня."""
+    """Moving a whole section against its neighbours on the top level."""
+
+    permission_classes = [IsAuthenticated, IsSchoolMember]
 
     def post(self, request, pk):
-        section = get_object_or_404(own_nodes(request.user).filter(is_section=True), pk=pk)
+        section = get_object_or_404(
+            PlanNode.objects.filter(teacher=request.user, is_section=True), pk=pk
+        )
         return perform_move(section, request.data)

@@ -55,9 +55,7 @@ class GoogleLoginTests(APITestCase):
         user = User.objects.create_user(
             email="teacher@example.com", password="S3cret-pass-123"
         )
-        EmailAddress.objects.create(
-            user=user, email=user.email, verified=True, primary=True
-        )
+        # create_user marks the address verified itself — see UserManager
 
         response = google_login()
 
@@ -77,9 +75,7 @@ class GoogleLoginTests(APITestCase):
         user = User.objects.create_user(
             email="teacher@example.com", password="S3cret-pass-123"
         )
-        EmailAddress.objects.create(
-            user=user, email=user.email, verified=True, primary=True
-        )
+        # create_user marks the address verified itself — see UserManager
 
         google_login()
 
@@ -95,9 +91,7 @@ class GoogleLoginTests(APITestCase):
             first_name="Маша",
             last_name="Петрова",
         )
-        EmailAddress.objects.create(
-            user=user, email=user.email, verified=True, primary=True
-        )
+        # create_user marks the address verified itself — see UserManager
 
         google_login()
 

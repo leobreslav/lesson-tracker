@@ -9,26 +9,30 @@ from . import services
 MAX_LESSON_NUMBER = 10
 
 
-class SchoolClass(models.Model):
+class Course(models.Model):
     """
-    Класс учителя в конкретном учебном году.
+    What somebody teaches: a group and a subject together, «9B Algebra».
 
-    Привязка к году намеренная: в следующем году 9Б становится 10Б, и это
-    другой объект со своей нагрузкой. Модель минимальная, но полноценная —
-    к ней будут цепляться слоты расписания и, возможно, список учеников.
+    The course belongs to the school and is created by its administrators —
+    a teacher picks from the list rather than inventing their own entry, or
+    two colleagues teaching the same group would end up with two courses
+    nobody can compare.
+
+    The link to a year is deliberate: next year 9B becomes 10B, and that is a
+    different course with its own load.
     """
 
-    owner = models.ForeignKey(
-        settings.AUTH_USER_MODEL,
-        related_name="classes",
+    school = models.ForeignKey(
+        "schools.School",
+        related_name="courses",
         on_delete=models.CASCADE,
-        verbose_name="owner",
+        verbose_name="school",
     )
-    # снос учебного года уносит и его классы; будущие слоты расписания
-    # точно так же вешаются на класс через on_delete=CASCADE
+    # deleting a year takes its courses with it; lesson slots and plan rows
+    # hang off the course under PROTECT, so a course in use cannot vanish
     year = models.ForeignKey(
         "calendars.SchoolYear",
-        related_name="classes",
+        related_name="courses",
         on_delete=models.CASCADE,
         verbose_name="school year",
     )
@@ -36,12 +40,12 @@ class SchoolClass(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
-        verbose_name = "class"
-        verbose_name_plural = "classes"
+        verbose_name = "course"
+        verbose_name_plural = "courses"
         ordering = ("name",)
         constraints = [
             models.UniqueConstraint(
-                fields=("owner", "year", "name"), name="unique_class_name_per_year"
+                fields=("school", "year", "name"), name="unique_course_name_per_year"
             ),
         ]
 
@@ -51,13 +55,16 @@ class SchoolClass(models.Model):
 
 class LessonSlot(models.Model):
     """
-    Один урок класса в конкретный день.
+    One lesson of one teacher in one course on one day.
 
-    Отдельной сущности «расписание» нет: расписание класса на год — это все
-    его слоты внутри границ года. Вида урока тоже нет, только два флага:
-    обычный урок — оба False, отменённый — is_cancelled, внезапный (замена,
-    дополнительное занятие) — is_extra. Комбинация допустима: отменить можно
-    и дополнительный урок.
+    There is no separate "timetable" entity: a teacher's schedule for the year
+    is every slot of theirs inside the year's boundaries. There is no lesson
+    kind either, only two flags: a regular lesson has both False, a cancelled
+    one has is_cancelled, an unplanned one (a substitution, a club) has
+    is_extra. The combination is allowed — an extra lesson can be cancelled.
+
+    The slot is personal. Two teachers may share a course and still keep
+    completely separate schedules inside it.
     """
 
     year = models.ForeignKey(
@@ -66,11 +73,19 @@ class LessonSlot(models.Model):
         on_delete=models.CASCADE,
         verbose_name="school year",
     )
-    school_class = models.ForeignKey(
-        SchoolClass,
+    teacher = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
         related_name="slots",
         on_delete=models.CASCADE,
-        verbose_name="class",
+        verbose_name="teacher",
+    )
+    course = models.ForeignKey(
+        Course,
+        related_name="slots",
+        # PROTECT: an administrator must not wipe somebody's schedule by
+        # deleting a course — the answer explains what is in the way
+        on_delete=models.PROTECT,
+        verbose_name="course",
     )
     date = models.DateField("date")
     lesson_number = models.PositiveSmallIntegerField(
@@ -87,12 +102,13 @@ class LessonSlot(models.Model):
         verbose_name_plural = "lesson slots"
         ordering = ("date", "lesson_number")
         indexes = [
-            models.Index(fields=("school_class", "date"), name="slot_class_date_idx"),
+            models.Index(fields=("teacher", "date"), name="slot_teacher_date_idx"),
+            models.Index(fields=("course", "date"), name="slot_course_date_idx"),
         ]
         constraints = [
             models.UniqueConstraint(
-                fields=("school_class", "date", "lesson_number"),
-                name="unique_slot_per_class_day",
+                fields=("teacher", "course", "date", "lesson_number"),
+                name="unique_slot_per_teacher_course_day",
             ),
             models.CheckConstraint(
                 condition=models.Q(lesson_number__gte=1)
@@ -102,7 +118,7 @@ class LessonSlot(models.Model):
         ]
 
     def __str__(self):
-        return f"{self.school_class} {self.date} №{self.lesson_number}"
+        return f"{self.course} {self.date} №{self.lesson_number}"
 
     @property
     def is_regular(self) -> bool:
@@ -110,21 +126,21 @@ class LessonSlot(models.Model):
         return not self.is_extra and not self.is_cancelled
 
     @classmethod
-    def find_conflict(cls, *, year, date, lesson_number, exclude_pk=None):
+    def find_conflict(cls, *, teacher_id, year, date, lesson_number, exclude_pk=None):
         """
-        Урок владельца, уже занимающий этот номер в этот день.
+        The teacher's own lesson already holding that number that day.
 
-        Физически учитель не ведёт два класса одновременно, а
-        unique_together этого не ловит: там ключ включает класс. Отменённые
-        уроки место не занимают — их можно перекрыть другим классом.
+        Physically nobody teaches two courses at once, and unique_together
+        does not catch it: its key includes the course. A cancelled lesson
+        frees the slot — another course can take it.
         """
         queryset = cls.objects.filter(
-            school_class__owner_id=year.owner_id,
+            teacher_id=teacher_id,
             year=year,
             date=date,
             lesson_number=lesson_number,
             is_cancelled=False,
-        ).select_related("school_class")
+        ).select_related("course")
 
         if exclude_pk is not None:
             queryset = queryset.exclude(pk=exclude_pk)
@@ -132,12 +148,13 @@ class LessonSlot(models.Model):
         return queryset.first()
 
     def conflict(self):
-        if self.is_cancelled or not (self.year_id and self.school_class_id):
+        if self.is_cancelled or not (self.year_id and self.course_id and self.teacher_id):
             return None
         if self.date is None or self.lesson_number is None:
             return None
 
         return self.find_conflict(
+            teacher_id=self.teacher_id,
             year=self.year,
             date=self.date,
             lesson_number=self.lesson_number,
@@ -152,7 +169,7 @@ class LessonSlot(models.Model):
             raise ValidationError(
                 {
                     "lesson_number": services.occupied_message(
-                        self.date, self.lesson_number, busy.school_class.name
+                        self.date, self.lesson_number, busy.course.name
                     )
                 }
             )

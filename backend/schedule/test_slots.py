@@ -3,15 +3,12 @@ from urllib.parse import urlencode
 
 from calendars import services as calendar_services
 from calendars.models import DayException, SchoolYear
-from django.contrib.auth import get_user_model
 from django.urls import reverse
 from django.utils import timezone
-from rest_framework.authtoken.models import Token
 from rest_framework.test import APITestCase
+from schools.testing import SchoolTestMixin
 
-from .models import LessonSlot, SchoolClass
-
-User = get_user_model()
+from .models import Course, LessonSlot
 
 YEAR_START = date(2026, 9, 1)
 YEAR_END = date(2027, 5, 31)
@@ -22,43 +19,46 @@ def days(count):
     return timedelta(days=count)
 
 
-class SlotTestCase(APITestCase):
+class SlotTestCase(SchoolTestMixin, APITestCase):
     def setUp(self):
-        self.user = User.objects.create_user(email="teacher@example.com")
-        self.other = User.objects.create_user(email="other@example.com")
-        self.client.credentials(
-            HTTP_AUTHORIZATION=f"Token {Token.objects.create(user=self.user).key}"
-        )
+        super().setUp()
 
         self.year = SchoolYear.objects.create(
-            owner=self.user, name="2026/2027", start_date=YEAR_START, end_date=YEAR_END
+            school=self.school,
+            name="2026/2027",
+            start_date=YEAR_START,
+            end_date=YEAR_END,
         )
-        self.school_class = SchoolClass.objects.create(
-            owner=self.user, year=self.year, name="9Б"
+        self.course = Course.objects.create(
+            school=self.school, year=self.year, name="9Б"
         )
 
         self.alien_year = SchoolYear.objects.create(
-            owner=self.other, name="2026/2027", start_date=YEAR_START, end_date=YEAR_END
+            school=self.alien_school,
+            name="2026/2027",
+            start_date=YEAR_START,
+            end_date=YEAR_END,
         )
-        self.alien_class = SchoolClass.objects.create(
-            owner=self.other, year=self.alien_year, name="9А"
+        self.alien_class = Course.objects.create(
+            school=self.alien_school, year=self.alien_year, name="9А"
         )
 
-    def make_slot(self, slot_date, number, school_class=None, **flags):
-        school_class = school_class or self.school_class
+    def make_slot(self, slot_date, number, course=None, teacher=None, **flags):
+        course = course or self.course
         return LessonSlot.objects.create(
-            year=school_class.year,
-            school_class=school_class,
+            year=course.year,
+            teacher=teacher or self.user,
+            course=course,
             date=slot_date,
             lesson_number=number,
             **flags,
         )
 
-    def post_slot(self, slot_date, number, school_class=None, **extra):
+    def post_slot(self, slot_date, number, course=None, **extra):
         return self.client.post(
             reverse("lessonslot-list"),
             {
-                "school_class": (school_class or self.school_class).pk,
+                "course": (course or self.course).pk,
                 "date": slot_date,
                 "lesson_number": number,
                 **extra,
@@ -66,10 +66,10 @@ class SlotTestCase(APITestCase):
             format="json",
         )
 
-    def slots_on(self, slot_date, school_class=None):
+    def slots_on(self, slot_date, course=None):
         return sorted(
             LessonSlot.objects.filter(
-                school_class=school_class or self.school_class, date=slot_date
+                course=course or self.course, date=slot_date
             ).values_list("lesson_number", flat=True)
         )
 
@@ -123,7 +123,7 @@ class SlotCrudTests(SlotTestCase):
 
     def test_year_must_match_the_class(self):
         other_year = SchoolYear.objects.create(
-            owner=self.user,
+            school=self.school,
             name="2027/2028",
             start_date=date(2027, 9, 1),
             end_date=date(2028, 5, 31),
@@ -137,7 +137,7 @@ class SlotCrudTests(SlotTestCase):
         self.assertIn("year", response.json())
 
     def test_cannot_create_a_slot_for_another_users_class(self):
-        response = self.post_slot("2026-09-07", 1, school_class=self.alien_class)
+        response = self.post_slot("2026-09-07", 1, course=self.alien_class)
 
         self.assertEqual(response.status_code, 400, response.content)
         self.assertFalse(LessonSlot.objects.exists())
@@ -150,7 +150,7 @@ class SlotCrudTests(SlotTestCase):
         self.assertEqual(response.status_code, 400)
         self.assertEqual(
             response.json()["non_field_errors"],
-            ["This class already has a lesson with this number on that day."],
+            ["You already have a lesson with this number in this course that day."],
         )
         self.assertEqual(LessonSlot.objects.count(), 1)
 
@@ -161,10 +161,11 @@ class SlotCrudTests(SlotTestCase):
 
     def test_same_number_for_another_class_on_another_day_is_fine(self):
         """Один номер у двух классов в один день запрещён — см. test_agenda.py."""
-        second = SchoolClass.objects.create(owner=self.user, year=self.year, name="9В")
+        second = Course.objects.create(
+            school=self.school, year=self.year, name="9В")
         self.post_slot("2026-09-07", 1)
 
-        response = self.post_slot("2026-09-08", 1, school_class=second)
+        response = self.post_slot("2026-09-08", 1, course=second)
 
         self.assertEqual(response.status_code, 201, response.content)
 
@@ -212,18 +213,34 @@ class SlotCrudTests(SlotTestCase):
         self.assertEqual(response.status_code, 204)
         self.assertFalse(LessonSlot.objects.exists())
 
-    def test_deleting_the_class_removes_its_slots(self):
+    def test_a_course_in_use_refuses_to_be_deleted(self):
+        """
+        PROTECT, not CASCADE: an administrator must not wipe somebody's year.
+
+        The answer names what is in the way, so the person knows whom to ask.
+        """
         self.make_slot(MONDAY, 1)
+        self.sign_in(self.admin)
 
-        self.client.delete(reverse("schoolclass-detail", args=[self.school_class.pk]))
+        response = self.client.delete(reverse("course-detail", args=[self.course.pk]))
 
-        self.assertFalse(LessonSlot.objects.exists())
+        self.assertEqual(response.status_code, 400, response.content)
+        self.assertEqual(response.json()["code"], "course_in_use")
+        self.assertEqual(response.json()["params"]["slots"], 1)
+        self.assertTrue(LessonSlot.objects.exists())
+
+    def test_an_unused_course_deletes_cleanly(self):
+        self.sign_in(self.admin)
+
+        response = self.client.delete(reverse("course-detail", args=[self.course.pk]))
+
+        self.assertEqual(response.status_code, 204, response.content)
 
 
 class SlotIsolationTests(SlotTestCase):
     def setUp(self):
         super().setUp()
-        self.alien_slot = self.make_slot(MONDAY, 1, school_class=self.alien_class)
+        self.alien_slot = self.make_slot(MONDAY, 1, teacher=self.colleague)
         self.mine = self.make_slot(MONDAY, 2)
 
     def test_list_shows_only_own_slots(self):
@@ -242,10 +259,11 @@ class SlotIsolationTests(SlotTestCase):
         self.assertTrue(LessonSlot.objects.filter(pk=self.alien_slot.pk).exists())
 
     def test_filter_by_class(self):
-        second = SchoolClass.objects.create(owner=self.user, year=self.year, name="9В")
-        expected = self.make_slot(MONDAY, 3, school_class=second)
+        second = Course.objects.create(
+            school=self.school, year=self.year, name="9В")
+        expected = self.make_slot(MONDAY, 3, course=second)
 
-        response = self.client.get(reverse("lessonslot-list"), {"class": second.pk})
+        response = self.client.get(reverse("lessonslot-list"), {"course": second.pk})
 
         self.assertEqual([item["id"] for item in response.json()], [expected.pk])
 
@@ -261,7 +279,7 @@ class SlotIsolationTests(SlotTestCase):
 
     def test_garbage_filters_return_nothing(self):
         self.assertEqual(
-            self.client.get(reverse("lessonslot-list"), {"class": "abc"}).json(), []
+            self.client.get(reverse("lessonslot-list"), {"course": "abc"}).json(), []
         )
         self.assertEqual(
             self.client.get(reverse("lessonslot-list"), {"start": "вчера"}).json(), []
@@ -279,7 +297,7 @@ class CopyTests(SlotTestCase):
 
     def copy(self, **overrides):
         payload = {
-            "class_id": self.school_class.pk,
+            "course_id": self.course.pk,
             "source_start": MONDAY.isoformat(),
             "source_end": (MONDAY + days(6)).isoformat(),
             "target_start": (MONDAY + days(7)).isoformat(),
@@ -409,11 +427,11 @@ class CopyTests(SlotTestCase):
 
         self.assertEqual(self.slots_on(MONDAY + days(8)), [])
 
-    def test_copy_into_another_users_class_is_rejected(self):
-        response = self.copy(class_id=self.alien_class.pk)
+    def test_copy_into_another_schools_course_is_rejected(self):
+        response = self.copy(course_id=self.alien_class.pk)
 
         self.assertEqual(response.status_code, 400, response.content)
-        self.assertEqual(LessonSlot.objects.filter(school_class=self.alien_class).count(), 0)
+        self.assertEqual(LessonSlot.objects.filter(course=self.alien_class).count(), 0)
 
     def test_reversed_period_is_rejected(self):
         response = self.copy(target_end=(MONDAY + days(1)).isoformat())
@@ -438,7 +456,7 @@ class BulkDeleteTests(SlotTestCase):
 
     def bulk(self, **params):
         query = {
-            "class": self.school_class.pk,
+            "course": self.course.pk,
             "start": MONDAY.isoformat(),
             "end": (MONDAY + days(6)).isoformat(),
             **params,
@@ -461,16 +479,16 @@ class BulkDeleteTests(SlotTestCase):
         self.assertTrue(LessonSlot.objects.filter(pk=self.cancelled.pk).exists())
 
     def test_another_users_class_is_rejected(self):
-        alien_slot = self.make_slot(MONDAY, 1, school_class=self.alien_class)
+        alien_slot = self.make_slot(MONDAY, 1, course=self.alien_class)
 
-        response = self.bulk(**{"class": self.alien_class.pk})
+        response = self.bulk(**{"course": self.alien_class.pk})
 
         self.assertEqual(response.status_code, 400, response.content)
         self.assertTrue(LessonSlot.objects.filter(pk=alien_slot.pk).exists())
 
     def test_missing_parameters_are_rejected(self):
         response = self.client.delete(
-            f"{reverse('lessonslot-bulk')}?class={self.school_class.pk}"
+            f"{reverse('lessonslot-bulk')}?course={self.course.pk}"
         )
 
         self.assertEqual(response.status_code, 400)
@@ -483,39 +501,39 @@ class StatsTests(SlotTestCase):
         self.today = timezone.localdate()
         # для past/remaining нужен год, внутри которого лежит сегодняшний день
         self.current_year = SchoolYear.objects.create(
-            owner=self.user,
+            school=self.school,
             name="текущий",
             start_date=self.today - days(60),
             end_date=self.today + days(60),
         )
-        self.current_class = SchoolClass.objects.create(
-            owner=self.user, year=self.current_year, name="7А"
+        self.current_class = Course.objects.create(
+            school=self.school, year=self.current_year, name="7А"
         )
 
-        self.make_slot(self.today - days(7), 1, school_class=self.current_class)
-        self.make_slot(self.today - days(1), 1, school_class=self.current_class)
-        self.make_slot(self.today, 1, school_class=self.current_class)
-        self.make_slot(self.today + days(3), 1, school_class=self.current_class)
+        self.make_slot(self.today - days(7), 1, course=self.current_class)
+        self.make_slot(self.today - days(1), 1, course=self.current_class)
+        self.make_slot(self.today, 1, course=self.current_class)
+        self.make_slot(self.today + days(3), 1, course=self.current_class)
         self.make_slot(
-            self.today + days(4), 2, school_class=self.current_class, is_extra=True, reason="Кружок"
+            self.today + days(4), 2, course=self.current_class, is_extra=True, reason="Кружок"
         )
         self.make_slot(
-            self.today - days(2), 3, school_class=self.current_class,
+            self.today - days(2), 3, course=self.current_class,
             is_cancelled=True, reason="Болезнь",
         )
         self.make_slot(
-            self.today - days(3), 4, school_class=self.current_class,
+            self.today - days(3), 4, course=self.current_class,
             is_cancelled=True, reason="Болезнь",
         )
         self.make_slot(
-            self.today + days(5), 5, school_class=self.current_class,
+            self.today + days(5), 5, course=self.current_class,
             is_cancelled=True, reason="Актировка",
         )
 
-    def stats(self, school_class=None):
+    def stats(self, course=None):
         return self.client.get(
             reverse("lessonslot-stats"),
-            {"class": (school_class or self.current_class).pk},
+            {"course": (course or self.current_class).pk},
         ).json()
 
     def test_total_is_split_into_past_and_remaining(self):
@@ -548,10 +566,10 @@ class StatsTests(SlotTestCase):
         self.make_slot(MONDAY, 1)
 
         self.assertEqual(self.stats()["total"], 5)
-        self.assertEqual(self.stats(self.school_class)["total"], 1)
+        self.assertEqual(self.stats(self.course)["total"], 1)
 
-    def test_stats_of_another_users_class_are_empty(self):
-        self.make_slot(MONDAY, 1, school_class=self.alien_class)
+    def test_stats_of_another_schools_course_are_empty(self):
+        self.make_slot(MONDAY, 1, course=self.alien_class, teacher=self.stranger)
 
         data = self.stats(self.alien_class)
 

@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
 import EmptyState from './EmptyState'
 import {
-  fetchClasses,
+  fetchCourses,
   fetchLayout,
   fetchLayoutSummary,
   fetchSchoolYears,
@@ -33,7 +33,7 @@ export default function Layout({ onLoggedOut }) {
   useEffect(() => {
     let cancelled = false
 
-    Promise.all([fetchClasses(), fetchSchoolYears()])
+    Promise.all([fetchCourses(), fetchSchoolYears()])
       .then(([classList, yearList]) => {
         if (cancelled) return
         setClasses(classList)

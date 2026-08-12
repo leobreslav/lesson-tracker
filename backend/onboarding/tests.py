@@ -3,40 +3,37 @@
 from datetime import date, timedelta
 
 from calendars.models import DayException, SchoolYear, Term
-from django.contrib.auth import get_user_model
 from django.urls import reverse
 from django.utils import timezone
 from plans.models import PlanNode
-from rest_framework.authtoken.models import Token
 from rest_framework.test import APITestCase
-from schedule.models import LessonSlot, SchoolClass
+from schedule.models import Course, LessonSlot
+from schools.testing import SchoolTestMixin
 
 from . import services
 
-User = get_user_model()
 
+class OnboardingTestCase(SchoolTestMixin, APITestCase):
+    """The demo belongs to the school, so the person here is an admin."""
 
-class OnboardingTestCase(APITestCase):
     def setUp(self):
-        self.user = User.objects.create_user(email="teacher@example.com")
-        self.other = User.objects.create_user(email="other@example.com")
-        self.client.credentials(
-            HTTP_AUTHORIZATION=f"Token {Token.objects.create(user=self.user).key}"
-        )
+        super().setUp()
+        self.sign_in(self.admin)
+        self.user = self.admin
 
     def status(self):
         return self.client.get(reverse("onboarding-status")).json()
 
-    def make_year(self, owner=None, name="2026/2027"):
+    def make_year(self, school=None, name="2026/2027"):
         return SchoolYear.objects.create(
-            owner=owner or self.user,
+            school=school or self.school,
             name=name,
             start_date=date(2026, 9, 1),
             end_date=date(2027, 5, 31),
         )
 
     def make_class(self, year, name="9Б"):
-        return SchoolClass.objects.create(owner=year.owner, year=year, name=name)
+        return Course.objects.create(school=year.school, year=year, name=name)
 
 
 class StatusTests(OnboardingTestCase):
@@ -100,13 +97,15 @@ class StatusTests(OnboardingTestCase):
 
         today = timezone.localdate()
         LessonSlot.objects.create(
-            year=year, school_class=first, date=date(2026, 9, 7), lesson_number=1
+            year=year, teacher=self.user, course=first,
+            date=date(2026, 9, 7), lesson_number=1,
         )
         LessonSlot.objects.create(
-            year=year, school_class=second, date=date(2026, 9, 8), lesson_number=1
+            year=year, teacher=self.user, course=second,
+            date=date(2026, 9, 8), lesson_number=1,
         )
         PlanNode.objects.create(
-            school_class=first, position=0, is_section=False, title="Урок"
+            teacher=self.user, course=first, position=0, is_section=False, title="Урок"
         )
 
         data = self.status()
@@ -126,9 +125,9 @@ class StatusTests(OnboardingTestCase):
 
     def test_cancelled_slots_do_not_count(self):
         year = self.make_year()
-        school_class = self.make_class(year)
+        course = self.make_class(year)
         LessonSlot.objects.create(
-            year=year, school_class=school_class, date=date(2026, 9, 7),
+            year=year, teacher=self.user, course=course, date=date(2026, 9, 7),
             lesson_number=1, is_cancelled=True, reason="Болезнь",
         )
 
@@ -137,17 +136,17 @@ class StatusTests(OnboardingTestCase):
     def test_latest_year_is_shown(self):
         self.make_year(name="2025/2026")
         SchoolYear.objects.create(
-            owner=self.user, name="2027/2028",
+            school=self.school, name="2027/2028",
             start_date=date(2027, 9, 1), end_date=date(2028, 5, 31),
         )
 
         self.assertEqual(self.status()["year"]["name"], "2027/2028")
 
     def test_another_users_data_is_invisible(self):
-        alien_year = self.make_year(owner=self.other, name="чужой")
+        alien_year = self.make_year(school=self.alien_school, name="чужой")
         alien_class = self.make_class(alien_year, "чужой класс")
         LessonSlot.objects.create(
-            year=alien_year, school_class=alien_class,
+            year=alien_year, teacher=self.stranger, course=alien_class,
             date=date(2026, 9, 7), lesson_number=1,
         )
 
@@ -182,19 +181,19 @@ class DemoTests(OnboardingTestCase):
 
     def test_demo_skips_vacations_and_weekends(self):
         self.create()
-        year = SchoolYear.objects.get(owner=self.user)
+        year = SchoolYear.objects.get(school=self.school)
 
         # уроков в каникулы и выходные быть не должно
         vacation = DayException.objects.filter(year=year).first()
         self.assertFalse(
             LessonSlot.objects.filter(
-                school_class__owner=self.user,
+                teacher=self.user,
                 date__range=(vacation.start_date, vacation.end_date),
             ).exists()
         )
         weekend_slots = [
             slot
-            for slot in LessonSlot.objects.filter(school_class__owner=self.user)
+            for slot in LessonSlot.objects.filter(teacher=self.user)
             if slot.date.weekday() >= 5
         ]
         self.assertEqual(weekend_slots, [])
@@ -204,7 +203,7 @@ class DemoTests(OnboardingTestCase):
         self.create()
 
         pairs = list(
-            LessonSlot.objects.filter(school_class__owner=self.user)
+            LessonSlot.objects.filter(teacher=self.user)
             .values_list("date", "lesson_number")
         )
 
@@ -213,8 +212,8 @@ class DemoTests(OnboardingTestCase):
     def test_demo_plan_is_a_two_level_tree(self):
         self.create()
 
-        sections = PlanNode.objects.filter(school_class__owner=self.user, is_section=True)
-        lessons = PlanNode.objects.filter(school_class__owner=self.user, is_section=False)
+        sections = PlanNode.objects.filter(teacher=self.user, is_section=True)
+        lessons = PlanNode.objects.filter(teacher=self.user, is_section=False)
 
         self.assertEqual(sections.count(), 7)
         self.assertEqual(lessons.count(), 44)
@@ -227,15 +226,15 @@ class DemoTests(OnboardingTestCase):
 
         self.assertEqual(response.status_code, 200, response.content)
         self.assertFalse(response.json()["status"]["year"]["exists"])
-        self.assertFalse(SchoolYear.objects.filter(owner=self.user).exists())
-        self.assertFalse(SchoolClass.objects.filter(owner=self.user).exists())
+        self.assertFalse(SchoolYear.objects.filter(school=self.school).exists())
+        self.assertFalse(Course.objects.filter(school=self.school).exists())
         self.assertFalse(
-            LessonSlot.objects.filter(school_class__owner=self.user).exists()
+            LessonSlot.objects.filter(teacher=self.user).exists()
         )
         self.assertFalse(
-            PlanNode.objects.filter(school_class__owner=self.user).exists()
+            PlanNode.objects.filter(teacher=self.user).exists()
         )
-        self.assertFalse(Term.objects.filter(year__owner=self.user).exists())
+        self.assertFalse(Term.objects.filter(year__school=self.school).exists())
 
     def test_delete_reports_what_was_removed(self):
         self.create()
@@ -254,47 +253,48 @@ class DemoTests(OnboardingTestCase):
 
         self.client.post(reverse("onboarding-demo"))
 
-        year = SchoolYear.objects.get(owner=self.user)
+        year = SchoolYear.objects.get(school=self.school)
         self.assertIn("(пример)", year.name)
         self.assertEqual(
             list(year.terms.values_list("name", flat=True))[:1], ["1 четверть"]
         )
         self.assertEqual(
-            sorted(SchoolClass.objects.filter(owner=self.user).values_list("name", flat=True)),
+            sorted(Course.objects.filter(school=self.school).values_list("name", flat=True)),
             ["9Б Алгебра", "9Б Геометрия"],
         )
 
     def test_demo_is_in_english_by_default(self):
         self.client.post(reverse("onboarding-demo"))
 
-        year = SchoolYear.objects.get(owner=self.user)
+        year = SchoolYear.objects.get(school=self.school)
         self.assertIn("(example)", year.name)
         self.assertEqual(
-            sorted(SchoolClass.objects.filter(owner=self.user).values_list("name", flat=True)),
+            sorted(Course.objects.filter(school=self.school).values_list("name", flat=True)),
             ["Grade 9B Algebra", "Grade 9B Geometry"],
         )
 
     def test_delete_does_not_touch_other_users(self):
-        alien_year = self.make_year(owner=self.other, name="чужой")
+        alien_year = self.make_year(school=self.alien_school, name="чужой")
         alien_class = self.make_class(alien_year, "чужой класс")
         LessonSlot.objects.create(
-            year=alien_year, school_class=alien_class,
+            year=alien_year, teacher=self.stranger, course=alien_class,
             date=date(2026, 9, 7), lesson_number=1,
         )
         PlanNode.objects.create(
-            school_class=alien_class, position=0, is_section=False, title="Чужой урок"
+            teacher=self.stranger, course=alien_class, position=0,
+            is_section=False, title="Чужой урок",
         )
         self.create()
 
         self.client.delete(reverse("onboarding-demo"))
 
         self.assertTrue(SchoolYear.objects.filter(pk=alien_year.pk).exists())
-        self.assertTrue(SchoolClass.objects.filter(pk=alien_class.pk).exists())
+        self.assertTrue(Course.objects.filter(pk=alien_class.pk).exists())
         self.assertEqual(
-            LessonSlot.objects.filter(school_class__owner=self.other).count(), 1
+            LessonSlot.objects.filter(course__school=self.alien_school).count(), 1
         )
         self.assertEqual(
-            PlanNode.objects.filter(school_class__owner=self.other).count(), 1
+            PlanNode.objects.filter(course__school=self.alien_school).count(), 1
         )
 
     def test_delete_on_empty_account_is_harmless(self):

@@ -48,6 +48,7 @@ INSTALLED_APPS = [
     'dj_rest_auth',
 
     'accounts',
+    'schools',
     'calendars',
     'schedule',
     'plans',

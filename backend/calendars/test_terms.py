@@ -189,7 +189,7 @@ class TermApiTests(CalendarApiTestCase):
 
     def test_list_is_filtered_by_year(self):
         second = self.year.__class__.objects.create(
-            owner=self.user,
+            school=self.school,
             name="2027/2028",
             start_date=date(2027, 9, 1),
             end_date=date(2028, 5, 31),
@@ -203,7 +203,7 @@ class TermApiTests(CalendarApiTestCase):
 
     def test_cannot_create_in_another_users_year(self):
         alien = self.year.__class__.objects.create(
-            owner=self.other,
+            school=self.alien_school,
             name="чужой",
             start_date=date(2026, 9, 1),
             end_date=date(2027, 5, 31),
@@ -216,7 +216,7 @@ class TermApiTests(CalendarApiTestCase):
 
     def test_another_users_term_is_invisible(self):
         alien_year = self.year.__class__.objects.create(
-            owner=self.other,
+            school=self.alien_school,
             name="чужой",
             start_date=date(2026, 9, 1),
             end_date=date(2027, 5, 31),

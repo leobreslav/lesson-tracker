@@ -1,3 +1,4 @@
+from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import models
 
@@ -6,17 +7,29 @@ from . import services
 
 class PlanNode(models.Model):
     """
-    Узел учебного плана: папка верхнего уровня или урок.
+    A node of a lesson plan: a top-level section or a lesson.
 
-    Дерево ровно двухуровневое — папка внутри папки запрещена, см. `clean`.
-    Сквозного номера у урока нет: его считает `services.number_lessons`.
+    The tree is exactly two levels deep — a section inside a section is
+    refused, see `clean`. A lesson carries no stored number:
+    `services.number_lessons` counts it by walking the tree.
+
+    The plan is personal, like the schedule: two teachers sharing a course
+    keep their own plans inside it.
     """
 
-    school_class = models.ForeignKey(
-        "schedule.SchoolClass",
+    teacher = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
         related_name="plan_nodes",
         on_delete=models.CASCADE,
-        verbose_name="class",
+        verbose_name="teacher",
+    )
+    course = models.ForeignKey(
+        "schedule.Course",
+        related_name="plan_nodes",
+        # PROTECT, like the slots: deleting a course must not take somebody's
+        # plan down with it
+        on_delete=models.PROTECT,
+        verbose_name="course",
     )
     parent = models.ForeignKey(
         "self",
@@ -37,7 +50,8 @@ class PlanNode(models.Model):
         ordering = ("position", "id")
         indexes = [
             models.Index(
-                fields=("school_class", "parent", "position"), name="plan_level_idx"
+                fields=("teacher", "course", "parent", "position"),
+                name="plan_level_idx",
             ),
         ]
 
@@ -48,7 +62,7 @@ class PlanNode(models.Model):
         super().clean()
 
         problems = services.structure_problems(
-            school_class_id=self.school_class_id,
+            course_id=self.course_id,
             parent=self.parent,
             is_section=self.is_section,
         )
@@ -61,12 +75,13 @@ class PlanNode(models.Model):
             raise ValidationError(messages)
 
     def _position_taken(self) -> bool:
-        if self.position is None or self.school_class_id is None:
+        if self.position is None or self.course_id is None:
             return False
 
         return (
             PlanNode.objects.filter(
-                school_class_id=self.school_class_id,
+                teacher_id=self.teacher_id,
+                course_id=self.course_id,
                 parent_id=self.parent_id,
                 position=self.position,
             )

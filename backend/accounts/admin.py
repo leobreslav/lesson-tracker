@@ -8,13 +8,16 @@ from .models import User
 @admin.register(User)
 class UserAdmin(BaseUserAdmin):
     ordering = ("email",)
-    list_display = ("email", "first_name", "last_name", "is_staff")
-    list_filter = ("is_staff", "is_superuser", "is_active")
+    list_display = ("email", "first_name", "last_name", "school", "is_school_admin")
+    list_filter = ("school", "is_school_admin", "is_staff", "is_active")
     search_fields = ("email", "first_name", "last_name")
 
     fieldsets = (
         (None, {"fields": ("email", "password")}),
         (_("Personal info"), {"fields": ("first_name", "last_name", "language")}),
+        # the school and the role are handed out here: the first administrator
+        # of a school has nowhere else to get them
+        ("School", {"fields": ("school", "is_school_admin")}),
         (
             _("Permissions"),
             {

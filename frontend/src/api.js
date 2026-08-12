@@ -127,27 +127,47 @@ export const createException = (fields) =>
 export const deleteException = (id) =>
   request(`/api/calendar/exceptions/${id}/`, { method: 'DELETE' })
 
-// --- classes ---
+// --- the school: courses, people, invitations ---
 
-// without a year: every class of the owner, which the agenda needs
-export const fetchClasses = (yearId) =>
+// without a year: every course of the school, which the agenda needs
+export const fetchCourses = (yearId) =>
   request(
-    yearId ? `/api/classes/?year=${encodeURIComponent(yearId)}` : '/api/classes/',
+    yearId ? `/api/courses/?year=${encodeURIComponent(yearId)}` : '/api/courses/',
   )
 
-export const createClass = (fields) =>
-  request('/api/classes/', { method: 'POST', body: fields })
+// the three below answer 403 «school_admin_required» for a plain teacher —
+// the interface hides the buttons, the server is what actually refuses
+export const createCourse = (fields) =>
+  request('/api/courses/', { method: 'POST', body: fields })
 
-export const renameClass = (id, name) =>
-  request(`/api/classes/${id}/`, { method: 'PATCH', body: { name } })
+export const renameCourse = (id, name) =>
+  request(`/api/courses/${id}/`, { method: 'PATCH', body: { name } })
 
-export const deleteClass = (id) =>
-  request(`/api/classes/${id}/`, { method: 'DELETE' })
+export const deleteCourse = (id) =>
+  request(`/api/courses/${id}/`, { method: 'DELETE' })
+
+export const fetchSchool = () => request('/api/school/')
+
+export const fetchMembers = () => request('/api/school/members/')
+
+export const setMemberRole = (id, isAdmin) =>
+  request(`/api/school/members/${id}/`, {
+    method: 'PATCH',
+    body: { is_school_admin: isAdmin },
+  })
+
+export const fetchInvitations = () => request('/api/school/invitations/')
+
+export const createInvitation = (fields) =>
+  request('/api/school/invitations/', { method: 'POST', body: fields })
+
+export const deleteInvitation = (id) =>
+  request(`/api/school/invitations/${id}/`, { method: 'DELETE' })
 
 // --- the lesson plan ---
 
 export const fetchPlan = (classId) =>
-  request(`/api/plan/?class=${encodeURIComponent(classId)}`)
+  request(`/api/plan/?course=${encodeURIComponent(classId)}`)
 
 export const createPlanNode = (fields) =>
   request('/api/plan/', { method: 'POST', body: fields })
@@ -165,7 +185,7 @@ export const importPlanCsv = (classId, file, mode) => {
   form.append('file', file)
   form.append('mode', mode)
 
-  return request(`/api/plan/import/?class=${encodeURIComponent(classId)}`, {
+  return request(`/api/plan/import/?course=${encodeURIComponent(classId)}`, {
     method: 'POST',
     body: form,
   })
@@ -180,7 +200,7 @@ export const importPlanCsv = (classId, file, mode) => {
 export const downloadPlanCsv = async (classId) => {
   const token = getToken()
   const response = await fetch(
-    `/api/plan/export/?class=${encodeURIComponent(classId)}`,
+    `/api/plan/export/?course=${encodeURIComponent(classId)}`,
     { headers: token ? { Authorization: `Token ${token}` } : {} },
   )
 
@@ -203,14 +223,14 @@ export const downloadPlanCsv = async (classId) => {
 }
 
 export const fetchLayout = (classId, period = {}) =>
-  request(`/api/plan/layout/?${new URLSearchParams({ class: classId, ...period })}`)
+  request(`/api/plan/layout/?${new URLSearchParams({ course: classId, ...period })}`)
 
 /** Topics across every class for a period: slot_id → the plan lesson. */
 export const fetchLayoutAgenda = (start, end) =>
   request(`/api/plan/layout/agenda/?${new URLSearchParams({ start, end })}`)
 
 export const fetchLayoutSummary = (classId) =>
-  request(`/api/plan/layout/summary/?class=${encodeURIComponent(classId)}`)
+  request(`/api/plan/layout/summary/?course=${encodeURIComponent(classId)}`)
 
 export const movePlanNodeTo = (id, parent, position) =>
   request(`/api/plan/${id}/move_to/`, {
@@ -230,10 +250,10 @@ export const movePlanSection = (id, direction) =>
 // --- schedule lessons ---
 
 export const fetchSlots = (classId) =>
-  request(`/api/slots/?class=${encodeURIComponent(classId)}`)
+  request(`/api/slots/?course=${encodeURIComponent(classId)}`)
 
 export const fetchSlotStats = (classId) =>
-  request(`/api/slots/stats/?class=${encodeURIComponent(classId)}`)
+  request(`/api/slots/stats/?course=${encodeURIComponent(classId)}`)
 
 export const fetchAgenda = (start, end) =>
   request(`/api/slots/agenda/?${new URLSearchParams({ start, end })}`)
@@ -253,7 +273,7 @@ export const copySlots = (payload) =>
 export const clearSlots = ({ classId, start, end, onlyRegular }) => {
   // bulk delete takes its parameters in the query string; DELETE has no body
   const query = new URLSearchParams({
-    class: classId,
+    course: classId,
     start,
     end,
     only_regular: onlyRegular,

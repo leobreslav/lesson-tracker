@@ -31,7 +31,7 @@ import {
   createPlanNode,
   deletePlanNode,
   downloadPlanCsv,
-  fetchClasses,
+  fetchCourses,
   fetchPlan,
   fetchSchoolYears,
   importPlanCsv,
@@ -76,7 +76,7 @@ export default function Plan({ onLoggedOut }) {
   useEffect(() => {
     let cancelled = false
 
-    Promise.all([fetchClasses(), fetchSchoolYears()])
+    Promise.all([fetchCourses(), fetchSchoolYears()])
       .then(([classList, yearList]) => {
         if (cancelled) return
         setClasses(classList)
@@ -303,7 +303,7 @@ export default function Plan({ onLoggedOut }) {
 
     await run(() =>
       createPlanNode({
-        school_class: classId,
+        course: classId,
         parent,
         after,
         is_section,

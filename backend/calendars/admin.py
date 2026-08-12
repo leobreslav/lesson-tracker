@@ -10,9 +10,9 @@ class DayExceptionInline(admin.TabularInline):
 
 @admin.register(SchoolYear)
 class SchoolYearAdmin(admin.ModelAdmin):
-    list_display = ("name", "owner", "start_date", "end_date")
-    list_filter = ("owner",)
-    search_fields = ("name", "owner__email")
+    list_display = ("name", "school", "start_date", "end_date")
+    list_filter = ("school",)
+    search_fields = ("name", "school__name")
     inlines = [DayExceptionInline]
 
 

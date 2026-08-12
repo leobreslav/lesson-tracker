@@ -1,17 +1,17 @@
 from django.contrib import admin
 
-from .models import LessonSlot, SchoolClass
+from .models import Course, LessonSlot
 
 
-@admin.register(SchoolClass)
-class SchoolClassAdmin(admin.ModelAdmin):
-    list_display = ("name", "year", "owner")
-    list_filter = ("year",)
-    search_fields = ("name", "owner__email")
+@admin.register(Course)
+class CourseAdmin(admin.ModelAdmin):
+    list_display = ("name", "year", "school")
+    list_filter = ("school", "year")
+    search_fields = ("name",)
 
 
 @admin.register(LessonSlot)
 class LessonSlotAdmin(admin.ModelAdmin):
-    list_display = ("date", "lesson_number", "school_class", "is_cancelled", "is_extra")
-    list_filter = ("school_class", "is_cancelled", "is_extra")
+    list_display = ("date", "lesson_number", "course", "teacher", "is_cancelled")
+    list_filter = ("course", "teacher", "is_cancelled", "is_extra")
     date_hierarchy = "date"

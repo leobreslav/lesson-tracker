@@ -7,21 +7,21 @@ from calendars.models import DayException
 from django.core.exceptions import ValidationError
 from django.urls import reverse
 
-from .models import LessonSlot, SchoolClass
+from .models import LessonSlot, Course
 from .test_slots import MONDAY, SlotTestCase, days
 
 
 class OccupiedSlotTests(SlotTestCase):
     def setUp(self):
         super().setUp()
-        self.second = SchoolClass.objects.create(
-            owner=self.user, year=self.year, name="10А"
+        self.second = Course.objects.create(
+            school=self.school, year=self.year, name="10А"
         )
 
     def test_two_classes_cannot_share_a_lesson_number(self):
         self.make_slot(MONDAY, 3)
 
-        response = self.post_slot("2026-09-07", 3, school_class=self.second)
+        response = self.post_slot("2026-09-07", 3, course=self.second)
 
         self.assertEqual(response.status_code, 400, response.content)
         body = response.json()
@@ -33,7 +33,7 @@ class OccupiedSlotTests(SlotTestCase):
     def test_another_number_on_the_same_day_is_free(self):
         self.make_slot(MONDAY, 3)
 
-        response = self.post_slot("2026-09-07", 4, school_class=self.second)
+        response = self.post_slot("2026-09-07", 4, course=self.second)
 
         self.assertEqual(response.status_code, 201, response.content)
 
@@ -45,14 +45,14 @@ class OccupiedSlotTests(SlotTestCase):
             {"is_cancelled": True, "reason": "Болезнь"},
             format="json",
         )
-        response = self.post_slot("2026-09-07", 3, school_class=self.second)
+        response = self.post_slot("2026-09-07", 3, course=self.second)
 
         self.assertEqual(response.status_code, 201, response.content)
         self.assertEqual(LessonSlot.objects.filter(is_cancelled=False).count(), 1)
 
     def test_cannot_restore_a_lesson_into_a_taken_slot(self):
         cancelled = self.make_slot(MONDAY, 3, is_cancelled=True, reason="Болезнь")
-        self.make_slot(MONDAY, 3, school_class=self.second)
+        self.make_slot(MONDAY, 3, course=self.second)
 
         response = self.client.patch(
             reverse("lessonslot-detail", args=[cancelled.pk]),
@@ -75,7 +75,7 @@ class OccupiedSlotTests(SlotTestCase):
         self.assertEqual(response.status_code, 200, response.content)
 
     def test_another_teacher_is_not_affected(self):
-        self.make_slot(MONDAY, 3, school_class=self.alien_class)
+        self.make_slot(MONDAY, 3, course=self.alien_class)
 
         response = self.post_slot("2026-09-07", 3)
 
@@ -84,17 +84,17 @@ class OccupiedSlotTests(SlotTestCase):
     def test_other_year_of_the_same_teacher_is_not_affected(self):
         """Проверка ограничена одним учебным годом."""
         other_year = self.year.__class__.objects.create(
-            owner=self.user,
+            school=self.school,
             name="2027/2028",
             start_date=date(2027, 9, 1),
             end_date=date(2028, 5, 31),
         )
-        other_class = SchoolClass.objects.create(
-            owner=self.user, year=other_year, name="9Б"
+        other_class = Course.objects.create(
+            school=self.school, year=other_year, name="9Б"
         )
-        self.make_slot(date(2027, 9, 6), 3, school_class=other_class)
+        self.make_slot(date(2027, 9, 6), 3, course=other_class)
 
-        response = self.post_slot("2027-09-06", 3, school_class=other_class)
+        response = self.post_slot("2027-09-06", 3, course=other_class)
 
         # тот же класс — ловит unique_together, а не занятость
         self.assertEqual(response.status_code, 400)
@@ -103,7 +103,11 @@ class OccupiedSlotTests(SlotTestCase):
     def test_model_clean_catches_the_conflict_too(self):
         self.make_slot(MONDAY, 3)
         duplicate = LessonSlot(
-            year=self.year, school_class=self.second, date=MONDAY, lesson_number=3
+            year=self.year,
+            teacher=self.user,
+            course=self.second,
+            date=MONDAY,
+            lesson_number=3,
         )
 
         with self.assertRaises(ValidationError) as caught:
@@ -115,7 +119,8 @@ class OccupiedSlotTests(SlotTestCase):
         self.make_slot(MONDAY, 3)
         duplicate = LessonSlot(
             year=self.year,
-            school_class=self.second,
+            teacher=self.user,
+            course=self.second,
             date=MONDAY,
             lesson_number=3,
             is_cancelled=True,
@@ -128,8 +133,8 @@ class OccupiedSlotTests(SlotTestCase):
 class CopyConflictTests(SlotTestCase):
     def setUp(self):
         super().setUp()
-        self.second = SchoolClass.objects.create(
-            owner=self.user, year=self.year, name="10А"
+        self.second = Course.objects.create(
+            school=self.school, year=self.year, name="10А"
         )
         # источник: понедельник, уроки 1 и 2
         self.make_slot(MONDAY, 1)
@@ -137,7 +142,7 @@ class CopyConflictTests(SlotTestCase):
 
     def copy(self, **overrides):
         payload = {
-            "class_id": self.school_class.pk,
+            "course_id": self.course.pk,
             "source_start": MONDAY.isoformat(),
             "source_end": (MONDAY + days(6)).isoformat(),
             "target_start": (MONDAY + days(7)).isoformat(),
@@ -148,7 +153,7 @@ class CopyConflictTests(SlotTestCase):
         return self.client.post(reverse("lessonslot-copy"), payload, format="json")
 
     def test_conflicting_slots_are_skipped_and_reported(self):
-        self.make_slot(MONDAY + days(7), 1, school_class=self.second)
+        self.make_slot(MONDAY + days(7), 1, course=self.second)
 
         response = self.copy()
 
@@ -169,7 +174,7 @@ class CopyConflictTests(SlotTestCase):
 
     def test_cancelled_lesson_of_another_class_does_not_block(self):
         self.make_slot(
-            MONDAY + days(7), 1, school_class=self.second, is_cancelled=True, reason="Болезнь"
+            MONDAY + days(7), 1, course=self.second, is_cancelled=True, reason="Болезнь"
         )
 
         response = self.copy()
@@ -178,7 +183,7 @@ class CopyConflictTests(SlotTestCase):
         self.assertEqual(response.json()["conflicts"], [])
 
     def test_replace_does_not_free_another_class_slot(self):
-        self.make_slot(MONDAY + days(7), 1, school_class=self.second)
+        self.make_slot(MONDAY + days(7), 1, course=self.second)
         self.make_slot(MONDAY + days(7), 2)
 
         response = self.copy(mode="replace")
@@ -188,7 +193,7 @@ class CopyConflictTests(SlotTestCase):
         self.assertEqual(data["created"], 1)
         self.assertEqual(len(data["conflicts"]), 1)
         self.assertTrue(
-            LessonSlot.objects.filter(school_class=self.second, lesson_number=1).exists()
+            LessonSlot.objects.filter(course=self.second, lesson_number=1).exists()
         )
 
 
@@ -197,18 +202,18 @@ class CopyEverythingTests(SlotTestCase):
 
     def setUp(self):
         super().setUp()
-        self.second = SchoolClass.objects.create(
-            owner=self.user, year=self.year, name="10А"
+        self.second = Course.objects.create(
+            school=self.school, year=self.year, name="10А"
         )
 
         # неделя-источник: у 9Б понедельник 1-й и среда 2-й, у 10А понедельник 3-й
         self.make_slot(MONDAY, 1)
         self.make_slot(MONDAY + days(2), 2)
-        self.make_slot(MONDAY, 3, school_class=self.second)
+        self.make_slot(MONDAY, 3, course=self.second)
         # это копироваться не должно
         self.make_slot(MONDAY + days(1), 4, is_extra=True, reason="Замена")
         self.make_slot(
-            MONDAY + days(1), 5, school_class=self.second, is_cancelled=True, reason="Болезнь"
+            MONDAY + days(1), 5, course=self.second, is_cancelled=True, reason="Болезнь"
         )
 
     def copy(self, **overrides):
@@ -253,7 +258,7 @@ class CopyEverythingTests(SlotTestCase):
         self.assertEqual(response.json()["skipped"], 2)
 
     def test_occupied_number_of_another_class_is_reported(self):
-        self.make_slot(MONDAY + days(7), 1, school_class=self.second)
+        self.make_slot(MONDAY + days(7), 1, course=self.second)
 
         response = self.copy()
 
@@ -264,9 +269,9 @@ class CopyEverythingTests(SlotTestCase):
 
     def test_replace_clears_regular_slots_of_all_classes(self):
         self.make_slot(MONDAY + days(9), 8)
-        self.make_slot(MONDAY + days(9), 9, school_class=self.second)
+        self.make_slot(MONDAY + days(9), 9, course=self.second)
         kept = self.make_slot(
-            MONDAY + days(9), 7, school_class=self.second, is_extra=True, reason="Кружок"
+            MONDAY + days(9), 7, course=self.second, is_extra=True, reason="Кружок"
         )
 
         response = self.copy(mode="replace")
@@ -276,36 +281,40 @@ class CopyEverythingTests(SlotTestCase):
         self.assertEqual(self.slots_on(MONDAY + days(9)), [2])
 
     def test_other_teachers_schedule_is_untouched(self):
-        self.make_slot(MONDAY, 1, school_class=self.alien_class)
+        """A colleague in the same course keeps their own week."""
+        theirs = self.make_slot(MONDAY, 7, teacher=self.colleague)
 
         self.copy()
 
         self.assertEqual(
-            LessonSlot.objects.filter(school_class=self.alien_class).count(), 1
+            LessonSlot.objects.filter(teacher=self.colleague).count(), 1
+        )
+        self.assertEqual(
+            LessonSlot.objects.get(pk=theirs.pk).lesson_number, 7
         )
 
     def test_classes_of_a_year_outside_the_target_are_skipped(self):
         other_year = self.year.__class__.objects.create(
-            owner=self.user,
+            school=self.school,
             name="2027/2028",
             start_date=date(2027, 9, 1),
             end_date=date(2028, 5, 31),
         )
-        future = SchoolClass.objects.create(
-            owner=self.user, year=other_year, name="11В"
+        future = Course.objects.create(
+            school=self.school, year=other_year, name="11В"
         )
-        self.make_slot(date(2027, 9, 6), 1, school_class=future)
+        self.make_slot(date(2027, 9, 6), 1, course=future)
 
         self.copy()
 
-        self.assertEqual(LessonSlot.objects.filter(school_class=future).count(), 1)
+        self.assertEqual(LessonSlot.objects.filter(course=future).count(), 1)
 
 
 class AgendaTests(SlotTestCase):
     def setUp(self):
         super().setUp()
-        self.second = SchoolClass.objects.create(
-            owner=self.user, year=self.year, name="10А"
+        self.second = Course.objects.create(
+            school=self.school, year=self.year, name="10А"
         )
         DayException.objects.create(
             year=self.year,
@@ -316,9 +325,9 @@ class AgendaTests(SlotTestCase):
         )
 
         self.make_slot(MONDAY, 1)
-        self.make_slot(MONDAY, 2, school_class=self.second)
+        self.make_slot(MONDAY, 2, course=self.second)
         self.make_slot(MONDAY + days(1), 3, is_cancelled=True, reason="Болезнь")
-        self.make_slot(MONDAY + days(2), 4, school_class=self.second, is_extra=True, reason="Кружок")
+        self.make_slot(MONDAY + days(2), 4, course=self.second, is_extra=True, reason="Кружок")
 
     def agenda(self, start=None, end=None):
         return self.client.get(
@@ -334,7 +343,7 @@ class AgendaTests(SlotTestCase):
 
         monday = data["lessons"][MONDAY.isoformat()]
         self.assertEqual(
-            [(item["lesson_number"], item["class_name"]) for item in monday],
+            [(item["lesson_number"], item["course_name"]) for item in monday],
             [(1, "9Б"), (2, "10А")],
         )
         self.assertEqual(len(data["lessons"]), 3)
@@ -348,7 +357,7 @@ class AgendaTests(SlotTestCase):
 
         extra = data["lessons"][(MONDAY + days(2)).isoformat()][0]
         self.assertTrue(extra["is_extra"])
-        self.assertEqual(extra["class_id"], self.second.pk)
+        self.assertEqual(extra["course_id"], self.second.pk)
 
     def test_cancelled_and_replacement_share_one_slot(self):
         """
@@ -358,7 +367,7 @@ class AgendaTests(SlotTestCase):
         cancelled = self.make_slot(
             MONDAY + days(3), 5, is_cancelled=True, reason="Болезнь"
         )
-        replacement = self.make_slot(MONDAY + days(3), 5, school_class=self.second)
+        replacement = self.make_slot(MONDAY + days(3), 5, course=self.second)
 
         lessons = self.agenda().json()["lessons"][(MONDAY + days(3)).isoformat()]
 
@@ -395,7 +404,7 @@ class AgendaTests(SlotTestCase):
         self.assertTrue(data["days"]["2026-09-01"]["is_study"])
 
     def test_other_teachers_lessons_are_invisible(self):
-        self.make_slot(MONDAY, 5, school_class=self.alien_class)
+        self.make_slot(MONDAY, 5, course=self.course, teacher=self.colleague)
 
         data = self.agenda().json()
 

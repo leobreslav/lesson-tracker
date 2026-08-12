@@ -10,6 +10,9 @@ const SECTIONS = [
   { to: '/plan', key: 'plan', needs: 'classes' },
   { to: '/classes', key: 'classes', needs: 'year' },
   { to: '/year', key: 'year', needs: null },
+  // the school section exists only for its administrators; a teacher has
+  // nothing to do there and the server would refuse anyway
+  { to: '/school', key: 'school', needs: null, adminOnly: true },
 ]
 
 /**
@@ -101,7 +104,9 @@ export default function NavBar({ user, status, onLoggedOut, onLanguageChange }) 
           ref={menuRef}
           className={menuOpen ? 'topbar-nav open' : 'topbar-nav'}
         >
-          {SECTIONS.map((section) => {
+          {SECTIONS.filter(
+            (section) => !section.adminOnly || user?.is_school_admin,
+          ).map((section) => {
             const reasonKey = reasonKeyFor(section.needs, status)
             const reason = reasonKey ? t(reasonKey) : null
 

@@ -17,7 +17,7 @@ import csv
 import io
 from collections import defaultdict
 from dataclasses import dataclass
-from typing import Iterable, Sequence
+from typing import Iterable, NamedTuple, Sequence
 
 from calendars.services import find_term
 
@@ -231,7 +231,7 @@ def layout_summary(
     }
 
 
-def structure_problems(*, school_class_id, parent, is_section) -> dict:
+def structure_problems(*, course_id, parent, is_section) -> dict:
     """
     Tree rule violations as ``{field: (code, message)}``; empty means fine.
 
@@ -249,8 +249,8 @@ def structure_problems(*, school_class_id, parent, is_section) -> dict:
     if not parent.is_section:
         return {"parent": (PARENT_NOT_SECTION, "A node can only be nested into a section.")}
 
-    if parent.school_class_id != school_class_id:
-        return {"parent": (PARENT_OTHER_CLASS, "That section belongs to another class.")}
+    if parent.course_id != course_id:
+        return {"parent": (PARENT_OTHER_CLASS, "That section belongs to another course.")}
 
     return {}
 
@@ -417,30 +417,51 @@ def build_plan_csv(tree: Iterable[Branch]) -> str:
     return "\ufeff" + buffer.getvalue()
 
 
-# --- дальше работа с базой: порядок узлов приходится хранить ---
+# --- from here on the database is involved: node order has to be stored ---
+
+
+class PlanOwner(NamedTuple):
+    """
+    Whose plan, in which course.
+
+    A course now holds the plans of everyone teaching it, so neither key
+    alone identifies a tree. A `PlanNode` carries both fields and can be
+    passed wherever an owner is expected.
+    """
+
+    teacher_id: int
+    course_id: int
 
 
 def _parent_id(parent):
     return parent.pk if hasattr(parent, "pk") else parent
 
 
-def level(school_class, parent=None) -> list:
-    """Сиблинги одного уровня по порядку."""
+def level(owner, parent=None) -> list:
+    """
+    Siblings of one level, in order.
+
+    `owner` is the (teacher, course) pair, not the course alone: one course
+    holds the plans of everyone teaching it, and a level must never mix them.
+    Any node carries both keys, so a node can stand in for the pair.
+    """
     from .models import PlanNode
 
     return sorted(
         PlanNode.objects.filter(
-            school_class=school_class, parent_id=_parent_id(parent)
+            teacher_id=owner.teacher_id,
+            course_id=owner.course_id,
+            parent_id=_parent_id(parent),
         ),
         key=_order_key,
     )
 
 
-def reindex(school_class, parent=None) -> list:
-    """Перенумеровать уровень без дыр: 0, 1, 2, …"""
+def reindex(owner, parent=None) -> list:
+    """Renumber a level without gaps: 0, 1, 2, …"""
     from .models import PlanNode
 
-    nodes = level(school_class, parent)
+    nodes = level(owner, parent)
     changed = []
 
     for position, node in enumerate(nodes):
@@ -455,13 +476,13 @@ def reindex(school_class, parent=None) -> list:
 
 
 def place(node, parent, index: int) -> None:
-    """Поставить узел на указанный уровень в указанное место."""
+    """Put a node onto the given level at the given position."""
     from .models import PlanNode
 
     parent_id = _parent_id(parent)
     previous_parent_id = node.parent_id
 
-    siblings = [item for item in level(node.school_class, parent_id) if item.pk != node.pk]
+    siblings = [item for item in level(node, parent_id) if item.pk != node.pk]
     index = max(0, min(index, len(siblings)))
 
     node.parent_id = parent_id
@@ -473,22 +494,22 @@ def place(node, parent, index: int) -> None:
     PlanNode.objects.bulk_update(siblings, ["position", "parent"])
 
     if previous_parent_id != parent_id:
-        # на покинутом уровне осталась дыра
-        reindex(node.school_class, previous_parent_id)
+        # the level just left behind now has a gap
+        reindex(node, previous_parent_id)
 
 
 def move(node, direction: str) -> bool:
     """
-    Шаг узла среди сиблингов — с заходом в папки и выходом из них.
+    One step among siblings — entering sections and leaving them.
 
-    Урок верхнего уровня, упирающийся в папку, входит в неё крайним
-    элементом; урок, дошедший до края папки, выходит наружу и встаёт рядом
-    с ней. Так кнопками можно провести урок через всё дерево.
+    A top-level lesson running into a section enters it as the outermost
+    element; a lesson that reached the edge of a section comes out and stands
+    next to it. Two buttons therefore walk a lesson through the whole tree.
 
-    Возвращает False, если двигаться некуда: край дерева.
+    Returns False when there is nowhere to go: the edge of the tree.
     """
     step = -1 if direction == UP else 1
-    siblings = level(node.school_class, node.parent_id)
+    siblings = level(node, node.parent_id)
     index = next(i for i, item in enumerate(siblings) if item.pk == node.pk)
     target = index + step
 
@@ -498,8 +519,8 @@ def move(node, direction: str) -> bool:
 
         neighbour = siblings[target]
         if neighbour.is_section and not node.is_section:
-            # сверху заходим первым элементом, снизу — последним
-            inside = level(node.school_class, neighbour)
+            # from above we enter first, from below last
+            inside = level(node, neighbour)
             place(node, neighbour, 0 if step > 0 else len(inside))
             return True
 
@@ -510,19 +531,19 @@ def move(node, direction: str) -> bool:
         place(node, node.parent, target)
         return True
 
-    # упёрлись в край папки — всплываем на верхний уровень рядом с ней
-    top = level(node.school_class, None)
+    # the edge of a section — surface to the top level next to it
+    top = level(node, None)
     section_index = next(i for i, item in enumerate(top) if item.pk == node.parent_id)
     place(node, None, section_index + (1 if step > 0 else 0))
     return True
 
 
 def dissolve_section(section) -> None:
-    """Удалить папку, подняв её уроки на верхний уровень на её место."""
+    """Delete a section, lifting its lessons to its place on the top level."""
     from .models import PlanNode
 
-    children = level(section.school_class, section)
-    top = level(section.school_class, None)
+    children = level(section, section)
+    top = level(section, None)
 
     order = []
     for item in top:
@@ -537,20 +558,20 @@ def dissolve_section(section) -> None:
         item.position = position
 
     PlanNode.objects.bulk_update(order, ["position", "parent"])
-    # детей уже отвязали, каскад их не заденет
+    # the children are detached already, the cascade will not reach them
     section.delete()
 
 
-def apply_import(school_class, rows: Iterable[ImportedRow], *, append: bool) -> dict:
+def apply_import(owner: PlanOwner, rows: Iterable[ImportedRow], *, append: bool) -> dict:
     """
-    Создать узлы по разобранным строкам. Зовётся внутри транзакции.
+    Create nodes from the parsed rows. Called inside a transaction.
 
-    Уроки ложатся в последний встреченный заголовок; пока заголовка не
-    было — остаются на верхнем уровне.
+    A lesson lands in the last header seen; until a header appears it stays
+    on the top level.
     """
     from .models import PlanNode
 
-    top_position = len(level(school_class, None)) if append else 0
+    top_position = len(level(owner, None)) if append else 0
     section = None
     section_position = 0
     created = {"headers": 0, "lessons": 0}
@@ -558,7 +579,8 @@ def apply_import(school_class, rows: Iterable[ImportedRow], *, append: bool) -> 
     for row in rows:
         if row.is_section:
             section = PlanNode.objects.create(
-                school_class=school_class,
+                teacher_id=owner.teacher_id,
+                course_id=owner.course_id,
                 parent=None,
                 position=top_position,
                 is_section=True,
@@ -571,7 +593,8 @@ def apply_import(school_class, rows: Iterable[ImportedRow], *, append: bool) -> 
             continue
 
         PlanNode.objects.create(
-            school_class=school_class,
+            teacher_id=owner.teacher_id,
+            course_id=owner.course_id,
             parent=section,
             position=section_position if section else top_position,
             is_section=False,
@@ -587,12 +610,16 @@ def apply_import(school_class, rows: Iterable[ImportedRow], *, append: bool) -> 
     return created
 
 
-def get_tree(school_class) -> list[Branch]:
+def get_tree(owner: PlanOwner) -> list[Branch]:
     from .models import PlanNode
 
-    return build_tree(PlanNode.objects.filter(school_class=school_class))
+    return build_tree(
+        PlanNode.objects.filter(
+            teacher_id=owner.teacher_id, course_id=owner.course_id
+        )
+    )
 
 
-def flatten_lessons(school_class) -> list[Lesson]:
-    """Плоская последовательность уроков — та, что позже ляжет на слоты."""
-    return number_lessons(get_tree(school_class))
+def flatten_lessons(owner: PlanOwner) -> list[Lesson]:
+    """The flat lesson sequence — the one that later lands on the slots."""
+    return number_lessons(get_tree(owner))

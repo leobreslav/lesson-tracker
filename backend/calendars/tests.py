@@ -1,29 +1,30 @@
 from collections import Counter
 from datetime import date
 
-from django.contrib.auth import get_user_model
 from django.urls import reverse
-from rest_framework.authtoken.models import Token
 from rest_framework.test import APITestCase
+from schools.testing import SchoolTestMixin
 
 from . import services
 from .models import DayException, SchoolYear
-
-User = get_user_model()
 
 YEAR_START = date(2026, 9, 1)  # вторник
 YEAR_END = date(2027, 5, 31)
 
 
-class CalendarApiTestCase(APITestCase):
+class CalendarApiTestCase(SchoolTestMixin, APITestCase):
+    """The calendar belongs to the school, so an admin is signed in here."""
+
     def setUp(self):
-        self.user = User.objects.create_user(email="teacher@example.com")
-        self.other = User.objects.create_user(email="other@example.com")
-        self.client.credentials(
-            HTTP_AUTHORIZATION=f"Token {Token.objects.create(user=self.user).key}"
-        )
+        super().setUp()
+        # editing the calendar is an administrator's job; the access tests
+        # sign in as somebody else on purpose
+        self.sign_in(self.admin)
         self.year = SchoolYear.objects.create(
-            owner=self.user, name="2026/2027", start_date=YEAR_START, end_date=YEAR_END
+            school=self.school,
+            name="2026/2027",
+            start_date=YEAR_START,
+            end_date=YEAR_END,
         )
 
     def make_exception(self, start, end, kind, title="", year=None):
@@ -55,7 +56,7 @@ class SchoolYearApiTests(CalendarApiTestCase):
 
         self.assertEqual(self.client.get(reverse("schoolyear-list")).status_code, 401)
 
-    def test_create_assigns_current_user_as_owner(self):
+    def test_create_puts_the_year_into_the_requesters_school(self):
         response = self.client.post(
             reverse("schoolyear-list"),
             {"name": "2027/2028", "start_date": "2027-09-01", "end_date": "2028-05-31"},
@@ -64,12 +65,12 @@ class SchoolYearApiTests(CalendarApiTestCase):
 
         self.assertEqual(response.status_code, 201, response.content)
         created = SchoolYear.objects.get(name="2027/2028")
-        self.assertEqual(created.owner, self.user)
+        self.assertEqual(created.school, self.school)
         self.assertEqual(created.weekend_days, [services.SATURDAY, services.SUNDAY])
 
     def test_list_shows_only_own_years(self):
         SchoolYear.objects.create(
-            owner=self.other, name="чужой", start_date=YEAR_START, end_date=YEAR_END
+            school=self.alien_school, name="чужой", start_date=YEAR_START, end_date=YEAR_END
         )
 
         response = self.client.get(reverse("schoolyear-list"))
@@ -78,14 +79,14 @@ class SchoolYearApiTests(CalendarApiTestCase):
 
     def test_other_users_year_is_not_found(self):
         alien = SchoolYear.objects.create(
-            owner=self.other, name="чужой", start_date=YEAR_START, end_date=YEAR_END
+            school=self.alien_school, name="чужой", start_date=YEAR_START, end_date=YEAR_END
         )
 
         response = self.client.get(reverse("schoolyear-detail", args=[alien.pk]))
 
         self.assertEqual(response.status_code, 404)
 
-    def test_duplicate_name_for_same_owner_is_rejected(self):
+    def test_duplicate_name_in_the_same_school_is_rejected(self):
         response = self.client.post(
             reverse("schoolyear-list"),
             {"name": "2026/2027", "start_date": "2026-09-01", "end_date": "2027-05-31"},
@@ -94,10 +95,8 @@ class SchoolYearApiTests(CalendarApiTestCase):
 
         self.assertEqual(response.status_code, 400, response.content)
 
-    def test_same_name_for_another_owner_is_allowed(self):
-        self.client.credentials(
-            HTTP_AUTHORIZATION=f"Token {Token.objects.create(user=self.other).key}"
-        )
+    def test_same_name_in_another_school_is_allowed(self):
+        self.sign_in(self.alien_admin)
 
         response = self.client.post(
             reverse("schoolyear-list"),
@@ -268,7 +267,7 @@ class DayExceptionApiTests(CalendarApiTestCase):
 
     def test_cannot_attach_an_exception_to_another_users_year(self):
         alien = SchoolYear.objects.create(
-            owner=self.other, name="чужой", start_date=YEAR_START, end_date=YEAR_END
+            school=self.alien_school, name="чужой", start_date=YEAR_START, end_date=YEAR_END
         )
 
         response = self.post_exception(
@@ -280,7 +279,7 @@ class DayExceptionApiTests(CalendarApiTestCase):
 
     def test_list_shows_only_own_exceptions(self):
         alien = SchoolYear.objects.create(
-            owner=self.other, name="чужой", start_date=YEAR_START, end_date=YEAR_END
+            school=self.alien_school, name="чужой", start_date=YEAR_START, end_date=YEAR_END
         )
         self.make_exception(
             date(2026, 11, 4), date(2026, 11, 4), services.KIND_HOLIDAY, year=alien
@@ -295,7 +294,7 @@ class DayExceptionApiTests(CalendarApiTestCase):
 
     def test_list_can_be_filtered_by_year(self):
         second = SchoolYear.objects.create(
-            owner=self.user,
+            school=self.school,
             name="2027/2028",
             start_date=date(2027, 9, 1),
             end_date=date(2028, 5, 31),
@@ -329,7 +328,7 @@ class DayExceptionApiTests(CalendarApiTestCase):
 
     def test_cannot_delete_another_users_exception(self):
         alien = SchoolYear.objects.create(
-            owner=self.other, name="чужой", start_date=YEAR_START, end_date=YEAR_END
+            school=self.alien_school, name="чужой", start_date=YEAR_START, end_date=YEAR_END
         )
         holiday = self.make_exception(
             date(2026, 11, 4), date(2026, 11, 4), services.KIND_HOLIDAY, year=alien
@@ -436,7 +435,7 @@ class CalendarViewTests(CalendarApiTestCase):
 
     def test_days_of_another_users_year_are_not_found(self):
         alien = SchoolYear.objects.create(
-            owner=self.other, name="чужой", start_date=YEAR_START, end_date=YEAR_END
+            school=self.alien_school, name="чужой", start_date=YEAR_START, end_date=YEAR_END
         )
 
         response = self.client.get(reverse("schoolyear-days", args=[alien.pk]))

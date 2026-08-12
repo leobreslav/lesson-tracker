@@ -48,8 +48,17 @@ function weekdayLabel(weekday) {
   return weekdayHeadings().find((item) => item.weekday === weekday)?.label ?? ''
 }
 
-export default function Calendar({ onLoggedOut }) {
+/**
+ * The school year and its markup.
+ *
+ * The calendar belongs to the school: everybody reads the same one, only an
+ * administrator edits it. For a teacher the page stays exactly as
+ * informative and loses every control — the server refuses those calls
+ * anyway, and a button that always fails is worse than no button.
+ */
+export default function Calendar({ user, onLoggedOut }) {
   const { t } = useTranslation()
+  const canEdit = Boolean(user?.is_school_admin)
   const [years, setYears] = useState(null)
   const [yearId, setYearId] = useState(null)
   const [year, setYear] = useState(null) // carries an `exceptions` field
@@ -353,6 +362,8 @@ export default function Calendar({ onLoggedOut }) {
         <h1>{t('calendar.title')}</h1>
       </header>
 
+      {!canEdit && <p className="hint">{t('calendar.readOnly')}</p>}
+
       <div className="year-picker">
         {years.map((item) => (
           <button
@@ -364,13 +375,15 @@ export default function Calendar({ onLoggedOut }) {
             {item.name}
           </button>
         ))}
-        <button
-          type="button"
-          className="chip"
-          onClick={() => setYearForm(yearForm ? null : suggestYear())}
-        >
-          {yearForm ? t('common.cancel') : t('calendar.newYear')}
-        </button>
+        {canEdit && (
+          <button
+            type="button"
+            className="chip"
+            onClick={() => setYearForm(yearForm ? null : suggestYear())}
+          >
+            {yearForm ? t('common.cancel') : t('calendar.newYear')}
+          </button>
+        )}
       </div>
 
       {yearForm && (
@@ -418,12 +431,14 @@ export default function Calendar({ onLoggedOut }) {
         <EmptyState
           title={t('calendar.empty.title')}
           actions={
-            <button type="button" onClick={() => setYearForm(suggestYear())}>
-              {t('calendar.empty.action')}
-            </button>
+            canEdit && (
+              <button type="button" onClick={() => setYearForm(suggestYear())}>
+                {t('calendar.empty.action')}
+              </button>
+            )
           }
         >
-          {t('calendar.empty.hint')}
+          {t(canEdit ? 'calendar.empty.hint' : 'calendar.empty.askAdmin')}
         </EmptyState>
       )}
 
@@ -437,7 +452,7 @@ export default function Calendar({ onLoggedOut }) {
             pending={rangeForm}
             onToggleDay={handleToggleDay}
             onSelectRange={handleSelectRange}
-            disabled={saving}
+            disabled={saving || !canEdit}
           />
 
           <aside className="calendar-side">
@@ -493,6 +508,7 @@ export default function Calendar({ onLoggedOut }) {
               year={year}
               studyDays={studyDaysByTerm}
               busy={saving}
+              canEdit={canEdit}
               onCreate={(fields) => runTerm(() => createTerm({ ...fields, year: year.id }))}
               onUpdate={(id, fields) => runTerm(() => updateTerm(id, fields))}
               onDelete={handleDeleteTerm}
@@ -500,7 +516,7 @@ export default function Calendar({ onLoggedOut }) {
 
             <section className="panel">
               <h3>{t('calendar.exceptions.title')}</h3>
-              {!year.exceptions.length && (
+              {canEdit && !year.exceptions.length && (
                 <p className="hint">
                   <button
                     type="button"
@@ -513,7 +529,7 @@ export default function Calendar({ onLoggedOut }) {
                   {t('calendar.exceptions.typicalHint')}
                 </p>
               )}
-              {!year.exceptions.length && (
+              {canEdit && !year.exceptions.length && (
                 <p className="hint">{t('calendar.exceptions.hint')}</p>
               )}
               <ul className="exceptions">
@@ -528,28 +544,32 @@ export default function Calendar({ onLoggedOut }) {
                         {dateRange(exception.start_date, exception.end_date)}
                       </span>
                     </div>
-                    <button
-                      type="button"
-                      className="link"
-                      disabled={saving}
-                      onClick={() => removeException(exception)}
-                      aria-label={t('calendar.exceptions.delete')}
-                    >
-                      ✕
-                    </button>
+                    {canEdit && (
+                      <button
+                        type="button"
+                        className="link"
+                        disabled={saving}
+                        onClick={() => removeException(exception)}
+                        aria-label={t('calendar.exceptions.delete')}
+                      >
+                        ✕
+                      </button>
+                    )}
                   </li>
                 ))}
               </ul>
             </section>
 
-            <button
-              type="button"
-              className="secondary"
-              disabled={saving}
-              onClick={handleDeleteYear}
-            >
-              {t('calendar.deleteYear')}
-            </button>
+            {canEdit && (
+              <button
+                type="button"
+                className="secondary"
+                disabled={saving}
+                onClick={handleDeleteYear}
+              >
+                {t('calendar.deleteYear')}
+              </button>
+            )}
           </aside>
         </div>
       )}

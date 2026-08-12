@@ -40,7 +40,8 @@
     "profile": "Profile",
     "logout": "Sign out",
     "needYear": "create a school year first",
-    "needClass": "add a class first"
+    "needClass": "add a class first",
+    "school": "School"
   },
   "auth": {
     "prompt": "Sign in to continue.",
@@ -111,7 +112,8 @@
       "action": "Delete all data",
       "busy": "Deleting…",
       "confirm": "Delete all your data: the year, classes, schedule and plans? This cannot be undone."
-    }
+    },
+    "adminDoes": "the school administrator does this"
   },
   "dayStatus": {
     "study": "Study day",
@@ -159,7 +161,15 @@
     "file_too_many_rows": "The file has too many rows — split it into parts.",
     "token_required": "An id_token or access_token is required.",
     "token_invalid": "The Google token is invalid or expired.",
-    "email_not_verified": "Google has not verified this email address."
+    "email_not_verified": "Google has not verified this email address.",
+    "no_school": "You do not belong to any school yet.",
+    "school_admin_required": "Only a school administrator can change this.",
+    "other_school": "That object belongs to another school.",
+    "course_in_use": "«{{name}}» is in use: {{slots}} lessons and {{plan_rows}} plan rows belong to other teachers. Ask them to clear it first.",
+    "course_name_taken": "A course with this name already exists in this year.",
+    "invitation_exists": "«{{email}}» has already been invited to this school.",
+    "already_member": "«{{email}}» already belongs to a school.",
+    "last_admin": "This is the only administrator of the school. Give the role to somebody else first."
   },
   "classPicker": {
     "label": "Classes:",
@@ -261,7 +271,8 @@
     "empty": {
       "title": "No school year yet",
       "hint": "A school year sets the boundaries lessons are counted inside. Breaks, holidays and terms are marked up here too.",
-      "action": "Create a school year"
+      "action": "Create a school year",
+      "askAdmin": "A school year is created by the school administrator."
     },
     "kind": {
       "holiday": "Public holiday",
@@ -292,8 +303,10 @@
       "nameLabel": "Term name",
       "add": "+ term",
       "delete": "Delete the term {{name}}",
-      "deleteConfirm": "Delete the term «{{name}}»?"
-    }
+      "deleteConfirm": "Delete the term «{{name}}»?",
+      "emptyReadOnly": "No quarters have been marked up in this school yet."
+    },
+    "readOnly": "The calendar belongs to the school — only an administrator edits it."
   },
   "classes": {
     "title": "Classes",
@@ -307,12 +320,17 @@
     "needYear": {
       "title": "A school year first",
       "hint": "A class lives inside a school year: next year 9B becomes 10B, and that is a different class with its own schedule.",
-      "action": "Create a school year"
+      "action": "Create a school year",
+      "askAdmin": "A course lives inside a school year, and the school administrator has not created one yet."
     },
     "empty": {
       "title": "No classes yet",
-      "hint": "A class is what you teach: the group and the subject together, for example «9B Algebra». Each one has its own schedule and its own plan. Type a name above and press Enter."
-    }
+      "hint": "A class is what you teach: the group and the subject together, for example «9B Algebra». Each one has its own schedule and its own plan. Type a name above and press Enter.",
+      "hintAdmin": "A course is a group and a subject together, for example «9B Algebra». Create the first one in the school section.",
+      "action": "Go to the school section"
+    },
+    "manageHint": "Courses are managed in the school section:",
+    "readOnlyHint": "Courses are created by the school administrator."
   },
   "layout": {
     "title": "Layout",
@@ -401,6 +419,37 @@
       "restore": "Restore",
       "cancel": "Cancel the lesson",
       "close": "Close"
+    }
+  },
+  "noSchool": {
+    "title": "You do not belong to a school yet",
+    "hint": "The tracker works inside a school: the calendar and the courses come from it. Ask your school administrator to invite this address — they need it exactly as it is written below."
+  },
+  "school": {
+    "title": "School: {{name}}",
+    "year": {
+      "title": "School year",
+      "hint": "The calendar is shared: the boundaries of the year, the breaks and the quarters are the same for everybody in the school.",
+      "action": "Open the calendar"
+    },
+    "courses": {
+      "title": "Courses",
+      "hint": "A course is a group and a subject together, «9B Algebra». Teachers pick from this list; their lessons and plans inside a course stay their own.",
+      "placeholder": "Course name, for example 9B Algebra",
+      "needYear": "Create a school year first",
+      "deleteConfirm": "Delete the course «{{name}}»?"
+    },
+    "people": {
+      "title": "Teachers",
+      "hint": "An invitation is written before the person first signs in: they get in with the Google account on that address.",
+      "admin": "administrator",
+      "emailPlaceholder": "Email address",
+      "inviteAsAdmin": "invite as an administrator",
+      "invite": "Invite",
+      "invited": "Invitations",
+      "pending": "waiting for the first sign-in",
+      "accepted": "accepted",
+      "withdraw": "Withdraw the invitation"
     }
   }
 }

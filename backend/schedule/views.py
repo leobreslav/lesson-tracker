@@ -2,75 +2,117 @@ from collections import defaultdict
 
 from calendars import services as calendar_services
 from calendars.models import SchoolYear
+from config.access import SchoolScopedViewSet, TeacherScopedViewSet
+from config.errors import Codes, api_error
 from django.db import transaction
 from django.db.models import Count
 from django.utils import timezone
+from django.db.models import ProtectedError
 from django.utils.dateparse import parse_date
-from rest_framework import viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
 
 from . import services
-from .models import LessonSlot, SchoolClass
+from .models import Course, LessonSlot
 from .serializers import (
     BulkDeleteSerializer,
     CopySerializer,
+    CourseSerializer,
     LessonSlotSerializer,
     PeriodSerializer,
-    SchoolClassSerializer,
 )
 
 
 def read_date(value):
-    """Дата из параметра запроса. Мусор — это None, а не 500."""
+    """A date from a query parameter. Garbage is None, not a 500."""
     try:
         return parse_date(value or "")
     except ValueError:
-        # parse_date падает на «2026-13-45»: формат похож, даты не существует
+        # parse_date raises on «2026-13-45»: the shape fits, the date does not
         return None
 
 
-class SchoolClassViewSet(viewsets.ModelViewSet):
-    """Классы текущего пользователя. Список фильтруется параметром ?year=<id>."""
+class CourseViewSet(SchoolScopedViewSet):
+    """
+    The school's courses. The list is filtered by ?year=<id>.
 
-    serializer_class = SchoolClassSerializer
+    Every teacher reads them and picks from the list; only an administrator
+    creates, renames and deletes.
+    """
+
+    serializer_class = CourseSerializer
+    queryset = Course.objects.all()
 
     def get_queryset(self):
-        # фильтр по владельцу на уровне queryset закрывает и чтение, и правку:
-        # чужой объект просто не находится
-        queryset = SchoolClass.objects.filter(owner=self.request.user)
+        queryset = super().get_queryset()
 
         year = self.request.query_params.get("year")
         if year:
-            # нечисловой параметр не должен ронять запрос ошибкой приведения
+            # a non-numeric value must not blow up on a cast
             queryset = queryset.filter(year_id=year) if year.isdigit() else queryset.none()
 
         return queryset.select_related("year")
 
+    def perform_destroy(self, instance):
+        """
+        Deleting a course that somebody teaches is refused, not cascaded.
 
-class LessonSlotViewSet(viewsets.ModelViewSet):
+        The slots and the plan rows hold it under PROTECT — an administrator
+        must not wipe a colleague's year with one button. The answer says how
+        many lessons and plan rows are in the way and whose they are.
+        """
+        try:
+            instance.delete()
+        except ProtectedError:
+            slots = instance.slots.count()
+            rows = instance.plan_nodes.count()
+            teachers = sorted(
+                {
+                    str(name or email)
+                    for name, email in instance.slots.values_list(
+                        "teacher__first_name", "teacher__email"
+                    ).union(
+                        instance.plan_nodes.values_list(
+                            "teacher__first_name", "teacher__email"
+                        )
+                    )
+                }
+            )
+            api_error(
+                Codes.COURSE_IN_USE,
+                f"«{instance.name}» is in use: {slots} lessons and {rows} plan "
+                f"rows belong to {', '.join(teachers)}. Ask them to clear it first.",
+                name=instance.name,
+                slots=slots,
+                plan_rows=rows,
+                teachers=teachers,
+            )
+
+
+class LessonSlotViewSet(TeacherScopedViewSet):
     """
-    Уроки расписания.
+    Lesson slots — personal to the teacher inside a shared course.
 
-    Список фильтруется параметрами `class`, `start`, `end`; сверх CRUD есть
-    массовые операции: copy, bulk и stats.
+    The list is filtered by `course`, `start` and `end`; beyond CRUD there are
+    the bulk operations: copy, bulk and stats.
     """
 
     serializer_class = LessonSlotSerializer
+    queryset = LessonSlot.objects.all()
 
     def own_slots(self):
-        return LessonSlot.objects.filter(school_class__owner=self.request.user)
+        return LessonSlot.objects.filter(teacher=self.request.user)
 
     def get_queryset(self):
-        queryset = self.own_slots().select_related("school_class", "year")
+        queryset = super().get_queryset().select_related("course", "year")
         # year.periods() нужен каждому слоту для предупреждения о неучебном дне
         queryset = queryset.prefetch_related("year__exceptions")
 
         params = self.request.query_params
-        class_id = params.get("class")
+        class_id = params.get("course")
         if class_id:
             queryset = (
-                queryset.filter(school_class_id=class_id)
+                queryset.filter(course_id=class_id)
                 if class_id.isdigit()
                 else queryset.none()
             )
@@ -85,17 +127,18 @@ class LessonSlotViewSet(viewsets.ModelViewSet):
 
         return queryset
 
-    def copy_one_class(self, school_class, data, study_dates):
+    def copy_one_course(self, course, data, study_dates):
         """
-        Копирование для одного класса. Вызывается внутри транзакции, потому
-        что уроки, созданные предыдущим классом, занимают номера для следующего.
+        Copying one course. Called inside a transaction, because the lessons
+        created for the previous course occupy numbers for the next one.
         """
         target = (data["target_start"], data["target_end"])
-        year = school_class.year
+        year = course.year
+        teacher = self.request.user
 
         source_numbers = defaultdict(list)
         source_slots = self.own_slots().filter(
-            school_class=school_class,
+            course=course,
             date__range=(data["source_start"], data["source_end"]),
             is_extra=False,
             is_cancelled=False,
@@ -114,33 +157,29 @@ class LessonSlotViewSet(viewsets.ModelViewSet):
 
         deleted = 0
         if data["mode"] == "replace":
-            # заменяем только обычные уроки: отменённые и дополнительные
-            # — это ручная правка, её сносить нельзя
-            deleted, _ = LessonSlot.objects.filter(
-                school_class=school_class,
+            # only regular lessons are replaced: a cancellation or an extra
+            # lesson is hand-made markup and a bulk operation must not touch it
+            deleted, _ = self.own_slots().filter(
+                course=course,
                 date__range=target,
                 is_extra=False,
                 is_cancelled=False,
             ).delete()
 
         occupied = set(
-            LessonSlot.objects.filter(
-                school_class=school_class, date__range=target
-            ).values_list("date", "lesson_number")
+            self.own_slots()
+            .filter(course=course, date__range=target)
+            .values_list("date", "lesson_number")
         )
 
-        # номера, занятые другими классами того же учителя: он не может
-        # вести два урока одновременно, такие слоты пропускаем с отчётом
+        # numbers this teacher already spends on their other courses: nobody
+        # runs two lessons at once, so such slots are skipped with a report
         busy = {
-            (slot.date, slot.lesson_number): slot.school_class.name
-            for slot in LessonSlot.objects.filter(
-                school_class__owner_id=year.owner_id,
-                year=year,
-                date__range=target,
-                is_cancelled=False,
-            )
-            .exclude(school_class=school_class)
-            .select_related("school_class")
+            (slot.date, slot.lesson_number): slot.course.name
+            for slot in self.own_slots()
+            .filter(year=year, date__range=target, is_cancelled=False)
+            .exclude(course=course)
+            .select_related("course")
         }
 
         created, conflicts = [], []
@@ -168,7 +207,8 @@ class LessonSlotViewSet(viewsets.ModelViewSet):
             created.append(
                 LessonSlot(
                     year=year,
-                    school_class=school_class,
+                    teacher=teacher,
+                    course=course,
                     date=slot_date,
                     lesson_number=number,
                 )
@@ -186,23 +226,25 @@ class LessonSlotViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=["post"])
     def copy(self, request):
         """
-        Повторить раскладку периода-источника на целевом периоде.
+        Repeat the layout of a source period onto a target period.
 
-        Без `class_id` копируется расписание целиком: все классы владельца,
-        чей учебный год задевает цель. Отменённые и дополнительные уроки не
-        копируются ни в том, ни в другом режиме.
+        Without `course_id` the whole schedule travels: every course this
+        teacher actually has lessons in, whose year touches the target.
+        Cancelled and extra lessons are copied in neither mode.
         """
         form = CopySerializer(data=request.data, context=self.get_serializer_context())
         form.is_valid(raise_exception=True)
         data = form.validated_data
 
-        one = data.get("school_class")
+        one = data.get("course")
         if one is not None:
-            classes = [one]
+            courses = [one]
         else:
-            classes = list(
-                SchoolClass.objects.filter(
-                    owner=request.user,
+            # only the courses this teacher works in: the school may hold
+            # dozens, and the others have nothing of theirs to copy
+            courses = list(
+                Course.objects.filter(
+                    pk__in=self.own_slots().values("course_id"),
                     year__start_date__lte=data["target_end"],
                     year__end_date__gte=data["target_start"],
                 ).select_related("year")
@@ -212,17 +254,15 @@ class LessonSlotViewSet(viewsets.ModelViewSet):
         study_by_year = {}
 
         with transaction.atomic():
-            for school_class in classes:
-                year = school_class.year
+            for course in courses:
+                year = course.year
                 if year.pk not in study_by_year:
-                    # учебные дни считает calendars — здесь мы их только спрашиваем
+                    # study days are calendars' business — we only ask
                     study_by_year[year.pk] = {
                         day.date for day in year.build_days() if day.is_study
                     }
 
-                result = self.copy_one_class(
-                    school_class, data, study_by_year[year.pk]
-                )
+                result = self.copy_one_course(course, data, study_by_year[year.pk])
                 for key in ("created", "skipped", "deleted"):
                     totals[key] += result[key]
                 totals["conflicts"].extend(result["conflicts"])
@@ -231,11 +271,11 @@ class LessonSlotViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=["delete"])
     def bulk(self, request):
-        """Снести уроки класса за период."""
+        """Remove this teacher's lessons in a course over a period."""
         params = request.query_params
         form = BulkDeleteSerializer(
             data={
-                "school_class": params.get("class"),
+                "course": params.get("course"),
                 "start": params.get("start"),
                 "end": params.get("end"),
                 "only_regular": params.get("only_regular", False),
@@ -246,11 +286,11 @@ class LessonSlotViewSet(viewsets.ModelViewSet):
         data = form.validated_data
 
         queryset = self.own_slots().filter(
-            school_class=data["school_class"],
+            course=data["course"],
             date__range=(data["start"], data["end"]),
         )
         if data["only_regular"]:
-            # ручная разметка переживает массовую чистку
+            # hand-made markup survives a bulk clean
             queryset = queryset.filter(is_extra=False, is_cancelled=False)
 
         deleted, _ = queryset.delete()
@@ -259,11 +299,11 @@ class LessonSlotViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=["get"])
     def agenda(self, request):
         """
-        Сводное расписание за период: все классы владельца сразу.
+        This teacher's whole schedule for a period, every course at once.
 
-        Уроки сгруппированы по датам, рядом — разметка дней: учебный ли
-        день и как называется исключение. Даты, не попавшие ни в один
-        учебный год, помечены статусом outside.
+        Lessons are grouped by date, next to the day markup: whether it is a
+        study day and what the exception is called. Dates outside every school
+        year carry the status «outside».
         """
         form = PeriodSerializer(data=request.query_params)
         form.is_valid(raise_exception=True)
@@ -273,32 +313,30 @@ class LessonSlotViewSet(viewsets.ModelViewSet):
         slots = (
             self.own_slots()
             .filter(date__range=(start, end))
-            .select_related("school_class")
+            .select_related("course")
         )
         for slot in slots:
             lessons[slot.date.isoformat()].append(
                 {
                     "id": slot.id,
                     "lesson_number": slot.lesson_number,
-                    "class_id": slot.school_class_id,
-                    "class_name": slot.school_class.name,
+                    "course_id": slot.course_id,
+                    "course_name": slot.course.name,
                     "is_cancelled": slot.is_cancelled,
                     "is_extra": slot.is_extra,
                     "reason": slot.reason,
                 }
             )
 
-        # разметку берём из календаря: год знает про каникулы и переносы
+        # the markup comes from the calendar: the year knows the breaks
         days = {
-            day.isoformat(): {
-                "status": "outside",
-                "title": "вне учебного года",
-                "is_study": False,
-            }
+            day.isoformat(): {"status": "outside", "title": "", "is_study": False}
             for day in calendar_services.iter_dates(start, end)
         }
         years = SchoolYear.objects.filter(
-            owner=request.user, start_date__lte=end, end_date__gte=start
+            school_id=request.user.school_id,
+            start_date__lte=end,
+            end_date__gte=start,
         ).prefetch_related("exceptions")
         for year in years:
             for day in year.build_days():
@@ -313,13 +351,13 @@ class LessonSlotViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=["get"])
     def stats(self, request):
-        """Сколько уроков всего, прошло, осталось, отменено и добавлено."""
+        """How many lessons there are, past, left, cancelled and extra."""
         queryset = self.own_slots()
 
-        class_id = request.query_params.get("class")
+        class_id = request.query_params.get("course")
         if class_id:
             queryset = (
-                queryset.filter(school_class_id=class_id)
+                queryset.filter(course_id=class_id)
                 if class_id.isdigit()
                 else queryset.none()
             )

@@ -7,7 +7,7 @@ from calendars.models import DayException, Term
 from django.test import SimpleTestCase
 from django.urls import reverse
 from django.utils import timezone
-from schedule.models import LessonSlot, SchoolClass
+from schedule.models import Course, LessonSlot
 
 from . import services
 from .models import PlanNode
@@ -166,31 +166,32 @@ class LayoutApiTestCase(PlanTestCase):
         self.trig, self.vectors, self.stereo = self.build_sample()  # 7 уроков плана
         self.slot_date = MONDAY
 
-    def add_slot(self, day=None, number=1, school_class=None, **flags):
+    def add_slot(self, day=None, number=1, course=None, **flags):
         return LessonSlot.objects.create(
-            year=(school_class or self.school_class).year,
-            school_class=school_class or self.school_class,
+            teacher=self.user,
+            year=(course or self.course).year,
+            course=course or self.course,
             date=day or self.slot_date,
             lesson_number=number,
             **flags,
         )
 
-    def fill_slots(self, count, school_class=None):
+    def fill_slots(self, count, course=None):
         """По одному слоту в день, начиная с понедельника."""
         return [
-            self.add_slot(MONDAY + timedelta(days=index), school_class=school_class)
+            self.add_slot(MONDAY + timedelta(days=index), course=course)
             for index in range(count)
         ]
 
     def layout(self, params=None):
         return self.client.get(
             reverse("plannode-layout"),
-            {"class": self.school_class.pk, **(params or {})},
+            {"course": self.course.pk, **(params or {})},
         )
 
     def summary(self):
         return self.client.get(
-            reverse("plannode-layout-summary"), {"class": self.school_class.pk}
+            reverse("plannode-layout-summary"), {"course": self.course.pk}
         )
 
     def pairs(self, response=None):
@@ -218,7 +219,7 @@ class LayoutApiTests(LayoutApiTestCase):
 
     def test_another_users_class_is_not_found(self):
         response = self.client.get(
-            reverse("plannode-layout"), {"class": self.alien_class.pk}
+            reverse("plannode-layout"), {"course": self.alien_class.pk}
         )
 
         self.assertEqual(response.status_code, 404)
@@ -300,7 +301,7 @@ class LayoutApiTests(LayoutApiTestCase):
         self.client.post(
             reverse("plannode-list"),
             {
-                "school_class": self.school_class.pk,
+                "course": self.course.pk,
                 "parent": self.trig.pk,
                 "title": "Вставка",
                 "after": self.node("Синус суммы").pk,
@@ -336,7 +337,7 @@ class LayoutApiTests(LayoutApiTestCase):
         self.assertEqual(len(response.json()["entries"]), 7)
 
     def test_empty_plan_and_schedule_do_not_break(self):
-        PlanNode.objects.filter(school_class=self.school_class).delete()
+        PlanNode.objects.filter(teacher=self.user, course=self.course).delete()
 
         response = self.layout()
 
@@ -344,10 +345,10 @@ class LayoutApiTests(LayoutApiTestCase):
         self.assertEqual(response.json()["entries"], [])
 
     def test_other_classes_slots_are_not_used(self):
-        second = SchoolClass.objects.create(
-            owner=self.user, year=self.school_class.year, name="10А"
+        second = Course.objects.create(
+            school=self.school, year=self.course.year, name="10А"
         )
-        self.fill_slots(2, school_class=second)
+        self.fill_slots(2, course=second)
 
         self.assertEqual(
             [entry[0] for entry in self.pairs()], ["no_slot"] * 7
@@ -360,13 +361,13 @@ class LayoutTermTests(LayoutApiTestCase):
     def setUp(self):
         super().setUp()
         self.first = Term.objects.create(
-            year=self.school_class.year,
+            year=self.course.year,
             name="1 четверть",
             start_date=MONDAY,
             end_date=MONDAY + timedelta(days=4),
         )
         self.second = Term.objects.create(
-            year=self.school_class.year,
+            year=self.course.year,
             name="2 четверть",
             start_date=MONDAY + timedelta(days=7),
             end_date=MONDAY + timedelta(days=11),
@@ -445,7 +446,7 @@ class LayoutTermTests(LayoutApiTestCase):
     def test_vacation_inside_a_term_only_removes_slots(self):
         """Каникулы убирают слоты, но терм остаётся термом."""
         DayException.objects.create(
-            year=self.school_class.year,
+            year=self.course.year,
             start_date=MONDAY + timedelta(days=1),
             end_date=MONDAY + timedelta(days=2),
             kind=calendar_services.KIND_VACATION,
@@ -533,7 +534,7 @@ class LayoutSummaryApiTests(LayoutApiTestCase):
 
     def test_summary_of_another_users_class_is_not_found(self):
         response = self.client.get(
-            reverse("plannode-layout-summary"), {"class": self.alien_class.pk}
+            reverse("plannode-layout-summary"), {"course": self.alien_class.pk}
         )
 
         self.assertEqual(response.status_code, 404)

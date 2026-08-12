@@ -6,12 +6,18 @@ from . import services
 from .models import DayException, SchoolYear, Term
 
 
-def own_years(serializer):
-    """Only the requester's own years: someone else's cannot be referenced."""
+def school_years(serializer):
+    """
+    Years of the requester's school — another school's cannot be referenced.
+
+    The viewset already refuses foreign objects, but a foreign key in the body
+    is a second door into the same room: without this the markup of one school
+    could be hung on the calendar of another.
+    """
     user = getattr(serializer.context.get("request"), "user", None)
-    if user is None or not user.is_authenticated:
+    if user is None or not user.is_authenticated or user.school_id is None:
         return SchoolYear.objects.none()
-    return SchoolYear.objects.filter(owner=user)
+    return SchoolYear.objects.filter(school_id=user.school_id)
 
 
 class DayExceptionSerializer(serializers.ModelSerializer):
@@ -21,7 +27,7 @@ class DayExceptionSerializer(serializers.ModelSerializer):
 
     def get_fields(self):
         fields = super().get_fields()
-        fields["year"].queryset = own_years(self)
+        fields["year"].queryset = school_years(self)
         return fields
 
     def validate(self, attrs):
@@ -81,7 +87,7 @@ class TermSerializer(serializers.ModelSerializer):
 
     def get_fields(self):
         fields = super().get_fields()
-        fields["year"].queryset = own_years(self)
+        fields["year"].queryset = school_years(self)
         return fields
 
     def validate(self, attrs):
@@ -128,16 +134,28 @@ class TermSerializer(serializers.ModelSerializer):
         return attrs
 
 
+class CurrentSchoolDefault:
+    """The school of the requester, for a field the body must not carry."""
+
+    requires_context = True
+
+    def __call__(self, serializer_field):
+        return serializer_field.context["request"].user.school
+
+    def __repr__(self):
+        return f"{self.__class__.__name__}()"
+
+
 class SchoolYearSerializer(serializers.ModelSerializer):
-    # the owner comes from the request, never from the body
-    owner = serializers.HiddenField(default=serializers.CurrentUserDefault())
+    # the school comes from the requester, never from the body
+    school = serializers.HiddenField(default=CurrentSchoolDefault())
     exceptions = DayExceptionSerializer(many=True, read_only=True)
 
     class Meta:
         model = SchoolYear
         fields = (
             "id",
-            "owner",
+            "school",
             "name",
             "start_date",
             "end_date",
@@ -145,11 +163,11 @@ class SchoolYearSerializer(serializers.ModelSerializer):
             "exceptions",
         )
         validators = [
-            # unique_together with owner: DRF cannot check a field that is not
+            # unique_together with school: DRF cannot check a field that is not
             # in the request body, and a duplicate name would blow up with 500
             UniqueTogetherValidator(
                 queryset=SchoolYear.objects.all(),
-                fields=("owner", "name"),
+                fields=("school", "name"),
                 message="A school year with this name already exists.",
             ),
         ]

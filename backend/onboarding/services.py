@@ -1,9 +1,13 @@
 """
-Состояние первого входа и демо-данные.
+The state of a first visit, and the demo data.
 
-Приложение своих моделей не имеет: оно только смотрит на календарь,
-классы, расписание и план и складывает из них одну картину — что уже
-заполнено, а что ещё нет.
+The app owns no models: it looks at the calendar, the courses, the schedule
+and the plan and folds them into one picture — what is filled in and what is
+not yet.
+
+Since the move to schools the picture has two halves. The year and the
+courses belong to the school, so a teacher sees the steps their administrator
+has already taken; the schedule and the plan are their own.
 """
 
 from __future__ import annotations
@@ -15,7 +19,7 @@ from calendars.services import KIND_VACATION
 from django.db.models import Count, Q
 from django.utils import timezone
 from plans.models import PlanNode
-from schedule.models import LessonSlot, SchoolClass
+from schedule.models import Course, LessonSlot
 
 # учебный год начинается в сентябре: до июня «текущим» считаем прошлый сентябрь
 SCHOOL_YEAR_STARTS_IN = 6
@@ -94,51 +98,80 @@ def typical_terms(start_year: int, language: str = "en") -> list[dict]:
     ]
 
 
-# --- состояние ---------------------------------------------------------------
+# --- state -------------------------------------------------------------------
 
 
 def current_year(user):
-    """Самый свежий учебный год пользователя — про него и говорит главная."""
-    return SchoolYear.objects.filter(owner=user).order_by("-start_date").first()
+    """The school's freshest year — the one the main page talks about."""
+    return (
+        SchoolYear.objects.filter(school_id=user.school_id)
+        .order_by("-start_date")
+        .first()
+    )
 
 
-def class_summary(school_class, today: date) -> dict:
-    """Слоты и план одного класса — то, что показывает готовая главная."""
-    slots = LessonSlot.objects.filter(school_class=school_class, is_cancelled=False)
+def course_summary(course, user, today: date) -> dict:
+    """
+    One course as this teacher sees it.
+
+    The course is shared, the numbers are not: another teacher's lessons in
+    the same course are none of this one's business.
+    """
+    slots = LessonSlot.objects.filter(
+        teacher=user, course=course, is_cancelled=False
+    )
     total = slots.count()
     past = slots.filter(date__lt=today).count()
     lessons = PlanNode.objects.filter(
-        school_class=school_class, is_section=False
+        teacher=user, course=course, is_section=False
     ).count()
 
     return {
-        "id": school_class.pk,
-        "name": school_class.name,
+        "id": course.pk,
+        "name": course.name,
         "slots": total,
         "past": past,
         "remaining": total - past,
         "plan_lessons": lessons,
-        # тот же смысл, что у баланса в раскладке: запас слотов минус план
+        # the same meaning as the balance in the layout: slots minus plan
         "balance": total - lessons,
     }
 
 
+def empty_status() -> dict:
+    """The answer for somebody no school has claimed yet."""
+    return {
+        "school": None,
+        "is_school_admin": False,
+        "year": {"exists": False, "id": None, "name": None, "start": None, "end": None},
+        "calendar": {"terms": 0, "exceptions": 0},
+        "classes": {"count": 0, "names": [], "items": []},
+        "schedule": {"slots": 0},
+        "plan": {"classes_with_plan": 0, "total_classes": 0},
+    }
+
+
 def build_status(user) -> dict:
-    """Одним запросом: что уже сделано, а что ещё нет."""
+    """One request: what is done already and what is not."""
+    if user.school_id is None:
+        return empty_status()
+
     today = timezone.localdate()
     year = current_year(user)
 
-    classes = (
-        SchoolClass.objects.filter(owner=user, year=year).order_by("name")
+    courses = (
+        Course.objects.filter(school_id=user.school_id, year=year).order_by("name")
         if year is not None
-        else SchoolClass.objects.none()
+        else Course.objects.none()
     )
-    classes = list(classes)
+    courses = list(courses)
 
-    items = [class_summary(school_class, today) for school_class in classes]
+    items = [course_summary(course, user, today) for course in courses]
     with_plan = sum(1 for item in items if item["plan_lessons"] > 0)
 
     return {
+        "school": {"id": user.school_id, "name": user.school.name},
+        "is_school_admin": user.is_school_admin,
         "year": {
             "exists": year is not None,
             "id": year.pk if year else None,
@@ -367,33 +400,51 @@ def demo_classes(language: str) -> tuple:
 
 def wipe(user) -> dict:
     """
-    Снести все данные пользователя.
+    Remove the example: this teacher's own work, then the school's shell.
 
-    Годы уносят за собой термы, исключения, классы, слоты и план — всё
-    связано каскадом, поэтому достаточно удалить корни.
+    The order matters. Slots and plan rows hold their course under PROTECT,
+    so they go first; only then can the years take the courses with them.
+
+    A teacher who is not an administrator clears their own lessons and plan
+    and leaves the school's calendar alone — it is not theirs to delete.
     """
-    counts = {
-        "years": SchoolYear.objects.filter(owner=user).count(),
-        "classes": SchoolClass.objects.filter(owner=user).count(),
-        "slots": LessonSlot.objects.filter(school_class__owner=user).count(),
-        "plan_nodes": PlanNode.objects.filter(school_class__owner=user).count(),
-    }
+    slots = LessonSlot.objects.filter(teacher=user)
+    nodes = PlanNode.objects.filter(teacher=user)
+    counts = {"slots": slots.count(), "plan_nodes": nodes.count()}
 
-    SchoolYear.objects.filter(owner=user).delete()
-    # класс без года невозможен, но пусть уборка не зависит от этого
-    SchoolClass.objects.filter(owner=user).delete()
+    nodes.delete()
+    slots.delete()
+
+    if user.is_school_admin and user.school_id is not None:
+        years = SchoolYear.objects.filter(school_id=user.school_id)
+        courses = Course.objects.filter(school_id=user.school_id)
+        counts["years"] = years.count()
+        counts["classes"] = courses.count()
+        # somebody else's lessons still holding a course make this refuse,
+        # and that is the right answer: the example is not theirs to erase
+        courses.delete()
+        years.delete()
+    else:
+        counts["years"] = 0
+        counts["classes"] = 0
 
     return counts
 
 
 def create_demo(user) -> dict:
-    """A full set of data that shows how everything hangs together."""
+    """
+    A full set of data that shows how everything hangs together.
+
+    The year and the courses are the school's, so only an administrator can
+    ask for it — the view checks the role. The schedule and the plan inside
+    are created for the person who pressed the button.
+    """
     start_year = current_start_year()
     language = getattr(user, "language", "en")
     classes = demo_classes(language)
 
     year = SchoolYear.objects.create(
-        owner=user,
+        school=user.school,
         name=f"{start_year}/{start_year + 1} {YEAR_SUFFIX.get(language, YEAR_SUFFIX['en'])}",
         start_date=date(start_year, 9, 1),
         end_date=date(start_year + 1, 5, 31),
@@ -412,14 +463,15 @@ def create_demo(user) -> dict:
 
     created_slots = 0
     for template in classes:
-        school_class = SchoolClass.objects.create(
-            owner=user, year=year, name=template["name"]
+        course = Course.objects.create(
+            school=user.school, year=year, name=template["name"]
         )
 
         slots = [
             LessonSlot(
                 year=year,
-                school_class=school_class,
+                teacher=user,
+                course=course,
                 date=day,
                 lesson_number=number,
             )
@@ -432,7 +484,8 @@ def create_demo(user) -> dict:
 
         for position, (section_title, lessons) in enumerate(template["plan"]):
             section = PlanNode.objects.create(
-                school_class=school_class,
+                teacher=user,
+                course=course,
                 parent=None,
                 position=position,
                 is_section=True,
@@ -440,7 +493,8 @@ def create_demo(user) -> dict:
             )
             PlanNode.objects.bulk_create(
                 PlanNode(
-                    school_class=school_class,
+                    teacher=user,
+                    course=course,
                     parent=section,
                     position=index,
                     is_section=False,

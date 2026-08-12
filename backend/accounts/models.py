@@ -15,7 +15,30 @@ class UserManager(BaseUserManager):
         user = self.model(email=email, **extra_fields)
         user.set_password(password)
         user.save(using=self._db)
+        self._mark_email_verified(user)
         return user
+
+    @staticmethod
+    def _mark_email_verified(user):
+        """
+        Give an account made from the command line a verified address.
+
+        Without it, allauth's email authentication calls `wipe_password` on
+        the first Google sign-in and the freshly created superuser loses the
+        password to /admin/. Accounts made this way are trusted by
+        construction — somebody with shell access typed them in.
+
+        Only the manager does this. allauth builds its users directly and
+        asserts that no EmailAddress exists yet, so hooking post_save here
+        would break signing up through Google.
+        """
+        from allauth.account.models import EmailAddress
+
+        EmailAddress.objects.get_or_create(
+            user=user,
+            email=user.email,
+            defaults={"verified": True, "primary": True},
+        )
 
     def create_user(self, email, password=None, **extra_fields):
         extra_fields.setdefault("is_staff", False)
@@ -42,6 +65,21 @@ class Language(models.TextChoices):
 
 
 class User(AbstractUser):
+    """
+    A teacher, and possibly an administrator of their school.
+
+    One user belongs to one school: a teacher working in two places would need
+    two accounts, and that is a fair trade for keeping every query scoped by a
+    single foreign key.
+
+    The roles are not exclusive and there is no mode to switch: an
+    administrator is a teacher with extra rights over the school's shared
+    objects — the calendar and the list of courses.
+
+    `school` stays nullable because a signed-in user without a school is a
+    real state: Google let them in, but nobody has invited them yet.
+    """
+
     username = None
     email = models.EmailField(_("email address"), unique=True)
     language = models.CharField(
@@ -50,6 +88,17 @@ class User(AbstractUser):
         choices=Language,
         default=Language.EN,
     )
+    school = models.ForeignKey(
+        "schools.School",
+        related_name="members",
+        null=True,
+        blank=True,
+        # PROTECT: a school with people in it must not disappear by accident,
+        # and deleting it would silently orphan its calendar and courses
+        on_delete=models.PROTECT,
+        verbose_name="school",
+    )
+    is_school_admin = models.BooleanField("school administrator", default=False)
 
     USERNAME_FIELD = "email"
     REQUIRED_FIELDS = []

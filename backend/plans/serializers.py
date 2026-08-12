@@ -1,28 +1,28 @@
 from config.errors import Codes, api_error
 from django.core.exceptions import ValidationError as DjangoValidationError
 from rest_framework import serializers
-from schedule.models import SchoolClass
+from schedule.serializers import school_courses
 
 from . import services
 from .models import PlanNode
 
 
-def own_classes(serializer):
-    user = getattr(serializer.context.get("request"), "user", None)
-    if user is None or not user.is_authenticated:
-        return SchoolClass.objects.none()
-    return SchoolClass.objects.filter(owner=user)
+def requester(serializer):
+    return getattr(serializer.context.get("request"), "user", None)
 
 
 def own_nodes(serializer):
     """
-    Любые свои узлы — не только папки.
+    Any node of one's own — not only sections.
 
-    Родителем может быть только папка, но проверяет это
-    `structure_problems`: так пользователь получает понятный текст вместо
-    сухого «объект не найден» от PrimaryKeyRelatedField.
+    Only a section may be a parent, but `structure_problems` is what says so:
+    that way the user reads a sentence instead of PrimaryKeyRelatedField's
+    flat «object does not exist».
     """
-    return PlanNode.objects.filter(school_class__in=own_classes(serializer))
+    user = requester(serializer)
+    if user is None or not user.is_authenticated:
+        return PlanNode.objects.none()
+    return PlanNode.objects.filter(teacher=user)
 
 
 def node_payload(node, number=None) -> dict:
@@ -38,8 +38,8 @@ def node_payload(node, number=None) -> dict:
     }
 
 
-def tree_payload(school_class) -> dict:
-    tree = services.get_tree(school_class)
+def tree_payload(owner) -> dict:
+    tree = services.get_tree(owner)
     numbers = services.lesson_numbers(tree)
 
     nodes = []
@@ -54,8 +54,8 @@ def tree_payload(school_class) -> dict:
     return {"nodes": nodes, "counts": services.counts(tree)}
 
 
-def flat_payload(school_class) -> dict:
-    lessons = services.flatten_lessons(school_class)
+def flat_payload(owner) -> dict:
+    lessons = services.flatten_lessons(owner)
 
     return {
         "lessons": [
@@ -66,12 +66,12 @@ def flat_payload(school_class) -> dict:
             }
             for item in lessons
         ],
-        "counts": services.counts(services.get_tree(school_class)),
+        "counts": services.counts(services.get_tree(owner)),
     }
 
 
 def layout_payload(entries) -> dict:
-    """Раскладка в JSON. Нигде не хранится — считается на каждый запрос."""
+    """The layout as JSON. Stored nowhere — recomputed on every request."""
 
     def slot_payload(slot):
         return slot and {
@@ -113,18 +113,18 @@ class PlanNodeCreateSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = PlanNode
-        fields = ("id", "school_class", "parent", "is_section", "title", "note", "after")
+        fields = ("id", "course", "parent", "is_section", "title", "note", "after")
 
     def get_fields(self):
         fields = super().get_fields()
-        fields["school_class"].queryset = own_classes(self)
+        fields["course"].queryset = school_courses(self)
         fields["parent"].queryset = own_nodes(self)
         fields["after"].queryset = own_nodes(self)
         return fields
 
     def validate(self, attrs):
         problems = services.structure_problems(
-            school_class_id=attrs["school_class"].pk,
+            course_id=attrs["course"].pk,
             parent=attrs.get("parent"),
             is_section=attrs.get("is_section", False),
         )
@@ -132,10 +132,10 @@ class PlanNodeCreateSerializer(serializers.ModelSerializer):
 
         after = attrs.get("after")
         if after is not None:
-            if after.school_class_id != attrs["school_class"].pk:
+            if after.course_id != attrs["course"].pk:
                 api_error(
                     Codes.ANCHOR_OTHER_CLASS,
-                    "That node belongs to another class.",
+                    "That node belongs to another course.",
                     field="after",
                 )
             if after.parent_id != (attrs.get("parent").pk if attrs.get("parent") else None):
@@ -150,15 +150,14 @@ class PlanNodeCreateSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         after = validated_data.pop("after", None)
         parent = validated_data.get("parent")
-        school_class = validated_data["school_class"]
 
-        # позиция уточнится в place(), а пока хватит любой
-        node = PlanNode.objects.create(position=0, **validated_data)
+        # the position is settled by place(); any value does until then
+        node = PlanNode.objects.create(
+            position=0, teacher=self.context["request"].user, **validated_data
+        )
 
         index = (
-            after.position + 1
-            if after is not None
-            else len(services.level(school_class, parent))
+            after.position + 1 if after is not None else len(services.level(node, parent))
         )
         services.place(node, parent, index)
 
@@ -166,7 +165,7 @@ class PlanNodeCreateSerializer(serializers.ModelSerializer):
 
 
 class PlanNodeUpdateSerializer(serializers.ModelSerializer):
-    """Правка содержимого узла. Структура меняется через move/move_to."""
+    """Editing a node's content. Structure moves through move/move_to."""
 
     class Meta:
         model = PlanNode
@@ -200,7 +199,7 @@ def check_structure(node, parent):
     """The same tree rules as in the model, applied when moving a node."""
     raise_structure_error(
         services.structure_problems(
-            school_class_id=node.school_class_id,
+            course_id=node.course_id,
             parent=parent,
             is_section=node.is_section,
         )

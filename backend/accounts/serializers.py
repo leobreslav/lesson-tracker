@@ -39,8 +39,31 @@ class GoogleLoginSerializer(SocialLoginSerializer):
 
 
 class UserSerializer(serializers.ModelSerializer):
+    """
+    The profile, plus everything the interface needs to decide what to show.
+
+    `school` is null for somebody nobody has invited yet — the frontend shows
+    them the "ask your administrator" screen instead of the sections.
+    """
+
+    school = serializers.SerializerMethodField()
+
     class Meta:
         model = User
-        fields = ("id", "email", "first_name", "last_name", "language")
-        # the email comes from Google and identifies the login — not editable
-        read_only_fields = ("id", "email")
+        fields = (
+            "id",
+            "email",
+            "first_name",
+            "last_name",
+            "language",
+            "school",
+            "is_school_admin",
+        )
+        # the email comes from Google and identifies the login — not editable;
+        # the role is granted by an administrator, not claimed in a profile
+        read_only_fields = ("id", "email", "school", "is_school_admin")
+
+    def get_school(self, obj):
+        if obj.school_id is None:
+            return None
+        return {"id": obj.school_id, "name": obj.school.name}

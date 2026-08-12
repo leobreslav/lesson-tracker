@@ -16,16 +16,20 @@ import { dateRange } from './dates'
  */
 function buildSteps(status, t) {
   const { year, calendar, classes, schedule, plan } = status
+  const admin = status.is_school_admin
   const noYear = year.exists ? null : t('nav.needYear')
   const noClass = classes.count ? null : t('nav.needClass')
+  // the first three steps are the school's, so a teacher only watches them:
+  // no action button that would answer 403 anyway
+  const forAdmin = admin ? null : t('dashboard.adminDoes')
 
   return [
     {
       key: 'year',
-      to: '/year',
+      to: admin ? '/school' : '/year',
       done: year.exists,
       summary: year.exists && `${year.name}, ${dateRange(year.start, year.end)}`,
-      blocked: null,
+      blocked: year.exists ? null : forAdmin,
     },
     {
       key: 'calendar',
@@ -37,14 +41,14 @@ function buildSteps(status, t) {
           terms: t('common.termCount', { count: calendar.terms }),
           breaks: t('common.breakCount', { count: calendar.exceptions }),
         }),
-      blocked: noYear,
+      blocked: noYear ?? forAdmin,
     },
     {
       key: 'classes',
-      to: '/classes',
+      to: admin ? '/school' : '/classes',
       done: classes.count > 0,
       summary: classes.count && classes.names.join(', '),
-      blocked: noYear,
+      blocked: noYear ?? forAdmin,
     },
     {
       key: 'schedule',
@@ -198,6 +202,8 @@ export default function Dashboard({ user, status, onStatusChange, onLoggedOut })
         </>
       )}
 
+      {/* the demo builds a year and courses, which belong to the school */}
+      {status.is_school_admin && (
       <section className="panel demo-panel">
         {empty ? (
           <>
@@ -222,6 +228,7 @@ export default function Dashboard({ user, status, onStatusChange, onLoggedOut })
           </>
         )}
       </section>
+      )}
     </main>
   )
 }

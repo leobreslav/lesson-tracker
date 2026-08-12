@@ -1,42 +1,42 @@
 from datetime import date
 
 from calendars.models import SchoolYear
-from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
 from django.urls import reverse
-from rest_framework.authtoken.models import Token
 from rest_framework.test import APITestCase
-from schedule.models import SchoolClass
+from schedule.models import Course
+from schools.testing import SchoolTestMixin
 
 from . import services
 from .models import PlanNode
 
-User = get_user_model()
 
-
-class PlanTestCase(APITestCase):
+class PlanTestCase(SchoolTestMixin, APITestCase):
     def setUp(self):
-        self.user = User.objects.create_user(email="teacher@example.com")
-        self.other = User.objects.create_user(email="other@example.com")
-        self.client.credentials(
-            HTTP_AUTHORIZATION=f"Token {Token.objects.create(user=self.user).key}"
+        super().setUp()
+        self.course = self.make_course(self.school, "9Б")
+        self.alien_class = self.make_course(self.alien_school, "9А")
+
+    def owner(self, teacher=None, course=None):
+        """The (teacher, course) pair every plan query needs."""
+        return services.PlanOwner(
+            teacher_id=(teacher or self.user).pk, course_id=(course or self.course).pk
         )
 
-        self.school_class = self.make_class(self.user, "9Б")
-        self.alien_class = self.make_class(self.other, "9А")
-
-    def make_class(self, owner, name):
+    def make_course(self, school, name):
         year = SchoolYear.objects.create(
-            owner=owner,
+            school=school,
             name=f"2026/2027 {name}",
             start_date=date(2026, 9, 1),
             end_date=date(2027, 5, 31),
         )
-        return SchoolClass.objects.create(owner=owner, year=year, name=name)
+        return Course.objects.create(school=school, year=year, name=name)
 
-    def add(self, title, parent=None, position=0, is_section=False, school_class=None):
+    def add(self, title, parent=None, position=0, is_section=False, course=None,
+            teacher=None):
         return PlanNode.objects.create(
-            school_class=school_class or self.school_class,
+            teacher=teacher or self.user,
+            course=course or self.course,
             parent=parent,
             position=position,
             is_section=is_section,
@@ -64,18 +64,18 @@ class PlanTestCase(APITestCase):
     # --- вспомогательные срезы состояния ---
 
     def node(self, title):
-        return PlanNode.objects.get(school_class=self.school_class, title=title)
+        return PlanNode.objects.get(course=self.course, title=title)
 
     def numbers(self):
         return {
             item.node.title: item.number
-            for item in services.flatten_lessons(self.school_class)
+            for item in services.flatten_lessons(self.owner())
         }
 
     def structure(self):
         """Дерево как список строк — читаемые ожидания в тестах."""
         rows = []
-        for branch in services.get_tree(self.school_class):
+        for branch in services.get_tree(self.owner()):
             rows.append(branch.node.title)
             rows.extend(f"  {child.title}" for child in branch.children)
         return rows
@@ -83,7 +83,7 @@ class PlanTestCase(APITestCase):
     def titles_with_notes(self):
         """Срез плана вместе с заметками — для сверки после кругового CSV."""
         rows = []
-        for branch in services.get_tree(self.school_class):
+        for branch in services.get_tree(self.owner()):
             rows.append((branch.node.title, branch.node.note, branch.node.is_section))
             rows.extend(
                 (child.title, child.note, child.is_section) for child in branch.children
@@ -91,14 +91,14 @@ class PlanTestCase(APITestCase):
         return rows
 
     def positions(self, parent=None):
-        return [node.position for node in services.level(self.school_class, parent)]
+        return [node.position for node in services.level(self.owner(), parent)]
 
     # --- запросы ---
 
-    def tree(self, school_class=None):
+    def tree(self, course=None):
         return self.client.get(
             reverse("plannode-list"),
-            {"class": (school_class or self.school_class).pk},
+            {"course": (course or self.course).pk},
         )
 
     def move(self, node, direction):
@@ -152,7 +152,7 @@ class TreeApiTests(PlanTestCase):
 
     def test_flat_endpoint_lists_lessons_in_order(self):
         response = self.client.get(
-            reverse("plannode-flat"), {"class": self.school_class.pk}
+            reverse("plannode-flat"), {"course": self.course.pk}
         )
 
         lessons = response.json()["lessons"]
@@ -168,7 +168,7 @@ class TreeApiTests(PlanTestCase):
 
 class CreateTests(PlanTestCase):
     def post(self, **fields):
-        payload = {"school_class": self.school_class.pk, "title": "Новый", **fields}
+        payload = {"course": self.course.pk, "title": "Новый", **fields}
         return self.client.post(reverse("plannode-list"), payload, format="json")
 
     def test_lesson_goes_to_the_end_of_the_level(self):
@@ -245,7 +245,7 @@ class CreateTests(PlanTestCase):
     def test_cannot_create_in_another_users_class(self):
         response = self.client.post(
             reverse("plannode-list"),
-            {"school_class": self.alien_class.pk, "title": "Чужой"},
+            {"class": self.alien_class.pk, "title": "Чужой"},
             format="json",
         )
 
@@ -255,7 +255,8 @@ class CreateTests(PlanTestCase):
     def test_model_clean_forbids_nested_section(self):
         trig, _, _ = self.build_sample()
         node = PlanNode(
-            school_class=self.school_class,
+            teacher=self.user,
+            course=self.course,
             parent=trig,
             position=9,
             is_section=True,
@@ -270,7 +271,7 @@ class CreateTests(PlanTestCase):
     def test_model_clean_forbids_duplicate_position(self):
         self.build_sample()
         node = PlanNode(
-            school_class=self.school_class, parent=None, position=0, title="Дубль"
+            teacher=self.user, course=self.course, parent=None, position=0, title="Дубль"
         )
 
         with self.assertRaises(ValidationError) as caught:
@@ -360,7 +361,7 @@ class UpdateAndDeleteTests(PlanTestCase):
         self.assertIn("Понятие вектора", self.numbers())
 
     def test_cannot_delete_another_users_node(self):
-        alien = self.add("Чужой", school_class=self.alien_class)
+        alien = self.add("Чужой", course=self.alien_class, teacher=self.stranger)
 
         response = self.client.delete(reverse("plannode-detail", args=[alien.pk]))
 
@@ -501,7 +502,7 @@ class MoveTests(PlanTestCase):
         self.assertEqual(response.status_code, 400)
 
     def test_cannot_move_another_users_node(self):
-        alien = self.add("Чужой", school_class=self.alien_class)
+        alien = self.add("Чужой", course=self.alien_class, teacher=self.stranger)
 
         response = self.move(alien, services.DOWN)
 
@@ -631,7 +632,7 @@ class MoveToTests(PlanTestCase):
         self.assertEqual(self.positions(self.trig), [0])
         self.assertEqual(self.positions(self.vectors), [0, 1, 2])
         self.assertEqual(
-            [item.number for item in services.flatten_lessons(self.school_class)],
+            [item.number for item in services.flatten_lessons(self.owner())],
             [1, 2, 3, 4, 5, 6, 7],
         )
 
@@ -662,7 +663,7 @@ class MoveToTests(PlanTestCase):
         self.assertEqual(self.numbers()["Синус суммы"], 3)
 
     def test_cannot_move_another_users_node(self):
-        alien = self.add("Чужой", school_class=self.alien_class)
+        alien = self.add("Чужой", course=self.alien_class, teacher=self.stranger)
 
         response = self.move_to(alien, None, 0)
 
@@ -670,7 +671,7 @@ class MoveToTests(PlanTestCase):
 
     def test_parent_from_another_class_is_rejected(self):
         alien_section = self.add(
-            "Чужая папка", is_section=True, school_class=self.alien_class
+            "Чужая папка", is_section=True, course=self.alien_class, teacher=self.stranger
         )
 
         response = self.move_to(self.node("Повторение"), alien_section, 0)
@@ -683,11 +684,11 @@ class ReindexTests(PlanTestCase):
         for position in (0, 5, 9):
             self.add(f"Урок {position}", position=position)
 
-        services.reindex(self.school_class, None)
+        services.reindex(self.owner(), None)
 
         self.assertEqual(self.positions(), [0, 1, 2])
         self.assertEqual(
-            [node.title for node in services.level(self.school_class)],
+            [node.title for node in services.level(self.owner())],
             ["Урок 0", "Урок 5", "Урок 9"],
         )
 
@@ -696,7 +697,7 @@ class ReindexTests(PlanTestCase):
         self.add("Внутри", parent=section, position=7)
         self.add("Снаружи", position=4)
 
-        services.reindex(self.school_class, section)
+        services.reindex(self.owner(), section)
 
         self.assertEqual(self.positions(section), [0])
         self.assertEqual(self.node("Снаружи").position, 4)

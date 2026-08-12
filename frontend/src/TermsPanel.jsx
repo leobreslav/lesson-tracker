@@ -11,7 +11,16 @@ const EMPTY_FORM = { name: '', start_date: '', end_date: '' }
  * Terms need not cover the year completely — the days between them belong to
  * no term, and that is a normal state rather than an error.
  */
-export default function TermsPanel({ terms, year, studyDays, busy, onCreate, onUpdate, onDelete }) {
+export default function TermsPanel({
+  terms,
+  year,
+  studyDays,
+  busy,
+  canEdit = true,
+  onCreate,
+  onUpdate,
+  onDelete,
+}) {
   const { t } = useTranslation()
   const [form, setForm] = useState(null) // {id?, name, start_date, end_date}
 
@@ -42,7 +51,11 @@ export default function TermsPanel({ terms, year, studyDays, busy, onCreate, onU
     <section className="panel">
       <h3>{t('calendar.terms.title')}</h3>
 
-      {!terms.length && <p className="hint">{t('calendar.terms.empty')}</p>}
+      {!terms.length && (
+        <p className="hint">
+          {t(canEdit ? 'calendar.terms.empty' : 'calendar.terms.emptyReadOnly')}
+        </p>
+      )}
 
       <ul className="terms">
         {terms.map((term) => (
@@ -54,24 +67,28 @@ export default function TermsPanel({ terms, year, studyDays, busy, onCreate, onU
                 {t('common.studyDayCount', { count: studyDays[term.id] ?? 0 })}
               </span>
             </div>
-            <button
-              type="button"
-              className="link"
-              title={t('common.edit')}
-              disabled={busy}
-              onClick={() => open(term)}
-            >
-              ✎
-            </button>
-            <button
-              type="button"
-              className="link"
-              aria-label={t('calendar.terms.delete', { name: term.name })}
-              disabled={busy}
-              onClick={() => onDelete(term)}
-            >
-              ✕
-            </button>
+            {canEdit && (
+              <>
+                <button
+                  type="button"
+                  className="link"
+                  title={t('common.edit')}
+                  disabled={busy}
+                  onClick={() => open(term)}
+                >
+                  ✎
+                </button>
+                <button
+                  type="button"
+                  className="link"
+                  aria-label={t('calendar.terms.delete', { name: term.name })}
+                  disabled={busy}
+                  onClick={() => onDelete(term)}
+                >
+                  ✕
+                </button>
+              </>
+            )}
           </li>
         ))}
       </ul>
@@ -120,9 +137,16 @@ export default function TermsPanel({ terms, year, studyDays, busy, onCreate, onU
           </div>
         </form>
       ) : (
-        <button type="button" className="secondary" disabled={busy} onClick={() => open(null)}>
-          {t('calendar.terms.add')}
-        </button>
+        canEdit && (
+          <button
+            type="button"
+            className="secondary"
+            disabled={busy}
+            onClick={() => open(null)}
+          >
+            {t('calendar.terms.add')}
+          </button>
+        )
       )}
     </section>
   )
