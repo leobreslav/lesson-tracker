@@ -34,6 +34,33 @@ body {
   font-family: system-ui, sans-serif;
   background: #f5f5f5;
   color: #222;
+  /* Прописные цифры на всё приложение.
+     В старостильных начертаниях у 6 и 9 выносные элементы: рядом с 1, 2, 3
+     они кажутся мельче и сползают вниз. Здесь почти всюду числа — данные
+     (номера уроков, счётчики, даты), а не текст, и им нужен ровный рост. */
+  font-variant-numeric: lining-nums;
+  font-feature-settings: 'lnum';
+}
+
+/*
+ * Числа, стоящие колонкой, — ещё и одинаковой ширины.
+ *
+ * Список в одном месте намеренно: правило, разбросанное по местам, к
+ * следующей колонке забыли бы дописать, и «10» снова уехало бы относительно
+ * «9». Ширину даёт tnum, ровный рост — lnum из body.
+ */
+.tabular,
+.grade-list .level,
+.plan-number,
+.layout-date,
+.layout-row .slot,
+.row-head,
+.day,
+.summary-cards .value,
+.card-stat h2,
+.block-count {
+  font-variant-numeric: lining-nums tabular-nums;
+  font-feature-settings: 'lnum', 'tnum';
 }
 
 /* --- верхний бар --- */
@@ -695,9 +722,14 @@ button.chip.active {
 
 /* --- список классов --- */
 
+/* Кнопка в ряд с полями.
+   По умолчанию flex растягивает элементы на высоту строки, и рядом с полем,
+   у которого есть подпись сверху, кнопка становилась выше поля на высоту
+   этой подписи. Выравниваем по нижнему краю — по строке ввода. */
 .add-form {
   display: flex;
   gap: 0.5rem;
+  align-items: flex-end;
 }
 
 .add-form input {
@@ -883,7 +915,6 @@ button.chip.active {
 .grade-list .level {
   min-width: 2rem;
   text-align: right;
-  font-variant-numeric: tabular-nums;
 }
 
 button.link.hint.level {
