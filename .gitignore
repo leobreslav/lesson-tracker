@@ -2,6 +2,9 @@ __pycache__/
 *.py[cod]
 .env
 .env.prod
+# резервные копии, которые push-deploy.sh оставляет на сервере рядом с ним:
+# без этой строки deploy.sh считал бы рабочее дерево грязным
+.env.prod.bak.*
 staticfiles/
 media/
 node_modules/

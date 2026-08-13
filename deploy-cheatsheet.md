@@ -109,6 +109,17 @@ Versioning у R2 нет — резерв это второй бакет; под�
 ```bash
 ./push-deploy.sh "что поменялось"   # коммит, пуш и деплой
 ./push-deploy.sh --deploy-only      # раскатать уже закоммиченное
+./push-deploy.sh --skip-env "…"     # не трогать .env.prod на сервере
+```
+
+По дороге скрипт везёт на сервер `.env.prod` из
+`~/secrets/lesson-tracker.env.prod` (путь — `DEPLOY_ENV_FILE`). Главная копия
+файла живёт на ноутбуке; **на сервере его руками не правят**. Если всё-таки
+поправили — сначала заберите оттуда, потом меняйте локально:
+
+```bash
+scp leobreslav@194.67.111.40:~/lesson-tracker/.env.prod \
+    ~/secrets/lesson-tracker.env.prod
 ```
 
 На сервере при старте контейнера сами выполняются `migrate`, `bootstrap` и
