@@ -85,6 +85,30 @@ class GradeLevelSerializer(serializers.ModelSerializer):
             ),
         ]
 
+    def validate_level(self, value):
+        """
+        The year of study is fixed once courses point at it.
+
+        Renaming is free — the name is a label. Moving the level is not: the
+        courses sitting on it would silently change places in every sorted
+        list, and nothing on screen would say why. An empty year group can
+        still be moved, which covers the usual case of a typo.
+        """
+        if self.instance and value != self.instance.level:
+            used = self.instance.courses.count()
+            if used:
+                api_error(
+                    Codes.GRADE_LEVEL_LOCKED,
+                    f"«{self.instance.name}» is used by {used} courses, so its "
+                    "year of study cannot be moved — the sorting of every list "
+                    "depends on it. Rename it instead.",
+                    field="level",
+                    name=self.instance.name,
+                    courses=used,
+                )
+
+        return value
+
 
 class TeacherBriefSerializer(serializers.ModelSerializer):
     """Just enough of a person to show them in a list."""

@@ -1,7 +1,7 @@
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import models
-from schedule.models import MAX_GRADE, MIN_GRADE
+from schedule.models import MIN_GRADE
 from django.core.validators import MaxValueValidator, MinValueValidator
 from plans.content import CONTENT_FIELDS, LessonContent, content_problems
 
@@ -35,8 +35,11 @@ class PlanTemplate(models.Model):
         verbose_name="subject",
     )
     grade = models.PositiveSmallIntegerField(
-        "grade",
-        validators=[MinValueValidator(MIN_GRADE), MaxValueValidator(MAX_GRADE)],
+        # the year of study, not a foreign key: a plan for the ninth year is
+        # a plan for the ninth year whatever the school writes on the door,
+        # and the filter needs one comparable number
+        "year of study",
+        validators=[MinValueValidator(MIN_GRADE)],
     )
     title = models.CharField("title", max_length=200)
     description = models.TextField("description", blank=True)

@@ -89,7 +89,8 @@ test('справочники: предмет заводится и паралл�
   await signIn(PEOPLE.admin)
   await openSection(page, '/school/reference')
 
-  const subjects = page.locator('.panel', { hasText: 'Предметы' })
+  // по тексту панель не поймать: «параллели» есть и в подсказке предметов
+  const subjects = page.locator('[data-panel="subjects"]')
   await subjects.getByPlaceholder('Название нового предмета').fill('Информатика')
   await subjects.getByRole('button', { name: 'Добавить' }).click()
   // exact: рядом стоит «Удалить Информатика»
@@ -98,8 +99,8 @@ test('справочники: предмет заводится и паралл�
   ).toBeVisible()
 
   // год обучения и название — разные вещи, и меняется только второе
-  const grades = page.locator('.panel', { hasText: 'Параллели' })
-  const ninth = grades.locator('li', { hasText: '9 год' })
+  const grades = page.locator('[data-panel="grades"]')
+  const ninth = grades.locator('li[data-level="9"]')
   await ninth.getByRole('button', { name: 'MYP 4', exact: true }).click()
   await ninth.getByLabel('Новое название').fill('MYP 4 (9 класс)')
   await ninth.getByLabel('Новое название').press('Enter')
@@ -107,7 +108,33 @@ test('справочники: предмет заводится и паралл�
   await expect(
     grades.getByRole('button', { name: 'MYP 4 (9 класс)', exact: true }),
   ).toBeVisible()
-  await expect(ninth).toContainText('9 год')
+  // само число рядом осталось прежним и менять его нельзя: курсы уже на нём
+  await expect(ninth.locator('.level')).toHaveText('9')
+})
+
+test('параллели: набор одной кнопкой и уборка неиспользуемых', async ({
+  page,
+  signIn,
+}) => {
+  await signIn(PEOPLE.admin)
+  await openSection(page, '/school/reference')
+
+  const grades = page.locator('[data-panel="grades"]')
+  // в демо-школе заведены только те две, что реально нужны курсам
+  await expect(grades.locator('li')).toHaveCount(2)
+
+  await grades.getByRole('button', { name: 'Добавить 1–13' }).click()
+  await expect(grades.locator('li')).toHaveCount(13)
+
+  // название подставляется само, стоит ввести год обучения
+  await grades.getByLabel('Год обучения').fill('14')
+  await expect(grades.getByLabel('Название')).toHaveValue('Grade 14')
+
+  page.once('dialog', (dialog) => dialog.accept())
+  await grades.getByRole('button', { name: /Удалить \d+ неиспользуем/ }).click()
+
+  // остались ровно те две, на которых висят курсы
+  await expect(grades.locator('li')).toHaveCount(2)
 })
 
 test('обзор считает школу и подсказывает следующий шаг', async ({ page, signIn }) => {

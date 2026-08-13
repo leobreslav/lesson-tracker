@@ -31,6 +31,8 @@ class Codes:
     COURSE_IN_USE = "course_in_use"
     COURSE_NAME_TAKEN = "course_name_taken"
     GRADE_IN_USE = "grade_in_use"
+    GRADE_LEVEL_LOCKED = "grade_level_locked"
+    GRADE_PRESET_INVALID = "grade_preset_invalid"
     MEMBER_IN_USE = "member_in_use"
     ASSIGNMENT_IN_USE = "assignment_in_use"
     NOT_ASSIGNED = "not_assigned"

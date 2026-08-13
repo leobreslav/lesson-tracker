@@ -8,9 +8,12 @@ from . import services
 # уроков в дне: больше десятого номера в школьном расписании не бывает
 MAX_LESSON_NUMBER = 10
 
-# школьные параллели: ниже пятой и выше одиннадцатой предметники не ведут
+# Год обучения считается от первого класса и сверху ничем не ограничен:
+# в британской школе их тринадцать, в IB-школе столько же, а где-то
+# считают и иначе. Верхняя граница была бы догадкой о чужой системе, и
+# сравнивать её здесь всё равно не с чем — сортировка работает на любом
+# числе.
 MIN_GRADE = 1
-MAX_GRADE = 11
 
 
 class Subject(models.Model):
@@ -69,7 +72,7 @@ class GradeLevel(models.Model):
     )
     level = models.PositiveSmallIntegerField(
         "year of study",
-        validators=[MinValueValidator(MIN_GRADE), MaxValueValidator(MAX_GRADE)],
+        validators=[MinValueValidator(MIN_GRADE)],
         help_text=(
             "The year of study counted from the first one, not the number "
             "inside the name. «MYP 4» is the ninth year of study, so its "

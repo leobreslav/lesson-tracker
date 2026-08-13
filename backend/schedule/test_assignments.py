@@ -357,12 +357,138 @@ class ImportRespectsAssignmentTests(AssignmentTestCase):
 
 
 class GradeLevelTests(AssignmentTestCase):
-    def test_a_new_school_starts_with_eleven_of_them(self):
-        levels = GradeLevel.objects.filter(school=self.school)
+    def test_a_new_school_starts_with_none_of_them(self):
+        """
+        Eleven guessed rows were worse than an empty list.
 
-        self.assertEqual(levels.count(), 11)
-        self.assertEqual([level.level for level in levels], list(range(1, 12)))
-        self.assertEqual(levels.first().name, "Grade 1")
+        A school numbering its years 1..13, or naming them MYP, had to delete
+        or rename most of what it never asked for. The empty state offers the
+        two usual sets as one button each instead.
+        """
+        self.assertEqual(GradeLevel.objects.filter(school=self.school).count(), 0)
+
+    def test_the_preset_button_fills_the_list(self):
+        self.as_admin()
+
+        response = self.client.post(
+            reverse("gradelevel-preset"), {"through": 13}, format="json"
+        )
+
+        self.assertEqual(response.status_code, 201, response.content)
+        self.assertEqual(response.json()["created"], 13)
+        levels = GradeLevel.objects.filter(school=self.school)
+        self.assertEqual([item.level for item in levels], list(range(1, 14)))
+        self.assertEqual(levels.last().name, "Grade 13")
+
+    def test_the_preset_adds_only_what_is_missing(self):
+        self.as_admin()
+        ninth = make_grade(self.school, 9, "MYP 4")
+
+        self.client.post(reverse("gradelevel-preset"), {"through": 11}, format="json")
+
+        ninth.refresh_from_db()
+        # the one that was already there kept its name
+        self.assertEqual(ninth.name, "MYP 4")
+        self.assertEqual(GradeLevel.objects.filter(school=self.school).count(), 11)
+
+    def test_a_silly_preset_is_refused(self):
+        self.as_admin()
+
+        response = self.client.post(
+            reverse("gradelevel-preset"), {"through": 99}, format="json"
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json()["code"], "grade_preset_invalid")
+
+    def test_a_teacher_cannot_press_the_preset_button(self):
+        response = self.client.post(
+            reverse("gradelevel-preset"), {"through": 11}, format="json"
+        )
+
+        self.assertEqual(response.status_code, 403)
+
+    def test_unused_levels_go_in_one_go(self):
+        self.as_admin()
+        self.client.post(reverse("gradelevel-preset"), {"through": 11}, format="json")
+        self.algebra.grade = make_grade(self.school, 9)
+        self.algebra.save(update_fields=["grade"])
+
+        response = self.client.delete(reverse("gradelevel-delete-unused"))
+
+        self.assertEqual(response.status_code, 200, response.content)
+        self.assertEqual(response.json()["deleted"], 10)
+        self.assertEqual(
+            [item.level for item in GradeLevel.objects.filter(school=self.school)], [9]
+        )
+
+    def test_clearing_the_unused_ones_does_not_reach_another_school(self):
+        self.as_admin()
+        theirs = make_grade(self.alien_school, 5)
+
+        self.client.delete(reverse("gradelevel-delete-unused"))
+
+        self.assertTrue(GradeLevel.objects.filter(pk=theirs.pk).exists())
+
+    def test_a_thirteenth_year_is_a_normal_number(self):
+        """British and IB schools have thirteen; the old ceiling was wrong."""
+        self.as_admin()
+
+        response = self.client.post(
+            reverse("gradelevel-list"), {"level": 13, "name": "Year 13"}, format="json"
+        )
+
+        self.assertEqual(response.status_code, 201, response.content)
+
+    def test_zero_is_still_not_a_year_of_study(self):
+        self.as_admin()
+
+        response = self.client.post(
+            reverse("gradelevel-list"), {"level": 0, "name": "Нулевой"}, format="json"
+        )
+
+        self.assertEqual(response.status_code, 400)
+
+    def test_the_year_of_study_is_fixed_once_courses_use_it(self):
+        self.as_admin()
+        ninth = make_grade(self.school, 9, "MYP 4")
+        self.algebra.grade = ninth
+        self.algebra.save(update_fields=["grade"])
+
+        response = self.client.patch(
+            reverse("gradelevel-detail", args=[ninth.pk]), {"level": 4}, format="json"
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json()["code"], "grade_level_locked")
+        ninth.refresh_from_db()
+        self.assertEqual(ninth.level, 9)
+
+    def test_an_empty_one_can_still_be_moved(self):
+        """A typo in a year group nobody uses is just a typo."""
+        self.as_admin()
+        level = make_grade(self.school, 4, "Year 4")
+
+        response = self.client.patch(
+            reverse("gradelevel-detail", args=[level.pk]), {"level": 5}, format="json"
+        )
+
+        self.assertEqual(response.status_code, 200, response.content)
+        level.refresh_from_db()
+        self.assertEqual(level.level, 5)
+
+    def test_renaming_stays_free_whatever_uses_it(self):
+        self.as_admin()
+        ninth = make_grade(self.school, 9, "Grade 9")
+        self.algebra.grade = ninth
+        self.algebra.save(update_fields=["grade"])
+
+        response = self.client.patch(
+            reverse("gradelevel-detail", args=[ninth.pk]), {"name": "MYP 4"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200, response.content)
 
     def test_an_administrator_renames_one(self):
         self.as_admin()
@@ -389,7 +515,7 @@ class GradeLevelTests(AssignmentTestCase):
         self.assertEqual(response.status_code, 403)
 
     def test_another_schools_levels_are_invisible(self):
-        alien = GradeLevel.objects.filter(school=self.alien_school).first()
+        alien = make_grade(self.alien_school, 9)
 
         listed = self.client.get(reverse("gradelevel-list")).json()
 
@@ -401,6 +527,7 @@ class GradeLevelTests(AssignmentTestCase):
 
     def test_two_levels_with_the_same_number_are_refused(self):
         self.as_admin()
+        make_grade(self.school, 9)
 
         response = self.client.post(
             reverse("gradelevel-list"), {"level": 9, "name": "Ещё девятый"},

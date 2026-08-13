@@ -780,6 +780,60 @@ button.chip.active {
   min-width: 4rem;
 }
 
+/* справочник параллелей: число слева от названия и подсказка у поля */
+.grade-list .level {
+  min-width: 2rem;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+button.link.hint.level {
+  flex: 0 0 auto;
+  padding: 0.1rem 0.2rem;
+}
+
+.level-input {
+  width: 4rem;
+}
+
+.field-with-hint {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  font-size: 0.85rem;
+  color: #5f6368;
+}
+
+.field-with-hint abbr {
+  margin-left: 0.25rem;
+  padding: 0 0.3rem;
+  color: #1a73e8;
+  border: 1px solid #cfd8e3;
+  border-radius: 999px;
+  text-decoration: none;
+  cursor: help;
+}
+
+.empty-inline {
+  padding: 0.6rem 0.75rem;
+  background: #f8f9fa;
+  border-radius: 6px;
+}
+
+.preset-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.6rem;
+}
+
+.empty-inline .row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: 0.5rem 0;
+}
+
 .tag {
   display: inline-flex;
   align-items: center;

@@ -199,7 +199,9 @@
     "grade_in_use": "«{{name}}» is used by {{courses}} courses — change them first.",
     "assignment_in_use": "{{teacher}} has {{slots}} lessons and {{plan_rows}} plan rows in «{{course}}». Unassigning keeps all of it.",
     "member_in_use": "{{email}} teaches {{courses}} courses and has {{slots}} lessons and {{plan_rows}} plan rows. Detaching keeps all of it.",
-    "not_assigned": "{{teacher}} is not assigned to «{{course}}» — assign them to the course first."
+    "not_assigned": "{{teacher}} is not assigned to «{{course}}» — assign them to the course first.",
+    "grade_level_locked": "«{{name}}» is used by {{courses}} courses, so its year of study cannot be moved — every list sorts by it. Rename it instead.",
+    "grade_preset_invalid": "The number of years must be between 1 and {{limit}}."
   },
   "classPicker": {
     "label": "Classes:",
@@ -513,7 +515,8 @@
       "noTeacher": "nobody teaches it yet",
       "unassign": "Take {{name}} off this course",
       "assignLabel": "Teacher for {{name}}",
-      "pickTeacher": "teacher…"
+      "pickTeacher": "teacher…",
+      "needGrades": "There are no year groups yet — add them in «Reference lists»."
     },
     "people": {
       "title": "Teachers",
@@ -578,16 +581,24 @@
       "subjects": "Subjects",
       "subjectsHint": "What is taught: «Algebra», «Geometry». The library is searched by subject and year group.",
       "grades": "Year groups",
-      "gradesHint": "Two fields, and they are different things. The level is the year of study counted from the first one — sorting runs on it. The name is what the school writes on the door: «MYP 4» is the ninth year of study, so its level is 9.",
       "level": "Year of study",
-      "levelShort": "year {{level}}",
       "levelPlaceholder": "9",
       "name": "Name",
-      "namePlaceholder": "MYP 4",
+      "namePlaceholder": "Grade 9, MYP 4, Year 10",
       "newName": "New name",
       "usedBy_one": "{{count}} course",
       "usedBy_other": "{{count}} courses",
-      "delete": "Delete {{name}}"
+      "delete": "Delete {{name}}",
+      "gradesEmpty": "No year groups yet. A course needs one, so start with the usual set:",
+      "preset": "Add years 1–{{through}}",
+      "presetHint": "Or add them one at a time below. Names can be changed afterwards; «Grade 9» becomes «MYP 4» in one click.",
+      "levelExplain": "The ordinal year counted from the first one, not the number inside the name. «MYP 4» is the ninth year of study, so its year is 9 — that is what every list sorts by.",
+      "levelEdit": "Change the year of study",
+      "levelLocked": "Courses use this year group, so its year of study is fixed — the sorting of every list depends on it. The name can still be changed.",
+      "clearUnused_one": "Delete {{count}} unused year group",
+      "clearUnused_other": "Delete {{count}} unused year groups",
+      "clearConfirm_one": "Delete {{count}} year group no course uses?",
+      "clearConfirm_other": "Delete {{count}} year groups no course uses?"
     }
   },
   "schools": {

@@ -223,6 +223,14 @@ export const updateGrade = (id, fields) =>
 export const deleteGrade = (id) =>
   request(`/api/school/grades/${id}/`, { method: 'DELETE' })
 
+/** Fill the list with years 1..N. Existing ones are left as they are. */
+export const addGradePreset = (through) =>
+  request('/api/school/grades/preset/', { method: 'POST', body: { through } })
+
+/** Drop every year group no course points at. */
+export const clearUnusedGrades = () =>
+  request('/api/school/grades/unused/', { method: 'DELETE' })
+
 export const renameSubject = (id, name) =>
   request(`/api/school/subjects/${id}/`, { method: 'PATCH', body: { name } })
 

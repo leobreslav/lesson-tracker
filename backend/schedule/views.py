@@ -3,12 +3,13 @@ from collections import defaultdict
 from calendars import services as calendar_services
 from calendars.models import SchoolYear
 from config.access import IsSchoolMember, SchoolScopedViewSet, TeacherScopedViewSet
-from config.errors import Codes, api_error
+from config.errors import Codes, api_denied, api_error
 from django.db import transaction
 from django.db.models import Count
 from django.utils import timezone
 from django.db.models import ProtectedError
 from django.utils.dateparse import parse_date
+from rest_framework import status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 
@@ -32,6 +33,12 @@ from .serializers import (
     PeriodSerializer,
     full_name,
 )
+
+
+# «add years 1..N»: the two buttons of the empty state offer 11 and 13, and
+# the field accepts anything up to this — a school with more years than that
+# is not a school we can guess about anyway
+PRESET_MAX = 20
 
 
 def read_date(value):
@@ -88,6 +95,73 @@ class GradeLevelViewSet(SchoolScopedViewSet):
                 f"«{instance.name}» is used by {instance.courses.count()} courses.",
                 name=instance.name,
                 courses=instance.courses.count(),
+            )
+
+    @action(detail=False, methods=["post"])
+    def preset(self, request):
+        """
+        Fill the list with years 1..N in one go.
+
+        A school with no year groups cannot have a course, so the empty state
+        offers this instead of eleven rows nobody asked for. Existing levels
+        are left alone — the button adds what is missing and nothing else,
+        which also makes it safe to press twice.
+        """
+        self.check_admin()
+        through = request.data.get("through")
+
+        if not str(through).isdigit() or not 1 <= int(through) <= PRESET_MAX:
+            api_error(
+                Codes.GRADE_PRESET_INVALID,
+                f"«through» must be a number between 1 and {PRESET_MAX}.",
+                field="through",
+                limit=PRESET_MAX,
+            )
+
+        through = int(through)
+        school = request.user.school
+        known = set(
+            GradeLevel.objects.filter(school=school).values_list("level", flat=True)
+        )
+        created = GradeLevel.objects.bulk_create(
+            GradeLevel(school=school, level=level, name=f"Grade {level}")
+            for level in range(1, through + 1)
+            if level not in known
+        )
+
+        return Response({"created": len(created)}, status=status.HTTP_201_CREATED)
+
+    @action(detail=False, methods=["delete"], url_path="unused")
+    def delete_unused(self, request):
+        """
+        Clear out the year groups no course points at.
+
+        The counterpart of the preset button: pressing «1–13» in a school
+        that turns out to use four of them should not mean nine confirmations
+        one after another. What is in use cannot be reached by this — the
+        filter is the same `courses` count the list already shows.
+        """
+        self.check_admin()
+        doomed = self.get_queryset().filter(courses__isnull=True)
+        names = list(doomed.values_list("name", flat=True))
+        doomed.delete()
+
+        return Response({"deleted": len(names), "names": names})
+
+    def check_admin(self):
+        """
+        The role check the extra actions need.
+
+        `IsSchoolAdminForWrite` looks at the HTTP method, and both actions
+        below are writes wearing POST and DELETE — but DRF checks permissions
+        before it knows which action is running, and `preset` is a POST to a
+        list route, which the class already covers. This keeps the two paths
+        honest even if that ever changes.
+        """
+        if not self.request.user.is_school_admin:
+            api_denied(
+                Codes.SCHOOL_ADMIN_REQUIRED,
+                "Only a school administrator may change the reference lists.",
             )
 
 

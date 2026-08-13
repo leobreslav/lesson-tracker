@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { Link } from 'react-router-dom'
 import EmptyState from './EmptyState'
 import {
   createAssignment,
@@ -227,6 +228,12 @@ export default function SchoolCourses() {
               </option>
             ))}
           </select>
+          {/* без параллелей курс не завести, и форма молчала бы об этом */}
+          {grades.length === 0 && (
+            <Link className="hint" to="/school/reference">
+              {t('school.courses.needGrades')}
+            </Link>
+          )}
           <button
             type="submit"
             disabled={busy || !form.name.trim() || !form.subject || !form.grade}
