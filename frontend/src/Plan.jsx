@@ -1050,7 +1050,7 @@ export default function Plan({ onLoggedOut }) {
                       type="button"
                       data-card="free"
                       className="panel card-stat link-card"
-                      onClick={() => navigate('/progress')}
+                      onClick={() => navigate('/status')}
                     >
                       <h2>{layout.totals.balance}</h2>
                       <p className="hint">{t('plan.summary.free')}</p>
@@ -1061,7 +1061,7 @@ export default function Plan({ onLoggedOut }) {
                       type="button"
                       data-card="missing"
                       className="panel card-stat bad link-card"
-                      onClick={() => navigate('/progress')}
+                      onClick={() => navigate('/status')}
                     >
                       <h2>{layout.totals.missing}</h2>
                       <p className="hint">{t('plan.summary.missing')}</p>

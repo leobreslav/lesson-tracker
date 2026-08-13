@@ -6,7 +6,7 @@ import { fetchProgress } from './api'
 import { longDate, shortDate, shortWeekday } from './dates'
 
 /**
- * «Ход года» — экран состояния, а не список уроков.
+ * «Состояние курсов» — экран состояния, а не список уроков.
  *
  * Ленту с датами забрал себе учебный план: там она рабочая, там же её и
  * правят. Здесь остаётся то, чего в плане нет и не должно быть: где курс
@@ -60,16 +60,16 @@ export default function Layout({ onLoggedOut }) {
 
   const statusText = (course) =>
     short(course)
-      ? t('progress.status.short', { count: -course.reserve })
-      : t('progress.status.fine')
+      ? t('status.status.short', { count: -course.reserve })
+      : t('status.status.fine')
 
   /** «урок 14 из 44 · Тригонометрия». */
   const whereText = (course) => {
-    if (!course.lessons_total) return t('progress.where.noPlan')
-    if (!course.current) return t('progress.where.finished', { count: course.done })
+    if (!course.lessons_total) return t('status.where.noPlan')
+    if (!course.current) return t('status.where.finished', { count: course.done })
 
     return [
-      t('progress.where.at', {
+      t('status.where.at', {
         number: course.current.number,
         total: course.lessons_total,
       }),
@@ -90,17 +90,17 @@ export default function Layout({ onLoggedOut }) {
         >
           <h2>{signed(course.reserve)}</h2>
           <p className="hint">
-            {t(short(course) ? 'progress.reserveShort' : 'progress.reserveSpare')}
+            {t(short(course) ? 'status.reserveShort' : 'status.reserveSpare')}
           </p>
         </section>
 
         <section className="panel card-stat" data-card="losses">
           <h2>{course.cancelled}</h2>
-          <p className="hint">{t('progress.cancelled')}</p>
+          <p className="hint">{t('status.cancelled')}</p>
           {course.cancelled > 0 && (
             <p className="hint">
               {Object.entries(course.cancelled_by_reason)
-                .map(([reason, count]) => `${reason || t('progress.noReason')}: ${count}`)
+                .map(([reason, count]) => `${reason || t('status.noReason')}: ${count}`)
                 .join(' · ')}
             </p>
           )}
@@ -111,20 +111,20 @@ export default function Layout({ onLoggedOut }) {
             <>
               <h2>{signed(course.baseline.added)}</h2>
               <p className="hint">
-                {t('progress.grown', {
+                {t('status.grown', {
                   date: shortDate(course.baseline.created_at.slice(0, 10)),
                 })}
               </p>
               {course.baseline.removed > 0 && (
                 <p className="hint">
-                  {t('progress.dropped', { count: course.baseline.removed })}
+                  {t('status.dropped', { count: course.baseline.removed })}
                 </p>
               )}
             </>
           ) : (
             <>
               <h2 className="small">—</h2>
-              <p className="hint">{t('progress.noBaseline')}</p>
+              <p className="hint">{t('status.noBaseline')}</p>
             </>
           )}
         </section>
@@ -135,8 +135,8 @@ export default function Layout({ onLoggedOut }) {
           </h2>
           <p className="hint">
             {course.last_lesson_date
-              ? t('progress.endsOn', { year: shortDate(course.year_end) })
-              : t('progress.doesNotFit', { count: course.missing })}
+              ? t('status.endsOn', { year: shortDate(course.year_end) })
+              : t('status.doesNotFit', { count: course.missing })}
           </p>
         </section>
       </div>
@@ -144,17 +144,17 @@ export default function Layout({ onLoggedOut }) {
       {/* про год говорим отдельно: на плашку состояния это не влияет */}
       {course.last_lesson_date && course.last_lesson_date > course.year_end && (
         <p className="hint warning">
-          {t('progress.pastYear', { year: shortDate(course.year_end) })}
+          {t('status.pastYear', { year: shortDate(course.year_end) })}
         </p>
       )}
 
       {course.baseline?.themes.length > 0 && (
         <section className="panel">
-          <h3>{t('progress.grownThemes')}</h3>
+          <h3>{t('status.grownThemes')}</h3>
           <ul className="progress-themes">
             {course.baseline.themes.map((theme) => (
               <li key={theme.title ?? 'loose'}>
-                <span>{theme.title ?? t('progress.looseTheme')}</span>
+                <span>{theme.title ?? t('status.looseTheme')}</span>
                 <b>{signed(theme.added)}</b>
               </li>
             ))}
@@ -164,7 +164,7 @@ export default function Layout({ onLoggedOut }) {
 
       {course.next.length > 0 && (
         <section className="panel">
-          <h3>{t('progress.next')}</h3>
+          <h3>{t('status.next')}</h3>
           <ul className="progress-next">
             {course.next.map((lesson) => (
               <li key={lesson.number}>
@@ -180,14 +180,14 @@ export default function Layout({ onLoggedOut }) {
 
       <div className="actions wrap">
         <button type="button" onClick={() => navigate('/plan')}>
-          {t('progress.toPlan')}
+          {t('status.toPlan')}
         </button>
         <button
           type="button"
           className="secondary"
           onClick={() => navigate('/schedule')}
         >
-          {t('progress.toSchedule')}
+          {t('status.toSchedule')}
         </button>
       </div>
     </div>
@@ -204,10 +204,10 @@ export default function Layout({ onLoggedOut }) {
   return (
     <main className="page wide">
       <header className="page-header">
-        <h1>{t('progress.title')}</h1>
+        <h1>{t('status.title')}</h1>
       </header>
 
-      <p className="hint">{t('progress.hint')}</p>
+      <p className="hint">{t('status.hint')}</p>
 
       {error && (
         <p className="error" role="alert">
@@ -217,14 +217,14 @@ export default function Layout({ onLoggedOut }) {
 
       {!courses.length ? (
         <EmptyState
-          title={t('progress.needClass.title')}
+          title={t('status.needClass.title')}
           actions={
             <button type="button" onClick={() => navigate('/classes')}>
-              {t('progress.needClass.action')}
+              {t('status.needClass.action')}
             </button>
           }
         >
-          {t('progress.needClass.hint')}
+          {t('status.needClass.hint')}
         </EmptyState>
       ) : (
         <ul className="progress-list">
@@ -241,7 +241,7 @@ export default function Layout({ onLoggedOut }) {
                 </span>
                 <span className="where">{whereText(course)}</span>
                 <span className="reserve">
-                  {t('progress.reserve', { count: course.reserve })}
+                  {t('status.reserve', { count: course.reserve })}
                 </span>
                 <span className={`badge state ${short(course) ? 'bad' : 'good'}`}>
                   {statusText(course)}

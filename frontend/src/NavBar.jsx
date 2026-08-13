@@ -6,7 +6,7 @@ import { LANGUAGES } from './i18n'
 
 const SECTIONS = [
   { to: '/schedule', key: 'schedule', needs: 'classes' },
-  { to: '/progress', key: 'progress', needs: 'classes' },
+  { to: '/status', key: 'status', needs: 'classes' },
   { to: '/plan', key: 'plan', needs: 'classes' },
   { to: '/library', key: 'library', needs: null },
   { to: '/classes', key: 'classes', needs: 'year' },

@@ -36,7 +36,7 @@
   "nav": {
     "menu": "Sections menu",
     "schedule": "My schedule",
-    "progress": "Progress",
+    "status": "Course Status",
     "plan": "Lesson plan",
     "classes": "Classes",
     "year": "School year",
@@ -369,15 +369,15 @@
     "baseline": {
       "fix": "Fix as baseline",
       "refix": "Re-fix the baseline",
-      "hint": "A snapshot of the plan to compare with later: «Progress» will show how far it has drifted.",
+      "hint": "A snapshot of the plan to compare with later: «Course Status» will show how far it has drifted.",
       "fixedAt": "fixed on {{date}} — re-fixing replaces it",
       "confirm": "Replace the baseline? The old snapshot goes, and the drift will be counted from today.",
       "done_one": "Baseline fixed: {{count}} row.",
       "done_other": "Baseline fixed: {{count}} rows."
     }
   },
-  "progress": {
-    "title": "Progress",
+  "status": {
+    "title": "Course Status",
     "hint": "Where each course stands: does the plan still fit the year, what got cancelled and how far it drifted from the baseline. Editing lives on the «Lesson plan» page.",
     "reserve_one": "{{count}} lesson of room",
     "reserve_other": "{{count}} lessons of room",

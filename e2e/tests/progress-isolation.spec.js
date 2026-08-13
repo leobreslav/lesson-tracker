@@ -70,12 +70,12 @@ test('отмена урока сдвигает даты в плане', async ({
   expect(after[1]).toBe(before[2])
 })
 
-test('«Ход года» — строка на курс и подробности по нажатию', async ({
+test('«Состояние курсов» — строка на курс и подробности по нажатию', async ({
   page,
   signIn,
 }) => {
   await signIn(PEOPLE.ivanova)
-  await page.goto('/progress')
+  await page.goto('/status')
   await ready(page)
 
   // строка на курс: где я, резерв, плашка состояния
@@ -165,7 +165,7 @@ test('эталон фиксируется в плане и виден на «Х�
   await expect(page.getByText(/Эталон зафиксирован/)).toBeVisible()
 
   // сразу после фиксации расхождения нет
-  await page.goto('/progress')
+  await page.goto('/status')
   await ready(page)
   const row = page.locator('.progress-list > li').first()
   await row.locator('.progress-head').click()
@@ -179,7 +179,7 @@ test('эталон фиксируется в плане и виден на «Х�
   await form.getByRole('button', { name: 'Добавить' }).click()
   await expect(page.locator('.plan-row', { hasText: 'Лишний урок' })).toBeVisible()
 
-  await page.goto('/progress')
+  await page.goto('/status')
   await ready(page)
   await page.locator('.progress-list > li').first().locator('.progress-head').click()
   await expect(
