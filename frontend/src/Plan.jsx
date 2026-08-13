@@ -785,7 +785,7 @@ export default function Plan({ onLoggedOut }) {
                 </EmptyState>
               )}
 
-              <div className="actions">
+              <div className="actions wrap">
                 <button
                   type="button"
                   disabled={busy}

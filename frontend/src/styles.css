@@ -27,6 +27,8 @@
   --panel-gap: 0.5rem;
   /* и внутри окна: полей больше, воздуха тоже нужно больше */
   --modal-gap: 0.75rem;
+  /* высота контрола, стоящего в строке с другими */
+  --control-height: 2.25rem;
 }
 
 body {
@@ -61,6 +63,82 @@ body {
 .block-count {
   font-variant-numeric: lining-nums tabular-nums;
   font-feature-settings: 'lnum', 'tnum';
+}
+
+/*
+ * Одна высота у всего, что стоит в строке формы.
+ *
+ * Измеряли: поле выходило 36px, кнопка — 39, а `select` без стилей и вовсе
+ * 19. Складывались три разные причины — своя строка текста у кнопки, свой
+ * padding и умолчания браузера у селекта, — поэтому подгонять их порознь
+ * бессмысленно: следующий контрол снова окажется своего роста.
+ *
+ * `min-height`, а не `height`: у кнопки с длинной подписью (панель учебного
+ * плана) текст переносится, и жёсткая высота обрезала бы вторую строку.
+ * Вертикальные отступы приведены к общему знаменателю, чтобы однострочный
+ * контрол не перерастал эту высоту сам.
+ *
+ * Список контейнеров явный. Кнопкой в этом приложении бывает и клетка
+ * календаря, и ячейка недельной сетки, и крестик в строке списка — попытка
+ * задать высоту всем кнопкам сразу растянула бы их все.
+ */
+:is(
+  .add-form,
+  .inline-form,
+  .agenda-bar,
+  .class-filter,
+  .year-picker,
+  .term-form,
+  .term-form .row,
+  .people-list .row,
+  .preset-row,
+  .plan-add-form,
+  .actions,
+  .modal-body,
+  .modal-body form,
+  .modal-body .row
+) :is(
+  input:not([type='checkbox']):not([type='radio']):not([type='file']),
+  select,
+  textarea,
+  button:not(.link)
+) {
+  box-sizing: border-box;
+  min-height: var(--control-height);
+  padding-top: 0.35rem;
+  padding-bottom: 0.35rem;
+}
+
+/* поле и селект однострочны всегда, поэтому им высота задаётся жёстко:
+   иначе поле даты остаётся на 0.2px выше соседей — своя внутренняя
+   разметка у элемента, padding'ом её не догнать */
+:is(
+  .add-form,
+  .inline-form,
+  .agenda-bar,
+  .class-filter,
+  .term-form,
+  .term-form .row,
+  .people-list .row,
+  .plan-add-form,
+  .modal-body,
+  .modal-body form,
+  .modal-body .row
+) :is(input:not([type='checkbox']):not([type='radio']):not([type='file']), select) {
+  height: var(--control-height);
+}
+
+/* селект в такой строке выглядел системным элементом рядом с полями:
+   рамка, скругление и фон у него теперь те же */
+:is(.add-form, .agenda-bar, .class-filter, .people-list .row, .modal-body, .modal-body form)
+  select {
+  padding-left: 0.5rem;
+  padding-right: 0.5rem;
+  font: inherit;
+  color: inherit;
+  background: #fff;
+  border: 1px solid #c6c6c6;
+  border-radius: 4px;
 }
 
 /* --- верхний бар --- */
@@ -311,8 +389,11 @@ h1 {
   align-items: center;
 }
 
+/* панель с переносом: подписи у кнопок разной длины, и одна может занять
+   две строки. Растягиваем их до высоты соседей, иначе ряд выглядит рваным */
 .actions.wrap {
   flex-wrap: wrap;
+  align-items: stretch;
 }
 
 button {
