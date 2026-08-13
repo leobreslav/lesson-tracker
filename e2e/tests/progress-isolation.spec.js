@@ -198,3 +198,72 @@ test('рост к утверждённому эталону виден на «С
     page.locator('.progress-list > li').first().locator('[data-card="growth"] h2'),
   ).toHaveText('+1')
 })
+
+test('прогресс по плану: три числа одной плашкой', async ({ page, signIn }) => {
+  await signIn(PEOPLE.ivanova)
+  await page.goto('/status')
+  await ready(page)
+
+  const row = page.locator('.progress-list > li').first()
+  await row.locator('.progress-head').click()
+  const card = row.locator('[data-card="progress"]')
+
+  // плашка стоит первой в ряду: ради неё на экран и заходят
+  await expect(row.locator('.cards .card-stat').first()).toHaveAttribute(
+    'data-card',
+    'progress',
+  )
+
+  // год не начался: проведено ноль, полоска пустая — это нормально
+  await expect(card.locator('h2')).toHaveText('0 из 40')
+  await expect(card.locator('.hint')).toHaveText('осталось 40')
+  await expect(card.locator('.progress-bar > span')).toHaveCSS('width', '0px')
+
+  // проведено плюс осталось равно всему — числа берутся из одного ответа
+  const [done, total] = (await card.locator('h2').textContent())
+    .match(/\d+/g)
+    .map(Number)
+  const left = Number((await card.locator('.hint').textContent()).match(/\d+/)[0])
+  expect(done + left).toBe(total)
+})
+
+test('дефицит виден словами в шапке, а числа плашки не меняет', async ({
+  page,
+  signIn,
+  api,
+}) => {
+  const teacher = await api(PEOPLE.ivanova)
+  const courses = await teacher.get('/api/courses/')
+  const course = courses.body.find((item) => item.name === 'Grade 6 Algebra')
+  await teacher.delete(
+    `/api/slots/bulk/?course=${course.id}&start=2026-10-01&end=2027-08-01`,
+  )
+
+  await signIn(PEOPLE.ivanova)
+  await page.goto('/status')
+  await ready(page)
+
+  const row = page.locator('.progress-list > li', { hasText: 'Grade 6 Algebra' })
+  await expect(row.locator('.reserve.overflow')).toContainText(
+    'не помещаются в учебный год',
+  )
+  await expect(row.locator('.badge.state')).toHaveText(/дефицит/)
+
+  // в плашке всё те же сорок уроков плана: хватает им дней или нет —
+  // отдельный вопрос, и на счёт «осталось» он не влияет
+  await expect(row.locator('[data-card="progress"] h2')).toHaveText('0 из 40')
+  await expect(row.locator('[data-card="progress"] .hint')).toHaveText('осталось 40')
+})
+
+test('пустой план не показывает «0 из 0»', async ({ page, signIn }) => {
+  await signIn(PEOPLE.ivanova)
+  await page.goto('/status')
+  await ready(page)
+
+  const row = page.locator('.progress-list > li', { hasText: 'Grade 6 Geometry' })
+  await row.locator('.progress-head').click()
+
+  const card = row.locator('[data-card="progress"]')
+  await expect(card).not.toContainText('0 из 0')
+  await expect(card.getByRole('button', { name: 'Заполнить план' })).toBeVisible()
+})

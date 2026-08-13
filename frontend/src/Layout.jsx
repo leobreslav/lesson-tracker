@@ -81,9 +81,55 @@ export default function Layout({ onLoggedOut }) {
 
   const signed = (value) => `${value > 0 ? '+' : ''}${value}`
 
+  /**
+   * Прогресс по плану: три связанных числа одной плашкой.
+   *
+   * Проведено, осталось и всего — это одно утверждение, разложенное на
+   * три части, и врозь они читаются как три разных показателя. Полоска
+   * нейтрального цвета: она про пройденный путь, а не про «хорошо или
+   * плохо» — цветом на этом экране говорит только резерв.
+   *
+   * Дефицит на числа не влияет: «осталось 30» значит тридцать уроков
+   * плана, а хватит ли им дней — отдельный вопрос, и у него своё
+   * предупреждение в шапке.
+   */
+  const progressCard = (course) => {
+    if (!course.lessons_total) {
+      return (
+        <section className="panel card-stat" data-card="progress">
+          <p className="hint">{t('status.where.noPlan')}</p>
+          <button type="button" className="link" onClick={() => navigate('/plan')}>
+            {t('status.fillPlan')}
+          </button>
+        </section>
+      )
+    }
+
+    const left = course.lessons_total - course.done
+    const share = Math.round((course.done / course.lessons_total) * 100)
+
+    return (
+      <section className="panel card-stat" data-card="progress">
+        <h2>{t('status.doneOf', { done: course.done, total: course.lessons_total })}</h2>
+        <div
+          className="progress-bar"
+          role="progressbar"
+          aria-valuenow={course.done}
+          aria-valuemin={0}
+          aria-valuemax={course.lessons_total}
+        >
+          <span style={{ width: `${share}%` }} />
+        </div>
+        <p className="hint">{t('status.left', { count: left })}</p>
+      </section>
+    )
+  }
+
   const details = (course) => (
     <div className="progress-details">
       <div className="cards">
+        {progressCard(course)}
+
         <section
           className={`panel card-stat ${short(course) ? 'bad' : 'good'}`}
           data-card="reserve"
@@ -134,9 +180,13 @@ export default function Layout({ onLoggedOut }) {
             {course.last_lesson_date ? shortDate(course.last_lesson_date) : '—'}
           </h2>
           <p className="hint">
-            {course.last_lesson_date
-              ? t('status.endsOn', { year: shortDate(course.year_end) })
-              : t('status.doesNotFit', { count: course.missing })}
+            {/* «0 урокам не хватило дней» — не ответ: у пустого плана нет ни
+                даты окончания, ни дефицита, ему просто нечего кончать */}
+            {!course.lessons_total
+              ? t('status.where.noPlan')
+              : course.last_lesson_date
+                ? t('status.endsOn', { year: shortDate(course.year_end) })
+                : t('status.doesNotFit', { count: course.missing })}
           </p>
         </section>
       </div>
@@ -243,9 +293,17 @@ export default function Layout({ onLoggedOut }) {
                 {/* число со знаком, а не «резерв −28 уроков»: смысл минуса
                     проговаривает плашка справа, и повторять его словами
                     значит спорить с ней на полстроки */}
-                <span className="reserve">
-                  {t('status.reserveLabel')}: {signed(course.reserve)}
-                </span>
+                {/* дефицит говорит словами и рядом с плашкой состояния, а
+                    не мелким текстом внизу: это главное, что нужно узнать */}
+                {course.missing > 0 ? (
+                  <span className="reserve overflow">
+                    {t('status.overflow', { count: course.missing })}
+                  </span>
+                ) : (
+                  <span className="reserve">
+                    {t('status.reserveLabel')}: {signed(course.reserve)}
+                  </span>
+                )}
                 <span className={`badge state ${short(course) ? 'bad' : 'good'}`}>
                   {statusText(course)}
                 </span>
