@@ -42,7 +42,7 @@ test('блок и уроки добавляются, нумерация скво
   await signIn(PEOPLE.petrov)
   await openPlan(page, EMPTY_COURSE)
 
-  await page.getByRole('button', { name: '+ папка' }).click()
+  await page.getByRole('button', { name: '+ тема' }).click()
   const form = page.locator('.plan-add-form')
   await form.getByLabel('Название').fill('Треугольники')
   await form.getByRole('button', { name: 'Добавить' }).click()
@@ -50,7 +50,7 @@ test('блок и уроки добавляются, нумерация скво
 
   // two lessons inside the block, through its own «+»
   for (const title of ['Первый признак', 'Второй признак']) {
-    await page.locator('.plan-section').getByTitle('Добавить урок в папку').click()
+    await page.locator('.plan-section').getByTitle('Добавить урок в тему').click()
     const inner = page.locator('.plan-add-form')
     await inner.getByLabel('Название').fill(title)
     await inner.getByRole('button', { name: 'Добавить' }).click()
@@ -119,6 +119,25 @@ const csvFile = (body) => ({
   name: 'plan.csv',
   mimeType: 'text/csv',
   buffer: Buffer.from(HEAD + body, 'utf-8'),
+})
+
+test('справка о формате раскрывается кнопкой «?»', async ({ page, signIn }) => {
+  await signIn(PEOPLE.petrov)
+  await openPlan(page, EMPTY_COURSE)
+
+  const card = page.locator('.panel', { hasText: 'Импорт и экспорт' })
+  // свёрнутого текста в разметке быть не должно: это состояние, а не display:none
+  await expect(card.locator('.csv-help')).toHaveCount(0)
+
+  await card.getByRole('button', { name: 'Как выглядит файл' }).click()
+
+  await expect(card.locator('.csv-sample')).toContainText('id,Тема,Урок,Заметка')
+  await expect(card.locator('.csv-help')).toContainText('Одна строка — один урок')
+  // три режима названы каждый одной строкой
+  await expect(card.locator('.csv-modes-help dt')).toHaveCount(3)
+
+  await card.getByRole('button', { name: 'Как выглядит файл' }).click()
+  await expect(card.locator('.csv-help')).toHaveCount(0)
 })
 
 test('импорт CSV разбирает файл и строит блоки', async ({ page, signIn }) => {
@@ -215,7 +234,7 @@ test('импорт из библиотеки наполняет пустой п�
   await signIn(PEOPLE.petrov)
   await openPlan(page, EMPTY_COURSE)
 
-  await page.getByRole('button', { name: 'Импорт из библиотеки' }).click()
+  await page.getByRole('button', { name: 'Из библиотеки' }).click()
 
   const dialog = page.locator('dialog.modal')
   await dialog.getByRole('combobox').selectOption({ index: 0 })

@@ -28,6 +28,7 @@ import {
 } from '@dnd-kit/sortable'
 import EmptyState from './EmptyState'
 import ImportDialog from './ImportDialog'
+import PlanCsvHelp from './PlanCsvHelp'
 import Modal from './Modal'
 import { EmptyDropZone, SortableRow, dragId, emptyZoneId } from './PlanDnd'
 import {
@@ -78,6 +79,7 @@ export default function Plan({ onLoggedOut }) {
   const [error, setError] = useState(null)
   const [editing, setEditing] = useState(null) // {id, title} — folders only
   const [opened, setOpened] = useState(null) // the lesson whose panel is open
+  const [helpOpen, setHelpOpen] = useState(false) // справка о формате CSV
   const [adding, setAdding] = useState(null) // {parent, after, is_section, title}
   const [deleting, setDeleting] = useState(null) // the section being removed
   const [importing, setImporting] = useState(false)
@@ -777,60 +779,84 @@ export default function Plan({ onLoggedOut }) {
                 </EmptyState>
               )}
 
-              <div className="actions wrap">
-                <button
-                  type="button"
-                  disabled={busy}
-                  onClick={() => openAdd({ parent: null })}
-                >
-                  {t('plan.addLesson')}
-                </button>
-                <button
-                  type="button"
-                  className="secondary"
-                  disabled={busy}
-                  onClick={() => openAdd({ parent: null, is_section: true })}
-                >
-                  {t('plan.addSection')}
-                </button>
+              <section className="panel">
+                <h3>{t('plan.addTitle')}</h3>
+                <div className="actions wrap">
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => openAdd({ parent: null })}
+                  >
+                    {t('plan.addLesson')}
+                  </button>
+                  <button
+                    type="button"
+                    className="secondary"
+                    disabled={busy}
+                    onClick={() => openAdd({ parent: null, is_section: true })}
+                  >
+                    {t('plan.addSection')}
+                  </button>
+                </div>
+              </section>
 
-                <button
-                  type="button"
-                  className="secondary"
-                  disabled={busy}
-                  onClick={() => setImporting(true)}
-                >
-                  {t('plan.importCsv')}
-                </button>
-                <button
-                  type="button"
-                  className="secondary"
-                  disabled={busy}
-                  onClick={() => setDialog({ type: 'library' })}
-                >
-                  {t('plan.importLibrary')}
-                </button>
-                <button
-                  type="button"
-                  className="secondary"
-                  disabled={busy}
-                  onClick={() => setDialog({ type: 'publish' })}
-                >
-                  {t(mineOnShelf ? 'plan.refreshTemplate' : 'plan.publish')}
-                </button>
-                <button
-                  type="button"
-                  className="secondary"
-                  disabled={busy}
-                  onClick={handleExport}
-                >
-                  {t('plan.exportCsv')}
-                </button>
-              </div>
+              <section className="panel">
+                <div className="panel-head">
+                  <h3>{t('plan.transferTitle')}</h3>
+                  {/* справка о формате — обычное состояние, а не спрятанная
+                      разметка: свёрнутого текста в DOM быть не должно */}
+                  <button
+                    type="button"
+                    className="help-toggle"
+                    aria-expanded={helpOpen}
+                    aria-label={t('plan.csvHelp.toggle')}
+                    title={t('plan.csvHelp.toggle')}
+                    onClick={() => setHelpOpen(!helpOpen)}
+                  >
+                    ?
+                  </button>
+                </div>
 
-              {/* содержание и файлы в CSV не выражаются — сказать об этом
-                  рядом с кнопкой, а не только в документации */}
-              <p className="hint">{t('plan.exportHint')}</p>
+                <div className="actions wrap">
+                  <button
+                    type="button"
+                    className="secondary"
+                    disabled={busy}
+                    onClick={() => setImporting(true)}
+                  >
+                    {t('plan.importCsv')}
+                  </button>
+                  <button
+                    type="button"
+                    className="secondary"
+                    disabled={busy}
+                    onClick={handleExport}
+                  >
+                    {t('plan.exportCsv')}
+                  </button>
+
+                  <span className="actions-divider" aria-hidden="true" />
+
+                  <button
+                    type="button"
+                    className="secondary"
+                    disabled={busy}
+                    onClick={() => setDialog({ type: 'library' })}
+                  >
+                    {t('plan.importLibrary')}
+                  </button>
+                  <button
+                    type="button"
+                    className="secondary"
+                    disabled={busy}
+                    onClick={() => setDialog({ type: 'publish' })}
+                  >
+                    {t(mineOnShelf ? 'plan.refreshTemplate' : 'plan.publish')}
+                  </button>
+                </div>
+
+                {helpOpen && <PlanCsvHelp />}
+              </section>
             </>
           )}
         </>

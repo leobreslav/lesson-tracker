@@ -151,9 +151,9 @@
     "period_reversed": "The end date is earlier than the start date.",
     "period_required": "Both a start and an end date are required.",
     "mode_invalid": "The mode must be «replace», «append» or «sync».",
-    "section_inside_section": "A section can only live at the top level.",
-    "parent_not_section": "A node can only be nested into a section.",
-    "parent_other_class": "That section belongs to another class.",
+    "section_inside_section": "A theme can only live at the top level.",
+    "parent_not_section": "A node can only be nested into a theme.",
+    "parent_other_class": "That theme belongs to another class.",
     "anchor_other_class": "That node belongs to another class.",
     "anchor_other_level": "The node to insert after sits on another level.",
     "position_taken": "Another node already occupies this position.",
@@ -182,7 +182,7 @@
     "plan_empty": "There is nothing to publish: the plan of this course is empty.",
     "subject_name_taken": "This school already has a subject with that name.",
     "subject_in_use": "«{{name}}» is used by {{courses}} courses.",
-    "content_on_section": "A section header holds no lesson content — only a lesson does.",
+    "content_on_section": "A theme holds no lesson content — only a lesson does.",
     "attachment_owner_required": "An attachment belongs to exactly one lesson.",
     "attachment_kind_mismatch": "Send either a file or a link, not both.",
     "attachment_forbidden": "This attachment belongs to somebody else's lesson.",
@@ -272,6 +272,8 @@
     "placeholder": "Name, for example «Autumn break»"
   },
   "plan": {
+    "addTitle": "Add",
+    "transferTitle": "Import and export",
     "drag": "Drag",
     "dropHere": "Drop a lesson here",
     "title": "Lesson plan",
@@ -280,20 +282,20 @@
     "titleLabel": "Title",
     "noteLabel": "Note",
     "notePlaceholder": "note",
-    "sectionPlaceholder": "Section title",
+    "sectionPlaceholder": "Theme name",
     "lessonPlaceholder": "Lesson title",
     "done": "Done",
     "up": "Up",
     "down": "Down",
     "rename": "Rename",
     "insertAfter": "Insert a lesson after",
-    "addToSection": "Add a lesson to the section",
-    "deleteSection": "Delete the section",
+    "addToSection": "Add a lesson to the theme",
+    "deleteSection": "Delete the theme",
     "expand": "Expand",
     "collapse": "Collapse",
     "deleteConfirm": "Delete «{{title}}»?",
     "addLesson": "+ lesson",
-    "addSection": "+ section",
+    "addSection": "+ theme",
     "importCsv": "Import CSV",
     "exportCsv": "Export CSV",
     "imported": "Created {{rows}} rows ({{sections}} sections, {{lessons}} lessons).",
@@ -308,15 +310,15 @@
       "hint": "A list of sections and lessons in order. It will be laid onto the dates of the schedule, and you will see whether the hours last until the end of the year. Add a lesson with the button below or load a ready list from CSV."
     },
     "removeSection": {
-      "title": "Delete the section «{{title}}»?",
-      "hint": "It holds {{count}}. They can be lifted to the top level — they will take the section's place and keep their order.",
+      "title": "Delete the theme «{{title}}»?",
+      "hint": "It holds {{count}}. They can be lifted to the top level — they take the theme's place and keep their order.",
       "keep": "Delete, keep the lessons",
       "withChildren": "Delete with the lessons"
     },
-    "importLibrary": "Import from the library",
-    "publish": "Publish to the library",
+    "importLibrary": "From the library",
+    "publish": "To the library",
     "publishHint": "The plan of this course goes on the shelf as your draft — nobody else sees it until you publish it.",
-    "refreshTemplate": "Update the library entry",
+    "refreshTemplate": "Update in the library",
     "refreshHint": "«{{title}}» will be overwritten with the current plan of this course. Colleagues who already took a copy keep theirs.",
     "published": "«{{title}}» is on the shelf.",
     "openLesson": "Open the lesson",
@@ -324,7 +326,21 @@
     "hasAttachments_one": "{{count}} attachment",
     "hasAttachments_other": "{{count}} attachments",
     "synced": "Synced: {{created}} created, {{updated}} updated, {{deleted}} deleted.",
-    "exportHint": "The file carries the structure only: themes, lesson titles, notes and ids. Lesson content and attachments stay here — take the file back with «Sync» and they survive. A theme without lessons is not written to the file."
+    "csvHelp": {
+      "toggle": "What the file looks like",
+      "rules": {
+        "oneRow": "One row is one lesson — there is no row for a theme of its own.",
+        "repeat": "The theme is repeated on every row; a new theme starts where the value changes.",
+        "emptyTheme": "An empty theme means the lesson sits outside any theme.",
+        "emptyId": "An empty id means the lesson is new; keep the id and the row is recognised."
+      },
+      "keeps": "Lesson content and attachments are not in the file and stay in the system: bring the file back as «Sync» and they survive. A theme without lessons is not written to the file.",
+      "modes": {
+        "sync": "rows are matched by id — titles, notes and order change, content stays.",
+        "append": "the rows are added to the end, ids are ignored, nothing is deleted.",
+        "replace": "the plan is wiped and built again from the file — content and attachments go with it."
+      }
+    }
   },
   "calendar": {
     "title": "School year",

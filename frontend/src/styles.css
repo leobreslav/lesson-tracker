@@ -704,6 +704,38 @@ form .success {
   align-self: flex-start;
 }
 
+/* заголовок карточки, у которого справа кнопка: «?» стоит у названия, а не
+   уезжает в ряд кнопок — там его приняли бы за ещё одно действие */
+.panel-head {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.help-toggle {
+  width: 1.4rem;
+  min-height: 0;
+  height: 1.4rem;
+  padding: 0;
+  font-size: 0.85rem;
+  line-height: 1;
+  color: #1a73e8;
+  background: #fff;
+  border: 1px solid #cfd8e3;
+  border-radius: 999px;
+}
+
+.help-toggle:hover:not(:disabled) {
+  background: #eef3fd;
+  border-color: #1a73e8;
+}
+
+.help-toggle[aria-expanded='true'] {
+  color: #fff;
+  background: #1a73e8;
+  border-color: #1a73e8;
+}
+
 /* карточка-счётчик: число и подпись — одно целое, им ритм не нужен */
 .panel.card-stat {
   gap: 0.15rem;
@@ -1555,6 +1587,71 @@ button.link:hover:not(:disabled) {
 
 /* --- учебный план --- */
 
+/* тонкая черта в ряду кнопок: слева файл, справа библиотека. Ряд
+   переносится, и на узком экране черта уезжает вместе с ним — это лучше,
+   чем разбивать четыре кнопки на две карточки ради одного различия */
+.actions-divider {
+  align-self: center;
+  width: 1px;
+  height: 1.4rem;
+  background: #e0e0e0;
+}
+
+/* справка о формате CSV: раскрывается кнопкой «?» у заголовка карточки */
+.csv-help {
+  display: flex;
+  flex-direction: column;
+  gap: var(--panel-gap);
+  padding: 0.75rem;
+  font-size: 0.9rem;
+  background: #f8f9fa;
+  border-radius: var(--row-radius);
+}
+
+.csv-sample {
+  margin: 0;
+  padding: 0.6rem 0.75rem;
+  overflow-x: auto;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.8rem;
+  line-height: 1.5;
+  white-space: pre;
+  background: #fff;
+  border: 1px solid #e6e6e6;
+  border-radius: var(--row-radius);
+}
+
+.csv-rules {
+  margin: 0;
+  padding-left: 1.1rem;
+  color: #3c4043;
+}
+
+.csv-rules li + li {
+  margin-top: 0.15rem;
+}
+
+.csv-modes-help {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.15rem 0.5rem;
+  margin: 0;
+}
+
+.csv-modes-help > div {
+  display: contents;
+}
+
+.csv-modes-help dt {
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.csv-modes-help dd {
+  margin: 0;
+  color: #5f6368;
+}
+
 .plan-counts {
   margin: 0 0 1rem;
 }
@@ -1861,7 +1958,7 @@ button.link.handle:hover:not(:disabled) {
   bottom: -2px;
 }
 
-/* папка как контейнер: подсвечивается, когда урок кладут внутрь */
+/* тема как контейнер: подсвечивается, когда урок кладут внутрь */
 .plan-section.drop-inside {
   border-color: #1a73e8;
   background: #f1f5fd;
