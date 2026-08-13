@@ -217,7 +217,7 @@ export default function Schools({ user, onLoggedOut }) {
                   }
                 />
                 <button type="submit" disabled={busy || !inviting.value.trim()}>
-                  {t('schools.inviteAdmin')}
+                  {t('school.people.invite')}
                 </button>
                 <button
                   type="button"
