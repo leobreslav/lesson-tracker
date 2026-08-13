@@ -240,8 +240,11 @@ export default function Layout({ onLoggedOut }) {
                   {opened === course.id ? '▾' : '▸'} {course.name}
                 </span>
                 <span className="where">{whereText(course)}</span>
+                {/* число со знаком, а не «резерв −28 уроков»: смысл минуса
+                    проговаривает плашка справа, и повторять его словами
+                    значит спорить с ней на полстроки */}
                 <span className="reserve">
-                  {t('status.reserve', { count: course.reserve })}
+                  {t('status.reserveLabel')}: {signed(course.reserve)}
                 </span>
                 <span className={`badge state ${short(course) ? 'bad' : 'good'}`}>
                   {statusText(course)}

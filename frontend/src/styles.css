@@ -1544,12 +1544,12 @@ button.progress-head:hover:not(:disabled) {
   color: #b00020;
 }
 
-/* резерв — главный показатель, поэтому у него заливка, а не только цифра */
-.progress-details .card-stat.good[data-card='reserve'] {
+/* резерв — единственный, у кого заливка значит смысл, а не форму */
+.progress-details .cards .card-stat.good[data-card='reserve'] {
   background: #e9f6ec;
 }
 
-.progress-details .card-stat.bad[data-card='reserve'] {
+.progress-details .cards .card-stat.bad[data-card='reserve'] {
   background: #fdecea;
 }
 
@@ -1641,6 +1641,27 @@ button.progress-head:hover:not(:disabled) {
 .progress-details .panel {
   padding: 0;
   box-shadow: none;
+}
+
+/*
+ * Четыре метрики — четыре одинаковые плашки.
+ *
+ * Плашка была только у резерва, остальные стояли голым текстом, и ряд
+ * читался как случайный набор. Одинаковые отступ, заливка и высота говорят
+ * обратное: это четыре ответа на один вопрос, и различаться им положено
+ * только числом. Цветом выделен один резерв — единственный показатель, у
+ * которого «плюс» и «минус» значат разное.
+ */
+.progress-details .cards {
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 0.7rem;
+}
+
+.progress-details .cards .card-stat {
+  gap: 0.15rem;
+  padding: 0.8rem;
+  background: var(--surface-1);
+  border-radius: var(--card-radius);
 }
 
 .progress-next {
