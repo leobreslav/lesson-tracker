@@ -9,10 +9,11 @@ second one just as much as the upload endpoint needs the first.
 
 from __future__ import annotations
 
+from collections import Counter
 from pathlib import PurePosixPath
 
 from django.conf import settings
-from django.db.models import Sum
+from django.db.models import Count, Sum
 
 from . import storage
 from .models import Attachment, KIND_FILE, StoredFile
@@ -203,3 +204,28 @@ def next_position(*, plan_row=None, template_row=None) -> int:
 
 def has_file_attachments(row) -> bool:
     return row.attachments.filter(kind=KIND_FILE).exists()
+
+
+def files_at_risk(plan_rows) -> int:
+    """
+    How many objects in the store would go if these plan rows were deleted.
+
+    Only the ones losing their **last** reference: a file shared with a
+    template or with another course survives, and warning about it would be a
+    lie — the kind that teaches people to click through warnings.
+    """
+    doomed = Counter(
+        Attachment.objects.filter(
+            plan_row__in=plan_rows, stored_file__isnull=False
+        ).values_list("stored_file_id", flat=True)
+    )
+    if not doomed:
+        return 0
+
+    total = dict(
+        Attachment.objects.filter(stored_file_id__in=doomed)
+        .values_list("stored_file_id")
+        .annotate(references=Count("pk"))
+    )
+
+    return sum(1 for file_id, going in doomed.items() if total.get(file_id, 0) <= going)

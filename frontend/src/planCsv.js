@@ -14,6 +14,9 @@ const HEADER_CELLS = new Set([
   'заметка', 'заметки', 'примечание', 'комментарий', 'note',
 ])
 
+// the first header cell when the file carries the id column
+const ID_CELLS = new Set(['id', 'ид', '№'])
+
 const TITLE_LIMIT = 200
 export const MAX_ROWS = 2000
 
@@ -85,19 +88,44 @@ function looksLikeHeader(cells) {
   return filled.length > 0 && filled.every((cell) => HEADER_CELLS.has(cell))
 }
 
+function headerWithIds(cells) {
+  if (!cells.length || !ID_CELLS.has(cells[0].trim().toLowerCase())) return false
+  const rest = cells.slice(1)
+  return looksLikeHeader(rest) || !rest.some((cell) => cell.trim())
+}
+
+/** Does the file carry an id column? Decided over the file, not per row. */
+export function detectIds(rawRows) {
+  const filled = rawRows.filter((row) => row.some((cell) => cell.trim()))
+  if (!filled.length) return false
+  if (headerWithIds(filled[0])) return true
+  if (Math.max(...filled.map((row) => row.length)) < 4) return false
+
+  const first = filled.map((row) => (row[0] ?? '').trim())
+  return (
+    first.some(Boolean) && first.every((cell) => cell === '' || /^\d+$/.test(cell))
+  )
+}
+
 export function parsePlanCsv(text) {
   const rows = []
   const warnings = []
   let theme = null
 
-  readRows(text, sniffDelimiter(text)).forEach((raw, index) => {
+  const raws = readRows(text, sniffDelimiter(text))
+  const hasIds = detectIds(raws)
+  const shift = hasIds ? 1 : 0
+
+  raws.forEach((raw, index) => {
     const number = index + 1
     if (number > MAX_ROWS) return
 
-    const cells = [0, 1, 2].map((position) => (raw[position] ?? '').trim())
-    const [themeCell, lessonCell, note] = cells
+    const cells = [0, 1, 2, 3]
+      .slice(0, 3 + shift)
+      .map((position) => (raw[position] ?? '').trim())
+    const [idCell, themeCell, lessonCell, note] = hasIds ? cells : ['', ...cells]
 
-    if (number === 1 && looksLikeHeader(cells)) return
+    if (number === 1 && (hasIds ? headerWithIds(cells) : looksLikeHeader(cells))) return
 
     if (!themeCell && !lessonCell) {
       if (raw.some((cell) => cell.trim())) {
@@ -114,19 +142,29 @@ export function parsePlanCsv(text) {
       return
     }
 
+    const id = /^\d+$/.test(idCell) ? Number(idCell) : null
+
     if (themeCell && !lessonCell) {
       theme = themeCell
-      rows.push({ is_section: true, title: themeCell, note })
+      rows.push({ is_section: true, title: themeCell, note, id })
       return
     }
 
     if (themeCell && themeCell !== theme) {
       theme = themeCell
-      rows.push({ is_section: true, title: themeCell, note: '' })
+      rows.push({ is_section: true, title: themeCell, note: '', id: null })
     }
 
-    rows.push({ is_section: false, title: lessonCell, note })
+    rows.push({
+      is_section: false,
+      title: lessonCell,
+      note,
+      id,
+      // with ids the theme is written on every lesson row, so an empty cell
+      // is a statement — «this lesson is not in a section» — and not silence
+      at_top_level: hasIds && !themeCell,
+    })
   })
 
-  return { rows, warnings }
+  return { rows, warnings, hasIds }
 }

@@ -31,7 +31,10 @@ def parsed(rows):
 
 class ParseTests(SimpleTestCase):
     def parse(self, text):
-        return services.parse_plan_csv(text)
+        # разбор отдаёт ещё и признак «в файле есть столбец id»; тестам
+        # этого раздела он не нужен, они про трёхстолбцовый формат
+        parsed_file = services.parse_plan_csv(text)
+        return parsed_file.rows, parsed_file.warnings
 
     def test_empty_cells_format(self):
         rows, warnings = self.parse(PLAIN)
@@ -146,7 +149,7 @@ class DecodeTests(SimpleTestCase):
     def test_cp1251(self):
         data = "Векторы;;\n;Понятие;\n".encode("cp1251")
 
-        rows, _ = services.parse_plan_csv(services.decode_csv(data))
+        rows = services.parse_plan_csv(services.decode_csv(data)).rows
 
         self.assertEqual(parsed(rows), [("тема", "Векторы"), ("урок", "Понятие")])
 
@@ -311,10 +314,10 @@ class ImportApiTests(PlanTestCase):
 
 
 class ExportApiTests(PlanTestCase):
-    def export(self, course=None):
+    def export(self, course=None, **params):
         return self.client.get(
             reverse("plannode-export"),
-            {"course": (course or self.course).pk},
+            {"course": (course or self.course).pk, **params},
         )
 
     def text(self, response):
@@ -327,12 +330,12 @@ class ExportApiTests(PlanTestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertTrue(response.content.startswith(b"\xef\xbb\xbf"))
-        self.assertEqual(self.text(response).splitlines()[0], "Тема,Урок,Заметка")
+        self.assertEqual(self.text(response).splitlines()[0], "id,Тема,Урок,Заметка")
 
     def test_export_mirrors_the_tree(self):
         self.build_sample()
 
-        lines = self.text(self.export()).splitlines()
+        lines = self.text(self.export(with_ids="false")).splitlines()
 
         self.assertEqual(
             lines[1:6],
@@ -345,6 +348,15 @@ class ExportApiTests(PlanTestCase):
             ],
         )
 
+    def test_ids_can_be_left_out_for_somebody_else(self):
+        self.build_sample()
+
+        plain = self.text(self.export(with_ids="false"))
+
+        self.assertEqual(plain.splitlines()[0], "Тема,Урок,Заметка")
+        # столбца id нет вовсе, а не пустой: чужие id ничего не значат
+        self.assertNotIn(",,,", plain)
+
     def test_filename_carries_the_class_and_date(self):
         response = self.export()
 
@@ -353,7 +365,7 @@ class ExportApiTests(PlanTestCase):
         self.assertIn("%D0%BF%D0%BB%D0%B0%D0%BD", disposition)  # «план»
 
     def test_export_of_an_empty_plan_is_just_the_header(self):
-        self.assertEqual(self.text(self.export()).strip(), "Тема,Урок,Заметка")
+        self.assertEqual(self.text(self.export()).strip(), "id,Тема,Урок,Заметка")
 
     def test_round_trip_gives_the_same_plan(self):
         self.build_sample()

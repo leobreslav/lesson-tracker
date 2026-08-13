@@ -3,6 +3,7 @@ from urllib.parse import quote
 from config.access import IsSchoolMember, TeacherScopedViewSet
 from config.errors import Codes, api_error
 from django.db import transaction
+from files import services as file_services
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
@@ -32,6 +33,47 @@ from .serializers import (
 
 # a plan file over a megabyte is not a lesson plan any more
 MAX_IMPORT_BYTES = 1024 * 1024
+
+IMPORT_MODES = ("replace", "append", "sync")
+
+# сколько уроков с содержанием перечислять поимённо: список нужен, чтобы
+# узнать свою работу в лицо, а не чтобы прочитать двести строк
+LOSS_LIMIT = 50
+
+
+def loss_payload(nodes) -> dict:
+    """
+    Что именно пропадёт вместе с этими узлами.
+
+    Содержание и вложения в CSV не выражаются, поэтому удаление строки — это
+    единственное место, где работа теряется молча. Считаем её до того, как
+    спросить подтверждение, и отдельно — файлы, у которых это была последняя
+    ссылка: остальные переживут удаление, и пугать ими нечестно.
+    """
+    lessons = [node for node in nodes if not node.is_section]
+    with_content = [node for node in lessons if node.has_content]
+    with_files = [node for node in lessons if node.attachment_count]
+    losing = sorted(
+        {node.pk: node for node in with_content + with_files}.values(),
+        key=lambda node: node.pk,
+    )
+
+    return {
+        "delete_lessons": len(lessons),
+        "delete_sections": len(nodes) - len(lessons),
+        "with_content": len(with_content),
+        "with_attachments": len(with_files),
+        "files_lost": file_services.files_at_risk([node.pk for node in with_files]),
+        "delete_with_content": [
+            {
+                "id": node.pk,
+                "title": node.title,
+                "has_content": node.has_content,
+                "has_attachments": bool(node.attachment_count),
+            }
+            for node in losing[:LOSS_LIMIT]
+        ],
+    }
 
 
 def read_date(value):
@@ -193,17 +235,9 @@ class PlanNodeViewSet(TeacherScopedViewSet):
 
         return Response({"start": start, "end": end, "slots": slots})
 
-    @action(detail=False, methods=["post"], url_path="import", url_name="import")
-    def import_csv(self, request):
-        """
-        Импорт плана из CSV. Либо файл заезжает целиком, либо ничего.
-
-        Разбор идёт до транзакции: непригодный файл не должен успеть снести
-        существующий план в режиме replace.
-        """
-        course = self.requested_course()
-
-        upload = request.FILES.get("file")
+    def read_upload(self):
+        """The uploaded file, parsed, or a coded refusal. No writes here."""
+        upload = self.request.FILES.get("file")
         if upload is None:
             api_error(Codes.FILE_REQUIRED, "A CSV file is required.", field="file")
         if upload.size > MAX_IMPORT_BYTES:
@@ -214,20 +248,55 @@ class PlanNodeViewSet(TeacherScopedViewSet):
                 limit_mb=MAX_IMPORT_BYTES // 1024 // 1024,
             )
 
-        mode = request.data.get("mode", "replace")
-        if mode not in ("replace", "append"):
-            api_error(
-                Codes.MODE_INVALID,
-                "Mode must be either «replace» or «append».",
-                field="mode",
-            )
-
         try:
-            rows, warnings = services.parse_plan_csv(
-                services.decode_csv(upload.read())
-            )
+            return services.parse_plan_csv(services.decode_csv(upload.read()))
         except services.PlanImportError as error:
             api_error(Codes.FILE_UNREADABLE, str(error), field="file")
+
+    def read_mode(self, parsed):
+        mode = self.request.data.get("mode", "replace")
+        if mode not in IMPORT_MODES:
+            api_error(
+                Codes.MODE_INVALID,
+                "Mode must be one of «replace», «append», «sync».",
+                field="mode",
+            )
+        if mode == "sync" and not parsed.has_ids:
+            api_error(
+                Codes.CSV_IDS_REQUIRED,
+                "Syncing needs the id column — export the plan first.",
+                field="file",
+            )
+        return mode
+
+    @action(detail=False, methods=["post"], url_path="import", url_name="import")
+    def import_csv(self, request):
+        """
+        Импорт плана из CSV. Либо файл заезжает целиком, либо ничего.
+
+        Разбор идёт до транзакции: непригодный файл не должен успеть снести
+        существующий план в режиме replace.
+        """
+        course = self.requested_course()
+        parsed = self.read_upload()
+        mode = self.read_mode(parsed)
+        owner = self.owner_of(course)
+
+        if mode == "sync":
+            plan = services.plan_sync(owner, parsed.rows)
+            if not plan.ok:
+                # весь файл или ничего: применить половину значит оставить
+                # человека разбираться, какую именно
+                first = plan.errors[0]
+                api_error(
+                    first["code"], first["detail"], field="file",
+                    **first.get("params", {}),
+                )
+
+            with transaction.atomic():
+                done = services.apply_sync(owner, plan)
+
+            return Response({**done, "warnings": parsed.warnings})
 
         with transaction.atomic():
             if mode == "replace":
@@ -236,7 +305,7 @@ class PlanNodeViewSet(TeacherScopedViewSet):
                 ).delete()
 
             created = services.apply_import(
-                self.owner_of(course), rows, append=(mode == "append")
+                owner, parsed.rows, append=(mode == "append")
             )
 
         return Response(
@@ -244,7 +313,45 @@ class PlanNodeViewSet(TeacherScopedViewSet):
                 "created_rows": created["headers"] + created["lessons"],
                 "created_headers": created["headers"],
                 "created_lessons": created["lessons"],
-                "warnings": warnings,
+                "warnings": parsed.warnings,
+            }
+        )
+
+    @action(detail=False, methods=["post"], url_path="import-preview",
+            url_name="import-preview")
+    def import_preview(self, request):
+        """
+        Что сделает импорт, до того как он что-то сделает.
+
+        Ничего не пишет и ни от чего не отказывается: даже файл с ошибками
+        синхронизации разбирается до конца, чтобы показать их все разом.
+        """
+        course = self.requested_course()
+        parsed = self.read_upload()
+        mode = self.read_mode(parsed)
+        owner = self.owner_of(course)
+        nodes = services.plan_nodes(owner)
+
+        if mode == "sync":
+            plan = services.plan_sync(owner, parsed.rows)
+            create, update, doomed = len(plan.create), len(plan.update), plan.delete
+            errors = plan.errors
+        else:
+            create = len(parsed.rows)
+            update, errors = 0, []
+            # append не удаляет ничего, replace — всё, что было
+            doomed = list(nodes) if mode == "replace" else []
+
+        return Response(
+            {
+                "mode": mode,
+                "has_ids": parsed.has_ids,
+                "create": create,
+                "update": update,
+                "delete": len(doomed),
+                **loss_payload(doomed),
+                "warnings": parsed.warnings,
+                "errors": errors,
             }
         )
 
@@ -252,7 +359,10 @@ class PlanNodeViewSet(TeacherScopedViewSet):
     def export_csv(self, request):
         """Выгрузка плана в CSV — формат тот же, что понимает импорт."""
         course = self.requested_course()
-        content = services.build_plan_csv(services.get_tree(self.owner_of(course)))
+        with_ids = request.query_params.get("with_ids", "true").lower() != "false"
+        content = services.build_plan_csv(
+            services.get_tree(self.owner_of(course)), with_ids=with_ids
+        )
 
         name = f"план_{course.name}_{timezone.localdate()}.csv"
         response = HttpResponse(content, content_type="text/csv; charset=utf-8")

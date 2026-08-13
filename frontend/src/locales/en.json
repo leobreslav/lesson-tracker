@@ -191,7 +191,11 @@
     "url_required": "A link needs an address.",
     "file_type_not_allowed": "This kind of file cannot be attached: «{{extension}}». Allowed: images, pdf, docx, xlsx, pptx, txt, zip.",
     "school_quota_exceeded": "The school has used up its storage quota ({{quota_mb}} MB). Remove some files to make room.",
-    "storage_unavailable": "The file store is not answering. Everything else works; try the file again in a moment."
+    "storage_unavailable": "The file store is not answering. Everything else works; try the file again in a moment.",
+    "csv_ids_required": "Syncing needs the id column — export the plan first.",
+    "csv_id_unknown": "Row {{row}}: id {{id}} is not in this plan.",
+    "csv_id_duplicate": "Row {{row}}: id {{id}} is used twice.",
+    "csv_id_kind_changed": "Row {{row}}: id {{id}} («{{title}}») is of the other kind in the plan — a section cannot become a lesson."
   },
   "classPicker": {
     "label": "Classes:",
@@ -218,17 +222,40 @@
   },
   "csv": {
     "title": "Import a plan from CSV",
-    "hint": "Two columns: the section and the lesson, a third one for a note. The section can stand on its own row or repeat on every lesson row.",
+    "hint": "Two columns: the section and the lesson, a third one for the note. A section may stand on its own line or be repeated on every lesson row.",
     "dropZone": "Drag a file here or choose one",
     "unreadable": "The file could not be read — a plain text CSV is expected.",
-    "modeReplace": "replace the plan",
-    "modeAppend": "append to the end",
-    "replaceWarning": "The current plan of this class will be deleted entirely.",
     "parsed": "Recognised {{rows}} rows ({{sections}} sections, {{lessons}} lessons).",
     "previewLimit": " The first {{limit}} are shown below.",
     "section": "section",
     "lesson": "lesson",
-    "submit": "Import"
+    "submit": "Import",
+    "mode": {
+      "replace": "Replace",
+      "replaceHint": "wipe the plan and build it again from the file",
+      "append": "Append",
+      "appendHint": "add the rows to the end, keeping what is there",
+      "sync": "Sync",
+      "syncHint": "match rows by id, keeping the lesson content",
+      "syncNeedsIds": "needs the id column — export the plan first"
+    },
+    "plan": {
+      "replace": "The whole plan will be replaced with {{create}} rows from the file.",
+      "append": "{{create}} rows will be added to the end.",
+      "sync": "To create: {{create}}, to update: {{update}}, to delete: {{delete}}."
+    },
+    "loss": "{{lessons}} lessons will be deleted, {{content}} of them with content and {{attachments}} with attachments.",
+    "filesLost_one": "{{count}} file will be gone for good.",
+    "filesLost_other": "{{count}} files will be gone for good.",
+    "deleteOnlyTitles": "Nothing but titles and notes is being deleted.",
+    "showLost": "Show what will be lost",
+    "hideLost": "Hide the list",
+    "confirmLoss_one": "I understand: the content of {{count}} lesson will be deleted.",
+    "confirmLoss_other": "I understand: the content of {{count}} lessons will be deleted.",
+    "refused": "The file cannot be applied — it is taken whole or not at all:",
+    "modeReplace": "replace the plan",
+    "modeAppend": "add to the end",
+    "replaceWarning": "The current plan of the course will be deleted in full."
   },
   "rangeDialog": {
     "title": "New break",
@@ -286,7 +313,11 @@
     "openLesson": "Open the lesson",
     "hasContent": "The lesson has content",
     "hasAttachments_one": "{{count}} attachment",
-    "hasAttachments_other": "{{count}} attachments"
+    "hasAttachments_other": "{{count}} attachments",
+    "synced": "Synced: {{created}} created, {{updated}} updated, {{deleted}} deleted.",
+    "exportPlain": "Export without ids",
+    "exportPlainHint": "the old format, for handing to somebody else",
+    "exportHint": "The file carries the structure only: titles, sections, notes and ids. Lesson content and attachments stay here — take the file back with «Sync» and they survive."
   },
   "calendar": {
     "title": "School year",

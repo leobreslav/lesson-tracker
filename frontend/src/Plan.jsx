@@ -383,11 +383,17 @@ export default function Plan({ onLoggedOut }) {
       const result = await importPlanCsv(classId, file, mode)
       await load(classId)
       setNotice(
-        t('plan.imported', {
-          rows: result.created_rows,
-          sections: result.created_headers,
-          lessons: result.created_lessons,
-        }) +
+        (mode === 'sync'
+          ? t('plan.synced', {
+              created: result.created,
+              updated: result.updated,
+              deleted: result.deleted,
+            })
+          : t('plan.imported', {
+              rows: result.created_rows,
+              sections: result.created_headers,
+              lessons: result.created_lessons,
+            })) +
           (result.warnings.length
             ? t('plan.importedSkipped', {
                 count: result.warnings.length,
@@ -404,10 +410,10 @@ export default function Plan({ onLoggedOut }) {
     }
   }
 
-  const handleExport = async () => {
+  const handleExport = async (withIds = true) => {
     setError(null)
     try {
-      await downloadPlanCsv(classId)
+      await downloadPlanCsv(classId, { withIds })
     } catch (err) {
       handleError(err)
     }
@@ -820,11 +826,24 @@ export default function Plan({ onLoggedOut }) {
                   type="button"
                   className="secondary"
                   disabled={busy}
-                  onClick={handleExport}
+                  onClick={() => handleExport(true)}
                 >
                   {t('plan.exportCsv')}
                 </button>
+                <button
+                  type="button"
+                  className="secondary"
+                  disabled={busy}
+                  title={t('plan.exportPlainHint')}
+                  onClick={() => handleExport(false)}
+                >
+                  {t('plan.exportPlain')}
+                </button>
               </div>
+
+              {/* содержание и файлы в CSV не выражаются — сказать об этом
+                  рядом с кнопкой, а не только в документации */}
+              <p className="hint">{t('plan.exportHint')}</p>
             </>
           )}
         </>
@@ -844,6 +863,7 @@ export default function Plan({ onLoggedOut }) {
 
       {importing && (
         <ImportDialog
+          classId={classId}
           busy={busy}
           onSubmit={handleImport}
           onClose={() => setImporting(false)}

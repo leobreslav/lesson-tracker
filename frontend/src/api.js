@@ -233,16 +233,30 @@ export const deletePlanNode = (id, keepChildren) =>
     method: 'DELETE',
   })
 
-export const importPlanCsv = (classId, file, mode) => {
+const csvForm = (file, mode) => {
   const form = new FormData()
   form.append('file', file)
   form.append('mode', mode)
-
-  return request(`/api/plan/import/?course=${encodeURIComponent(classId)}`, {
-    method: 'POST',
-    body: form,
-  })
+  return form
 }
+
+export const importPlanCsv = (classId, file, mode) =>
+  request(`/api/plan/import/?course=${encodeURIComponent(classId)}`, {
+    method: 'POST',
+    body: csvForm(file, mode),
+  })
+
+/**
+ * What the import would do — counts, and what would be lost.
+ *
+ * Asked of the server rather than worked out here: only it knows which
+ * lessons have content, and which files nothing else points at.
+ */
+export const previewPlanCsv = (classId, file, mode) =>
+  request(`/api/plan/import-preview/?course=${encodeURIComponent(classId)}`, {
+    method: 'POST',
+    body: csvForm(file, mode),
+  })
 
 /**
  * Downloading the plan.
@@ -250,12 +264,12 @@ export const importPlanCsv = (classId, file, mode) => {
  * A plain link will not do: the endpoint wants a token in the header, so the
  * file is fetched and handed to the browser as a blob.
  */
-export const downloadPlanCsv = async (classId) => {
+export const downloadPlanCsv = async (classId, { withIds = true } = {}) => {
   const token = getToken()
-  const response = await fetch(
-    `/api/plan/export/?course=${encodeURIComponent(classId)}`,
-    { headers: token ? { Authorization: `Token ${token}` } : {} },
-  )
+  const query = new URLSearchParams({ course: classId, with_ids: String(withIds) })
+  const response = await fetch(`/api/plan/export/?${query}`, {
+    headers: token ? { Authorization: `Token ${token}` } : {},
+  })
 
   if (!response.ok) {
     throw new ApiError(i18n.t('errors.downloadFailed'), response.status)

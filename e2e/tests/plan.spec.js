@@ -149,6 +149,50 @@ test('импорт CSV разбирает файл и строит блоки', 
   expect(rows.join(' | ')).toContain('3 Касательная')
 })
 
+/** A three-column file: the old format, with no ids in it. */
+const PLAIN_CSV = {
+  name: 'plan.csv',
+  mimeType: 'text/csv',
+  buffer: Buffer.from('Тема,Урок,Заметка\nВекторы,,\n,Понятие вектора,\n', 'utf-8'),
+}
+
+test('замена предупреждает, что содержание уроков пропадёт', async ({
+  page,
+  signIn,
+}) => {
+  // Ivanova's Grade 6 Algebra is the seeded course with lesson content on it
+  await signIn(PEOPLE.ivanova)
+  await openPlan(page, 'Grade 6 Algebra')
+
+  await page.getByRole('button', { name: 'Импорт CSV' }).click()
+  const dialog = page.locator('dialog.modal')
+  await dialog.locator('input[type="file"]').setInputFiles(PLAIN_CSV)
+
+  // the count comes from the server: only it knows which lessons are written
+  await expect(dialog).toContainText('с содержанием')
+
+  const submit = dialog.getByRole('button', { name: 'Импортировать' })
+  await expect(submit).toBeDisabled()
+
+  await dialog.getByText('Понимаю', { exact: false }).click()
+  await expect(submit).toBeEnabled()
+})
+
+test('синхронизация недоступна для файла без столбца id', async ({
+  page,
+  signIn,
+}) => {
+  await signIn(PEOPLE.petrov)
+  await openPlan(page, EMPTY_COURSE)
+
+  await page.getByRole('button', { name: 'Импорт CSV' }).click()
+  const dialog = page.locator('dialog.modal')
+  await dialog.locator('input[type="file"]').setInputFiles(PLAIN_CSV)
+
+  await expect(dialog.getByRole('radio', { name: /Синхронизовать/ })).toBeDisabled()
+  await expect(dialog).toContainText('нужен столбец id')
+})
+
 test('импорт из библиотеки наполняет пустой план', async ({ page, signIn }) => {
   await signIn(PEOPLE.petrov)
   await openPlan(page, EMPTY_COURSE)

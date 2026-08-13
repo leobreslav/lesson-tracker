@@ -1296,6 +1296,68 @@ button.link.toggle {
   margin: 0;
 }
 
+/* режимы импорта: у каждого пояснение в строку, иначе «заменить» и
+   «синхронизовать» различимы только по опыту */
+.csv-modes {
+  margin: 0.6rem 0;
+  padding: 0;
+  list-style: none;
+}
+
+.csv-modes li + li {
+  margin-top: 0.35rem;
+}
+
+.csv-modes label {
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+
+.csv-modes label.disabled {
+  opacity: 0.55;
+}
+
+.csv-modes .hint {
+  margin: 0;
+}
+
+/* цена импорта: что именно будет потеряно */
+.csv-cost {
+  margin: 0.6rem 0;
+  padding: 0.5rem 0.7rem;
+  border: 1px solid #e0e0e0;
+  border-radius: 6px;
+  font-size: 0.9rem;
+}
+
+.csv-cost p {
+  margin: 0 0 0.35rem;
+}
+
+.csv-cost.losing {
+  border-color: #e57373;
+  background: #fff5f5;
+}
+
+.csv-cost .checkbox.danger {
+  margin-top: 0.4rem;
+  font-weight: 600;
+}
+
+.csv-lost {
+  margin: 0.3rem 0;
+  padding-left: 1.1rem;
+  max-height: 10rem;
+  overflow-y: auto;
+  font-size: 0.85rem;
+}
+
+.csv-lost .mark {
+  margin-left: 0.3rem;
+}
+
 /* --- перетаскивание --- */
 
 button.link.handle {

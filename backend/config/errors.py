@@ -94,6 +94,12 @@ class Codes:
     FILE_UNREADABLE = "file_unreadable"
     FILE_TOO_MANY_ROWS = "file_too_many_rows"
 
+    # CSV sync: the whole file is refused, never half of it
+    CSV_IDS_REQUIRED = "csv_ids_required"
+    CSV_ID_UNKNOWN = "csv_id_unknown"
+    CSV_ID_DUPLICATE = "csv_id_duplicate"
+    CSV_ID_KIND_CHANGED = "csv_id_kind_changed"
+
     # lesson content and attachments
     CONTENT_ON_SECTION = "content_on_section"
     ATTACHMENT_OWNER_REQUIRED = "attachment_owner_required"
