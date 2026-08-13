@@ -161,7 +161,7 @@ export default function SchoolTeachers() {
                 </label>
                 <button
                   type="button"
-                  className="link"
+                  className="link detach"
                   disabled={busy}
                   onClick={() => detach(member)}
                 >

@@ -97,14 +97,14 @@ export default function Library({ onLoggedOut }) {
 
   if (templates === null) {
     return (
-      <main className="page narrow">
+      <main className="page">
         <p>{error ? <span className="error">{error}</span> : t('common.loading')}</p>
       </main>
     )
   }
 
   return (
-    <main className="page narrow">
+    <main className="page">
       <header className="page-header">
         <h1>{t('library.title')}</h1>
       </header>
@@ -169,7 +169,7 @@ export default function Library({ onLoggedOut }) {
         <EmptyState title={t('library.empty.title')}>{t('library.empty.hint')}</EmptyState>
       )}
 
-      <ul className="class-list">
+      <ul className="class-list template-list">
         {templates.map((template) => (
           <li key={template.id}>
             <button

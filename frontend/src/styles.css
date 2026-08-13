@@ -737,6 +737,24 @@ button.chip.active {
   margin-top: var(--row-gap);
 }
 
+/* Полка библиотеки: две колонки текста и кнопка.
+   Название делит место с описанием пополам, а кнопка не тянется и не
+   переносится — иначе заголовок ломался в три строки, пока справа пусто.
+   Селектор с элементом: правило `button.link.name` выше специфичнее класса. */
+.template-list button.link.name {
+  flex: 1 1 45%;
+}
+
+.template-list .hint {
+  flex: 1 1 45%;
+  min-width: 0;
+}
+
+.template-list li > button:not(.link) {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
 .class-list input {
   flex: 1;
   padding: 0.25rem 0.4rem;
@@ -848,6 +866,13 @@ button.chip.active {
 
 .people-list .name {
   font-weight: 600;
+}
+
+/* отвязка от школы — второстепенное действие строки: прижато вправо и
+   набрано как подпись, иначе читается заголовком рядом с именем */
+.people-list .detach {
+  margin-left: auto;
+  font-size: 0.8125rem;
 }
 
 .people-list .hint.level {
