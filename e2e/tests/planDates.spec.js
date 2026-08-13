@@ -238,25 +238,45 @@ test('недели: подпись в первой строке и заливк�
   await expect(labels.first()).toHaveText('нед 1')
   await expect(labels.nth(1)).toHaveText('нед 2')
 
-  // подпись одна на неделю, и стоит она в её первой строке
-  const groups = await page.evaluate(() => {
-    const rows = [...document.querySelectorAll('.plan-row')]
-    const runs = []
-    rows.forEach((row) => {
+  // группы задаёт заливка: чередуется через одну, и в каждой ровно одна
+  // подпись — где именно, проверяет следующий тест
+  const runs = await page.evaluate(() => {
+    const out = []
+    let previous = null
+    document.querySelectorAll('.plan-row').forEach((row) => {
+      const even = row.classList.contains('week-even')
       const label = row.querySelector('.plan-weekmark')?.textContent.trim()
-      if (label) runs.push({ labels: 1, striped: row.classList.contains('week-even') })
-      else if (runs.length) {
-        runs.at(-1).striped =
-          runs.at(-1).striped === row.classList.contains('week-even')
-            ? runs.at(-1).striped
-            : 'разошлось'
-      }
+      if (previous === null || even !== previous) out.push({ even, labels: [] })
+      previous = even
+      if (label) out.at(-1).labels.push(label)
     })
-    return runs.slice(0, 4)
+    return out.slice(0, 4)
   })
 
-  // чётные недели закрашены, нечётные нет — и вся неделя одинаково
-  expect(groups.map((run) => run.striped)).toEqual([false, true, false, true])
+  expect(runs.map((run) => run.even)).toEqual([false, true, false, true])
+  for (const run of runs) expect(run.labels).toHaveLength(1)
+})
+
+test('номер недели стоит у урока, а не у главы', async ({ page, signIn }) => {
+  await signIn(PEOPLE.ivanova)
+  await openPlan(page)
+
+  const carriers = await page.evaluate(() =>
+    [...document.querySelectorAll('.plan-weekmark')]
+      .filter((mark) => mark.textContent.trim())
+      .map((mark) => {
+        const row = mark.closest('.plan-row')
+        return {
+          section: row.classList.contains('section-head'),
+          date: row.querySelector('.plan-date')?.textContent.trim() ?? '',
+        }
+      }),
+  )
+
+  expect(carriers.length).toBeGreaterThan(3)
+  // ни одной подписи на строке главы, и у каждой рядом стоит дата
+  expect(carriers.filter((row) => row.section)).toEqual([])
+  expect(carriers.filter((row) => !row.date)).toEqual([])
 })
 
 test('заголовок главы не разрывает неделю', async ({ page, signIn }) => {

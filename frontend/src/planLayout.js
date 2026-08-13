@@ -87,7 +87,7 @@ export function stitchLayout(rows, ribbon, today = null) {
 }
 
 /**
- * Неделя: у каждой строки — её номер и то, первая ли это строка недели.
+ * Неделя: у каждой строки — её номер и то, ей ли достаётся подпись.
  *
  * Неделя удобнее как единица планирования, чем отдельная дата, но строкой
  * она стоила бы по строке на каждые три урока. Поэтому — подпись в первой
@@ -113,11 +113,24 @@ function markWeeks(rows) {
     const number = numbers[start]
     if (number == null) return
 
+    // подпись достаётся первой строке **с датой**: у главы левая колонка
+    // всегда пуста, и номер недели смотрелся бы там случайным
+    let labelled = -1
+    for (let index = start; index <= end; index += 1) {
+      if (rows[index].slot) {
+        labelled = index
+        break
+      }
+    }
+    // неделя без единого урока — не неделя: ни подписи, ни заливки
+    if (labelled === -1) return
+
     for (let index = start; index <= end; index += 1) {
       rows[index].week = {
         number,
         first: index === start,
         last: index === end,
+        labelled: index === labelled,
       }
     }
   }

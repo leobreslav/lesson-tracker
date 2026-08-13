@@ -626,7 +626,8 @@ export default function Plan({ onLoggedOut }) {
       : null
 
   /**
-   * Левая колонка недели: подпись в первой строке группы и больше ничего.
+   * Левая колонка недели: подпись в первой строке **с датой** и больше
+   * ничего — у главы дат нет, и номер недели там смотрелся бы случайным.
    *
    * Саму группу показывает заливка каждой второй недели — линий и рамок
    * тут нет: строк в таблице сорок, и любой декор на них множится.
@@ -637,7 +638,7 @@ export default function Plan({ onLoggedOut }) {
 
     return (
       <span className="plan-weekmark">
-        {showWeeks && week?.first && t('plan.week', { number: week.number })}
+        {showWeeks && week?.labelled && t('plan.week', { number: week.number })}
       </span>
     )
   }

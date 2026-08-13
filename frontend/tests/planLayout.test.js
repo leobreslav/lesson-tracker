@@ -283,16 +283,51 @@ describe('недели', () => {
       row.week ? [row.week.number, row.week.first, row.week.last] : null,
     )
 
+  /** Кому досталась подпись «нед N» — по id строки. */
+  const labelled = (rows, ribbon) =>
+    stitchLayout(rows, ribbon)
+      .filter((row) => row.week?.labelled)
+      .map((row) => [row.week.number, row.id])
+
   it('строка знает свою неделю и края группы', () => {
     const rows = [lesson(1), lesson(2), lesson(3), lesson(4), lesson(5)]
 
     assert.deepEqual(brackets(rows, weeks(6)), [
-      [1, true, false], // подпись стоит в первой строке недели
+      [1, true, false],
       [1, false, false],
       [1, false, true],
       [2, true, false],
       [2, false, true],
     ])
+  })
+
+  it('подпись достаётся первому уроку недели, а не главе', () => {
+    // глава открывает неделю: номер должен уйти под неё, на первый урок
+    const rows = [section(10), lesson(1, 10), lesson(2, 10), lesson(3, 10)]
+
+    assert.deepEqual(labelled(rows, weeks(3)), [[1, 1]])
+  })
+
+  it('глава посреди недели подпись не перехватывает и не повторяет её', () => {
+    const rows = [lesson(1), section(10), lesson(2, 10), lesson(3, 10)]
+
+    assert.deepEqual(labelled(rows, weeks(3)), [[1, 1]])
+  })
+
+  it('две главы подряд ждут первого урока', () => {
+    const rows = [section(10), section(11), lesson(1, 11), lesson(2, 11)]
+
+    assert.deepEqual(labelled(rows, weeks(3)), [[1, 1]])
+  })
+
+  it('неделя без единого урока не получает ни подписи, ни заливки', () => {
+    // главы в хвосте плана: уроков под ними нет, недели у них тоже
+    const rows = [lesson(1), lesson(2), lesson(3), section(10), section(11)]
+    const stitched = stitchLayout(rows, weeks(3))
+
+    assert.deepEqual(labelled(rows, weeks(3)), [[1, 1]])
+    assert.equal(stitched.at(-1).week, undefined)
+    assert.equal(stitched.at(-2).week, undefined)
   })
 
   it('неделя строкой не является: черт перед строками не прибавилось', () => {
