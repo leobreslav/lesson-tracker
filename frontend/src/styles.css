@@ -2250,11 +2250,18 @@ button.day-head:hover {
 
 /* --- легенда и статистика --- */
 
+/* легенда над обеими колонками: статусы одной строкой, термы — другой */
+.legends {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
 .legend {
   display: flex;
   flex-wrap: wrap;
   gap: 1rem;
-  margin: 0 0 1rem;
+  margin: 0;
   padding: 0;
   list-style: none;
   font-size: 0.8125rem;

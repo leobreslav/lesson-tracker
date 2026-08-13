@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import CalendarGrid from './CalendarGrid'
+import CalendarGrid, { CalendarLegend } from './CalendarGrid'
 import EmptyState from './EmptyState'
 import TermsPanel from './TermsPanel'
 import RangeDialog from './RangeDialog'
@@ -445,133 +445,140 @@ export default function Calendar({ user, onLoggedOut }) {
       {loading && <p>{t('calendar.loadingCalendar')}</p>}
 
       {year && !loading && (
-        <div className="calendar-layout">
-          <CalendarGrid
-            days={days}
-            terms={terms}
-            pending={rangeForm}
-            onToggleDay={handleToggleDay}
-            onSelectRange={handleSelectRange}
-            disabled={saving || !canEdit}
-          />
+        <>
+          {/* легенда над обеими колонками: те же квадратики стоят и в
+              сводке справа, а внутри левой колонки она сдвигала
+              календари вниз — колонки начинались на разной высоте */}
+          <CalendarLegend terms={terms} />
 
-          <aside className="calendar-side">
-            <section className="panel">
-              <h2>{stats ? stats.total : '—'}</h2>
-              <p className="hint">
-                {t('calendar.studyDaysOf', {
-                  start: year.start_date,
-                  end: year.end_date,
-                })}
-              </p>
-              {stats && (
-                <>
-                  <table className="weekday-stats">
-                    <tbody>
-                      {stats.by_weekday
-                        .filter((row) => row.count > 0)
-                        .map((row) => (
-                          <tr key={row.weekday}>
-                            <th scope="row">{weekdayLabel(row.weekday)}</th>
-                            <td>{row.count}</td>
-                          </tr>
-                        ))}
-                    </tbody>
-                  </table>
-
-                  {/* every day of the year lands in exactly one row */}
-                  <table className="weekday-stats status-stats">
-                    <tbody>
-                      {STATUSES.filter((status) => status !== STATUS_STUDY).map(
-                        (status) => (
-                          <tr key={status}>
-                            <th scope="row">
-                              <span className={`swatch ${status}`} aria-hidden="true" />
-                              {t(`dayStatus.${status}`)}
-                            </th>
-                            <td>{stats.by_status[status]}</td>
-                          </tr>
-                        ),
-                      )}
-                      <tr>
-                        <th scope="row">{t('calendar.totalDays')}</th>
-                        <td>{stats.calendar_days}</td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </>
-              )}
-            </section>
-
-            <TermsPanel
+          <div className="calendar-layout">
+            <CalendarGrid
+              days={days}
               terms={terms}
-              year={year}
-              studyDays={studyDaysByTerm}
-              busy={saving}
-              canEdit={canEdit}
-              onCreate={(fields) => runTerm(() => createTerm({ ...fields, year: year.id }))}
-              onUpdate={(id, fields) => runTerm(() => updateTerm(id, fields))}
-              onDelete={handleDeleteTerm}
+              pending={rangeForm}
+              onToggleDay={handleToggleDay}
+              onSelectRange={handleSelectRange}
+              disabled={saving || !canEdit}
             />
 
-            <section className="panel">
-              <h3>{t('calendar.exceptions.title')}</h3>
-              {canEdit && !year.exceptions.length && (
+            <aside className="calendar-side">
+              <section className="panel">
+                <h2>{stats ? stats.total : '—'}</h2>
                 <p className="hint">
-                  <button
-                    type="button"
-                    className="secondary"
-                    disabled={saving}
-                    onClick={addTypicalVacations}
-                  >
-                    {t('calendar.exceptions.typical')}
-                  </button>{' '}
-                  {t('calendar.exceptions.typicalHint')}
+                  {t('calendar.studyDaysOf', {
+                    start: year.start_date,
+                    end: year.end_date,
+                  })}
                 </p>
-              )}
-              {canEdit && !year.exceptions.length && (
-                <p className="hint">{t('calendar.exceptions.hint')}</p>
-              )}
-              <ul className="exceptions">
-                {year.exceptions.map((exception) => (
-                  <li key={exception.id} className={exception.kind}>
-                    <div>
-                      <strong>
-                        {exception.title || t(`calendar.kind.${exception.kind}`)}
-                      </strong>
-                      <span className="hint">
-                        {t(`calendar.kind.${exception.kind}`)},{' '}
-                        {dateRange(exception.start_date, exception.end_date)}
-                      </span>
-                    </div>
-                    {canEdit && (
-                      <button
-                        type="button"
-                        className="link"
-                        disabled={saving}
-                        onClick={() => removeException(exception)}
-                        aria-label={t('calendar.exceptions.delete')}
-                      >
-                        ✕
-                      </button>
-                    )}
-                  </li>
-                ))}
-              </ul>
-            </section>
+                {stats && (
+                  <>
+                    <table className="weekday-stats">
+                      <tbody>
+                        {stats.by_weekday
+                          .filter((row) => row.count > 0)
+                          .map((row) => (
+                            <tr key={row.weekday}>
+                              <th scope="row">{weekdayLabel(row.weekday)}</th>
+                              <td>{row.count}</td>
+                            </tr>
+                          ))}
+                      </tbody>
+                    </table>
 
-            {canEdit && (
-              <button
-                type="button"
-                className="secondary"
-                disabled={saving}
-                onClick={handleDeleteYear}
-              >
-                {t('calendar.deleteYear')}
-              </button>
-            )}
-          </aside>
-        </div>
+                    {/* every day of the year lands in exactly one row */}
+                    <table className="weekday-stats status-stats">
+                      <tbody>
+                        {STATUSES.filter((status) => status !== STATUS_STUDY).map(
+                          (status) => (
+                            <tr key={status}>
+                              <th scope="row">
+                                <span className={`swatch ${status}`} aria-hidden="true" />
+                                {t(`dayStatus.${status}`)}
+                              </th>
+                              <td>{stats.by_status[status]}</td>
+                            </tr>
+                          ),
+                        )}
+                        <tr>
+                          <th scope="row">{t('calendar.totalDays')}</th>
+                          <td>{stats.calendar_days}</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </>
+                )}
+              </section>
+
+              <TermsPanel
+                terms={terms}
+                year={year}
+                studyDays={studyDaysByTerm}
+                busy={saving}
+                canEdit={canEdit}
+                onCreate={(fields) => runTerm(() => createTerm({ ...fields, year: year.id }))}
+                onUpdate={(id, fields) => runTerm(() => updateTerm(id, fields))}
+                onDelete={handleDeleteTerm}
+              />
+
+              <section className="panel">
+                <h3>{t('calendar.exceptions.title')}</h3>
+                {canEdit && !year.exceptions.length && (
+                  <p className="hint">
+                    <button
+                      type="button"
+                      className="secondary"
+                      disabled={saving}
+                      onClick={addTypicalVacations}
+                    >
+                      {t('calendar.exceptions.typical')}
+                    </button>{' '}
+                    {t('calendar.exceptions.typicalHint')}
+                  </p>
+                )}
+                {canEdit && !year.exceptions.length && (
+                  <p className="hint">{t('calendar.exceptions.hint')}</p>
+                )}
+                <ul className="exceptions">
+                  {year.exceptions.map((exception) => (
+                    <li key={exception.id} className={exception.kind}>
+                      <div>
+                        <strong>
+                          {exception.title || t(`calendar.kind.${exception.kind}`)}
+                        </strong>
+                        <span className="hint">
+                          {t(`calendar.kind.${exception.kind}`)},{' '}
+                          {dateRange(exception.start_date, exception.end_date)}
+                        </span>
+                      </div>
+                      {canEdit && (
+                        <button
+                          type="button"
+                          className="link"
+                          disabled={saving}
+                          onClick={() => removeException(exception)}
+                          aria-label={t('calendar.exceptions.delete')}
+                        >
+                          ✕
+                        </button>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              </section>
+
+              {canEdit && (
+                <button
+                  type="button"
+                  className="secondary"
+                  disabled={saving}
+                  onClick={handleDeleteYear}
+                >
+                  {t('calendar.deleteYear')}
+                </button>
+              )}
+            </aside>
+          </div>
+        </>
       )}
 
       {rangeForm && (
