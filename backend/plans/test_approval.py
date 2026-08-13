@@ -68,6 +68,18 @@ class ApprovalTestCase(PlanTestCase):
 
 
 class SubmitTests(ApprovalTestCase):
+    def test_sending_again_does_not_pile_up_requests(self):
+        """У одного плана один запрос: иначе очередь заполнится им же."""
+        self.make_methodist(self.methodist)
+        first = self.submit().json()["request"]
+
+        self.add("Новый урок", parent=self.trig, position=9)
+        again = self.submit().json()["request"]
+
+        self.assertEqual(PlanBaseline.objects.count(), 1)
+        self.assertEqual(again["id"], first["id"])
+        self.assertGreater(again["submitted_at"], first["submitted_at"])
+
     def test_a_single_methodist_is_chosen_by_himself(self):
         self.make_methodist(self.methodist)
 
@@ -123,51 +135,6 @@ class SubmitTests(ApprovalTestCase):
         self.submit()
 
         self.assertEqual(PlanBaseline.objects.get().rows.count(), 0)
-
-
-class WithdrawTests(ApprovalTestCase):
-    def setUp(self):
-        super().setUp()
-        self.make_methodist(self.methodist)
-        self.submit()
-
-    def test_editing_the_plan_withdraws_the_request(self):
-        """Иначе методист утверждал бы одно, а в силе оказывалось другое."""
-        self.add("Новый урок", parent=self.trig, position=9)
-
-        self.assertEqual(self.state()["request"]["status"], "draft")
-
-    def test_a_rename_withdraws_it_too(self):
-        node = PlanNode.objects.get(course=self.course, title="Синус суммы")
-        node.title = "Синус суммы двух углов"
-        node.save(update_fields=["title"])
-
-        self.assertEqual(self.state()["request"]["status"], "draft")
-
-    def test_a_deletion_withdraws_it(self):
-        PlanNode.objects.get(course=self.course, title="Аксиомы").delete()
-
-        self.assertEqual(self.state()["request"]["status"], "draft")
-
-    def test_a_withdrawn_request_leaves_the_queue(self):
-        self.client.force_authenticate(self.methodist)
-        self.assertEqual(len(self.queue()), 1)
-
-        self.client.force_authenticate(self.user)
-        self.add("Новый урок", parent=self.trig, position=9)
-
-        self.client.force_authenticate(self.methodist)
-        self.assertEqual(self.queue(), [])
-
-    def test_the_teacher_can_send_it_again(self):
-        self.add("Новый урок", parent=self.trig, position=9)
-
-        response = self.submit()
-
-        self.assertEqual(response.status_code, 201, response.content)
-        self.assertEqual(response.json()["request"]["status"], "pending")
-        # прежний снимок ушёл: висеть двум запросам разом незачем
-        self.assertEqual(PlanBaseline.objects.count(), 1)
 
 
 class ReviewTests(ApprovalTestCase):
@@ -234,19 +201,25 @@ class ReviewTests(ApprovalTestCase):
         self.assertEqual(state["request"]["comment"], "Мало часов на повторение")
         self.assertIsNone(state["approved"])
 
-    def test_an_edited_plan_cannot_be_approved_at_all(self):
+    def test_the_methodist_reads_the_current_plan(self):
         """
-        Снимок снимается при утверждении, и это безопасно ровно потому, что
-        утверждать изменившийся план не из чего: правка отозвала запрос.
+        Правки после отправки ничего не отзывают: запрос висит, а методист
+        открывает то, что в плане сейчас, — и утверждает именно это.
         """
         self.add("Дописанный после отправки", parent=self.trig, position=9)
 
         self.client.force_authenticate(self.methodist)
+        body = self.client.get(
+            reverse("planreview-detail", args=[self.baseline.pk])
+        ).json()
 
-        self.assertEqual(self.queue(), [])
-        self.assertEqual(self.approve(self.baseline.pk).status_code, 404)
-        self.baseline.refresh_from_db()
-        self.assertEqual(self.baseline.rows.count(), 0)
+        self.assertEqual(len(self.queue()), 1)
+        self.assertIn("Дописанный после отправки", [row["title"] for row in body["rows"]])
+
+        self.approve(self.baseline.pk)
+
+        titles = [row.title for row in self.baseline.rows.all()]
+        self.assertIn("Дописанный после отправки", titles)
 
     def test_approval_takes_the_snapshot(self):
         self.client.force_authenticate(self.methodist)

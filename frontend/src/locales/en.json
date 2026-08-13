@@ -378,7 +378,6 @@
       "sent": "Sent to {{name}}.",
       "pending": "On approval with {{name}}.",
       "returned": "Returned by {{name}}:",
-      "withdrawn": "The request was withdrawn by an edit — send the plan again.",
       "approved": "Approved on {{date}} by {{name}}.",
       "approvedSelf": "Approved on {{date}} by the author.",
       "chooseTitle": "Who should approve it?",
@@ -586,7 +585,8 @@
       "pickMethodist": "choose a methodist",
       "nameMethodist": "Make methodist",
       "methodistLabel": "Methodist for {{name}}",
-      "dropMethodist": "Remove {{name}} from approving"
+      "dropMethodist": "Remove {{name}} from approving",
+      "teaches": "Teaches the course:"
     },
     "people": {
       "title": "Teachers",

@@ -1156,8 +1156,6 @@ export default function Plan({ onLoggedOut }) {
                   <b>{baseline.request.comment}</b>
                 </>
               )}
-              {baseline.request?.status === 'draft' &&
-                t('plan.baseline.withdrawn')}
               {!baseline.request &&
                 baseline.approved &&
                 t(

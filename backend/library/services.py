@@ -123,8 +123,6 @@ def import_into_course(*, template, owner, append: bool) -> dict:
             teacher_id=owner.teacher_id, course_id=owner.course_id
         ).delete()
 
-    from plans import approval
-
     created = plan_services.apply_import(
         owner, template_as_rows(template), append=append
     )
@@ -133,9 +131,6 @@ def import_into_course(*, template, owner, append: bool) -> dict:
     for row, node in created["pairs"]:
         if row.attachments:
             files += file_services.copy_attachments(row.attachments, plan_row=node)
-
-    # bulk-операции сигналов не шлют: поданный запрос отзываем сами
-    approval.withdraw(owner.teacher_id, owner.course_id)
 
     return {
         "created_rows": created["headers"] + created["lessons"],

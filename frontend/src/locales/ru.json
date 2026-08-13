@@ -391,7 +391,6 @@
       "sent": "Отправлено: {{name}}.",
       "pending": "На утверждении у {{name}}.",
       "returned": "Возвращено ({{name}}):",
-      "withdrawn": "Запрос отозван правкой — отправьте план заново.",
       "approved": "Утверждён {{date}}, {{name}}.",
       "approvedSelf": "Утверждён {{date}} автором.",
       "chooseTitle": "Кому отправить на утверждение?",
@@ -602,7 +601,8 @@
       "pickMethodist": "выберите методиста",
       "nameMethodist": "Назначить методиста",
       "methodistLabel": "Методист курса {{name}}",
-      "dropMethodist": "Снять {{name}} с утверждения"
+      "dropMethodist": "Снять {{name}} с утверждения",
+      "teaches": "Ведут курс:"
     },
     "people": {
       "title": "Учителя",

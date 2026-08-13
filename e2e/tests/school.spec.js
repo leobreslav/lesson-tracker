@@ -27,13 +27,19 @@ test('администратор заводит курс и назначает �
   await page.getByLabel('Параллель:').selectOption({ label: 'MYP 4' })
   await page.getByRole('button', { name: 'Добавить', exact: true }).click()
 
-  const card = page.locator('.people-list > li', { hasText: '9А Алгебра' })
+  // свёрнутая строка сразу говорит, чего курсу не хватает
+  const card = page.locator('.course-row', { hasText: '9А Алгебра' })
   await expect(card).toContainText('курс никто не ведёт')
+  await expect(card).toContainText('методист не назначен')
 
+  await card.locator('.toggle').click()
   await card.getByLabel('Учитель для 9А Алгебра').selectOption({ label: 'Мария Иванова' })
   await card.getByRole('button', { name: 'Назначить', exact: true }).click()
 
   await expect(card.locator('.tag')).toContainText('Мария Иванова')
+  // строка осталась раскрытой: назначать людей по одному, каждый раз
+  // раскрывая заново, было бы издевательством
+  await expect(card.locator('.course-body')).toBeVisible()
 
   // и курс появился в её собственном списке — ради этого связь и заведена
   await signIn(PEOPLE.ivanova)
@@ -57,13 +63,13 @@ test('длинное название курса сохраняется цели
   await page.getByRole('button', { name: 'Добавить', exact: true }).click()
 
   // сервер принял имя целиком, а не обрезал его
-  const card = page.locator('.people-list > li', { hasText: NAME })
+  const card = page.locator('.course-row', { hasText: NAME })
   await expect(card).toBeVisible()
 
-  // и карточка осталась внутри своей панели, а не уехала за край
+  // и строка осталась внутри своей рамки, а не уехала за край
   const overflow = await card.evaluate((item) => {
-    const panel = item.closest('.panel') ?? item.parentElement
-    return item.getBoundingClientRect().right - panel.getBoundingClientRect().right
+    const list = item.closest('.course-list')
+    return item.getBoundingClientRect().right - list.getBoundingClientRect().right
   })
   expect(overflow).toBeLessThanOrEqual(1)
 })
@@ -83,9 +89,49 @@ test('назначение видно и снимается со стороны 
 
   // и обратно, с карточки курса
   await openSection(page, '/school/courses')
-  const course = page.locator('.people-list > li', { hasText: 'Grade 9 Geometry' })
-  // exact: у курса уже есть свой учитель, и «.tag» их двое
-  await expect(course.locator('.tag', { hasText: 'Мария Иванова' })).toBeVisible()
+  const course = page.locator('.course-row', { hasText: 'Grade 9 Geometry' })
+  // в свёрнутой строке учителя перечислены прямо, без раскрытия
+  await expect(course.locator('.who')).toContainText('Мария Иванова')
+})
+
+test('семь курсов помещаются в экран, каждый одной строкой', async ({
+  page,
+  signIn,
+  api,
+}) => {
+  const admin = await api(PEOPLE.admin)
+  const years = await admin.get('/api/calendar/years/')
+  const subjects = await admin.get('/api/school/subjects/')
+  const grades = await admin.get('/api/school/grades/')
+  // в демо-школе четыре курса; доводим до семи
+  for (const index of [1, 2, 3]) {
+    await admin.post('/api/courses/', {
+      year: years.body[0].id,
+      subject: subjects.body[0].id,
+      grade: grades.body[0].id,
+      name: `Ещё курс ${index}`,
+    })
+  }
+
+  await signIn(PEOPLE.admin)
+  await page.setViewportSize({ width: 1280, height: 900 })
+  await openSection(page, '/school/courses')
+
+  const rows = page.locator('.course-row')
+  await expect(rows).toHaveCount(7)
+
+  const fits = await page.evaluate(() => {
+    const list = [...document.querySelectorAll('.course-row')]
+    return {
+      visible: list.filter((row) => row.getBoundingClientRect().bottom <= innerHeight)
+        .length,
+      wrapped: list.filter((row) => row.getBoundingClientRect().height > 48).length,
+    }
+  })
+
+  expect(fits.visible).toBe(7)
+  // ни одна строка не переносится: колонки жёсткие, лишнее обрезается
+  expect(fits.wrapped).toBe(0)
 })
 
 test('учитель курсы не заводит: формы нет, а сервер отказывает', async ({

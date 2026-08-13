@@ -35,7 +35,8 @@ const problems = (page) =>
   page.evaluate(() => {
     const ROWS =
       '.add-form, .inline-form, .agenda-bar, .class-filter, .year-picker,' +
-      '.term-form .row, .people-list .row, .preset-row, .plan-add-form,' +
+      '.term-form .row, .people-list .row, .course-role .row, .preset-row,' +
+      '.plan-add-form,' +
       '.actions, .modal-body .row'
     const CONTROLS =
       'input:not([type=checkbox]):not([type=radio]):not([type=file]),' +

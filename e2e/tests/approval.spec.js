@@ -88,7 +88,7 @@ test('методист возвращает план с замечанием', a
   await expect(page.locator('.hint.approval')).toContainText('Мало часов на повторение')
 })
 
-test('правка плана после отправки отзывает запрос', async ({
+test('правка после отправки запрос не отзывает, методист видит новое', async ({
   page,
   signIn,
   api,
@@ -106,15 +106,17 @@ test('правка плана после отправки отзывает за�
   await form.getByRole('button', { name: 'Добавить' }).click()
   await expect(page.locator('.plan-row', { hasText: 'Урок после отправки' })).toBeVisible()
 
+  // запрос на месте, и методист открывает текущую версию плана
   await page.reload()
   await ready(page)
-  await expect(page.locator('.hint.approval')).toContainText('отозван')
+  await expect(page.locator('.hint.approval')).toContainText('На утверждении')
 
-  // и у методиста запроса больше нет
   await signIn(PEOPLE.petrov)
   await page.goto('/reviews')
   await ready(page)
-  await expect(page.getByText('Пока ничего')).toBeVisible()
+  await page.getByRole('button', { name: 'Открыть' }).click()
+  const dialog = page.locator('dialog.modal')
+  await expect(dialog.locator('.review-plan')).toContainText('Урок после отправки')
 })
 
 test('без методиста у курса отправка объясняет, почему нельзя', async ({

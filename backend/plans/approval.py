@@ -2,13 +2,13 @@
 Утверждение учебного плана методистом.
 
 Состояния у самого плана нет — учитель правит его свободно. Состояние есть
-у **запроса**: план отправляют на утверждение, методист смотрит его как
-есть, и копия структуры снимается в момент **утверждения** — эталоном
-становится ровно то, что приняли.
+у **запроса**: план отправляют на утверждение, методист открывает
+**текущую** версию плана, и копия структуры снимается в момент утверждения —
+эталоном становится ровно то, что приняли.
 
-Правка отзывает поданный запрос, и это то, что делает схему безопасной:
-утвердить можно только план, не менявшийся с момента отправки. Иначе
-методист читал бы одно, а утверждал другое.
+Правки после отправки ничего не отзывают: запрос висит, пока методист его
+не обработает, а утверждает он то, что видит сейчас. Так у процедуры ровно
+одно место, где план фиксируется, и ровно одно, где он оценивается.
 
 Здесь же живёт единственное место, откуда позже пойдут письма: `notify`
 вызывается на каждом переходе, и рассылку добавят в него, а не в четыре
@@ -31,12 +31,11 @@ logger = logging.getLogger(__name__)
 SUBMITTED = "submitted"
 APPROVED = "approved"
 RETURNED = "returned"
-WITHDRAWN = "withdrawn"
 
 
 def notify(event: str, baseline: PlanBaseline) -> None:
     """
-    Событие процедуры: отправили, утвердили, вернули, отозвали.
+    Событие процедуры: отправили, утвердили, вернули.
 
     Писем пока нет — хватает счётчика в интерфейсе, — но событие есть, и
     когда рассылка понадобится, добавлять её придётся в одно место, а не
@@ -78,22 +77,12 @@ def approved_baseline(teacher_id: int, course_id: int):
 
 
 def open_request(teacher_id: int, course_id: int):
-    """
-    Последний неутверждённый запрос: поданный, возвращённый или отозванный.
-
-    Отозванный тоже показывается, и это важно: учитель, поправивший план,
-    должен увидеть, что запрос больше никого не ждёт, — иначе он будет
-    думать, что план на утверждении, а тот лежит у него же в черновиках.
-    """
+    """Запрос в работе: поданный или возвращённый с замечанием."""
     return (
         PlanBaseline.objects.filter(
             teacher_id=teacher_id,
             course_id=course_id,
-            status__in=(
-                PlanBaseline.Status.PENDING,
-                PlanBaseline.Status.RETURNED,
-                PlanBaseline.Status.DRAFT,
-            ),
+            status__in=(PlanBaseline.Status.PENDING, PlanBaseline.Status.RETURNED),
         )
         .order_by("-created_at", "-id")
         .first()
@@ -105,32 +94,31 @@ def submit(owner: services.PlanOwner, course, reviewer) -> PlanBaseline:
     """
     Отправить план на утверждение.
 
-    Строк у запроса пока нет: методист смотрит живой план, а копия
-    снимается при утверждении. Читать он при этом будет именно то, что ему
-    прислали, — любая правка отзывает запрос, так что утверждать
-    изменившийся план попросту не из чего.
+    Строк у запроса нет: методист смотрит **текущий** план, а копия
+    снимается при утверждении. Повторная отправка, пока запрос висит, не
+    заводит второй — обновляет дату и адресата: у одного плана один запрос,
+    иначе очередь методиста заполнилась бы одним и тем же курсом.
 
-    Прежние неутверждённые запросы уходят — висеть двум разом незачем, — а
-    утверждённый эталон остаётся: пока новый не принят, расхождение
-    считается от него.
+    Утверждённый эталон при этом остаётся: пока новый не принят,
+    расхождение считается от него.
     """
-    PlanBaseline.objects.filter(
-        teacher_id=owner.teacher_id,
-        course_id=owner.course_id,
-        status__in=(
-            PlanBaseline.Status.PENDING,
-            PlanBaseline.Status.RETURNED,
-            PlanBaseline.Status.DRAFT,
-        ),
-    ).delete()
+    baseline = open_request(owner.teacher_id, owner.course_id)
 
-    baseline = PlanBaseline.objects.create(
-        teacher_id=owner.teacher_id,
-        course_id=owner.course_id,
-        status=PlanBaseline.Status.PENDING,
-        submitted_at=timezone.now(),
-        reviewer=reviewer,
-    )
+    if baseline is None:
+        baseline = PlanBaseline.objects.create(
+            teacher_id=owner.teacher_id,
+            course_id=owner.course_id,
+            status=PlanBaseline.Status.PENDING,
+            submitted_at=timezone.now(),
+            reviewer=reviewer,
+        )
+    else:
+        baseline.status = PlanBaseline.Status.PENDING
+        baseline.submitted_at = timezone.now()
+        baseline.reviewer = reviewer
+        baseline.comment = ""
+        baseline.save(update_fields=["status", "submitted_at", "reviewer", "comment"])
+
     notify(SUBMITTED, baseline)
     return baseline
 
@@ -176,36 +164,6 @@ def send_back(baseline: PlanBaseline, reviewer, comment: str) -> PlanBaseline:
 
     notify(RETURNED, baseline)
     return baseline
-
-
-def withdraw(teacher_id: int, course_id: int) -> int:
-    """
-    Правка плана отзывает поданный запрос.
-
-    Иначе методист утверждал бы одно, а в силе оказывалось другое. Снимок
-    при этом остаётся: он и есть свидетельство того, что присылали, — но
-    больше никого не ждёт.
-
-    Возвращает число отозванных запросов: ноль в подавляющем большинстве
-    правок, и по нему видно, что звать `notify` не за чем.
-    """
-    pending = list(
-        PlanBaseline.objects.filter(
-            teacher_id=teacher_id,
-            course_id=course_id,
-            status=PlanBaseline.Status.PENDING,
-        )
-    )
-    if not pending:
-        return 0
-
-    PlanBaseline.objects.filter(pk__in=[item.pk for item in pending]).update(
-        status=PlanBaseline.Status.DRAFT
-    )
-    for baseline in pending:
-        notify(WITHDRAWN, baseline)
-
-    return len(pending)
 
 
 def review_queue(user):

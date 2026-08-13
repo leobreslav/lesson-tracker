@@ -22,7 +22,7 @@ export default function School({ user, onLoggedOut, onSchoolChange }) {
   const { t } = useTranslation()
 
   return (
-    <main className="page narrow">
+    <main className="page">
       <header className="page-header">
         <h1>{t('school.title', { name: user?.school?.name ?? '' })}</h1>
       </header>

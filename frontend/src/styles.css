@@ -121,6 +121,7 @@ body {
 .year-picker,
 .term-form .row,
 .people-list .row,
+.course-role .row,
 .preset-row,
 .plan-add-form,
 .actions,
@@ -1826,6 +1827,79 @@ button.progress-head:hover:not(:disabled) {
 
 .plan-cards .hint {
   font-size: 0.75rem;
+}
+
+/*
+ * Список курсов школы — строки в одной рамке, а не карточки с тенями.
+ *
+ * У каждого курса две роли и два списка людей; развёрнутые формы у семи
+ * курсов давали четырнадцать селектов на экране, и страница переставала
+ * читаться. Поэтому строка свёрнута до колонок, а формы открываются по
+ * нажатию — раскрыт всегда ровно один курс.
+ */
+.course-list {
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  list-style: none;
+  border: 1px solid #e0e0e0;
+  border-radius: var(--card-radius);
+}
+
+.course-row + .course-row {
+  border-top: 1px solid #eee;
+}
+
+.course-row.open {
+  background: var(--surface-1);
+}
+
+/* колонки постоянной ширины: семь строк должны читаться столбцами, а не
+   лесенкой из имён разной длины */
+.course-head {
+  display: grid;
+  grid-template-columns: 1.5rem minmax(8rem, 1fr) minmax(8rem, 1fr) minmax(10rem, 2fr) auto;
+  gap: 0.5rem;
+  align-items: center;
+  padding: 0.3rem 0.6rem;
+}
+
+.course-head .name {
+  overflow: hidden;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.course-head .what,
+.course-head .who {
+  overflow: hidden;
+  font-size: 0.9rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.course-head .toggle {
+  padding: 0;
+}
+
+.course-body {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr));
+  gap: 0.5rem 1.5rem;
+  padding: 0.25rem 0.6rem 0.6rem 2.1rem;
+}
+
+/* обе роли устроены одинаково: подпись, плашки, форма — и обе одной
+   высоты, потому что различие тут только в вопросе */
+.course-role {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.course-role .row.courses {
+  min-height: 1.6rem;
 }
 
 /* справка о формате CSV: раскрывается кнопкой «?» у заголовка карточки */

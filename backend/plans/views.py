@@ -538,8 +538,6 @@ class PlanNodeViewSet(TeacherScopedViewSet):
 
             with transaction.atomic():
                 done = services.apply_sync(owner, plan)
-                # bulk_update сигналов не шлёт, поэтому отзыв руками
-                approval.withdraw(owner.teacher_id, owner.course_id)
 
             return Response({**done, **about})
 
@@ -552,7 +550,6 @@ class PlanNodeViewSet(TeacherScopedViewSet):
             created = services.apply_import(
                 owner, parsed.rows, append=(mode == "append")
             )
-            approval.withdraw(owner.teacher_id, owner.course_id)
 
         return Response(
             {

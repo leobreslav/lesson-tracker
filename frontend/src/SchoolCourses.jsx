@@ -42,6 +42,7 @@ export default function SchoolCourses() {
   const [editing, setEditing] = useState(null) // {id, value}
   const [assigning, setAssigning] = useState({}) // course id -> teacher id
   const [naming, setNaming] = useState({}) // course id -> methodist id
+  const [expanded, setExpanded] = useState(null) // какой курс раскрыт
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
 
@@ -268,173 +269,223 @@ export default function SchoolCourses() {
         {courses === null ? (
           <p>{t('common.loading')}</p>
         ) : (
-          <ul className="people-list">
-            {courses.map((course) => (
-              <li key={course.id}>
-                <div className="row">
-                  {editing?.id === course.id ? (
-                    <input
-                      autoFocus
-                      value={editing.value}
-                      maxLength={100}
-                      aria-label={t('classes.newNameLabel')}
-                      onChange={(event) =>
-                        setEditing({ ...editing, value: event.target.value })
-                      }
-                      onKeyDown={(event) => {
-                        if (event.key === 'Escape') setEditing(null)
-                        if (event.key === 'Enter') commitRename()
-                      }}
-                      onBlur={commitRename}
-                    />
-                  ) : (
+          <ul className="course-list">
+            {courses.map((course) => {
+              const open = expanded === course.id
+
+              return (
+                <li key={course.id} className={open ? 'course-row open' : 'course-row'}>
+                  {/* свёрнутая строка: колонки фиксированной ширины, чтобы
+                      семь курсов читались столбцами, а не лесенкой */}
+                  <div className="course-head">
                     <button
                       type="button"
-                      className="link name"
-                      title={t('classes.rename')}
-                      disabled={busy}
-                      onClick={() => setEditing({ id: course.id, value: course.name })}
+                      className="link toggle"
+                      aria-expanded={open}
+                      aria-label={t(open ? 'plan.collapse' : 'plan.expand')}
+                      onClick={() => setExpanded(open ? null : course.id)}
                     >
-                      {course.name}
+                      {open ? '▾' : '▸'}
                     </button>
-                  )}
-                  <span className="hint">
-                    {[course.subject_name, course.grade_name]
-                      .filter(Boolean)
-                      .join(', ')}
-                  </span>
-                  <button
-                    type="button"
-                    className="link"
-                    aria-label={t('classes.delete', { name: course.name })}
-                    disabled={busy}
-                    onClick={() => remove(course)}
-                  >
-                    ✕
-                  </button>
-                </div>
 
-                <div className="row courses">
-                  {course.teachers.length === 0 ? (
-                    <span className="hint warning">
-                      {t('school.courses.noTeacher')}
+                    {editing?.id === course.id ? (
+                      <input
+                        autoFocus
+                        value={editing.value}
+                        maxLength={100}
+                        aria-label={t('classes.newNameLabel')}
+                        onChange={(event) =>
+                          setEditing({ ...editing, value: event.target.value })
+                        }
+                        onKeyDown={(event) => {
+                          if (event.key === 'Escape') setEditing(null)
+                          if (event.key === 'Enter') commitRename()
+                        }}
+                        onBlur={commitRename}
+                      />
+                    ) : (
+                      <button
+                        type="button"
+                        className="link name"
+                        title={t('classes.rename')}
+                        disabled={busy}
+                        onClick={() =>
+                          setEditing({ id: course.id, value: course.name })
+                        }
+                      >
+                        {course.name}
+                      </button>
+                    )}
+
+                    <span className="hint what">
+                      {[course.subject_name, course.grade_name]
+                        .filter(Boolean)
+                        .join(' · ')}
                     </span>
-                  ) : (
-                    course.teachers.map((teacher) => (
-                      <span className="tag" key={teacher.id}>
-                        {teacher.name}
-                        <button
-                          type="button"
-                          className="link"
-                          aria-label={t('school.courses.unassign', {
-                            name: teacher.name,
-                          })}
-                          disabled={busy}
-                          onClick={() => unassign(course, teacher)}
-                        >
-                          ✕
-                        </button>
-                      </span>
-                    ))
+
+                    <span className="who">
+                      {course.teachers.length === 0 ? (
+                        <span className="hint warning">
+                          {t('school.courses.noTeacher')}
+                        </span>
+                      ) : (
+                        course.teachers.map((teacher) => teacher.name).join(', ')
+                      )}
+                      {course.methodists.length === 0 && (
+                        <span className="hint warning">
+                          {' · '}
+                          {t('school.courses.noMethodist')}
+                        </span>
+                      )}
+                    </span>
+
+                    <button
+                      type="button"
+                      className="link"
+                      aria-label={t('classes.delete', { name: course.name })}
+                      disabled={busy}
+                      onClick={() => remove(course)}
+                    >
+                      ✕
+                    </button>
+                  </div>
+
+                  {open && (
+                    <div className="course-body">
+                      {/* две роли курса, и формы у них одинаковые: вопросы
+                          разные, а действие одно — назвать человека */}
+                      <div className="course-role">
+                        <span className="hint">{t('school.courses.teaches')}</span>
+                        <div className="row courses">
+                          {course.teachers.length === 0 ? (
+                            <span className="hint">{t('school.courses.noTeacher')}</span>
+                          ) : (
+                            course.teachers.map((teacher) => (
+                              <span className="tag" key={teacher.id}>
+                                {teacher.name}
+                                <button
+                                  type="button"
+                                  className="link"
+                                  aria-label={t('school.courses.unassign', {
+                                    name: teacher.name,
+                                  })}
+                                  disabled={busy}
+                                  onClick={() => unassign(course, teacher)}
+                                >
+                                  ✕
+                                </button>
+                              </span>
+                            ))
+                          )}
+                        </div>
+                        <div className="row">
+                          <select
+                            value={assigning[course.id] ?? ''}
+                            aria-label={t('school.courses.assignLabel', {
+                              name: course.name,
+                            })}
+                            disabled={busy}
+                            onChange={(event) =>
+                              setAssigning((current) => ({
+                                ...current,
+                                [course.id]: event.target.value,
+                              }))
+                            }
+                          >
+                            <option value="">{t('school.courses.pickTeacher')}</option>
+                            {members
+                              .filter(
+                                (person) =>
+                                  !course.teachers.some((item) => item.id === person.id),
+                              )
+                              .map((person) => (
+                                <option key={person.id} value={person.id}>
+                                  {fullName(person)}
+                                </option>
+                              ))}
+                          </select>
+                          <button
+                            type="button"
+                            className="secondary"
+                            disabled={busy || !assigning[course.id]}
+                            onClick={() => assign(course)}
+                          >
+                            {t('school.teachers.assign')}
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="course-role">
+                        <span className="hint">{t('school.courses.methodist')}</span>
+                        <div className="row courses">
+                          {course.methodists.length === 0 ? (
+                            <span className="hint">
+                              {t('school.courses.noMethodist')}
+                            </span>
+                          ) : (
+                            course.methodists.map((person) => (
+                              <span className="tag" key={person.row}>
+                                {person.name}
+                                <button
+                                  type="button"
+                                  className="link"
+                                  aria-label={t('school.courses.dropMethodist', {
+                                    name: person.name,
+                                  })}
+                                  disabled={busy}
+                                  onClick={() => dropMethodist(person.row)}
+                                >
+                                  ✕
+                                </button>
+                              </span>
+                            ))
+                          )}
+                        </div>
+                        <div className="row">
+                          <select
+                            value={naming[course.id] ?? ''}
+                            aria-label={t('school.courses.methodistLabel', {
+                              name: course.name,
+                            })}
+                            disabled={busy}
+                            onChange={(event) =>
+                              setNaming((current) => ({
+                                ...current,
+                                [course.id]: event.target.value,
+                              }))
+                            }
+                          >
+                            <option value="">
+                              {t('school.courses.pickMethodist')}
+                            </option>
+                            {members
+                              .filter(
+                                (person) =>
+                                  !course.methodists.some(
+                                    (item) => item.id === person.id,
+                                  ),
+                              )
+                              .map((person) => (
+                                <option key={person.id} value={person.id}>
+                                  {fullName(person)}
+                                </option>
+                              ))}
+                          </select>
+                          <button
+                            type="button"
+                            className="secondary"
+                            disabled={busy || !naming[course.id]}
+                            onClick={() => nameMethodist(course)}
+                          >
+                            {t('school.courses.nameMethodist')}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
                   )}
-                </div>
-
-                {/* вторая роль курса: кто утверждает его план */}
-                <div className="row courses">
-                  <span className="hint">{t('school.courses.methodist')}</span>
-                  {course.methodists.length === 0 ? (
-                    <span className="hint">{t('school.courses.noMethodist')}</span>
-                  ) : (
-                    course.methodists.map((person) => (
-                      <span className="tag" key={person.row}>
-                        {person.name}
-                        <button
-                          type="button"
-                          className="link"
-                          aria-label={t('school.courses.dropMethodist', {
-                            name: person.name,
-                          })}
-                          disabled={busy}
-                          onClick={() => dropMethodist(person.row)}
-                        >
-                          ✕
-                        </button>
-                      </span>
-                    ))
-                  )}
-                </div>
-
-                <div className="row">
-                  <select
-                    value={naming[course.id] ?? ''}
-                    aria-label={t('school.courses.methodistLabel', {
-                      name: course.name,
-                    })}
-                    disabled={busy}
-                    onChange={(event) =>
-                      setNaming((current) => ({
-                        ...current,
-                        [course.id]: event.target.value,
-                      }))
-                    }
-                  >
-                    <option value="">{t('school.courses.pickMethodist')}</option>
-                    {members
-                      .filter(
-                        (person) =>
-                          !course.methodists.some((item) => item.id === person.id),
-                      )
-                      .map((person) => (
-                        <option key={person.id} value={person.id}>
-                          {fullName(person)}
-                        </option>
-                      ))}
-                  </select>
-                  <button
-                    type="button"
-                    className="secondary"
-                    disabled={busy || !naming[course.id]}
-                    onClick={() => nameMethodist(course)}
-                  >
-                    {t('school.courses.nameMethodist')}
-                  </button>
-                </div>
-
-                <div className="row">
-                  <select
-                    value={assigning[course.id] ?? ''}
-                    aria-label={t('school.courses.assignLabel', { name: course.name })}
-                    disabled={busy}
-                    onChange={(event) =>
-                      setAssigning((current) => ({
-                        ...current,
-                        [course.id]: event.target.value,
-                      }))
-                    }
-                  >
-                    <option value="">{t('school.courses.pickTeacher')}</option>
-                    {members
-                      .filter(
-                        (person) =>
-                          !course.teachers.some((item) => item.id === person.id),
-                      )
-                      .map((person) => (
-                        <option key={person.id} value={person.id}>
-                          {fullName(person)}
-                        </option>
-                      ))}
-                  </select>
-                  <button
-                    type="button"
-                    className="secondary"
-                    disabled={busy || !assigning[course.id]}
-                    onClick={() => assign(course)}
-                  >
-                    {t('school.teachers.assign')}
-                  </button>
-                </div>
-              </li>
-            ))}
+                </li>
+              )
+            })}
           </ul>
         )}
       </section>

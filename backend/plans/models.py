@@ -118,12 +118,11 @@ class PlanBaseline(models.Model):
     точку отсчёта, относительно которой считается расхождение.
 
     У самого плана состояния нет: учитель правит его свободно, состояние
-    есть только у снимка. Правка отзывает поданный запрос (`WITHDRAWN`),
-    чтобы состояние всегда оставалось честным.
+    есть только у запроса. Правки после отправки ничего не отзывают —
+    методист открывает текущую версию плана и утверждает то, что видит.
     """
 
     class Status(models.TextChoices):
-        DRAFT = "draft", "withdrawn by an edit"
         PENDING = "pending", "waiting for approval"
         APPROVED = "approved", "approved"
         RETURNED = "returned", "returned with a comment"
