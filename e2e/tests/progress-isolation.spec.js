@@ -93,8 +93,10 @@ test('«Состояние курсов» — строка на курс и по
   await rows.first().locator('.progress-head').click()
   const details = rows.first().locator('.progress-details')
   await expect(details.locator('[data-card="reserve"]')).toContainText('свободных')
-  await expect(details.locator('[data-card="losses"]')).toContainText('отменено')
+  await expect(details.locator('[data-card="changes"]')).toContainText('отменено')
   await expect(details.locator('[data-card="growth"]')).toContainText('эталон')
+  // дата окончания плашки не занимает: она повторяла бы резерв
+  await expect(details.locator('[data-card="ends"]')).toHaveCount(0)
   // ближайших уроков ровно два
   await expect(details.locator('.progress-next li')).toHaveCount(2)
 })
@@ -177,8 +179,9 @@ test('рост к утверждённому эталону виден на «С
   await ready(page)
   const row = page.locator('.progress-list > li').first()
   await row.locator('.progress-head').click()
-  // сразу после утверждения расхождения нет
-  await expect(row.locator('[data-card="growth"] h2')).toHaveText('0')
+  // сразу после утверждения расхождения нет — и добавленных, и удалённых
+  await expect(row.locator('[data-card="growth"] .pair b').first()).toHaveText('0')
+  await expect(row.locator('[data-card="growth"] .pair b').last()).toHaveText('0')
 
   // добавили урок — план вырос ровно на него
   await page.goto('/plan')
@@ -194,9 +197,30 @@ test('рост к утверждённому эталону виден на «С
   await page.goto('/status')
   await ready(page)
   await page.locator('.progress-list > li').first().locator('.progress-head').click()
-  await expect(
-    page.locator('.progress-list > li').first().locator('[data-card="growth"] h2'),
-  ).toHaveText('+1')
+  const growth = page.locator('.progress-list > li').first().locator('[data-card="growth"]')
+  // два числа, а не сальдо: добавили один, не удаляли ни одного
+  await expect(growth.locator('.pair b').first()).toHaveText('+1')
+  await expect(growth.locator('.pair b').last()).toHaveText('0')
+})
+
+test('плашек четыре, и все одного роста', async ({ page, signIn }) => {
+  await signIn(PEOPLE.ivanova)
+  await page.goto('/status')
+  await ready(page)
+
+  // курс с планом и курс без плана: пустые случаи ростом отличаться не должны
+  for (const name of ['Grade 6 Algebra', 'Grade 6 Geometry']) {
+    const row = page.locator('.progress-list > li', { hasText: name })
+    await row.locator('.progress-head').click()
+
+    const cards = row.locator('.progress-details .cards .card-stat')
+    await expect(cards).toHaveCount(4)
+
+    const heights = await cards.evaluateAll((all) =>
+      all.map((card) => Math.round(card.getBoundingClientRect().height)),
+    )
+    expect(new Set(heights).size, `${name}: ${heights.join(', ')}`).toBe(1)
+  }
 })
 
 test('прогресс по плану: три числа одной плашкой', async ({ page, signIn }) => {
@@ -214,10 +238,9 @@ test('прогресс по плану: три числа одной плашк�
     'progress',
   )
 
-  // год не начался: проведено ноль, полоска пустая — это нормально
+  // год не начался: проведено ноль — это нормально
   await expect(card.locator('h2')).toHaveText('0 из 40')
   await expect(card.locator('.hint')).toHaveText('осталось 40')
-  await expect(card.locator('.progress-bar > span')).toHaveCSS('width', '0px')
 
   // проведено плюс осталось равно всему — числа берутся из одного ответа
   const [done, total] = (await card.locator('h2').textContent())

@@ -85,9 +85,7 @@ export default function Layout({ onLoggedOut }) {
    * Прогресс по плану: три связанных числа одной плашкой.
    *
    * Проведено, осталось и всего — это одно утверждение, разложенное на
-   * три части, и врозь они читаются как три разных показателя. Полоска
-   * нейтрального цвета: она про пройденный путь, а не про «хорошо или
-   * плохо» — цветом на этом экране говорит только резерв.
+   * три части, и врозь они читаются как три разных показателя.
    *
    * Дефицит на числа не влияет: «осталось 30» значит тридцать уроков
    * плана, а хватит ли им дней — отдельный вопрос, и у него своё
@@ -106,20 +104,10 @@ export default function Layout({ onLoggedOut }) {
     }
 
     const left = course.lessons_total - course.done
-    const share = Math.round((course.done / course.lessons_total) * 100)
 
     return (
       <section className="panel card-stat" data-card="progress">
         <h2>{t('status.doneOf', { done: course.done, total: course.lessons_total })}</h2>
-        <div
-          className="progress-bar"
-          role="progressbar"
-          aria-valuenow={course.done}
-          aria-valuemin={0}
-          aria-valuemax={course.lessons_total}
-        >
-          <span style={{ width: `${share}%` }} />
-        </div>
         <p className="hint">{t('status.left', { count: left })}</p>
       </section>
     )
@@ -140,61 +128,54 @@ export default function Layout({ onLoggedOut }) {
           </p>
         </section>
 
-        <section className="panel card-stat" data-card="losses">
-          <h2>{course.cancelled}</h2>
-          <p className="hint">{t('status.cancelled')}</p>
-          {course.cancelled > 0 && (
-            <p className="hint">
-              {Object.entries(course.cancelled_by_reason)
-                .map(([reason, count]) => `${reason || t('status.noReason')}: ${count}`)
-                .join(' · ')}
-            </p>
-          )}
+        {/* насколько расписание разошлось с исходным: добавили минус
+            отменили. С резервом не путать — тот про план, этот про дни */}
+        <section className="panel card-stat" data-card="changes">
+          <h2>{signed(course.extra - course.cancelled)}</h2>
+          <p className="hint">{t('status.changes')}</p>
+          <p className="hint">
+            {t('status.changesDetail', {
+              cancelled: course.cancelled,
+              extra: course.extra,
+            })}
+          </p>
         </section>
 
+        {/* два числа, а не сальдо: рост съедает резерв, удаление означает
+            выкинутый материал, и «плюс три минус три» тут не ноль */}
         <section className="panel card-stat" data-card="growth">
           {course.baseline ? (
             <>
-              <h2>{signed(course.baseline.added)}</h2>
+              <p className="pair">
+                <b>{signed(course.baseline.added)}</b> {t('status.addedToPlan')}
+              </p>
+              <p className="pair">
+                <b>{course.baseline.removed}</b> {t('status.droppedFromPlan')}
+              </p>
               <p className="hint">
                 {t('status.grown', {
-                  date: shortDate(course.baseline.created_at.slice(0, 10)),
+                  date: shortDate(course.baseline.approved_at.slice(0, 10)),
                 })}
               </p>
-              {course.baseline.removed > 0 && (
-                <p className="hint">
-                  {t('status.dropped', { count: course.baseline.removed })}
-                </p>
-              )}
             </>
           ) : (
             <>
-              <h2 className="small">—</h2>
               <p className="hint">{t('status.noBaseline')}</p>
+              <button type="button" className="link" onClick={() => navigate('/plan')}>
+                {t('status.sendForApproval')}
+              </button>
             </>
           )}
-        </section>
-
-        <section className="panel card-stat" data-card="ends">
-          <h2 className="small">
-            {course.last_lesson_date ? shortDate(course.last_lesson_date) : '—'}
-          </h2>
-          <p className="hint">
-            {/* «0 урокам не хватило дней» — не ответ: у пустого плана нет ни
-                даты окончания, ни дефицита, ему просто нечего кончать */}
-            {!course.lessons_total
-              ? t('status.where.noPlan')
-              : course.last_lesson_date
-                ? t('status.endsOn', { year: shortDate(course.year_end) })
-                : t('status.doesNotFit', { count: course.missing })}
-          </p>
         </section>
       </div>
 
       {/* про год говорим отдельно: на плашку состояния это не влияет */}
       {course.last_lesson_date && course.last_lesson_date > course.year_end && (
         <p className="hint warning">
-          {t('status.pastYear', { year: shortDate(course.year_end) })}
+          {t('status.pastYear', {
+            date: shortDate(course.last_lesson_date),
+            year: shortDate(course.year_end),
+          })}
         </p>
       )}
 

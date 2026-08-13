@@ -397,17 +397,11 @@
     "fillPlan": "Fill the plan",
     "reserveSpare": "spare lessons in the year",
     "reserveShort": "lessons over the year",
-    "cancelled": "cancelled",
-    "noReason": "no reason given",
-    "grown": "since {{date}}",
-    "dropped_one": "and {{count}} lesson dropped",
-    "dropped_other": "and {{count}} lessons dropped",
+    "grown": "against the baseline of {{date}}",
     "noBaseline": "no approved baseline",
     "grownThemes": "Which themes grew",
     "looseTheme": "outside the themes",
-    "endsOn": "year to {{year}}",
-    "doesNotFit": "{{count}} lessons have no day",
-    "pastYear": "the plan runs past the end of the year ({{year}})",
+    "pastYear": "the plan ends on {{date}}, past the end of the year ({{year}})",
     "next": "Coming up",
     "toPlan": "Open the plan",
     "toSchedule": "Open the schedule",
@@ -425,7 +419,12 @@
       "title": "A course first",
       "hint": "This page shows how each course is going through the year — and both the plan and the schedule belong to a course.",
       "action": "Add a course"
-    }
+    },
+    "changes": "change in lessons",
+    "changesDetail": "{{cancelled}} cancelled · {{extra}} added",
+    "addedToPlan": "added to the plan",
+    "droppedFromPlan": "dropped from the plan",
+    "sendForApproval": "send for approval"
   },
   "calendar": {
     "title": "School year",
