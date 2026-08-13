@@ -9,7 +9,7 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 
-import { layoutTotals, stitchLayout } from '../src/planLayout.js'
+import { freeSlots, layoutTotals, stitchLayout } from '../src/planLayout.js'
 import { planRows } from '../src/planLogic.js'
 
 /** Лента: по слоту в день, с 1 октября. */
@@ -376,5 +376,53 @@ describe('недели', () => {
     const rows = [lesson(1), lesson(2), lesson(3), lesson(4)]
 
     assert.equal(brackets(rows, weeks(3)).at(-1), null)
+  })
+})
+
+describe('свободные слоты', () => {
+  const ribbon = (count) =>
+    Array.from({ length: count }, (_, index) => ({
+      id: 200 + index,
+      date: `2026-09-${String(index + 7).padStart(2, '0')}`,
+      week: Math.floor(index / 3) + 1,
+      week_start: '2026-09-07',
+      term: null,
+      break_before: null,
+    }))
+
+  it('это хвост ленты после последнего урока плана', () => {
+    const rows = [section(10), lesson(1, 10), lesson(2, 10)]
+
+    assert.deepEqual(
+      freeSlots(rows, ribbon(5)).map((free) => free.slot.date),
+      ['2026-09-09', '2026-09-10', '2026-09-11'],
+    )
+  })
+
+  it('при дефиците свободных нет вовсе', () => {
+    const rows = [lesson(1), lesson(2), lesson(3)]
+
+    assert.deepEqual(freeSlots(rows, ribbon(2)), [])
+  })
+
+  it('подпись недели не повторяется, если неделю начал урок плана', () => {
+    // два урока плана заняли начало первой недели
+    const rows = [lesson(1), lesson(2)]
+
+    assert.deepEqual(
+      freeSlots(rows, ribbon(7)).map((free) => [free.slot.week, free.labelled]),
+      [
+        [1, false], // первая неделя уже подписана в плане
+        [2, true],
+        [2, false],
+        [2, false],
+        [3, true],
+      ],
+    )
+  })
+
+  it('пустой план — свободны все слоты', () => {
+    assert.equal(freeSlots([], ribbon(4)).length, 4)
+    assert.equal(freeSlots([], ribbon(4))[0].labelled, true)
   })
 })

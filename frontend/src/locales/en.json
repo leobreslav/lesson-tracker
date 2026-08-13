@@ -358,10 +358,14 @@
       "missing": "do not fit",
       "sections": "themes",
       "doesNotFit": "the plan does not fit",
-      "weeks": "Weeks"
+      "weeks": "Weeks",
+      "freeSlots": "Free"
     },
     "today": "TODAY",
-    "week": "wk {{number}}"
+    "week": "wk {{number}}",
+    "freeSlot": "free lesson",
+    "freeSummary_one": "{{count}} free lesson, {{start}} — {{end}}",
+    "freeSummary_other": "{{count}} free lessons, {{start}} — {{end}}"
   },
   "calendar": {
     "title": "School year",

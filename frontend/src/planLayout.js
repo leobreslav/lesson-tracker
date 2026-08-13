@@ -156,3 +156,25 @@ export function layoutTotals(rows, ribbon) {
     missing: Math.max(0, lessons - slots),
   }
 }
+
+/**
+ * Слоты, на которые не пришлось ни одного урока плана.
+ *
+ * Сводка говорит «баланс +82», но где эти восемьдесят два дня — по числу не
+ * видно. При позиционном сопоставлении они идут все подряд после последнего
+ * урока плана, поэтому это просто хвост ленты.
+ *
+ * Подпись недели ставится там же, где и в плане: у первой строки недели, —
+ * и первая свободная строка её не получает, если неделя началась ещё
+ * уроками плана.
+ */
+export function freeSlots(rows, ribbon) {
+  const lessons = rows.filter((row) => !row.is_section).length
+  let previous = lessons > 0 ? (ribbon[lessons - 1]?.week ?? null) : null
+
+  return ribbon.slice(lessons).map((slot) => {
+    const labelled = slot.week != null && slot.week !== previous
+    previous = slot.week
+    return { slot, labelled }
+  })
+}

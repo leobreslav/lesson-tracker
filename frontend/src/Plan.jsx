@@ -31,7 +31,7 @@ import ImportDialog from './ImportDialog'
 import PlanCsvHelp from './PlanCsvHelp'
 import Modal from './Modal'
 import { EmptyDropZone, SortableRow, dragId, emptyZoneId } from './PlanDnd'
-import { layoutTotals, stitchLayout } from './planLayout'
+import { freeSlots, layoutTotals, stitchLayout } from './planLayout'
 import { dayMonth, longDate, shortDate, shortWeekday } from './dates'
 import { today } from './calendarLogic'
 import {
@@ -73,6 +73,12 @@ const LessonPanel = lazy(() => import('./LessonPanel'))
 // мешают, при планировании нужны, и переключать это каждый раз незачем
 const DATES_KEY = 'planShowDates'
 const WEEKS_KEY = 'planShowWeeks'
+const FREE_KEY = 'planShowFree'
+const FREE_OPEN_KEY = 'planFreeOpen'
+
+// столько свободных слотов показываем сразу: свернуть три строки — значит
+// заставить нажать кнопку ради трёх строк
+const FREE_INLINE = 5
 
 function remembered(key, fallback) {
   try {
@@ -117,6 +123,8 @@ export default function Plan({ onLoggedOut }) {
   const [ribbon, setRibbon] = useState([])
   const [showDates, setShowDates] = useState(rememberedDates)
   const [showWeeks, setShowWeeks] = useState(() => remembered(WEEKS_KEY, true))
+  const [showFree, setShowFree] = useState(() => remembered(FREE_KEY, true))
+  const [freeOpen, setFreeOpen] = useState(() => remembered(FREE_OPEN_KEY, false))
   const [adding, setAdding] = useState(null) // {parent, after, is_section, title}
   const [deleting, setDeleting] = useState(null) // the section being removed
   const [importing, setImporting] = useState(false)
@@ -260,6 +268,7 @@ export default function Plan({ onLoggedOut }) {
         stitchLayout(rows, ribbon, today()).map((row) => [row.id, row]),
       ),
       totals: layoutTotals(rows, ribbon),
+      free: freeSlots(rows, ribbon),
     }
   }, [data, ribbon])
 
@@ -643,6 +652,77 @@ export default function Plan({ onLoggedOut }) {
     )
   }
 
+  /**
+   * Свободные слоты — даты, на которые уроков плана не хватило.
+   *
+   * Их бывает и восемьдесят: при позиционном сопоставлении они идут хвостом
+   * после последнего урока, поэтому по умолчанию свёрнуты в одну строку. До
+   * пяти показываем сразу — сворачивать три строки значит требовать нажатия
+   * ради трёх строк.
+   */
+  const renderFree = () => {
+    const free = layout.free
+    if (!dated || !showFree || !free.length) return null
+
+    const many = free.length > FREE_INLINE
+    const open = !many || freeOpen
+
+    return (
+      <>
+        {many && (
+          <button
+            type="button"
+            className="link free-summary"
+            aria-expanded={open}
+            onClick={() => {
+              setFreeOpen(!freeOpen)
+              remember(FREE_OPEN_KEY, !freeOpen)
+            }}
+          >
+            {open ? '▾' : '▸'}{' '}
+            {t('plan.freeSummary', {
+              count: free.length,
+              start: dayMonth(free[0].slot.date),
+              end: dayMonth(free.at(-1).slot.date),
+            })}
+          </button>
+        )}
+
+        {open && (
+          <ul className="plan free">
+            {free.map(({ slot, labelled }) => (
+              <li
+                key={slot.id}
+                className={`plan-row free${slot.week % 2 === 0 ? ' week-even' : ''}`}
+              >
+                <span className="plan-weekmark">
+                  {showWeeks && labelled && t('plan.week', { number: slot.week })}
+                </span>
+                <span className="plan-date">
+                  {dayMonth(slot.date)} <em>{shortWeekday(slot.date)}</em>
+                </span>
+                {/* ни ручки, ни номера: это не строка плана, а пустое место
+                    в расписании */}
+                <span />
+                <span />
+                <span className="plan-title-cell">
+                  <button
+                    type="button"
+                    className="link title free-slot"
+                    disabled={busy}
+                    onClick={() => openAdd({ parent: null })}
+                  >
+                    {t('plan.freeSlot')}
+                  </button>
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </>
+    )
+  }
+
   /** Чётные недели закрашены — этим и группируются. */
   const weekStripe = (node) => {
     const week = dated && showWeeks && layout.byId.get(node.id)?.week
@@ -1004,6 +1084,17 @@ export default function Plan({ onLoggedOut }) {
                 />
                 {t('plan.summary.weeks')}
               </label>
+              <label className="checkbox">
+                <input
+                  type="checkbox"
+                  checked={showFree}
+                  onChange={(event) => {
+                    setShowFree(event.target.checked)
+                    remember(FREE_KEY, event.target.checked)
+                  }}
+                />
+                {t('plan.summary.freeSlots')}
+              </label>
             </div>
           )}
 
@@ -1071,6 +1162,8 @@ export default function Plan({ onLoggedOut }) {
                   )}
                 </DragOverlay>
               </DndContext>
+
+              {renderFree()}
 
               {!data.nodes.length && (
                 <EmptyState title={t('plan.empty.title')}>

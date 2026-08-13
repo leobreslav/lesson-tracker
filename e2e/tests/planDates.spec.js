@@ -521,3 +521,103 @@ test('перетаскивание в тему и обратно меняет о
     )
     .toBe(nestedAt - 20)
 })
+
+test('свободные слоты свёрнуты, раскрываются и помнят это', async ({
+  page,
+  signIn,
+}) => {
+  await signIn(PEOPLE.ivanova)
+  await openPlan(page)
+
+  // по умолчанию — одна строка вместо пятидесяти девяти
+  const summary = page.locator('.free-summary')
+  await expect(summary).toContainText('свободных уроков')
+  await expect(page.locator('.plan-row.free')).toHaveCount(0)
+
+  await summary.click()
+  const free = page.locator('.plan-row.free')
+  expect(await free.count()).toBeGreaterThan(5)
+  // у заглушки есть дата, но нет ни ручки, ни номера
+  await expect(free.first().locator('.plan-date')).not.toBeEmpty()
+  await expect(free.first().locator('.handle')).toHaveCount(0)
+  await expect(free.first().locator('.plan-number')).toHaveCount(0)
+  await expect(free.first()).toContainText('свободный урок')
+
+  await page.reload()
+  await ready(page)
+  await expect(page.locator('.plan-row.free').first()).toBeVisible()
+})
+
+test('чередование недель продолжается на свободных слотах', async ({
+  page,
+  signIn,
+}) => {
+  await signIn(PEOPLE.ivanova)
+  await openPlan(page)
+  await page.locator('.free-summary').click()
+
+  // полоса заливки идёт по неделе, а не по тому, план это или пустое место
+  const mixed = await page.evaluate(() => {
+    const marks = [...document.querySelectorAll('.plan-row.free')].map((row) => ({
+      even: row.classList.contains('week-even'),
+      label: row.querySelector('.plan-weekmark')?.textContent.trim() ?? '',
+    }))
+    // у каждой подписи чередование должно переключаться
+    return marks.filter(
+      (row, index) => row.label && index > 0 && marks[index - 1].even === row.even,
+    ).length
+  })
+
+  expect(mixed).toBe(0)
+})
+
+test('в свободный слот вставляется урок, и остальные пересчитываются', async ({
+  page,
+  signIn,
+}) => {
+  await signIn(PEOPLE.ivanova)
+  await openPlan(page)
+  await page.locator('.free-summary').click()
+
+  const free = page.locator('.plan-row.free')
+  const before = await free.count()
+  const firstDate = await free.first().locator('.plan-date').textContent()
+
+  await free.first().getByRole('button', { name: 'свободный урок' }).click()
+  const form = page.locator('.plan-add-form')
+  await form.getByLabel('Название').fill('Занял свободный день')
+  await form.getByRole('button', { name: 'Добавить' }).click()
+
+  const added = page.locator('.plan-row', { hasText: 'Занял свободный день' })
+  await expect(added).toBeVisible()
+  // урок встал на первую свободную дату, а свободных стало на одну меньше
+  await expect(added.locator('.plan-date')).toHaveText(firstDate.trim())
+  await expect.poll(() => free.count()).toBe(before - 1)
+})
+
+test('без дат свободные слоты не показываются', async ({ page, signIn }) => {
+  await signIn(PEOPLE.ivanova)
+  await openPlan(page)
+
+  await page.getByLabel('Даты').uncheck()
+
+  await expect(page.locator('.free-summary')).toHaveCount(0)
+  await expect(page.locator('.plan-row.free')).toHaveCount(0)
+})
+
+test('при дефиците свободных нет вовсе', async ({ page, signIn, api }) => {
+  const teacher = await api(PEOPLE.ivanova)
+  const courses = await teacher.get('/api/courses/')
+  const course = courses.body.find((item) => item.name === COURSE)
+  await teacher.delete(
+    `/api/slots/bulk/?course=${course.id}&start=2026-10-01&end=2027-08-01`,
+  )
+
+  await signIn(PEOPLE.ivanova)
+  await openPlan(page)
+
+  // план не помещается — свободному месту взяться неоткуда
+  await expect(page.locator('[data-card="missing"]')).toBeVisible()
+  await expect(page.locator('.free-summary')).toHaveCount(0)
+  await expect(page.locator('.plan-row.free')).toHaveCount(0)
+})

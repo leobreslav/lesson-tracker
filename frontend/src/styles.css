@@ -1888,6 +1888,36 @@ button.link:hover:not(:disabled) {
   padding-left: var(--plan-indent);
 }
 
+/*
+ * Свободный слот — дата, на которую урока плана не хватило.
+ *
+ * Строка та же самая, только без ручки и номера: это не элемент плана, а
+ * пустое место в расписании. Курсив и приглушённый цвет говорят то же самое
+ * ещё раз — с двух шагов видно, где план кончился.
+ */
+.plan-row.free .title {
+  font-style: italic;
+  color: #80868b;
+}
+
+.plan-row.free:hover .title {
+  color: #1a73e8;
+}
+
+/* свёрнутый хвост: одна строка вместо восьмидесяти */
+button.link.free-summary {
+  align-self: flex-start;
+  padding: 0.25rem 0.4rem;
+  font-size: 0.8rem;
+  color: #5f6368;
+}
+
+.plan.free {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
 /* строки вплотную: скобка недели идёт через них сплошной линией, а зазор
    разорвал бы её на пунктир */
 .plan > .plan-row,

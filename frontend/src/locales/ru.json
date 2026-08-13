@@ -370,10 +370,15 @@
       "missing": "не помещается",
       "sections": "тем",
       "doesNotFit": "план не помещается",
-      "weeks": "Недели"
+      "weeks": "Недели",
+      "freeSlots": "Свободные"
     },
     "today": "СЕГОДНЯ",
-    "week": "нед {{number}}"
+    "week": "нед {{number}}",
+    "freeSlot": "свободный урок",
+    "freeSummary_one": "{{count}} свободный урок, {{start}} — {{end}}",
+    "freeSummary_few": "{{count}} свободных урока, {{start}} — {{end}}",
+    "freeSummary_many": "{{count}} свободных уроков, {{start}} — {{end}}"
   },
   "calendar": {
     "title": "Учебный год",
