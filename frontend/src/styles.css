@@ -730,7 +730,9 @@ form .success {
   border-color: #1a73e8;
 }
 
-.help-toggle[aria-expanded='true'] {
+/* :not(:disabled) — не украшение, а вес: у правила выше он такой же, и без
+   него наведение перебивало бы раскрытое состояние */
+.help-toggle[aria-expanded='true']:not(:disabled) {
   color: #fff;
   background: #1a73e8;
   border-color: #1a73e8;
@@ -1595,6 +1597,28 @@ button.link:hover:not(:disabled) {
   width: 1px;
   height: 1.4rem;
   background: #e0e0e0;
+}
+
+/* формат выгрузки: две кнопки, читающиеся как один переключатель. Рост у
+   них общий с соседними кнопками — иначе ряд ломает сторож высот, и
+   правильно делает: разновысокие контролы в ряду и есть поломка */
+.format-switch {
+  display: flex;
+  gap: 0.25rem;
+}
+
+/* только по горизонтали: вертикальные отступы задаёт строка формы, и
+   переписать их значит выбиться из ряда по высоте — сторож это ловит */
+.format-switch button.chip {
+  padding-left: 0.7rem;
+  padding-right: 0.7rem;
+  font-size: 0.8rem;
+}
+
+.format-switch button.chip.active {
+  color: #fff;
+  background: #1a73e8;
+  border-color: #1a73e8;
 }
 
 /* справка о формате CSV: раскрывается кнопкой «?» у заголовка карточки */

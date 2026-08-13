@@ -13,6 +13,7 @@ import { useTranslation } from 'react-i18next'
  * одинаковая — это часть формата, а не перевод.
  */
 
+// столбцы те же и в книге: у CSV они через запятую, в xlsx — четыре ячейки
 const SAMPLE = [
   'id,Тема,Урок,Заметка',
   '412,Тригонометрия,Синус суммы,',
@@ -29,6 +30,8 @@ export default function PlanCsvHelp() {
 
   return (
     <div className="csv-help">
+      <p>{t('plan.csvHelp.formats')}</p>
+
       <pre className="csv-sample">{SAMPLE.join('\n')}</pre>
 
       <ul className="csv-rules">

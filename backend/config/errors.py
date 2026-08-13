@@ -97,6 +97,7 @@ class Codes:
     FILE_TOO_LARGE = "file_too_large"
     FILE_UNREADABLE = "file_unreadable"
     FILE_TOO_MANY_ROWS = "file_too_many_rows"
+    FILE_NOT_XLSX = "file_not_xlsx"
     MODE_REQUIRED = "mode_required"
 
     # CSV: the file is read strictly, and refused whole. There is one format

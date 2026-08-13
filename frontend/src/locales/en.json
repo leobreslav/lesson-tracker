@@ -206,7 +206,8 @@
     "csv_row_empty": "Row {{row}}: neither a theme nor a lesson.",
     "csv_row_too_long": "Row {{row}}: the title is longer than {{limit}} characters.",
     "csv_bad_id": "Row {{row}}: «{{value}}» is not a row id — leave the cell empty for a new lesson.",
-    "csv_nothing_to_sync": "Nothing to sync with: not a single row carries an id. Export the plan first, or import it as «Append»."
+    "csv_nothing_to_sync": "Nothing to sync with: not a single row carries an id. Export the plan first, or import it as «Append».",
+    "file_not_xlsx": "The file is not an «.xlsx» workbook. The old «.xls» is not supported — save it as «.xlsx» or export the plan again."
   },
   "classPicker": {
     "label": "Classes:",
@@ -232,9 +233,9 @@
     "summaryMore": " and {{count}} more."
   },
   "csv": {
-    "title": "Import a plan from CSV",
-    "hint": "One format: {{header}}, the header is required. One row is one lesson, the theme is repeated on every row; an empty theme means the lesson sits outside any theme, an empty id means it is new.",
-    "dropZone": "Drag a file here or choose one",
+    "title": "Import a plan",
+    "hint": "Two formats, same table: {{header}}, one row is one lesson. xlsx is the safer one — no encodings, no delimiters, no quotes around commas.",
+    "dropZone": "Drag an .xlsx or .csv file here or choose one",
     "unreadable": "The file could not be read — a plain text CSV is expected.",
     "readAs": "Rows: {{rows}} · lessons: {{lessons}} · themes: {{sections}}",
     "willDo": " · new: {{create}} · updated: {{update}} · deleted: {{delete}}",
@@ -265,7 +266,9 @@
     "refused": "The file cannot be applied — it is taken whole or not at all:",
     "modeReplace": "replace the plan",
     "modeAppend": "add to the end",
-    "replaceWarning": "The current plan of the course will be deleted in full."
+    "replaceWarning": "The current plan of the course will be deleted in full.",
+    "sheetUsed_one": "Read the sheet «{{sheet}}»; {{count}} more sheet in the book is left alone.",
+    "sheetUsed_other": "Read the sheet «{{sheet}}»; {{count}} more sheets in the book are left alone."
   },
   "rangeDialog": {
     "title": "New break",
@@ -296,8 +299,6 @@
     "deleteConfirm": "Delete «{{title}}»?",
     "addLesson": "+ lesson",
     "addSection": "+ theme",
-    "importCsv": "Import CSV",
-    "exportCsv": "Export CSV",
     "imported": "Created {{rows}} rows ({{sections}} sections, {{lessons}} lessons).",
     "dndInstructions": "Press space to pick the item up. Choose a new place with the up and down arrows, press space to drop it, Escape cancels the move. The arrow buttons in the row do the same.",
     "needClass": {
@@ -328,6 +329,7 @@
     "synced": "Synced: {{created}} created, {{updated}} updated, {{deleted}} deleted.",
     "csvHelp": {
       "toggle": "What the file looks like",
+      "formats": "Two formats, one table. xlsx is preferred: a workbook has no encoding, no delimiter and no quoting, so a comma inside a title is just a comma. csv stays for those who want a plain text file.",
       "rules": {
         "oneRow": "One row is one lesson — there is no row for a theme of its own.",
         "repeat": "The theme is repeated on every row; a new theme starts where the value changes.",
@@ -340,7 +342,10 @@
         "append": "the rows are added to the end, ids are ignored, nothing is deleted.",
         "replace": "the plan is wiped and built again from the file — content and attachments go with it."
       }
-    }
+    },
+    "importFile": "Import",
+    "exportFile": "Export",
+    "exportFormat": "Export format"
   },
   "calendar": {
     "title": "School year",

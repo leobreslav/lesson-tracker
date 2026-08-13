@@ -1,22 +1,29 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import Modal from './Modal'
-import { previewPlanCsv } from './api'
+import { previewPlanFile } from './api'
 import { decodeCsv, parsePlanCsv } from './planCsv'
+
+/** Книгу здесь не читают: её разбирает сервер. */
+const isWorkbook = (file) => /\.xlsx$/i.test(file?.name ?? '')
 
 const PREVIEW_LIMIT = 20
 const MODES = ['sync', 'append', 'replace']
 
 /**
- * Importing a plan from CSV: the file, the mode and two previews.
+ * Importing a plan from a file: the file, the mode and two previews.
  *
- * The file itself is parsed here, in the browser, so the person sees how it
- * was read before anything is sent — and a file the strict format refuses is
- * refused right here, without a round trip. What the import will *cost*
- * comes from the server: only it knows which lessons have content and which
- * files nothing else points at. That answer is the reason this dialog exists
- * in its present form: replace deletes the lesson bodies and the attachments
- * along with the rows, and a file whose last reference goes is gone for good.
+ * Форматов два, и различаются они только тем, кто читает файл. **CSV**
+ * разбирается здесь же, в браузере: человек видит, как файл прочитан, ещё
+ * до отправки, и негодный отклоняется без обращения к серверу. **xlsx**
+ * читает openpyxl на сервере — тащить вторую библиотеку в бандл ради
+ * предпросмотра незачем, — поэтому «как прочитано» приезжает вместе с
+ * ценой, из `import-preview-xlsx`.
+ *
+ * Цену в обоих случаях считает сервер: только он знает, у каких уроков есть
+ * содержание и на какие файлы больше никто не смотрит. Ради этого ответа
+ * диалог и устроен так: replace уносит тела уроков и вложения вместе со
+ * строками, а файл, потерявший последнюю ссылку, исчезает навсегда.
  */
 export default function ImportDialog({ classId, busy, onSubmit, onClose }) {
   const { t } = useTranslation()
@@ -29,7 +36,8 @@ export default function ImportDialog({ classId, busy, onSubmit, onClose }) {
   const [dragging, setDragging] = useState(false)
   const [error, setError] = useState(null)
 
-  const syncable = Boolean(parsed?.rows.some((row) => row.id))
+  // у книги id видно только серверу: файл читает он
+  const syncable = parsed ? parsed.rows.some((row) => row.id) : cost?.syncable
 
   const take = async (chosen) => {
     setError(null)
@@ -38,6 +46,8 @@ export default function ImportDialog({ classId, busy, onSubmit, onClose }) {
     setCost(null)
     setAgreed(false)
     if (!chosen) return
+
+    if (isWorkbook(chosen)) return // книгу читает сервер, здесь читать нечем
 
     try {
       const result = parsePlanCsv(decodeCsv(await chosen.arrayBuffer()))
@@ -52,15 +62,20 @@ export default function ImportDialog({ classId, busy, onSubmit, onClose }) {
   // the cost is asked again on every change of mode: replace and sync lose
   // entirely different things
   useEffect(() => {
-    if (!file || !parsed || parsed.errors.length) return undefined
+    if (!file || parsed?.errors.length) return undefined
+    if (!parsed && !isWorkbook(file)) return undefined
 
     let current = true
     setCost(null)
     setAgreed(false)
 
-    previewPlanCsv(classId, file, mode)
+    previewPlanFile(classId, file, mode)
       .then((result) => current && setCost(result))
-      .catch(() => current && setCost(null))
+      .catch((err) => {
+        if (!current) return
+        setCost(null)
+        setError(err.message)
+      })
 
     return () => {
       current = false
@@ -80,7 +95,7 @@ export default function ImportDialog({ classId, busy, onSubmit, onClose }) {
   // an explicit tick, not just a click on a button: this is the one place
   // where work disappears without a copy anywhere
   const blocked =
-    busy || !parsed?.rows.length || refused || !cost || (losing && !agreed)
+    busy || refused || !cost || !cost.lessons || (losing && !agreed)
 
   const handleSubmit = (event) => {
     event.preventDefault()
@@ -104,7 +119,7 @@ export default function ImportDialog({ classId, busy, onSubmit, onClose }) {
         >
           <input
             type="file"
-            accept=".csv,text/csv"
+            accept=".xlsx,.csv,text/csv"
             onChange={(event) => take(event.target.files?.[0] ?? null)}
           />
           {file ? file.name : t('csv.dropZone')}
@@ -112,7 +127,9 @@ export default function ImportDialog({ classId, busy, onSubmit, onClose }) {
 
         <ul className="csv-modes">
           {MODES.map((name) => {
-            const off = name === 'sync' && parsed && !syncable
+            // у книги ответ приходит с сервера, поэтому ждём его: пока
+            // syncable неизвестен, режим не гасим
+            const off = name === 'sync' && syncable === false
             return (
               <li key={name}>
                 <label className={off ? 'checkbox disabled' : 'checkbox'}>
@@ -156,12 +173,16 @@ export default function ImportDialog({ classId, busy, onSubmit, onClose }) {
         )}
 
         {/* как файл прочитан и что из этого выйдет — одной строкой */}
-        {parsed && !refused && (
+        {(parsed || cost) && !refused && (
           <p className="hint">
             {t('csv.readAs', {
               rows: cost ? cost.rows : parsed.dataRows,
-              lessons: parsed.rows.filter((row) => !row.is_section).length,
-              sections: parsed.rows.filter((row) => row.is_section).length,
+              lessons: cost
+                ? cost.lessons
+                : parsed.rows.filter((row) => !row.is_section).length,
+              sections: cost
+                ? cost.sections
+                : parsed.rows.filter((row) => row.is_section).length,
             })}
             {cost &&
               t('csv.willDo', {
@@ -171,6 +192,15 @@ export default function ImportDialog({ classId, busy, onSubmit, onClose }) {
               })}
             {cost?.with_content > 0 &&
               t('csv.ofThemWithContent', { count: cost.with_content })}
+          </p>
+        )}
+
+        {cost?.sheets_ignored > 0 && (
+          <p className="hint">
+            {t('csv.sheetUsed', {
+              sheet: cost.sheet,
+              count: cost.sheets_ignored,
+            })}
           </p>
         )}
 

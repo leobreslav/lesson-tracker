@@ -412,22 +412,37 @@ class ParsedPlan(NamedTuple):
 
 
 def parse_plan_csv(text: str, *, max_rows: int = CSV_MAX_ROWS) -> ParsedPlan:
+    """CSV → строки плана. Дальше файл ничем не отличается от таблицы."""
+    return parse_plan_rows(
+        csv.reader(io.StringIO(text), delimiter=sniff_delimiter(text)),
+        max_rows=max_rows,
+    )
+
+
+def parse_plan_rows(
+    raw_rows: Iterable[Sequence[str]], *, max_rows: int = CSV_MAX_ROWS
+) -> ParsedPlan:
     """
-    Разбор файла единственного формата.
+    Разбор таблицы единственного формата — общий для CSV и xlsx.
+
+    Форматы различаются только тем, как получить ячейки: у CSV это
+    кодировка, разделитель и кавычки, у xlsx — openpyxl. Всё остальное —
+    шапка, столбцы, id, темы, уроки — здесь, в одном месте, иначе два
+    формата разошлись бы правилами уже на второй правке.
 
     Ошибки собираются все разом и ничего не пишут: показать человеку весь
     список полезнее, чем первую строку, на которой разбор сдался. Отказ
     всегда целиком — половина применённого файла хуже неприменённого.
     """
-    raw_rows = []
-    for number, raw in enumerate(csv.reader(io.StringIO(text),
-                                            delimiter=sniff_delimiter(text)), start=1):
+    rows_read = []
+    for number, raw in enumerate(raw_rows, start=1):
         # шапка — не урок, поэтому предел считается по строкам данных
         if number > max_rows + 1:
             raise PlanImportError(
                 f"The file has more than {max_rows} rows — split it into parts."
             )
-        raw_rows.append(raw)
+        rows_read.append(list(raw))
+    raw_rows = rows_read
 
     head = row_cells(raw_rows[0]) if raw_rows else None
     if head is None or tuple(normalized_cell(cell) for cell in head) != HEADER_NORMALIZED:

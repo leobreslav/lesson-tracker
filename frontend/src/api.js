@@ -310,11 +310,15 @@ const csvForm = (file, mode) => {
   return form
 }
 
-export const importPlanCsv = (classId, file, mode) =>
-  request(`/api/plan/import/?course=${encodeURIComponent(classId)}`, {
-    method: 'POST',
-    body: csvForm(file, mode),
-  })
+/** Куда слать файл: книгу читает openpyxl на сервере, CSV — свой разбор. */
+const isWorkbook = (file) => /\.xlsx$/i.test(file?.name ?? '')
+
+export const importPlanFile = (classId, file, mode) =>
+  request(
+    `/api/plan/${isWorkbook(file) ? 'import-xlsx' : 'import'}/` +
+      `?course=${encodeURIComponent(classId)}`,
+    { method: 'POST', body: csvForm(file, mode) },
+  )
 
 /**
  * What the import would do — counts, and what would be lost.
@@ -322,11 +326,12 @@ export const importPlanCsv = (classId, file, mode) =>
  * Asked of the server rather than worked out here: only it knows which
  * lessons have content, and which files nothing else points at.
  */
-export const previewPlanCsv = (classId, file, mode) =>
-  request(`/api/plan/import-preview/?course=${encodeURIComponent(classId)}`, {
-    method: 'POST',
-    body: csvForm(file, mode),
-  })
+export const previewPlanFile = (classId, file, mode) =>
+  request(
+    `/api/plan/${isWorkbook(file) ? 'import-preview-xlsx' : 'import-preview'}/` +
+      `?course=${encodeURIComponent(classId)}`,
+    { method: 'POST', body: csvForm(file, mode) },
+  )
 
 /**
  * Downloading the plan.
@@ -334,10 +339,11 @@ export const previewPlanCsv = (classId, file, mode) =>
  * A plain link will not do: the endpoint wants a token in the header, so the
  * file is fetched and handed to the browser as a blob.
  */
-export const downloadPlanCsv = async (classId) => {
+export const downloadPlan = async (classId, format = 'xlsx') => {
   const token = getToken()
   const query = new URLSearchParams({ course: classId })
-  const response = await fetch(`/api/plan/export/?${query}`, {
+  const path = format === 'xlsx' ? 'export-xlsx' : 'export'
+  const response = await fetch(`/api/plan/${path}/?${query}`, {
     headers: token ? { Authorization: `Token ${token}` } : {},
   })
 
@@ -347,7 +353,7 @@ export const downloadPlanCsv = async (classId) => {
 
   const disposition = response.headers.get('Content-Disposition') || ''
   const encoded = /filename\*=UTF-8''([^;]+)/i.exec(disposition)
-  const name = encoded ? decodeURIComponent(encoded[1]) : 'plan.csv'
+  const name = encoded ? decodeURIComponent(encoded[1]) : `plan.${format}`
 
   const url = URL.createObjectURL(await response.blob())
   const link = document.createElement('a')

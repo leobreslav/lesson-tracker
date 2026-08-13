@@ -16,7 +16,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from schedule.models import Course, LessonSlot
 
-from . import services
+from . import services, xlsx
 from .models import PlanNode
 from .serializers import (
     MoveSerializer,
@@ -235,11 +235,11 @@ class PlanNodeViewSet(TeacherScopedViewSet):
 
         return Response({"start": start, "end": end, "slots": slots})
 
-    def read_upload(self):
-        """The uploaded file, parsed, or a coded refusal. No writes here."""
+    def uploaded_bytes(self):
+        """Байты присланного файла или коротко объяснённый отказ."""
         upload = self.request.FILES.get("file")
         if upload is None:
-            api_error(Codes.FILE_REQUIRED, "A CSV file is required.", field="file")
+            api_error(Codes.FILE_REQUIRED, "A file is required.", field="file")
         if upload.size > MAX_IMPORT_BYTES:
             api_error(
                 Codes.FILE_TOO_LARGE,
@@ -247,11 +247,48 @@ class PlanNodeViewSet(TeacherScopedViewSet):
                 field="file",
                 limit_mb=MAX_IMPORT_BYTES // 1024 // 1024,
             )
+        return upload.name or "", upload.read()
+
+    def unreadable(self, code, error, *, refusing):
+        """
+        Нечитаемый файл: импорту это отказ, предпросмотру — строка списка.
+
+        Предпросмотр не отказывается ни от чего принципиально: он затем и
+        нужен, чтобы человек прочитал, что не так, — а 400 в ответ на выбор
+        файла он увидел бы только консолью браузера.
+        """
+        if refusing:
+            api_error(code, str(error), field="file")
+        return services.ParsedPlan([], [error_payload(code, str(error))])
+
+    def read_upload(self, *, refusing=True):
+        """CSV: байты → строки плана, или код `file_unreadable`."""
+        _, data = self.uploaded_bytes()
+        try:
+            return services.parse_plan_csv(services.decode_csv(data)), {}
+        except services.PlanImportError as error:
+            return self.unreadable(Codes.FILE_UNREADABLE, error, refusing=refusing), {}
+
+    def read_workbook(self, *, refusing=True):
+        """
+        xlsx: то же самое, но ячейки берёт openpyxl.
+
+        Вторым значением едет то, что стоит сказать про саму книгу: имя
+        листа и сколько листов осталось за бортом. Разбор структуры общий с
+        CSV, поэтому здесь только чтение.
+        """
+        name, data = self.uploaded_bytes()
+        try:
+            book = xlsx.read_plan_xlsx(data, filename=name)
+        except services.PlanImportError as error:
+            return self.unreadable(Codes.FILE_NOT_XLSX, error, refusing=refusing), {}
 
         try:
-            return services.parse_plan_csv(services.decode_csv(upload.read()))
+            parsed = services.parse_plan_rows(book.rows)
         except services.PlanImportError as error:
-            api_error(Codes.FILE_UNREADABLE, str(error), field="file")
+            parsed = self.unreadable(Codes.FILE_UNREADABLE, error, refusing=refusing)
+
+        return parsed, {"sheet": book.sheet, "sheets_ignored": book.sheets_ignored}
 
     def read_mode(self, parsed, *, refusing=True):
         """
@@ -296,14 +333,24 @@ class PlanNodeViewSet(TeacherScopedViewSet):
 
     @action(detail=False, methods=["post"], url_path="import", url_name="import")
     def import_csv(self, request):
+        """Импорт плана из CSV."""
+        return self.run_import(*self.read_upload())
+
+    @action(detail=False, methods=["post"], url_path="import-xlsx",
+            url_name="import-xlsx")
+    def import_xlsx(self, request):
+        """Импорт плана из книги Excel — тем же путём, что и CSV."""
+        return self.run_import(*self.read_workbook())
+
+    def run_import(self, parsed, about):
         """
-        Импорт плана из CSV. Либо файл заезжает целиком, либо ничего.
+        Либо файл заезжает целиком, либо ничего.
 
         Разбор идёт до транзакции: непригодный файл не должен успеть снести
         существующий план в режиме replace.
         """
+        request = self.request
         course = self.requested_course()
-        parsed = self.read_upload()
         if not parsed.ok:
             # файл читается строго: непонятная строка отклоняет его целиком,
             # и до плана дело не доходит вовсе
@@ -321,7 +368,7 @@ class PlanNodeViewSet(TeacherScopedViewSet):
             with transaction.atomic():
                 done = services.apply_sync(owner, plan)
 
-            return Response(done)
+            return Response({**done, **about})
 
         with transaction.atomic():
             if mode == "replace":
@@ -338,20 +385,34 @@ class PlanNodeViewSet(TeacherScopedViewSet):
                 "created_rows": created["headers"] + created["lessons"],
                 "created_headers": created["headers"],
                 "created_lessons": created["lessons"],
+                **about,
             }
         )
 
     @action(detail=False, methods=["post"], url_path="import-preview",
             url_name="import-preview")
     def import_preview(self, request):
-        """
-        Что сделает импорт, до того как он что-то сделает.
+        """Что сделает импорт CSV, до того как он что-то сделает."""
+        return self.run_preview(*self.read_upload(refusing=False))
 
+    @action(detail=False, methods=["post"], url_path="import-preview-xlsx",
+            url_name="import-preview-xlsx")
+    def import_preview_xlsx(self, request):
+        """
+        То же для книги Excel.
+
+        Клиент xlsx не разбирает (для этого нужна была бы вторая
+        библиотека уже в браузере), поэтому «как файл прочитан» он узнаёт
+        отсюда — и до импорта, а не после.
+        """
+        return self.run_preview(*self.read_workbook(refusing=False))
+
+    def run_preview(self, parsed, about):
+        """
         Ничего не пишет и ни от чего не отказывается: даже файл с ошибками
         синхронизации разбирается до конца, чтобы показать их все разом.
         """
         course = self.requested_course()
-        parsed = self.read_upload()
         mode = self.read_mode(parsed, refusing=False)
         owner = self.owner_of(course)
 
@@ -393,8 +454,12 @@ class PlanNodeViewSet(TeacherScopedViewSet):
                 "create_lessons": new_lessons,
                 "update": update,
                 "delete": len(doomed),
+                # можно ли вообще синхронизировать: у xlsx клиент этого сам
+                # не знает — файл он не читает
+                "syncable": any(row.node_id for row in parsed.rows),
                 **loss_payload(doomed),
                 "errors": errors,
+                **about,
             }
         )
 
@@ -404,11 +469,36 @@ class PlanNodeViewSet(TeacherScopedViewSet):
         course = self.requested_course()
         content = services.build_plan_csv(services.get_tree(self.owner_of(course)))
 
-        name = f"план_{course.name}_{timezone.localdate()}.csv"
-        response = HttpResponse(content, content_type="text/csv; charset=utf-8")
+        return self.as_download(
+            content, course, "csv", "text/csv; charset=utf-8"
+        )
+
+    @action(detail=False, methods=["get"], url_path="export-xlsx",
+            url_name="export-xlsx")
+    def export_xlsx(self, request):
+        """
+        Тот же план книгой Excel.
+
+        Оформление (текстовый формат ячеек, закреплённая шапка, запертый
+        столбец id) живёт в `plans/xlsx.py` — здесь только выдача файла.
+        """
+        course = self.requested_course()
+        content = xlsx.build_plan_xlsx(services.get_tree(self.owner_of(course)))
+
+        return self.as_download(
+            content,
+            course,
+            "xlsx",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+
+    def as_download(self, content, course, extension, content_type):
+        """Файл под именем «план_<курс>_<дата>.<расширение>»."""
+        name = f"план_{course.name}_{timezone.localdate()}.{extension}"
+        response = HttpResponse(content, content_type=content_type)
         # имя с кириллицей — только через RFC 5987, плюс ascii-запасное
         response["Content-Disposition"] = (
-            'attachment; filename="plan.csv"; '
+            f'attachment; filename="plan.{extension}"; '
             f"filename*=UTF-8''{quote(name)}"
         )
         return response

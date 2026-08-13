@@ -45,11 +45,11 @@ import {
   publishPlan,
   refreshTemplate,
   deletePlanNode,
-  downloadPlanCsv,
+  downloadPlan,
   fetchCourses,
   fetchPlan,
   fetchSchoolYears,
-  importPlanCsv,
+  importPlanFile,
   movePlanNode,
   movePlanNodeTo,
   movePlanSection,
@@ -65,6 +65,9 @@ import {
  */
 const LessonPanel = lazy(() => import('./LessonPanel'))
 
+// xlsx первым: он и по умолчанию
+const FORMATS = ['xlsx', 'csv']
+
 export default function Plan({ onLoggedOut }) {
   const { t } = useTranslation()
   const navigate = useNavigate()
@@ -79,7 +82,10 @@ export default function Plan({ onLoggedOut }) {
   const [error, setError] = useState(null)
   const [editing, setEditing] = useState(null) // {id, title} — folders only
   const [opened, setOpened] = useState(null) // the lesson whose panel is open
-  const [helpOpen, setHelpOpen] = useState(false) // справка о формате CSV
+  const [helpOpen, setHelpOpen] = useState(false) // справка о формате
+  // xlsx по умолчанию: в нём нет ни кодировки, ни разделителя, ни кавычек,
+  // то есть ровно тех трёх вещей, на которых спотыкается CSV
+  const [format, setFormat] = useState('xlsx')
   const [adding, setAdding] = useState(null) // {parent, after, is_section, title}
   const [deleting, setDeleting] = useState(null) // the section being removed
   const [importing, setImporting] = useState(false)
@@ -386,7 +392,7 @@ export default function Plan({ onLoggedOut }) {
     setNotice(null)
 
     try {
-      const result = await importPlanCsv(classId, file, mode)
+      const result = await importPlanFile(classId, file, mode)
       await load(classId)
       setNotice(
         (mode === 'sync'
@@ -411,7 +417,7 @@ export default function Plan({ onLoggedOut }) {
   const handleExport = async () => {
     setError(null)
     try {
-      await downloadPlanCsv(classId)
+      await downloadPlan(classId, format)
     } catch (err) {
       handleError(err)
     }
@@ -824,7 +830,7 @@ export default function Plan({ onLoggedOut }) {
                     disabled={busy}
                     onClick={() => setImporting(true)}
                   >
-                    {t('plan.importCsv')}
+                    {t('plan.importFile')}
                   </button>
                   <button
                     type="button"
@@ -832,8 +838,27 @@ export default function Plan({ onLoggedOut }) {
                     disabled={busy}
                     onClick={handleExport}
                   >
-                    {t('plan.exportCsv')}
+                    {t('plan.exportFile')}
                   </button>
+                  {/* формат нужен только выгрузке: у загруженного файла его
+                      называет он сам, по расширению */}
+                  <span
+                    className="format-switch"
+                    role="group"
+                    aria-label={t('plan.exportFormat')}
+                  >
+                    {FORMATS.map((name) => (
+                      <button
+                        key={name}
+                        type="button"
+                        className={name === format ? 'chip active' : 'chip'}
+                        aria-pressed={name === format}
+                        onClick={() => setFormat(name)}
+                      >
+                        {name}
+                      </button>
+                    ))}
+                  </span>
 
                   <span className="actions-divider" aria-hidden="true" />
 

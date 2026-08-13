@@ -144,7 +144,7 @@ test('импорт CSV разбирает файл и строит блоки', 
   await signIn(PEOPLE.petrov)
   await openPlan(page, EMPTY_COURSE)
 
-  await page.getByRole('button', { name: 'Импорт CSV' }).click()
+  await page.getByRole('button', { name: 'Импорт', exact: true }).click()
 
   const dialog = page.locator('dialog.modal')
   await dialog.locator('input[type="file"]').setInputFiles(
@@ -176,7 +176,7 @@ test('файл прежнего формата отклоняется с объ�
   await signIn(PEOPLE.petrov)
   await openPlan(page, EMPTY_COURSE)
 
-  await page.getByRole('button', { name: 'Импорт CSV' }).click()
+  await page.getByRole('button', { name: 'Импорт', exact: true }).click()
   const dialog = page.locator('dialog.modal')
   await dialog.locator('input[type="file"]').setInputFiles({
     name: 'plan.csv',
@@ -200,7 +200,7 @@ test('замена предупреждает, что содержание ур�
   await signIn(PEOPLE.ivanova)
   await openPlan(page, 'Grade 6 Algebra')
 
-  await page.getByRole('button', { name: 'Импорт CSV' }).click()
+  await page.getByRole('button', { name: 'Импорт', exact: true }).click()
   const dialog = page.locator('dialog.modal')
   await dialog.locator('input[type="file"]').setInputFiles(PLAIN_CSV)
   await dialog.getByRole('radio', { name: /Заменить/ }).check()
@@ -222,12 +222,59 @@ test('синхронизация недоступна, пока в файле н
   await signIn(PEOPLE.petrov)
   await openPlan(page, EMPTY_COURSE)
 
-  await page.getByRole('button', { name: 'Импорт CSV' }).click()
+  await page.getByRole('button', { name: 'Импорт', exact: true }).click()
   const dialog = page.locator('dialog.modal')
   await dialog.locator('input[type="file"]').setInputFiles(PLAIN_CSV)
 
   await expect(dialog.getByRole('radio', { name: /Синхронизовать/ })).toBeDisabled()
   await expect(dialog).toContainText('синхронизировать не с чем')
+})
+
+test('xlsx: выгрузка возвращается обратно без единого изменения', async ({
+  page,
+  signIn,
+}) => {
+  await signIn(PEOPLE.ivanova)
+  await openPlan(page, 'Grade 6 Algebra')
+  const before = await page.locator('.plan-counts').textContent()
+
+  // xlsx — формат по умолчанию, поэтому переключать ничего не надо
+  const [download] = await Promise.all([
+    page.waitForEvent('download'),
+    page.getByRole('button', { name: 'Экспорт' }).click(),
+  ])
+  expect(download.suggestedFilename()).toMatch(/\.xlsx$/)
+  const saved = '/tmp/' + download.suggestedFilename()
+  await download.saveAs(saved)
+
+  await page.getByRole('button', { name: 'Импорт', exact: true }).click()
+  const dialog = page.locator('dialog.modal')
+  await dialog.locator('input[type="file"]').setInputFiles(saved)
+
+  // книгу читает сервер, и предпросмотр приезжает оттуда же
+  await expect(dialog).toContainText('новых: 0')
+  await expect(dialog).toContainText('удалено: 0')
+
+  await dialog.getByRole('button', { name: 'Импортировать' }).click()
+  await expect(dialog).toBeHidden()
+
+  await expect(page.locator('.plan-counts')).toHaveText(before)
+})
+
+test('xlsx: чужой файл отклоняется понятным текстом', async ({ page, signIn }) => {
+  await signIn(PEOPLE.petrov)
+  await openPlan(page, EMPTY_COURSE)
+
+  await page.getByRole('button', { name: 'Импорт', exact: true }).click()
+  const dialog = page.locator('dialog.modal')
+  await dialog.locator('input[type="file"]').setInputFiles({
+    name: 'план.xlsx',
+    mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    buffer: Buffer.from('%PDF-1.7\n%\u00c7\u00ec\u008f\u00a2\n', 'latin1'),
+  })
+
+  await expect(dialog).toContainText('Это не книга')
+  await expect(dialog.getByRole('button', { name: 'Импортировать' })).toBeDisabled()
 })
 
 test('импорт из библиотеки наполняет пустой план', async ({ page, signIn }) => {
@@ -251,7 +298,7 @@ test('импорт вкладывает уроки в темы, включая �
   await signIn(PEOPLE.petrov)
   await openPlan(page, EMPTY_COURSE)
 
-  await page.getByRole('button', { name: 'Импорт CSV' }).click()
+  await page.getByRole('button', { name: 'Импорт', exact: true }).click()
   const dialog = page.locator('dialog.modal')
   await dialog.locator('input[type="file"]').setInputFiles(
     csvFile(
