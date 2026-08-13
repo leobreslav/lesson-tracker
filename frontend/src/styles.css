@@ -66,82 +66,115 @@ body {
 }
 
 /*
- * Одна высота у всего, что стоит в строке формы.
+ * ─── СТРОКА ФОРМЫ ───────────────────────────────────────────────────────
  *
- * Измеряли: поле выходило 36px, кнопка — 39, а `select` без стилей и вовсе
- * 19. Складывались три разные причины — своя строка текста у кнопки, свой
- * padding и умолчания браузера у селекта, — поэтому подгонять их порознь
- * бессмысленно: следующий контрол снова окажется своего роста.
+ * Всё про поля, селекты, кнопки и их выравнивание в ряду — здесь и только
+ * здесь. Правило для контрола в строке, написанное в другом месте файла, —
+ * это ошибка: раскладку в этом разделе так ломали три раза подряд, и каждый
+ * раз следующая правка чинила один ряд и портила соседний.
  *
- * `min-height`, а не `height`: у кнопки с длинной подписью (панель учебного
- * плана) текст переносится, и жёсткая высота обрезала бы вторую строку.
- * Вертикальные отступы приведены к общему знаменателю, чтобы однострочный
- * контрол не перерастал эту высоту сам.
+ * Что здесь решается:
  *
- * Список контейнеров явный. Кнопкой в этом приложении бывает и клетка
- * календаря, и ячейка недельной сетки, и крестик в строке списка — попытка
- * задать высоту всем кнопкам сразу растянула бы их все.
+ * 1. Одна высота. Мерили: поле выходило 36px, кнопка 39, а `select` без
+ *    стилей и вовсе 19 — три разные причины, и подгонять их порознь
+ *    бессмысленно, следующий контрол снова окажется своего роста.
+ * 2. `min-height` у кнопки, жёсткая `height` у поля и селекта. Кнопка с
+ *    длинной подписью на узком экране переносится, и жёсткая высота
+ *    обрезала бы вторую строку; поле однострочно всегда, и без жёсткой
+ *    высоты дата остаётся на 0.2px выше соседей.
+ * 3. Кнопка от длины подписи становится шире, а не выше.
+ * 4. Ряд переносится, только когда иначе вылезет за карточку, и ужимается
+ *    сначала поле — иначе кнопка уезжала бы вниз там, где место ещё было.
+ *
+ * Список контейнеров явный, потому что «кнопка» в этом приложении — это и
+ * клетка календаря, и ячейка недельной сетки, и крестик в строке списка:
+ * общее правило растянуло бы их все.
+ *
+ * И главная ловушка, на которой всё сломалось в прошлый раз: поле с
+ * подписью (`.field-with-hint`) — это **колонка**. Внутри неё `flex-basis`
+ * задаёт не ширину, а высоту, и `flex: 1 1 8rem`, написанное для ряда,
+ * растянуло поле до 128px. Поэтому правила растяжения адресованы только
+ * ПРЯМЫМ детям ряда (`>`), а поле внутри подписи явно снимает флекс.
  */
-:is(
-  .add-form,
-  .inline-form,
-  .agenda-bar,
-  .class-filter,
-  .year-picker,
-  .term-form,
-  .term-form .row,
-  .people-list .row,
-  .preset-row,
-  .plan-add-form,
-  .actions,
-  .modal-body,
-  .modal-body form,
-  .modal-body .row
-) :is(
-  input:not([type='checkbox']):not([type='radio']):not([type='file']),
-  select,
-  textarea,
-  button:not(.link)
-) {
-  box-sizing: border-box;
-  min-height: var(--control-height);
-  padding-top: 0.35rem;
-  padding-bottom: 0.35rem;
-  /* от длины подписи кнопка становится шире, а не выше: перенос внутри
-     кнопки — это вторая строка, из-за которой ряд перестаёт быть рядом */
-  white-space: nowrap;
+
+/*
+ * Контейнеры, которые являются строкой контролов. Список написан один раз:
+ * всё остальное — вложенные правила, они не могут разойтись с ним.
+ */
+.add-form,
+.inline-form,
+.agenda-bar,
+.class-filter,
+.year-picker,
+.term-form .row,
+.people-list .row,
+.preset-row,
+.plan-add-form,
+.actions,
+.modal-body .row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.5rem;
+
+  /* высота, отступы, отказ от переноса подписи */
+  & :is(
+      input:not([type='checkbox']):not([type='radio']):not([type='file']),
+      select,
+      textarea,
+      button:not(.link)
+    ) {
+    box-sizing: border-box;
+    min-height: var(--control-height);
+    padding-top: 0.35rem;
+    padding-bottom: 0.35rem;
+    white-space: nowrap;
+  }
+
+  /* поле и селект однострочны всегда — им высота жёсткая */
+  & :is(
+      input:not([type='checkbox']):not([type='radio']):not([type='file']),
+      select
+    ) {
+    height: var(--control-height);
+  }
+
+  & :is(input:not([type='checkbox']):not([type='radio']), select, textarea) {
+    padding-left: 0.5rem;
+    padding-right: 0.5rem;
+    font: inherit;
+    color: inherit;
+    background: #fff;
+    border: 1px solid #c6c6c6;
+    border-radius: 4px;
+  }
+
+  & :is(input, select, textarea):focus {
+    outline: 2px solid #1a73e8;
+    outline-offset: -1px;
+    border-color: #1a73e8;
+  }
+
+  /* растягивается только то, что лежит в ряду непосредственно: внутри
+     колонки с подписью flex-basis стал бы высотой */
+  & > :is(input:not([type='checkbox']):not([type='radio']), .field-with-hint) {
+    flex: 1 1 8rem;
+    min-width: 6rem;
+  }
 }
 
-/* поле и селект однострочны всегда, поэтому им высота задаётся жёстко:
-   иначе поле даты остаётся на 0.2px выше соседей — своя внутренняя
-   разметка у элемента, padding'ом её не догнать */
-:is(
-  .add-form,
-  .inline-form,
-  .agenda-bar,
-  .class-filter,
-  .term-form,
-  .term-form .row,
-  .people-list .row,
-  .plan-add-form,
-  .modal-body,
-  .modal-body form,
-  .modal-body .row
-) :is(input:not([type='checkbox']):not([type='radio']):not([type='file']), select) {
-  height: var(--control-height);
+/* поле с подписью сверху: колонка, и поле в ней своей высоты */
+.field-with-hint {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  font-size: 0.85rem;
+  color: #5f6368;
 }
 
-/* селект в такой строке выглядел системным элементом рядом с полями:
-   рамка, скругление и фон у него теперь те же */
-:is(.add-form, .agenda-bar, .class-filter, .people-list .row, .modal-body, .modal-body form)
-  select {
-  padding-left: 0.5rem;
-  padding-right: 0.5rem;
-  font: inherit;
-  color: inherit;
-  background: #fff;
-  border: 1px solid #c6c6c6;
-  border-radius: 4px;
+.field-with-hint > :is(input, select) {
+  flex: none;
+  width: 100%;
 }
 
 /* --- верхний бар --- */
@@ -851,40 +884,6 @@ button.chip.active {
 
 /* --- список классов --- */
 
-/* Кнопка в ряд с полями.
-   По умолчанию flex растягивает элементы на высоту строки, и рядом с полем,
-   у которого есть подпись сверху, кнопка становилась выше поля на высоту
-   этой подписи. Выравниваем по нижнему краю — по строке ввода. */
-.add-form {
-  display: flex;
-  /* перенос — на крайний случай: четыре контрола по-русски в 34rem уже не
-     помещаются, и лучше вторая строка, чем ряд, вылезающий за карточку */
-  flex-wrap: wrap;
-  gap: 0.5rem;
-  align-items: flex-end;
-}
-
-/* поле ужимается первым: иначе оно держало бы свою ширину, и на вторую
-   строку уезжала бы кнопка — там, где место ещё было */
-.add-form input {
-  flex: 1 1 8rem;
-  /* но не в нитку: уже шести рем поле сжиматься не должно, дальше пусть
-     ряд переносится */
-  min-width: 6rem;
-  padding: 0.5rem 0.65rem;
-  font: inherit;
-  color: inherit;
-  border: 1px solid #c6c6c6;
-  border-radius: 4px;
-  background: #fff;
-}
-
-.add-form input:focus {
-  outline: 2px solid #1a73e8;
-  outline-offset: -1px;
-  border-color: #1a73e8;
-}
-
 .class-list {
   margin: 0;
   padding: 0;
@@ -1075,14 +1074,6 @@ button.link.hint.level {
 
 .level-input {
   width: 4rem;
-}
-
-.field-with-hint {
-  display: flex;
-  flex-direction: column;
-  gap: 0.15rem;
-  font-size: 0.85rem;
-  color: #5f6368;
 }
 
 .field-with-hint abbr {
