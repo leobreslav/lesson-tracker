@@ -15,19 +15,20 @@ const openPlan = async (page, course) => {
   await expect(page.locator('.plan-cards')).toBeVisible()
 }
 
-/** Назначить человека методистом по предмету — руками администратора. */
-async function makeMethodist(api, email, subjectName) {
+/** Назначить человека методистом курса — руками администратора. */
+async function makeMethodist(api, email, courseName) {
   const admin = await api(PEOPLE.admin)
   const members = await admin.get('/api/school/members/')
   const person = members.body.find((item) => item.email === email)
-  const subjects = await admin.get('/api/school/subjects/')
-  const subject = subjects.body.find((item) => item.name === subjectName)
+  const courses = await admin.get('/api/courses/?scope=school')
+  const course = courses.body.find((item) => item.name === courseName)
 
-  const done = await admin.put(`/api/school/members/${person.id}/methodist/`, {
-    subjects: [subject.id],
+  const done = await admin.post('/api/school/methodists/', {
+    course: course.id,
+    user: person.id,
   })
-  expect(done.status).toBe(200)
-  return { person, subject }
+  expect(done.status).toBe(201)
+  return { person, course }
 }
 
 test('учитель отправляет план, методист утверждает', async ({
@@ -35,7 +36,7 @@ test('учитель отправляет план, методист утвер�
   signIn,
   api,
 }) => {
-  await makeMethodist(api, PEOPLE.petrov, 'Алгебра')
+  await makeMethodist(api, PEOPLE.petrov, 'Grade 6 Algebra')
 
   await signIn(PEOPLE.ivanova)
   await openPlan(page, 'Grade 6 Algebra')
@@ -62,7 +63,7 @@ test('учитель отправляет план, методист утвер�
 })
 
 test('методист возвращает план с замечанием', async ({ page, signIn, api }) => {
-  await makeMethodist(api, PEOPLE.petrov, 'Алгебра')
+  await makeMethodist(api, PEOPLE.petrov, 'Grade 6 Algebra')
 
   const teacher = await api(PEOPLE.ivanova)
   const courses = await teacher.get('/api/courses/')
@@ -92,7 +93,7 @@ test('правка плана после отправки отзывает за�
   signIn,
   api,
 }) => {
-  await makeMethodist(api, PEOPLE.petrov, 'Алгебра')
+  await makeMethodist(api, PEOPLE.petrov, 'Grade 6 Algebra')
 
   await signIn(PEOPLE.ivanova)
   await openPlan(page, 'Grade 6 Algebra')
@@ -116,7 +117,7 @@ test('правка плана после отправки отзывает за�
   await expect(page.getByText('Пока ничего')).toBeVisible()
 })
 
-test('без методиста по предмету отправка объясняет, почему нельзя', async ({
+test('без методиста у курса отправка объясняет, почему нельзя', async ({
   page,
   signIn,
 }) => {
@@ -125,7 +126,7 @@ test('без методиста по предмету отправка объя�
 
   await page.getByRole('button', { name: 'Отправить на утверждение' }).click()
 
-  await expect(page.getByText(/не назначен методист|No methodist/)).toBeVisible()
+  await expect(page.getByText(/некому утверждать|Nobody approves/)).toBeVisible()
 })
 
 test('раздела «На утверждение» у обычного учителя нет', async ({ page, signIn }) => {

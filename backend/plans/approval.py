@@ -2,10 +2,13 @@
 Утверждение учебного плана методистом.
 
 Состояния у самого плана нет — учитель правит его свободно. Состояние есть
-у **снимка**: план отправляют на утверждение, и в этот момент с него
-снимается копия структуры. Дальше методист смотрит именно её, а учитель
-может продолжать править план: правка отзовёт запрос, но того, что уже
-прислали, не изменит.
+у **запроса**: план отправляют на утверждение, методист смотрит его как
+есть, и копия структуры снимается в момент **утверждения** — эталоном
+становится ровно то, что приняли.
+
+Правка отзывает поданный запрос, и это то, что делает схему безопасной:
+утвердить можно только план, не менявшийся с момента отправки. Иначе
+методист читал бы одно, а утверждал другое.
 
 Здесь же живёт единственное место, откуда позже пойдут письма: `notify`
 вызывается на каждом переходе, и рассылку добавят в него, а не в четыре
@@ -18,7 +21,7 @@ import logging
 
 from django.db import transaction
 from django.utils import timezone
-from schools.models import SubjectMethodist
+from schedule.models import CourseMethodist
 
 from . import services
 from .models import PlanBaseline, PlanBaselineRow
@@ -52,17 +55,12 @@ def methodists_for(course) -> list:
     """
     Кому можно отправить план этого курса.
 
-    По предмету курса и внутри его школы: методист чужой школы не увидит
-    ни плана, ни того, что он существует. Курс без предмета отправить
-    некому — это и есть случай «методист не назначен».
+    Методист назначается на курс, а не на предмет: отвечают за конкретный
+    «9Б Алгебра», и назначают там же, где раздают сам курс. Никого не
+    назначили — плану некуда идти, и это отдельный внятный отказ.
     """
-    if course.subject_id is None:
-        return []
-
     return list(
-        SubjectMethodist.objects.filter(
-            school=course.school, subject_id=course.subject_id
-        ).select_related("user")
+        CourseMethodist.objects.filter(course=course).select_related("user")
     )
 
 
@@ -105,12 +103,16 @@ def open_request(teacher_id: int, course_id: int):
 @transaction.atomic
 def submit(owner: services.PlanOwner, course, reviewer) -> PlanBaseline:
     """
-    Снять копию плана и отправить её на утверждение.
+    Отправить план на утверждение.
 
-    Копия снимается **сейчас**, а не при утверждении: методист смотрит то,
-    что ему прислали. Прежние неутверждённые снимки этого плана уходят —
-    висеть двум запросам разом незачем, — а утверждённый остаётся: пока
-    новый не принят, расхождение считается от него.
+    Строк у запроса пока нет: методист смотрит живой план, а копия
+    снимается при утверждении. Читать он при этом будет именно то, что ему
+    прислали, — любая правка отзывает запрос, так что утверждать
+    изменившийся план попросту не из чего.
+
+    Прежние неутверждённые запросы уходят — висеть двум разом незачем, — а
+    утверждённый эталон остаётся: пока новый не принят, расхождение
+    считается от него.
     """
     PlanBaseline.objects.filter(
         teacher_id=owner.teacher_id,
@@ -129,6 +131,22 @@ def submit(owner: services.PlanOwner, course, reviewer) -> PlanBaseline:
         submitted_at=timezone.now(),
         reviewer=reviewer,
     )
+    notify(SUBMITTED, baseline)
+    return baseline
+
+
+@transaction.atomic
+def approve(baseline: PlanBaseline, reviewer) -> PlanBaseline:
+    """
+    Утвердить — и в этот же момент снять копию плана.
+
+    Эталоном становится ровно то, что приняли. План с момента отправки не
+    менялся: правка отозвала бы запрос, и утверждать было бы нечего.
+    """
+    owner = services.PlanOwner(
+        teacher_id=baseline.teacher_id, course_id=baseline.course_id
+    )
+    baseline.rows.all().delete()
     PlanBaselineRow.objects.bulk_create(
         PlanBaselineRow(
             baseline=baseline,
@@ -140,11 +158,6 @@ def submit(owner: services.PlanOwner, course, reviewer) -> PlanBaseline:
         for position, row in enumerate(services.plan_snapshot(owner))
     )
 
-    notify(SUBMITTED, baseline)
-    return baseline
-
-
-def approve(baseline: PlanBaseline, reviewer) -> PlanBaseline:
     baseline.status = PlanBaseline.Status.APPROVED
     baseline.approved_at = timezone.now()
     baseline.reviewer = reviewer
@@ -197,23 +210,22 @@ def withdraw(teacher_id: int, course_id: int) -> int:
 
 def review_queue(user):
     """
-    Что видит методист: запросы по **его** предметам, в его школе.
+    Что видит методист: запросы по **его** курсам.
 
-    Не «присланные лично ему»: методистов по предмету может быть несколько,
-    и запрос, отправленный коллеге, всё равно про его предмет — прятать его
-    значило бы делать вид, что предмет поделён между людьми.
+    Не «присланные лично ему»: методистов у курса может быть несколько, и
+    запрос, отправленный коллеге, всё равно про этот курс — прятать его
+    значило бы делать вид, что курс поделён между людьми.
     """
-    subjects = SubjectMethodist.objects.filter(user=user).values_list(
-        "subject_id", flat=True
+    courses = CourseMethodist.objects.filter(user=user).values_list(
+        "course_id", flat=True
     )
-    if not subjects:
+    if not courses:
         return PlanBaseline.objects.none()
 
     return (
         PlanBaseline.objects.filter(
             status=PlanBaseline.Status.PENDING,
-            course__school=user.school,
-            course__subject_id__in=list(subjects),
+            course_id__in=list(courses),
         )
         .select_related("course", "teacher", "course__subject")
         .order_by("submitted_at")

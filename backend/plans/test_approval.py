@@ -12,9 +12,8 @@
 """
 
 from django.urls import reverse
-from schedule.models import Subject
-from schools.models import SubjectMethodist
-from schools.testing import assign
+from schedule.models import CourseMethodist, Subject
+from schools.testing import assign, make_course
 
 from .models import PlanBaseline, PlanNode
 from .tests import PlanTestCase
@@ -32,12 +31,9 @@ class ApprovalTestCase(PlanTestCase):
         self.methodist = self.colleague
         assign(self.methodist, self.course)
 
-    def make_methodist(self, person, subject=None):
-        return SubjectMethodist.objects.create(
-            school=self.school,
-            user=person,
-            subject=subject or self.algebra,
-            assigned_by=self.admin,
+    def make_methodist(self, person, course=None):
+        return CourseMethodist.objects.create(
+            course=course or self.course, user=person, assigned_by=self.admin
         )
 
     # --- запросы ---
@@ -104,29 +100,29 @@ class SubmitTests(ApprovalTestCase):
 
         self.assertEqual(response.status_code, 400)
         self.assertEqual(response.json()["code"], "no_methodist")
-        self.assertEqual(response.json()["params"]["subject"], "Алгебра")
+        # называем курс: методиста назначают на него, а не на предмет
+        self.assertEqual(response.json()["params"]["subject"], self.course.name)
 
-    def test_a_methodist_of_another_subject_is_not_offered(self):
-        geometry = Subject.objects.create(school=self.school, name="Геометрия")
-        self.make_methodist(self.methodist, geometry)
+    def test_a_methodist_of_another_course_is_not_offered(self):
+        other = make_course(self.school, year=self.course.year, name="9А")
+        self.make_methodist(self.methodist, other)
 
         self.assertEqual(self.submit().json()["code"], "no_methodist")
 
     def test_a_methodist_of_another_school_is_not_offered(self):
-        SubjectMethodist.objects.create(
-            school=self.alien_school, user=self.alien_admin, subject=self.algebra
+        CourseMethodist.objects.create(
+            course=self.alien_class, user=self.alien_admin
         )
 
         self.assertEqual(self.submit().json()["code"], "no_methodist")
 
-    def test_the_snapshot_is_taken_at_submission(self):
+    def test_a_pending_request_carries_no_snapshot_yet(self):
+        """Копия снимается при утверждении: эталон — это то, что приняли."""
         self.make_methodist(self.methodist)
 
         self.submit()
 
-        rows = PlanBaseline.objects.get().rows.all()
-        self.assertEqual(sum(1 for row in rows if not row.is_section), 7)
-        self.assertEqual(rows.count(), 10)
+        self.assertEqual(PlanBaseline.objects.get().rows.count(), 0)
 
 
 class WithdrawTests(ApprovalTestCase):
@@ -192,6 +188,7 @@ class ReviewTests(ApprovalTestCase):
         self.assertEqual(queue[0]["lessons"], 7)
 
     def test_the_request_opens_with_the_plan_and_the_numbers(self):
+        """Методист смотрит живой план: правка отозвала бы запрос."""
         self.client.force_authenticate(self.methodist)
 
         body = self.client.get(
@@ -237,30 +234,32 @@ class ReviewTests(ApprovalTestCase):
         self.assertEqual(state["request"]["comment"], "Мало часов на повторение")
         self.assertIsNone(state["approved"])
 
-    def test_the_snapshot_is_what_was_sent_not_what_it_became(self):
+    def test_an_edited_plan_cannot_be_approved_at_all(self):
         """
-        Правка между отправкой и утверждением эталона не меняет.
-
-        Ради этого снимок и снимается при отправке: методист утверждает то,
-        что прочитал.
+        Снимок снимается при утверждении, и это безопасно ровно потому, что
+        утверждать изменившийся план не из чего: правка отозвала запрос.
         """
         self.add("Дописанный после отправки", parent=self.trig, position=9)
 
         self.client.force_authenticate(self.methodist)
-        # запрос отозван правкой, поэтому утверждаем его напрямую — важно
-        # здесь другое: строки снимка остались прежними
+
+        self.assertEqual(self.queue(), [])
+        self.assertEqual(self.approve(self.baseline.pk).status_code, 404)
+        self.baseline.refresh_from_db()
+        self.assertEqual(self.baseline.rows.count(), 0)
+
+    def test_approval_takes_the_snapshot(self):
+        self.client.force_authenticate(self.methodist)
+
+        self.approve(self.baseline.pk)
+
         rows = self.baseline.rows.all()
-
         self.assertEqual(sum(1 for row in rows if not row.is_section), 7)
-        self.assertNotIn(
-            "Дописанный после отправки", [row.title for row in rows]
-        )
+        self.assertEqual(rows.count(), 10)
 
-    def test_a_methodist_of_another_subject_sees_nothing(self):
-        geometry = Subject.objects.create(school=self.school, name="Геометрия")
-        SubjectMethodist.objects.create(
-            school=self.school, user=self.stranger, subject=geometry
-        )
+    def test_a_methodist_of_another_course_sees_nothing(self):
+        other = make_course(self.school, year=self.course.year, name="9А")
+        CourseMethodist.objects.create(course=other, user=self.stranger)
         self.stranger.school = self.school
         self.stranger.save(update_fields=["school"])
 
@@ -295,9 +294,7 @@ class ReviewTests(ApprovalTestCase):
         self.assertEqual(lesson.title, "Синус суммы")
 
     def test_a_methodist_of_another_school_sees_nothing(self):
-        SubjectMethodist.objects.create(
-            school=self.alien_school, user=self.alien_admin, subject=self.algebra
-        )
+        CourseMethodist.objects.create(course=self.alien_class, user=self.alien_admin)
         self.client.force_authenticate(self.alien_admin)
 
         self.assertEqual(self.queue(), [])

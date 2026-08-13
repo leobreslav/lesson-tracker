@@ -209,9 +209,9 @@
     "csv_bad_id": "Row {{row}}: «{{value}}» is not a row id — leave the cell empty for a new lesson.",
     "csv_nothing_to_sync": "Nothing to sync with: not a single row carries an id. Export the plan first, or import it as «Append».",
     "file_not_xlsx": "The file is not an «.xlsx» workbook. The old «.xls» is not supported — save it as «.xlsx» or export the plan again.",
-    "no_methodist": "No methodist is assigned to «{{subject}}» — ask the school administrator to assign one.",
-    "reviewer_required": "Several methodists teach this subject — choose one.",
-    "not_a_methodist": "That person is not a methodist for this subject.",
+    "no_methodist": "Nobody approves the plan of «{{subject}}» — ask the school administrator to name a methodist on the course card.",
+    "reviewer_required": "This course has several methodists — choose one.",
+    "not_a_methodist": "That person does not approve the plan of this course.",
     "comment_required": "Say what to fix — a plan returned without a word is a riddle.",
     "review_closed": "This request is no longer waiting for a decision."
   },
@@ -374,7 +374,7 @@
     "freeSummary_other": "{{count}} free lessons, {{start}} — {{end}}",
     "baseline": {
       "submit": "Send for approval",
-      "hint": "A snapshot of the plan goes to the methodist of the subject; «Course Status» then counts the drift from what was approved.",
+      "hint": "A snapshot goes to the methodist of the course; «Course Status» then counts the drift from what was approved.",
       "sent": "Sent to {{name}}.",
       "pending": "On approval with {{name}}.",
       "returned": "Returned by {{name}}:",
@@ -382,7 +382,7 @@
       "approved": "Approved on {{date}} by {{name}}.",
       "approvedSelf": "Approved on {{date}} by the author.",
       "chooseTitle": "Who should approve it?",
-      "chooseHint": "Several methodists teach this subject.",
+      "chooseHint": "This course has several methodists.",
       "sendTo": "Send"
     }
   },
@@ -580,7 +580,13 @@
       "unassign": "Take {{name}} off this course",
       "assignLabel": "Teacher for {{name}}",
       "pickTeacher": "teacher…",
-      "needGrades": "There are no year groups yet — add them in «Reference lists»."
+      "needGrades": "There are no year groups yet — add them in «Reference lists».",
+      "methodist": "Approves the plan:",
+      "noMethodist": "nobody approves the plan yet",
+      "pickMethodist": "choose a methodist",
+      "nameMethodist": "Make methodist",
+      "methodistLabel": "Methodist for {{name}}",
+      "dropMethodist": "Remove {{name}} from approving"
     },
     "people": {
       "title": "Teachers",
@@ -634,8 +640,7 @@
       "unassign": "Take {{name}} away",
       "detach": "Detach from the school",
       "keepsWork": "The lessons and the plan stay where they are — only the assignment goes.",
-      "detachKeeps": "Their lessons and plans are kept; the assignments and the role are removed.",
-      "methodist": "Approves plans for:"
+      "detachKeeps": "Their lessons and plans are kept; the assignments and the role are removed."
     },
     "invitations": {
       "title": "Invited",

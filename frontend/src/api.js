@@ -458,12 +458,12 @@ export const returnReview = (id, comment) =>
     body: { comment },
   })
 
-/** По каким предметам человек утверждает планы — списком целиком. */
-export const setMethodistSubjects = (memberId, subjects) =>
-  request(`/api/school/members/${memberId}/methodist/`, {
-    method: 'PUT',
-    body: { subjects },
-  })
+/** Кто утверждает план курса — та же пара, что у назначения учителя. */
+export const createMethodist = (course, user) =>
+  request('/api/school/methodists/', { method: 'POST', body: { course, user } })
+
+export const deleteMethodist = (id) =>
+  request(`/api/school/methodists/${id}/`, { method: 'DELETE' })
 
 /** Topics across every class for a period: slot_id → the plan lesson. */
 export const fetchLayoutAgenda = (start, end) =>

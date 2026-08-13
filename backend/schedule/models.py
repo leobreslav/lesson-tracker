@@ -192,6 +192,56 @@ class Course(models.Model):
         return self.name
 
 
+class CourseMethodist(models.Model):
+    """
+    Кто утверждает план этого курса.
+
+    Полномочие, а не ступень иерархии: методист — такой же учитель, просто
+    ему присылают план на утверждение. Висит на **курсе**, а не на предмете:
+    предмет школы это ярлык, а отвечают за конкретный курс — «9Б Алгебра», —
+    и назначают методиста там же, где раздают сам курс.
+
+    Устроено как `CourseAssignment` рядом: та же пара «курс и человек», та
+    же уникальность, тот же администратор, который её ставит. Разница в
+    вопросе: одна строка отвечает «кто ведёт», другая — «кто утверждает», и
+    у одного курса это обычно разные люди.
+    """
+
+    course = models.ForeignKey(
+        Course,
+        related_name="methodists",
+        on_delete=models.CASCADE,
+        verbose_name="course",
+    )
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        related_name="methodist_of",
+        on_delete=models.CASCADE,
+        verbose_name="methodist",
+    )
+    assigned_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        related_name="methodists_assigned",
+        null=True,
+        on_delete=models.SET_NULL,
+        verbose_name="assigned by",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = "course methodist"
+        verbose_name_plural = "course methodists"
+        ordering = ("course__name", "user__last_name")
+        constraints = [
+            models.UniqueConstraint(
+                fields=("course", "user"), name="one_methodist_row_per_course"
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.user} — {self.course}"
+
+
 class CourseAssignment(models.Model):
     """
     Who teaches this course. The one place that answers it.

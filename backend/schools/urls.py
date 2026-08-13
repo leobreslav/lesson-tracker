@@ -4,6 +4,7 @@ from rest_framework.routers import DefaultRouter
 # under /api/school/ next to the courses and the people
 from schedule.views import (
     CourseAssignmentViewSet,
+    CourseMethodistViewSet,
     GradeLevelViewSet,
     MasterSlotViewSet,
     SubjectViewSet,
@@ -22,6 +23,7 @@ router.register("master-slots", MasterSlotViewSet, basename="masterslot")
 router.register("subjects", SubjectViewSet, basename="subject")
 router.register("grades", GradeLevelViewSet, basename="gradelevel")
 router.register("assignments", CourseAssignmentViewSet, basename="courseassignment")
+router.register("methodists", CourseMethodistViewSet, basename="coursemethodist")
 router.register("members", MemberViewSet, basename="member")
 router.register("invitations", InvitationViewSet, basename="invitation")
 

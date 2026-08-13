@@ -120,7 +120,7 @@ export default function NavBar({
             (section) =>
               (!section.adminOnly || user?.is_school_admin) &&
               (!section.superuserOnly || user?.is_superuser) &&
-              (!section.methodistOnly || user?.methodist_subjects?.length),
+              (!section.methodistOnly || user?.methodist_courses?.length),
           ).map((section) => {
             const reasonKey = reasonKeyFor(section.needs, status)
             const reason = reasonKey ? t(reasonKey) : null

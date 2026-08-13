@@ -159,19 +159,15 @@ test('рост к утверждённому эталону виден на «С
   signIn,
   api,
 }) => {
-  // методист по алгебре — сама Иванова: самоутверждение законно и помечается
+  // методист курса — сама Иванова: самоутверждение законно и помечается
   const admin = await api(PEOPLE.admin)
   const members = await admin.get('/api/school/members/')
   const her = members.body.find((item) => item.email === PEOPLE.ivanova)
-  const subjects = await admin.get('/api/school/subjects/')
-  const algebra = subjects.body.find((item) => item.name === 'Алгебра')
-  await admin.put(`/api/school/members/${her.id}/methodist/`, {
-    subjects: [algebra.id],
-  })
+  const all = await admin.get('/api/courses/?scope=school')
+  const course = all.body.find((item) => item.name === 'Grade 6 Algebra')
+  await admin.post('/api/school/methodists/', { course: course.id, user: her.id })
 
   const teacher = await api(PEOPLE.ivanova)
-  const courses = await teacher.get('/api/courses/')
-  const course = courses.body.find((item) => item.name === 'Grade 6 Algebra')
   await teacher.post(`/api/plan/baseline/submit/?course=${course.id}`, {})
   const queue = await teacher.get('/api/plan/reviews/')
   await teacher.post(`/api/plan/reviews/${queue.body.reviews[0].id}/approve/`)

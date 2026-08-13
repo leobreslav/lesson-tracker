@@ -31,7 +31,7 @@ test('администратор заводит курс и назначает �
   await expect(card).toContainText('курс никто не ведёт')
 
   await card.getByLabel('Учитель для 9А Алгебра').selectOption({ label: 'Мария Иванова' })
-  await card.getByRole('button', { name: 'Назначить' }).click()
+  await card.getByRole('button', { name: 'Назначить', exact: true }).click()
 
   await expect(card.locator('.tag')).toContainText('Мария Иванова')
 
@@ -77,7 +77,7 @@ test('назначение видно и снимается со стороны 
   await expect(card.locator('.tag').first()).toContainText('Grade 6 Algebra')
 
   await card.getByLabel('Курс для Мария Иванова').selectOption({ label: 'Grade 9 Geometry' })
-  await card.getByRole('button', { name: 'Назначить' }).click()
+  await card.getByRole('button', { name: 'Назначить', exact: true }).click()
 
   await expect(card.locator('.tag', { hasText: 'Grade 9 Geometry' })).toBeVisible()
 

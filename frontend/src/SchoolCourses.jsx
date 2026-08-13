@@ -5,8 +5,10 @@ import EmptyState from './EmptyState'
 import {
   createAssignment,
   createCourse,
+  createMethodist,
   deleteAssignment,
   deleteCourse,
+  deleteMethodist,
   fetchAssignments,
   fetchCourses,
   fetchGrades,
@@ -39,6 +41,7 @@ export default function SchoolCourses() {
   const [form, setForm] = useState({ name: '', subject: '', grade: '' })
   const [editing, setEditing] = useState(null) // {id, value}
   const [assigning, setAssigning] = useState({}) // course id -> teacher id
+  const [naming, setNaming] = useState({}) // course id -> methodist id
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
 
@@ -128,6 +131,26 @@ export default function SchoolCourses() {
       ),
     )
   }
+
+  /**
+   * Назначить методиста — того, кто утверждает план этого курса.
+   *
+   * Та же пара «курс и человек», что у преподавания, и та же кнопка рядом:
+   * вопросы разные («кто ведёт» против «кто утверждает»), но отвечают на
+   * них в одном месте — на карточке курса.
+   */
+  const nameMethodist = (course) => {
+    const personId = naming[course.id]
+    if (!personId || busy) return
+
+    run(() =>
+      createMethodist(course.id, Number(personId)).then(() =>
+        setNaming((current) => ({ ...current, [course.id]: '' })),
+      ),
+    )
+  }
+
+  const dropMethodist = (row) => run(() => deleteMethodist(row))
 
   /**
    * Take a teacher off a course.
@@ -314,6 +337,67 @@ export default function SchoolCourses() {
                       </span>
                     ))
                   )}
+                </div>
+
+                {/* вторая роль курса: кто утверждает его план */}
+                <div className="row courses">
+                  <span className="hint">{t('school.courses.methodist')}</span>
+                  {course.methodists.length === 0 ? (
+                    <span className="hint">{t('school.courses.noMethodist')}</span>
+                  ) : (
+                    course.methodists.map((person) => (
+                      <span className="tag" key={person.row}>
+                        {person.name}
+                        <button
+                          type="button"
+                          className="link"
+                          aria-label={t('school.courses.dropMethodist', {
+                            name: person.name,
+                          })}
+                          disabled={busy}
+                          onClick={() => dropMethodist(person.row)}
+                        >
+                          ✕
+                        </button>
+                      </span>
+                    ))
+                  )}
+                </div>
+
+                <div className="row">
+                  <select
+                    value={naming[course.id] ?? ''}
+                    aria-label={t('school.courses.methodistLabel', {
+                      name: course.name,
+                    })}
+                    disabled={busy}
+                    onChange={(event) =>
+                      setNaming((current) => ({
+                        ...current,
+                        [course.id]: event.target.value,
+                      }))
+                    }
+                  >
+                    <option value="">{t('school.courses.pickMethodist')}</option>
+                    {members
+                      .filter(
+                        (person) =>
+                          !course.methodists.some((item) => item.id === person.id),
+                      )
+                      .map((person) => (
+                        <option key={person.id} value={person.id}>
+                          {fullName(person)}
+                        </option>
+                      ))}
+                  </select>
+                  <button
+                    type="button"
+                    className="secondary"
+                    disabled={busy || !naming[course.id]}
+                    onClick={() => nameMethodist(course)}
+                  >
+                    {t('school.courses.nameMethodist')}
+                  </button>
                 </div>
 
                 <div className="row">

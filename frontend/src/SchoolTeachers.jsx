@@ -9,9 +9,7 @@ import {
   fetchCourses,
   fetchInvitations,
   fetchMembers,
-  fetchSubjects,
   setMemberRole,
-  setMethodistSubjects,
 } from './api'
 import { useSchoolSection } from './School'
 
@@ -36,7 +34,6 @@ export default function SchoolTeachers() {
   const [members, setMembers] = useState(null)
   const [invitations, setInvitations] = useState([])
   const [courses, setCourses] = useState([])
-  const [subjects, setSubjects] = useState([])
   const [email, setEmail] = useState('')
   const [inviteAdmin, setInviteAdmin] = useState(false)
   const [assigning, setAssigning] = useState({}) // teacher id -> course id
@@ -57,13 +54,11 @@ export default function SchoolTeachers() {
         fetchMembers(),
         fetchInvitations(),
         fetchCourses(null, { scope: 'school' }),
-        fetchSubjects(),
       ])
-        .then(([people, invited, all, subjectList]) => {
+        .then(([people, invited, all]) => {
           setMembers(people)
           setInvitations(invited)
           setCourses(all)
-          setSubjects(subjectList)
         })
         .catch(handleError),
     [handleError],
@@ -198,46 +193,6 @@ export default function SchoolTeachers() {
                   ))
                 )}
               </div>
-
-              {/* методист — не ступень иерархии, а полномочие по предмету:
-                  отсюда и список предметов, а не одна галочка */}
-              {subjects.length > 0 && (
-                <div className="row methodist">
-                  <span className="hint">{t('school.teachers.methodist')}</span>
-                  {subjects.map((subject) => {
-                    const has = member.methodist_subjects.some(
-                      (item) => item.id === subject.id,
-                    )
-                    return (
-                      <label className="checkbox" key={subject.id}>
-                        <input
-                          type="checkbox"
-                          checked={has}
-                          disabled={busy}
-                          onChange={() =>
-                            run(() =>
-                              setMethodistSubjects(
-                                member.id,
-                                has
-                                  ? member.methodist_subjects
-                                      .filter((item) => item.id !== subject.id)
-                                      .map((item) => item.id)
-                                  : [
-                                      ...member.methodist_subjects.map(
-                                        (item) => item.id,
-                                      ),
-                                      subject.id,
-                                    ],
-                              ),
-                            )
-                          }
-                        />
-                        {subject.name}
-                      </label>
-                    )
-                  })}
-                </div>
-              )}
 
               <div className="row">
                 <select

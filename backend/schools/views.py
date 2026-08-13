@@ -8,7 +8,6 @@ from collections import Counter
 
 from config.errors import Codes, api_error
 from django.contrib.auth import get_user_model
-from django.db import transaction
 from django.db.models import ProtectedError
 from rest_framework import mixins, viewsets
 from rest_framework.decorators import action
@@ -17,7 +16,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from .models import Invitation, School, SubjectMethodist
+from .models import Invitation, School
 from .serializers import (
     InvitationSerializer,
     MemberSerializer,
@@ -198,12 +197,90 @@ class MemberViewSet(
 
     serializer_class = MemberSerializer
     permission_classes = [IsAuthenticated, IsSchoolMember, IsSchoolAdminForWrite]
-    http_method_names = ["get", "patch", "put", "delete", "head", "options"]
+    http_method_names = ["get", "patch", "delete", "head", "options"]
 
     def get_queryset(self):
         return (
             User.objects.filter(school_id=self.request.user.school_id)
-            .prefetch_related("course_assignments__course", "methodist_of__subject")
+            .prefetch_related("course_assignments__course")
+            .order_by("first_name", "last_name", "email")
+        )
+
+    def perform_destroy(self, instance):
+        """
+        A school with anything in it stays. Several PROTECTs say so.
+
+        People are the usual blocker — deleting the school would strand their
+        calendar, courses and lessons — but not the only one: subjects and
+        stored files hold it too, and a school can outlive its last member.
+        So the answer names what is actually in the way rather than assuming
+        it is people; a message that says «2 members» about three files sends
+        somebody looking in the wrong place.
+        """
+        try:
+            instance.delete()
+        except ProtectedError as blocked:
+            api_error(
+                Codes.SCHOOL_IN_USE,
+                f"«{instance.name}» is still in use: {describe(blocked)}. "
+                "Clear it first.",
+                name=instance.name,
+                members=instance.members.count(),
+                blocked_by=describe(blocked),
+            )
+
+    @action(detail=True, methods=["post"])
+    def invite(self, request, pk=None):
+        """
+        Invite the first administrator of a school.
+
+        The same invitation a school admin would write, only from outside:
+        the person signs in through Google on that address and arrives with
+        the role already granted.
+        """
+        school = self.get_object()
+        form = SchoolInviteSerializer(data=request.data)
+        form.is_valid(raise_exception=True)
+        email = form.validated_data["email"]
+
+        invitation, created = Invitation.objects.get_or_create(
+            school=school,
+            email=email,
+            defaults={"is_school_admin": True, "created_by": request.user},
+        )
+        if not created and not invitation.is_school_admin:
+            # the address was already invited as a plain teacher — promote it
+            invitation.is_school_admin = True
+            invitation.save(update_fields=["is_school_admin"])
+
+        return Response(
+            InvitationSerializer(invitation).data, status=201 if created else 200
+        )
+
+
+class MemberViewSet(
+    mixins.ListModelMixin,
+    mixins.RetrieveModelMixin,
+    mixins.UpdateModelMixin,
+    mixins.DestroyModelMixin,
+    viewsets.GenericViewSet,
+):
+    """
+    The people of the school.
+
+    Everybody sees the list — knowing who else teaches here is not a secret
+    and the schedule shows their names anyway. Only an administrator hands
+    the role over or detaches somebody.
+    """
+
+    serializer_class = MemberSerializer
+    permission_classes = [IsAuthenticated, IsSchoolMember, IsSchoolAdminForWrite]
+    http_method_names = ["get", "patch", "delete", "head", "options"]
+
+    def get_queryset(self):
+        return (
+            User.objects.filter(school_id=self.request.user.school_id)
+            .prefetch_related("course_assignments__course")
             .order_by("first_name", "last_name", "email")
         )
 

@@ -110,7 +110,7 @@ export default function App() {
       <StatusWatcher onChange={setStatus} />
       {/* счётчик в баре: методист должен видеть, что его ждут, не заходя
           в раздел. Писем пока нет, и это единственное уведомление */}
-      {user?.methodist_subjects?.length > 0 && (
+      {user?.methodist_courses?.length > 0 && (
         <ReviewWatcher onChange={setReviews} />
       )}
 

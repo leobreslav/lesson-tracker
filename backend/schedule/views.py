@@ -19,9 +19,18 @@ from rest_framework.views import APIView
 from plans.models import PlanNode
 
 from . import importing, services
-from .models import Course, CourseAssignment, GradeLevel, LessonSlot, MasterSlot, Subject
+from .models import (
+    Course,
+    CourseAssignment,
+    CourseMethodist,
+    GradeLevel,
+    LessonSlot,
+    MasterSlot,
+    Subject,
+)
 from .serializers import (
     BulkDeleteSerializer,
+    CourseMethodistSerializer,
     SubjectSerializer,
     CopySerializer,
     CourseAssignmentSerializer,
@@ -163,6 +172,35 @@ class GradeLevelViewSet(SchoolScopedViewSet):
                 Codes.SCHOOL_ADMIN_REQUIRED,
                 "Only a school administrator may change the reference lists.",
             )
+
+
+class CourseMethodistViewSet(SchoolScopedViewSet):
+    """
+    Кто утверждает план курса.
+
+    Устроено как назначение учителя рядом: та же пара «курс и человек», тот
+    же администратор. Разница в вопросе — «кто ведёт» против «кто
+    утверждает», — и на карточке курса они стоят двумя строками.
+    """
+
+    serializer_class = CourseMethodistSerializer
+    queryset = CourseMethodist.objects.select_related("course", "user")
+    school_path = "course__school"
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        course = self.request.query_params.get("course")
+        if course:
+            queryset = (
+                queryset.filter(course_id=course)
+                if course.isdigit()
+                else queryset.none()
+            )
+
+        return queryset
+
+    def perform_create(self, serializer):
+        serializer.save(assigned_by=self.request.user)
 
 
 class CourseAssignmentViewSet(SchoolScopedViewSet):

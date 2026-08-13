@@ -59,28 +59,13 @@ class MemberSerializer(serializers.ModelSerializer):
     """
 
     courses = serializers.SerializerMethodField()
-    methodist_subjects = serializers.SerializerMethodField()
 
     class Meta:
         model = User
         fields = (
             "id", "email", "first_name", "last_name", "is_school_admin", "courses",
-            "methodist_subjects",
         )
         read_only_fields = ("id", "email", "first_name", "last_name")
-
-    def get_methodist_subjects(self, person) -> list:
-        """
-        По каким предметам человек утверждает планы.
-
-        Роль висит на паре «человек и предмет», а не на человеке: методистов
-        по алгебре бывает двое, и один человек может отвечать за два
-        предмета.
-        """
-        return [
-            {"id": row.subject_id, "name": row.subject.name}
-            for row in person.methodist_of.all()
-        ]
 
     def get_courses(self, person) -> list:
         """

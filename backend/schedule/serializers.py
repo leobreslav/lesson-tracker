@@ -7,7 +7,15 @@ from rest_framework import serializers
 from rest_framework.validators import UniqueTogetherValidator
 
 from . import services
-from .models import Course, CourseAssignment, GradeLevel, LessonSlot, MasterSlot, Subject
+from .models import (
+    Course,
+    CourseAssignment,
+    CourseMethodist,
+    GradeLevel,
+    LessonSlot,
+    MasterSlot,
+    Subject,
+)
 
 User = get_user_model()
 
@@ -154,6 +162,7 @@ class CourseSerializer(serializers.ModelSerializer):
     grade_name = serializers.CharField(source="grade.name", read_only=True)
     grade_level = serializers.IntegerField(source="grade.level", read_only=True)
     teachers = serializers.SerializerMethodField()
+    methodists = serializers.SerializerMethodField()
 
     class Meta:
         model = Course
@@ -167,6 +176,7 @@ class CourseSerializer(serializers.ModelSerializer):
             "grade_name",
             "grade_level",
             "teachers",
+            "methodists",
             "name",
             "created_at",
         )
@@ -179,6 +189,19 @@ class CourseSerializer(serializers.ModelSerializer):
                 fields=("school", "year", "name"),
                 message="A course with this name already exists in this year.",
             ),
+        ]
+
+    def get_methodists(self, course) -> list:
+        """
+        Кто утверждает план этого курса — вторая строка карточки курса.
+
+        Приходит вместе с курсом по той же причине, что и учителя: экран
+        показывает обе роли рядом, и спрашивать их по строке значило бы
+        рисовать карточку в два приёма.
+        """
+        return [
+            {"id": item.user_id, "name": full_name(item.user), "row": item.pk}
+            for item in course.methodists.all()
         ]
 
     def get_teachers(self, course) -> list:
@@ -531,3 +554,36 @@ class BulkDeleteSerializer(serializers.Serializer):
                 field="end",
             )
         return attrs
+
+
+class CourseMethodistSerializer(serializers.ModelSerializer):
+    """Кто утверждает план курса: та же форма, что у назначения учителя."""
+
+    user_name = serializers.SerializerMethodField()
+    course_name = serializers.CharField(source="course.name", read_only=True)
+
+    class Meta:
+        model = CourseMethodist
+        fields = ("id", "course", "user", "user_name", "course_name", "created_at")
+        read_only_fields = ("created_at",)
+        validators = [
+            UniqueTogetherValidator(
+                queryset=CourseMethodist.objects.all(),
+                fields=("course", "user"),
+                message="This person already approves the plan of this course.",
+            ),
+        ]
+
+    def get_user_name(self, row) -> str:
+        return full_name(row.user)
+
+    def get_fields(self):
+        fields = super().get_fields()
+        school_id = getattr(self.context.get("request").user, "school_id", None)
+        # курс и человек — только свои: чужой id так же не существует, как и
+        # несуществующий
+        fields["course"].queryset = Course.objects.filter(school_id=school_id)
+        fields["user"].queryset = get_user_model().objects.filter(
+            school_id=school_id
+        )
+        return fields

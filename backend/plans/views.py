@@ -243,7 +243,7 @@ class PlanNodeViewSet(TeacherScopedViewSet):
                 approval.approved_baseline(owner.teacher_id, owner.course_id),
                 approval.open_request(owner.teacher_id, owner.course_id),
                 approval.methodists_for(course),
-                subject=course.subject.name if course.subject else None,
+                subject=course.name,
             )
         )
 
@@ -264,17 +264,17 @@ class PlanNodeViewSet(TeacherScopedViewSet):
         if not methodists:
             api_error(
                 Codes.NO_METHODIST,
-                f"No methodist is assigned to «{course.subject or course.name}» — "
-                "ask the school administrator to assign one.",
+                f"Nobody approves the plan of «{course.name}» — ask the school "
+                "administrator to name a methodist on the course card.",
                 field="course",
-                subject=str(course.subject or course.name),
+                subject=course.name,
             )
 
         chosen = request.data.get("reviewer")
         if chosen is None and len(methodists) > 1:
             api_error(
                 Codes.REVIEWER_REQUIRED,
-                "Several methodists teach this subject — choose one.",
+                "This course has several methodists — choose one.",
                 field="reviewer",
             )
 
@@ -285,7 +285,7 @@ class PlanNodeViewSet(TeacherScopedViewSet):
         if reviewer is None:
             api_error(
                 Codes.NOT_A_METHODIST,
-                "That person is not a methodist for this subject.",
+                "That person does not approve the plan of this course.",
                 field="reviewer",
             )
 
@@ -296,7 +296,7 @@ class PlanNodeViewSet(TeacherScopedViewSet):
                 approval.approved_baseline(owner.teacher_id, owner.course_id),
                 baseline,
                 methodists,
-                subject=course.subject.name if course.subject else None,
+                subject=course.name,
             ),
             status=status.HTTP_201_CREATED,
         )
@@ -772,7 +772,19 @@ class PlanReviewViewSet(ReadOnlyModelViewSet):
 
     def list(self, request):
         return Response(
-            {"reviews": [review_payload(row) for row in self.get_queryset()]}
+            {
+                "reviews": [
+                    review_payload(
+                        row,
+                        rows=services.plan_snapshot(
+                            services.PlanOwner(
+                                teacher_id=row.teacher_id, course_id=row.course_id
+                            )
+                        ),
+                    )
+                    for row in self.get_queryset()
+                ]
+            }
         )
 
     def retrieve(self, request, pk=None):
@@ -781,11 +793,14 @@ class PlanReviewViewSet(ReadOnlyModelViewSet):
         slots = LessonSlot.objects.filter(
             teacher=baseline.teacher, course=course, is_cancelled=False
         ).count()
-        lessons = sum(1 for row in baseline.rows.all() if not row.is_section)
+        rows = services.plan_snapshot(
+            services.PlanOwner(teacher_id=baseline.teacher_id, course_id=course.pk)
+        )
+        lessons = sum(1 for row in rows if not row.is_section)
 
         return Response(
             {
-                **review_payload(baseline, rows=True),
+                **review_payload(baseline, rows=rows),
                 # ключевые числа рядом с планом: методист смотрит не только
                 # «что написано», но и «помещается ли это в год»
                 "slots_total": slots,
@@ -798,7 +813,7 @@ class PlanReviewViewSet(ReadOnlyModelViewSet):
         baseline = self.get_object()
         approval.approve(baseline, request.user)
 
-        return Response(review_payload(baseline))
+        return Response(review_payload(baseline, rows=list(baseline.rows.all())))
 
     @action(detail=True, methods=["post"], url_path="return", url_name="return")
     def send_back(self, request, pk=None):
