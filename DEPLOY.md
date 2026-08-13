@@ -113,7 +113,7 @@ NGINX_SSL=false
 # Cloudflare R2: вложения к урокам
 R2_ACCESS_KEY_ID=<из R2 → Manage API tokens>
 R2_SECRET_ACCESS_KEY=<оттуда же>
-R2_BUCKET_NAME=lesson-tracker-prod
+R2_BUCKET_NAME=lesson-tracker
 R2_ENDPOINT_URL=https://<account-id>.r2.cloudflarestorage.com
 
 # резервный бакет, см. раздел 10; endpoint тот же
@@ -469,7 +469,7 @@ Redirect URI не нужны — вход идёт по frontend-flow с `id_tok
 | что | где живёт | чем спасается |
 |---|---|---|
 | база: уроки, планы, содержание, ссылки на файлы | Postgres в контейнере на VPS | ежедневный `pg_dump` в `~/backups/` |
-| файлы, приложенные к урокам | бакет `lesson-tracker-prod` в Cloudflare R2 | ежедневная синхронизация в бакет `lesson-tracker-backup` |
+| файлы, приложенные к урокам | бакет `lesson-tracker` в Cloudflare R2 | ежедневная синхронизация в бакет `lesson-tracker-backup` |
 | собранный фронт, статика Django | том в контейнере | пересобираются из git |
 
 **Второй бакет, а не versioning.** Object versioning — функция AWS S3;
@@ -496,7 +496,9 @@ Redirect URI не нужны — вход идёт по frontend-flow с `id_tok
 ### Расписание
 
 Обе задачи — в crontab пользователя, со сдвигом по времени: одновременно
-им работать незачем, а лог общий.
+им работать незачем. Логи разные — база пишет каждый день по три строки, а
+синхронизация файлов молчит, пока копировать нечего, и в общем логе её
+нечастые строки терялись бы.
 
 ```bash
 mkdir -p ~/backups
@@ -505,7 +507,7 @@ crontab -e
 
 ```cron
 30 3 * * * /home/leobreslav/lesson-tracker/scripts/backup-db.sh >> /home/leobreslav/backups/backup.log 2>&1
-10 4 * * * /home/leobreslav/lesson-tracker/scripts/backup-files.sh >> /home/leobreslav/backups/backup.log 2>&1
+0 4 * * * /home/leobreslav/lesson-tracker/scripts/backup-files.sh >> /home/leobreslav/backups/files.log 2>&1
 ```
 
 Проверьте оба сразу, не дожидаясь ночи:
@@ -514,6 +516,7 @@ crontab -e
 ~/lesson-tracker/scripts/backup-db.sh
 ~/lesson-tracker/scripts/backup-files.sh --dry-run
 ls -lh ~/backups/lesson-tracker/
+tail ~/backups/backup.log ~/backups/files.log
 ```
 
 ### База: дампы

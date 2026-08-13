@@ -206,10 +206,11 @@ test('keys built at runtime exist for every value they take', () => {
   )
 })
 
-test('the week starts where the language says it does', () => {
-  // Monday is 0 in our numbering, so Russian reads straight through
-  assert.deepEqual(weekOrder('ru'), [0, 1, 2, 3, 4, 5, 6])
-  // American English starts on Sunday, which is our 6
-  assert.deepEqual(weekOrder('en-US'), [6, 0, 1, 2, 3, 4, 5])
-  assert.deepEqual(weekOrder('en-GB'), [0, 1, 2, 3, 4, 5, 6])
+test('the week starts on Monday, whatever the language', () => {
+  // A school week is Monday to Sunday, and the backend numbers weekdays the
+  // same way. Letting the locale decide meant that switching the interface
+  // to English reflowed the grid without a lesson having moved.
+  for (const language of ['ru', 'en', 'en-US', 'en-GB', undefined]) {
+    assert.deepEqual(weekOrder(language), [0, 1, 2, 3, 4, 5, 6], String(language))
+  }
 })

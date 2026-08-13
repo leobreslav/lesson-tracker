@@ -128,14 +128,15 @@ docker compose exec backend python manage.py cleanup_orphaned_files --delete
 
 ## Бэкапы (на сервере)
 
-Обе задачи висят в crontab: `03:30` дамп базы, `04:10` копия файлов в
-резервный бакет. Лог общий — `~/backups/backup.log`.
+Обе задачи висят в crontab: `03:30` дамп базы, `04:00` копия файлов в
+резервный бакет `lesson-tracker-backup`. Логи разные — `~/backups/backup.log`
+и `~/backups/files.log`.
 
 ```bash
 ~/lesson-tracker/scripts/backup-db.sh                 # дамп прямо сейчас
 ~/lesson-tracker/scripts/backup-files.sh --dry-run    # что скопировалось бы
 ~/lesson-tracker/scripts/backup-files.sh --restore    # вернуть файлы из резерва
-tail -50 ~/backups/backup.log
+tail -50 ~/backups/backup.log ~/backups/files.log
 ```
 
 Versioning у R2 нет — резерв это второй бакет; подробности и порядок

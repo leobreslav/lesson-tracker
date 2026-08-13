@@ -1,33 +1,25 @@
 /**
- * Where a week begins, per language.
+ * Where a week begins. Always Monday.
  *
- * Separate from `dates.js` on purpose: this half depends on nothing but Intl,
- * so it is testable without booting i18next, and the weekday numbering it
- * speaks is ours (Monday is 0), not the CLDR one.
+ * It used to depend on the interface language: Russian read Monday first,
+ * American English Sunday first. That is right for a wall calendar and wrong
+ * here. A school week is Monday to Sunday whatever language the interface is
+ * in, and everything below the surface already agrees — the backend numbers
+ * weekdays from Monday (`date.weekday()`), `weekend_days` is written in those
+ * numbers, and copying a period rounds the source to whole weeks starting
+ * Monday. With the locale in charge, switching the interface to English
+ * reflowed the timetable grid without a single lesson having moved.
+ *
+ * The numbering itself stays ours — Monday is 0, Sunday is 6 — and the
+ * functions stay, because the column order is still built from them.
  */
 
-// Intl.Locale.getWeekInfo is missing in some engines; this table covers ours
-const FIRST_DAY_FALLBACK = { en: 6, 'en-GB': 0, ru: 0 }
-
-/** First weekday of the week in our numbering: Monday is 0, Sunday is 6. */
-export function firstWeekday(language) {
-  try {
-    // getWeekInfo counts 1 for Monday and 7 for Sunday
-    const info = new Intl.Locale(language).getWeekInfo?.()
-    if (info?.firstDay) return (info.firstDay - 1) % 7
-  } catch {
-    // an old engine or an unknown tag — the table below answers instead
-  }
-
-  const base = String(language).split('-')[0]
-  return FIRST_DAY_FALLBACK[language] ?? FIRST_DAY_FALLBACK[base] ?? 0
+/** First weekday of the week in our numbering: Monday is 0. */
+export function firstWeekday() {
+  return 0
 }
 
-/**
- * Week column order: our weekday numbers starting from the first day of the
- * week in this language. Russian gives [0…6], American English [6,0,…,5].
- */
-export function weekOrder(language) {
-  const first = firstWeekday(language)
-  return Array.from({ length: 7 }, (_, index) => (first + index) % 7)
+/** Week column order: Monday through Sunday. */
+export function weekOrder() {
+  return [0, 1, 2, 3, 4, 5, 6]
 }
