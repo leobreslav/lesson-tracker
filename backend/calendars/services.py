@@ -67,6 +67,10 @@ STATUS_WEEKEND = "weekend"
 
 STATUSES = (STATUS_STUDY, STATUS_HOLIDAY, STATUS_VACATION, STATUS_WEEKEND)
 
+# date outside every school year: not a status of the calendar, but the
+# schedule spans weeks the year does not cover and has to say something
+STATUS_OUTSIDE = "outside"
+
 # fallback wording for API payloads; the UI localises by status code
 STATUS_LABELS = {
     STATUS_STUDY: "study day",
@@ -112,6 +116,34 @@ class Day:
     @property
     def is_study(self) -> bool:
         return self.status == STATUS_STUDY
+
+
+def outside_day(day: date) -> Day:
+    """A date no school year covers. Never a study day."""
+    return Day(date=day, status=STATUS_OUTSIDE)
+
+
+def day_payload(day: Day) -> dict:
+    """
+    One calendar day as **every** endpoint sends it.
+
+    The computation was always shared (`SchoolYear.build_days`), but the
+    serialisation was not: `/calendar/years/<id>/days/` sent the status and
+    the agenda sent `is_study` next to it. The school timetable read
+    `is_study` from the first one, got `undefined`, and marked every day of
+    the year as not a study day. Two payloads for one thing is one payload
+    too many.
+    """
+    return {
+        "date": day.date,
+        "weekday": day.weekday,
+        "status": day.status,
+        "is_study": day.is_study,
+        "title": day.title,
+        "exception": day.exception_id,
+        "term_id": day.term_id,
+        "term_name": day.term_name,
+    }
 
 
 MONTHS_GENITIVE = (

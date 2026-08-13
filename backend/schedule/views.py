@@ -527,9 +527,12 @@ class LessonSlotViewSet(TeacherScopedViewSet):
                 }
             )
 
-        # the markup comes from the calendar: the year knows the breaks
+        # the markup comes from the calendar: the year knows the breaks, and
+        # the payload is the one every endpoint sends — see `day_payload`
         days = {
-            day.isoformat(): {"status": "outside", "title": "", "is_study": False}
+            day.isoformat(): calendar_services.day_payload(
+                calendar_services.outside_day(day)
+            )
             for day in calendar_services.iter_dates(start, end)
         }
         years = SchoolYear.objects.filter(
@@ -540,11 +543,7 @@ class LessonSlotViewSet(TeacherScopedViewSet):
         for year in years:
             for day in year.build_days():
                 if start <= day.date <= end:
-                    days[day.date.isoformat()] = {
-                        "status": day.status,
-                        "title": day.title,
-                        "is_study": day.is_study,
-                    }
+                    days[day.date.isoformat()] = calendar_services.day_payload(day)
 
         return Response({"start": start, "end": end, "lessons": lessons, "days": days})
 

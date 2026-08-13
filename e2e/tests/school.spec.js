@@ -145,3 +145,33 @@ test('обзор считает школу и подсказывает след�
   await expect(cards.filter({ hasText: 'учителей' })).toContainText('3')
   await expect(cards.filter({ hasText: 'курсов' })).toContainText('4')
 })
+
+test('в школьном расписании урок ставится в обычный будний день', async ({
+  page,
+  signIn,
+}) => {
+  await signIn(PEOPLE.admin)
+  await openSection(page, '/school/schedule')
+
+  // листаем в учебный год: «сегодня» в демо-данных до его начала, а поля
+  // выбора даты в этой панели нет
+  const monday = page.locator('[data-day-head="2026-09-07"]')
+  for (let step = 0; step < 8 && !(await monday.count()); step += 1) {
+    await page.getByRole('button', { name: '→' }).click()
+    await page.waitForTimeout(250)
+  }
+
+  // понедельник — учебный день, и сетка обязана это знать: признак приходит
+  // из того же ответа календаря, что и на странице «Учебный год»
+  await expect(monday).toBeVisible()
+  await expect(monday).not.toContainText('не учебный')
+
+  await page.locator('[data-add="2026-09-07:6"]').click()
+
+  const dialog = page.locator('dialog.modal')
+  await dialog.getByLabel('Курсы').selectOption({ index: 1 })
+  await dialog.getByRole('button', { name: 'Добавить', exact: true }).click()
+
+  await expect(dialog).toBeHidden()
+  await expect(page.locator('[data-lesson="2026-09-07:6"]')).toHaveCount(1)
+})

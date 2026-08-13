@@ -11,18 +11,6 @@ from .serializers import (
 )
 
 
-def serialize_day(day: services.Day) -> dict:
-    return {
-        "date": day.date,
-        "weekday": day.weekday,
-        "status": day.status,
-        "title": day.title,
-        "exception": day.exception_id,
-        "term_id": day.term_id,
-        "term_name": day.term_name,
-    }
-
-
 class SchoolYearViewSet(SchoolScopedViewSet):
     """
     The school's years: CRUD, the expanded calendar and the statistics.
@@ -43,7 +31,7 @@ class SchoolYearViewSet(SchoolScopedViewSet):
                 "start_date": year.start_date,
                 "end_date": year.end_date,
                 "weekend_days": year.weekend_days,
-                "days": [serialize_day(day) for day in year.build_days()],
+                "days": [services.day_payload(day) for day in year.build_days()],
             }
         )
 

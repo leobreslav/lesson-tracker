@@ -84,7 +84,9 @@ export default function SchoolSchedule({ onLoggedOut }) {
 
   useEffect(() => {
     if (!yearId) return
-    fetchCourses(yearId).then(setCourses).catch(handleError)
+    // расписание школы — экран администратора: здесь нужны все курсы
+    // школы, а не только те, что ведёт он сам
+    fetchCourses(yearId, { scope: 'school' }).then(setCourses).catch(handleError)
     // the calendar decides which columns are dimmed; the timetable itself
     // knows nothing about breaks
     fetchYearDays(yearId)
