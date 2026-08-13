@@ -48,6 +48,78 @@ class Subject(models.Model):
         return self.name
 
 
+class GradeLevel(models.Model):
+    """
+    A year group as this school writes it: «Grade 6», «MYP 4», «10 класс».
+
+    Two fields on purpose. `level` is the year of study counted from the
+    first one and is what sorting and comparison run on; `name` is what the
+    school puts on the door. Schools using several systems at once — MYP
+    alongside ordinary numbers — would otherwise sort «MYP 4» next to the
+    fourth grade instead of the ninth.
+
+    The list belongs to the school, like the subjects next to it.
+    """
+
+    school = models.ForeignKey(
+        "schools.School",
+        related_name="grade_levels",
+        on_delete=models.CASCADE,
+        verbose_name="school",
+    )
+    level = models.PositiveSmallIntegerField(
+        "year of study",
+        validators=[MinValueValidator(MIN_GRADE), MaxValueValidator(MAX_GRADE)],
+        help_text=(
+            "The year of study counted from the first one, not the number "
+            "inside the name. «MYP 4» is the ninth year of study, so its "
+            "level is 9 — that is what keeps sorting right in a school that "
+            "uses both systems."
+        ),
+    )
+    name = models.CharField(
+        "name",
+        max_length=50,
+        help_text="What the school calls it: «Grade 6», «MYP 4», «10 класс».",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = "grade level"
+        verbose_name_plural = "grade levels"
+        ordering = ("level",)
+        constraints = [
+            models.UniqueConstraint(
+                fields=("school", "level"), name="unique_grade_level_per_school"
+            ),
+        ]
+
+    def __str__(self):
+        return self.name
+
+
+class CourseQuerySet(models.QuerySet):
+    def for_teacher(self, user):
+        """
+        The courses a teacher works in: assigned, or already worked in.
+
+        Assignment is the answer to «what do I teach», and normally it is the
+        only one. The second half is there because an assignment can be taken
+        away while the lessons and the plan stay (see `CourseAssignment`) —
+        hiding a colleague's own work behind an administrator's edit would be
+        worse than a slightly longer list.
+        """
+        if user is None or not user.is_authenticated or user.school_id is None:
+            return self.none()
+
+        return self.filter(
+            models.Q(assignments__teacher=user)
+            | models.Q(slots__teacher=user)
+            | models.Q(plan_nodes__teacher=user),
+            school_id=user.school_id,
+        ).distinct()
+
+
 class Course(models.Model):
     """
     What somebody teaches: a group and a subject together, «9B Algebra».
@@ -85,19 +157,25 @@ class Course(models.Model):
         on_delete=models.PROTECT,
         verbose_name="subject",
     )
-    grade = models.PositiveSmallIntegerField(
-        "grade",
+    grade = models.ForeignKey(
+        GradeLevel,
+        related_name="courses",
         null=True,
         blank=True,
-        validators=[MinValueValidator(MIN_GRADE), MaxValueValidator(MAX_GRADE)],
+        on_delete=models.PROTECT,
+        verbose_name="grade level",
     )
     name = models.CharField("name", max_length=20)
     created_at = models.DateTimeField(auto_now_add=True)
 
+    objects = CourseQuerySet.as_manager()
+
     class Meta:
         verbose_name = "course"
         verbose_name_plural = "courses"
-        ordering = ("name",)
+        # by year of study first: «MYP 4» and «9 класс» are the same year and
+        # belong next to each other, whatever they are called
+        ordering = ("grade__level", "name")
         constraints = [
             models.UniqueConstraint(
                 fields=("school", "year", "name"), name="unique_course_name_per_year"
@@ -106,6 +184,62 @@ class Course(models.Model):
 
     def __str__(self):
         return self.name
+
+
+class CourseAssignment(models.Model):
+    """
+    Who teaches this course. The one place that answers it.
+
+    Until now the answer only existed inside the school timetable, as the
+    `teacher` of a `MasterSlot` — so an administrator could not hand somebody
+    a course without also drawing their week, and a teacher with no timetable
+    saw an empty list everywhere. Load and timetable are different questions
+    and now have different tables.
+
+    Many-to-many in both directions: a course can be taught by several people
+    (parallel groups, a stand-in), and a teacher naturally has several
+    courses.
+
+    Removing an assignment does **not** touch the lessons or the plan written
+    under it — see the delete endpoint. The row is a statement about the
+    present, not the owner of the work done in the past.
+    """
+
+    course = models.ForeignKey(
+        Course,
+        related_name="assignments",
+        on_delete=models.CASCADE,
+        verbose_name="course",
+    )
+    teacher = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        related_name="course_assignments",
+        on_delete=models.CASCADE,
+        verbose_name="teacher",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = "course assignment"
+        verbose_name_plural = "course assignments"
+        ordering = ("course__name", "teacher__last_name", "teacher__email")
+        constraints = [
+            models.UniqueConstraint(
+                fields=("course", "teacher"), name="unique_course_assignment"
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.teacher} — {self.course}"
+
+    def clean(self):
+        super().clean()
+
+        if self.course_id and self.teacher_id:
+            if self.course.school_id != self.teacher.school_id:
+                raise ValidationError(
+                    {"teacher": "The teacher belongs to another school."}
+                )
 
 
 class MasterSlot(models.Model):
@@ -207,6 +341,11 @@ class MasterSlot(models.Model):
 
         return queryset.first()
 
+    def teacher_is_assigned(self) -> bool:
+        return CourseAssignment.objects.filter(
+            course_id=self.course_id, teacher_id=self.teacher_id
+        ).exists()
+
     def clean(self):
         super().clean()
 
@@ -218,6 +357,14 @@ class MasterSlot(models.Model):
                 raise ValidationError(
                     {"teacher": "The teacher belongs to another school."}
                 )
+
+        if self.teacher_id and self.course_id and not self.teacher_is_assigned():
+            # naming somebody in the timetable is not how a course is handed
+            # over: the assignment is a separate, deliberate step, and going
+            # through it keeps the two answers from drifting apart
+            raise ValidationError(
+                {"teacher": "The teacher is not assigned to this course."}
+            )
 
         if not (self.date and self.lesson_number):
             return

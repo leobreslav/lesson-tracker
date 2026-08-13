@@ -1,29 +1,64 @@
 import { PEOPLE, expect, ready, test } from './harness.js'
 
-/** Scenario 2: an administrator adds a course and finds it in the list. */
+/**
+ * Scenario 2: the «School» section — four tabs and the link between a
+ * teacher and a course.
+ *
+ * That link is the thing worth driving through a browser: it is written from
+ * two different screens and read on a third one (the teacher's own list of
+ * courses), so a mistake anywhere in the chain shows up only here.
+ */
 
-test('администратор заводит курс и видит его в списке', async ({ page, signIn }) => {
+const openSection = async (page, path) => {
+  await page.goto(path)
+  await ready(page)
+}
+
+test('администратор заводит курс и назначает на него учителя', async ({
+  page,
+  signIn,
+}) => {
   await signIn(PEOPLE.admin)
-  await page.goto('/school')
-  await ready(page)
+  await openSection(page, '/school/courses')
 
-  const courses = page.locator('.panel', { hasText: 'Курсы' })
-  await courses.getByPlaceholder('Название курса').fill('9А Алгебра')
-  await courses.getByLabel('Предмет:').selectOption({ label: 'Алгебра' })
-  await courses.getByLabel('Параллель:').fill('9')
-  await courses.getByRole('button', { name: 'Добавить', exact: true }).click()
+  await page.getByPlaceholder('Название курса').fill('9А Алгебра')
+  await page.getByLabel('Предмет:').selectOption({ label: 'Алгебра' })
+  // параллели теперь справочник: «MYP 4» — это девятый год обучения
+  await page.getByLabel('Параллель:').selectOption({ label: 'MYP 4' })
+  await page.getByRole('button', { name: 'Добавить', exact: true }).click()
 
-  // exact: кнопка удаления рядом называется «Удалить курс 9А Алгебра», и
-  // подстрочное совпадение по умолчанию задело бы обе
-  await expect(
-    courses.getByRole('button', { name: '9А Алгебра', exact: true }),
-  ).toBeVisible()
+  const card = page.locator('.people-list > li', { hasText: '9А Алгебра' })
+  await expect(card).toContainText('курс никто не ведёт')
 
-  // and the teacher's read-only list agrees, which is the point of a
-  // school-wide course
-  await page.goto('/classes')
-  await ready(page)
+  await card.getByLabel('Учитель для 9А Алгебра').selectOption({ label: 'Мария Иванова' })
+  await card.getByRole('button', { name: 'Назначить' }).click()
+
+  await expect(card.locator('.tag')).toContainText('Мария Иванова')
+
+  // и курс появился в её собственном списке — ради этого связь и заведена
+  await signIn(PEOPLE.ivanova)
+  await openSection(page, '/classes')
   await expect(page.getByText('9А Алгебра')).toBeVisible()
+})
+
+test('назначение видно и снимается со стороны учителя', async ({ page, signIn }) => {
+  await signIn(PEOPLE.admin)
+  await openSection(page, '/school/teachers')
+
+  const card = page.locator('.people-list > li', { hasText: 'ivanova@example.com' })
+  // то же самое отношение, показанное с другого конца
+  await expect(card.locator('.tag').first()).toContainText('Grade 6 Algebra')
+
+  await card.getByLabel('Курс для Мария Иванова').selectOption({ label: 'Grade 9 Geometry' })
+  await card.getByRole('button', { name: 'Назначить' }).click()
+
+  await expect(card.locator('.tag', { hasText: 'Grade 9 Geometry' })).toBeVisible()
+
+  // и обратно, с карточки курса
+  await openSection(page, '/school/courses')
+  const course = page.locator('.people-list > li', { hasText: 'Grade 9 Geometry' })
+  // exact: у курса уже есть свой учитель, и «.tag» их двое
+  await expect(course.locator('.tag', { hasText: 'Мария Иванова' })).toBeVisible()
 })
 
 test('учитель курсы не заводит: формы нет, а сервер отказывает', async ({
@@ -32,8 +67,7 @@ test('учитель курсы не заводит: формы нет, а се�
   api,
 }) => {
   await signIn(PEOPLE.ivanova)
-  await page.goto('/classes')
-  await ready(page)
+  await openSection(page, '/classes')
 
   await expect(page.getByPlaceholder('Название курса')).toHaveCount(0)
 
@@ -48,14 +82,39 @@ test('учитель курсы не заводит: формы нет, а се�
   expect(refused.body.code).toBe('school_admin_required')
 })
 
-test('новый предмет заводится не покидая формы курса', async ({ page, signIn }) => {
+test('справочники: предмет заводится и параллель переименовывается', async ({
+  page,
+  signIn,
+}) => {
   await signIn(PEOPLE.admin)
-  await page.goto('/school')
-  await ready(page)
+  await openSection(page, '/school/reference')
 
-  const courses = page.locator('.panel', { hasText: 'Курсы' })
-  await courses.getByPlaceholder('Название нового предмета').fill('Информатика')
-  await courses.getByRole('button', { name: 'Добавить предмет' }).click()
+  const subjects = page.locator('.panel', { hasText: 'Предметы' })
+  await subjects.getByPlaceholder('Название нового предмета').fill('Информатика')
+  await subjects.getByRole('button', { name: 'Добавить' }).click()
+  // exact: рядом стоит «Удалить Информатика»
+  await expect(
+    subjects.getByRole('button', { name: 'Информатика', exact: true }),
+  ).toBeVisible()
 
-  await expect(courses.getByLabel('Предмет:')).toContainText('Информатика')
+  // год обучения и название — разные вещи, и меняется только второе
+  const grades = page.locator('.panel', { hasText: 'Параллели' })
+  const ninth = grades.locator('li', { hasText: '9 год' })
+  await ninth.getByRole('button', { name: 'MYP 4', exact: true }).click()
+  await ninth.getByLabel('Новое название').fill('MYP 4 (9 класс)')
+  await ninth.getByLabel('Новое название').press('Enter')
+
+  await expect(
+    grades.getByRole('button', { name: 'MYP 4 (9 класс)', exact: true }),
+  ).toBeVisible()
+  await expect(ninth).toContainText('9 год')
+})
+
+test('обзор считает школу и подсказывает следующий шаг', async ({ page, signIn }) => {
+  await signIn(PEOPLE.admin)
+  await openSection(page, '/school')
+
+  const cards = page.locator('.summary-cards li')
+  await expect(cards.filter({ hasText: 'учителей' })).toContainText('3')
+  await expect(cards.filter({ hasText: 'курсов' })).toContainText('4')
 })

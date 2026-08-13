@@ -1,7 +1,7 @@
 from config.errors import Codes, api_error
 from django.core.exceptions import ValidationError as DjangoValidationError
 from rest_framework import serializers
-from schedule.serializers import school_courses
+from schedule.serializers import teacher_courses
 
 from . import services
 from .content import CONTENT_EXTRA_KWARGS, CONTENT_FIELDS, content_problems
@@ -139,7 +139,7 @@ class PlanNodeCreateSerializer(serializers.ModelSerializer):
 
     def get_fields(self):
         fields = super().get_fields()
-        fields["course"].queryset = school_courses(self)
+        fields["course"].queryset = teacher_courses(self)
         fields["parent"].queryset = own_nodes(self)
         fields["after"].queryset = own_nodes(self)
         return fields

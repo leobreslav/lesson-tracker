@@ -16,7 +16,7 @@ from collections import defaultdict
 from django.db import transaction
 
 from . import services
-from .models import LessonSlot, MasterSlot
+from .models import Course, LessonSlot, MasterSlot
 
 MERGE = "merge"
 REPLACE = "replace"
@@ -28,11 +28,17 @@ def master_rows(*, teacher, year, courses=None, start, end):
 
     Rows with nobody assigned are not here by construction: the filter is on
     this teacher, and a row without a teacher belongs to no one.
+
+    The course filter is doubled deliberately. A timetable row can only name
+    an assigned teacher, so the two conditions agree — until an assignment is
+    taken away, and then the import should not quietly hand back a course
+    somebody no longer teaches.
     """
     rows = MasterSlot.objects.filter(
         school_id=teacher.school_id,
         year=year,
         teacher=teacher,
+        course__in=Course.objects.for_teacher(teacher),
         date__range=(start, end),
     )
     if courses:

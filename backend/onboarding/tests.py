@@ -8,7 +8,7 @@ from django.utils import timezone
 from plans.models import PlanNode
 from rest_framework.test import APITestCase
 from schedule.models import Course, LessonSlot
-from schools.testing import SchoolTestMixin, make_course, make_year
+from schools.testing import assign, SchoolTestMixin, make_course, make_year
 
 from . import services
 
@@ -28,7 +28,15 @@ class OnboardingTestCase(SchoolTestMixin, APITestCase):
         return make_year(school or self.school, name)
 
     def make_class(self, year, name="9Б"):
-        return make_course(year.school, year, name)
+        """
+        A course of this teacher's.
+
+        Assigned on the way: the dashboard shows what somebody teaches, and
+        a course nobody handed them is not on their list.
+        """
+        course = make_course(year.school, year, name)
+        assign(self.user, course)
+        return course
 
 
 class StatusTests(OnboardingTestCase):

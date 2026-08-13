@@ -10,6 +10,8 @@ from django.urls import reverse
 from plans.models import PlanNode
 from rest_framework.test import APITestCase
 from schools.testing import (
+    assign,
+    make_grade,
     SchoolTestMixin,
     make_course,
     make_node,
@@ -39,8 +41,11 @@ class LibraryTestCase(SchoolTestMixin, APITestCase):
         self.geometry = make_subject(self.school, "Геометрия")
         self.course = make_course(self.school, self.year, "9Б")
         self.course.subject = self.subject
-        self.course.grade = 9
+        self.course.grade = make_grade(self.school, 9)
         self.course.save(update_fields=["subject", "grade"])
+        # шаблон снимается с плана СВОЕГО курса, поэтому назначение нужно
+        # так же, как и в интерфейсе
+        assign(self.user, self.course)
 
     def build_plan(self, teacher=None, course=None):
         """The tree the sample template mirrors: a lesson, then two blocks."""
@@ -430,6 +435,8 @@ class ImportTests(LibraryTestCase):
     def test_three_courses_get_three_independent_plans(self):
         second = make_course(self.school, self.year, "9В")
         third = make_course(self.school, self.year, "9Г")
+        assign(self.user, second)
+        assign(self.user, third)
 
         for course in (self.course, second, third):
             self.use(course=course.pk)

@@ -4,7 +4,7 @@ from calendars.models import SchoolYear
 from django.core.exceptions import ValidationError
 from django.urls import reverse
 from rest_framework.test import APITestCase
-from schools.testing import SchoolTestMixin, make_course, make_node
+from schools.testing import assign, SchoolTestMixin, make_course, make_node
 
 from . import services
 from .models import PlanNode
@@ -14,6 +14,7 @@ class PlanTestCase(SchoolTestMixin, APITestCase):
     def setUp(self):
         super().setUp()
         self.course = self.make_course(self.school, "9Б")
+        assign(self.user, self.course)
         self.alien_class = self.make_course(self.alien_school, "9А")
 
     def owner(self, teacher=None, course=None):

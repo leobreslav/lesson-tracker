@@ -7,6 +7,8 @@ from calendars.models import DayException
 from django.core.exceptions import ValidationError
 from django.urls import reverse
 
+from schools.testing import assign
+
 from .models import LessonSlot, Course
 from .test_slots import MONDAY, SlotTestCase, days
 
@@ -17,6 +19,7 @@ class OccupiedSlotTests(SlotTestCase):
         self.second = Course.objects.create(
             school=self.school, year=self.year, name="10А"
         )
+        assign(self.user, self.second)
 
     def test_two_classes_cannot_share_a_lesson_number(self):
         self.make_slot(MONDAY, 3)

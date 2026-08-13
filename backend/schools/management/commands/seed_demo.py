@@ -31,7 +31,14 @@ from plans.models import PlanNode
 from plans.services import PlanOwner
 from library import services as library_services
 from library.models import PlanTemplate, PlanTemplateRow
-from schedule.models import Course, LessonSlot, MasterSlot, Subject
+from schedule.models import (
+    Course,
+    CourseAssignment,
+    GradeLevel,
+    LessonSlot,
+    MasterSlot,
+    Subject,
+)
 from schools.models import Invitation, School
 
 User = get_user_model()
@@ -75,6 +82,12 @@ COURSES = (
 )
 
 SUBJECTS = ("Алгебра", "Геометрия")
+
+# Two of the eleven default year groups are renamed: «Grade 9» becomes an MYP
+# label whose number says 4 while its year of study is 9. Sorting has to keep
+# it in the right place, and a demo where every name matches its number would
+# never show that it does.
+DEMO_GRADE_NAMES = {6: "Grade 6", 9: "MYP 4"}
 
 # a plan of ~40 lessons in blocks — the one that fills a year
 FULL_PLAN = (
@@ -281,7 +294,8 @@ class Command(BaseCommand):
             year = self.year(school)
             self.markup(year)
             subjects = self.subjects(school)
-            courses = self.courses(school, year, subjects)
+            grades = self.grades(school)
+            courses = self.courses(school, year, subjects, grades, people)
 
             self.timetable(year, courses, people)
 
@@ -416,20 +430,46 @@ class Command(BaseCommand):
             for name in SUBJECTS
         }
 
-    def courses(self, school, year, subjects):
+    def grades(self, school):
+        """
+        Year groups. The school already has «Grade 1..11» from the signal —
+        two of them are renamed to show that the name and the year of study
+        are different things, which is the whole reason the table exists.
+        """
+        levels = {
+            level.level: level
+            for level in GradeLevel.objects.filter(school=school)
+        }
+        for level, name in DEMO_GRADE_NAMES.items():
+            grade = levels.get(level) or GradeLevel.objects.create(
+                school=school, level=level, name=name
+            )
+            if grade.name != name:
+                grade.name = name
+                grade.save(update_fields=["name"])
+            levels[level] = grade
+        return levels
+
+    def courses(self, school, year, subjects, grades, people):
         courses = {}
-        for name, subject, grade, _, _ in COURSES:
+        for name, subject, grade, email, _ in COURSES:
             course, _ = Course.objects.get_or_create(
                 school=school,
                 year=year,
                 name=name,
-                defaults={"subject": subjects[subject], "grade": grade},
+                defaults={"subject": subjects[subject], "grade": grades[grade]},
             )
             # a course made before subjects existed gets them now
             if course.subject_id is None:
                 course.subject = subjects[subject]
-                course.grade = grade
+                course.grade = grades[grade]
                 course.save(update_fields=["subject", "grade"])
+
+            # who teaches it — the link the timetable and every personal list
+            # now hang off
+            CourseAssignment.objects.get_or_create(
+                course=course, teacher=people[email]
+            )
             courses[name] = course
         return courses
 

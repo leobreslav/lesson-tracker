@@ -129,11 +129,21 @@ export const deleteException = (id) =>
 
 // --- the school: courses, people, invitations ---
 
-// without a year: every course of the school, which the agenda needs
-export const fetchCourses = (yearId) =>
-  request(
-    yearId ? `/api/courses/?year=${encodeURIComponent(yearId)}` : '/api/courses/',
-  )
+/**
+ * Courses. By default the ones this teacher was given.
+ *
+ * `scope: 'school'` asks for the whole list instead — that is what the
+ * «School» section manages, including the courses nobody teaches yet.
+ * Without a year: every course, which the agenda needs.
+ */
+export const fetchCourses = (yearId, { scope } = {}) => {
+  const query = new URLSearchParams()
+  if (yearId) query.set('year', yearId)
+  if (scope) query.set('scope', scope)
+  const tail = query.toString()
+
+  return request(tail ? `/api/courses/?${tail}` : '/api/courses/')
+}
 
 // the three below answer 403 «school_admin_required» for a plain teacher —
 // the interface hides the buttons, the server is what actually refuses
@@ -183,6 +193,58 @@ export const createInvitation = (fields) =>
 
 export const deleteInvitation = (id) =>
   request(`/api/school/invitations/${id}/`, { method: 'DELETE' })
+
+/**
+ * Detach a teacher from the school. Their lessons and plans are kept.
+ *
+ * Refused the first time with the counts, exactly like unassigning: `force`
+ * is the confirmation, and the interface only sends it after the person has
+ * read what the counts are.
+ */
+export const detachMember = (id, { force = false } = {}) =>
+  request(`/api/school/members/${id}/${force ? '?force=true' : ''}`, {
+    method: 'DELETE',
+  })
+
+// --- the school's state in one number each ---
+
+export const fetchSchoolOverview = () => request('/api/school/overview/')
+
+// --- reference lists: subjects and year groups ---
+
+export const fetchGrades = () => request('/api/school/grades/')
+
+export const createGrade = (fields) =>
+  request('/api/school/grades/', { method: 'POST', body: fields })
+
+export const updateGrade = (id, fields) =>
+  request(`/api/school/grades/${id}/`, { method: 'PATCH', body: fields })
+
+export const deleteGrade = (id) =>
+  request(`/api/school/grades/${id}/`, { method: 'DELETE' })
+
+export const renameSubject = (id, name) =>
+  request(`/api/school/subjects/${id}/`, { method: 'PATCH', body: { name } })
+
+export const deleteSubject = (id) =>
+  request(`/api/school/subjects/${id}/`, { method: 'DELETE' })
+
+// --- who teaches what: written from both the teacher and the course ---
+
+export const fetchAssignments = (params = {}) =>
+  request(`/api/school/assignments/?${new URLSearchParams(params)}`)
+
+export const createAssignment = (course, teacher) =>
+  request('/api/school/assignments/', {
+    method: 'POST',
+    body: { course, teacher },
+  })
+
+/** Unassigning keeps the lessons and the plan; `force` confirms that. */
+export const deleteAssignment = (id, { force = false } = {}) =>
+  request(`/api/school/assignments/${id}/${force ? '?force=true' : ''}`, {
+    method: 'DELETE',
+  })
 
 // --- the plan library: templates shared inside the school ---
 

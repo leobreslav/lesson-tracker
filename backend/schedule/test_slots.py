@@ -7,6 +7,7 @@ from django.urls import reverse
 from django.utils import timezone
 from rest_framework.test import APITestCase
 from schools.testing import (
+    assign,
     MONDAY,
     YEAR_END,
     YEAR_START,
@@ -28,6 +29,7 @@ class SlotTestCase(SchoolTestMixin, APITestCase):
 
         self.year = make_year(self.school)
         self.course = make_course(self.school, self.year)
+        assign(self.user, self.course)
 
         self.alien_year = make_year(self.alien_school)
         self.alien_class = make_course(self.alien_school, self.alien_year, "9А")
@@ -152,6 +154,7 @@ class SlotCrudTests(SlotTestCase):
         """Один номер у двух классов в один день запрещён — см. test_agenda.py."""
         second = Course.objects.create(
             school=self.school, year=self.year, name="9В")
+        assign(self.user, second)
         self.post_slot("2026-09-07", 1)
 
         response = self.post_slot("2026-09-08", 1, course=second)

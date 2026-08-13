@@ -29,6 +29,7 @@ from plans.models import PlanNode
 from plans.services import PlanOwner
 from rest_framework.test import APITestCase
 from schools.testing import (
+    assign,
     SchoolTestMixin,
     make_attachment,
     make_course,
@@ -96,6 +97,7 @@ class FilesTestCase(SchoolTestMixin, APITestCase):
     def setUp(self):
         super().setUp()
         self.course = make_course(self.school, name="9Б Алгебра")
+        assign(self.user, self.course)
         self.lesson = make_node(self.user, self.course, "Теорема Пифагора")
 
     # --- helpers -------------------------------------------------------------

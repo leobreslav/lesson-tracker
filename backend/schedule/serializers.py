@@ -7,9 +7,14 @@ from rest_framework import serializers
 from rest_framework.validators import UniqueTogetherValidator
 
 from . import services
-from .models import Course, LessonSlot, MasterSlot, Subject
+from .models import Course, CourseAssignment, GradeLevel, LessonSlot, MasterSlot, Subject
 
 User = get_user_model()
+
+
+def full_name(person) -> str:
+    """A person as a list shows them: their name, or the address they signed in with."""
+    return f"{person.first_name} {person.last_name}".strip() or person.email
 
 
 def school_members(serializer):
@@ -33,6 +38,18 @@ def school_courses(serializer):
     return Course.objects.filter(school_id=user.school_id)
 
 
+def teacher_courses(serializer):
+    """
+    Courses this teacher works in — the choices for anything personal.
+
+    A lesson of mine, a plan of mine and a template taken into my course all
+    belong to a course I actually teach. Being a member of the school is not
+    enough: the school's list holds every course in it.
+    """
+    user = getattr(serializer.context.get("request"), "user", None)
+    return Course.objects.for_teacher(user)
+
+
 class SubjectSerializer(serializers.ModelSerializer):
     """A subject of the school. Administrators keep the list."""
 
@@ -51,10 +68,68 @@ class SubjectSerializer(serializers.ModelSerializer):
         ]
 
 
+class GradeLevelSerializer(serializers.ModelSerializer):
+    """A year group of the school. Administrators keep the list."""
+
+    school = serializers.HiddenField(default=CurrentSchoolDefault())
+    courses = serializers.IntegerField(source="courses.count", read_only=True)
+
+    class Meta:
+        model = GradeLevel
+        fields = ("id", "school", "level", "name", "courses")
+        validators = [
+            UniqueTogetherValidator(
+                queryset=GradeLevel.objects.all(),
+                fields=("school", "level"),
+                message="This school already has a year group at that level.",
+            ),
+        ]
+
+
+class TeacherBriefSerializer(serializers.ModelSerializer):
+    """Just enough of a person to show them in a list."""
+
+    class Meta:
+        model = User
+        fields = ("id", "email", "first_name", "last_name", "is_school_admin")
+
+
+class CourseAssignmentSerializer(serializers.ModelSerializer):
+    """Who teaches what. Written from either side, stored in one place."""
+
+    teacher_name = serializers.SerializerMethodField()
+    course_name = serializers.CharField(source="course.name", read_only=True)
+
+    class Meta:
+        model = CourseAssignment
+        fields = ("id", "course", "course_name", "teacher", "teacher_name", "created_at")
+        read_only_fields = ("created_at",)
+        validators = [
+            UniqueTogetherValidator(
+                queryset=CourseAssignment.objects.all(),
+                fields=("course", "teacher"),
+                message="This teacher is already assigned to this course.",
+            ),
+        ]
+
+    def get_teacher_name(self, assignment) -> str:
+        return full_name(assignment.teacher)
+
+    def get_fields(self):
+        fields = super().get_fields()
+        # both ends stay inside the requester's school
+        fields["course"].queryset = school_courses(self)
+        fields["teacher"].queryset = school_members(self)
+        return fields
+
+
 class CourseSerializer(serializers.ModelSerializer):
     # the school comes from the requester, never from the body
     school = serializers.HiddenField(default=CurrentSchoolDefault())
     subject_name = serializers.CharField(source="subject.name", read_only=True)
+    grade_name = serializers.CharField(source="grade.name", read_only=True)
+    grade_level = serializers.IntegerField(source="grade.level", read_only=True)
+    teachers = serializers.SerializerMethodField()
 
     class Meta:
         model = Course
@@ -65,6 +140,9 @@ class CourseSerializer(serializers.ModelSerializer):
             "subject",
             "subject_name",
             "grade",
+            "grade_name",
+            "grade_level",
+            "teachers",
             "name",
             "created_at",
         )
@@ -79,13 +157,25 @@ class CourseSerializer(serializers.ModelSerializer):
             ),
         ]
 
+    def get_teachers(self, course) -> list:
+        """
+        Who teaches it — the same answer the teacher's own card gives.
+
+        Sent with the course because both screens need it and neither should
+        have to ask again per row.
+        """
+        return [
+            {"id": item.teacher_id, "name": full_name(item.teacher)}
+            for item in course.assignments.all()
+        ]
+
     def get_fields(self):
         fields = super().get_fields()
+        school_id = getattr(self.context.get("request").user, "school_id", None)
         # a course can only live in a year of its own school
         fields["year"].queryset = school_years(self)
-        fields["subject"].queryset = Subject.objects.filter(
-            school_id=getattr(self.context.get("request").user, "school_id", None)
-        )
+        fields["subject"].queryset = Subject.objects.filter(school_id=school_id)
+        fields["grade"].queryset = GradeLevel.objects.filter(school_id=school_id)
         return fields
 
 
@@ -126,7 +216,7 @@ class LessonSlotSerializer(serializers.ModelSerializer):
 
     def get_fields(self):
         fields = super().get_fields()
-        courses = school_courses(self)
+        courses = teacher_courses(self)
         fields["course"].queryset = courses
         fields["year"].queryset = SchoolYear.objects.filter(
             pk__in=courses.values("year_id")
@@ -272,6 +362,20 @@ class MasterSlotSerializer(serializers.ModelSerializer):
                 end=str(year.end_date),
             )
 
+        if teacher is not None and not CourseAssignment.objects.filter(
+            course=course, teacher=teacher
+        ).exists():
+            # the timetable names a teacher, it does not appoint one: handing
+            # over a course is a separate, deliberate step
+            api_error(
+                Codes.NOT_ASSIGNED,
+                f"{full_name(teacher)} is not assigned to «{course.name}». "
+                "Assign them to the course first.",
+                field="teacher",
+                teacher=full_name(teacher),
+                course=course.name,
+            )
+
         # a row with no teacher yet cannot clash with anybody
         busy = MasterSlot.find_conflict(
             teacher_id=teacher.pk if teacher else None,
@@ -317,7 +421,7 @@ class ImportFromSchoolSerializer(serializers.Serializer):
     def get_fields(self):
         fields = super().get_fields()
         fields["year"].queryset = school_years(self)
-        fields["courses"].child.queryset = school_courses(self)
+        fields["courses"].child.queryset = teacher_courses(self)
         return fields
 
     def validate(self, attrs):

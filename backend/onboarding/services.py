@@ -160,7 +160,9 @@ def build_status(user) -> dict:
     year = current_year(user)
 
     courses = (
-        Course.objects.filter(school_id=user.school_id, year=year).order_by("name")
+        # only what this teacher works in: the dashboard is about their year,
+        # not the school's whole list
+        Course.objects.for_teacher(user).filter(year=year).order_by("name")
         if year is not None
         else Course.objects.none()
     )

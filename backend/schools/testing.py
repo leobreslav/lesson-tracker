@@ -74,13 +74,45 @@ def make_year(school, name="2026/2027", start=YEAR_START, end=YEAR_END):
     )
 
 
-def make_course(school, year=None, name="9Б"):
+def make_course(school, year=None, name="9Б", grade=None, subject=None):
     """A course of the school. Without a year, one is made to hold it."""
     from schedule.models import Course
 
     return Course.objects.create(
-        school=school, year=year or make_year(school), name=name
+        school=school,
+        year=year or make_year(school),
+        name=name,
+        grade=grade,
+        subject=subject,
     )
+
+
+def make_grade(school, level=9, name=None):
+    """
+    A year group of the school.
+
+    `get_or_create` because every school starts with levels 1..11 (see
+    `schools.signals`): asking for «the ninth» twice means the same row, and
+    the unique constraint agrees.
+    """
+    from schedule.models import GradeLevel
+
+    grade, _ = GradeLevel.objects.get_or_create(
+        school=school, level=level, defaults={"name": name or f"Grade {level}"}
+    )
+    # the level exists from the day the school does, so a name asked for here
+    # is a rename — «MYP 4» over the default «Grade 9»
+    if name and grade.name != name:
+        grade.name = name
+        grade.save(update_fields=["name"])
+    return grade
+
+
+def assign(teacher, course):
+    """Put a teacher on a course — the link everything personal hangs off."""
+    from schedule.models import CourseAssignment
+
+    return CourseAssignment.objects.get_or_create(course=course, teacher=teacher)[0]
 
 
 def make_term(year, name="1 четверть", start=None, end=None):
@@ -106,8 +138,16 @@ def make_exception(year, day=date(2026, 11, 4), kind="holiday", title="Праз�
 
 
 def make_slot(teacher, course, day=MONDAY, number=1, **flags):
-    """One lesson. The year follows the course — never passed separately."""
+    """
+    One lesson. The year follows the course — never passed separately.
+
+    Assigning the teacher to the course on the way: a lesson in a course
+    nobody handed you is a state the API refuses, and a fixture that can
+    express it would test something the product cannot reach.
+    """
     from schedule.models import LessonSlot
+
+    assign(teacher, course)
 
     return LessonSlot.objects.create(
         year=course.year,
@@ -129,6 +169,9 @@ def make_master_slot(course, teacher=None, day=MONDAY, number=1):
     """
     from schedule.models import MasterSlot
 
+    if teacher is not None:
+        assign(teacher, course)
+
     return MasterSlot.objects.create(
         school=course.school,
         year=course.year,
@@ -140,7 +183,10 @@ def make_master_slot(course, teacher=None, day=MONDAY, number=1):
 
 
 def make_node(teacher, course, title="Урок", *, parent=None, position=0, section=False):
+    """A plan row. Assigns the teacher to the course, like `make_slot`."""
     from plans.models import PlanNode
+
+    assign(teacher, course)
 
     return PlanNode.objects.create(
         teacher=teacher,

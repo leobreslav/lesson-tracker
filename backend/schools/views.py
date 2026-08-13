@@ -14,6 +14,7 @@ from rest_framework.decorators import action
 from rest_framework.generics import RetrieveUpdateAPIView
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
+from rest_framework.views import APIView
 
 from .models import Invitation, School
 from .serializers import (
@@ -48,6 +49,64 @@ class MySchoolView(RetrieveUpdateAPIView):
 
     def get_object(self):
         return self.request.user.school
+
+
+class SchoolOverviewView(APIView):
+    """
+    The state of the school in one request: what is set up and what is not.
+
+    The «Overview» page is built from this rather than from five separate
+    lists — it shows counts, not rows, and five requests for five numbers is
+    five chances to show a half-drawn page.
+    """
+
+    permission_classes = [IsAuthenticated, IsSchoolMember]
+
+    def get(self, request):
+        from calendars.models import SchoolYear
+        from schedule.models import Course, CourseAssignment, GradeLevel, MasterSlot, Subject
+
+        school = request.user.school
+        year = (
+            SchoolYear.objects.filter(school=school).order_by("-start_date").first()
+        )
+        courses = Course.objects.filter(school=school)
+        master = MasterSlot.objects.filter(school=school)
+
+        return Response(
+            {
+                "school": {"id": school.pk, "name": school.name},
+                "teachers": User.objects.filter(school=school).count(),
+                "admins": User.objects.filter(
+                    school=school, is_school_admin=True
+                ).count(),
+                "invitations": Invitation.objects.filter(
+                    school=school, accepted_at__isnull=True
+                ).count(),
+                "courses": courses.count(),
+                "courses_without_teacher": courses.filter(
+                    assignments__isnull=True
+                ).count(),
+                "assignments": CourseAssignment.objects.filter(
+                    course__school=school
+                ).count(),
+                "subjects": Subject.objects.filter(school=school).count(),
+                "grades": GradeLevel.objects.filter(school=school).count(),
+                "year": (
+                    None
+                    if year is None
+                    else {
+                        "id": year.pk,
+                        "name": year.name,
+                        "start_date": year.start_date,
+                        "end_date": year.end_date,
+                        "terms": year.terms.count(),
+                    }
+                ),
+                "master_slots": master.count(),
+                "master_slots_unassigned": master.filter(teacher__isnull=True).count(),
+            }
+        )
 
 
 class SchoolViewSet(viewsets.ModelViewSet):
@@ -125,6 +184,7 @@ class MemberViewSet(
     mixins.ListModelMixin,
     mixins.RetrieveModelMixin,
     mixins.UpdateModelMixin,
+    mixins.DestroyModelMixin,
     viewsets.GenericViewSet,
 ):
     """
@@ -132,19 +192,73 @@ class MemberViewSet(
 
     Everybody sees the list — knowing who else teaches here is not a secret
     and the schedule shows their names anyway. Only an administrator hands
-    the role over, and there is no deletion: a person leaving the school is
-    an operation with consequences for their lessons, and this stage does not
-    define what should happen to them.
+    the role over or detaches somebody.
     """
 
     serializer_class = MemberSerializer
     permission_classes = [IsAuthenticated, IsSchoolMember, IsSchoolAdminForWrite]
-    http_method_names = ["get", "patch", "head", "options"]
+    http_method_names = ["get", "patch", "delete", "head", "options"]
 
     def get_queryset(self):
-        return User.objects.filter(school_id=self.request.user.school_id).order_by(
-            "first_name", "last_name", "email"
+        return (
+            User.objects.filter(school_id=self.request.user.school_id)
+            .prefetch_related("course_assignments__course")
+            .order_by("first_name", "last_name", "email")
         )
+
+    def perform_destroy(self, instance):
+        """
+        Detaching a teacher from the school. Their work is not deleted.
+
+        `school` is set to None and the assignments go with them, because an
+        assignment is a statement about this school. The lessons and the plan
+        stay: they are the person's own, and «remove from the list» must not
+        mean «erase a year of teaching». The school timetable keeps their
+        rows too — `MasterSlot.teacher` is SET_NULL, so the grid survives as
+        unassigned load rather than disappearing.
+
+        The first attempt is refused with the counts; `?force=true` confirms.
+        """
+        from schedule.models import CourseAssignment, LessonSlot
+        from plans.models import PlanNode
+
+        if instance.pk == self.request.user.pk:
+            api_error(
+                Codes.LAST_ADMIN,
+                "You cannot detach yourself from the school.",
+            )
+
+        slots = LessonSlot.objects.filter(teacher=instance).count()
+        rows = PlanNode.objects.filter(teacher=instance).count()
+        courses = CourseAssignment.objects.filter(teacher=instance).count()
+
+        forced = self.request.query_params.get("force", "").lower() == "true"
+        if (slots or rows or courses) and not forced:
+            api_error(
+                Codes.MEMBER_IN_USE,
+                f"{instance.email} teaches {courses} courses and has {slots} "
+                f"lessons and {rows} plan rows. Detaching keeps all of it but "
+                "removes their assignments; repeat with force=true to confirm.",
+                email=instance.email,
+                courses=courses,
+                slots=slots,
+                plan_rows=rows,
+            )
+
+        # a person can be the last administrator only while they are here
+        others = User.objects.filter(
+            school_id=instance.school_id, is_school_admin=True
+        ).exclude(pk=instance.pk)
+        if instance.is_school_admin and not others.exists():
+            api_error(
+                Codes.LAST_ADMIN,
+                "This is the last administrator of the school.",
+            )
+
+        instance.course_assignments.all().delete()
+        instance.school = None
+        instance.is_school_admin = False
+        instance.save(update_fields=["school", "is_school_admin"])
 
 
 class InvitationViewSet(

@@ -95,11 +95,23 @@ class CourseApiTests(SchoolTestMixin, APITestCase):
 
     # --- чтение ---
 
+    def list_courses(self, **params):
+        """
+        The school's whole list — what the «School» section shows.
+
+        Without `scope` the endpoint answers with the requester's own
+        courses, which for an administrator managing the school is usually
+        the shorter and less useful half.
+        """
+        return self.client.get(
+            reverse("course-list"), {"scope": "school", **params}
+        )
+
     def test_list_shows_only_the_schools_courses(self):
         mine = Course.objects.create(school=self.school, year=self.year, name="9Б")
         Course.objects.create(school=self.alien_school, year=self.alien_year, name="9А")
 
-        response = self.client.get(reverse("course-list"))
+        response = self.list_courses()
 
         self.assertEqual([item["id"] for item in response.json()], [mine.pk])
 
@@ -112,14 +124,14 @@ class CourseApiTests(SchoolTestMixin, APITestCase):
             school=self.school, year=next_year, name="10Б"
         )
 
-        response = self.client.get(reverse("course-list"), {"year": next_year.pk})
+        response = self.list_courses(year=next_year.pk)
 
         self.assertEqual([item["id"] for item in response.json()], [expected.pk])
 
     def test_garbage_year_filter_returns_nothing(self):
         Course.objects.create(school=self.school, year=self.year, name="9Б")
 
-        response = self.client.get(reverse("course-list"), {"year": "abc"})
+        response = self.list_courses(year="abc")
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json(), [])
@@ -128,7 +140,7 @@ class CourseApiTests(SchoolTestMixin, APITestCase):
         for name in ("11А", "5В", "9Б"):
             Course.objects.create(school=self.school, year=self.year, name=name)
 
-        response = self.client.get(reverse("course-list"))
+        response = self.list_courses()
 
         self.assertEqual([item["name"] for item in response.json()], ["11А", "5В", "9Б"])
 

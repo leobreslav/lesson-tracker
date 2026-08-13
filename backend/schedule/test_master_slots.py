@@ -12,6 +12,7 @@ from django.core.exceptions import ValidationError
 from django.urls import reverse
 from rest_framework.test import APITestCase
 from schools.testing import (
+    assign,
     MONDAY,
     SchoolTestMixin,
     make_course,
@@ -30,6 +31,10 @@ class MasterSlotTestCase(SchoolTestMixin, APITestCase):
         self.year = make_year(self.school)
         self.algebra = make_course(self.school, self.year, "9Б Алгебра")
         self.geometry = make_course(self.school, self.year, "9Б Геометрия")
+        # в школьном расписании можно назвать только назначенного учителя
+        for course in (self.algebra, self.geometry):
+            assign(self.user, course)
+            assign(self.colleague, course)
         self.sign_in(self.admin)
 
     def post(self, **fields):

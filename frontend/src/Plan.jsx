@@ -301,7 +301,11 @@ export default function Plan({ onLoggedOut }) {
     return (
       templates.find(
         (item) =>
-          item.mine && item.subject === course.subject && item.grade === course.grade,
+          item.mine &&
+          item.subject === course.subject &&
+          // the shelf stores the year of study, the course points at the
+          // school's name for it — «MYP 4» and 9 are the same year
+          item.grade === course.grade_level,
       ) ?? null
     )
   }, [templates, course])
@@ -1028,11 +1032,11 @@ function UseLibraryDialog({ templates, busy, onSubmit, onClose }) {
 function PublishDialog({ course, subjects, existing, busy, onSubmit, onClose }) {
   const { t } = useTranslation()
   const [title, setTitle] = useState(
-    course ? `${course.subject_name ?? ''} ${course.grade ?? ''}`.trim() : '',
+    course ? `${course.subject_name ?? ''} ${course.grade_name ?? ''}`.trim() : '',
   )
   const [description, setDescription] = useState('')
   const [subject, setSubject] = useState(course?.subject ?? subjects[0]?.id ?? null)
-  const [grade, setGrade] = useState(course?.grade ?? '')
+  const [grade, setGrade] = useState(course?.grade_level ?? '')
 
   if (existing) {
     return (

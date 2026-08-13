@@ -14,6 +14,10 @@ import NotFound from './NotFound'
 import Plan from './Plan'
 import Profile from './Profile'
 import School from './School'
+import SchoolCourses from './SchoolCourses'
+import SchoolOverview from './SchoolOverview'
+import SchoolReference from './SchoolReference'
+import SchoolTeachers from './SchoolTeachers'
 import SchoolSchedule from './SchoolSchedule'
 import Schools from './Schools'
 import { clearToken, fetchMe, fetchOnboarding, getToken, updateMe } from './api'
@@ -113,6 +117,8 @@ export default function App() {
           <Route path="/plan" element={guarded(Plan)} />
           <Route path="/library" element={guarded(Library)} />
           <Route path="/classes" element={guarded(Classes, { user })} />
+          {/* «Школа» — не одна страница, а четыре: рамка с подменю и
+              вложенные маршруты под ней */}
           <Route
             path="/school"
             element={guarded(School, {
@@ -120,7 +126,12 @@ export default function App() {
               onSchoolChange: (school) =>
                 setUser((prev) => (prev ? { ...prev, school } : prev)),
             })}
-          />
+          >
+            <Route index element={<SchoolOverview />} />
+            <Route path="teachers" element={<SchoolTeachers />} />
+            <Route path="courses" element={<SchoolCourses />} />
+            <Route path="reference" element={<SchoolReference />} />
+          </Route>
           <Route path="/schools" element={guarded(Schools, { user })} />
           <Route path="/school/schedule" element={guarded(SchoolSchedule)} />
           <Route path="/year" element={guarded(Calendar, { user })} />

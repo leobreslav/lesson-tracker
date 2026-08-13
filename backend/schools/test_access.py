@@ -22,6 +22,7 @@ from schedule.models import Course, LessonSlot
 from .matrix import AccessRulesMixin
 from .models import Invitation, School
 from .testing import (
+    assign,
     MONDAY,
     YEAR_START,
     SchoolTestMixin,
@@ -43,6 +44,7 @@ class AccessTestCase(AccessRulesMixin, SchoolTestMixin, APITestCase):
 
         self.year = make_year(self.school)
         self.course = make_course(self.school, self.year)
+        assign(self.user, self.course)
         self.term = make_term(self.year)
         self.exception = make_exception(self.year)
         self.slot = make_slot(self.user, self.course)
@@ -228,6 +230,8 @@ class PersonalObjectTests(AccessTestCase):
 
     def test_two_teachers_keep_separate_schedules_in_one_course(self):
         """The same number on the same day, two people — both are fine."""
+        # one course, two teachers on it: that is what an assignment allows
+        assign(self.colleague, self.course)
         self.sign_in(self.colleague)
 
         response = self.client.post(

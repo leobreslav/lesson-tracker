@@ -11,6 +11,7 @@ from datetime import timedelta
 from django.urls import reverse
 from rest_framework.test import APITestCase
 from schools.testing import (
+    assign,
     MONDAY,
     SchoolTestMixin,
     make_course,
@@ -34,6 +35,9 @@ class ImportTestCase(SchoolTestMixin, APITestCase):
         self.algebra = make_course(self.school, self.year, "9Б Алгебра")
         self.geometry = make_course(self.school, self.year, "9Б Геометрия")
         self.theirs = make_course(self.school, self.year, "10А Алгебра")
+        assign(self.user, self.algebra)
+        assign(self.user, self.geometry)
+        assign(self.colleague, self.theirs)
 
         make_master_slot(self.algebra, self.user, MONDAY, 1)
         make_master_slot(self.algebra, self.user, NEXT_MONDAY, 1)

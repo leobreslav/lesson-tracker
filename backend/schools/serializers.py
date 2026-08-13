@@ -58,10 +58,31 @@ class MemberSerializer(serializers.ModelSerializer):
     administrator manages membership, not identity.
     """
 
+    courses = serializers.SerializerMethodField()
+
     class Meta:
         model = User
-        fields = ("id", "email", "first_name", "last_name", "is_school_admin")
+        fields = (
+            "id", "email", "first_name", "last_name", "is_school_admin", "courses",
+        )
         read_only_fields = ("id", "email", "first_name", "last_name")
+
+    def get_courses(self, person) -> list:
+        """
+        What this person teaches — the other half of the assignment table.
+
+        The course card shows its teachers, the teacher card shows their
+        courses, and both are read from the same rows: one link, two ways of
+        looking for it.
+        """
+        return [
+            {
+                "id": item.course_id,
+                "name": item.course.name,
+                "assignment": item.pk,
+            }
+            for item in person.course_assignments.select_related("course")
+        ]
 
     def validate_is_school_admin(self, value):
         if value:

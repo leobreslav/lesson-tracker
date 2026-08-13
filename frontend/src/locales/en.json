@@ -195,7 +195,11 @@
     "csv_ids_required": "Syncing needs the id column — export the plan first.",
     "csv_id_unknown": "Row {{row}}: id {{id}} is not in this plan.",
     "csv_id_duplicate": "Row {{row}}: id {{id}} is used twice.",
-    "csv_id_kind_changed": "Row {{row}}: id {{id}} («{{title}}») is of the other kind in the plan — a section cannot become a lesson."
+    "csv_id_kind_changed": "Row {{row}}: id {{id}} («{{title}}») is of the other kind in the plan — a section cannot become a lesson.",
+    "grade_in_use": "«{{name}}» is used by {{courses}} courses — change them first.",
+    "assignment_in_use": "{{teacher}} has {{slots}} lessons and {{plan_rows}} plan rows in «{{course}}». Unassigning keeps all of it.",
+    "member_in_use": "{{email}} teaches {{courses}} courses and has {{slots}} lessons and {{plan_rows}} plan rows. Detaching keeps all of it.",
+    "not_assigned": "{{teacher}} is not assigned to «{{course}}» — assign them to the course first."
   },
   "classPicker": {
     "label": "Classes:",
@@ -503,9 +507,13 @@
       "needYear": "Create a school year first",
       "deleteConfirm": "Delete the course «{{name}}»?",
       "pickSubject": "subject…",
-      "gradePlaceholder": "grade",
       "newSubject": "New subject name",
-      "addSubject": "Add a subject"
+      "addSubject": "Add a subject",
+      "pickGrade": "year group…",
+      "noTeacher": "nobody teaches it yet",
+      "unassign": "Take {{name}} off this course",
+      "assignLabel": "Teacher for {{name}}",
+      "pickTeacher": "teacher…"
     },
     "people": {
       "title": "Teachers",
@@ -522,6 +530,64 @@
     "profile": {
       "title": "Name of the school",
       "nameLabel": "School name"
+    },
+    "tabs": {
+      "overview": "Overview",
+      "teachers": "Teachers",
+      "courses": "Courses",
+      "reference": "Reference lists"
+    },
+    "overview": {
+      "title": "How the school stands",
+      "teachers": "teachers",
+      "admins_one": "{{count}} administrator",
+      "admins_other": "{{count}} administrators",
+      "courses": "courses",
+      "withoutTeacher_one": "{{count}} with nobody on it",
+      "withoutTeacher_other": "{{count}} with nobody on them",
+      "assignments": "assignments",
+      "masterSlots": "timetable lessons",
+      "unassigned_one": "{{count}} with no teacher",
+      "unassigned_other": "{{count}} with no teacher",
+      "yearSet": "{{name}}, terms: {{terms}}.",
+      "next": {
+        "year": "Start with the school year: everything else lives inside it.",
+        "courses": "Now add the courses — a year group and a subject together, «9B Algebra».",
+        "assignments": "Now say who teaches what: open «Teachers» or «Courses».",
+        "timetable": "The last step is the school timetable, which teachers copy into their own."
+      }
+    },
+    "teachers": {
+      "title": "Teachers",
+      "hint": "Everybody who has signed in at least once. A course handed to somebody appears in their lists — lessons, plan, layout.",
+      "noCourses": "no courses yet",
+      "assign": "Assign",
+      "assignLabel": "Course for {{name}}",
+      "pickCourse": "course…",
+      "unassign": "Take {{name}} away",
+      "detach": "Detach from the school",
+      "keepsWork": "The lessons and the plan stay where they are — only the assignment goes.",
+      "detachKeeps": "Their lessons and plans are kept; the assignments and the role are removed."
+    },
+    "invitations": {
+      "title": "Invited",
+      "hint": "Written down in advance: the person signs in through Google on that address and joins the school.",
+      "none": "Nobody is waiting for a first sign-in."
+    },
+    "reference": {
+      "subjects": "Subjects",
+      "subjectsHint": "What is taught: «Algebra», «Geometry». The library is searched by subject and year group.",
+      "grades": "Year groups",
+      "gradesHint": "Two fields, and they are different things. The level is the year of study counted from the first one — sorting runs on it. The name is what the school writes on the door: «MYP 4» is the ninth year of study, so its level is 9.",
+      "level": "Year of study",
+      "levelShort": "year {{level}}",
+      "levelPlaceholder": "9",
+      "name": "Name",
+      "namePlaceholder": "MYP 4",
+      "newName": "New name",
+      "usedBy_one": "{{count}} course",
+      "usedBy_other": "{{count}} courses",
+      "delete": "Delete {{name}}"
     }
   },
   "schools": {

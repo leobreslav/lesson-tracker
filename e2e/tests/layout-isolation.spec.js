@@ -105,11 +105,14 @@ test('второй учитель не видит ни уроков, ни пла
   await expect(page.locator(`[data-lesson="${MONDAY}:1"]`)).toHaveCount(0)
   await expect(page.locator('.week-grid').getByText('Grade 6 Algebra')).toHaveCount(0)
 
-  // the plan of a course he shares with nobody is empty for him
+  // a course nobody assigned him is not even offered: «what do I teach» is
+  // now a table of its own, and hers is not in it
   await page.goto('/plan')
   await ready(page)
-  await page.getByRole('button', { name: 'Grade 6 Algebra', exact: true }).click()
-  await expect(page.locator('.plan-counts')).toContainText('Уроков: 0')
+  await expect(
+    page.getByRole('button', { name: 'Grade 6 Algebra', exact: true }),
+  ).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Grade 9 Algebra', exact: true })).toBeVisible()
 
   // and the API says the same, so it is not the interface hiding things
   const petrov = await api(PEOPLE.petrov)

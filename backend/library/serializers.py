@@ -2,7 +2,7 @@ from config.errors import Codes, api_error
 from plans.content import CONTENT_EXTRA_KWARGS, CONTENT_FIELDS, content_problems
 from rest_framework import serializers
 from schedule.models import Course, Subject
-from schedule.serializers import school_courses
+from schedule.serializers import teacher_courses
 
 from .models import PlanTemplate, PlanTemplateRow
 
@@ -140,7 +140,7 @@ class FromPlanSerializer(serializers.Serializer):
 
     def get_fields(self):
         fields = super().get_fields()
-        fields["course"].queryset = school_courses(self)
+        fields["course"].queryset = teacher_courses(self)
         fields["subject"].queryset = school_subjects(self)
         return fields
 
@@ -149,7 +149,11 @@ class FromPlanSerializer(serializers.Serializer):
         # the course usually knows both already; the form only asks when it
         # does not, which is the case for courses made before subjects existed
         subject = attrs.get("subject") or course.subject
-        grade = attrs.get("grade") or course.grade
+        # the shelf stores the **year of study**, not the school's name for
+        # it: a plan for the ninth year is a plan for the ninth year whether
+        # the door says «9Б» or «MYP 4», and one number is what the filter
+        # can compare
+        grade = attrs.get("grade") or (course.grade.level if course.grade else None)
 
         if subject is None:
             api_error(
@@ -180,7 +184,7 @@ class UseTemplateSerializer(serializers.Serializer):
 
     def get_fields(self):
         fields = super().get_fields()
-        fields["course"].queryset = school_courses(self)
+        fields["course"].queryset = teacher_courses(self)
         fields["template"].queryset = visible_templates(
             self.context["request"].user
         )
@@ -192,7 +196,7 @@ class UpdateFromPlanSerializer(serializers.Serializer):
 
     def get_fields(self):
         fields = super().get_fields()
-        fields["course"].queryset = school_courses(self)
+        fields["course"].queryset = teacher_courses(self)
         return fields
 
 

@@ -15,17 +15,22 @@ from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.views import APIView
 
+from plans.models import PlanNode
+
 from . import importing, services
-from .models import Course, LessonSlot, MasterSlot, Subject
+from .models import Course, CourseAssignment, GradeLevel, LessonSlot, MasterSlot, Subject
 from .serializers import (
     BulkDeleteSerializer,
     SubjectSerializer,
     CopySerializer,
+    CourseAssignmentSerializer,
     CourseSerializer,
+    GradeLevelSerializer,
     ImportFromSchoolSerializer,
     LessonSlotSerializer,
     MasterSlotSerializer,
     PeriodSerializer,
+    full_name,
 )
 
 
@@ -62,12 +67,110 @@ class SubjectViewSet(SchoolScopedViewSet):
             )
 
 
+class GradeLevelViewSet(SchoolScopedViewSet):
+    """
+    The school's year groups: «Grade 6», «MYP 4», «10 класс».
+
+    Kept by administrators, read by everybody — the course form offers them
+    and the library searches on them.
+    """
+
+    serializer_class = GradeLevelSerializer
+    queryset = GradeLevel.objects.all()
+
+    def perform_destroy(self, instance):
+        """A level a course still points at stays: PROTECT says so."""
+        try:
+            instance.delete()
+        except ProtectedError:
+            api_error(
+                Codes.GRADE_IN_USE,
+                f"«{instance.name}» is used by {instance.courses.count()} courses.",
+                name=instance.name,
+                courses=instance.courses.count(),
+            )
+
+
+class CourseAssignmentViewSet(SchoolScopedViewSet):
+    """
+    Who teaches which course.
+
+    Written from two sides — the teacher's card and the course's card — and
+    that is the point of having one table: the question is the same, but
+    which end somebody starts from depends on what they are thinking about.
+    """
+
+    serializer_class = CourseAssignmentSerializer
+    queryset = CourseAssignment.objects.select_related("course", "teacher")
+    school_path = "course__school"
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+
+        for param, lookup in (("course", "course_id"), ("teacher", "teacher_id")):
+            value = self.request.query_params.get(param)
+            if value:
+                queryset = (
+                    queryset.filter(**{lookup: value})
+                    if value.isdigit()
+                    else queryset.none()
+                )
+
+        return queryset
+
+    def perform_destroy(self, instance):
+        """
+        Taking a course away from somebody. The work stays where it is.
+
+        Three answers were possible and only one of them is honest. Deleting
+        the lessons and the plan along with the assignment would destroy a
+        colleague's year from an administrator's screen — never. Refusing
+        while anything exists would deadlock the moment a teacher leaves the
+        school. So: the assignment goes, everything written under it stays,
+        and the first attempt is refused with the counts so that nobody does
+        it by accident. `?force=true` is the confirmation.
+
+        Nothing is hidden afterwards either: `Course.objects.for_teacher`
+        keeps a course visible to whoever already has work in it.
+        """
+        slots = LessonSlot.objects.filter(
+            course=instance.course, teacher=instance.teacher
+        ).count()
+        rows = PlanNode.objects.filter(
+            course=instance.course, teacher=instance.teacher
+        ).count()
+        master = MasterSlot.objects.filter(
+            course=instance.course, teacher=instance.teacher
+        ).count()
+
+        forced = self.request.query_params.get("force", "").lower() == "true"
+        if (slots or rows or master) and not forced:
+            api_error(
+                Codes.ASSIGNMENT_IN_USE,
+                f"{full_name(instance.teacher)} has {slots} lessons, {rows} plan "
+                f"rows and {master} timetable rows in «{instance.course.name}». "
+                "Unassigning keeps all of it; repeat with force=true to confirm.",
+                teacher=full_name(instance.teacher),
+                course=instance.course.name,
+                slots=slots,
+                plan_rows=rows,
+                master_slots=master,
+            )
+
+        instance.delete()
+
+
 class CourseViewSet(SchoolScopedViewSet):
     """
     The school's courses. The list is filtered by ?year=<id>.
 
-    Every teacher reads them and picks from the list; only an administrator
-    creates, renames and deletes.
+    By default a teacher gets **their own** courses — the ones they are
+    assigned to (see `Course.objects.for_teacher`). `?scope=school` asks for
+    the whole list instead, which is what the «School» section shows; it is
+    not a secret from anybody, the school timetable names every course
+    anyway.
+
+    Every teacher reads; only an administrator creates, renames and deletes.
     """
 
     serializer_class = CourseSerializer
@@ -76,12 +179,22 @@ class CourseViewSet(SchoolScopedViewSet):
     def get_queryset(self):
         queryset = super().get_queryset()
 
+        # only the list narrows: a course reached by id is a school object
+        # like any other, and an administrator edits the ones they do not
+        # teach — which is most of them
+        if self.action == "list" and self.request.query_params.get("scope") != "school":
+            queryset = queryset.filter(
+                pk__in=Course.objects.for_teacher(self.request.user)
+            )
+
         year = self.request.query_params.get("year")
         if year:
             # a non-numeric value must not blow up on a cast
             queryset = queryset.filter(year_id=year) if year.isdigit() else queryset.none()
 
-        return queryset.select_related("year")
+        return queryset.select_related("year", "subject", "grade").prefetch_related(
+            "assignments__teacher"
+        )
 
     def perform_destroy(self, instance):
         """
@@ -254,11 +367,12 @@ class LessonSlotViewSet(TeacherScopedViewSet):
             # only the courses this teacher works in: the school may hold
             # dozens, and the others have nothing of theirs to copy
             courses = list(
-                Course.objects.filter(
-                    pk__in=self.own_slots().values("course_id"),
+                Course.objects.for_teacher(request.user)
+                .filter(
                     year__start_date__lte=data["target_end"],
                     year__end_date__gte=data["target_start"],
-                ).select_related("year")
+                )
+                .select_related("year")
             )
 
         totals = {"created": 0, "skipped": 0, "deleted": 0, "conflicts": []}
@@ -491,6 +605,19 @@ class MasterSlotViewSet(SchoolScopedViewSet):
                 .exclude(course=course)
                 .select_related("course")
             }
+
+        # bulk_create writes past clean(), so the assignment is checked here
+        # instead: copying a week must not be a way to hand somebody a course
+        # they were taken off
+        if teacher_id is not None and not CourseAssignment.objects.filter(
+            course=course, teacher_id=teacher_id
+        ).exists():
+            api_error(
+                Codes.NOT_ASSIGNED,
+                f"The teacher of «{course.name}» is no longer assigned to it. "
+                "Assign them again, or clear those rows first.",
+                course=course.name,
+            )
 
         result = services.place_copies(
             plan=plan,
