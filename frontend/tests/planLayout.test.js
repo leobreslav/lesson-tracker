@@ -21,10 +21,10 @@ const ribbon = (count, options = {}) =>
     is_extra: false,
     term_id: 1,
     term_name: '1 четверть',
-    term_ends:
-      index === options.termEndsAt
-        ? { id: 1, name: '1 четверть', end: '2026-10-26' }
-        : null,
+    term:
+      index >= (options.secondTermFrom ?? Infinity)
+        ? { id: 2, name: '2 четверть', start: '2026-11-05', end: '2026-12-28' }
+        : { id: 1, name: '1 четверть', start: '2026-09-01', end: '2026-10-26' },
     break_before:
       index === options.breakAt
         ? { title: 'осенние каникулы', start: '2026-10-27', end: '2026-11-03' }
@@ -91,48 +91,40 @@ describe('stitchLayout', () => {
 })
 
 describe('границы термов и каникулы', () => {
-  it('черта конца четверти стоит после урока, попавшего в последний слот', () => {
+  const marksOf = (row, kind) => (row.before ?? []).filter((m) => m.kind === kind)
+
+  it('заголовок терма стоит перед первым его уроком', () => {
     const rows = stitchLayout(
       [lesson(1), lesson(2), lesson(3)],
-      ribbon(5, { termEndsAt: 1 }),
+      ribbon(5, { secondTermFrom: 2 }),
     )
 
-    assert.deepEqual(rows[1].after, [
-      { kind: 'term', id: 1, name: '1 четверть', end: '2026-10-26' },
+    assert.deepEqual(marksOf(rows[0], 'term'), [
+      { kind: 'term', id: 1, name: '1 четверть', start: '2026-09-01', end: '2026-10-26' },
     ])
-    assert.deepEqual(rows[0].after, [])
-    assert.deepEqual(rows[2].after, [])
+    assert.deepEqual(marksOf(rows[1], 'term'), [])
+    assert.equal(marksOf(rows[2], 'term')[0].name, '2 четверть')
   })
 
-  it('под чертой оказывается другой урок, когда выше добавили ещё один', () => {
-    // черта стоит там, где кончается терм, — на третьем слоте; двигается не
-    // она, а уроки под ней, и в этом весь смысл: видно, что тема не влезла
-    const lastBefore = (rows) => {
-      const stitched = stitchLayout(rows, ribbon(6, { termEndsAt: 2 }))
-      return stitched.find((row) => row.after?.length)?.id
-    }
+  it('граница терма переезжает на другой урок, когда выше добавили ещё один', () => {
+    // сама черта привязана к слоту; двигаются уроки под ней, и в этом весь
+    // смысл: видно, что тема перестала помещаться в четверть
+    const firstOfSecond = (rows) =>
+      stitchLayout(rows, ribbon(6, { secondTermFrom: 3 })).find(
+        (row) => marksOf(row, 'term')[0]?.id === 2,
+      )?.id
 
-    assert.equal(lastBefore([lesson(1), lesson(2), lesson(3), lesson(4)]), 3)
+    assert.equal(firstOfSecond([lesson(1), lesson(2), lesson(3), lesson(4)]), 4)
     assert.equal(
-      lastBefore([lesson(9), lesson(1), lesson(2), lesson(3), lesson(4)]),
-      2,
+      firstOfSecond([lesson(9), lesson(1), lesson(2), lesson(3), lesson(4)]),
+      3,
     )
-  })
-
-  it('заголовок темы сдвигает саму черту: строк выше стало больше', () => {
-    const line = (rows) =>
-      stitchLayout(rows, ribbon(6, { termEndsAt: 2 })).findIndex(
-        (row) => row.after?.length,
-      )
-
-    assert.equal(line([lesson(1), lesson(2), lesson(3)]), 2)
-    assert.equal(line([section(10), lesson(1, 10), lesson(2, 10), lesson(3)]), 3)
   })
 
   it('каникулы отмечаются перед уроком, который стоит уже после них', () => {
     const rows = stitchLayout([lesson(1), lesson(2)], ribbon(4, { breakAt: 1 }))
 
-    assert.deepEqual(rows[1].before, [
+    assert.deepEqual(marksOf(rows[1], 'break'), [
       {
         kind: 'break',
         title: 'осенние каникулы',
@@ -140,7 +132,32 @@ describe('границы термов и каникулы', () => {
         end: '2026-11-03',
       },
     ])
-    assert.deepEqual(rows[0].before, [])
+    assert.deepEqual(marksOf(rows[0], 'break'), [])
+  })
+
+  it('черта «сегодня» — перед первым непрошедшим уроком, прошлое приглушено', () => {
+    const rows = stitchLayout(
+      [lesson(1), lesson(2), lesson(3)],
+      ribbon(5),
+      '2026-10-02',
+    )
+
+    assert.deepEqual(
+      rows.map((row) => row.past),
+      [true, false, false],
+    )
+    assert.deepEqual(marksOf(rows[1], 'today'), [{ kind: 'today' }])
+    assert.equal(rows.filter((row) => marksOf(row, 'today').length).length, 1)
+  })
+
+  it('без сегодняшней даты черты нет вовсе', () => {
+    const rows = stitchLayout([lesson(1), lesson(2)], ribbon(3))
+
+    assert.equal(rows.filter((row) => marksOf(row, 'today').length).length, 0)
+    assert.deepEqual(
+      rows.map((row) => row.past),
+      [false, false],
+    )
   })
 })
 

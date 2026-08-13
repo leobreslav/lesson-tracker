@@ -109,6 +109,15 @@ export const test = base.extend({
 
 export { expect }
 
+/**
+ * Число в плашке плана — «в плане» по умолчанию.
+ *
+ * По тексту плашку не поймать: подписи переводятся, а якорь `data-card`
+ * от языка не зависит.
+ */
+export const lessonCount = (page, card = 'lessons') =>
+  page.locator(`[data-card="${card}"] h2`)
+
 /** The seeded cast, so tests name people rather than addresses. */
 export const PEOPLE = {
   admin: 'director@example.com',

@@ -586,17 +586,21 @@ class SlotRibbonTests(LayoutApiTestCase):
 
         self.assertEqual(len(self.ribbon().json()["slots"]), 2)
 
-    def test_the_last_slot_of_a_term_says_so(self):
+    def test_every_slot_carries_its_term_with_dates(self):
+        """
+        Терм целиком, а не только его id: по смене терма страница плана
+        рисует заголовок с датами, и второго запроса за ними быть не должно.
+        """
         self.fill_slots(12)
 
         rows = self.ribbon().json()["slots"]
-        ends = [row["term_ends"] for row in rows]
 
-        # пятый слот — пятница первой четверти, шестой уже вне термов
-        self.assertEqual(ends[4]["name"], "1 четверть")
-        self.assertEqual(ends[4]["end"], str(MONDAY + timedelta(days=4)))
-        self.assertIsNone(ends[3])
-        self.assertIsNone(ends[5])
+        self.assertEqual(rows[0]["term"]["name"], "1 четверть")
+        self.assertEqual(rows[0]["term"]["start"], str(MONDAY))
+        self.assertEqual(rows[0]["term"]["end"], str(MONDAY + timedelta(days=4)))
+        # шестой слот приходится на промежуток между четвертями
+        self.assertIsNone(rows[5]["term"])
+        self.assertEqual(rows[10]["term"]["name"], "2 четверть")
 
     def test_a_break_between_two_lessons_is_named(self):
         DayException.objects.create(

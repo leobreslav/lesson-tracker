@@ -1,4 +1,4 @@
-import { PEOPLE, expect, ready, test } from './harness.js'
+import { PEOPLE, expect, lessonCount, ready, test } from './harness.js'
 
 /**
  * Scenarios 6 and 7: the plan tree, dragging, and CSV.
@@ -13,7 +13,7 @@ async function openPlan(page, course) {
   await page.goto('/plan')
   await ready(page)
   await page.getByRole('button', { name: course, exact: true }).click()
-  await expect(page.locator('.plan-counts')).toBeVisible()
+  await expect(page.locator('.plan-cards')).toBeVisible()
 }
 
 /**
@@ -50,7 +50,10 @@ test('блок и уроки добавляются, нумерация скво
 
   // two lessons inside the block, through its own «+»
   for (const title of ['Первый признак', 'Второй признак']) {
-    await page.locator('.plan-section').getByTitle('Добавить урок в тему').click()
+    // кнопки строки видны при наведении: сначала подводим мышь, как человек
+    const head = page.locator('.plan-section .section-head').first()
+    await head.hover()
+    await head.getByTitle('Добавить урок в тему').click()
     const inner = page.locator('.plan-add-form')
     await inner.getByLabel('Название').fill(title)
     await inner.getByRole('button', { name: 'Добавить' }).click()
@@ -72,7 +75,7 @@ test('блок и уроки добавляются, нумерация скво
   expect(rows.join(' | ')).toContain('3 Итоговый урок')
 
   // the counter agrees with the tree
-  await expect(page.locator('.plan-counts')).toContainText('Уроков: 3')
+  await expect(lessonCount(page)).toHaveText('3')
 })
 
 test('перетаскивание меняет порядок и пересчитывает номера', async ({
@@ -89,6 +92,7 @@ test('перетаскивание меняет порядок и пересчи
 
   // drag the second lesson above the first, by its handle: dnd-kit only
   // listens there, and the pointer sensor needs a few steps to engage
+  await lessons.nth(1).hover()
   const handle = lessons.nth(1).getByTitle('Перетащить')
   const target = lessons.first()
 
@@ -163,7 +167,7 @@ test('импорт CSV разбирает файл и строит блоки', 
   await dialog.getByRole('button', { name: 'Импортировать' }).click()
   await expect(dialog).toBeHidden()
 
-  await expect(page.locator('.plan-counts')).toContainText('Уроков: 3')
+  await expect(lessonCount(page)).toHaveText('3')
   await expect(page.getByText('Векторы')).toBeVisible()
   await expect(page.getByText('Окружность')).toBeVisible()
 
@@ -236,7 +240,7 @@ test('xlsx: выгрузка возвращается обратно без ед
 }) => {
   await signIn(PEOPLE.ivanova)
   await openPlan(page, 'Grade 6 Algebra')
-  const before = await page.locator('.plan-counts').textContent()
+  const before = await lessonCount(page).textContent()
 
   // xlsx — формат по умолчанию, поэтому переключать ничего не надо
   const [download] = await Promise.all([
@@ -258,7 +262,7 @@ test('xlsx: выгрузка возвращается обратно без ед
   await dialog.getByRole('button', { name: 'Импортировать' }).click()
   await expect(dialog).toBeHidden()
 
-  await expect(page.locator('.plan-counts')).toHaveText(before)
+  await expect(lessonCount(page)).toHaveText(before)
 })
 
 test('xlsx: чужой файл отклоняется понятным текстом', async ({ page, signIn }) => {
@@ -288,7 +292,7 @@ test('импорт из библиотеки наполняет пустой п�
   await dialog.getByRole('button', { name: 'Импортировать в курс' }).click()
 
   await expect(dialog).toBeHidden()
-  await expect(page.locator('.plan-counts')).not.toContainText('Уроков: 0')
+  await expect(lessonCount(page)).not.toHaveText('0')
 })
 
 test('импорт вкладывает уроки в темы, включая названия с запятыми', async ({
@@ -319,7 +323,7 @@ test('импорт вкладывает уроки в темы, включая �
 
   // дождаться перечитанного дерева: диалог закрывается раньше, чем ответ
   // сервера доедет обратно
-  await expect(page.locator('.plan-counts')).toContainText('Уроков: 3')
+  await expect(lessonCount(page)).toHaveText('3')
 
   // вложенность читается прямо из дерева: тема и её уроки, а не плоский
   // список — плоский совпал бы и у сломанного импорта

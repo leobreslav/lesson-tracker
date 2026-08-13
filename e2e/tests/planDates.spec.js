@@ -15,7 +15,7 @@ const openPlan = async (page, course = COURSE) => {
   await page.goto('/plan')
   await ready(page)
   await page.getByRole('button', { name: course, exact: true }).click()
-  await expect(page.locator('.plan-counts')).toBeVisible()
+  await expect(page.locator('.plan-cards')).toBeVisible()
 }
 
 /** Дата в строке урока с этим номером. */
@@ -36,16 +36,15 @@ const dateOfLesson = (page, title) =>
     .locator('.plan-date')
     .textContent()
 
-/** Название урока, после которого стоит черта конца четверти. */
-async function beforeTermLine(page) {
+/** Название первого урока следующей четверти — того, что под её заголовком. */
+async function firstOfSecondTerm(page) {
   return page.evaluate(() => {
-    const line = document.querySelector('.plan-divider.term')
-    if (!line) return null
-    let previous = line.previousElementSibling
-    while (previous && !previous.querySelector?.('.title')) {
-      previous = previous.previousElementSibling
-    }
-    return previous?.querySelector('.title')?.textContent.trim() ?? null
+    const heads = [...document.querySelectorAll('.plan-term')]
+    const second = heads[1]
+    if (!second) return null
+    let next = second.nextElementSibling
+    while (next && !next.querySelector?.('.title')) next = next.nextElementSibling
+    return next?.querySelector('.title')?.textContent.trim() ?? null
   })
 }
 
@@ -53,12 +52,14 @@ test('даты видны, сводка сходится с раскладкой
   await signIn(PEOPLE.ivanova)
   await openPlan(page)
 
-  const summary = page.locator('.plan-summary')
-  await expect(summary).toBeVisible()
+  const number = async (card) =>
+    Number(await page.locator(`[data-card="${card}"] h2`).textContent())
 
-  // числа сводки — те же, что видно в таблице
-  const text = await summary.textContent()
-  const [slots, lessons, balance] = text.match(/-?\d+/g).map(Number)
+  const slots = await number('slots')
+  const lessons = await number('lessons')
+  const balance = await number('balance')
+
+  // плашки сходятся между собой и с таблицей
   expect(slots - lessons).toBe(balance)
   await expect(page.locator('.plan-row.lesson .plan-date')).toHaveCount(lessons)
 })
@@ -77,6 +78,8 @@ test('добавление урока сдвигает даты ниже, уда
   expect(dateOfSecond).not.toBe(thirdSlot)
 
   // вставляем урок после первого — второй уезжает на слот вперёд
+  // кнопки строки появляются при наведении
+  await lessons.first().hover()
   await lessons.first().getByTitle('Вставить урок после').click()
   const form = page.locator('.plan-add-form')
   await form.getByLabel('Название').fill('Вставка')
@@ -89,7 +92,9 @@ test('добавление урока сдвигает даты ниже, уда
 
   // и обратно: удалили — даты вернулись
   page.once('dialog', (dialog) => dialog.accept())
-  await page.locator('.plan-row', { hasText: 'Вставка' }).getByTitle('Удалить').click()
+  const inserted = page.locator('.plan-row', { hasText: 'Вставка' })
+  await inserted.hover()
+  await inserted.getByTitle('Удалить').click()
 
   await expect(page.locator('.plan-row', { hasText: 'Вставка' })).toHaveCount(0)
   await expect.poll(() => dateOfLesson(page, second)).toBe(dateOfSecond)
@@ -102,19 +107,20 @@ test('граница четверти приходится на другой у�
   await signIn(PEOPLE.ivanova)
   await openPlan(page)
 
-  const line = page.locator('.plan-divider.term').first()
-  await expect(line).toContainText('заканчивается')
-  const before = await beforeTermLine(page)
+  const heads = page.locator('.plan-term')
+  await expect(heads.first()).toContainText('четверть')
+  const before = await firstOfSecondTerm(page)
 
   const first = page.locator('.plan-row.lesson').first()
+  await first.hover()
   await first.getByTitle('Вставить урок после').click()
   const form = page.locator('.plan-add-form')
   await form.getByLabel('Название').fill('Ещё один урок')
   await form.getByRole('button', { name: 'Добавить' }).click()
   await expect(page.locator('.plan-row', { hasText: 'Ещё один урок' })).toBeVisible()
 
-  // черта осталась на своём слоте, а под ней теперь предыдущий урок темы
-  await expect.poll(() => beforeTermLine(page)).not.toBe(before)
+  // заголовок четверти остался на своём слоте, а первым её уроком стал другой
+  await expect.poll(() => firstOfSecondTerm(page)).not.toBe(before)
 })
 
 test('каникулы отмечены между уроками', async ({ page, signIn }) => {
@@ -134,6 +140,7 @@ test('перетаскивание пересчитывает даты сраз�
   const secondTitle = await lessons.nth(1).locator('.title').textContent()
   const firstDate = await dateOf(page, 1)
 
+  await lessons.nth(1).hover()
   const handle = lessons.nth(1).getByTitle('Перетащить')
   const target = lessons.first()
   const from = await handle.boundingBox()
@@ -168,17 +175,16 @@ test('уроки без слота помечены, а темы показыв�
   const missing = page.locator('.plan-row.lesson.no-slot')
   await expect(missing.first()).toBeVisible()
   await expect(missing.first().locator('.plan-date')).toHaveText('не помещается')
-  // у непоместившегося урока даты нет вовсе, только пометка
-  await expect(missing.first().locator('.plan-weekday')).toHaveCount(0)
 
-  // баланс отрицательный, «последнего урока» нет: план не влезает
-  const summary = page.locator('.plan-summary')
-  await expect(summary.locator('.balance.short')).toBeVisible()
-  await expect(summary).not.toContainText('последний урок')
+  // баланс отрицательный, вместо даты последнего урока — «план не помещается»
+  await expect(page.locator('[data-card="balance"].bad')).toBeVisible()
+  await expect(page.locator('[data-card="last"]')).toContainText('не помещается')
+  // и отдельная плашка со счётчиком непоместившихся, она ведёт на раскладку
+  await expect(page.locator('[data-card="missing"]')).toBeVisible()
 
   // тема, часть которой не поместилась, так и говорит
   await expect(
-    page.locator('.plan-section', { has: page.locator('.plan-range.missing') }).first(),
+    page.locator('.section-head .block-count', { hasText: 'не помещается' }).first(),
   ).toBeVisible()
 })
 
@@ -189,8 +195,8 @@ test('переключатель дат запоминается и не дви�
   await signIn(PEOPLE.ivanova)
   await openPlan(page)
 
-  // колонки дат жёсткой ширины: они выстраиваются в столбец, как бы ни
-  // различались строки — с пометками, с заметкой, с длинным названием
+  // колонка дат жёсткой ширины и стоит первой: строки выстраиваются в
+  // столбец, как бы ни различались названия и пометки
   const widths = await page
     .locator('.plan-row.lesson .plan-date')
     .evaluateAll((cells) => [...new Set(cells.map((cell) => cell.clientWidth))])
@@ -203,13 +209,16 @@ test('переключатель дат запоминается и не дви�
     ])
   expect(lefts).toHaveLength(1)
 
-  const title = page.locator('.plan-row.lesson .title').first()
-  const left = (await title.boundingBox()).x
+  // названия тоже стоят столбцом: колонка дат одной ширины у всех строк
+  const titles = await page
+    .locator('.plan-row.lesson .title')
+    .evaluateAll((cells) => [
+      ...new Set(cells.map((cell) => Math.round(cell.getBoundingClientRect().left))),
+    ])
+  expect(titles).toHaveLength(1)
 
   await page.getByLabel('Даты').uncheck()
   await expect(page.locator('.plan-date')).toHaveCount(0)
-  // название осталось на месте: даты стоят справа от него и его не двигают
-  expect(Math.abs((await title.boundingBox()).x - left)).toBeLessThan(1)
 
   // и переживает перезагрузку
   await page.reload()

@@ -20,7 +20,7 @@ async function openPlan(page) {
   await page.goto('/plan')
   await ready(page)
   await page.getByRole('button', { name: COURSE, exact: true }).click()
-  await expect(page.locator('.plan-counts')).toBeVisible()
+  await expect(page.locator('.plan-cards')).toBeVisible()
 }
 
 function rowFor(page, title) {

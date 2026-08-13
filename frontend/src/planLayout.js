@@ -18,24 +18,40 @@
  *
  * У каждой строки появляется:
  * - `slot` — слот, в который лёг урок, или null («не помещается»);
+ * - `past` — урок уже прошёл;
  * - `range` — у темы: с какой по какую дату идут её уроки;
- * - `before` / `after` — черты, которые рисуются вокруг строки: конец
- *   терма после последнего его урока и каникулы перед тем уроком, который
- *   стоит уже после них.
+ * - `before` — то, что рисуется перед строкой: заголовок терма при его
+ *   смене, каникулы перед уроком, который стоит уже после них, и черта
+ *   «сегодня» перед первым непрошедшим уроком.
  */
-export function stitchLayout(rows, ribbon) {
+export function stitchLayout(rows, ribbon, today = null) {
   let index = 0
+  let term // терм предыдущего урока: по его смене рисуется заголовок
+  let todayDone = false
+
   const stitched = rows.map((row) => {
     if (row.is_section) return { ...row, children: [], range: null }
 
     const slot = index < ribbon.length ? ribbon[index] : null
     index += 1
-    return {
-      ...row,
-      slot,
-      before: slot?.break_before ? [{ kind: 'break', ...slot.break_before }] : [],
-      after: slot?.term_ends ? [{ kind: 'term', ...slot.term_ends }] : [],
+
+    const before = []
+    if (slot?.break_before) before.push({ kind: 'break', ...slot.break_before })
+
+    const key = slot?.term?.id ?? null
+    if (slot && key !== term) {
+      term = key
+      if (slot.term) before.push({ kind: 'term', ...slot.term })
     }
+
+    // черта «сегодня» — перед первым уроком, который ещё не прошёл
+    const past = Boolean(today && slot && slot.date < today)
+    if (today && slot && !past && !todayDone) {
+      todayDone = true
+      before.push({ kind: 'today' })
+    }
+
+    return { ...row, slot, past, before, after: [] }
   })
 
   // диапазон темы: от первого её урока до последнего поместившегося

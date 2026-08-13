@@ -347,15 +347,19 @@
     "exportFile": "Export",
     "exportFormat": "Export format",
     "noSlot": "no slot",
-    "termEnds": "{{name}} ends · {{date}}",
     "breakBetween": "{{title}} · {{start}} — {{end}}",
     "summary": {
       "slots": "slots",
       "lessons": "in the plan",
       "balance": "balance",
       "last": "last lesson",
-      "dates": "Dates"
-    }
+      "dates": "Dates",
+      "free": "free slots",
+      "missing": "do not fit",
+      "sections": "themes",
+      "doesNotFit": "the plan does not fit"
+    },
+    "today": "TODAY"
   },
   "calendar": {
     "title": "School year",

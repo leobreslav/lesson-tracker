@@ -170,21 +170,18 @@ def slot_ribbon(slots: Sequence, terms: Iterable = (), breaks: Iterable = ()) ->
     получая мгновенный пересчёт после каждой правки и не унося на клиент
     ни одного настоящего правила.
 
-    У слота, последнего в своём терме, заполнено `term_ends` — по нему
-    рисуется черта «конец 1 четверти». У слота, перед которым в календаре
-    лежат каникулы, заполнено `break_before`: между этими двумя уроками
-    в расписании дыра, и её стоит назвать.
+    У слота есть его терм целиком (с датами) — по смене терма страница
+    рисует заголовок «1 четверть · 07.09 — 25.10». У слота, перед которым
+    в календаре лежат каникулы, заполнено `break_before`: между этими двумя
+    уроками в расписании дыра, и её стоит назвать.
     """
     terms = list(terms)
     breaks = list(breaks)
     rows = []
     previous = None
 
-    for index, slot in enumerate(slots):
+    for slot in slots:
         term = find_term(slot.date, terms)
-        following = slots[index + 1] if index + 1 < len(slots) else None
-        next_term = find_term(following.date, terms) if following else None
-        ends = term is not None and (next_term is None or next_term.pk != term.pk)
 
         gap = next(
             (
@@ -205,9 +202,14 @@ def slot_ribbon(slots: Sequence, terms: Iterable = (), breaks: Iterable = ()) ->
                 "is_extra": slot.is_extra,
                 "term_id": term.pk if term else None,
                 "term_name": term.name if term else None,
-                "term_ends": (
-                    {"id": term.pk, "name": term.name, "end": term.end_date}
-                    if ends
+                "term": (
+                    {
+                        "id": term.pk,
+                        "name": term.name,
+                        "start": term.start_date,
+                        "end": term.end_date,
+                    }
+                    if term
                     else None
                 ),
                 "break_before": (

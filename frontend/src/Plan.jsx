@@ -8,7 +8,7 @@ import {
   useRef,
   useState,
 } from 'react'
-import { Trans, useTranslation } from 'react-i18next'
+import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
 import {
   DndContext,
@@ -32,7 +32,8 @@ import PlanCsvHelp from './PlanCsvHelp'
 import Modal from './Modal'
 import { EmptyDropZone, SortableRow, dragId, emptyZoneId } from './PlanDnd'
 import { layoutTotals, stitchLayout } from './planLayout'
-import { dayMonth, shortDate, shortWeekday } from './dates'
+import { dayMonth, longDate, shortDate, shortWeekday } from './dates'
+import { today } from './calendarLogic'
 import {
   applyMove,
   countBlocks,
@@ -250,7 +251,9 @@ export default function Plan({ onLoggedOut }) {
   const layout = useMemo(() => {
     const rows = planRows(data?.nodes ?? [])
     return {
-      byId: new Map(stitchLayout(rows, ribbon).map((row) => [row.id, row])),
+      byId: new Map(
+        stitchLayout(rows, ribbon, today()).map((row) => [row.id, row]),
+      ),
       totals: layoutTotals(rows, ribbon),
     }
   }, [data, ribbon])
@@ -571,20 +574,39 @@ export default function Plan({ onLoggedOut }) {
 
   const indicatorFor = (id) => (drop?.overId === dragId(id) ? drop.side : null)
 
-  /** Черта между строками: конец терма или каникулы. */
-  const divider = (mark, key) => (
-    <li className={`plan-divider ${mark.kind}`} key={key}>
-      <span>
-        {mark.kind === 'term'
-          ? t('plan.termEnds', { name: mark.name, date: shortDate(mark.end) })
-          : t('plan.breakBetween', {
-              title: mark.title,
-              start: shortDate(mark.start),
-              end: shortDate(mark.end),
-            })}
-      </span>
-    </li>
-  )
+  /** Строка-разделитель: заголовок терма, каникулы или черта «сегодня». */
+  const divider = (mark, key) => {
+    if (mark.kind === 'term') {
+      return (
+        <li className="plan-term" key={key}>
+          <strong>{mark.name}</strong>
+          <span className="hint">
+            {shortDate(mark.start)} — {shortDate(mark.end)}
+          </span>
+        </li>
+      )
+    }
+
+    if (mark.kind === 'today') {
+      return (
+        <li className="plan-today" key={key}>
+          {t('plan.today')}
+        </li>
+      )
+    }
+
+    return (
+      <li className="plan-divider break" key={key}>
+        <span>
+          {t('plan.breakBetween', {
+            title: mark.title,
+            start: shortDate(mark.start),
+            end: shortDate(mark.end),
+          })}
+        </span>
+      </li>
+    )
+  }
 
   // без расписания раскладывать нечего: «не помещается» на каждой строке —
   // это шум, а не сообщение
@@ -592,7 +614,7 @@ export default function Plan({ onLoggedOut }) {
 
   /** Черты вокруг строки урока: каникулы сверху, конец терма снизу. */
   const marks = (node, side) =>
-    dated
+    dated && node
       ? (layout.byId.get(node.id)?.[side] ?? []).map((mark, index) =>
           divider(mark, `${side}-${node.id}-${index}`),
         )
@@ -604,10 +626,9 @@ export default function Plan({ onLoggedOut }) {
     const slot = layout.byId.get(node.id)?.slot
 
     return slot ? (
-      <>
-        <span className="plan-date">{dayMonth(slot.date)}</span>
-        <span className="plan-weekday">{shortWeekday(slot.date)}</span>
-      </>
+      <span className="plan-date">
+        {dayMonth(slot.date)} <em>{shortWeekday(slot.date)}</em>
+      </span>
     ) : (
       <span className="plan-date missing">{t('plan.noSlot')}</span>
     )
@@ -617,19 +638,22 @@ export default function Plan({ onLoggedOut }) {
     <SortableRow
       key={node.id}
       id={dragId(node.id)}
-      className={`plan-row lesson${
-        dated && !layout.byId.get(node.id)?.slot ? ' no-slot' : ''
-      }`}
+      className={
+        'plan-row lesson' +
+        (dated && !layout.byId.get(node.id)?.slot ? ' no-slot' : '') +
+        (dated && layout.byId.get(node.id)?.past ? ' past' : '')
+      }
       indicator={indicatorFor(node.id)}
     >
       {(handle) => (
         <>
           {handle}
+          {dateCells(node)}
           <span className="plan-number">{node.number}</span>
           <button
             type="button"
             className="link title"
-            title={t('plan.openLesson')}
+            title={node.title}
             disabled={busy}
             onClick={() => setOpened(node.id)}
           >
@@ -653,9 +677,11 @@ export default function Plan({ onLoggedOut }) {
             </span>
           )}
 
-          {node.note && <span className="hint">{node.note}</span>}
-
-          {dateCells(node)}
+          {node.note && (
+            <span className="hint note" title={node.note}>
+              {node.note}
+            </span>
+          )}
 
           <span className="row-actions">
             {moveButtons(node, movePlanNode)}
@@ -687,16 +713,11 @@ export default function Plan({ onLoggedOut }) {
   const sectionRange = (node) => {
     const range = layout.byId.get(node.id)?.range
     if (!range) return null
+    if (!range.from) return t('plan.noSlot')
 
-    const text = range.from
-      ? `${dayMonth(range.from)} — ${
-          range.missing ? t('plan.noSlot') : dayMonth(range.to)
-        }`
-      : t('plan.noSlot')
-
-    return (
-      <span className={`plan-range${range.missing ? ' missing' : ''}`}>{text}</span>
-    )
+    return `${dayMonth(range.from)} — ${
+      range.missing ? t('plan.noSlot') : dayMonth(range.to)
+    }`
   }
 
   const renderSection = (node) => {
@@ -739,11 +760,15 @@ export default function Plan({ onLoggedOut }) {
                 {node.title}
               </button>
               <span className="hint block-count">
-                {t('common.lessonCount', {
-                  count: blocks.byId.get(node.id)?.lessons ?? 0,
-                })}
+                {[
+                  t('common.lessonCount', {
+                    count: blocks.byId.get(node.id)?.lessons ?? 0,
+                  }),
+                  dated && sectionRange(node),
+                ]
+                  .filter(Boolean)
+                  .join(' · ')}
               </span>
-              {dated && sectionRange(node)}
 
               <span className="row-actions">
                 {moveButtons(node, movePlanSection)}
@@ -773,11 +798,11 @@ export default function Plan({ onLoggedOut }) {
         {!hidden && (
           <SortableContext items={childIds} strategy={verticalListSortingStrategy}>
             <ul className="plan-children">
-              {node.children.map((child) => (
+              {node.children.map((child, index) => (
                 <Fragment key={child.id}>
-                  {marks(child, 'before')}
+                  {/* у первого урока черта уже нарисована над полосой темы */}
+                  {index > 0 && marks(child, 'before')}
                   {renderLesson(child, node.id)}
-                  {marks(child, 'after')}
                   {addFormFor(node.id, child.id)}
                 </Fragment>
               ))}
@@ -837,56 +862,105 @@ export default function Plan({ onLoggedOut }) {
             ))}
           </div>
 
-          {data && ribbon.length > 0 && (
-            <div className="plan-summary">
-              <span>
-                {t('plan.summary.slots')} <strong>{layout.totals.slots}</strong>
-              </span>
-              <span>
-                {t('plan.summary.lessons')} <strong>{layout.totals.lessons}</strong>
-              </span>
-              <span
-                className={layout.totals.balance < 0 ? 'balance short' : 'balance spare'}
-              >
-                {t('plan.summary.balance')}{' '}
-                <strong>
-                  {layout.totals.balance > 0 ? '+' : ''}
-                  {layout.totals.balance}
-                </strong>
-              </span>
-              {layout.totals.lastDate && (
-                <span>
-                  {t('plan.summary.last')}{' '}
-                  <strong>{shortDate(layout.totals.lastDate)}</strong>
-                </span>
+          {data && (
+            <div className="cards plan-cards">
+              {ribbon.length > 0 && (
+                <>
+                  <section className="panel card-stat" data-card="slots">
+                    <h2>{layout.totals.slots}</h2>
+                    <p className="hint">{t('plan.summary.slots')}</p>
+                  </section>
+                  <section className="panel card-stat" data-card="lessons">
+                    <h2>{layout.totals.lessons}</h2>
+                    <p className="hint">{t('plan.summary.lessons')}</p>
+                  </section>
+                  <section
+                    data-card="balance"
+                    className={`panel card-stat ${
+                      layout.totals.balance < 0 ? 'bad' : 'good'
+                    }`}
+                  >
+                    <h2>
+                      {layout.totals.balance > 0 ? '+' : ''}
+                      {layout.totals.balance}
+                    </h2>
+                    <p className="hint">{t('plan.summary.balance')}</p>
+                  </section>
+                  <section className="panel card-stat" data-card="last">
+                    <h2 className="small">
+                      {layout.totals.lastDate
+                        ? longDate(layout.totals.lastDate)
+                        : '—'}
+                    </h2>
+                    <p className="hint">
+                      {t(
+                        layout.totals.lastDate
+                          ? 'plan.summary.last'
+                          : 'plan.summary.doesNotFit',
+                      )}
+                    </p>
+                  </section>
+
+                  {/* эти две ведут на «Раскладку»: там видно, какие именно
+                      дни остались пустыми и какие уроки не влезли */}
+                  {layout.totals.balance > 0 && (
+                    <button
+                      type="button"
+                      data-card="free"
+                      className="panel card-stat link-card"
+                      onClick={() => navigate('/layout')}
+                    >
+                      <h2>{layout.totals.balance}</h2>
+                      <p className="hint">{t('plan.summary.free')}</p>
+                    </button>
+                  )}
+                  {layout.totals.missing > 0 && (
+                    <button
+                      type="button"
+                      data-card="missing"
+                      className="panel card-stat bad link-card"
+                      onClick={() => navigate('/layout')}
+                    >
+                      <h2>{layout.totals.missing}</h2>
+                      <p className="hint">{t('plan.summary.missing')}</p>
+                    </button>
+                  )}
+                </>
               )}
 
-              <label className="checkbox dates-toggle">
-                <input
-                  type="checkbox"
-                  checked={showDates}
-                  onChange={(event) => {
-                    setShowDates(event.target.checked)
-                    rememberDates(event.target.checked)
-                  }}
-                />
-                {t('plan.summary.dates')}
-              </label>
+              {ribbon.length === 0 && (
+                <>
+                  <section className="panel card-stat" data-card="lessons">
+                    <h2>{data.counts.lessons}</h2>
+                    <p className="hint">{t('plan.summary.lessons')}</p>
+                  </section>
+                  <section className="panel card-stat" data-card="sections">
+                    <h2>{data.counts.sections}</h2>
+                    <p className="hint">{t('plan.summary.sections')}</p>
+                  </section>
+                </>
+              )}
             </div>
           )}
 
-          {data && (
-            <p className="hint plan-counts">
-              <Trans
-                i18nKey="plan.counts"
-                values={{
-                  lessons: data.counts.lessons,
-                  sections: data.counts.sections,
+          {ribbon.length > 0 && (
+            <label className="checkbox dates-toggle">
+              <input
+                type="checkbox"
+                checked={showDates}
+                onChange={(event) => {
+                  setShowDates(event.target.checked)
+                  rememberDates(event.target.checked)
                 }}
-              >
-                <strong>{data.counts.lessons}</strong>
-              </Trans>
-              {blocks.loose > 0 && t('plan.loose', { count: blocks.loose })}
+              />
+              {t('plan.summary.dates')}
+            </label>
+          )}
+
+          {/* уроки вне тем — не число сводки, а замечание о структуре */}
+          {data && blocks.loose > 0 && (
+            <p className="hint plan-loose">
+              {t('plan.loose', { count: blocks.loose })}
             </p>
           )}
 
@@ -921,11 +995,13 @@ export default function Plan({ onLoggedOut }) {
                   <ul className="plan">
                     {data.nodes.map((node) => (
                       <Fragment key={node.id}>
-                        {!node.is_section && marks(node, 'before')}
+                        {/* черта, выпавшая на первый урок темы, встаёт над
+                            её полосой: внутри блока она читалась бы как
+                            часть темы, а это граница между ними */}
+                        {marks(node.is_section ? node.children?.[0] : node, 'before')}
                         {node.is_section
                           ? renderSection(node)
                           : renderLesson(node, null)}
-                        {!node.is_section && marks(node, 'after')}
                         {addFormFor(null, node.id)}
                       </Fragment>
                     ))}

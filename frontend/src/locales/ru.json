@@ -359,15 +359,19 @@
     "exportFile": "Экспорт",
     "exportFormat": "Формат выгрузки",
     "noSlot": "не помещается",
-    "termEnds": "{{name}} заканчивается · {{date}}",
     "breakBetween": "{{title}} · {{start}} — {{end}}",
     "summary": {
       "slots": "слотов",
       "lessons": "в плане",
       "balance": "баланс",
       "last": "последний урок",
-      "dates": "Даты"
-    }
+      "dates": "Даты",
+      "free": "свободных слотов",
+      "missing": "не помещается",
+      "sections": "тем",
+      "doesNotFit": "план не помещается"
+    },
+    "today": "СЕГОДНЯ"
   },
   "calendar": {
     "title": "Учебный год",

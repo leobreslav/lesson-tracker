@@ -1621,6 +1621,102 @@ button.link:hover:not(:disabled) {
   border-color: #1a73e8;
 }
 
+/*
+ * Заголовок темы — полоса с заливкой, как в раскладке.
+ *
+ * Раньше он выглядел обычной строкой с теми же кнопками, и границы блока
+ * не читались вовсе: сорок строк подряд сливались в одну ленту.
+ */
+.plan-row.section-head {
+  padding: 0.25rem 0.4rem;
+  background: #f0f2f5;
+  border-radius: 4px;
+}
+
+.plan-row.section-head .title {
+  flex: 0 1 auto;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #444;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+/* заголовок терма и черта «сегодня» — те же, что на «Раскладке»: две
+   страницы про одно и то же не должны выглядеть по-разному */
+.plan-term {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: baseline;
+  margin: 0.6rem 0 0.25rem;
+  padding: 0.2rem 0.1rem;
+  border-bottom: 2px solid #d7dce3;
+}
+
+.plan-term strong {
+  font-size: 0.85rem;
+}
+
+.plan-today {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0.4rem 0;
+  font-size: 0.75rem;
+  color: #b00020;
+  text-transform: uppercase;
+}
+
+.plan-today::after {
+  content: '';
+  flex: 1;
+  height: 2px;
+  background: #b00020;
+  border-radius: 2px;
+}
+
+/* плашка, по которой можно щёлкнуть: ведёт на «Раскладку» */
+.card-stat.link-card {
+  align-items: flex-start;
+  min-height: 0;
+  color: inherit;
+  text-align: left;
+  background: #fff;
+  cursor: pointer;
+  border: 1px solid transparent;
+}
+
+.card-stat.link-card:hover:not(:disabled) {
+  background: #f8faff;
+  border-color: #c3d5f5;
+}
+
+/* плашки плана мельче, чем на «Раскладке»: там они и есть страница, здесь
+   над ними ещё сорок строк, ради которых всё и затевалось */
+.plan-cards {
+  grid-template-columns: repeat(auto-fit, minmax(7.5rem, 1fr));
+  gap: 0.5rem;
+  margin-bottom: 0.25rem;
+}
+
+.plan-cards .card-stat {
+  padding: 0.4rem 0.6rem;
+  gap: 0;
+}
+
+.plan-cards .card-stat h2 {
+  font-size: 1.5rem;
+}
+
+.plan-cards .card-stat h2.small {
+  font-size: 0.95rem;
+}
+
+.plan-cards .hint {
+  font-size: 0.75rem;
+}
+
 /* справка о формате CSV: раскрывается кнопкой «?» у заголовка карточки */
 .csv-help {
   display: flex;
@@ -1687,18 +1783,26 @@ button.link:hover:not(:disabled) {
   list-style: none;
 }
 
+/*
+ * Строка плана — одна линия, как в раскладке.
+ *
+ * Сорок уроков должны помещаться на экран: перенос названия на две строки
+ * растягивал главу вдвое, и глава переставала читаться целиком. Поэтому
+ * `nowrap` и обрезка многоточием, а полное название — в подсказке.
+ */
 .plan-row {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   align-items: center;
   gap: 0.4rem;
-  padding: 0.3rem 0.4rem;
+  padding: 0.1rem 0.4rem;
+  line-height: 1.4;
   border-radius: 4px;
 }
 
 .plan > .plan-row,
 .plan-section {
-  margin-bottom: 0.3rem;
+  margin-bottom: 0.15rem;
 }
 
 .plan-row:hover {
@@ -1714,22 +1818,20 @@ button.link:hover:not(:disabled) {
  * задана в rem, а не по содержимому: «14.10» и «3.11» иначе давали бы
  * разные колонки на соседних строках.
  */
-.plan-date,
-.plan-weekday {
+/* дата и день недели — первым столбцом, как в раскладке: взгляд идёт по
+   левому краю, а не прыгает от названия к правому краю строки */
+.plan-date {
   flex: 0 0 auto;
+  width: 5rem;
   font-size: 0.8rem;
   font-variant-numeric: lining-nums tabular-nums;
   color: #5f6368;
-  text-align: right;
+  white-space: nowrap;
 }
 
-.plan-date {
-  width: 3.4rem;
-}
-
-.plan-weekday {
-  width: 1.8rem;
-  text-align: left;
+.plan-date em {
+  font-style: normal;
+  color: #9aa0a6;
 }
 
 /* урок, которому слота не досталось: строка целиком, а не одна ячейка —
@@ -1738,25 +1840,8 @@ button.link:hover:not(:disabled) {
   background: #fdecea;
 }
 
-.plan-date.missing,
-.plan-range.missing {
-  width: auto;
+.plan-date.missing {
   color: #c5221f;
-}
-
-/* диапазон дат темы стоит там же, где даты уроков: у заголовка своя строка,
-   и колонки урока ему не нужны */
-.plan-range {
-  margin-left: auto;
-  font-size: 0.8rem;
-  font-variant-numeric: lining-nums tabular-nums;
-  color: #5f6368;
-}
-
-/* у темы после диапазона идут кнопки — им своё «прижать вправо» уже не
-   нужно, иначе диапазон и кнопки разъедутся по краям */
-.section-head .plan-range + .row-actions {
-  margin-left: 0.4rem;
 }
 
 /*
@@ -1793,53 +1878,40 @@ button.link:hover:not(:disabled) {
   border-top-color: #8ab4f8;
 }
 
-/*
- * Сводка раскладки: закреплена под верхним баром.
- *
- * Смысл в том, чтобы баланс был виден, пока правишь низ плана, — поэтому
- * sticky, а не просто «сверху страницы».
- */
-.plan-summary {
-  position: sticky;
-  top: 3.25rem;
-  z-index: 4;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.35rem 1rem;
-  align-items: center;
-  padding: 0.5rem 0.75rem;
-  font-size: 0.9rem;
-  color: #5f6368;
-  background: #fff;
-  border-radius: var(--card-radius);
-  box-shadow: var(--card-shadow);
-}
-
-.plan-summary strong {
-  color: #202124;
-  font-variant-numeric: lining-nums tabular-nums;
-}
-
-.plan-summary .balance.spare strong {
-  color: #137333;
-}
-
-.plan-summary .balance.short strong {
-  color: #c5221f;
-}
-
-.plan-summary .dates-toggle {
-  margin-left: auto;
+/* переключатель дат живёт рядом с плашками, справа */
+.dates-toggle {
+  align-self: flex-end;
+  margin-top: -0.25rem;
+  font-size: 0.85rem;
 }
 
 .plan-row .title {
-  flex: 1;
-  min-width: 6rem;
-  padding: 0.15rem 0.3rem;
+  flex: 1 1 auto;
+  min-width: 3rem;
+  font-size: 0.95rem;
+  overflow: hidden;
+  padding: 0 0.3rem;
   color: inherit;
   font: inherit;
   text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   border-radius: 3px;
+}
+
+/* заметка урока рядом с названием: своё место, но не в ущерб названию */
+.plan-row .hint.note {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 30%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* прошедшее приглушено — это только оформление, на расчёт не влияет */
+.plan-row.past {
+  opacity: 0.55;
 }
 
 .plan-row .title:hover:not(:disabled) {
@@ -1860,11 +1932,36 @@ button.link:hover:not(:disabled) {
   margin-left: auto;
 }
 
+/*
+ * Кнопки строки появляются при наведении.
+ *
+ * Четыре кнопки на сорока строках — сто шестьдесят значков, из-за которых
+ * не виден сам план. Прячем только там, где есть чем навести: на сенсорном
+ * экране наведения не бывает, и кнопки остаются на месте — «долгое нажатие»
+ * там уже занято перетаскиванием.
+ */
+@media (hover: hover) {
+  .plan-row .row-actions {
+    visibility: hidden;
+  }
+
+  .plan-row:hover .row-actions,
+  .plan-row:focus-within .row-actions {
+    visibility: visible;
+  }
+}
+
+/*
+ * Тема — полоса и строки под ней, без своей карточки.
+ *
+ * Карточка вокруг каждой темы съедала по полсотни пикселей на блок: шесть
+ * тем — треть экрана рамок. Полоса читается как разделитель не хуже, а
+ * место оставляет плану.
+ */
 .plan-section {
-  padding: 0.35rem 0.4rem;
-  background: #fff;
-  border: 1px solid #dcdcdc;
-  border-radius: var(--card-radius);
+  padding: 0;
+  background: none;
+  border: none;
 }
 
 .section-head .title {
