@@ -258,3 +258,96 @@ describe('planRows несёт id — иначе сшивать не с чем', 
     )
   })
 })
+
+describe('разделители недель', () => {
+  /** Лента с настоящими неделями: по уроку в понедельник, среду и пятницу. */
+  const weeks = (count) =>
+    Array.from({ length: count }, (_, index) => {
+      const week = Math.floor(index / 3) + 1
+      const day = 7 + (week - 1) * 7 + [0, 2, 4][index % 3]
+      const iso = `2026-09-${String(day).padStart(2, '0')}`
+      return {
+        id: 100 + index,
+        date: iso,
+        lesson_number: 1,
+        is_extra: false,
+        week,
+        week_start: `2026-09-${String(7 + (week - 1) * 7).padStart(2, '0')}`,
+        term: null,
+        break_before: null,
+      }
+    })
+
+  const weekMarks = (rows, ribbon, today = null) =>
+    stitchLayout(rows, ribbon, today)
+      .flatMap((row) => row.before ?? [])
+      .filter((mark) => mark.kind === 'week')
+
+  it('по разделителю на неделю, с числом уроков и границами', () => {
+    const rows = [lesson(1), lesson(2), lesson(3), lesson(4), lesson(5)]
+
+    assert.deepEqual(weekMarks(rows, weeks(6)), [
+      {
+        kind: 'week',
+        number: 1,
+        start: '2026-09-07',
+        end: '2026-09-11',
+        lessons: 3,
+      },
+      {
+        kind: 'week',
+        number: 2,
+        start: '2026-09-14',
+        end: '2026-09-16',
+        lessons: 2,
+      },
+    ])
+  })
+
+  it('короткая неделя видна по числу уроков', () => {
+    // в ленте только два урока второй недели: третий выпал на праздник
+    const ribbon = weeks(6).filter((slot) => slot.date !== '2026-09-18')
+    const rows = [lesson(1), lesson(2), lesson(3), lesson(4), lesson(5)]
+
+    assert.deepEqual(
+      weekMarks(rows, ribbon).map((mark) => mark.lessons),
+      [3, 2],
+    )
+  })
+
+  it('неделя целиком на каникулах разделителя не получает', () => {
+    // второй недели в ленте нет вовсе: уроков в ней не было
+    const ribbon = weeks(9).filter((slot) => slot.week !== 2)
+    const rows = [lesson(1), lesson(2), lesson(3), lesson(4), lesson(5), lesson(6)]
+
+    assert.deepEqual(
+      weekMarks(rows, ribbon).map((mark) => mark.number),
+      [1, 3],
+    )
+  })
+
+  it('уроку без слота недели не достаётся', () => {
+    const rows = [lesson(1), lesson(2), lesson(3), lesson(4)]
+
+    assert.deepEqual(
+      weekMarks(rows, weeks(3)).map((mark) => mark.lessons),
+      [3],
+    )
+  })
+
+  it('порядок черт: терм, каникулы, неделя, сегодня', () => {
+    const ribbon = weeks(3)
+    ribbon[0].term = { id: 1, name: '1 четверть', start: '2026-09-01', end: '2026-10-25' }
+    ribbon[0].break_before = {
+      title: 'каникулы',
+      start: '2026-09-01',
+      end: '2026-09-06',
+    }
+    const rows = stitchLayout([lesson(1), lesson(2)], ribbon, '2026-09-07')
+
+    assert.deepEqual(
+      rows[0].before.map((mark) => mark.kind),
+      ['term', 'break', 'week', 'today'],
+    )
+  })
+})

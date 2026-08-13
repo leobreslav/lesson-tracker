@@ -668,6 +668,37 @@ class SlotRibbonTests(LayoutApiTestCase):
             [(entry["slot"]["date"], entry["term_id"]) for entry in entries],
         )
 
+    def test_slots_carry_the_school_week_and_its_monday(self):
+        """
+        Нумерация сквозная от начала года, а не календарная: учителю важно,
+        какая это неделя занятий.
+        """
+        year = self.course.year
+        year.start_date = MONDAY
+        year.save(update_fields=["start_date"])
+        self.fill_slots(12)
+
+        rows = self.ribbon().json()["slots"]
+
+        self.assertEqual(rows[0]["week"], 1)
+        self.assertEqual(rows[0]["week_start"], str(MONDAY))
+        # шестой слот — воскресенье той же недели, седьмой уже следующая
+        self.assertEqual(rows[6]["week"], 1)
+        self.assertEqual(rows[7]["week"], 2)
+        self.assertEqual(rows[7]["week_start"], str(MONDAY + timedelta(days=7)))
+
+    def test_a_year_starting_midweek_still_has_a_first_week(self):
+        """Год начался во вторник — эта неделя первая, следующая вторая."""
+        year = self.course.year
+        year.start_date = MONDAY - timedelta(days=6)  # прошлый вторник
+        year.save(update_fields=["start_date"])
+
+        self.add_slot(MONDAY - timedelta(days=5))
+        self.add_slot(MONDAY)
+
+        weeks = [row["week"] for row in self.ribbon().json()["slots"]]
+        self.assertEqual(weeks, [1, 2])
+
     def test_another_teachers_course_is_not_found(self):
         self.assertEqual(self.ribbon(self.alien_class).status_code, 404)
 

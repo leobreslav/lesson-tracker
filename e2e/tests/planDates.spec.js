@@ -226,3 +226,83 @@ test('переключатель дат запоминается и не дви�
   await expect(page.getByLabel('Даты')).not.toBeChecked()
   await expect(page.locator('.plan-date')).toHaveCount(0)
 })
+
+test('недели пронумерованы от начала года и считают уроки', async ({
+  page,
+  signIn,
+}) => {
+  await signIn(PEOPLE.ivanova)
+  await openPlan(page)
+
+  const weeks = page.locator('.plan-week')
+  await expect(weeks.first()).toContainText('Неделя 1')
+  // вторая неделя идёт следом: нумерация сквозная, а не календарная
+  await expect(weeks.nth(1)).toContainText('Неделя 2')
+  await expect(weeks.nth(1)).toContainText('урока')
+
+  // число уроков недели сходится с числом строк до следующего разделителя
+  const counted = await page.evaluate(() => {
+    const head = document.querySelectorAll('.plan-week')[1]
+    const said = Number(head.textContent.match(/(\d+) урок/)[1])
+    let node = head.nextElementSibling
+    let rows = 0
+    while (node && !node.classList.contains('plan-week')) {
+      if (node.classList.contains('lesson')) rows += 1
+      // строки темы лежат вложенным списком — считаем и их
+      rows += node.querySelectorAll?.('.plan-row.lesson').length ?? 0
+      node = node.nextElementSibling
+    }
+    return { said, rows }
+  })
+  expect(counted.rows).toBe(counted.said)
+})
+
+test('вставленный урок переносит уроки через границу недели', async ({
+  page,
+  signIn,
+}) => {
+  await signIn(PEOPLE.ivanova)
+  await openPlan(page)
+
+  /** Название первого урока второй недели. */
+  const firstOfSecondWeek = () =>
+    page.evaluate(() => {
+      const head = document.querySelectorAll('.plan-week')[1]
+      let node = head.nextElementSibling
+      while (node && !node.querySelector?.('.title')) node = node.nextElementSibling
+      return node?.querySelector('.title')?.textContent.trim() ?? null
+    })
+
+  const before = await firstOfSecondWeek()
+  const weekText = await page.locator('.plan-week').nth(1).textContent()
+
+  const first = page.locator('.plan-row.lesson').first()
+  await first.hover()
+  await first.getByTitle('Вставить урок после').click()
+  const form = page.locator('.plan-add-form')
+  await form.getByLabel('Название').fill('Ещё урок')
+  await form.getByRole('button', { name: 'Добавить' }).click()
+  await expect(page.locator('.plan-row', { hasText: 'Ещё урок' })).toBeVisible()
+
+  // сам разделитель на месте — недели задаёт расписание, а не план, — но
+  // под него уехал другой урок
+  await expect.poll(firstOfSecondWeek).not.toBe(before)
+  expect(await page.locator('.plan-week').nth(1).textContent()).toBe(weekText)
+})
+
+test('недели выключаются отдельно от дат', async ({ page, signIn }) => {
+  await signIn(PEOPLE.ivanova)
+  await openPlan(page)
+
+  await expect(page.locator('.plan-week').first()).toBeVisible()
+
+  await page.getByLabel('Недели').uncheck()
+  await expect(page.locator('.plan-week')).toHaveCount(0)
+  // даты при этом остались
+  await expect(page.locator('.plan-date').first()).toBeVisible()
+
+  await page.reload()
+  await ready(page)
+  await expect(page.getByLabel('Недели')).not.toBeChecked()
+  await expect(page.locator('.plan-week')).toHaveCount(0)
+})

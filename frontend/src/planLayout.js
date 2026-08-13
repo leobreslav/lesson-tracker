@@ -21,8 +21,11 @@
  * - `past` — урок уже прошёл;
  * - `range` — у темы: с какой по какую дату идут её уроки;
  * - `before` — то, что рисуется перед строкой: заголовок терма при его
- *   смене, каникулы перед уроком, который стоит уже после них, и черта
- *   «сегодня» перед первым непрошедшим уроком.
+ *   смене, каникулы перед уроком, который стоит уже после них, разделитель
+ *   учебной недели и черта «сегодня» перед первым непрошедшим уроком.
+ *
+ * Порядок черт постоянный — терм, каникулы, неделя, сегодня, — от крупного
+ * к мелкому: так они читаются как вложенные, а не как список пометок.
  */
 export function stitchLayout(rows, ribbon, today = null) {
   let index = 0
@@ -36,13 +39,14 @@ export function stitchLayout(rows, ribbon, today = null) {
     index += 1
 
     const before = []
-    if (slot?.break_before) before.push({ kind: 'break', ...slot.break_before })
 
     const key = slot?.term?.id ?? null
     if (slot && key !== term) {
       term = key
       if (slot.term) before.push({ kind: 'term', ...slot.term })
     }
+
+    if (slot?.break_before) before.push({ kind: 'break', ...slot.break_before })
 
     // черта «сегодня» — перед первым уроком, который ещё не прошёл
     const past = Boolean(today && slot && slot.date < today)
@@ -53,6 +57,8 @@ export function stitchLayout(rows, ribbon, today = null) {
 
     return { ...row, slot, past, before, after: [] }
   })
+
+  markWeeks(stitched)
 
   // диапазон темы: от первого её урока до последнего поместившегося
   let section = null
@@ -73,6 +79,59 @@ export function stitchLayout(rows, ribbon, today = null) {
   }
 
   return stitched
+}
+
+/**
+ * Разделители недель — по одному перед первым уроком каждой недели.
+ *
+ * Неделя удобнее как единица планирования, чем отдельная дата, а число
+ * уроков в ней говорит больше, чем кажется: меньше обычного — значит там
+ * праздник или короткая неделя перед каникулами.
+ *
+ * Неделя, целиком выпавшая на каникулы, разделителя не получает сама собой:
+ * уроков в ней нет, а значит нет и строки, перед которой его рисовать. О
+ * самих каникулах говорит своя черта.
+ *
+ * Считать приходится вторым проходом: в подписи стоит число уроков недели,
+ * а его знаешь, только дойдя до её конца.
+ */
+function markWeeks(rows) {
+  let run = null
+
+  const close = () => {
+    if (!run) return
+    const mark = {
+      kind: 'week',
+      number: run.number,
+      start: run.start,
+      end: run.end,
+      lessons: run.lessons,
+    }
+    // «сегодня» всегда вплотную к строке, поэтому неделя встаёт перед ним
+    const todayAt = run.first.before.findIndex((item) => item.kind === 'today')
+    if (todayAt === -1) run.first.before.push(mark)
+    else run.first.before.splice(todayAt, 0, mark)
+  }
+
+  for (const row of rows) {
+    if (row.is_section || !row.slot?.week) continue
+
+    if (run?.number !== row.slot.week) {
+      close()
+      run = {
+        number: row.slot.week,
+        start: row.slot.week_start,
+        end: row.slot.date,
+        lessons: 0,
+        first: row,
+      }
+    }
+
+    run.end = row.slot.date
+    run.lessons += 1
+  }
+
+  close()
 }
 
 /** Сводка сверху: сколько слотов, сколько уроков и чем это кончится. */

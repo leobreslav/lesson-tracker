@@ -663,7 +663,7 @@ export default function Agenda({ onLoggedOut }) {
   }
 
   return (
-    <main className="page">
+    <main className="page wide">
       <header className="page-header">
         <h1>{t('agenda.title')}</h1>
       </header>

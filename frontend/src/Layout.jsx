@@ -209,14 +209,14 @@ export default function Layout({ onLoggedOut }) {
 
   if (classes === null) {
     return (
-      <main className="page">
+      <main className="page wide">
         <p>{error ? <span className="error">{error}</span> : t('common.loading')}</p>
       </main>
     )
   }
 
   return (
-    <main className="page">
+    <main className="page wide">
       <header className="page-header">
         <h1>{t('layout.title')}</h1>
       </header>

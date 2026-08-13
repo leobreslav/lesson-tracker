@@ -160,7 +160,7 @@ export default function SchoolSchedule({ onLoggedOut }) {
 
   if (years === null) {
     return (
-      <main className="page">
+      <main className="page wide">
         <p>{error ? <span className="error">{error}</span> : t('common.loading')}</p>
       </main>
     )
@@ -180,7 +180,7 @@ export default function SchoolSchedule({ onLoggedOut }) {
   }
 
   return (
-    <main className="page">
+    <main className="page wide">
       <header className="page-header">
         <h1>{t('schoolSchedule.title')}</h1>
       </header>

@@ -357,9 +357,11 @@
       "free": "free slots",
       "missing": "do not fit",
       "sections": "themes",
-      "doesNotFit": "the plan does not fit"
+      "doesNotFit": "the plan does not fit",
+      "weeks": "Weeks"
     },
-    "today": "TODAY"
+    "today": "TODAY",
+    "week": "Week {{number}}"
   },
   "calendar": {
     "title": "School year",

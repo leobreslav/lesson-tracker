@@ -182,7 +182,10 @@ class PlanNodeViewSet(TeacherScopedViewSet):
         return Response(
             {
                 "slots": services.slot_ribbon(
-                    list(slots), course.year.terms.all(), breaks
+                    list(slots),
+                    course.year.terms.all(),
+                    breaks,
+                    year_start=course.year.start_date,
                 )
             }
         )

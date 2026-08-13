@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import csv
 import io
+from datetime import timedelta
 from collections import defaultdict
 from dataclasses import dataclass
 from typing import Iterable, NamedTuple, Sequence
@@ -159,7 +160,26 @@ def build_layout(
     return entries
 
 
-def slot_ribbon(slots: Sequence, terms: Iterable = (), breaks: Iterable = ()) -> list:
+def week_of(day, year_start) -> tuple:
+    """
+    Номер учебной недели и её понедельник.
+
+    Нумерация сквозная от начала учебного года, а не календарная: учителю
+    важно, какая это неделя занятий, и «третья» он скажет скорее, чем
+    «тридцать девятая». Считается по понедельникам, поэтому неделя, в
+    которую год начался в среду, всё равно первая.
+    """
+    monday = day - timedelta(days=day.weekday())
+    first = year_start - timedelta(days=year_start.weekday())
+    return (monday - first).days // 7 + 1, monday
+
+
+def slot_ribbon(
+    slots: Sequence,
+    terms: Iterable = (),
+    breaks: Iterable = (),
+    year_start=None,
+) -> list:
     """
     Лента слотов: всё про даты, что **не зависит** от плана.
 
@@ -171,9 +191,11 @@ def slot_ribbon(slots: Sequence, terms: Iterable = (), breaks: Iterable = ()) ->
     ни одного настоящего правила.
 
     У слота есть его терм целиком (с датами) — по смене терма страница
-    рисует заголовок «1 четверть · 07.09 — 25.10». У слота, перед которым
-    в календаре лежат каникулы, заполнено `break_before`: между этими двумя
-    уроками в расписании дыра, и её стоит назвать.
+    рисует заголовок «1 четверть · 07.09 — 25.10» — и номер учебной недели с
+    её понедельником, по смене которого рисуется разделитель недели. У
+    слота, перед которым в календаре лежат каникулы, заполнено
+    `break_before`: между этими двумя уроками в расписании дыра, и её стоит
+    назвать.
     """
     terms = list(terms)
     breaks = list(breaks)
@@ -182,6 +204,7 @@ def slot_ribbon(slots: Sequence, terms: Iterable = (), breaks: Iterable = ()) ->
 
     for slot in slots:
         term = find_term(slot.date, terms)
+        week, monday = week_of(slot.date, year_start) if year_start else (None, None)
 
         gap = next(
             (
@@ -200,6 +223,8 @@ def slot_ribbon(slots: Sequence, terms: Iterable = (), breaks: Iterable = ()) ->
                 "date": slot.date,
                 "lesson_number": slot.lesson_number,
                 "is_extra": slot.is_extra,
+                "week": week,
+                "week_start": monday,
                 "term_id": term.pk if term else None,
                 "term_name": term.name if term else None,
                 "term": (

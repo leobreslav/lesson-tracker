@@ -69,25 +69,29 @@ import {
  */
 const LessonPanel = lazy(() => import('./LessonPanel'))
 
-// показ дат переживает перезагрузку: при наборе плана с нуля они мешают,
-// при планировании нужны, и переключать это каждый раз незачем
+// показ дат и недель переживает перезагрузку: при наборе плана с нуля они
+// мешают, при планировании нужны, и переключать это каждый раз незачем
 const DATES_KEY = 'planShowDates'
+const WEEKS_KEY = 'planShowWeeks'
 
-function rememberedDates() {
+function remembered(key, fallback) {
   try {
-    return localStorage.getItem(DATES_KEY) !== '0'
+    const saved = localStorage.getItem(key)
+    return saved === null ? fallback : saved === '1'
   } catch {
-    return true
+    return fallback
   }
 }
 
-function rememberDates(value) {
+function remember(key, value) {
   try {
-    localStorage.setItem(DATES_KEY, value ? '1' : '0')
+    localStorage.setItem(key, value ? '1' : '0')
   } catch {
     // приватный режим — просто не запоминаем
   }
 }
+
+const rememberedDates = () => remembered(DATES_KEY, true)
 
 // xlsx первым: он и по умолчанию
 const FORMATS = ['xlsx', 'csv']
@@ -112,6 +116,7 @@ export default function Plan({ onLoggedOut }) {
   const [format, setFormat] = useState('xlsx')
   const [ribbon, setRibbon] = useState([])
   const [showDates, setShowDates] = useState(rememberedDates)
+  const [showWeeks, setShowWeeks] = useState(() => remembered(WEEKS_KEY, true))
   const [adding, setAdding] = useState(null) // {parent, after, is_section, title}
   const [deleting, setDeleting] = useState(null) // the section being removed
   const [importing, setImporting] = useState(false)
@@ -587,6 +592,18 @@ export default function Plan({ onLoggedOut }) {
       )
     }
 
+    if (mark.kind === 'week') {
+      return showWeeks ? (
+        <li className="plan-week" key={key}>
+          <span>{t('plan.week', { number: mark.number })}</span>
+          <span className="hint">
+            {shortDate(mark.start)} — {shortDate(mark.end)} ·{' '}
+            {t('common.lessonCount', { count: mark.lessons })}
+          </span>
+        </li>
+      ) : null
+    }
+
     if (mark.kind === 'today') {
       return (
         <li className="plan-today" key={key}>
@@ -647,8 +664,10 @@ export default function Plan({ onLoggedOut }) {
     >
       {(handle) => (
         <>
-          {handle}
+          {/* дата первой: взгляд идёт по левому краю и должен встречать
+              данные, а не служебную ручку */}
           {dateCells(node)}
+          {handle}
           <span className="plan-number">{node.number}</span>
           <button
             type="button"
@@ -824,14 +843,14 @@ export default function Plan({ onLoggedOut }) {
 
   if (classes === null) {
     return (
-      <main className="page narrow">
+      <main className="page wide">
         <p>{error ? <span className="error">{error}</span> : t('common.loading')}</p>
       </main>
     )
   }
 
   return (
-    <main className="page narrow">
+    <main className="page wide">
       <header className="page-header">
         <h1>{t('plan.title')}</h1>
       </header>
@@ -944,17 +963,30 @@ export default function Plan({ onLoggedOut }) {
           )}
 
           {ribbon.length > 0 && (
-            <label className="checkbox dates-toggle">
-              <input
-                type="checkbox"
-                checked={showDates}
-                onChange={(event) => {
-                  setShowDates(event.target.checked)
-                  rememberDates(event.target.checked)
-                }}
-              />
-              {t('plan.summary.dates')}
-            </label>
+            <div className="dates-toggle">
+              <label className="checkbox">
+                <input
+                  type="checkbox"
+                  checked={showDates}
+                  onChange={(event) => {
+                    setShowDates(event.target.checked)
+                    remember(DATES_KEY, event.target.checked)
+                  }}
+                />
+                {t('plan.summary.dates')}
+              </label>
+              <label className="checkbox">
+                <input
+                  type="checkbox"
+                  checked={showWeeks}
+                  onChange={(event) => {
+                    setShowWeeks(event.target.checked)
+                    remember(WEEKS_KEY, event.target.checked)
+                  }}
+                />
+                {t('plan.summary.weeks')}
+              </label>
+            </div>
           )}
 
           {/* уроки вне тем — не число сводки, а замечание о структуре */}
