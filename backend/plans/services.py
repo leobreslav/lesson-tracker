@@ -160,25 +160,33 @@ def build_layout(
     return entries
 
 
-def week_of(day, year_start) -> tuple:
-    """
-    Номер учебной недели и её понедельник.
+def monday_of(day):
+    return day - timedelta(days=day.weekday())
 
-    Нумерация сквозная от начала учебного года, а не календарная: учителю
-    важно, какая это неделя занятий, и «третья» он скажет скорее, чем
-    «тридцать девятая». Считается по понедельникам, поэтому неделя, в
-    которую год начался в среду, всё равно первая.
+
+def number_weeks(study_days: Iterable, slots: Iterable = ()) -> dict:
     """
-    monday = day - timedelta(days=day.weekday())
-    first = year_start - timedelta(days=year_start.weekday())
-    return (monday - first).days // 7 + 1, monday
+    Понедельник недели → её номер. Считаются только **учебные** недели.
+
+    Нумерация сквозная от начала года и без дыр: неделя, целиком выпавшая
+    на каникулы, номера не получает, и следующая за ней — не «одиннадцатая»,
+    а та, что идёт по счёту занятий. Учителю нужен именно этот счёт, и
+    «третья неделя» он скажет скорее, чем «тридцать девятая».
+
+    Неделя, в которой учебных дней нет, но урок стоит (отработка в субботу
+    посреди каникул), в счёт всё-таки входит: иначе у этого урока не было
+    бы недели вовсе.
+    """
+    mondays = {monday_of(day) for day in study_days}
+    mondays |= {monday_of(slot.date) for slot in slots}
+    return {monday: number for number, monday in enumerate(sorted(mondays), start=1)}
 
 
 def slot_ribbon(
     slots: Sequence,
     terms: Iterable = (),
     breaks: Iterable = (),
-    year_start=None,
+    study_days: Iterable = (),
 ) -> list:
     """
     Лента слотов: всё про даты, что **не зависит** от плана.
@@ -199,12 +207,13 @@ def slot_ribbon(
     """
     terms = list(terms)
     breaks = list(breaks)
+    weeks = number_weeks(study_days, slots)
     rows = []
     previous = None
 
     for slot in slots:
         term = find_term(slot.date, terms)
-        week, monday = week_of(slot.date, year_start) if year_start else (None, None)
+        monday = monday_of(slot.date)
 
         gap = next(
             (
@@ -223,7 +232,7 @@ def slot_ribbon(
                 "date": slot.date,
                 "lesson_number": slot.lesson_number,
                 "is_extra": slot.is_extra,
-                "week": week,
+                "week": weeks.get(monday),
                 "week_start": monday,
                 "term_id": term.pk if term else None,
                 "term_name": term.name if term else None,

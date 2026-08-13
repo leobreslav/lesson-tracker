@@ -592,18 +592,6 @@ export default function Plan({ onLoggedOut }) {
       )
     }
 
-    if (mark.kind === 'week') {
-      return showWeeks ? (
-        <li className="plan-week" key={key}>
-          <span>{t('plan.week', { number: mark.number })}</span>
-          <span className="hint">
-            {shortDate(mark.start)} — {shortDate(mark.end)} ·{' '}
-            {t('common.lessonCount', { count: mark.lessons })}
-          </span>
-        </li>
-      ) : null
-    }
-
     if (mark.kind === 'today') {
       return (
         <li className="plan-today" key={key}>
@@ -637,9 +625,41 @@ export default function Plan({ onLoggedOut }) {
         )
       : null
 
-  /** Дата и день недели урока — две узкие колонки справа от названия. */
-  const dateCells = (node) => {
+  /**
+   * Скобка недели в левой колонке: подпись посередине группы, линия во всю
+   * её высоту. Строки она не занимает — в этом весь смысл.
+   */
+  const weekCell = (node) => {
     if (!dated) return null
+    const week = layout.byId.get(node.id)?.week
+
+    if (!week || !showWeeks) return <span className="plan-weekmark" />
+
+    return (
+      <span className="plan-weekmark">
+        {week.label && (
+          <span className="week-label">{t('plan.week', { number: week.number })}</span>
+        )}
+        <span
+          className={
+            'week-line' +
+            (week.first ? ' first' : '') +
+            (week.last ? ' last' : '')
+          }
+        />
+      </span>
+    )
+  }
+
+  /**
+   * Дата и день недели урока — узкая колонка слева.
+   *
+   * У темы даты нет (её диапазон стоит в полосе), но ячейка нужна пустой:
+   * иначе полоса съехала бы влево относительно строк уроков.
+   */
+  const dateCells = (node, empty = false) => {
+    if (!dated) return null
+    if (empty) return <span className="plan-date" />
     const slot = layout.byId.get(node.id)?.slot
 
     return slot ? (
@@ -664,9 +684,13 @@ export default function Plan({ onLoggedOut }) {
     >
       {(handle) => (
         <>
-          {/* дата первой: взгляд идёт по левому краю и должен встречать
-              данные, а не служебную ручку */}
+          {/* левая колонка: неделя и дата. Взгляд идёт по левому краю и
+              должен встречать данные, а не служебную ручку */}
+          {weekCell(node)}
           {dateCells(node)}
+          {/* отступ вложенности отдельной ячейкой, а не padding'ом строки:
+              иначе он сдвинул бы и левую колонку вместе с ней */}
+          {parent && <span className="plan-indent" aria-hidden="true" />}
           {handle}
           <span className="plan-number">{node.number}</span>
           <button
@@ -755,6 +779,9 @@ export default function Plan({ onLoggedOut }) {
         {(handle) => (
           <>
         <div className="plan-row section-head">
+          {weekCell(node)}
+          {dateCells(node, true)}
+          <div className="section-band">
           {handle}
           <button
             type="button"
@@ -812,6 +839,7 @@ export default function Plan({ onLoggedOut }) {
               </span>
             </>
           )}
+          </div>
         </div>
 
         {!hidden && (

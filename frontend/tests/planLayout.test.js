@@ -259,7 +259,7 @@ describe('planRows несёт id — иначе сшивать не с чем', 
   })
 })
 
-describe('разделители недель', () => {
+describe('скобка недели', () => {
   /** Лента с настоящими неделями: по уроку в понедельник, среду и пятницу. */
   const weeks = (count) =>
     Array.from({ length: count }, (_, index) => {
@@ -278,76 +278,70 @@ describe('разделители недель', () => {
       }
     })
 
-  const weekMarks = (rows, ribbon, today = null) =>
-    stitchLayout(rows, ribbon, today)
-      .flatMap((row) => row.before ?? [])
-      .filter((mark) => mark.kind === 'week')
+  const brackets = (rows, ribbon) =>
+    stitchLayout(rows, ribbon).map((row) =>
+      row.week
+        ? [row.week.number, row.week.first, row.week.label, row.week.last]
+        : null,
+    )
 
-  it('по разделителю на неделю, с числом уроков и границами', () => {
+  it('строка знает свою неделю, края группы и где подпись', () => {
     const rows = [lesson(1), lesson(2), lesson(3), lesson(4), lesson(5)]
 
-    assert.deepEqual(weekMarks(rows, weeks(6)), [
-      {
-        kind: 'week',
-        number: 1,
-        start: '2026-09-07',
-        end: '2026-09-11',
-        lessons: 3,
-      },
-      {
-        kind: 'week',
-        number: 2,
-        start: '2026-09-14',
-        end: '2026-09-16',
-        lessons: 2,
-      },
+    assert.deepEqual(brackets(rows, weeks(6)), [
+      [1, true, false, false],
+      [1, false, true, false], // подпись — на средней строке группы
+      [1, false, false, true],
+      [2, true, true, false],
+      [2, false, false, true],
     ])
   })
 
-  it('короткая неделя видна по числу уроков', () => {
-    // в ленте только два урока второй недели: третий выпал на праздник
-    const ribbon = weeks(6).filter((slot) => slot.date !== '2026-09-18')
-    const rows = [lesson(1), lesson(2), lesson(3), lesson(4), lesson(5)]
+  it('неделя строкой не является: черт перед строками не прибавилось', () => {
+    const rows = stitchLayout([lesson(1), lesson(2)], weeks(3))
 
     assert.deepEqual(
-      weekMarks(rows, ribbon).map((mark) => mark.lessons),
-      [3, 2],
+      rows.flatMap((row) => row.before.map((mark) => mark.kind)),
+      [],
     )
   })
 
-  it('неделя целиком на каникулах разделителя не получает', () => {
-    // второй недели в ленте нет вовсе: уроков в ней не было
-    const ribbon = weeks(9).filter((slot) => slot.week !== 2)
+  it('заголовок темы попадает в неделю своих уроков и скобку не рвёт', () => {
+    const rows = [lesson(1), section(10), lesson(2, 10), lesson(3, 10)]
+
+    assert.deepEqual(
+      brackets(rows, weeks(3)).map((week) => week[0]),
+      [1, 1, 1, 1],
+    )
+    // тема стоит внутри группы, а не открывает свою
+    assert.equal(brackets(rows, weeks(3))[1][1], false)
+  })
+
+  it('тема на границе недель уходит к той, что под ней', () => {
+    const rows = [lesson(1), lesson(2), lesson(3), section(10), lesson(4, 10)]
+
+    assert.deepEqual(
+      brackets(rows, weeks(6)).map((week) => week[0]),
+      [1, 1, 1, 2, 2],
+    )
+  })
+
+  it('неделя целиком на каникулах номера не занимает — счёт идёт подряд', () => {
+    // второй недели в ленте нет вовсе, и сервер прислал 1 и 2, а не 1 и 3
+    const ribbon = weeks(9)
+      .filter((slot) => slot.week !== 2)
+      .map((slot) => ({ ...slot, week: slot.week === 3 ? 2 : slot.week }))
     const rows = [lesson(1), lesson(2), lesson(3), lesson(4), lesson(5), lesson(6)]
 
     assert.deepEqual(
-      weekMarks(rows, ribbon).map((mark) => mark.number),
-      [1, 3],
+      brackets(rows, ribbon).map((week) => week[0]),
+      [1, 1, 1, 2, 2, 2],
     )
   })
 
-  it('уроку без слота недели не достаётся', () => {
+  it('уроку без слота скобка не достаётся', () => {
     const rows = [lesson(1), lesson(2), lesson(3), lesson(4)]
 
-    assert.deepEqual(
-      weekMarks(rows, weeks(3)).map((mark) => mark.lessons),
-      [3],
-    )
-  })
-
-  it('порядок черт: терм, каникулы, неделя, сегодня', () => {
-    const ribbon = weeks(3)
-    ribbon[0].term = { id: 1, name: '1 четверть', start: '2026-09-01', end: '2026-10-25' }
-    ribbon[0].break_before = {
-      title: 'каникулы',
-      start: '2026-09-01',
-      end: '2026-09-06',
-    }
-    const rows = stitchLayout([lesson(1), lesson(2)], ribbon, '2026-09-07')
-
-    assert.deepEqual(
-      rows[0].before.map((mark) => mark.kind),
-      ['term', 'break', 'week', 'today'],
-    )
+    assert.equal(brackets(rows, weeks(3)).at(-1), null)
   })
 })

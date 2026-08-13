@@ -361,7 +361,7 @@
       "weeks": "Weeks"
     },
     "today": "TODAY",
-    "week": "Week {{number}}"
+    "week": "wk {{number}}"
   },
   "calendar": {
     "title": "School year",

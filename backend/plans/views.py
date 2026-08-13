@@ -179,13 +179,14 @@ class PlanNodeViewSet(TeacherScopedViewSet):
             kind=DayException.Kind.VACATION
         ).order_by("start_date")
 
+        # учебные дни года нужны ради нумерации недель: каникулярная неделя
+        # номера не получает, и счёт идёт по занятиям, а не по календарю
+        study = [day.date for day in course.year.build_days() if day.is_study]
+
         return Response(
             {
                 "slots": services.slot_ribbon(
-                    list(slots),
-                    course.year.terms.all(),
-                    breaks,
-                    year_start=course.year.start_date,
+                    list(slots), course.year.terms.all(), breaks, study_days=study
                 )
             }
         )

@@ -29,6 +29,12 @@
   --modal-gap: 0.75rem;
   /* высота контрола, стоящего в строке с другими */
   --control-height: 2.25rem;
+  /* один отступ вложенности: на него сдвинут урок внутри темы */
+  --plan-indent: 1.25rem;
+  /* зазор между ячейками строки плана — он же часть отступа вложенности */
+  --plan-row-gap: 0.4rem;
+  /* левая колонка: скобка недели и дата */
+  --plan-week-width: 3rem;
 }
 
 body {
@@ -1638,9 +1644,25 @@ button.link:hover:not(:disabled) {
  * Раньше он выглядел обычной строкой с теми же кнопками, и границы блока
  * не читались вовсе: сорок строк подряд сливались в одну ленту.
  */
+/* горизонтальные отступы те же, что у строки урока: иначе ручка темы
+   съезжала бы на них относительно ручек уроков */
 .plan-row.section-head {
-  padding: 0.25rem 0.4rem;
-  background: #f0f2f5;
+  padding: 0.35rem 0.4rem 0.05rem;
+  background: none;
+}
+
+/* заливка — только на содержимом: слева от неё колонка недели и даты, и
+   полоса во всю ширину накрыла бы их */
+.section-band {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  align-items: center;
+  gap: var(--plan-row-gap);
+  /* слева отступа нет: ручка темы задаёт левый край правой колонки, и
+     отступ сдвинул бы её относительно ручек уроков */
+  padding: 0.1rem 0.4rem 0.1rem 0;
+  background: #eef0f4;
   border-radius: 4px;
 }
 
@@ -1831,15 +1853,17 @@ button.link:hover:not(:disabled) {
   display: flex;
   flex-wrap: nowrap;
   align-items: center;
-  gap: 0.4rem;
+  gap: var(--plan-row-gap);
   padding: 0.1rem 0.4rem;
   line-height: 1.4;
   border-radius: 4px;
 }
 
+/* строки вплотную: скобка недели идёт через них сплошной линией, а зазор
+   разорвал бы её на пунктир */
 .plan > .plan-row,
 .plan-section {
-  margin-bottom: 0.15rem;
+  margin-bottom: 0;
 }
 
 .plan-row:hover {
@@ -1855,6 +1879,64 @@ button.link:hover:not(:disabled) {
  * задана в rem, а не по содержимому: «14.10» и «3.11» иначе давали бы
  * разные колонки на соседних строках.
  */
+/*
+ * Скобка недели — левее даты, во всю высоту группы.
+ *
+ * Строкой неделя была бы десятью лишними строками на сорока уроках, а
+ * группировка нужна вся: номер недели и то, где она кончается. Поэтому
+ * подпись на средней строке группы, линия — сегментами по строкам, а
+ * вертикального места ноль.
+ */
+.plan-weekmark {
+  position: relative;
+  flex: 0 0 auto;
+  align-self: stretch;
+  width: var(--plan-week-width);
+}
+
+/* подпись прижата к линии справа: слева от неё край страницы, и болтаться
+   ей там незачем */
+.week-label {
+  position: absolute;
+  top: 50%;
+  right: 0.7rem;
+  font-size: 0.7rem;
+  color: #9aa0a6;
+  white-space: nowrap;
+  transform: translateY(-50%);
+}
+
+.week-line {
+  position: absolute;
+  top: 0;
+  right: 0.35rem;
+  bottom: 0;
+  width: 2px;
+  background: #dadce0;
+}
+
+.week-line.first {
+  top: 0.15rem;
+  border-radius: 2px 2px 0 0;
+}
+
+.week-line.last {
+  bottom: 0.15rem;
+  border-radius: 0 0 2px 2px;
+}
+
+/*
+ * Ячейка отступа вложенности.
+ *
+ * Ширина — отступ **минус зазор строки**: зазор строка добавит сама, и в
+ * сумме урок сдвинут относительно темы ровно на `--plan-indent`. Иначе два
+ * столбца ручек стояли бы на разном расстоянии, и это было бы видно.
+ */
+.plan-indent {
+  flex: 0 0 auto;
+  width: calc(var(--plan-indent) - var(--plan-row-gap));
+}
+
 /* дата и день недели — первым столбцом, как в раскладке: взгляд идёт по
    левому краю, а не прыгает от названия к правому краю строки */
 .plan-date {
@@ -1923,6 +2005,16 @@ button.link:hover:not(:disabled) {
   align-self: flex-end;
   margin-top: -0.25rem;
   font-size: 0.85rem;
+}
+
+/* номер — колонка постоянной ширины с выключкой вправо: иначе двузначный
+   номер сдвигал бы название на пиксель-другой относительно однозначного */
+.plan-row .plan-number {
+  flex: 0 0 auto;
+  width: 1.6rem;
+  font-size: 0.8rem;
+  color: #80868b;
+  text-align: right;
 }
 
 /* название не растягивается: на широком экране пометки и заметка должны
@@ -2014,8 +2106,10 @@ button.link:hover:not(:disabled) {
   background: none;
 }
 
+/* вложенность рисует не список, а ячейка отступа внутри строки: иначе
+   сдвинулась бы и левая колонка с датами */
 .plan-children {
-  margin: 0.2rem 0 0 1.6rem;
+  margin: 0;
 }
 
 .plan-children .empty {

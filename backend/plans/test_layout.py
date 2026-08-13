@@ -687,6 +687,29 @@ class SlotRibbonTests(LayoutApiTestCase):
         self.assertEqual(rows[7]["week"], 2)
         self.assertEqual(rows[7]["week_start"], str(MONDAY + timedelta(days=7)))
 
+    def test_a_week_lost_to_a_break_does_not_take_a_number(self):
+        """
+        Счёт идёт по учебным неделям: неделя, целиком выпавшая на каникулы,
+        номера не получает, и следующая за ней не «третья по календарю», а
+        вторая по занятиям.
+        """
+        year = self.course.year
+        year.start_date = MONDAY
+        year.save(update_fields=["start_date"])
+        DayException.objects.create(
+            year=year,
+            start_date=MONDAY + timedelta(days=7),
+            end_date=MONDAY + timedelta(days=13),
+            kind=DayException.Kind.VACATION,
+            title="каникулы",
+        )
+        self.add_slot(MONDAY)
+        self.add_slot(MONDAY + timedelta(days=14))
+
+        rows = self.ribbon().json()["slots"]
+
+        self.assertEqual([row["week"] for row in rows], [1, 2])
+
     def test_a_year_starting_midweek_still_has_a_first_week(self):
         """Год начался во вторник — эта неделя первая, следующая вторая."""
         year = self.course.year

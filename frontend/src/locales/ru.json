@@ -373,7 +373,7 @@
       "weeks": "Недели"
     },
     "today": "СЕГОДНЯ",
-    "week": "Неделя {{number}}"
+    "week": "нед {{number}}"
   },
   "calendar": {
     "title": "Учебный год",
