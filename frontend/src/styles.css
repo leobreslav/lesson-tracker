@@ -1,3 +1,34 @@
+/*
+ * Карточки и расстояние между ними.
+ *
+ * Значения собраны здесь, потому что раньше их не было нигде: карточка
+ * (`.panel`) не несла никакого внешнего отступа вовсе, и две подряд
+ * слипались — их разделяло только то, что случайно оказывалось между ними.
+ * Контейнеры, у которых gap был (`.cards`, `.months`, `.calendar-side`),
+ * сговорились на 1rem, так что новое значение не изобретается: оно просто
+ * получает имя.
+ *
+ * Уровней ровно два. Карточка страницы — белая, с тенью и радиусом 8;
+ * строка внутри неё — легче: радиус 6 и тень слабее, иначе список внутри
+ * карточки читался бы как десяток карточек.
+ */
+:root {
+  --card-gap: 1rem;
+  --card-pad: 1rem;
+  /* плотные карточки-сетки: календарный месяц и недельная сетка, где
+     каждые лишние 0.25rem съедают колонку */
+  --card-pad-tight: 0.75rem;
+  --card-radius: 8px;
+  --card-shadow: 0 1px 4px rgba(0, 0, 0, 0.12);
+  --row-radius: 6px;
+  --row-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  --row-gap: 0.4rem;
+  /* ритм внутри карточки: заголовок, подсказка, форма, список */
+  --panel-gap: 0.5rem;
+  /* и внутри окна: полей больше, воздуха тоже нужно больше */
+  --modal-gap: 0.75rem;
+}
+
 body {
   margin: 0;
   font-family: system-ui, sans-serif;
@@ -89,7 +120,7 @@ body {
   list-style: none;
   background: #fff;
   border: 1px solid #e0e0e0;
-  border-radius: 6px;
+  border-radius: var(--row-radius);
   box-shadow: 0 6px 18px rgba(0, 0, 0, 0.14);
 }
 
@@ -189,8 +220,8 @@ body {
   margin: 2rem auto;
   padding: 2rem;
   background: #fff;
-  border-radius: 8px;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12);
+  border-radius: var(--card-radius);
+  box-shadow: var(--card-shadow);
 }
 
 h1 {
@@ -311,7 +342,7 @@ form .success {
 /* --- главная: шаги первого входа --- */
 
 .steps {
-  margin: 0 0 1.5rem;
+  margin: 0;
   padding: 0;
   list-style: none;
   counter-reset: step;
@@ -323,12 +354,14 @@ form .success {
   gap: 0.75rem;
   padding: 0.75rem 1rem;
   background: #fff;
+  /* рамка вместо тени намеренно: это чек-лист, а не набор карточек, и
+     текущий шаг обводится синим — поверх тени это читалось бы грязно */
   border: 1px solid #e6e6e6;
-  border-radius: 8px;
+  border-radius: var(--card-radius);
 }
 
 .step + .step {
-  margin-top: 0.5rem;
+  margin-top: var(--row-gap);
 }
 
 .step-mark {
@@ -402,7 +435,7 @@ form .success {
 }
 
 .class-summary {
-  margin: 0 0 1.5rem;
+  margin: 0;
   padding: 0;
   list-style: none;
 }
@@ -435,12 +468,8 @@ form .success {
   color: #b00020;
 }
 
-.demo-panel {
-  margin-top: 1.5rem;
-}
-
 .empty-state {
-  margin: 1rem 0;
+  margin: 0;
 }
 
 .empty-state .hint {
@@ -455,10 +484,27 @@ form .success {
 
 /* --- широкая страница --- */
 
+/*
+ * Страница — колонка с одним расстоянием между всем, что в ней лежит.
+ *
+ * Ритм задаётся здесь и только здесь: карточка, добавленная завтра, окажется
+ * отделена сама, без строчки margin рядом с ней. Поэтому же собственные
+ * вертикальные поля прямых детей обнулены — иначе они складывались бы с gap
+ * и один и тот же зазор был бы то 1rem, то 2.5rem. Внутри карточек всё
+ * по-прежнему при своих отступах.
+ */
 .page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--card-gap);
   max-width: 72rem;
   margin: 2rem auto;
   padding: 0 1.5rem 3rem;
+}
+
+.page > * {
+  margin-top: 0;
+  margin-bottom: 0;
 }
 
 .page.narrow {
@@ -472,11 +518,30 @@ form .success {
   gap: 1rem;
 }
 
+.page-header h1 {
+  margin: 0;
+}
+
+/*
+ * Карточка — такая же колонка, как страница, только шаг мельче.
+ *
+ * Иначе внутренние отступы жили бы на самих блоках, а они односторонние:
+ * `.add-form` носила margin-bottom, и стоило поставить её ПОД список, как
+ * она к нему прилипала. Здесь порядок блоков ни на что не влияет.
+ */
 .panel {
-  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: var(--panel-gap);
+  padding: var(--card-pad);
   background: #fff;
-  border-radius: 8px;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12);
+  border-radius: var(--card-radius);
+  box-shadow: var(--card-shadow);
+}
+
+.panel > * {
+  margin-top: 0;
+  margin-bottom: 0;
 }
 
 .panel h2 {
@@ -485,8 +550,13 @@ form .success {
 }
 
 .panel h3 {
-  margin: 0 0 0.5rem;
+  margin: 0;
   font-size: 1rem;
+}
+
+/* карточка-счётчик: число и подпись — одно целое, им ритм не нужен */
+.panel.card-stat {
+  gap: 0.15rem;
 }
 
 /* --- выбор года и формы --- */
@@ -495,7 +565,6 @@ form .success {
   display: flex;
   flex-wrap: wrap;
   gap: 0.5rem;
-  margin-bottom: 1rem;
 }
 
 button.chip {
@@ -521,11 +590,10 @@ button.chip.active {
   flex-wrap: wrap;
   gap: 0.75rem;
   align-items: flex-end;
-  margin-bottom: 1rem;
-  padding: 1rem;
+  padding: var(--card-pad);
   background: #fff;
-  border-radius: 8px;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12);
+  border-radius: var(--card-radius);
+  box-shadow: var(--card-shadow);
 }
 
 .inline-form .field {
@@ -540,7 +608,7 @@ button.chip.active {
   /* padding нулевой: только так клик по фону отличим от клика по форме */
   padding: 0;
   border: none;
-  border-radius: 8px;
+  border-radius: var(--card-radius);
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.25);
 }
 
@@ -552,7 +620,14 @@ button.chip.active {
 .modal-body form {
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
+  gap: var(--modal-gap);
+}
+
+/* как и на странице: ритм задаёт контейнер, а не сами блоки */
+.modal-body > *,
+.modal-body form > * {
+  margin-top: 0;
+  margin-bottom: 0;
 }
 
 .modal-body {
@@ -623,7 +698,6 @@ button.chip.active {
 .add-form {
   display: flex;
   gap: 0.5rem;
-  margin-bottom: 1rem;
 }
 
 .add-form input {
@@ -655,12 +729,12 @@ button.chip.active {
   gap: 0.5rem;
   padding: 0.6rem 0.75rem;
   background: #fff;
-  border-radius: 6px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  border-radius: var(--row-radius);
+  box-shadow: var(--row-shadow);
 }
 
 .class-list li + li {
-  margin-top: 0.4rem;
+  margin-top: var(--row-gap);
 }
 
 .class-list input {
@@ -712,8 +786,8 @@ button.chip.active {
   flex-direction: column;
   padding: 0.6rem 0.75rem;
   background: #fff;
-  border-radius: 6px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  border-radius: var(--row-radius);
+  box-shadow: var(--row-shadow);
 }
 
 .summary-cards .value {
@@ -735,7 +809,7 @@ button.chip.active {
   margin-top: 0.8rem;
   padding: 0.5rem 0.7rem;
   background: #e8f0fe;
-  border-radius: 6px;
+  border-radius: var(--row-radius);
 }
 
 /* строка человека или курса: несколько рядов внутри одной карточки —
@@ -749,12 +823,12 @@ button.chip.active {
 .people-list > li {
   padding: 0.6rem 0.75rem;
   background: #fff;
-  border-radius: 6px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  border-radius: var(--row-radius);
+  box-shadow: var(--row-shadow);
 }
 
 .people-list > li + li {
-  margin-top: 0.4rem;
+  margin-top: var(--row-gap);
 }
 
 .people-list .row {
@@ -817,7 +891,7 @@ button.link.hint.level {
 .empty-inline {
   padding: 0.6rem 0.75rem;
   background: #f8f9fa;
-  border-radius: 6px;
+  border-radius: var(--row-radius);
 }
 
 .preset-row {
@@ -891,20 +965,20 @@ button.link:hover:not(:disabled) {
   flex: 0 1 18rem;
   display: flex;
   flex-direction: column;
-  gap: 1rem;
+  gap: var(--card-gap);
 }
 
 .months {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr));
-  gap: 1rem;
+  gap: var(--card-gap);
 }
 
 .month {
-  padding: 0.75rem;
+  padding: var(--card-pad-tight);
   background: #fff;
-  border-radius: 8px;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12);
+  border-radius: var(--card-radius);
+  box-shadow: var(--card-shadow);
 }
 
 .month h3 {
@@ -1121,7 +1195,7 @@ button.link:hover:not(:disabled) {
   gap: 0.75rem;
   padding: 0.4rem 0.5rem;
   background: #f4f6f9;
-  border-radius: 6px;
+  border-radius: var(--row-radius);
 }
 
 .term-head .hint {
@@ -1147,8 +1221,7 @@ button.link:hover:not(:disabled) {
 .cards {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
-  gap: 1rem;
-  margin-bottom: 1.5rem;
+  gap: var(--card-gap);
 }
 
 .card-stat h2 {
@@ -1337,7 +1410,7 @@ button.link:hover:not(:disabled) {
   padding: 0.35rem 0.4rem;
   background: #fff;
   border: 1px solid #dcdcdc;
-  border-radius: 8px;
+  border-radius: var(--card-radius);
 }
 
 .section-head .title {
@@ -1380,7 +1453,7 @@ button.link.toggle {
   text-align: center;
   background: #fafafa;
   border: 1px dashed #c6c6c6;
-  border-radius: 6px;
+  border-radius: var(--row-radius);
   cursor: pointer;
 }
 
@@ -1498,10 +1571,9 @@ button.link.toggle {
 
 /* цена импорта: что именно будет потеряно */
 .csv-cost {
-  margin: 0.6rem 0;
   padding: 0.5rem 0.7rem;
   border: 1px solid #e0e0e0;
-  border-radius: 6px;
+  border-radius: var(--row-radius);
   font-size: 0.9rem;
 }
 
@@ -1678,11 +1750,10 @@ button.link.handle:hover:not(:disabled) {
   flex-wrap: wrap;
   align-items: center;
   gap: 0.75rem;
-  margin-bottom: 1rem;
   padding: 0.6rem 0.9rem;
   background: #fff;
-  border-radius: 8px;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12);
+  border-radius: var(--card-radius);
+  box-shadow: var(--card-shadow);
 }
 
 .selection-bar span {
@@ -1747,10 +1818,10 @@ label.checkbox {
 .week-grid {
   display: grid;
   gap: 2px;
-  padding: 0.75rem;
+  padding: var(--card-pad-tight);
   background: #fff;
-  border-radius: 8px;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12);
+  border-radius: var(--card-radius);
+  box-shadow: var(--card-shadow);
 }
 
 .day-head {
@@ -2085,7 +2156,7 @@ button.day-head:hover {
   margin: 0 0 0 auto;
   max-height: 100vh;
   height: 100vh;
-  border-radius: 8px 0 0 8px;
+  border-radius: var(--card-radius) 0 0 var(--card-radius);
 }
 
 .modal-body.sheet {
@@ -2153,7 +2224,7 @@ button.day-head:hover {
 
 .lesson-field {
   border: 1px solid #e6e6e6;
-  border-radius: 6px;
+  border-radius: var(--row-radius);
   background: #fafafa;
 }
 
@@ -2333,7 +2404,7 @@ button.day-head:hover {
   font-size: 0.85rem;
   color: #777;
   border: 2px dashed #d0d0d0;
-  border-radius: 6px;
+  border-radius: var(--row-radius);
 }
 
 .dropzone.over {

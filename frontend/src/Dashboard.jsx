@@ -223,7 +223,7 @@ export default function Dashboard({ user, status, onStatusChange, onLoggedOut })
 
       {/* the demo builds a year and courses, which belong to the school */}
       {status.is_school_admin && (
-      <section className="panel demo-panel">
+      <section className="panel">
         {empty ? (
           <>
             <h3>{t('dashboard.demo.title')}</h3>

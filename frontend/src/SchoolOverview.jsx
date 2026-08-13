@@ -29,13 +29,20 @@ export default function SchoolOverview() {
   )
 
   useEffect(() => {
-    fetchSchoolOverview().then(setData).catch(handleError)
+    fetchSchoolOverview()
+      .then((result) => {
+        setData(result)
+        // имя берём отсюда, а не из профиля: страницу рисуют раньше, чем
+        // /api/me/ ответит, и поле оставалось пустым
+        setName(result.school.name)
+      })
+      .catch(handleError)
   }, [handleError])
 
   const rename = (event) => {
     event.preventDefault()
     const value = name.trim()
-    if (!value || value === user?.school?.name || busy) return
+    if (!value || value === data.school.name || busy) return
 
     setBusy(true)
     setError(null)
@@ -84,7 +91,7 @@ export default function SchoolOverview() {
           />
           <button
             type="submit"
-            disabled={busy || !name.trim() || name.trim() === user?.school?.name}
+            disabled={busy || !name.trim() || name.trim() === data.school.name}
           >
             {busy ? t('common.saving') : t('common.save')}
           </button>
