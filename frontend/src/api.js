@@ -419,15 +419,18 @@ export const openAttachment = async (id) => {
   window.location.assign(url)
 }
 
-export const fetchLayout = (classId, period = {}) =>
-  request(`/api/plan/layout/?${new URLSearchParams({ course: classId, ...period })}`)
+/**
+ * Как идут дела по всем курсам сразу — страница «Раскладка».
+ *
+ * Один запрос на страницу и ни одного расчёта на клиенте: числа считает тот
+ * же код, что и остальные ответы про раскладку, поэтому разойтись с планом
+ * они не могут.
+ */
+export const fetchProgress = () => request('/api/plan/progress/')
 
 /** Topics across every class for a period: slot_id → the plan lesson. */
 export const fetchLayoutAgenda = (start, end) =>
   request(`/api/plan/layout/agenda/?${new URLSearchParams({ start, end })}`)
-
-export const fetchLayoutSummary = (classId) =>
-  request(`/api/plan/layout/summary/?course=${encodeURIComponent(classId)}`)
 
 export const movePlanNodeTo = (id, parent, position) =>
   request(`/api/plan/${id}/move_to/`, {

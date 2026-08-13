@@ -7,24 +7,19 @@ import { PEOPLE, expect, ready, test } from './harness.js'
 
 const MONDAY = '2026-09-07'
 
-async function openLayout(page, course) {
-  await page.goto('/layout')
+async function openPlan(page, course) {
+  await page.goto('/plan')
   await ready(page)
   await page.getByRole('button', { name: course, exact: true }).click()
-  await expect(page.locator('.layout-feed').first()).toBeVisible()
+  await expect(page.locator('.plan-cards')).toBeVisible()
 }
 
-/** The first rows of the feed, as {date, slot, title}. */
-async function feed(page, count = 6) {
-  return page.locator('.layout-row').evaluateAll(
-    (rows, limit) =>
-      rows.slice(0, limit).map((row) => ({
-        date: row.querySelector('.layout-date')?.textContent.trim() ?? '',
-        slot: row.querySelector('.slot')?.textContent.trim() ?? '',
-        title: row.querySelector('.layout-title')?.textContent.trim() ?? '',
-      })),
-    count,
-  )
+/** Даты первых строк плана — по ним и видно, что раскладка съехала. */
+async function dates(page, count = 4) {
+  const all = await page
+    .locator('.plan-row.lesson .plan-date')
+    .evaluateAll((cells) => cells.map((cell) => cell.textContent.trim()))
+  return all.slice(0, count)
 }
 
 /** The n-th lesson of a course that is still standing, straight from the API. */
@@ -38,20 +33,19 @@ async function nthSlot(api, courseId, index) {
   return live[index]
 }
 
-test('отмена урока сдвигает даты в раскладке', async ({ page, signIn, api }) => {
+test('отмена урока сдвигает даты в плане', async ({ page, signIn, api }) => {
   const teacher = await api(PEOPLE.ivanova)
   const courses = await teacher.get('/api/courses/')
   const algebra = courses.body.find((item) => item.name === 'Grade 6 Algebra')
 
   await signIn(PEOPLE.ivanova)
-  await openLayout(page, 'Grade 6 Algebra')
+  await openPlan(page, 'Grade 6 Algebra')
 
-  const before = await feed(page)
+  const before = await dates(page)
   expect(before.length).toBeGreaterThan(3)
 
-  // cancel the earliest lesson of the course — the one the first topic sits
-  // on. The seeded year starts before the first full week, so «the Monday of
-  // week one» is not it
+  // cancel the earliest lesson of the course. The seeded year starts before
+  // the first full week, so «the Monday of week one» is not it
   const first = await nthSlot(teacher, algebra.id, 0)
   await page.goto('/schedule')
   await ready(page)
@@ -67,23 +61,37 @@ test('отмена урока сдвигает даты в раскладке', 
   await menu.getByRole('button', { name: 'Отменить урок' }).click()
   await expect(menu).toBeHidden()
 
-  // a cancelled lesson leaves the layout entirely, so the whole tape slides
-  // one date earlier: the first topic now falls on what was the second date
-  await openLayout(page, 'Grade 6 Algebra')
-  const after = await feed(page)
+  // отменённый урок уходит из раскладки целиком, и вся лента съезжает на
+  // одну дату назад: первый урок плана встаёт на вторую дату
+  await openPlan(page, 'Grade 6 Algebra')
+  const after = await dates(page)
 
-  expect(after[0].date).toBe(before[1].date)
-  expect(after[0].title).toBe(before[0].title)
-  expect(after[1].title).toBe(before[1].title)
+  expect(after[0]).toBe(before[1])
+  expect(after[1]).toBe(before[2])
 })
 
-test('в сводке раскладки виден баланс', async ({ page, signIn }) => {
+test('раскладка показывает строку на курс и подробности по нажатию', async ({
+  page,
+  signIn,
+}) => {
   await signIn(PEOPLE.ivanova)
-  await openLayout(page, 'Grade 6 Algebra')
+  await page.goto('/layout')
+  await ready(page)
 
-  const cards = page.locator('.card-stat')
-  await expect(cards.first()).toBeVisible()
-  await expect(page.locator('.cards')).toContainText('слотов осталось')
+  // строка на курс: где я, темп, баланс текущей четверти
+  const rows = page.locator('.progress-list > li')
+  expect(await rows.count()).toBeGreaterThan(1)
+  await expect(rows.first().locator('.where')).toContainText('урок')
+  await expect(rows.first().locator('.pace')).not.toBeEmpty()
+
+  // ленты уроков здесь больше нет — она в плане
+  await expect(page.locator('.layout-feed, .layout-row')).toHaveCount(0)
+
+  await rows.first().locator('.progress-head').click()
+  const details = rows.first().locator('.progress-details')
+  await expect(details.locator('[data-card="pace"]')).toContainText('равномерного')
+  await expect(details.locator('.terms-table tbody tr').first()).toBeVisible()
+  await expect(details.locator('.progress-counters')).toContainText('отменённых')
 })
 
 test('второй учитель не видит ни уроков, ни планов первого', async ({

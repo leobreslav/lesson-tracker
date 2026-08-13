@@ -6,7 +6,6 @@ import { describe, it } from 'node:test'
 import {
   applyMove,
   countBlocks,
-  layoutBlocks,
   planRows,
 } from '../src/planLogic.js'
 
@@ -152,42 +151,3 @@ describe('пересчёт после правок дерева', () => {
   })
 })
 
-describe('layoutBlocks', () => {
-  const entry = (title, sectionId, date, term) => ({
-    status: date ? 'matched' : 'no_slot',
-    slot: date ? { id: date, date, lesson_number: 1, is_extra: false } : null,
-    plan_row: { id: 1, title: 'Урок', number: 1, section_id: sectionId, section_title: title },
-    term_id: term ? 1 : null,
-    term_name: term ?? null,
-  })
-
-  it('считает уроки, даты и непоместившиеся', () => {
-    const { blocks, loose } = layoutBlocks([
-      entry('Тригонометрия', 1, '2026-10-14', '1 четверть'),
-      entry('Тригонометрия', 1, '2026-11-21', '2 четверть'),
-      entry('Тригонометрия', 1, null),
-      { status: 'no_plan', slot: { id: 9, date: '2026-12-01', lesson_number: 1 }, plan_row: null, term_id: null, term_name: null },
-    ])
-
-    assert.equal(blocks.length, 1)
-    assert.equal(blocks[0].lessons, 3)
-    assert.equal(blocks[0].missing, 1)
-    assert.equal(blocks[0].first, '2026-10-14')
-    assert.equal(blocks[0].last, '2026-11-21')
-    assert.deepEqual(blocks[0].terms, ['1 четверть', '2 четверть'])
-    assert.equal(loose, 0)
-  })
-
-  it('уроки вне тем идут в «вне блоков»', () => {
-    const { blocks, loose } = layoutBlocks([
-      entry(null, null, '2026-10-14', '1 четверть'),
-      entry('Векторы', 2, '2026-10-15', '1 четверть'),
-    ])
-
-    assert.equal(loose, 1)
-    assert.deepEqual(
-      blocks.map((b) => [b.title, b.lessons]),
-      [['Векторы', 1]],
-    )
-  })
-})

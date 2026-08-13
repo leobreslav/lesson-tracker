@@ -161,6 +161,48 @@ class PlanNodeViewSet(TeacherScopedViewSet):
             course.year.terms.all(),
         )
 
+    @action(detail=False, methods=["get"])
+    def progress(self, request):
+        """
+        Как идут дела **по всем курсам сразу** — экран «Раскладка».
+
+        План всегда про один курс, раскладка — про все: учитель ведёт пять
+        курсов и хочет одним взглядом понять, где проблема. Считает всё то
+        же `build_layout`, что и остальные ответы про раскладку, поэтому
+        числа не могут разойтись с планом.
+        """
+        courses = (
+            Course.objects.for_teacher(request.user)
+            .select_related("year")
+            .order_by("year__start_date", "name")
+        )
+
+        rows = []
+        for course in courses:
+            slots = LessonSlot.objects.filter(
+                teacher=request.user, course=course, is_cancelled=False
+            ).order_by("date", "lesson_number")
+            cancelled = LessonSlot.objects.filter(
+                teacher=request.user, course=course, is_cancelled=True
+            )
+            terms = list(course.year.terms.all())
+            entries = services.build_layout(
+                services.flatten_lessons(self.owner_of(course)), list(slots), terms
+            )
+
+            rows.append(
+                {
+                    "id": course.pk,
+                    "name": course.name,
+                    "year": course.year.name,
+                    **services.course_progress(
+                        entries, timezone.localdate(), terms, cancelled
+                    ),
+                }
+            )
+
+        return Response({"courses": rows})
+
     @action(detail=False, methods=["get"], url_path="layout/slots",
             url_name="layout-slots")
     def layout_slots(self, request):

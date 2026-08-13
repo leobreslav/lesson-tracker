@@ -147,47 +147,6 @@ export function countBlocks(rows) {
   return { blocks, byId, loose }
 }
 
-/**
- * The same over layout entries, plus the block's dates, the lessons that
- * did not fit and the terms the block runs through.
- */
-export function layoutBlocks(entries) {
-  const rows = entries
-    .filter((entry) => entry.plan_row)
-    .map((entry) => ({
-      is_section: false,
-      section_id: entry.plan_row.section_id ?? null,
-      section_title: entry.plan_row.section_title ?? null,
-    }))
-
-  const { blocks, byId, loose } = countBlocks(rows)
-
-  blocks.forEach((block) => {
-    block.first = null
-    block.last = null
-    block.missing = 0
-    block.terms = []
-  })
-
-  entries.forEach((entry) => {
-    const id = entry.plan_row?.section_id ?? null
-    const block = id != null ? byId.get(id) : null
-    if (!block) return
-
-    if (entry.slot) {
-      block.first ??= entry.slot.date
-      block.last = entry.slot.date
-      if (entry.term_name && !block.terms.includes(entry.term_name)) {
-        block.terms.push(entry.term_name)
-      }
-    } else {
-      // a lesson of the block ran out of slots — it does not fit the year
-      block.missing += 1
-    }
-  })
-
-  return { blocks, byId, loose }
-}
 
 /**
  * Move a node and recompute the whole tree.

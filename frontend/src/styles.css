@@ -69,8 +69,6 @@ body {
 .tabular,
 .grade-list .level,
 .plan-number,
-.layout-date,
-.layout-row .slot,
 .row-head,
 .day,
 .summary-cards .value,
@@ -1447,41 +1445,6 @@ button.link:hover:not(:disabled) {
   border-radius: 4px;
 }
 
-/* блок терма в раскладке */
-.term-block {
-  margin-bottom: 1.5rem;
-  padding-bottom: 0.5rem;
-  border-bottom: 2px solid #e0e0e0;
-}
-
-.term-head {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 0.75rem;
-  padding: 0.4rem 0.5rem;
-  background: #f4f6f9;
-  border-radius: var(--row-radius);
-}
-
-.term-head .hint {
-  margin: 0;
-}
-
-.term-counters {
-  margin-left: auto;
-  font-size: 0.85rem;
-  color: #555;
-}
-
-.term-counters .good {
-  color: #1c7a34;
-}
-
-.term-counters .bad {
-  color: #b00020;
-}
-
 /* --- раскладка --- */
 
 .cards {
@@ -1507,110 +1470,161 @@ button.link:hover:not(:disabled) {
   color: #b00020;
 }
 
-.layout-feed {
+/*
+ * «Раскладка» — строка на курс и подробности под ней.
+ *
+ * Ленты уроков здесь больше нет: она уехала в план, где её правят. Осталось
+ * то, что отвечает на три вопроса за секунду — где я, успеваю ли, что
+ * дальше, — и по всем курсам сразу.
+ */
+.progress-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--card-gap);
   margin: 0;
   padding: 0;
   list-style: none;
 }
 
-.layout-row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
+/* строка курса — кнопка, поэтому вес селектора выше базового `button`:
+   иначе наведение красит её синим, как обычную кнопку */
+button.progress-head {
+  display: grid;
+  grid-template-columns: minmax(9rem, 1.2fr) minmax(10rem, 1.6fr) minmax(8rem, 1fr) minmax(8rem, 1fr);
   gap: 0.5rem;
-  padding: 0.35rem 0.5rem;
-  border-bottom: 1px solid #eee;
+  align-items: baseline;
+  width: 100%;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  background: none;
+  border: none;
+  cursor: pointer;
 }
 
-/* прошедшее приглушено — это только оформление, на расчёт не влияет */
-.layout-row.past {
-  opacity: 0.55;
+button.progress-head:hover:not(:disabled) {
+  background: #f8faff;
 }
 
-.layout-row.free .layout-title {
-  color: #888;
-  font-style: italic;
+.progress-head .course {
+  font-weight: 600;
 }
 
-.layout-row.extra {
-  background: #fdf6e6;
+.progress-head .where,
+.progress-head .term {
+  font-size: 0.9rem;
+  color: #5f6368;
 }
 
-.layout-date {
-  min-width: 5.5rem;
+.progress-head .pace {
+  font-size: 0.9rem;
+}
+
+.progress-head .pace.good,
+.terms-table .good,
+.progress-details .card-stat.good h2 {
+  color: #1c7a34;
+}
+
+.progress-head .pace.bad,
+.terms-table .bad,
+.progress-details .card-stat.bad h2 {
+  color: #b00020;
+}
+
+.progress-details {
+  display: flex;
+  flex-direction: column;
+  gap: var(--card-gap);
+  margin-top: var(--card-gap);
+  padding-top: var(--card-gap);
+  border-top: 1px solid #eee;
+}
+
+/* подробности лежат внутри карточки курса, и свои карточки им ни к чему */
+.progress-details .panel {
+  padding: 0;
+  box-shadow: none;
+}
+
+.progress-next {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.progress-next li {
+  display: grid;
+  grid-template-columns: 6rem 2rem 1fr auto;
+  gap: 0.5rem;
+  align-items: baseline;
+}
+
+.progress-next .when {
   font-size: 0.85rem;
-  color: #555;
+  color: #5f6368;
 }
 
-.layout-date em {
+.progress-next .when em {
   font-style: normal;
-  color: #999;
+  color: #9aa0a6;
 }
 
-.layout-row .slot {
-  min-width: 1.2rem;
-  text-align: center;
+.terms-table {
+  border-collapse: collapse;
+  width: 100%;
+  font-variant-numeric: lining-nums tabular-nums;
 }
 
-.layout-title {
-  flex: 1;
-  min-width: 10rem;
-}
-
-.layout-title .plan-number {
-  min-width: 0;
-  color: #999;
-}
-
-/* счётчик блока: приглушён и мельче названия, чтобы не спорить с ним */
-.block-count {
-  margin: 0 0 0 0.5rem;
-  font-size: 0.78rem;
-  font-weight: 400;
-  color: #8a8a8a;
-  text-transform: none;
-  letter-spacing: normal;
-}
-
-.layout-theme {
-  margin-top: 0.75rem;
-  padding: 0.25rem 0.5rem;
+.terms-table th {
   font-size: 0.8rem;
   font-weight: 600;
-  color: #555;
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
-  background: #f0f2f5;
-  border-radius: 4px;
+  color: #5f6368;
+  text-align: right;
 }
 
-/* черта «сегодня» */
-.layout-today {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  margin: 0.5rem 0;
-  font-size: 0.75rem;
-  color: #b00020;
-  text-transform: uppercase;
+.terms-table th:first-child {
+  text-align: left;
 }
 
-.layout-today::after {
-  content: '';
-  flex: 1;
-  height: 2px;
-  background: #b00020;
-  border-radius: 2px;
-}
-
-.leftovers {
-  margin-top: 1.5rem;
-  border-left: 3px solid #e57373;
-}
-
-.layout-row.leftover {
-  border-bottom: none;
+.terms-table td {
   padding: 0.2rem 0;
+  text-align: right;
+  border-top: 1px solid #f1f3f4;
+}
+
+.terms-table td:first-child {
+  text-align: left;
+}
+
+.terms-table td .hint {
+  margin-left: 0.5rem;
+  font-size: 0.75rem;
+}
+
+.progress-counters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 1.5rem;
+  margin: 0;
+  padding: 0;
+  font-size: 0.9rem;
+  color: #5f6368;
+  list-style: none;
+}
+
+.progress-counters b {
+  font-variant-numeric: lining-nums tabular-nums;
+  color: #202124;
+}
+
+.progress-counters .hint {
+  margin-left: 0.4rem;
+  font-size: 0.8rem;
 }
 
 /* --- учебный план --- */

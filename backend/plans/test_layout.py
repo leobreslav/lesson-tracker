@@ -8,6 +8,7 @@ from django.test import SimpleTestCase
 from django.urls import reverse
 from django.utils import timezone
 from schedule.models import Course, LessonSlot
+from schools.testing import assign, make_course
 
 from . import services
 from .models import PlanNode
@@ -729,3 +730,144 @@ class SlotRibbonTests(LayoutApiTestCase):
         self.client.credentials()
 
         self.assertEqual(self.ribbon().status_code, 401)
+
+
+class ProgressTests(LayoutApiTestCase):
+    """
+    Экран «Раскладка»: где курс идёт, успевает ли и что впереди.
+
+    Считает всё то же `build_layout`, что и остальные ответы про раскладку,
+    поэтому проверяется не арифметика сопоставления, а то, что поверх неё:
+    темп, текущий терм и счётчики, которых больше нигде нет.
+    """
+
+    def progress(self):
+        return self.client.get(reverse("plannode-progress"))
+
+    def courses(self):
+        return {row["name"]: row for row in self.progress().json()["courses"]}
+
+    def test_it_answers_for_every_course_at_once(self):
+        """План всегда про один курс, раскладка — про все."""
+        second = make_course(self.school, year=self.course.year, name="9А")
+        assign(self.user, second)
+        self.add_slot(course=second)
+
+        names = set(self.courses())
+
+        self.assertIn(self.course.name, names)
+        self.assertIn("9А", names)
+
+    def test_where_i_am_is_the_next_lesson(self):
+        self.fill_slots(9)
+
+        row = self.courses()[self.course.name]
+
+        self.assertEqual(row["lessons_total"], 7)
+        # год ещё не начался, поэтому «сейчас» — самый первый урок плана
+        self.assertEqual(row["current"]["number"], 1)
+        self.assertEqual(row["current"]["title"], "Синус суммы")
+        self.assertEqual(row["current"]["section_title"], "Тригонометрия")
+        self.assertEqual(row["done"], 0)
+
+    def test_the_next_lessons_come_with_dates(self):
+        self.fill_slots(9)
+
+        upcoming = self.courses()[self.course.name]["next"]
+
+        self.assertEqual(len(upcoming), 5)
+        self.assertEqual(upcoming[0]["date"], str(MONDAY))
+        self.assertEqual([row["number"] for row in upcoming], [1, 2, 3, 4, 5])
+
+    def test_pace_compares_with_an_even_spread(self):
+        """
+        Темп — не «сколько прошло», а «сколько прошло бы при равномерном
+        прохождении плана по слотам года». Прямого отставания не бывает:
+        раскладка позиционная, и пройдено всегда столько же, сколько слотов.
+        """
+        # семь уроков плана на четырнадцать слотов, половина из них позади:
+        # даты считаем от сегодняшнего дня, иначе «прошло» зависело бы от
+        # того, когда прогоняют тесты
+        now = timezone.localdate()
+        for index in range(7):
+            self.add_slot(now - timedelta(days=index + 1))
+        for index in range(7):
+            self.add_slot(now + timedelta(days=index + 1))
+
+        row = self.courses()[self.course.name]
+
+        self.assertEqual(row["slots_total"], 14)
+        self.assertEqual(row["lessons_total"], 7)
+        # прошло 7 слотов из 14, значит по плану должно быть пройдено 3.5 → 4
+        self.assertEqual(row["expected"], 4)
+        self.assertEqual(row["done"], 7)
+        self.assertEqual(row["pace"], 3)
+
+    def test_a_plan_that_does_not_fit_has_no_end_date(self):
+        self.fill_slots(3)
+
+        row = self.courses()[self.course.name]
+
+        self.assertIsNone(row["last_lesson_date"])
+        self.assertEqual(row["missing"], 4)
+        self.assertEqual(row["free_slots"], 0)
+
+    def test_counters_the_plan_page_does_not_have(self):
+        self.fill_slots(9)
+        self.add_slot(MONDAY + timedelta(days=20), is_extra=True)
+        self.add_slot(MONDAY + timedelta(days=21), is_cancelled=True, reason="Болезнь")
+        self.add_slot(MONDAY + timedelta(days=22), is_cancelled=True, reason="Болезнь")
+        self.add_slot(MONDAY + timedelta(days=23), is_cancelled=True)
+
+        row = self.courses()[self.course.name]
+
+        self.assertEqual(row["extra"], 1)
+        self.assertEqual(row["cancelled"], 3)
+        self.assertEqual(row["cancelled_by_reason"], {"Болезнь": 2, "": 1})
+        self.assertEqual(row["free_slots"], 3)
+
+    def test_the_current_term_is_the_one_we_are_in_or_the_next(self):
+        Term.objects.create(
+            year=self.course.year,
+            name="1 четверть",
+            start_date=MONDAY,
+            end_date=MONDAY + timedelta(days=11),
+        )
+        self.fill_slots(9)
+
+        row = self.courses()[self.course.name]
+
+        # «сегодня» в тестах раньше учебного года, поэтому терм — ближайший
+        self.assertEqual(row["term"]["name"], "1 четверть")
+        self.assertEqual(row["term"]["slots"], 9)
+        self.assertEqual(row["term"]["lessons"], 7)
+        self.assertEqual(row["term"]["balance"], 2)
+
+    def test_terms_add_up_to_the_whole(self):
+        Term.objects.create(
+            year=self.course.year,
+            name="1 четверть",
+            start_date=MONDAY,
+            end_date=MONDAY + timedelta(days=4),
+        )
+        self.fill_slots(9)
+
+        row = self.courses()[self.course.name]
+
+        self.assertEqual(sum(term["slots"] for term in row["terms"]), row["slots_total"])
+        self.assertEqual(
+            sum(term["lessons"] for term in row["terms"]), row["lessons_total"]
+        )
+
+    def test_another_teachers_course_is_not_there(self):
+        other = make_course(
+            self.alien_school, year=self.alien_class.year, name="9В"
+        )
+        assign(self.stranger, other)
+
+        self.assertNotIn("9В", self.courses())
+
+    def test_requires_authentication(self):
+        self.client.credentials()
+
+        self.assertEqual(self.progress().status_code, 401)

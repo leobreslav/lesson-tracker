@@ -337,6 +337,96 @@ def layout_summary(
     }
 
 
+def course_progress(
+    entries: Sequence[LayoutEntry],
+    today,
+    terms: Iterable = (),
+    cancelled: Iterable = (),
+    ahead: int = 5,
+) -> dict:
+    """
+    Где курс идёт по году: положение, темп и ближайшие уроки.
+
+    **Про темп.** «Отстаю на два урока» посчитать напрямую нельзя: раскладка
+    позиционная, i-й урок лежит в i-м слоте, и пройдено всегда ровно столько
+    уроков, сколько прошло слотов, — отставания не бывает по построению.
+    Поэтому база другая: **равномерный темп**, то есть план, растянутый на
+    все слоты года. К сегодняшнему дню при нём должно быть пройдено
+    `lessons × прошедшие слоты / все слоты`, а пройдено — сколько прошло.
+    Разница и есть темп: план короче года — идёте с опережением, длиннее —
+    с отставанием.
+
+    Честное «к концу первой четверти должна быть пройдена тема 4» так не
+    посчитать: для этого плану нужна собственная разметка по термам, а её в
+    модели нет. Поэтому подпись у числа называет базу прямо.
+    """
+    entries = list(entries)
+    matched = [entry for entry in entries if entry.status == STATUS_MATCHED]
+    with_slot = [entry for entry in entries if entry.slot is not None]
+    lessons_total = sum(1 for entry in entries if entry.lesson is not None)
+    slots_total = len(with_slot)
+
+    passed_slots = sum(1 for entry in with_slot if entry.slot.date < today)
+    done = sum(1 for entry in matched if entry.slot.date < today)
+    expected = round(lessons_total * passed_slots / slots_total) if slots_total else 0
+
+    upcoming = [entry for entry in matched if entry.slot.date >= today]
+    fits = len(matched) == lessons_total
+
+    by_reason: dict[str, int] = {}
+    for slot in cancelled:
+        by_reason[slot.reason or ""] = by_reason.get(slot.reason or "", 0) + 1
+
+    return {
+        "lessons_total": lessons_total,
+        "slots_total": slots_total,
+        "done": done,
+        "expected": expected,
+        "pace": done - expected,
+        "current": lesson_position(upcoming[0]) if upcoming else None,
+        "next": [lesson_position(entry) for entry in upcoming[:ahead]],
+        "last_lesson_date": matched[-1].slot.date if fits and matched else None,
+        "missing": lessons_total - len(matched),
+        "free_slots": max(0, slots_total - lessons_total),
+        "cancelled": sum(by_reason.values()),
+        "cancelled_by_reason": by_reason,
+        "extra": sum(1 for entry in with_slot if entry.slot.is_extra),
+        "terms": summary_by_term(entries, terms),
+        "term": current_term(entries, today, terms),
+    }
+
+
+def lesson_position(entry: LayoutEntry) -> dict:
+    """Урок плана вместе с датой, на которую он попал."""
+    return {
+        "number": entry.lesson.number,
+        "title": entry.lesson.node.title,
+        "section_title": entry.lesson.section.title if entry.lesson.section else None,
+        "date": entry.slot.date if entry.slot else None,
+    }
+
+
+def current_term(entries: Sequence[LayoutEntry], today, terms: Iterable = ()):
+    """
+    Терм, в котором курс сейчас, — или ближайший будущий.
+
+    Год может сходиться, а четверть уже нет, поэтому запас считается прежде
+    всего по ней. До начала года «сейчас» ещё нет, и тогда полезнее сказать
+    про ту четверть, которая начнётся.
+    """
+    terms = sorted(terms, key=lambda term: term.start_date)
+    term = find_term(today, terms) or next(
+        (item for item in terms if item.start_date > today), None
+    )
+    if term is None:
+        return None
+
+    return next(
+        (row for row in summary_by_term(entries, [term]) if row["id"] == term.pk),
+        None,
+    )
+
+
 def structure_problems(*, course_id, parent, is_section) -> dict:
     """
     Tree rule violations as ``{field: (code, message)}``; empty means fine.

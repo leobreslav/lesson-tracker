@@ -444,37 +444,46 @@
     "readOnlyHint": "Courses are created by the school administrator."
   },
   "layout": {
-    "title": "Layout",
-    "today": "today",
-    "noTheme": "no section",
-    "freeSlot": "free slot",
-    "extra": "extra",
-    "outsideTerms": "outside the terms",
-    "remainingSlots": "slots left",
-    "remainingLessons": "plan lessons left",
-    "balanceShort": "lessons do not fit",
-    "balanceSpare": "spare slots",
-    "lastLesson": "last lesson of the plan",
-    "planDoesNotFit": "the plan does not fit into the year",
-    "loose": "Outside the blocks: {{count}}.",
-    "blockMissing": "{{count}} do not fit",
-    "blockCrossing": "runs into {{term}}",
-    "termCounters": "slots {{slots}} · lessons {{lessons}} ·",
-    "total": "{{slots}} slots in total, {{lessons}} plan lessons; {{cancelled}} cancelled, {{extra}} extra. The layout is computed on the fly and follows the plan and the schedule by itself.",
+    "title": "Progress",
+    "hint": "How the courses are going: where you are now, whether you are keeping up and what is next. Editing lives on the «Lesson plan» page.",
+    "done": "lessons taught",
+    "planEnds": "the plan ends on this date",
+    "planDoesNotFit": "the plan does not fit: {{count}} lessons have no slot",
+    "termSpare": "spare slots, {{term}}",
+    "termShort": "lessons over the top, {{term}}",
+    "next": "Coming up",
+    "byTerm": "By term",
+    "term": "Term",
+    "slots": "Slots",
+    "lessons": "Lessons",
+    "balance": "Balance",
+    "counters": "For the year",
+    "slotsTotal": "lessons scheduled for the year",
+    "freeSlots": "slots the plan does not reach",
+    "extra": "extra lessons",
+    "cancelled": "cancelled lessons",
+    "noReason": "no reason given",
+    "toPlan": "Open the plan",
+    "toSchedule": "Open the schedule",
+    "outsideTerms": "outside terms",
+    "pace": {
+      "even": "on pace",
+      "ahead_one": "{{count}} lesson ahead",
+      "ahead_other": "{{count}} lessons ahead",
+      "behind_one": "{{count}} lesson behind",
+      "behind_other": "{{count}} lessons behind",
+      "idle": "not started",
+      "base": "against an even pace — the plan spread over every slot of the year; by today it would be {{expected}}"
+    },
+    "where": {
+      "at": "lesson {{number}} of {{total}}",
+      "noPlan": "no plan yet",
+      "finished": "the plan is finished: {{count}} lessons"
+    },
     "needClass": {
-      "title": "A class first",
-      "hint": "The layout joins the plan to the schedule, and both of them belong to a class.",
-      "action": "Add a class"
-    },
-    "nothing": {
-      "title": "Nothing to lay out",
-      "hint": "This is where the plan meets the schedule: you see which date every lesson lands on and whether there is enough time. Both halves are needed.",
-      "fillPlan": "Fill in the plan",
-      "buildSchedule": "Build the schedule"
-    },
-    "leftovers": {
-      "title": "Do not fit into the year",
-      "hint": "These plan lessons ran out of slots — add lessons or shorten the plan."
+      "title": "A course first",
+      "hint": "This page shows how each course is going through the year — and both the plan and the schedule belong to a course.",
+      "action": "Add a course"
     }
   },
   "agenda": {
