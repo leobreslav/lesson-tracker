@@ -289,6 +289,15 @@ export const createSubject = (name) =>
 
 // --- the lesson plan ---
 
+/**
+ * Лента слотов курса: даты, термы и каникулы между уроками.
+ *
+ * Берётся один раз на курс — от плана она не зависит, а сшивает их
+ * страница у себя (`planLayout.js`), чтобы даты сдвигались мгновенно.
+ */
+export const fetchPlanSlots = (classId) =>
+  request(`/api/plan/layout/slots/?course=${encodeURIComponent(classId)}`)
+
 export const fetchPlan = (classId) =>
   request(`/api/plan/?course=${encodeURIComponent(classId)}`)
 

@@ -25,6 +25,14 @@ function formatter(options) {
 
 const format = (iso, options) => formatter(options).format(parseDate(iso))
 
+/**
+ * "14.10" — самая узкая форма, для колонки в таблице.
+ *
+ * Через Intl, как и всё здесь: по-русски выйдет «14.10», по-английски
+ * «10/14» — порядок частей это тоже язык, а не оформление.
+ */
+export const dayMonth = (iso) => format(iso, { day: '2-digit', month: '2-digit' })
+
 /** "14 Oct" — for dense lists. */
 export const shortDate = (iso) => format(iso, { day: 'numeric', month: 'short' })
 

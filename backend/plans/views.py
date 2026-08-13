@@ -14,6 +14,7 @@ from rest_framework.decorators import action
 from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from calendars.models import DayException
 from schedule.models import Course, LessonSlot
 
 from . import services, xlsx
@@ -158,6 +159,32 @@ class PlanNodeViewSet(TeacherScopedViewSet):
             services.flatten_lessons(self.owner_of(course)),
             list(slots),
             course.year.terms.all(),
+        )
+
+    @action(detail=False, methods=["get"], url_path="layout/slots",
+            url_name="layout-slots")
+    def layout_slots(self, request):
+        """
+        Лента слотов курса: даты, термы и каникулы между уроками.
+
+        От плана не зависит, поэтому страница плана берёт её один раз, а
+        дальше сшивает с планом у себя — и даты сдвигаются в тот же миг,
+        когда урок добавили или перетащили.
+        """
+        course = self.requested_course()
+        slots = LessonSlot.objects.filter(
+            teacher=request.user, course=course, is_cancelled=False
+        ).order_by("date", "lesson_number")
+        breaks = course.year.exceptions.filter(
+            kind=DayException.Kind.VACATION
+        ).order_by("start_date")
+
+        return Response(
+            {
+                "slots": services.slot_ribbon(
+                    list(slots), course.year.terms.all(), breaks
+                )
+            }
         )
 
     @action(detail=False, methods=["get"])

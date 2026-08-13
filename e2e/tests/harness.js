@@ -101,6 +101,7 @@ export const test = base.extend({
         get: (path) => call('GET', path),
         post: (path, data) => call('POST', path, data),
         patch: (path, data) => call('PATCH', path, data),
+        delete: (path) => call('DELETE', path),
       }
     })
   },

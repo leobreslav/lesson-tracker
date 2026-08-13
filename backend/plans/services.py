@@ -159,6 +159,73 @@ def build_layout(
     return entries
 
 
+def slot_ribbon(slots: Sequence, terms: Iterable = (), breaks: Iterable = ()) -> list:
+    """
+    Лента слотов: всё про даты, что **не зависит** от плана.
+
+    Раскладка — это zip: i-й урок в i-й слот. Из двух её половин от правки
+    плана меняется только одна, и как раз она тривиальна; календарь же —
+    учебные дни, термы, каникулы — от плана не зависит вовсе. Поэтому
+    страница плана берёт ленту один раз и сшивает её с планом у себя,
+    получая мгновенный пересчёт после каждой правки и не унося на клиент
+    ни одного настоящего правила.
+
+    У слота, последнего в своём терме, заполнено `term_ends` — по нему
+    рисуется черта «конец 1 четверти». У слота, перед которым в календаре
+    лежат каникулы, заполнено `break_before`: между этими двумя уроками
+    в расписании дыра, и её стоит назвать.
+    """
+    terms = list(terms)
+    breaks = list(breaks)
+    rows = []
+    previous = None
+
+    for index, slot in enumerate(slots):
+        term = find_term(slot.date, terms)
+        following = slots[index + 1] if index + 1 < len(slots) else None
+        next_term = find_term(following.date, terms) if following else None
+        ends = term is not None and (next_term is None or next_term.pk != term.pk)
+
+        gap = next(
+            (
+                period
+                for period in breaks
+                if previous is not None
+                and previous.date < period.start_date
+                and period.end_date < slot.date
+            ),
+            None,
+        )
+
+        rows.append(
+            {
+                "id": slot.pk,
+                "date": slot.date,
+                "lesson_number": slot.lesson_number,
+                "is_extra": slot.is_extra,
+                "term_id": term.pk if term else None,
+                "term_name": term.name if term else None,
+                "term_ends": (
+                    {"id": term.pk, "name": term.name, "end": term.end_date}
+                    if ends
+                    else None
+                ),
+                "break_before": (
+                    {
+                        "title": gap.title,
+                        "start": gap.start_date,
+                        "end": gap.end_date,
+                    }
+                    if gap
+                    else None
+                ),
+            }
+        )
+        previous = slot
+
+    return rows
+
+
 def summary_by_term(entries: Sequence[LayoutEntry], terms: Iterable = ()) -> list[dict]:
     """
     Слоты и уроки плана по термам плюс отдельная запись «вне термов».

@@ -1705,6 +1705,133 @@ button.link:hover:not(:disabled) {
   background: #f4f7fd;
 }
 
+/*
+ * Даты в строке плана.
+ *
+ * Колонки жёсткой ширины и в конце строки, сразу перед кнопками: включение
+ * дат не должно двигать название урока — за ним следят глазами, и прыжок
+ * текста при переключении читается как перерисовка всей страницы. Ширина
+ * задана в rem, а не по содержимому: «14.10» и «3.11» иначе давали бы
+ * разные колонки на соседних строках.
+ */
+.plan-date,
+.plan-weekday {
+  flex: 0 0 auto;
+  font-size: 0.8rem;
+  font-variant-numeric: lining-nums tabular-nums;
+  color: #5f6368;
+  text-align: right;
+}
+
+.plan-date {
+  width: 3.4rem;
+}
+
+.plan-weekday {
+  width: 1.8rem;
+  text-align: left;
+}
+
+/* урок, которому слота не досталось: строка целиком, а не одна ячейка —
+   иначе на длинном плане это незаметно */
+.plan-row.no-slot {
+  background: #fdecea;
+}
+
+.plan-date.missing,
+.plan-range.missing {
+  width: auto;
+  color: #c5221f;
+}
+
+/* диапазон дат темы стоит там же, где даты уроков: у заголовка своя строка,
+   и колонки урока ему не нужны */
+.plan-range {
+  margin-left: auto;
+  font-size: 0.8rem;
+  font-variant-numeric: lining-nums tabular-nums;
+  color: #5f6368;
+}
+
+/* у темы после диапазона идут кнопки — им своё «прижать вправо» уже не
+   нужно, иначе диапазон и кнопки разъедутся по краям */
+.section-head .plan-range + .row-actions {
+  margin-left: 0.4rem;
+}
+
+/*
+ * Черта между строками: конец четверти или каникулы.
+ *
+ * Ради неё всё и затевалось: даты без неё бесполезны — надо помнить, когда
+ * кончается четверть. Поэтому она заметная, с подписью посередине.
+ */
+.plan-divider {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0.35rem 0;
+  font-size: 0.78rem;
+  color: #b06000;
+  white-space: nowrap;
+}
+
+.plan-divider::before,
+.plan-divider::after {
+  content: '';
+  flex: 1;
+  height: 0;
+  border-top: 2px solid #f0b429;
+}
+
+.plan-divider.break {
+  color: #1967d2;
+}
+
+.plan-divider.break::before,
+.plan-divider.break::after {
+  border-top-style: dashed;
+  border-top-color: #8ab4f8;
+}
+
+/*
+ * Сводка раскладки: закреплена под верхним баром.
+ *
+ * Смысл в том, чтобы баланс был виден, пока правишь низ плана, — поэтому
+ * sticky, а не просто «сверху страницы».
+ */
+.plan-summary {
+  position: sticky;
+  top: 3.25rem;
+  z-index: 4;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 1rem;
+  align-items: center;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.9rem;
+  color: #5f6368;
+  background: #fff;
+  border-radius: var(--card-radius);
+  box-shadow: var(--card-shadow);
+}
+
+.plan-summary strong {
+  color: #202124;
+  font-variant-numeric: lining-nums tabular-nums;
+}
+
+.plan-summary .balance.spare strong {
+  color: #137333;
+}
+
+.plan-summary .balance.short strong {
+  color: #c5221f;
+}
+
+.plan-summary .dates-toggle {
+  margin-left: auto;
+}
+
 .plan-row .title {
   flex: 1;
   min-width: 6rem;

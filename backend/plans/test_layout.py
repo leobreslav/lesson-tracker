@@ -538,3 +538,136 @@ class LayoutSummaryApiTests(LayoutApiTestCase):
         )
 
         self.assertEqual(response.status_code, 404)
+
+
+class SlotRibbonTests(LayoutApiTestCase):
+    """
+    Лента слотов — половина раскладки, которая от плана не зависит.
+
+    Её берёт страница плана, чтобы сшивать даты с деревом у себя: правка
+    плана меняет только вторую половину, а она тривиальна.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.first = Term.objects.create(
+            year=self.course.year,
+            name="1 четверть",
+            start_date=MONDAY,
+            end_date=MONDAY + timedelta(days=4),
+        )
+        self.second = Term.objects.create(
+            year=self.course.year,
+            name="2 четверть",
+            start_date=MONDAY + timedelta(days=10),
+            end_date=MONDAY + timedelta(days=20),
+        )
+
+    def ribbon(self, course=None):
+        return self.client.get(
+            reverse("plannode-layout-slots"),
+            {"course": (course or self.course).pk},
+        )
+
+    def test_it_carries_dates_in_order(self):
+        self.fill_slots(3)
+
+        rows = self.ribbon().json()["slots"]
+
+        self.assertEqual(
+            [row["date"] for row in rows],
+            [str(MONDAY + timedelta(days=index)) for index in range(3)],
+        )
+
+    def test_a_cancelled_lesson_is_not_in_the_ribbon(self):
+        """Отменённый урок не занимает место в плане — и в ленте его нет."""
+        self.fill_slots(2)
+        self.add_slot(MONDAY + timedelta(days=2), is_cancelled=True)
+
+        self.assertEqual(len(self.ribbon().json()["slots"]), 2)
+
+    def test_the_last_slot_of_a_term_says_so(self):
+        self.fill_slots(12)
+
+        rows = self.ribbon().json()["slots"]
+        ends = [row["term_ends"] for row in rows]
+
+        # пятый слот — пятница первой четверти, шестой уже вне термов
+        self.assertEqual(ends[4]["name"], "1 четверть")
+        self.assertEqual(ends[4]["end"], str(MONDAY + timedelta(days=4)))
+        self.assertIsNone(ends[3])
+        self.assertIsNone(ends[5])
+
+    def test_a_break_between_two_lessons_is_named(self):
+        DayException.objects.create(
+            year=self.course.year,
+            start_date=MONDAY + timedelta(days=5),
+            end_date=MONDAY + timedelta(days=9),
+            kind=DayException.Kind.VACATION,
+            title="осенние каникулы",
+        )
+        # уроки по краям каникул, между ними — дыра
+        self.add_slot(MONDAY)
+        self.add_slot(MONDAY + timedelta(days=10))
+
+        rows = self.ribbon().json()["slots"]
+
+        self.assertIsNone(rows[0]["break_before"])
+        self.assertEqual(rows[1]["break_before"]["title"], "осенние каникулы")
+        self.assertEqual(
+            rows[1]["break_before"]["start"], str(MONDAY + timedelta(days=5))
+        )
+
+    def test_a_break_that_no_lesson_straddles_is_not_mentioned(self):
+        """Каникулы после последнего урока ничего не разрывают."""
+        DayException.objects.create(
+            year=self.course.year,
+            start_date=MONDAY + timedelta(days=5),
+            end_date=MONDAY + timedelta(days=9),
+            kind=DayException.Kind.VACATION,
+            title="осенние каникулы",
+        )
+        self.add_slot(MONDAY)
+
+        self.assertIsNone(self.ribbon().json()["slots"][0]["break_before"])
+
+    def test_a_holiday_is_not_a_break(self):
+        """Праздник в один день ленту не рвёт: о нём и говорить нечего."""
+        DayException.objects.create(
+            year=self.course.year,
+            start_date=MONDAY + timedelta(days=1),
+            end_date=MONDAY + timedelta(days=1),
+            kind=DayException.Kind.HOLIDAY,
+            title="праздник",
+        )
+        self.add_slot(MONDAY)
+        self.add_slot(MONDAY + timedelta(days=2))
+
+        self.assertIsNone(self.ribbon().json()["slots"][1]["break_before"])
+
+    def test_it_agrees_with_the_layout(self):
+        """
+        Два ответа об одном и том же не должны расходиться: лента — это
+        раскладка без плана, и даты с термами в них одни и те же.
+        """
+        self.fill_slots(12)
+
+        ribbon = self.ribbon().json()["slots"]
+        entries = [
+            entry
+            for entry in self.layout().json()["entries"]
+            if entry["slot"] is not None
+        ]
+
+        self.assertEqual(
+            [(row["date"], row["term_id"]) for row in ribbon[: len(entries)]],
+            [(entry["slot"]["date"], entry["term_id"]) for entry in entries],
+        )
+
+    def test_another_teachers_course_is_not_found(self):
+        self.assertEqual(self.ribbon(self.alien_class).status_code, 404)
+
+    def test_requires_authentication(self):
+        self.client.credentials()
+
+        self.assertEqual(self.ribbon().status_code, 401)

@@ -345,7 +345,17 @@
     },
     "importFile": "Import",
     "exportFile": "Export",
-    "exportFormat": "Export format"
+    "exportFormat": "Export format",
+    "noSlot": "no slot",
+    "termEnds": "{{name}} ends · {{date}}",
+    "breakBetween": "{{title}} · {{start}} — {{end}}",
+    "summary": {
+      "slots": "slots",
+      "lessons": "in the plan",
+      "balance": "balance",
+      "last": "last lesson",
+      "dates": "Dates"
+    }
   },
   "calendar": {
     "title": "School year",

@@ -31,6 +31,8 @@ import ImportDialog from './ImportDialog'
 import PlanCsvHelp from './PlanCsvHelp'
 import Modal from './Modal'
 import { EmptyDropZone, SortableRow, dragId, emptyZoneId } from './PlanDnd'
+import { layoutTotals, stitchLayout } from './planLayout'
+import { dayMonth, shortDate, shortWeekday } from './dates'
 import {
   applyMove,
   countBlocks,
@@ -48,6 +50,7 @@ import {
   downloadPlan,
   fetchCourses,
   fetchPlan,
+  fetchPlanSlots,
   fetchSchoolYears,
   importPlanFile,
   movePlanNode,
@@ -64,6 +67,26 @@ import {
  * for them.
  */
 const LessonPanel = lazy(() => import('./LessonPanel'))
+
+// показ дат переживает перезагрузку: при наборе плана с нуля они мешают,
+// при планировании нужны, и переключать это каждый раз незачем
+const DATES_KEY = 'planShowDates'
+
+function rememberedDates() {
+  try {
+    return localStorage.getItem(DATES_KEY) !== '0'
+  } catch {
+    return true
+  }
+}
+
+function rememberDates(value) {
+  try {
+    localStorage.setItem(DATES_KEY, value ? '1' : '0')
+  } catch {
+    // приватный режим — просто не запоминаем
+  }
+}
 
 // xlsx первым: он и по умолчанию
 const FORMATS = ['xlsx', 'csv']
@@ -86,6 +109,8 @@ export default function Plan({ onLoggedOut }) {
   // xlsx по умолчанию: в нём нет ни кодировки, ни разделителя, ни кавычек,
   // то есть ровно тех трёх вещей, на которых спотыкается CSV
   const [format, setFormat] = useState('xlsx')
+  const [ribbon, setRibbon] = useState([])
+  const [showDates, setShowDates] = useState(rememberedDates)
   const [adding, setAdding] = useState(null) // {parent, after, is_section, title}
   const [deleting, setDeleting] = useState(null) // the section being removed
   const [importing, setImporting] = useState(false)
@@ -133,6 +158,28 @@ export default function Plan({ onLoggedOut }) {
     (id) => fetchPlan(id).then(setData),
     [],
   )
+
+  /**
+   * Лента слотов курса — вторая половина раскладки.
+   *
+   * Берётся один раз на курс: от правок плана она не зависит, а сшивка
+   * идёт на клиенте, поэтому даты сдвигаются в тот же миг, без запроса.
+   */
+  useEffect(() => {
+    if (!classId) {
+      setRibbon([])
+      return undefined
+    }
+
+    let cancelled = false
+    fetchPlanSlots(classId)
+      .then((result) => !cancelled && setRibbon(result.slots))
+      .catch(() => !cancelled && setRibbon([]))
+
+    return () => {
+      cancelled = true
+    }
+  }, [classId])
 
   useEffect(() => {
     if (!classId) {
@@ -192,6 +239,21 @@ export default function Plan({ onLoggedOut }) {
     () => countBlocks(planRows(data?.nodes ?? [])),
     [data],
   )
+
+  /**
+   * Даты, границы термов и сводка — пересчитываются на каждый рендер.
+   *
+   * Это и есть смысл задачи: добавили урок — строки ниже съехали, а конец
+   * четверти пришёлся на другую строку. Пересчёт стоит один проход по
+   * плану, поэтому ни дебаунса, ни запроса здесь не нужно.
+   */
+  const layout = useMemo(() => {
+    const rows = planRows(data?.nodes ?? [])
+    return {
+      byId: new Map(stitchLayout(rows, ribbon).map((row) => [row.id, row])),
+      totals: layoutTotals(rows, ribbon),
+    }
+  }, [data, ribbon])
 
   const items = useMemo(() => {
     const map = new Map()
@@ -509,11 +571,55 @@ export default function Plan({ onLoggedOut }) {
 
   const indicatorFor = (id) => (drop?.overId === dragId(id) ? drop.side : null)
 
+  /** Черта между строками: конец терма или каникулы. */
+  const divider = (mark, key) => (
+    <li className={`plan-divider ${mark.kind}`} key={key}>
+      <span>
+        {mark.kind === 'term'
+          ? t('plan.termEnds', { name: mark.name, date: shortDate(mark.end) })
+          : t('plan.breakBetween', {
+              title: mark.title,
+              start: shortDate(mark.start),
+              end: shortDate(mark.end),
+            })}
+      </span>
+    </li>
+  )
+
+  // без расписания раскладывать нечего: «не помещается» на каждой строке —
+  // это шум, а не сообщение
+  const dated = showDates && ribbon.length > 0
+
+  /** Черты вокруг строки урока: каникулы сверху, конец терма снизу. */
+  const marks = (node, side) =>
+    dated
+      ? (layout.byId.get(node.id)?.[side] ?? []).map((mark, index) =>
+          divider(mark, `${side}-${node.id}-${index}`),
+        )
+      : null
+
+  /** Дата и день недели урока — две узкие колонки справа от названия. */
+  const dateCells = (node) => {
+    if (!dated) return null
+    const slot = layout.byId.get(node.id)?.slot
+
+    return slot ? (
+      <>
+        <span className="plan-date">{dayMonth(slot.date)}</span>
+        <span className="plan-weekday">{shortWeekday(slot.date)}</span>
+      </>
+    ) : (
+      <span className="plan-date missing">{t('plan.noSlot')}</span>
+    )
+  }
+
   const renderLesson = (node, parent) => (
     <SortableRow
       key={node.id}
       id={dragId(node.id)}
-      className="plan-row lesson"
+      className={`plan-row lesson${
+        dated && !layout.byId.get(node.id)?.slot ? ' no-slot' : ''
+      }`}
       indicator={indicatorFor(node.id)}
     >
       {(handle) => (
@@ -549,6 +655,8 @@ export default function Plan({ onLoggedOut }) {
 
           {node.note && <span className="hint">{node.note}</span>}
 
+          {dateCells(node)}
+
           <span className="row-actions">
             {moveButtons(node, movePlanNode)}
             <button
@@ -574,6 +682,22 @@ export default function Plan({ onLoggedOut }) {
       )}
     </SortableRow>
   )
+
+  /** Диапазон дат темы: с какой по какую она идёт по раскладке. */
+  const sectionRange = (node) => {
+    const range = layout.byId.get(node.id)?.range
+    if (!range) return null
+
+    const text = range.from
+      ? `${dayMonth(range.from)} — ${
+          range.missing ? t('plan.noSlot') : dayMonth(range.to)
+        }`
+      : t('plan.noSlot')
+
+    return (
+      <span className={`plan-range${range.missing ? ' missing' : ''}`}>{text}</span>
+    )
+  }
 
   const renderSection = (node) => {
     const hidden = collapsed.has(node.id)
@@ -619,6 +743,7 @@ export default function Plan({ onLoggedOut }) {
                   count: blocks.byId.get(node.id)?.lessons ?? 0,
                 })}
               </span>
+              {dated && sectionRange(node)}
 
               <span className="row-actions">
                 {moveButtons(node, movePlanSection)}
@@ -650,7 +775,9 @@ export default function Plan({ onLoggedOut }) {
             <ul className="plan-children">
               {node.children.map((child) => (
                 <Fragment key={child.id}>
+                  {marks(child, 'before')}
                   {renderLesson(child, node.id)}
+                  {marks(child, 'after')}
                   {addFormFor(node.id, child.id)}
                 </Fragment>
               ))}
@@ -710,6 +837,44 @@ export default function Plan({ onLoggedOut }) {
             ))}
           </div>
 
+          {data && ribbon.length > 0 && (
+            <div className="plan-summary">
+              <span>
+                {t('plan.summary.slots')} <strong>{layout.totals.slots}</strong>
+              </span>
+              <span>
+                {t('plan.summary.lessons')} <strong>{layout.totals.lessons}</strong>
+              </span>
+              <span
+                className={layout.totals.balance < 0 ? 'balance short' : 'balance spare'}
+              >
+                {t('plan.summary.balance')}{' '}
+                <strong>
+                  {layout.totals.balance > 0 ? '+' : ''}
+                  {layout.totals.balance}
+                </strong>
+              </span>
+              {layout.totals.lastDate && (
+                <span>
+                  {t('plan.summary.last')}{' '}
+                  <strong>{shortDate(layout.totals.lastDate)}</strong>
+                </span>
+              )}
+
+              <label className="checkbox dates-toggle">
+                <input
+                  type="checkbox"
+                  checked={showDates}
+                  onChange={(event) => {
+                    setShowDates(event.target.checked)
+                    rememberDates(event.target.checked)
+                  }}
+                />
+                {t('plan.summary.dates')}
+              </label>
+            </div>
+          )}
+
           {data && (
             <p className="hint plan-counts">
               <Trans
@@ -756,9 +921,11 @@ export default function Plan({ onLoggedOut }) {
                   <ul className="plan">
                     {data.nodes.map((node) => (
                       <Fragment key={node.id}>
+                        {!node.is_section && marks(node, 'before')}
                         {node.is_section
                           ? renderSection(node)
                           : renderLesson(node, null)}
+                        {!node.is_section && marks(node, 'after')}
                         {addFormFor(null, node.id)}
                       </Fragment>
                     ))}

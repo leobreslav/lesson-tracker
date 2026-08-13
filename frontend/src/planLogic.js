@@ -88,11 +88,19 @@ export function planRows(nodes) {
           { is_section: true, id: node.id, title: node.title },
           ...(node.children ?? []).map((child) => ({
             is_section: false,
+            id: child.id,
             section_id: node.id,
             section_title: node.title,
           })),
         ]
-      : [{ is_section: false, section_id: null, section_title: null }],
+      : [
+          {
+            is_section: false,
+            id: node.id,
+            section_id: null,
+            section_title: null,
+          },
+        ],
   )
 }
 

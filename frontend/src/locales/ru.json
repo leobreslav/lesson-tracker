@@ -357,7 +357,17 @@
     },
     "importFile": "Импорт",
     "exportFile": "Экспорт",
-    "exportFormat": "Формат выгрузки"
+    "exportFormat": "Формат выгрузки",
+    "noSlot": "не помещается",
+    "termEnds": "{{name}} заканчивается · {{date}}",
+    "breakBetween": "{{title}} · {{start}} — {{end}}",
+    "summary": {
+      "slots": "слотов",
+      "lessons": "в плане",
+      "balance": "баланс",
+      "last": "последний урок",
+      "dates": "Даты"
+    }
   },
   "calendar": {
     "title": "Учебный год",
