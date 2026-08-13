@@ -53,7 +53,7 @@ import {
   fetchPlan,
   fetchBaseline,
   fetchPlanSlots,
-  fixBaseline,
+  submitBaseline,
   fetchSchoolYears,
   importPlanFile,
   movePlanNode,
@@ -193,7 +193,7 @@ export default function Plan({ onLoggedOut }) {
       .then((result) => !cancelled && setRibbon(result.slots))
       .catch(() => !cancelled && setRibbon([]))
     fetchBaseline(classId)
-      .then((result) => !cancelled && setBaseline(result.created_at))
+      .then((result) => !cancelled && setBaseline(result))
       .catch(() => !cancelled && setBaseline(null))
 
     return () => {
@@ -500,22 +500,40 @@ export default function Plan({ onLoggedOut }) {
   }
 
   /**
-   * Зафиксировать план эталоном.
+   * Отправить план на утверждение.
    *
-   * Перефиксация спрашивает: снимок один на план, и прежний уйдёт вместе с
-   * ответом на вопрос «относительно чего мы считали расхождение».
+   * Снимок снимается на сервере в этот же момент: методист смотрит то, что
+   * ему прислали, а не то, что учитель успел поправить, пока тот читал.
+   * Методиста выбирают, только если их несколько.
    */
-  const handleBaseline = async () => {
-    if (baseline && !window.confirm(t('plan.baseline.confirm'))) return
-
+  const sendForApproval = async (reviewer) => {
     setError(null)
+    setDialog(null)
+
     try {
-      const saved = await fixBaseline(classId)
-      setBaseline(saved.created_at)
-      setNotice(t('plan.baseline.done', { count: saved.rows }))
+      const saved = await submitBaseline(classId, reviewer)
+      setBaseline(saved)
+      setNotice(
+        t('plan.baseline.sent', { name: saved.request.reviewer?.name ?? '' }),
+      )
     } catch (err) {
       handleError(err)
     }
+  }
+
+  const handleSubmitPlan = () => {
+    const people = baseline?.methodists ?? []
+    // список методистов у страницы уже есть, поэтому отказ показываем сами:
+    // спрашивать сервер, чтобы получить 400, здесь незачем
+    if (!people.length) {
+      return setError(
+        t('errors.no_methodist', {
+          subject: baseline?.subject ?? course?.name ?? '',
+        }),
+      )
+    }
+    if (people.length > 1) return setDialog({ type: 'reviewer' })
+    sendForApproval(people[0].id)
   }
 
   const handleExport = async () => {
@@ -1123,6 +1141,37 @@ export default function Plan({ onLoggedOut }) {
             </div>
           )}
 
+          {/* состояние утверждения: у плана его нет, оно есть у снимка */}
+          {baseline && (baseline.approved || baseline.request) && (
+            <p className={`hint approval ${baseline.request?.status ?? 'approved'}`}>
+              {baseline.request?.status === 'pending' &&
+                t('plan.baseline.pending', {
+                  name: baseline.request.reviewer?.name ?? '',
+                })}
+              {baseline.request?.status === 'returned' && (
+                <>
+                  {t('plan.baseline.returned', {
+                    name: baseline.request.reviewer?.name ?? '',
+                  })}{' '}
+                  <b>{baseline.request.comment}</b>
+                </>
+              )}
+              {baseline.request?.status === 'draft' &&
+                t('plan.baseline.withdrawn')}
+              {!baseline.request &&
+                baseline.approved &&
+                t(
+                  baseline.approved.self_approved
+                    ? 'plan.baseline.approvedSelf'
+                    : 'plan.baseline.approved',
+                  {
+                    date: shortDate(baseline.approved.approved_at.slice(0, 10)),
+                    name: baseline.approved.reviewer?.name ?? '',
+                  },
+                )}
+            </p>
+          )}
+
           {/* уроки вне тем — не число сводки, а замечание о структуре */}
           {data && blocks.loose > 0 && (
             <p className="hint plan-loose">
@@ -1295,15 +1344,11 @@ export default function Plan({ onLoggedOut }) {
                   <button
                     type="button"
                     className="secondary"
-                    disabled={busy}
-                    title={
-                      baseline
-                        ? t('plan.baseline.fixedAt', { date: shortDate(baseline.slice(0, 10)) })
-                        : t('plan.baseline.hint')
-                    }
-                    onClick={handleBaseline}
+                    disabled={busy || baseline?.request?.status === 'pending'}
+                    title={t('plan.baseline.hint')}
+                    onClick={handleSubmitPlan}
                   >
-                    {t(baseline ? 'plan.baseline.refix' : 'plan.baseline.fix')}
+                    {t('plan.baseline.submit')}
                   </button>
                 </div>
 
@@ -1348,6 +1393,34 @@ export default function Plan({ onLoggedOut }) {
           }
           onClose={() => setDialog(null)}
         />
+      )}
+
+      {dialog?.type === 'reviewer' && (
+        <Modal onClose={() => setDialog(null)}>
+          <h3>{t('plan.baseline.chooseTitle')}</h3>
+          <p className="hint">{t('plan.baseline.chooseHint')}</p>
+          <ul className="people-list">
+            {(baseline?.methodists ?? []).map((person) => (
+              <li key={person.id}>
+                <div className="row">
+                  <span>{person.name}</span>
+                  <button type="button" onClick={() => sendForApproval(person.id)}>
+                    {t('plan.baseline.sendTo')}
+                  </button>
+                </div>
+              </li>
+            ))}
+          </ul>
+          <div className="actions">
+            <button
+              type="button"
+              className="secondary"
+              onClick={() => setDialog(null)}
+            >
+              {t('common.cancel')}
+            </button>
+          </div>
+        </Modal>
       )}
 
       {dialog?.type === 'publish' && (

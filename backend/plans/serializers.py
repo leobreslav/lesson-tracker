@@ -273,3 +273,78 @@ def to_drf_error(error: DjangoValidationError) -> serializers.ValidationError:
     return serializers.ValidationError(
         error.message_dict if hasattr(error, "message_dict") else error.messages
     )
+
+
+# --- утверждение плана методистом ---
+
+
+def person(user) -> dict | None:
+    """Человек так, как его показывают в чужом списке: имя и адрес."""
+    if user is None:
+        return None
+
+    name = f"{user.first_name} {user.last_name}".strip()
+    return {"id": user.pk, "name": name or user.email, "email": user.email}
+
+
+def request_payload(baseline) -> dict | None:
+    """Поданный, возвращённый или отозванный запрос — как есть."""
+    if baseline is None:
+        return None
+
+    return {
+        "id": baseline.pk,
+        "status": baseline.status,
+        "created_at": baseline.created_at,
+        "submitted_at": baseline.submitted_at,
+        "approved_at": baseline.approved_at,
+        "reviewer": person(baseline.reviewer),
+        "comment": baseline.comment,
+        "self_approved": baseline.self_approved,
+        "lessons": sum(1 for row in baseline.rows.all() if not row.is_section),
+    }
+
+
+def baseline_payload(approved, pending, methodists, subject=None) -> dict:
+    """
+    Весь блок «эталон» одним ответом.
+
+    Утверждённое и то, что в работе, — разные вещи и живут рядом: пока новый
+    снимок ждёт методиста, расхождение считается от прежнего утверждённого,
+    и на экране должны быть видны оба.
+    """
+    return {
+        "approved": request_payload(approved),
+        "request": request_payload(pending),
+        "methodists": [person(row.user) for row in methodists],
+        # предмет нужен, чтобы отказ «методист не назначен» назвал его, не
+        # спрашивая сервер: список методистов у страницы уже есть
+        "subject": subject,
+    }
+
+
+def review_payload(baseline, *, rows=False) -> dict:
+    """Запрос глазами методиста: чей план, какой курс и что в нём."""
+    payload = {
+        **request_payload(baseline),
+        "teacher": person(baseline.teacher),
+        "course": {
+            "id": baseline.course_id,
+            "name": baseline.course.name,
+            "subject": (
+                baseline.course.subject.name if baseline.course.subject else None
+            ),
+        },
+    }
+
+    if rows:
+        payload["rows"] = [
+            {
+                "position": row.position,
+                "is_section": row.is_section,
+                "title": row.title,
+            }
+            for row in baseline.rows.all()
+        ]
+
+    return payload

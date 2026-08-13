@@ -8,6 +8,7 @@ from collections import Counter
 
 from config.errors import Codes, api_error
 from django.contrib.auth import get_user_model
+from django.db import transaction
 from django.db.models import ProtectedError
 from rest_framework import mixins, viewsets
 from rest_framework.decorators import action
@@ -16,7 +17,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from .models import Invitation, School
+from .models import Invitation, School, SubjectMethodist
 from .serializers import (
     InvitationSerializer,
     MemberSerializer,
@@ -197,14 +198,47 @@ class MemberViewSet(
 
     serializer_class = MemberSerializer
     permission_classes = [IsAuthenticated, IsSchoolMember, IsSchoolAdminForWrite]
-    http_method_names = ["get", "patch", "delete", "head", "options"]
+    http_method_names = ["get", "patch", "put", "delete", "head", "options"]
 
     def get_queryset(self):
         return (
             User.objects.filter(school_id=self.request.user.school_id)
-            .prefetch_related("course_assignments__course")
+            .prefetch_related("course_assignments__course", "methodist_of__subject")
             .order_by("first_name", "last_name", "email")
         )
+
+    @action(detail=True, methods=["put"])
+    def methodist(self, request, pk=None):
+        """
+        По каким предметам человек утверждает планы — списком целиком.
+
+        Список, а не «добавить/убрать по одному»: набор короткий, а замена
+        целиком не оставляет полусостояний, если запрос потерялся. Назначает
+        только администратор школы; предметы принимаются лишь свои — чужой
+        id так же не существует, как и несуществующий.
+        """
+        from schedule.models import Subject
+
+        person = self.get_object()
+        school = request.user.school
+        wanted = set(
+            Subject.objects.filter(
+                school=school, pk__in=request.data.get("subjects") or []
+            ).values_list("pk", flat=True)
+        )
+
+        with transaction.atomic():
+            SubjectMethodist.objects.filter(user=person).exclude(
+                subject_id__in=wanted
+            ).delete()
+            for subject_id in wanted:
+                SubjectMethodist.objects.get_or_create(
+                    user=person,
+                    subject_id=subject_id,
+                    defaults={"school": school, "assigned_by": request.user},
+                )
+
+        return Response(self.get_serializer(person).data)
 
     def perform_destroy(self, instance):
         """

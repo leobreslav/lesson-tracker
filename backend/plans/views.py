@@ -14,20 +14,24 @@ from rest_framework.decorators import action
 from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from rest_framework.viewsets import ReadOnlyModelViewSet
 from calendars.models import DayException
 from schedule.models import Course, LessonSlot
 
-from . import services, xlsx
-from .models import PlanBaseline, PlanBaselineRow, PlanNode
+from . import approval, services, xlsx
+from .models import PlanBaseline, PlanNode
 from .serializers import (
     MoveSerializer,
     MoveToSerializer,
     PlanNodeCreateSerializer,
     PlanNodeDetailSerializer,
     PlanNodeUpdateSerializer,
+    baseline_payload,
     check_structure,
     flat_payload,
     layout_payload,
+    request_payload,
+    review_payload,
     tree_payload,
 )
 
@@ -190,9 +194,7 @@ class PlanNodeViewSet(TeacherScopedViewSet):
             entries = services.build_layout(
                 lessons, list(slots), course.year.terms.all()
             )
-            baseline = PlanBaseline.objects.filter(
-                teacher=request.user, course=course
-            ).first()
+            baseline = approval.approved_baseline(request.user.pk, course.pk)
 
             rows.append(
                 {
@@ -200,13 +202,20 @@ class PlanNodeViewSet(TeacherScopedViewSet):
                     "name": course.name,
                     "year": course.year.name,
                     "year_end": course.year.end_date,
+                    # метрики считаются только от **утверждённого** эталона:
+                    # пока план не приняли, сравнивать не с чем
                     "baseline": (
                         {
                             "created_at": baseline.created_at,
+                            "approved_at": baseline.approved_at,
+                            "self_approved": baseline.self_approved,
                             **services.baseline_diff(baseline.rows.all(), lessons),
                         }
                         if baseline
                         else None
+                    ),
+                    "review": request_payload(
+                        approval.open_request(request.user.pk, course.pk)
                     ),
                     **services.course_progress(
                         entries, timezone.localdate(), cancelled
@@ -216,44 +225,79 @@ class PlanNodeViewSet(TeacherScopedViewSet):
 
         return Response({"courses": rows})
 
-    @action(detail=False, methods=["post", "get"])
+    @action(detail=False, methods=["get"])
     def baseline(self, request):
         """
-        Зафиксировать план как эталон — или узнать, когда его фиксировали.
+        Состояние эталона у этого плана: что утверждено и что на подходе.
 
-        Снимок один на пару (учитель, курс): перефиксация заменяет прежний,
-        и подтверждает её интерфейс. Хранить историю снимков значило бы
-        завести ей экран, а вопрос у неё один — «относительно чего считаем».
+        Один ответ на весь блок в интерфейсе: утверждённый снимок (и когда
+        его утвердили), поданный или возвращённый запрос с замечанием, и
+        список методистов, которым можно отправить, — иначе страница
+        спрашивала бы это тремя запросами и показывала бы полусостояние.
         """
         course = self.requested_course()
         owner = self.owner_of(course)
 
-        if request.method == "GET":
-            saved = PlanBaseline.objects.filter(
-                teacher=request.user, course=course
-            ).first()
-            return Response(
-                {"created_at": saved.created_at, "rows": saved.rows.count()}
-                if saved
-                else {"created_at": None, "rows": 0}
+        return Response(
+            baseline_payload(
+                approval.approved_baseline(owner.teacher_id, owner.course_id),
+                approval.open_request(owner.teacher_id, owner.course_id),
+                approval.methodists_for(course),
+                subject=course.subject.name if course.subject else None,
+            )
+        )
+
+    @action(detail=False, methods=["post"], url_path="baseline/submit",
+            url_name="baseline-submit")
+    def baseline_submit(self, request):
+        """
+        Отправить план на утверждение — со снимком, снятым **сейчас**.
+
+        Методиста выбирает учитель, если их несколько; при единственном он
+        подставляется сам. Ни одного — отказ с объяснением: молчаливое «не
+        получилось» отправило бы человека искать ошибку у себя.
+        """
+        course = self.requested_course()
+        owner = self.owner_of(course)
+        methodists = approval.methodists_for(course)
+
+        if not methodists:
+            api_error(
+                Codes.NO_METHODIST,
+                f"No methodist is assigned to «{course.subject or course.name}» — "
+                "ask the school administrator to assign one.",
+                field="course",
+                subject=str(course.subject or course.name),
             )
 
-        with transaction.atomic():
-            PlanBaseline.objects.filter(teacher=request.user, course=course).delete()
-            saved = PlanBaseline.objects.create(teacher=request.user, course=course)
-            PlanBaselineRow.objects.bulk_create(
-                PlanBaselineRow(
-                    baseline=saved,
-                    position=position,
-                    is_section=row.is_section,
-                    title=row.title,
-                    node_id=row.node_id,
-                )
-                for position, row in enumerate(services.plan_snapshot(owner))
+        chosen = request.data.get("reviewer")
+        if chosen is None and len(methodists) > 1:
+            api_error(
+                Codes.REVIEWER_REQUIRED,
+                "Several methodists teach this subject — choose one.",
+                field="reviewer",
             )
+
+        reviewer = next(
+            (row.user for row in methodists if str(row.user_id) == str(chosen)),
+            methodists[0].user if chosen is None else None,
+        )
+        if reviewer is None:
+            api_error(
+                Codes.NOT_A_METHODIST,
+                "That person is not a methodist for this subject.",
+                field="reviewer",
+            )
+
+        baseline = approval.submit(owner, course, reviewer)
 
         return Response(
-            {"created_at": saved.created_at, "rows": saved.rows.count()},
+            baseline_payload(
+                approval.approved_baseline(owner.teacher_id, owner.course_id),
+                baseline,
+                methodists,
+                subject=course.subject.name if course.subject else None,
+            ),
             status=status.HTTP_201_CREATED,
         )
 
@@ -494,6 +538,8 @@ class PlanNodeViewSet(TeacherScopedViewSet):
 
             with transaction.atomic():
                 done = services.apply_sync(owner, plan)
+                # bulk_update сигналов не шлёт, поэтому отзыв руками
+                approval.withdraw(owner.teacher_id, owner.course_id)
 
             return Response({**done, **about})
 
@@ -506,6 +552,7 @@ class PlanNodeViewSet(TeacherScopedViewSet):
             created = services.apply_import(
                 owner, parsed.rows, append=(mode == "append")
             )
+            approval.withdraw(owner.teacher_id, owner.course_id)
 
         return Response(
             {
@@ -703,3 +750,68 @@ class SectionMoveView(APIView):
             PlanNode.objects.filter(teacher=request.user, is_section=True), pk=pk
         )
         return perform_move(section, request.data)
+
+
+class PlanReviewViewSet(ReadOnlyModelViewSet):
+    """
+    Очередь методиста: планы по его предметам, присланные на утверждение.
+
+    Читать — и только: методист утверждает или возвращает, но не правит.
+    Чужой план правится только его автором, и это не вопрос вежливости —
+    иначе учитель однажды обнаружил бы у себя чужие уроки.
+    """
+
+    permission_classes = [IsAuthenticated, IsSchoolMember]
+    serializer_class = None
+
+    def get_queryset(self):
+        return approval.review_queue(self.request.user)
+
+    def get_object(self):
+        return get_object_or_404(self.get_queryset(), pk=self.kwargs["pk"])
+
+    def list(self, request):
+        return Response(
+            {"reviews": [review_payload(row) for row in self.get_queryset()]}
+        )
+
+    def retrieve(self, request, pk=None):
+        baseline = self.get_object()
+        course = baseline.course
+        slots = LessonSlot.objects.filter(
+            teacher=baseline.teacher, course=course, is_cancelled=False
+        ).count()
+        lessons = sum(1 for row in baseline.rows.all() if not row.is_section)
+
+        return Response(
+            {
+                **review_payload(baseline, rows=True),
+                # ключевые числа рядом с планом: методист смотрит не только
+                # «что написано», но и «помещается ли это в год»
+                "slots_total": slots,
+                "reserve": slots - lessons,
+            }
+        )
+
+    @action(detail=True, methods=["post"])
+    def approve(self, request, pk=None):
+        baseline = self.get_object()
+        approval.approve(baseline, request.user)
+
+        return Response(review_payload(baseline))
+
+    @action(detail=True, methods=["post"], url_path="return", url_name="return")
+    def send_back(self, request, pk=None):
+        """Возврат без замечания смысла не имеет: учителю нечего исправлять."""
+        comment = (request.data.get("comment") or "").strip()
+        if not comment:
+            api_error(
+                Codes.COMMENT_REQUIRED,
+                "Say what to fix — a plan returned without a word is a riddle.",
+                field="comment",
+            )
+
+        baseline = self.get_object()
+        approval.send_back(baseline, request.user, comment)
+
+        return Response(review_payload(baseline))

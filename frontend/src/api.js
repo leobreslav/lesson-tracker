@@ -428,14 +428,42 @@ export const openAttachment = async (id) => {
  */
 export const fetchProgress = () => request('/api/plan/progress/')
 
-/** Зафиксировать план курса как эталон — снимок, с которым сравнивают потом. */
-export const fixBaseline = (classId) =>
-  request(`/api/plan/baseline/?course=${encodeURIComponent(classId)}`, {
-    method: 'POST',
-  })
-
+/**
+ * Состояние эталона у плана курса: утверждённое, поданное и кому слать.
+ *
+ * Один запрос на весь блок: иначе страница показывала бы полусостояние —
+ * «на утверждении», пока список методистов ещё едет.
+ */
 export const fetchBaseline = (classId) =>
   request(`/api/plan/baseline/?course=${encodeURIComponent(classId)}`)
+
+/** Отправить план на утверждение — снимок снимается в этот момент. */
+export const submitBaseline = (classId, reviewer) =>
+  request(`/api/plan/baseline/submit/?course=${encodeURIComponent(classId)}`, {
+    method: 'POST',
+    body: reviewer ? { reviewer } : {},
+  })
+
+/** Очередь методиста: планы по его предметам, присланные на утверждение. */
+export const fetchReviews = () => request('/api/plan/reviews/')
+
+export const fetchReview = (id) => request(`/api/plan/reviews/${id}/`)
+
+export const approveReview = (id) =>
+  request(`/api/plan/reviews/${id}/approve/`, { method: 'POST' })
+
+export const returnReview = (id, comment) =>
+  request(`/api/plan/reviews/${id}/return/`, {
+    method: 'POST',
+    body: { comment },
+  })
+
+/** По каким предметам человек утверждает планы — списком целиком. */
+export const setMethodistSubjects = (memberId, subjects) =>
+  request(`/api/school/members/${memberId}/methodist/`, {
+    method: 'PUT',
+    body: { subjects },
+  })
 
 /** Topics across every class for a period: slot_id → the plan lesson. */
 export const fetchLayoutAgenda = (start, end) =>

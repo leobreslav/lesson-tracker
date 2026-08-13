@@ -9,6 +9,9 @@ const SECTIONS = [
   { to: '/status', key: 'status', needs: 'classes' },
   { to: '/plan', key: 'plan', needs: 'classes' },
   { to: '/library', key: 'library', needs: null },
+  // раздел методиста: роль не иерархическая, у большинства назначений нет,
+  // и пустой раздел в баре был бы обещанием работы, которой нет
+  { to: '/reviews', key: 'reviews', needs: null, methodistOnly: true },
   { to: '/classes', key: 'classes', needs: 'year' },
   { to: '/year', key: 'year', needs: null },
   // the school section exists only for its administrators; a teacher has
@@ -56,7 +59,13 @@ function useDismissable(open, close) {
   return ref
 }
 
-export default function NavBar({ user, status, onLoggedOut, onLanguageChange }) {
+export default function NavBar({
+  user,
+  status,
+  reviews = 0,
+  onLoggedOut,
+  onLanguageChange,
+}) {
   const { t, i18n } = useTranslation()
   const [menuOpen, setMenuOpen] = useState(false)
   const [userOpen, setUserOpen] = useState(false)
@@ -110,7 +119,8 @@ export default function NavBar({ user, status, onLoggedOut, onLanguageChange }) 
           {SECTIONS.filter(
             (section) =>
               (!section.adminOnly || user?.is_school_admin) &&
-              (!section.superuserOnly || user?.is_superuser),
+              (!section.superuserOnly || user?.is_superuser) &&
+              (!section.methodistOnly || user?.methodist_subjects?.length),
           ).map((section) => {
             const reasonKey = reasonKeyFor(section.needs, status)
             const reason = reasonKey ? t(reasonKey) : null
@@ -127,6 +137,9 @@ export default function NavBar({ user, status, onLoggedOut, onLanguageChange }) 
                 }
               >
                 {t(`nav.${section.key}`)}
+                {section.key === 'reviews' && reviews > 0 && (
+                  <span className="nav-count">{reviews}</span>
+                )}
               </NavLink>
             )
           })}

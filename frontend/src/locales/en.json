@@ -46,7 +46,8 @@
     "needClass": "add a class first",
     "school": "School",
     "schools": "Schools",
-    "library": "Library"
+    "library": "Library",
+    "reviews": "For approval"
   },
   "auth": {
     "prompt": "Sign in to continue.",
@@ -207,7 +208,12 @@
     "csv_row_too_long": "Row {{row}}: the title is longer than {{limit}} characters.",
     "csv_bad_id": "Row {{row}}: «{{value}}» is not a row id — leave the cell empty for a new lesson.",
     "csv_nothing_to_sync": "Nothing to sync with: not a single row carries an id. Export the plan first, or import it as «Append».",
-    "file_not_xlsx": "The file is not an «.xlsx» workbook. The old «.xls» is not supported — save it as «.xlsx» or export the plan again."
+    "file_not_xlsx": "The file is not an «.xlsx» workbook. The old «.xls» is not supported — save it as «.xlsx» or export the plan again.",
+    "no_methodist": "No methodist is assigned to «{{subject}}» — ask the school administrator to assign one.",
+    "reviewer_required": "Several methodists teach this subject — choose one.",
+    "not_a_methodist": "That person is not a methodist for this subject.",
+    "comment_required": "Say what to fix — a plan returned without a word is a riddle.",
+    "review_closed": "This request is no longer waiting for a decision."
   },
   "classPicker": {
     "label": "Classes:",
@@ -367,13 +373,17 @@
     "freeSummary_one": "{{count}} free lesson, {{start}} — {{end}}",
     "freeSummary_other": "{{count}} free lessons, {{start}} — {{end}}",
     "baseline": {
-      "fix": "Fix as baseline",
-      "refix": "Re-fix the baseline",
-      "hint": "A snapshot of the plan to compare with later: «Course Status» will show how far it has drifted.",
-      "fixedAt": "fixed on {{date}} — re-fixing replaces it",
-      "confirm": "Replace the baseline? The old snapshot goes, and the drift will be counted from today.",
-      "done_one": "Baseline fixed: {{count}} row.",
-      "done_other": "Baseline fixed: {{count}} rows."
+      "submit": "Send for approval",
+      "hint": "A snapshot of the plan goes to the methodist of the subject; «Course Status» then counts the drift from what was approved.",
+      "sent": "Sent to {{name}}.",
+      "pending": "On approval with {{name}}.",
+      "returned": "Returned by {{name}}:",
+      "withdrawn": "The request was withdrawn by an edit — send the plan again.",
+      "approved": "Approved on {{date}} by {{name}}.",
+      "approvedSelf": "Approved on {{date}} by the author.",
+      "chooseTitle": "Who should approve it?",
+      "chooseHint": "Several methodists teach this subject.",
+      "sendTo": "Send"
     }
   },
   "status": {
@@ -624,7 +634,8 @@
       "unassign": "Take {{name}} away",
       "detach": "Detach from the school",
       "keepsWork": "The lessons and the plan stay where they are — only the assignment goes.",
-      "detachKeeps": "Their lessons and plans are kept; the assignments and the role are removed."
+      "detachKeeps": "Their lessons and plans are kept; the assignments and the role are removed.",
+      "methodist": "Approves plans for:"
     },
     "invitations": {
       "title": "Invited",
@@ -763,6 +774,23 @@
       "b": "{{value}} B",
       "kb": "{{value}} KB",
       "mb": "{{value}} MB"
+    }
+  },
+  "reviews": {
+    "title": "For approval",
+    "hint": "Plans sent to you as a methodist of the subject. You approve or return them with a comment — editing somebody else's plan is not yours to do.",
+    "open": "Open",
+    "sentOn": "sent {{date}}",
+    "lessons": "lessons in the plan",
+    "slots": "lessons scheduled for the year",
+    "reserve": "reserve",
+    "approve": "Approve",
+    "return": "Return with a comment",
+    "sendBack": "Return",
+    "comment": "What to fix",
+    "empty": {
+      "title": "Nothing waiting",
+      "hint": "When a teacher sends a plan on your subject, it appears here."
     }
   }
 }

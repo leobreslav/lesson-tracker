@@ -47,6 +47,7 @@ class UserSerializer(serializers.ModelSerializer):
     """
 
     school = serializers.SerializerMethodField()
+    methodist_subjects = serializers.SerializerMethodField()
 
     class Meta:
         model = User
@@ -59,6 +60,7 @@ class UserSerializer(serializers.ModelSerializer):
             "school",
             "is_school_admin",
             "is_superuser",
+            "methodist_subjects",
         )
         # the email comes from Google and identifies the login — not editable;
         # the role is granted by an administrator, not claimed in a profile
@@ -68,9 +70,22 @@ class UserSerializer(serializers.ModelSerializer):
             "school",
             "is_school_admin",
             "is_superuser",
+            "methodist_subjects",
         )
 
     def get_school(self, obj):
         if obj.school_id is None:
             return None
         return {"id": obj.school_id, "name": obj.school.name}
+
+    def get_methodist_subjects(self, obj) -> list:
+        """
+        По каким предметам этот человек утверждает планы.
+
+        Отсюда интерфейс узнаёт, показывать ли ему раздел «На утверждение»:
+        роль не иерархическая, и у большинства список пуст.
+        """
+        return [
+            {"id": row.subject_id, "name": row.subject.name}
+            for row in obj.methodist_of.select_related("subject")
+        ]

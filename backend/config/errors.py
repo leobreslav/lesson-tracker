@@ -114,6 +114,13 @@ class Codes:
     CSV_ID_KIND_CHANGED = "csv_id_kind_changed"
     CSV_NOTHING_TO_SYNC = "csv_nothing_to_sync"
 
+    # утверждение плана методистом
+    NO_METHODIST = "no_methodist"
+    REVIEWER_REQUIRED = "reviewer_required"
+    NOT_A_METHODIST = "not_a_methodist"
+    COMMENT_REQUIRED = "comment_required"
+    REVIEW_CLOSED = "review_closed"
+
     # lesson content and attachments
     CONTENT_ON_SECTION = "content_on_section"
     ATTACHMENT_OWNER_REQUIRED = "attachment_owner_required"

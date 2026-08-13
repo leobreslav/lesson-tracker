@@ -1,0 +1,139 @@
+import { PEOPLE, expect, ready, test } from './harness.js'
+
+/**
+ * Утверждение плана методистом.
+ *
+ * Проверяется процедура целиком, через две роли: учитель отправляет,
+ * методист смотрит присланное и решает. Отдельно — что правка после
+ * отправки отзывает запрос: состояние должно быть честным.
+ */
+
+const openPlan = async (page, course) => {
+  await page.goto('/plan')
+  await ready(page)
+  await page.getByRole('button', { name: course, exact: true }).click()
+  await expect(page.locator('.plan-cards')).toBeVisible()
+}
+
+/** Назначить человека методистом по предмету — руками администратора. */
+async function makeMethodist(api, email, subjectName) {
+  const admin = await api(PEOPLE.admin)
+  const members = await admin.get('/api/school/members/')
+  const person = members.body.find((item) => item.email === email)
+  const subjects = await admin.get('/api/school/subjects/')
+  const subject = subjects.body.find((item) => item.name === subjectName)
+
+  const done = await admin.put(`/api/school/members/${person.id}/methodist/`, {
+    subjects: [subject.id],
+  })
+  expect(done.status).toBe(200)
+  return { person, subject }
+}
+
+test('учитель отправляет план, методист утверждает', async ({
+  page,
+  signIn,
+  api,
+}) => {
+  await makeMethodist(api, PEOPLE.petrov, 'Алгебра')
+
+  await signIn(PEOPLE.ivanova)
+  await openPlan(page, 'Grade 6 Algebra')
+  await page.getByRole('button', { name: 'Отправить на утверждение' }).click()
+  await expect(page.getByText(/Отправлено/)).toBeVisible()
+  await expect(page.locator('.hint.approval')).toContainText('На утверждении')
+
+  // методист видит запрос и присланный план
+  await signIn(PEOPLE.petrov)
+  await page.goto('/reviews')
+  await ready(page)
+  await expect(page.locator('.nav-count')).toHaveText('1')
+  await page.getByRole('button', { name: 'Открыть' }).click()
+
+  const dialog = page.locator('dialog.modal')
+  await expect(dialog.locator('.review-plan li').first()).toBeVisible()
+  await dialog.getByRole('button', { name: 'Утвердить' }).click()
+  await expect(dialog).toBeHidden()
+
+  // и учитель видит, что план утверждён
+  await signIn(PEOPLE.ivanova)
+  await openPlan(page, 'Grade 6 Algebra')
+  await expect(page.locator('.hint.approval')).toContainText('Утверждён')
+})
+
+test('методист возвращает план с замечанием', async ({ page, signIn, api }) => {
+  await makeMethodist(api, PEOPLE.petrov, 'Алгебра')
+
+  const teacher = await api(PEOPLE.ivanova)
+  const courses = await teacher.get('/api/courses/')
+  const algebra = courses.body.find((item) => item.name === 'Grade 6 Algebra')
+  await teacher.post(`/api/plan/baseline/submit/?course=${algebra.id}`, {})
+
+  await signIn(PEOPLE.petrov)
+  await page.goto('/reviews')
+  await ready(page)
+  await page.getByRole('button', { name: 'Открыть' }).click()
+
+  const dialog = page.locator('dialog.modal')
+  await dialog.getByRole('button', { name: 'Вернуть с замечанием' }).click()
+  // без текста кнопка возврата недоступна: возврат молчком — загадка
+  await expect(dialog.getByRole('button', { name: 'Вернуть', exact: true })).toBeDisabled()
+  await dialog.getByLabel('Что поправить').fill('Мало часов на повторение')
+  await dialog.getByRole('button', { name: 'Вернуть', exact: true }).click()
+  await expect(dialog).toBeHidden()
+
+  await signIn(PEOPLE.ivanova)
+  await openPlan(page, 'Grade 6 Algebra')
+  await expect(page.locator('.hint.approval')).toContainText('Мало часов на повторение')
+})
+
+test('правка плана после отправки отзывает запрос', async ({
+  page,
+  signIn,
+  api,
+}) => {
+  await makeMethodist(api, PEOPLE.petrov, 'Алгебра')
+
+  await signIn(PEOPLE.ivanova)
+  await openPlan(page, 'Grade 6 Algebra')
+  await page.getByRole('button', { name: 'Отправить на утверждение' }).click()
+  await expect(page.locator('.hint.approval')).toContainText('На утверждении')
+
+  await page.getByRole('button', { name: '+ урок' }).click()
+  const form = page.locator('.plan-add-form')
+  await form.getByLabel('Название').fill('Урок после отправки')
+  await form.getByRole('button', { name: 'Добавить' }).click()
+  await expect(page.locator('.plan-row', { hasText: 'Урок после отправки' })).toBeVisible()
+
+  await page.reload()
+  await ready(page)
+  await expect(page.locator('.hint.approval')).toContainText('отозван')
+
+  // и у методиста запроса больше нет
+  await signIn(PEOPLE.petrov)
+  await page.goto('/reviews')
+  await ready(page)
+  await expect(page.getByText('Пока ничего')).toBeVisible()
+})
+
+test('без методиста по предмету отправка объясняет, почему нельзя', async ({
+  page,
+  signIn,
+}) => {
+  await signIn(PEOPLE.ivanova)
+  await openPlan(page, 'Grade 6 Algebra')
+
+  await page.getByRole('button', { name: 'Отправить на утверждение' }).click()
+
+  await expect(page.getByText(/не назначен методист|No methodist/)).toBeVisible()
+})
+
+test('раздела «На утверждение» у обычного учителя нет', async ({ page, signIn }) => {
+  await signIn(PEOPLE.ivanova)
+  await page.goto('/plan')
+  await ready(page)
+
+  await expect(
+    page.getByRole('link', { name: 'На утверждение' }),
+  ).toHaveCount(0)
+})

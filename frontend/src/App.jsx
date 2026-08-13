@@ -6,6 +6,7 @@ import Calendar from './Calendar'
 import Classes from './Classes'
 import Dashboard from './Dashboard'
 import Layout from './Layout'
+import Reviews from './Reviews'
 import Library from './Library'
 import Login from './Login'
 import NavBar from './NavBar'
@@ -20,7 +21,14 @@ import SchoolReference from './SchoolReference'
 import SchoolTeachers from './SchoolTeachers'
 import SchoolSchedule from './SchoolSchedule'
 import Schools from './Schools'
-import { clearToken, fetchMe, fetchOnboarding, getToken, updateMe } from './api'
+import {
+  clearToken,
+  fetchMe,
+  fetchOnboarding,
+  fetchReviews,
+  getToken,
+  updateMe,
+} from './api'
 import i18n, { normalizeLanguage } from './i18n'
 
 export default function App() {
@@ -30,6 +38,7 @@ export default function App() {
   // what is filled in already: the main page builds steps out of it and the
   // bar dims the sections that are not usable yet
   const [status, setStatus] = useState(null)
+  const [reviews, setReviews] = useState(0)
 
   const handleLoggedIn = useCallback(() => setTokenState(getToken()), [])
 
@@ -94,10 +103,16 @@ export default function App() {
       <NavBar
         user={user}
         status={status}
+        reviews={reviews}
         onLoggedOut={handleLoggedOut}
         onLanguageChange={handleLanguageChange}
       />
       <StatusWatcher onChange={setStatus} />
+      {/* счётчик в баре: методист должен видеть, что его ждут, не заходя
+          в раздел. Писем пока нет, и это единственное уведомление */}
+      {user?.methodist_subjects?.length > 0 && (
+        <ReviewWatcher onChange={setReviews} />
+      )}
 
       <PageBoundary>
         <Routes>
@@ -114,6 +129,7 @@ export default function App() {
           />
           <Route path="/schedule" element={guarded(Agenda)} />
           <Route path="/status" element={guarded(Layout)} />
+          <Route path="/reviews" element={guarded(Reviews)} />
           <Route path="/plan" element={guarded(Plan)} />
           <Route path="/library" element={guarded(Library)} />
           <Route path="/classes" element={guarded(Classes, { user })} />
@@ -148,6 +164,26 @@ export default function App() {
  * pages, and the bar and the main page have to tell the truth. The request is
  * small — a dedicated sync mechanism would cost more than it saves.
  */
+function ReviewWatcher({ onChange }) {
+  const location = useLocation()
+
+  useEffect(() => {
+    let cancelled = false
+
+    fetchReviews()
+      .then((data) => !cancelled && onChange(data.reviews.length))
+      .catch(() => {
+        // не ответили — счётчика просто не будет
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [location.pathname, onChange])
+
+  return null
+}
+
 function StatusWatcher({ onChange }) {
   const location = useLocation()
 

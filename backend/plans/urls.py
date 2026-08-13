@@ -3,9 +3,12 @@ from rest_framework.routers import SimpleRouter
 
 from library.views import ImportFromTemplateView
 
-from .views import PlanNodeViewSet, SectionMoveView
+from .views import PlanNodeViewSet, PlanReviewViewSet, SectionMoveView
 
 router = SimpleRouter()
+# очередь методиста объявлена раньше плана: у роутера плана префикс пустой,
+# и «reviews» иначе приняли бы за id узла
+router.register("reviews", PlanReviewViewSet, basename="planreview")
 # префикс пустой: приложение подключено как /api/plan/
 router.register("", PlanNodeViewSet, basename="plannode")
 

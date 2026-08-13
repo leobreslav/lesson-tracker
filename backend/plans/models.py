@@ -101,20 +101,32 @@ class PlanNode(LessonContent):
 
 class PlanBaseline(models.Model):
     """
-    Снимок плана на момент фиксации — то, с чем сравнивают потом.
+    Снимок плана на момент отправки на утверждение.
 
-    Нужен ровно для одного вопроса: план разросся или его пришлось
-    сократить? Без эталона на этот вопрос ответить нечем — план меняется
-    каждый день, и «стало 47 уроков» само по себе ничего не значит.
+    Нужен для двух вопросов сразу: что именно прислали методисту и
+    относительно чего считать расхождение. Оба требуют, чтобы снимок был
+    сделан **при отправке**, а не при утверждении: методист должен видеть
+    то, что ему прислали, а не то, что учитель успел поправить, пока тот
+    читал.
 
     Содержание уроков и вложения сюда не копируются: эталон про
     **структуру** — сколько уроков, в каких темах и в каком порядке. Копия
     содержания удвоила бы хранение ради вопроса, которого никто не задаёт.
 
-    На пару (учитель, курс) снимок один: перефиксация заменяет прежний.
-    История версий тут была бы отдельной функцией со своим экраном, а нужен
-    ответ «относительно чего считаем» — и он один.
+    Снимков у плана несколько: утверждённый продолжает действовать, пока
+    новый лежит на утверждении, — иначе отправка новой версии стирала бы
+    точку отсчёта, относительно которой считается расхождение.
+
+    У самого плана состояния нет: учитель правит его свободно, состояние
+    есть только у снимка. Правка отзывает поданный запрос (`WITHDRAWN`),
+    чтобы состояние всегда оставалось честным.
     """
+
+    class Status(models.TextChoices):
+        DRAFT = "draft", "withdrawn by an edit"
+        PENDING = "pending", "waiting for approval"
+        APPROVED = "approved", "approved"
+        RETURNED = "returned", "returned with a comment"
 
     teacher = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -128,19 +140,38 @@ class PlanBaseline(models.Model):
         on_delete=models.CASCADE,
         verbose_name="course",
     )
-    created_at = models.DateTimeField("fixed at", auto_now_add=True)
+    created_at = models.DateTimeField("snapshot taken at", auto_now_add=True)
+    status = models.CharField(
+        "status", max_length=16, choices=Status, default=Status.PENDING
+    )
+    submitted_at = models.DateTimeField("submitted at", null=True, blank=True)
+    approved_at = models.DateTimeField("approved at", null=True, blank=True)
+    reviewer = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        related_name="plans_to_review",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        verbose_name="reviewer",
+    )
+    comment = models.TextField("comment", blank=True)
 
     class Meta:
         verbose_name = "plan baseline"
         verbose_name_plural = "plan baselines"
-        constraints = [
-            models.UniqueConstraint(
-                fields=("teacher", "course"), name="one_baseline_per_plan"
-            ),
-        ]
+        ordering = ("-created_at",)
 
     def __str__(self):
-        return f"{self.course} — {self.created_at:%Y-%m-%d}"
+        return f"{self.course} — {self.created_at:%Y-%m-%d} ({self.status})"
+
+    @property
+    def self_approved(self) -> bool:
+        """Методист утвердил собственный план — это законно, но помечается."""
+        return (
+            self.status == self.Status.APPROVED
+            and self.reviewer_id is not None
+            and self.reviewer_id == self.teacher_id
+        )
 
 
 class PlanBaselineRow(models.Model):

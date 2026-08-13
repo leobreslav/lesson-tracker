@@ -154,25 +154,41 @@ test('автор свой черновик видит и помечен метк
   await expect(draft.locator('.badge')).toHaveText('черновик')
 })
 
-test('эталон фиксируется в плане и виден на «Ходе года»', async ({
+test('рост к утверждённому эталону виден на «Состоянии курсов»', async ({
   page,
   signIn,
+  api,
 }) => {
+  // методист по алгебре — сама Иванова: самоутверждение законно и помечается
+  const admin = await api(PEOPLE.admin)
+  const members = await admin.get('/api/school/members/')
+  const her = members.body.find((item) => item.email === PEOPLE.ivanova)
+  const subjects = await admin.get('/api/school/subjects/')
+  const algebra = subjects.body.find((item) => item.name === 'Алгебра')
+  await admin.put(`/api/school/members/${her.id}/methodist/`, {
+    subjects: [algebra.id],
+  })
+
+  const teacher = await api(PEOPLE.ivanova)
+  const courses = await teacher.get('/api/courses/')
+  const course = courses.body.find((item) => item.name === 'Grade 6 Algebra')
+  await teacher.post(`/api/plan/baseline/submit/?course=${course.id}`, {})
+  const queue = await teacher.get('/api/plan/reviews/')
+  await teacher.post(`/api/plan/reviews/${queue.body.reviews[0].id}/approve/`)
+
   await signIn(PEOPLE.ivanova)
-  await openPlan(page, 'Grade 6 Algebra')
-
-  await page.getByRole('button', { name: 'Зафиксировать план' }).click()
-  await expect(page.getByText(/Эталон зафиксирован/)).toBeVisible()
-
-  // сразу после фиксации расхождения нет
   await page.goto('/status')
   await ready(page)
   const row = page.locator('.progress-list > li').first()
   await row.locator('.progress-head').click()
+  // сразу после утверждения расхождения нет
   await expect(row.locator('[data-card="growth"] h2')).toHaveText('0')
 
   // добавили урок — план вырос ровно на него
-  await openPlan(page, 'Grade 6 Algebra')
+  await page.goto('/plan')
+  await ready(page)
+  await page.getByRole('button', { name: 'Grade 6 Algebra', exact: true }).click()
+  await expect(page.locator('.plan-cards')).toBeVisible()
   await page.getByRole('button', { name: '+ урок' }).click()
   const form = page.locator('.plan-add-form')
   await form.getByLabel('Название').fill('Лишний урок')
@@ -185,10 +201,4 @@ test('эталон фиксируется в плане и виден на «Х�
   await expect(
     page.locator('.progress-list > li').first().locator('[data-card="growth"] h2'),
   ).toHaveText('+1')
-
-  // кнопка сменила подпись: следующая фиксация заменит прежнюю
-  await openPlan(page, 'Grade 6 Algebra')
-  await expect(
-    page.getByRole('button', { name: 'Перефиксировать план' }),
-  ).toBeVisible()
 })
