@@ -665,6 +665,12 @@ form .success {
   font-size: 1rem;
 }
 
+/* кнопка прямо в карточке: колонка растянула бы её во всю ширину, а
+   кнопка на всю карточку читается как полоса, а не как кнопка */
+.panel > button {
+  align-self: flex-start;
+}
+
 /* карточка-счётчик: число и подпись — одно целое, им ритм не нужен */
 .panel.card-stat {
   gap: 0.15rem;
@@ -804,6 +810,45 @@ button.chip.active {
   background: #fff;
 }
 
+/*
+ * Списки карточек: колонка с тем же шагом, что и у страницы.
+ *
+ * Список без своего правила остаётся при браузерных умолчаниях — сорок
+ * пикселей слева и маркеры, — и тогда карточки в нём стоят уже формы над
+ * ними. Ровно это и было в разделе «Школы».
+ */
+.school-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--card-gap);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* просмотр шаблона в библиотеке: заголовки тем и уроки под ними. Отступ
+   уроку даёт не браузерный маркер, а собственное правило ниже */
+.plan-preview {
+  margin: 0;
+  padding: 0;
+  max-height: 18rem;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.plan-preview li {
+  padding: 0.15rem 0;
+  font-size: 0.9rem;
+}
+
+.plan-preview li.lesson {
+  padding-left: 1rem;
+}
+
+.plan-preview .hint {
+  margin: 0 0 0 0.4rem;
+}
+
 /* --- список классов --- */
 
 /* Кнопка в ряд с полями.
@@ -918,7 +963,8 @@ button.chip.active {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(8rem, 1fr));
   gap: 0.6rem;
-  margin: 0.5rem 0 0;
+  /* ритм внутри карточки задаёт .panel; свой отступ его удваивал */
+  margin: 0;
   padding: 0;
   list-style: none;
 }
