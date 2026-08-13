@@ -341,15 +341,28 @@ def sniff_delimiter(text: str) -> str:
     """
     Русский Excel сохраняет с точкой с запятой, остальные — с запятой.
 
-    Считать вхождения бесполезно: запятые бывают внутри названий. Смотрим,
-    какой разделитель даёт одинаковое число столбцов в строках.
+    Считать вхождения бесполезно: запятые бывают внутри названий, и в файле,
+    где каждое название с запятой, победила бы запятая. Смотрим, какой
+    разделитель даёт одинаковое число столбцов в первых записях.
+
+    Именно записях, а не строках: перевод строки внутри кавычек — это часть
+    заметки, и, порезав текст по \n, мы сравнивали бы обрывки. Читаем теми же
+    csv.reader'ами, что и разберут потом, — каждый со своим разделителем.
     """
-    head = [line for line in text.splitlines()[:5] if line.strip()]
-    if not head:
-        return ","
+    def head(candidate):
+        reader = csv.reader(io.StringIO(text), delimiter=candidate)
+        rows = []
+        for row in reader:
+            if any(cell.strip() for cell in row):
+                rows.append(row)
+            if len(rows) == 5:
+                break
+        return rows
 
     def score(candidate):
-        widths = [len(row) for row in csv.reader(head, delimiter=candidate)]
+        widths = [len(row) for row in head(candidate)]
+        if not widths:
+            return (False, 0)
         return (len(set(widths)) == 1 and min(widths) > 1, min(widths))
 
     return ";" if score(";") > score(",") else ","
@@ -392,6 +405,31 @@ def detect_ids(raw_rows: Sequence[Sequence[str]]) -> bool:
     return any(first) and all(cell == "" or cell.isdigit() for cell in first)
 
 
+def uses_spread(raw_rows: Sequence[Sequence[str]], shift: int) -> bool:
+    """
+    Написана ли тема в каждой строке урока.
+
+    От этого зависит, что означает **пустая** ячейка темы. Если тема
+    повторяется — файл проговаривает принадлежность вслух, и пустая ячейка
+    значит «этот урок вне темы»; так выглядит экспорт с id, и только так
+    урок верхнего уровня после темы вообще выразим. Если тема не
+    повторяется нигде, файл написан в привычном стиле «заголовок, потом
+    уроки под ним», и пустая ячейка не значит ничего.
+
+    Раньше это решал столбец id: с ним пустая тема всегда значила «вне
+    темы». Человек, выгрузивший план и поправивший его в привычном стиле,
+    получал пустые темы и все уроки на верхнем уровне — файл выглядел
+    правильным, а результат нет. Спрашивать нужно у файла, а не у столбца.
+    """
+    for raw in raw_rows:
+        cells = [cell.strip() for cell in raw[shift:shift + 2]] + ["", ""]
+        theme, lesson = cells[0], cells[1]
+        if theme and lesson:
+            return True
+
+    return False
+
+
 class ParsedPlan(NamedTuple):
     """Разобранный файл: строки, предупреждения и был ли в нём столбец id."""
 
@@ -423,6 +461,14 @@ def parse_plan_csv(text: str, *, max_rows: int = CSV_MAX_ROWS) -> ParsedPlan:
     has_ids = detect_ids(raw_rows)
     shift = 1 if has_ids else 0
     width = 3 + shift
+
+    # шапку в счёт не берём: «Тема» и «Урок» в ней стоят рядом заполненными
+    # и выглядят в точности как строка урока с протянутой темой
+    first = raw_rows[0] if raw_rows else []
+    header = bool(first) and (
+        header_with_ids(first) if has_ids else looks_like_header(first)
+    )
+    spread = uses_spread(raw_rows[1:] if header else raw_rows, shift)
 
     rows: list[ImportedRow] = []
     warnings: list[dict] = []
@@ -485,9 +531,9 @@ def parse_plan_csv(text: str, *, max_rows: int = CSV_MAX_ROWS) -> ParsedPlan:
             ImportedRow(
                 is_section=False, title=lesson, note=note,
                 node_id=pk, row_number=number,
-                # без id пустая ячейка темы значит «внутри предыдущей темы»:
-                # так пишут руками и так выглядит экспорт без id
-                at_top_level=has_ids and not theme,
+                # пустая ячейка темы значит «вне темы» только в файле, где
+                # тема написана в каждой строке урока, — см. `uses_spread`
+                at_top_level=spread and not theme,
             )
         )
 

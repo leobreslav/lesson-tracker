@@ -75,12 +75,20 @@ class PlanTestCase(SchoolTestMixin, APITestCase):
         return rows
 
     def titles_with_notes(self):
-        """Срез плана вместе с заметками — для сверки после кругового CSV."""
+        """
+        Срез плана вместе с заметками — для сверки после кругового CSV.
+
+        Тема урока — часть среза, и это важно: пока строки шли плоским
+        списком, урок внутри темы и урок на верхнем уровне давали одинаковый
+        кортеж, и круговой тест не заметил, как импорт перестал вкладывать
+        уроки в темы вовсе.
+        """
         rows = []
         for branch in services.get_tree(self.owner()):
-            rows.append((branch.node.title, branch.node.note, branch.node.is_section))
+            rows.append((None, branch.node.title, branch.node.note, branch.node.is_section))
             rows.extend(
-                (child.title, child.note, child.is_section) for child in branch.children
+                (branch.node.title, child.title, child.note, child.is_section)
+                for child in branch.children
             )
         return rows
 

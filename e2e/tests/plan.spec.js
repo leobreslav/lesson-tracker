@@ -206,3 +206,57 @@ test('импорт из библиотеки наполняет пустой п�
   await expect(dialog).toBeHidden()
   await expect(page.locator('.plan-counts')).not.toContainText('Уроков: 0')
 })
+
+test('импорт вкладывает уроки в темы, включая названия с запятыми', async ({
+  page,
+  signIn,
+}) => {
+  await signIn(PEOPLE.petrov)
+  await openPlan(page, EMPTY_COURSE)
+
+  await page.getByRole('button', { name: 'Импорт CSV' }).click()
+  const dialog = page.locator('dialog.modal')
+  await dialog.locator('input[type="file"]').setInputFiles({
+    name: 'plan.csv',
+    mimeType: 'text/csv',
+    buffer: Buffer.from(
+      'Тема,Урок,Заметка\n' +
+        '"Дроби, обыкновенные",,\n' +
+        ',"Сложение, вычитание","№ 12, 13"\n' +
+        ',"Умножение ""в столбик""",\n' +
+        '"Точки; и запятые",,\n' +
+        ',"Урок; третий",\n',
+      'utf-8',
+    ),
+  })
+
+  // предпросмотр считает файл сам, на клиенте — и должен совпасть с тем,
+  // что положит сервер
+  await expect(dialog).toContainText('Распознано строк: 5')
+  await expect(dialog).toContainText('Сложение, вычитание')
+  await expect(dialog).toContainText('Умножение "в столбик"')
+
+  await dialog.getByRole('button', { name: 'Импортировать' }).click()
+  await expect(dialog).toBeHidden()
+
+  // дождаться перечитанного дерева: диалог закрывается раньше, чем ответ
+  // сервера доедет обратно
+  await expect(page.locator('.plan-counts')).toContainText('Уроков: 3')
+
+  // вложенность читается прямо из дерева: тема и её уроки, а не плоский
+  // список — плоский совпал бы и у сломанного импорта
+  const tree = await page.locator('.plan > li').evaluateAll((items) =>
+    items.map((item) => {
+      const head = item.querySelector('.title')?.textContent.trim() ?? ''
+      const kids = [...item.querySelectorAll('.plan-children .title')].map((el) =>
+        el.textContent.trim(),
+      )
+      return kids.length ? `${head}: ${kids.join(' / ')}` : head
+    }),
+  )
+
+  expect(tree).toEqual([
+    'Дроби, обыкновенные: Сложение, вычитание / Умножение "в столбик"',
+    'Точки; и запятые: Урок; третий',
+  ])
+})

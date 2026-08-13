@@ -68,11 +68,14 @@ function readRows(text, delimiter) {
 }
 
 export function sniffDelimiter(text) {
-  const head = text.split(/\r?\n/).filter((line) => line.trim()).slice(0, 5)
-  if (!head.length) return ','
-
+  // записи, а не строки: перевод строки внутри кавычек — часть заметки, и,
+  // порезав текст по \n, мы сравнивали бы обрывки
   const score = (delimiter) => {
-    const widths = readRows(head.join('\n'), delimiter).map((row) => row.length)
+    const widths = readRows(text, delimiter)
+      .filter((row) => row.some((cell) => cell.trim()))
+      .slice(0, 5)
+      .map((row) => row.length)
+    if (!widths.length) return [false, 0]
     const same = new Set(widths).size === 1
     return [same && Math.min(...widths) > 1, Math.min(...widths)]
   }
@@ -92,6 +95,22 @@ function headerWithIds(cells) {
   if (!cells.length || !ID_CELLS.has(cells[0].trim().toLowerCase())) return false
   const rest = cells.slice(1)
   return looksLikeHeader(rest) || !rest.some((cell) => cell.trim())
+}
+
+/**
+ * Is the theme written on every lesson row?
+ *
+ * That is what decides the meaning of an **empty** theme cell: in a file
+ * that repeats the theme, emptiness means «this lesson is outside a
+ * section»; in a file written as «a header, then lessons under it» it means
+ * nothing at all. Mirrors `uses_spread` on the server.
+ */
+export function usesSpread(rawRows, shift) {
+  return rawRows.some((raw) => {
+    const theme = (raw[shift] ?? '').trim()
+    const lesson = (raw[shift + 1] ?? '').trim()
+    return Boolean(theme && lesson)
+  })
 }
 
 /** Does the file carry an id column? Decided over the file, not per row. */
@@ -115,6 +134,11 @@ export function parsePlanCsv(text) {
   const raws = readRows(text, sniffDelimiter(text))
   const hasIds = detectIds(raws)
   const shift = hasIds ? 1 : 0
+  // шапку в счёт не берём: «Тема» и «Урок» в ней стоят рядом заполненными и
+  // выглядят в точности как строка урока с протянутой темой
+  const first = raws[0] ?? []
+  const header = hasIds ? headerWithIds(first) : looksLikeHeader(first)
+  const spread = usesSpread(header ? raws.slice(1) : raws, shift)
 
   raws.forEach((raw, index) => {
     const number = index + 1
@@ -160,9 +184,9 @@ export function parsePlanCsv(text) {
       title: lessonCell,
       note,
       id,
-      // with ids the theme is written on every lesson row, so an empty cell
-      // is a statement — «this lesson is not in a section» — and not silence
-      at_top_level: hasIds && !themeCell,
+      // an empty theme cell means «outside a section» only in a file that
+      // writes the theme on every lesson row — see usesSpread
+      at_top_level: spread && !themeCell,
     })
   })
 

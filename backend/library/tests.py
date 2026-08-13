@@ -32,6 +32,16 @@ SAMPLE = (
     (False, "Понятие вектора"),
 )
 
+# то же самое, но в виде дерева: у урока названа тема, в которой он лежит
+SAMPLE_TREE = (
+    (False, "Вводный урок", None),
+    (True, "Тригонометрия", None),
+    (False, "Синус суммы", "Тригонометрия"),
+    (False, "Косинус суммы", "Тригонометрия"),
+    (True, "Векторы", None),
+    (False, "Понятие вектора", "Векторы"),
+)
+
 
 class LibraryTestCase(SchoolTestMixin, APITestCase):
     def setUp(self):
@@ -60,7 +70,14 @@ class LibraryTestCase(SchoolTestMixin, APITestCase):
         make_node(teacher, course, "Понятие вектора", parent=vectors, position=0)
 
     def structure(self, teacher=None, course=None):
-        """The plan as «header / lesson» pairs, in display order."""
+        """
+        The plan as «header / lesson» pairs, in display order.
+
+        The header a lesson sits under is part of the pair: while the rows
+        were flat, a lesson inside a block and a lesson at the top level
+        looked identical here, and a copy that lost its nesting compared
+        equal to one that kept it.
+        """
         from plans import services
 
         owner = services.PlanOwner(
@@ -68,8 +85,10 @@ class LibraryTestCase(SchoolTestMixin, APITestCase):
         )
         rows = []
         for branch in services.get_tree(owner):
-            rows.append((branch.node.is_section, branch.node.title))
-            rows.extend((False, child.title) for child in branch.children)
+            rows.append((branch.node.is_section, branch.node.title, None))
+            rows.extend(
+                (False, child.title, branch.node.title) for child in branch.children
+            )
         return rows
 
     def rows_of(self, template):
@@ -406,7 +425,7 @@ class ImportTests(LibraryTestCase):
         self.assertEqual(response.status_code, 200, response.content)
         self.assertEqual(response.json()["created_lessons"], 4)
         self.assertEqual(response.json()["created_headers"], 2)
-        self.assertEqual(self.structure(), list(SAMPLE))
+        self.assertEqual(self.structure(), list(SAMPLE_TREE))
 
     def test_replace_clears_what_was_there(self):
         make_node(self.user, self.course, "Старый урок", position=0)
@@ -422,7 +441,7 @@ class ImportTests(LibraryTestCase):
         self.use(mode="append")
 
         structure = self.structure()
-        self.assertEqual(structure[0], (False, "Старый урок"))
+        self.assertEqual(structure[0], (False, "Старый урок", None))
         self.assertEqual(len(structure), len(SAMPLE) + 1)
 
     def test_it_writes_into_my_plan_and_not_the_authors(self):
@@ -449,9 +468,11 @@ class ImportTests(LibraryTestCase):
             format="json",
         )
 
-        self.assertEqual(self.structure(course=self.course), list(SAMPLE))
-        self.assertEqual(self.structure(course=third), list(SAMPLE))
-        self.assertIn((False, "Переименован"), self.structure(course=second))
+        self.assertEqual(self.structure(course=self.course), list(SAMPLE_TREE))
+        self.assertEqual(self.structure(course=third), list(SAMPLE_TREE))
+        self.assertIn(
+            (False, "Переименован", "Тригонометрия"), self.structure(course=second)
+        )
 
     def test_a_draft_of_somebody_else_cannot_be_used(self):
         self.template.is_published = False
@@ -493,7 +514,7 @@ class ImportTests(LibraryTestCase):
 
         # replace deletes before it writes: the transaction is what keeps
         # the old plan from vanishing when the write fails
-        self.assertEqual(self.structure(), [(False, "Старый урок")])
+        self.assertEqual(self.structure(), [(False, "Старый урок", None)])
 
 
 class RowEditingTests(LibraryTestCase):
