@@ -340,25 +340,24 @@ def layout_summary(
 def course_progress(
     entries: Sequence[LayoutEntry],
     today,
-    terms: Iterable = (),
     cancelled: Iterable = (),
-    ahead: int = 5,
+    ahead: int = 2,
 ) -> dict:
     """
-    Где курс идёт по году: положение, темп и ближайшие уроки.
+    Где курс идёт по году: положение, резерв, потери и ближайшие уроки.
 
-    **Про темп.** «Отстаю на два урока» посчитать напрямую нельзя: раскладка
-    позиционная, i-й урок лежит в i-м слоте, и пройдено всегда ровно столько
-    уроков, сколько прошло слотов, — отставания не бывает по построению.
-    Поэтому база другая: **равномерный темп**, то есть план, растянутый на
-    все слоты года. К сегодняшнему дню при нём должно быть пройдено
-    `lessons × прошедшие слоты / все слоты`, а пройдено — сколько прошло.
-    Разница и есть темп: план короче года — идёте с опережением, длиннее —
-    с отставанием.
+    **Главное число — резерв**: `слоты минус уроки плана`. Плюс значит, что
+    в году есть незанятые дни, минус — что план не помещается и его придётся
+    сократить. Порогов и промежуточных состояний нет: либо помещается, либо
+    нет.
 
-    Честное «к концу первой четверти должна быть пройдена тема 4» так не
-    посчитать: для этого плану нужна собственная разметка по термам, а её в
-    модели нет. Поэтому подпись у числа называет базу прямо.
+    Темпа здесь не считается, и это осознанно. «Отстаю на два урока» при
+    позиционной раскладке не бывает: i-й урок лежит в i-м слоте, и пройдено
+    всегда ровно столько уроков, сколько прошло слотов. Любая такая метрика
+    была бы пересчётом резерва, выданным за новость.
+
+    Расхождение с эталоном (`baseline_diff`) считает вызывающий код: снимок
+    живёт в базе, а эта функция работает над готовой раскладкой.
     """
     entries = list(entries)
     matched = [entry for entry in entries if entry.status == STATUS_MATCHED]
@@ -366,9 +365,7 @@ def course_progress(
     lessons_total = sum(1 for entry in entries if entry.lesson is not None)
     slots_total = len(with_slot)
 
-    passed_slots = sum(1 for entry in with_slot if entry.slot.date < today)
     done = sum(1 for entry in matched if entry.slot.date < today)
-    expected = round(lessons_total * passed_slots / slots_total) if slots_total else 0
 
     upcoming = [entry for entry in matched if entry.slot.date >= today]
     fits = len(matched) == lessons_total
@@ -381,18 +378,110 @@ def course_progress(
         "lessons_total": lessons_total,
         "slots_total": slots_total,
         "done": done,
-        "expected": expected,
-        "pace": done - expected,
+        "reserve": slots_total - lessons_total,
         "current": lesson_position(upcoming[0]) if upcoming else None,
         "next": [lesson_position(entry) for entry in upcoming[:ahead]],
         "last_lesson_date": matched[-1].slot.date if fits and matched else None,
         "missing": lessons_total - len(matched),
-        "free_slots": max(0, slots_total - lessons_total),
         "cancelled": sum(by_reason.values()),
         "cancelled_by_reason": by_reason,
         "extra": sum(1 for entry in with_slot if entry.slot.is_extra),
-        "terms": summary_by_term(entries, terms),
-        "term": current_term(entries, today, terms),
+    }
+
+
+def baseline_diff(rows: Iterable, lessons: Sequence[Lesson]) -> dict:
+    """
+    Насколько план разошёлся с зафиксированным эталоном.
+
+    Две категории, а не сальдо: **добавлено** и **удалено**. Обе плохие, но
+    по-разному — рост съедает резерв, удаление означает выкинутый материал,
+    и «плюс три минус три» тут не ноль, а шесть событий.
+
+    Считается по id узлов, а не по названиям: переименованный урок остаётся
+    тем же уроком, а два «Контрольная работа» в разных темах — разными.
+    Удалённый и заново заведённый урок честно считается и удалённым, и
+    добавленным: это и есть две правки.
+
+    По темам показывается только рост: дефицита по теме не бывает — тема,
+    из которой убрали урок, просто стала короче, а не «должна» его.
+    """
+    known = {row.node_id for row in rows if row.node_id}
+    alive = {lesson.node.pk for lesson in lessons}
+
+    added = [lesson for lesson in lessons if lesson.node.pk not in known]
+    removed = sum(
+        1
+        for row in rows
+        if not row.is_section and row.node_id and row.node_id not in alive
+    )
+
+    grown: dict[str | None, int] = {}
+    for lesson in added:
+        title = lesson.section.title if lesson.section else None
+        grown[title] = grown.get(title, 0) + 1
+
+    return {
+        "added": len(added),
+        "removed": removed,
+        "themes": [
+            {"title": title, "added": count}
+            for title, count in sorted(
+                grown.items(), key=lambda item: (-item[1], item[0] or "")
+            )
+        ],
+    }
+
+
+def lesson_position(entry: LayoutEntry) -> dict:
+    """Урок плана вместе с датой, на которую он попал."""
+    return {
+        "number": entry.lesson.number,
+        "title": entry.lesson.node.title,
+        "section_title": entry.lesson.section.title if entry.lesson.section else None,
+        "date": entry.slot.date if entry.slot else None,
+    }
+
+
+def baseline_diff(rows: Iterable, lessons: Sequence[Lesson]) -> dict:
+    """
+    Насколько план разошёлся с зафиксированным эталоном.
+
+    Две категории, а не сальдо: **добавлено** и **удалено**. Обе плохие, но
+    по-разному — рост съедает резерв, удаление означает выкинутый материал,
+    и «плюс три минус три» тут не ноль, а шесть событий.
+
+    Считается по id узлов, а не по названиям: переименованный урок остаётся
+    тем же уроком, а два «Контрольная работа» в разных темах — разными.
+    Удалённый и заново заведённый урок честно считается и удалённым, и
+    добавленным: это и есть две правки.
+
+    По темам показывается только рост: дефицита по теме не бывает — тема,
+    из которой убрали урок, просто стала короче, а не «должна» его.
+    """
+    known = {row.node_id for row in rows if row.node_id}
+    alive = {lesson.node.pk for lesson in lessons}
+
+    added = [lesson for lesson in lessons if lesson.node.pk not in known]
+    removed = sum(
+        1
+        for row in rows
+        if not row.is_section and row.node_id and row.node_id not in alive
+    )
+
+    grown: dict[str | None, int] = {}
+    for lesson in added:
+        title = lesson.section.title if lesson.section else None
+        grown[title] = grown.get(title, 0) + 1
+
+    return {
+        "added": len(added),
+        "removed": removed,
+        "themes": [
+            {"title": title, "added": count}
+            for title, count in sorted(
+                grown.items(), key=lambda item: (-item[1], item[0] or "")
+            )
+        ],
     }
 
 
@@ -1242,6 +1331,33 @@ def plan_nodes(owner: PlanOwner):
 
 def get_tree(owner: PlanOwner) -> list[Branch]:
     return build_tree(plan_nodes(owner))
+
+
+class SnapshotRow(NamedTuple):
+    """Строка снимка плана: то, что уходит в эталон."""
+
+    is_section: bool
+    title: str
+    node_id: int
+
+
+def plan_snapshot(owner: PlanOwner) -> list[SnapshotRow]:
+    """
+    План плоским списком в порядке отображения — форма эталона.
+
+    Та же форма, что у строк шаблона в библиотеке: дерево ровно
+    двухуровневое, и плоский список с заголовками выражает его полностью.
+    """
+    rows = []
+    for branch in get_tree(owner):
+        rows.append(SnapshotRow(True, branch.node.title, branch.node.pk)
+                    if branch.node.is_section
+                    else SnapshotRow(False, branch.node.title, branch.node.pk))
+        rows.extend(
+            SnapshotRow(False, child.title, child.pk) for child in branch.children
+        )
+
+    return rows
 
 
 def flatten_lessons(owner: PlanOwner) -> list[Lesson]:

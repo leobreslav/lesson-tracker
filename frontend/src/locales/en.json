@@ -36,7 +36,7 @@
   "nav": {
     "menu": "Sections menu",
     "schedule": "My schedule",
-    "layout": "Layout",
+    "progress": "Progress",
     "plan": "Lesson plan",
     "classes": "Classes",
     "year": "School year",
@@ -365,7 +365,53 @@
     "week": "wk {{number}}",
     "freeSlot": "free lesson",
     "freeSummary_one": "{{count}} free lesson, {{start}} — {{end}}",
-    "freeSummary_other": "{{count}} free lessons, {{start}} — {{end}}"
+    "freeSummary_other": "{{count}} free lessons, {{start}} — {{end}}",
+    "baseline": {
+      "fix": "Fix as baseline",
+      "refix": "Re-fix the baseline",
+      "hint": "A snapshot of the plan to compare with later: «Progress» will show how far it has drifted.",
+      "fixedAt": "fixed on {{date}} — re-fixing replaces it",
+      "confirm": "Replace the baseline? The old snapshot goes, and the drift will be counted from today.",
+      "done_one": "Baseline fixed: {{count}} row.",
+      "done_other": "Baseline fixed: {{count}} rows."
+    }
+  },
+  "progress": {
+    "title": "Progress",
+    "hint": "Where each course stands: does the plan still fit the year, what got cancelled and how far it drifted from the baseline. Editing lives on the «Lesson plan» page.",
+    "reserve_one": "{{count}} lesson of room",
+    "reserve_other": "{{count}} lessons of room",
+    "reserveSpare": "spare lessons in the year",
+    "reserveShort": "lessons over the year",
+    "cancelled": "lessons cancelled",
+    "noReason": "no reason given",
+    "grown": "added since {{date}}",
+    "dropped_one": "and {{count}} lesson dropped",
+    "dropped_other": "and {{count}} lessons dropped",
+    "noBaseline": "no baseline fixed yet",
+    "grownThemes": "Which themes grew",
+    "looseTheme": "outside the themes",
+    "endsOn": "the plan ends here; the year runs to {{year}}",
+    "doesNotFit": "the plan does not fit: {{count}} lessons have no day",
+    "pastYear": "the plan runs past the end of the year ({{year}})",
+    "next": "Coming up",
+    "toPlan": "Open the plan",
+    "toSchedule": "Open the schedule",
+    "status": {
+      "fine": "on track",
+      "short_one": "{{count}} lesson over",
+      "short_other": "{{count}} lessons over"
+    },
+    "where": {
+      "at": "lesson {{number}} of {{total}}",
+      "noPlan": "no plan yet",
+      "finished": "the plan is finished: {{count}} lessons"
+    },
+    "needClass": {
+      "title": "A course first",
+      "hint": "This page shows how each course is going through the year — and both the plan and the schedule belong to a course.",
+      "action": "Add a course"
+    }
   },
   "calendar": {
     "title": "School year",
@@ -442,49 +488,6 @@
     },
     "manageHint": "Courses are managed in the school section:",
     "readOnlyHint": "Courses are created by the school administrator."
-  },
-  "layout": {
-    "title": "Progress",
-    "hint": "How the courses are going: where you are now, whether you are keeping up and what is next. Editing lives on the «Lesson plan» page.",
-    "done": "lessons taught",
-    "planEnds": "the plan ends on this date",
-    "planDoesNotFit": "the plan does not fit: {{count}} lessons have no slot",
-    "termSpare": "spare slots, {{term}}",
-    "termShort": "lessons over the top, {{term}}",
-    "next": "Coming up",
-    "byTerm": "By term",
-    "term": "Term",
-    "slots": "Slots",
-    "lessons": "Lessons",
-    "balance": "Balance",
-    "counters": "For the year",
-    "slotsTotal": "lessons scheduled for the year",
-    "freeSlots": "slots the plan does not reach",
-    "extra": "extra lessons",
-    "cancelled": "cancelled lessons",
-    "noReason": "no reason given",
-    "toPlan": "Open the plan",
-    "toSchedule": "Open the schedule",
-    "outsideTerms": "outside terms",
-    "pace": {
-      "even": "on pace",
-      "ahead_one": "{{count}} lesson ahead",
-      "ahead_other": "{{count}} lessons ahead",
-      "behind_one": "{{count}} lesson behind",
-      "behind_other": "{{count}} lessons behind",
-      "idle": "not started",
-      "base": "against an even pace — the plan spread over every slot of the year; by today it would be {{expected}}"
-    },
-    "where": {
-      "at": "lesson {{number}} of {{total}}",
-      "noPlan": "no plan yet",
-      "finished": "the plan is finished: {{count}} lessons"
-    },
-    "needClass": {
-      "title": "A course first",
-      "hint": "This page shows how each course is going through the year — and both the plan and the schedule belong to a course.",
-      "action": "Add a course"
-    }
   },
   "agenda": {
     "title": "My schedule",

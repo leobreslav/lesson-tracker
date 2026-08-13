@@ -97,3 +97,76 @@ class PlanNode(LessonContent):
             .exclude(pk=self.pk)
             .exists()
         )
+
+
+class PlanBaseline(models.Model):
+    """
+    Снимок плана на момент фиксации — то, с чем сравнивают потом.
+
+    Нужен ровно для одного вопроса: план разросся или его пришлось
+    сократить? Без эталона на этот вопрос ответить нечем — план меняется
+    каждый день, и «стало 47 уроков» само по себе ничего не значит.
+
+    Содержание уроков и вложения сюда не копируются: эталон про
+    **структуру** — сколько уроков, в каких темах и в каком порядке. Копия
+    содержания удвоила бы хранение ради вопроса, которого никто не задаёт.
+
+    На пару (учитель, курс) снимок один: перефиксация заменяет прежний.
+    История версий тут была бы отдельной функцией со своим экраном, а нужен
+    ответ «относительно чего считаем» — и он один.
+    """
+
+    teacher = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        related_name="plan_baselines",
+        on_delete=models.CASCADE,
+        verbose_name="teacher",
+    )
+    course = models.ForeignKey(
+        "schedule.Course",
+        related_name="plan_baselines",
+        on_delete=models.CASCADE,
+        verbose_name="course",
+    )
+    created_at = models.DateTimeField("fixed at", auto_now_add=True)
+
+    class Meta:
+        verbose_name = "plan baseline"
+        verbose_name_plural = "plan baselines"
+        constraints = [
+            models.UniqueConstraint(
+                fields=("teacher", "course"), name="one_baseline_per_plan"
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.course} — {self.created_at:%Y-%m-%d}"
+
+
+class PlanBaselineRow(models.Model):
+    """
+    Строка снимка: плоский список, как у шаблона библиотеки.
+
+    `node_id` — тот узел плана, с которого строку сняли, обычным числом, а
+    не связью: узел могут удалить, и именно это удаление снимок и должен
+    пережить, чтобы о нём рассказать.
+    """
+
+    baseline = models.ForeignKey(
+        PlanBaseline,
+        related_name="rows",
+        on_delete=models.CASCADE,
+        verbose_name="baseline",
+    )
+    position = models.PositiveIntegerField("position")
+    is_section = models.BooleanField("section", default=False)
+    title = models.CharField("title", max_length=200)
+    node_id = models.PositiveIntegerField("plan node id", null=True, blank=True)
+
+    class Meta:
+        verbose_name = "plan baseline row"
+        verbose_name_plural = "plan baseline rows"
+        ordering = ("position", "id")
+
+    def __str__(self):
+        return self.title

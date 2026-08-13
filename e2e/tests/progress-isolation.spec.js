@@ -70,28 +70,33 @@ test('отмена урока сдвигает даты в плане', async ({
   expect(after[1]).toBe(before[2])
 })
 
-test('раскладка показывает строку на курс и подробности по нажатию', async ({
+test('«Ход года» — строка на курс и подробности по нажатию', async ({
   page,
   signIn,
 }) => {
   await signIn(PEOPLE.ivanova)
-  await page.goto('/layout')
+  await page.goto('/progress')
   await ready(page)
 
-  // строка на курс: где я, темп, баланс текущей четверти
+  // строка на курс: где я, резерв, плашка состояния
   const rows = page.locator('.progress-list > li')
   expect(await rows.count()).toBeGreaterThan(1)
   await expect(rows.first().locator('.where')).toContainText('урок')
-  await expect(rows.first().locator('.pace')).not.toBeEmpty()
+  await expect(rows.first().locator('.reserve')).toContainText('резерв')
+  await expect(rows.first().locator('.badge.state')).toHaveText('в порядке')
 
   // ленты уроков здесь больше нет — она в плане
   await expect(page.locator('.layout-feed, .layout-row')).toHaveCount(0)
+  // как и метрик, от которых отказались
+  await expect(page.locator('.terms-table, [data-card="pace"]')).toHaveCount(0)
 
   await rows.first().locator('.progress-head').click()
   const details = rows.first().locator('.progress-details')
-  await expect(details.locator('[data-card="pace"]')).toContainText('равномерного')
-  await expect(details.locator('.terms-table tbody tr').first()).toBeVisible()
-  await expect(details.locator('.progress-counters')).toContainText('отменённых')
+  await expect(details.locator('[data-card="reserve"]')).toContainText('свободных')
+  await expect(details.locator('[data-card="losses"]')).toContainText('отменено')
+  await expect(details.locator('[data-card="growth"]')).toContainText('эталон')
+  // ближайших уроков ровно два
+  await expect(details.locator('.progress-next li')).toHaveCount(2)
 })
 
 test('второй учитель не видит ни уроков, ни планов первого', async ({
@@ -147,4 +152,43 @@ test('автор свой черновик видит и помечен метк
   const draft = page.locator('li', { hasText: 'Алгебра 9, черновик' })
   await expect(draft).toBeVisible()
   await expect(draft.locator('.badge')).toHaveText('черновик')
+})
+
+test('эталон фиксируется в плане и виден на «Ходе года»', async ({
+  page,
+  signIn,
+}) => {
+  await signIn(PEOPLE.ivanova)
+  await openPlan(page, 'Grade 6 Algebra')
+
+  await page.getByRole('button', { name: 'Зафиксировать план' }).click()
+  await expect(page.getByText(/Эталон зафиксирован/)).toBeVisible()
+
+  // сразу после фиксации расхождения нет
+  await page.goto('/progress')
+  await ready(page)
+  const row = page.locator('.progress-list > li').first()
+  await row.locator('.progress-head').click()
+  await expect(row.locator('[data-card="growth"] h2')).toHaveText('0')
+
+  // добавили урок — план вырос ровно на него
+  await openPlan(page, 'Grade 6 Algebra')
+  await page.getByRole('button', { name: '+ урок' }).click()
+  const form = page.locator('.plan-add-form')
+  await form.getByLabel('Название').fill('Лишний урок')
+  await form.getByRole('button', { name: 'Добавить' }).click()
+  await expect(page.locator('.plan-row', { hasText: 'Лишний урок' })).toBeVisible()
+
+  await page.goto('/progress')
+  await ready(page)
+  await page.locator('.progress-list > li').first().locator('.progress-head').click()
+  await expect(
+    page.locator('.progress-list > li').first().locator('[data-card="growth"] h2'),
+  ).toHaveText('+1')
+
+  // кнопка сменила подпись: следующая фиксация заменит прежнюю
+  await openPlan(page, 'Grade 6 Algebra')
+  await expect(
+    page.getByRole('button', { name: 'Перефиксировать план' }),
+  ).toBeVisible()
 })

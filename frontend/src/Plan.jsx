@@ -51,7 +51,9 @@ import {
   downloadPlan,
   fetchCourses,
   fetchPlan,
+  fetchBaseline,
   fetchPlanSlots,
+  fixBaseline,
   fetchSchoolYears,
   importPlanFile,
   movePlanNode,
@@ -121,6 +123,7 @@ export default function Plan({ onLoggedOut }) {
   // то есть ровно тех трёх вещей, на которых спотыкается CSV
   const [format, setFormat] = useState('xlsx')
   const [ribbon, setRibbon] = useState([])
+  const [baseline, setBaseline] = useState(null)
   const [showDates, setShowDates] = useState(rememberedDates)
   const [showWeeks, setShowWeeks] = useState(() => remembered(WEEKS_KEY, true))
   const [showFree, setShowFree] = useState(() => remembered(FREE_KEY, true))
@@ -189,6 +192,9 @@ export default function Plan({ onLoggedOut }) {
     fetchPlanSlots(classId)
       .then((result) => !cancelled && setRibbon(result.slots))
       .catch(() => !cancelled && setRibbon([]))
+    fetchBaseline(classId)
+      .then((result) => !cancelled && setBaseline(result.created_at))
+      .catch(() => !cancelled && setBaseline(null))
 
     return () => {
       cancelled = true
@@ -490,6 +496,25 @@ export default function Plan({ onLoggedOut }) {
       handleError(err)
     } finally {
       setBusy(false)
+    }
+  }
+
+  /**
+   * Зафиксировать план эталоном.
+   *
+   * Перефиксация спрашивает: снимок один на план, и прежний уйдёт вместе с
+   * ответом на вопрос «относительно чего мы считали расхождение».
+   */
+  const handleBaseline = async () => {
+    if (baseline && !window.confirm(t('plan.baseline.confirm'))) return
+
+    setError(null)
+    try {
+      const saved = await fixBaseline(classId)
+      setBaseline(saved.created_at)
+      setNotice(t('plan.baseline.done', { count: saved.rows }))
+    } catch (err) {
+      handleError(err)
     }
   }
 
@@ -1025,7 +1050,7 @@ export default function Plan({ onLoggedOut }) {
                       type="button"
                       data-card="free"
                       className="panel card-stat link-card"
-                      onClick={() => navigate('/layout')}
+                      onClick={() => navigate('/progress')}
                     >
                       <h2>{layout.totals.balance}</h2>
                       <p className="hint">{t('plan.summary.free')}</p>
@@ -1036,7 +1061,7 @@ export default function Plan({ onLoggedOut }) {
                       type="button"
                       data-card="missing"
                       className="panel card-stat bad link-card"
-                      onClick={() => navigate('/layout')}
+                      onClick={() => navigate('/progress')}
                     >
                       <h2>{layout.totals.missing}</h2>
                       <p className="hint">{t('plan.summary.missing')}</p>
@@ -1263,6 +1288,22 @@ export default function Plan({ onLoggedOut }) {
                     onClick={() => setDialog({ type: 'publish' })}
                   >
                     {t(mineOnShelf ? 'plan.refreshTemplate' : 'plan.publish')}
+                  </button>
+
+                  <span className="actions-divider" aria-hidden="true" />
+
+                  <button
+                    type="button"
+                    className="secondary"
+                    disabled={busy}
+                    title={
+                      baseline
+                        ? t('plan.baseline.fixedAt', { date: shortDate(baseline.slice(0, 10)) })
+                        : t('plan.baseline.hint')
+                    }
+                    onClick={handleBaseline}
+                  >
+                    {t(baseline ? 'plan.baseline.refix' : 'plan.baseline.fix')}
                   </button>
                 </div>
 

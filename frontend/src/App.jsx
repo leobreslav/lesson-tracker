@@ -113,7 +113,7 @@ export default function App() {
             }
           />
           <Route path="/schedule" element={guarded(Agenda)} />
-          <Route path="/layout" element={guarded(Layout)} />
+          <Route path="/progress" element={guarded(Layout)} />
           <Route path="/plan" element={guarded(Plan)} />
           <Route path="/library" element={guarded(Library)} />
           <Route path="/classes" element={guarded(Classes, { user })} />

@@ -428,6 +428,15 @@ export const openAttachment = async (id) => {
  */
 export const fetchProgress = () => request('/api/plan/progress/')
 
+/** Зафиксировать план курса как эталон — снимок, с которым сравнивают потом. */
+export const fixBaseline = (classId) =>
+  request(`/api/plan/baseline/?course=${encodeURIComponent(classId)}`, {
+    method: 'POST',
+  })
+
+export const fetchBaseline = (classId) =>
+  request(`/api/plan/baseline/?course=${encodeURIComponent(classId)}`)
+
 /** Topics across every class for a period: slot_id → the plan lesson. */
 export const fetchLayoutAgenda = (start, end) =>
   request(`/api/plan/layout/agenda/?${new URLSearchParams({ start, end })}`)

@@ -771,37 +771,48 @@ class ProgressTests(LayoutApiTestCase):
         self.assertEqual(row["done"], 0)
 
     def test_the_next_lessons_come_with_dates(self):
+        """Два, а не пять: экран отвечает «что готовить», а не «что дальше»."""
         self.fill_slots(9)
 
         upcoming = self.courses()[self.course.name]["next"]
 
-        self.assertEqual(len(upcoming), 5)
+        self.assertEqual(len(upcoming), 2)
         self.assertEqual(upcoming[0]["date"], str(MONDAY))
-        self.assertEqual([row["number"] for row in upcoming], [1, 2, 3, 4, 5])
+        self.assertEqual([row["number"] for row in upcoming], [1, 2])
 
-    def test_pace_compares_with_an_even_spread(self):
+    def test_reserve_is_slots_minus_lessons(self):
         """
-        Темп — не «сколько прошло», а «сколько прошло бы при равномерном
-        прохождении плана по слотам года». Прямого отставания не бывает:
-        раскладка позиционная, и пройдено всегда столько же, сколько слотов.
+        Резерв — главное число экрана: плюс значит запас дней, минус — что
+        план не помещается. Порогов между ними нет.
         """
-        # семь уроков плана на четырнадцать слотов, половина из них позади:
-        # даты считаем от сегодняшнего дня, иначе «прошло» зависело бы от
-        # того, когда прогоняют тесты
+        self.fill_slots(9)
+
+        row = self.courses()[self.course.name]
+
+        self.assertEqual(row["slots_total"], 9)
+        self.assertEqual(row["lessons_total"], 7)
+        self.assertEqual(row["reserve"], 2)
+
+    def test_a_plan_longer_than_the_year_has_a_negative_reserve(self):
+        self.fill_slots(3)
+
+        row = self.courses()[self.course.name]
+
+        self.assertEqual(row["reserve"], -4)
+        self.assertEqual(row["missing"], 4)
+
+    def test_done_counts_lessons_already_taught(self):
+        """Даты считаем от сегодняшнего дня, иначе «прошло» зависело бы от
+        того, когда прогоняют тесты."""
         now = timezone.localdate()
-        for index in range(7):
+        for index in range(3):
             self.add_slot(now - timedelta(days=index + 1))
-        for index in range(7):
+        for index in range(3):
             self.add_slot(now + timedelta(days=index + 1))
 
         row = self.courses()[self.course.name]
 
-        self.assertEqual(row["slots_total"], 14)
-        self.assertEqual(row["lessons_total"], 7)
-        # прошло 7 слотов из 14, значит по плану должно быть пройдено 3.5 → 4
-        self.assertEqual(row["expected"], 4)
-        self.assertEqual(row["done"], 7)
-        self.assertEqual(row["pace"], 3)
+        self.assertEqual(row["done"], 3)
 
     def test_a_plan_that_does_not_fit_has_no_end_date(self):
         self.fill_slots(3)
@@ -810,7 +821,6 @@ class ProgressTests(LayoutApiTestCase):
 
         self.assertIsNone(row["last_lesson_date"])
         self.assertEqual(row["missing"], 4)
-        self.assertEqual(row["free_slots"], 0)
 
     def test_counters_the_plan_page_does_not_have(self):
         self.fill_slots(9)
@@ -824,40 +834,7 @@ class ProgressTests(LayoutApiTestCase):
         self.assertEqual(row["extra"], 1)
         self.assertEqual(row["cancelled"], 3)
         self.assertEqual(row["cancelled_by_reason"], {"Болезнь": 2, "": 1})
-        self.assertEqual(row["free_slots"], 3)
-
-    def test_the_current_term_is_the_one_we_are_in_or_the_next(self):
-        Term.objects.create(
-            year=self.course.year,
-            name="1 четверть",
-            start_date=MONDAY,
-            end_date=MONDAY + timedelta(days=11),
-        )
-        self.fill_slots(9)
-
-        row = self.courses()[self.course.name]
-
-        # «сегодня» в тестах раньше учебного года, поэтому терм — ближайший
-        self.assertEqual(row["term"]["name"], "1 четверть")
-        self.assertEqual(row["term"]["slots"], 9)
-        self.assertEqual(row["term"]["lessons"], 7)
-        self.assertEqual(row["term"]["balance"], 2)
-
-    def test_terms_add_up_to_the_whole(self):
-        Term.objects.create(
-            year=self.course.year,
-            name="1 четверть",
-            start_date=MONDAY,
-            end_date=MONDAY + timedelta(days=4),
-        )
-        self.fill_slots(9)
-
-        row = self.courses()[self.course.name]
-
-        self.assertEqual(sum(term["slots"] for term in row["terms"]), row["slots_total"])
-        self.assertEqual(
-            sum(term["lessons"] for term in row["terms"]), row["lessons_total"]
-        )
+        self.assertEqual(row["reserve"], 3)
 
     def test_another_teachers_course_is_not_there(self):
         other = make_course(
@@ -871,3 +848,116 @@ class ProgressTests(LayoutApiTestCase):
         self.client.credentials()
 
         self.assertEqual(self.progress().status_code, 401)
+
+
+class BaselineTests(LayoutApiTestCase):
+    """
+    Эталонный план: снимок, с которым сравнивают потом.
+
+    Проверяется главное свойство — что «добавлено» и «удалено» это **две**
+    категории, а не сальдо, и что считаются они по узлам, а не по названиям.
+    """
+
+    def fix(self, course=None):
+        return self.client.post(
+            f"{reverse('plannode-baseline')}?course={(course or self.course).pk}"
+        )
+
+    def progress(self):
+        rows = self.client.get(reverse("plannode-progress")).json()["courses"]
+        return {row["name"]: row for row in rows}[self.course.name]
+
+    def test_fixing_takes_the_whole_plan(self):
+        response = self.fix()
+
+        self.assertEqual(response.status_code, 201, response.content)
+        # семь уроков и три темы из build_sample
+        self.assertEqual(response.json()["rows"], 10)
+        self.assertIsNotNone(response.json()["created_at"])
+
+    def test_without_a_baseline_there_is_nothing_to_compare_with(self):
+        self.assertIsNone(self.progress()["baseline"])
+
+    def test_a_freshly_fixed_plan_differs_from_itself_in_nothing(self):
+        self.fix()
+
+        baseline = self.progress()["baseline"]
+
+        self.assertEqual(baseline["added"], 0)
+        self.assertEqual(baseline["removed"], 0)
+        self.assertEqual(baseline["themes"], [])
+
+    def test_added_and_removed_are_two_numbers_not_one(self):
+        """Плюс три минус три — это не ноль, а шесть правок."""
+        self.fix()
+        for index in range(3):
+            self.add(f"Новый {index}", parent=self.trig, position=10 + index)
+        PlanNode.objects.filter(title__in=("Понятие вектора", "Сложение векторов")).delete()
+
+        baseline = self.progress()["baseline"]
+
+        self.assertEqual(baseline["added"], 3)
+        self.assertEqual(baseline["removed"], 2)
+
+    def test_growth_is_counted_per_theme(self):
+        self.fix()
+        self.add("Ещё один", parent=self.trig, position=10)
+        self.add("И ещё", parent=self.trig, position=11)
+        self.add("Сам по себе", position=12)
+
+        themes = self.progress()["baseline"]["themes"]
+
+        self.assertEqual(themes[0], {"title": "Тригонометрия", "added": 2})
+        # урок вне тем тоже считается, просто без названия темы
+        self.assertEqual(themes[1], {"title": None, "added": 1})
+
+    def test_renaming_is_not_a_change_of_size(self):
+        """Переименованный урок остаётся тем же уроком."""
+        self.fix()
+        lesson = PlanNode.objects.get(course=self.course, title="Синус суммы")
+        lesson.title = "Синус суммы двух углов"
+        lesson.save(update_fields=["title"])
+
+        baseline = self.progress()["baseline"]
+
+        self.assertEqual((baseline["added"], baseline["removed"]), (0, 0))
+
+    def test_refixing_replaces_the_previous_snapshot(self):
+        self.fix()
+        self.add("Новый урок", parent=self.trig, position=10)
+        self.fix()
+
+        baseline = self.progress()["baseline"]
+
+        # план из десяти строк плюс добавленный урок — и все они в эталоне
+        self.assertEqual((baseline["added"], baseline["removed"]), (0, 0))
+        self.assertEqual(PlanNode.objects.filter(course=self.course).count(), 11)
+
+    def test_the_snapshot_survives_the_deletion_of_its_lessons(self):
+        """
+        Ради этого id узла лежит числом, а не связью: удаление урока — это
+        ровно то событие, о котором снимок и должен рассказать.
+        """
+        self.fix()
+        PlanNode.objects.filter(course=self.course, title="Аксиомы").delete()
+
+        self.assertEqual(self.progress()["baseline"]["removed"], 1)
+
+    def test_a_colleague_fixes_their_own_plan(self):
+        self.fix()
+        other = self.add("Их урок", teacher=self.colleague)
+
+        self.client.force_authenticate(self.colleague)
+        self.client.post(f"{reverse('plannode-baseline')}?course={self.course.pk}")
+        rows = self.client.get(reverse("plannode-baseline"), {"course": self.course.pk})
+
+        self.assertEqual(rows.json()["rows"], 1)
+        self.assertTrue(PlanNode.objects.filter(pk=other.pk).exists())
+
+    def test_cannot_fix_another_teachers_course(self):
+        self.assertEqual(self.fix(self.alien_class).status_code, 404)
+
+    def test_requires_authentication(self):
+        self.client.credentials()
+
+        self.assertEqual(self.fix().status_code, 401)

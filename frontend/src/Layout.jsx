@@ -6,7 +6,7 @@ import { fetchProgress } from './api'
 import { longDate, shortDate, shortWeekday } from './dates'
 
 /**
- * «Раскладка» — экран текущего состояния, а не список уроков.
+ * «Ход года» — экран состояния, а не список уроков.
  *
  * Ленту с датами забрал себе учебный план: там она рабочая, там же её и
  * правят. Здесь остаётся то, чего в плане нет и не должно быть: где курс
@@ -40,8 +40,11 @@ export default function Layout({ onLoggedOut }) {
       .then((result) => {
         if (cancelled) return
         setCourses(result.courses)
-        // один курс разворачиваем сразу: прятать за нажатием нечего
-        if (result.courses.length === 1) setOpened(result.courses[0].id)
+        // разворачиваем тот, где проблема: экран затем и нужен, чтобы её
+        // увидеть. Проблем нет — все свёрнуты, смотреть не на что
+        const trouble = result.courses.find((course) => course.reserve < 0)
+        if (trouble) setOpened(trouble.id)
+        else if (result.courses.length === 1) setOpened(result.courses[0].id)
       })
       .catch((err) => {
         if (!cancelled) handleError(err)
@@ -52,27 +55,21 @@ export default function Layout({ onLoggedOut }) {
     }
   }, [handleError])
 
-  /** «Опережаете на 2» / «отстаёте на 3» / «идёте вровень». */
-  const paceText = (course) => {
-    if (!course.slots_total || !course.lessons_total) return t('layout.pace.idle')
-    if (course.pace === 0) return t('layout.pace.even')
-    return t(course.pace > 0 ? 'layout.pace.ahead' : 'layout.pace.behind', {
-      count: Math.abs(course.pace),
-    })
-  }
+  /** Всё сводится к одному: план помещается в год или нет. */
+  const short = (course) => course.reserve < 0
 
-  const paceClass = (course) => {
-    if (!course.slots_total || !course.lessons_total || course.pace === 0) return ''
-    return course.pace > 0 ? ' good' : ' bad'
-  }
+  const statusText = (course) =>
+    short(course)
+      ? t('progress.status.short', { count: -course.reserve })
+      : t('progress.status.fine')
 
-  /** «урок 14 из 44 · Одночлены и многочлены». */
+  /** «урок 14 из 44 · Тригонометрия». */
   const whereText = (course) => {
-    if (!course.lessons_total) return t('layout.where.noPlan')
-    if (!course.current) return t('layout.where.finished', { count: course.done })
+    if (!course.lessons_total) return t('progress.where.noPlan')
+    if (!course.current) return t('progress.where.finished', { count: course.done })
 
     return [
-      t('layout.where.at', {
+      t('progress.where.at', {
         number: course.current.number,
         total: course.lessons_total,
       }),
@@ -82,139 +79,115 @@ export default function Layout({ onLoggedOut }) {
       .join(' · ')
   }
 
-  const balanceText = (balance) => `${balance > 0 ? '+' : ''}${balance}`
+  const signed = (value) => `${value > 0 ? '+' : ''}${value}`
 
   const details = (course) => (
     <div className="progress-details">
       <div className="cards">
-        <section className="panel card-stat" data-card="done">
-          <h2>
-            {course.done} / {course.lessons_total}
-          </h2>
-          <p className="hint">{t('layout.done')}</p>
+        <section
+          className={`panel card-stat ${short(course) ? 'bad' : 'good'}`}
+          data-card="reserve"
+        >
+          <h2>{signed(course.reserve)}</h2>
+          <p className="hint">
+            {t(short(course) ? 'progress.reserveShort' : 'progress.reserveSpare')}
+          </p>
         </section>
 
-        <section className={`panel card-stat${paceClass(course)}`} data-card="pace">
-          <h2 className="small">{paceText(course)}</h2>
-          <p className="hint">{t('layout.pace.base', { expected: course.expected })}</p>
+        <section className="panel card-stat" data-card="losses">
+          <h2>{course.cancelled}</h2>
+          <p className="hint">{t('progress.cancelled')}</p>
+          {course.cancelled > 0 && (
+            <p className="hint">
+              {Object.entries(course.cancelled_by_reason)
+                .map(([reason, count]) => `${reason || t('progress.noReason')}: ${count}`)
+                .join(' · ')}
+            </p>
+          )}
+        </section>
+
+        <section className="panel card-stat" data-card="growth">
+          {course.baseline ? (
+            <>
+              <h2>{signed(course.baseline.added)}</h2>
+              <p className="hint">
+                {t('progress.grown', {
+                  date: shortDate(course.baseline.created_at.slice(0, 10)),
+                })}
+              </p>
+              {course.baseline.removed > 0 && (
+                <p className="hint">
+                  {t('progress.dropped', { count: course.baseline.removed })}
+                </p>
+              )}
+            </>
+          ) : (
+            <>
+              <h2 className="small">—</h2>
+              <p className="hint">{t('progress.noBaseline')}</p>
+            </>
+          )}
         </section>
 
         <section className="panel card-stat" data-card="ends">
           <h2 className="small">
-            {course.last_lesson_date ? longDate(course.last_lesson_date) : '—'}
+            {course.last_lesson_date ? shortDate(course.last_lesson_date) : '—'}
           </h2>
           <p className="hint">
             {course.last_lesson_date
-              ? t('layout.planEnds')
-              : t('layout.planDoesNotFit', { count: course.missing })}
+              ? t('progress.endsOn', { year: shortDate(course.year_end) })
+              : t('progress.doesNotFit', { count: course.missing })}
           </p>
         </section>
-
-        {course.term && (
-          <section
-            className={`panel card-stat ${course.term.balance < 0 ? 'bad' : 'good'}`}
-            data-card="term"
-          >
-            <h2>{balanceText(course.term.balance)}</h2>
-            <p className="hint">
-              {t(course.term.balance < 0 ? 'layout.termShort' : 'layout.termSpare', {
-                term: course.term.name,
-              })}
-            </p>
-          </section>
-        )}
       </div>
 
-      {course.next.length > 0 && (
+      {/* про год говорим отдельно: на плашку состояния это не влияет */}
+      {course.last_lesson_date && course.last_lesson_date > course.year_end && (
+        <p className="hint warning">
+          {t('progress.pastYear', { year: shortDate(course.year_end) })}
+        </p>
+      )}
+
+      {course.baseline?.themes.length > 0 && (
         <section className="panel">
-          <h3>{t('layout.next')}</h3>
-          <ul className="progress-next">
-            {course.next.map((lesson) => (
-              <li key={lesson.number}>
-                <span className="when">
-                  {shortDate(lesson.date)} <em>{shortWeekday(lesson.date)}</em>
-                </span>
-                <span className="plan-number">{lesson.number}</span>
-                <span className="what">{lesson.title}</span>
-                {lesson.section_title && (
-                  <span className="hint">{lesson.section_title}</span>
-                )}
+          <h3>{t('progress.grownThemes')}</h3>
+          <ul className="progress-themes">
+            {course.baseline.themes.map((theme) => (
+              <li key={theme.title ?? 'loose'}>
+                <span>{theme.title ?? t('progress.looseTheme')}</span>
+                <b>{signed(theme.added)}</b>
               </li>
             ))}
           </ul>
         </section>
       )}
 
-      <section className="panel">
-        <h3>{t('layout.byTerm')}</h3>
-        <table className="terms-table">
-          <thead>
-            <tr>
-              <th>{t('layout.term')}</th>
-              <th>{t('layout.slots')}</th>
-              <th>{t('layout.lessons')}</th>
-              <th>{t('layout.balance')}</th>
-            </tr>
-          </thead>
-          <tbody>
-            {course.terms.map((term) => (
-              <tr key={term.id ?? 'outside'}>
-                <td>
-                  {term.name}
-                  {term.start && (
-                    <span className="hint">
-                      {shortDate(term.start)} — {shortDate(term.end)}
-                    </span>
-                  )}
-                </td>
-                <td>{term.slots}</td>
-                <td>{term.lessons}</td>
-                <td className={term.balance < 0 ? 'bad' : 'good'}>
-                  {balanceText(term.balance)}
-                </td>
-              </tr>
+      {course.next.length > 0 && (
+        <section className="panel">
+          <h3>{t('progress.next')}</h3>
+          <ul className="progress-next">
+            {course.next.map((lesson) => (
+              <li key={lesson.number}>
+                <span className="when">
+                  {shortDate(lesson.date)} <em>{shortWeekday(lesson.date)}</em>
+                </span>
+                <span className="what">{lesson.title}</span>
+              </li>
             ))}
-          </tbody>
-        </table>
-      </section>
-
-      <section className="panel">
-        <h3>{t('layout.counters')}</h3>
-        <ul className="progress-counters">
-          <li>
-            <b>{course.slots_total}</b> {t('layout.slotsTotal')}
-          </li>
-          <li>
-            <b>{course.free_slots}</b> {t('layout.freeSlots')}
-          </li>
-          <li>
-            <b>{course.extra}</b> {t('layout.extra')}
-          </li>
-          <li>
-            <b>{course.cancelled}</b> {t('layout.cancelled')}
-            {course.cancelled > 0 && (
-              <span className="hint">
-                {Object.entries(course.cancelled_by_reason)
-                  .map(
-                    ([reason, count]) => `${reason || t('layout.noReason')}: ${count}`,
-                  )
-                  .join(' · ')}
-              </span>
-            )}
-          </li>
-        </ul>
-      </section>
+          </ul>
+        </section>
+      )}
 
       <div className="actions wrap">
         <button type="button" onClick={() => navigate('/plan')}>
-          {t('layout.toPlan')}
+          {t('progress.toPlan')}
         </button>
         <button
           type="button"
           className="secondary"
           onClick={() => navigate('/schedule')}
         >
-          {t('layout.toSchedule')}
+          {t('progress.toSchedule')}
         </button>
       </div>
     </div>
@@ -231,10 +204,10 @@ export default function Layout({ onLoggedOut }) {
   return (
     <main className="page wide">
       <header className="page-header">
-        <h1>{t('layout.title')}</h1>
+        <h1>{t('progress.title')}</h1>
       </header>
 
-      <p className="hint">{t('layout.hint')}</p>
+      <p className="hint">{t('progress.hint')}</p>
 
       {error && (
         <p className="error" role="alert">
@@ -244,14 +217,14 @@ export default function Layout({ onLoggedOut }) {
 
       {!courses.length ? (
         <EmptyState
-          title={t('layout.needClass.title')}
+          title={t('progress.needClass.title')}
           actions={
             <button type="button" onClick={() => navigate('/classes')}>
-              {t('layout.needClass.action')}
+              {t('progress.needClass.action')}
             </button>
           }
         >
-          {t('layout.needClass.hint')}
+          {t('progress.needClass.hint')}
         </EmptyState>
       ) : (
         <ul className="progress-list">
@@ -267,11 +240,11 @@ export default function Layout({ onLoggedOut }) {
                   {opened === course.id ? '▾' : '▸'} {course.name}
                 </span>
                 <span className="where">{whereText(course)}</span>
-                <span className={`pace${paceClass(course)}`}>{paceText(course)}</span>
-                <span className="term">
-                  {course.term
-                    ? `${course.term.name}: ${balanceText(course.term.balance)}`
-                    : '—'}
+                <span className="reserve">
+                  {t('progress.reserve', { count: course.reserve })}
+                </span>
+                <span className={`badge state ${short(course) ? 'bad' : 'good'}`}>
+                  {statusText(course)}
                 </span>
               </button>
 

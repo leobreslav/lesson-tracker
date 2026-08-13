@@ -18,7 +18,7 @@ from calendars.models import DayException
 from schedule.models import Course, LessonSlot
 
 from . import services, xlsx
-from .models import PlanNode
+from .models import PlanBaseline, PlanBaselineRow, PlanNode
 from .serializers import (
     MoveSerializer,
     MoveToSerializer,
@@ -164,9 +164,9 @@ class PlanNodeViewSet(TeacherScopedViewSet):
     @action(detail=False, methods=["get"])
     def progress(self, request):
         """
-        Как идут дела **по всем курсам сразу** — экран «Раскладка».
+        Как идут дела **по всем курсам сразу** — экран «Ход года».
 
-        План всегда про один курс, раскладка — про все: учитель ведёт пять
+        План всегда про один курс, этот экран — про все: учитель ведёт пять
         курсов и хочет одним взглядом понять, где проблема. Считает всё то
         же `build_layout`, что и остальные ответы про раскладку, поэтому
         числа не могут разойтись с планом.
@@ -179,29 +179,83 @@ class PlanNodeViewSet(TeacherScopedViewSet):
 
         rows = []
         for course in courses:
+            owner = self.owner_of(course)
             slots = LessonSlot.objects.filter(
                 teacher=request.user, course=course, is_cancelled=False
             ).order_by("date", "lesson_number")
             cancelled = LessonSlot.objects.filter(
                 teacher=request.user, course=course, is_cancelled=True
             )
-            terms = list(course.year.terms.all())
+            lessons = services.flatten_lessons(owner)
             entries = services.build_layout(
-                services.flatten_lessons(self.owner_of(course)), list(slots), terms
+                lessons, list(slots), course.year.terms.all()
             )
+            baseline = PlanBaseline.objects.filter(
+                teacher=request.user, course=course
+            ).first()
 
             rows.append(
                 {
                     "id": course.pk,
                     "name": course.name,
                     "year": course.year.name,
+                    "year_end": course.year.end_date,
+                    "baseline": (
+                        {
+                            "created_at": baseline.created_at,
+                            **services.baseline_diff(baseline.rows.all(), lessons),
+                        }
+                        if baseline
+                        else None
+                    ),
                     **services.course_progress(
-                        entries, timezone.localdate(), terms, cancelled
+                        entries, timezone.localdate(), cancelled
                     ),
                 }
             )
 
         return Response({"courses": rows})
+
+    @action(detail=False, methods=["post", "get"])
+    def baseline(self, request):
+        """
+        Зафиксировать план как эталон — или узнать, когда его фиксировали.
+
+        Снимок один на пару (учитель, курс): перефиксация заменяет прежний,
+        и подтверждает её интерфейс. Хранить историю снимков значило бы
+        завести ей экран, а вопрос у неё один — «относительно чего считаем».
+        """
+        course = self.requested_course()
+        owner = self.owner_of(course)
+
+        if request.method == "GET":
+            saved = PlanBaseline.objects.filter(
+                teacher=request.user, course=course
+            ).first()
+            return Response(
+                {"created_at": saved.created_at, "rows": saved.rows.count()}
+                if saved
+                else {"created_at": None, "rows": 0}
+            )
+
+        with transaction.atomic():
+            PlanBaseline.objects.filter(teacher=request.user, course=course).delete()
+            saved = PlanBaseline.objects.create(teacher=request.user, course=course)
+            PlanBaselineRow.objects.bulk_create(
+                PlanBaselineRow(
+                    baseline=saved,
+                    position=position,
+                    is_section=row.is_section,
+                    title=row.title,
+                    node_id=row.node_id,
+                )
+                for position, row in enumerate(services.plan_snapshot(owner))
+            )
+
+        return Response(
+            {"created_at": saved.created_at, "rows": saved.rows.count()},
+            status=status.HTTP_201_CREATED,
+        )
 
     @action(detail=False, methods=["get"], url_path="layout/slots",
             url_name="layout-slots")

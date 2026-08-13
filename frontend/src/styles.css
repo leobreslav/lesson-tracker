@@ -1490,7 +1490,7 @@ button.link:hover:not(:disabled) {
    иначе наведение красит её синим, как обычную кнопку */
 button.progress-head {
   display: grid;
-  grid-template-columns: minmax(9rem, 1.2fr) minmax(10rem, 1.6fr) minmax(8rem, 1fr) minmax(8rem, 1fr);
+  grid-template-columns: minmax(9rem, 1.2fr) minmax(10rem, 1.6fr) minmax(7rem, 0.8fr) auto;
   gap: 0.5rem;
   align-items: baseline;
   width: 100%;
@@ -1512,25 +1512,68 @@ button.progress-head:hover:not(:disabled) {
 }
 
 .progress-head .where,
-.progress-head .term {
+.progress-head .reserve {
   font-size: 0.9rem;
   color: #5f6368;
 }
 
-.progress-head .pace {
-  font-size: 0.9rem;
+/* плашка состояния: одна на курс, и промежуточных состояний у неё нет */
+.badge.state {
+  justify-self: end;
+  padding: 0.1rem 0.6rem;
+  font-size: 0.8rem;
+  white-space: nowrap;
 }
 
-.progress-head .pace.good,
-.terms-table .good,
+.badge.state.good {
+  color: #1c7a34;
+  background: #e6f4ea;
+}
+
+.badge.state.bad {
+  color: #b00020;
+  background: #fce8e6;
+}
+
 .progress-details .card-stat.good h2 {
   color: #1c7a34;
 }
 
-.progress-head .pace.bad,
-.terms-table .bad,
 .progress-details .card-stat.bad h2 {
   color: #b00020;
+}
+
+/* резерв — главный показатель, поэтому у него заливка, а не только цифра */
+.progress-details .card-stat.good[data-card='reserve'] {
+  background: #e9f6ec;
+}
+
+.progress-details .card-stat.bad[data-card='reserve'] {
+  background: #fdecea;
+}
+
+.progress-themes {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.progress-themes li {
+  display: flex;
+  gap: 0.5rem;
+  justify-content: space-between;
+  max-width: 24rem;
+}
+
+.progress-themes b {
+  font-variant-numeric: lining-nums tabular-nums;
+}
+
+.hint.warning {
+  color: #b06000;
 }
 
 .progress-details {
@@ -1559,7 +1602,7 @@ button.progress-head:hover:not(:disabled) {
 
 .progress-next li {
   display: grid;
-  grid-template-columns: 6rem 2rem 1fr auto;
+  grid-template-columns: 6rem 1fr;
   gap: 0.5rem;
   align-items: baseline;
 }
@@ -1572,59 +1615,6 @@ button.progress-head:hover:not(:disabled) {
 .progress-next .when em {
   font-style: normal;
   color: #9aa0a6;
-}
-
-.terms-table {
-  border-collapse: collapse;
-  width: 100%;
-  font-variant-numeric: lining-nums tabular-nums;
-}
-
-.terms-table th {
-  font-size: 0.8rem;
-  font-weight: 600;
-  color: #5f6368;
-  text-align: right;
-}
-
-.terms-table th:first-child {
-  text-align: left;
-}
-
-.terms-table td {
-  padding: 0.2rem 0;
-  text-align: right;
-  border-top: 1px solid #f1f3f4;
-}
-
-.terms-table td:first-child {
-  text-align: left;
-}
-
-.terms-table td .hint {
-  margin-left: 0.5rem;
-  font-size: 0.75rem;
-}
-
-.progress-counters {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.25rem 1.5rem;
-  margin: 0;
-  padding: 0;
-  font-size: 0.9rem;
-  color: #5f6368;
-  list-style: none;
-}
-
-.progress-counters b {
-  font-variant-numeric: lining-nums tabular-nums;
-  color: #202124;
-}
-
-.progress-counters .hint {
-  margin-left: 0.4rem;
-  font-size: 0.8rem;
 }
 
 /* --- учебный план --- */
