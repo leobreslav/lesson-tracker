@@ -367,7 +367,11 @@ test('маркеры, номера и названия стоят по верт�
       return {
         sections: lefts('.plan-row.section-head > .handle'),
         lessons: lefts('.plan-row.lesson > .handle'),
-        titles: lefts('.plan-row .title'),
+        sectionTitles: lefts('.plan-row.section-head .title'),
+        nested: lefts('.plan-title-cell.nested .title'),
+        loose: lefts(
+          '.plan-row.lesson .plan-title-cell:not(.nested) .title',
+        ),
         numbers: [
           ...new Set(
             [...document.querySelectorAll('.plan-row.lesson .plan-number')].map((el) =>
@@ -383,17 +387,21 @@ test('маркеры, номера и названия стоят по верт�
   // маркеры глав и уроков — одна вертикаль на всех, без исключений
   expect(before.sections).toEqual(before.lessons)
   expect(before.lessons).toHaveLength(1)
-  // названия начинаются с одной вертикали при любом числе цифр в номере
-  expect(before.titles).toHaveLength(1)
+  // номера — одна вертикаль, значит названия не пляшут от числа цифр
   expect(before.numbers).toHaveLength(1)
   expect(before.dates).toHaveLength(1)
+  // названий две вертикали, и это единственное, чем видна вложенность
+  expect(before.sectionTitles).toHaveLength(1)
+  expect(before.nested).toHaveLength(1)
+  expect(before.nested[0] - before.sectionTitles[0]).toBe(20)
 
   await page.getByLabel('Даты').uncheck()
   const after = await columns()
 
   // левая зона ушла, правая встала к краю, вертикали внутри целы
   expect(after.sections).toEqual(after.lessons)
-  expect(after.titles).toHaveLength(1)
+  expect(after.nested).toHaveLength(1)
+  expect(after.nested[0] - after.sectionTitles[0]).toBe(20)
   expect(after.lessons[0]).toBeLessThan(before.lessons[0])
 })
 
@@ -436,4 +444,80 @@ test('глава — только шрифт, без заливки и поло�
   // ни заливки, ни рамок — иначе они сдвинули бы маркер
   expect(looks.background).toBe('rgba(0, 0, 0, 0)')
   expect(looks.border).toBe('0px0px')
+})
+
+test('урок вне темы стоит на уровне темы, а вложенный — с отступом', async ({
+  page,
+  signIn,
+}) => {
+  await signIn(PEOPLE.petrov)
+  await page.goto('/plan')
+  await ready(page)
+  // курс без плана: соберём в нём тему, урок внутри и урок вне
+  await page.getByRole('button', { name: 'Grade 9 Geometry', exact: true }).click()
+  await expect(page.locator('.plan-cards')).toBeVisible()
+
+  const add = async (button, title) => {
+    await page.getByRole('button', { name: button }).click()
+    const form = page.locator('.plan-add-form')
+    await form.getByLabel('Название').fill(title)
+    await form.getByRole('button', { name: 'Добавить' }).click()
+    await expect(page.locator('.plan-row', { hasText: title })).toBeVisible()
+  }
+
+  await add('+ тема', 'Треугольники')
+  const head = page.locator('.plan-section .section-head').first()
+  await head.hover()
+  await head.getByTitle('Добавить урок в тему').click()
+  const inner = page.locator('.plan-add-form')
+  await inner.getByLabel('Название').fill('Первый признак')
+  await inner.getByRole('button', { name: 'Добавить' }).click()
+  await expect(page.locator('.plan-row', { hasText: 'Первый признак' })).toBeVisible()
+
+  await add('+ урок', 'Сам по себе')
+
+  const left = (title) =>
+    page
+      .locator('.plan-row', { hasText: title })
+      .first()
+      .locator('.title')
+      .evaluate((el) => Math.round(el.getBoundingClientRect().left))
+
+  const theme = await left('Треугольники')
+  expect(await left('Первый признак')).toBe(theme + 20)
+  // урок вне темы — на одной вертикали с названием темы
+  expect(await left('Сам по себе')).toBe(theme)
+})
+
+test('перетаскивание в тему и обратно меняет отступ сразу', async ({
+  page,
+  signIn,
+}) => {
+  await signIn(PEOPLE.ivanova)
+  await openPlan(page)
+
+  // первый урок первой темы вытаскиваем на верхний уровень, к её заголовку
+  const lesson = page.locator('.plan-row.lesson').first()
+  const title = await lesson.locator('.title').textContent()
+  const nestedAt = await lesson
+    .locator('.title')
+    .evaluate((el) => Math.round(el.getBoundingClientRect().left))
+
+  const head = page.locator('.plan-row.section-head').first()
+  await lesson.hover()
+  const handle = lesson.getByTitle('Перетащить')
+  const from = await handle.boundingBox()
+  const to = await head.boundingBox()
+  await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(to.x + to.width / 2, to.y + 2, { steps: 12 })
+  await page.mouse.up()
+
+  // отступ пропал в том же кадре, без ответа сервера
+  const moved = page.locator('.plan-row', { hasText: title }).first()
+  await expect
+    .poll(() =>
+      moved.locator('.title').evaluate((el) => Math.round(el.getBoundingClientRect().left)),
+    )
+    .toBe(nestedAt - 20)
 })

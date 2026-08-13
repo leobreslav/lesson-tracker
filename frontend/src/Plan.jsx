@@ -689,7 +689,7 @@ export default function Plan({ onLoggedOut }) {
           {dateCells(node)}
           {handle}
           <span className="plan-number">{node.number}</span>
-          <span className="plan-title-cell">
+          <span className={parent ? 'plan-title-cell nested' : 'plan-title-cell'}>
             <button
               type="button"
               className="link title"
