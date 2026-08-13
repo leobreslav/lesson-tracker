@@ -21,9 +21,11 @@ import re
 import unicodedata
 import uuid
 from contextlib import contextmanager
+from dataclasses import dataclass
 from pathlib import PurePosixPath
 from urllib.parse import quote
 
+import boto3
 from botocore.exceptions import BotoCoreError, ClientError
 from django.conf import settings
 from django.core.files.storage import storages
@@ -215,3 +217,98 @@ def _walk(store, path: str):
         yield f"{path}/{name}" if path else name
     for directory in directories:
         yield from _walk(store, f"{path}/{directory}" if path else directory)
+
+
+# --- the backup copy ---------------------------------------------------------
+#
+# The second bucket is not part of the application: nothing here is reachable
+# from a view, and the app's own token cannot even see it. It exists so that
+# `scripts/backup-files.sh` can copy new objects into it once a day, and it
+# lives in this module for the same reason everything else does — boto3 is
+# spoken in one place.
+
+
+@dataclass(frozen=True)
+class Item:
+    """One object as a listing describes it."""
+
+    key: str
+    size: int
+    etag: str
+
+
+def backup_configured() -> bool:
+    return bool(
+        settings.R2_BACKUP_BUCKET_NAME
+        and settings.R2_BACKUP_ACCESS_KEY_ID
+        and settings.R2_ENDPOINT_URL
+    )
+
+
+def backup_client():
+    """
+    A client holding the backup token, which reads both buckets.
+
+    One token for both sides is what makes the copy server-side: R2 does it
+    inside Cloudflare, so the bytes never travel to the server and back, and
+    the VPS disk is not involved at all.
+    """
+    return boto3.client(
+        "s3",
+        endpoint_url=settings.R2_ENDPOINT_URL,
+        aws_access_key_id=settings.R2_BACKUP_ACCESS_KEY_ID,
+        aws_secret_access_key=settings.R2_BACKUP_SECRET_ACCESS_KEY,
+        region_name="auto",
+        config=settings.R2_CLIENT_CONFIG,
+    )
+
+
+def iter_objects(client, bucket: str, prefix: str = KEY_PREFIX + "/"):
+    """Every object of the bucket under the prefix, with size and etag."""
+    with as_unavailable():
+        pages = client.get_paginator("list_objects_v2").paginate(
+            Bucket=bucket, Prefix=prefix
+        )
+        for page in pages:
+            for item in page.get("Contents", ()):
+                yield Item(
+                    key=item["Key"],
+                    size=item["Size"],
+                    etag=(item.get("ETag") or "").strip('"'),
+                )
+
+
+def index(client, bucket: str, prefix: str = KEY_PREFIX + "/") -> dict[str, Item]:
+    return {item.key: item for item in iter_objects(client, bucket, prefix)}
+
+
+def needs_copy(item: Item, existing: Item | None) -> bool:
+    """
+    Is this object missing from the copy, or different from what is there?
+
+    Size first, because it is the one field both sides always fill in and
+    never lie about. The etag of a single-part upload is the md5 of the body,
+    so it settles the rest; a multipart one carries a dash and is computed
+    from part boundaries, which two buckets have no reason to share — for
+    those, equal size is as far as a listing can take us.
+
+    In practice only the first branch ever fires: a key contains a uuid, so
+    the same key is never written twice with different bytes.
+    """
+    if existing is None:
+        return True
+    if existing.size != item.size:
+        return True
+    if "-" in item.etag or "-" in existing.etag:
+        return False
+    return item.etag != existing.etag
+
+
+def copy_object(client, key: str, *, source: str, target: str) -> None:
+    """Server-side copy, one object, overwriting whatever is there."""
+    with as_unavailable():
+        client.copy_object(
+            Bucket=target,
+            Key=key,
+            CopySource={"Bucket": source, "Key": key},
+        )

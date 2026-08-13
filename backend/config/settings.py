@@ -182,6 +182,14 @@ R2_CLIENT_CONFIG = Config(
     retries={"max_attempts": 2, "mode": "standard"},
 )
 
+# Резервный бакет: копия вложений, которую делает scripts/backup-files.sh.
+# Приложение в него не пишет и не читает — он подключается только командой
+# backup_files, поэтому и ключи здесь отдельные: у токена приложения прав на
+# резерв нет вовсе, а токен резерва видит оба бакета.
+R2_BACKUP_BUCKET_NAME = env("R2_BACKUP_BUCKET_NAME", default="")
+R2_BACKUP_ACCESS_KEY_ID = env("R2_BACKUP_ACCESS_KEY_ID", default="")
+R2_BACKUP_SECRET_ACCESS_KEY = env("R2_BACKUP_SECRET_ACCESS_KEY", default="")
+
 # сколько живёт ссылка на скачивание
 FILE_URL_TTL = env.int("FILE_URL_TTL", default=300)
 # 20 МБ на файл; nginx пропускает 25m, запас на оболочку multipart

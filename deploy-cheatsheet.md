@@ -89,6 +89,21 @@ docker compose exec backend python manage.py cleanup_orphaned_files --delete
 Штатно она не находит ничего. `seed_demo --flush` чистит dev-бакет сам, а
 тесты в R2 не ходят вовсе — хранилище им подменяет `config/testing.py`.
 
+## Бэкапы (на сервере)
+
+Обе задачи висят в crontab: `03:30` дамп базы, `04:10` копия файлов в
+резервный бакет. Лог общий — `~/backups/backup.log`.
+
+```bash
+~/lesson-tracker/scripts/backup-db.sh                 # дамп прямо сейчас
+~/lesson-tracker/scripts/backup-files.sh --dry-run    # что скопировалось бы
+~/lesson-tracker/scripts/backup-files.sh --restore    # вернуть файлы из резерва
+tail -50 ~/backups/backup.log
+```
+
+Versioning у R2 нет — резерв это второй бакет; подробности и порядок
+восстановления в [DEPLOY.md](DEPLOY.md), раздел 10.
+
 ## Выкатка
 
 ```bash

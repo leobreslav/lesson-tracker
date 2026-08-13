@@ -15,11 +15,13 @@ by accident, which is the right way round.
 
 import logging
 from contextlib import contextmanager
+from io import StringIO
 from unittest import mock
 
 from botocore.exceptions import EndpointConnectionError
 from django.core.management import call_command
-from django.test import TestCase
+from django.core.management.base import CommandError
+from django.test import SimpleTestCase, TestCase, override_settings
 from django.urls import reverse
 from library.models import PlanTemplateRow
 from library.services import import_into_course
@@ -619,8 +621,6 @@ class CleanupCommandTests(SchoolTestMixin, APITestCase):
         self.lesson = make_node(self.user, self.course, "Урок")
 
     def run_cleanup(self, delete=False):
-        from io import StringIO
-
         out = StringIO()
         call_command("cleanup_orphaned_files", delete=delete, stdout=out, stderr=out)
         return out.getvalue()
@@ -669,6 +669,182 @@ class CleanupCommandTests(SchoolTestMixin, APITestCase):
 
         self.assertIn("хранилище не отвечает", output)
         self.assertIn("записи без единого вложения: 1", output)
+
+
+# --- the backup bucket ----------------------------------------------------------------
+
+
+class FakeR2:
+    """
+    Two buckets and the three calls the backup command makes.
+
+    A fake rather than moto because what is being tested is the walk, not
+    boto3: which objects the command decides to copy, and — the part that
+    matters — which ones it leaves alone.
+    """
+
+    def __init__(self, **buckets):
+        # {bucket: {key: (size, etag)}}
+        self.buckets = {name: dict(items) for name, items in buckets.items()}
+        self.copies = []
+        self.failing = set()
+
+    def get_paginator(self, name):
+        assert name == "list_objects_v2"
+        return self
+
+    def paginate(self, Bucket, Prefix):  # noqa: N803 — boto3 spells them so
+        items = [
+            {"Key": key, "Size": size, "ETag": f'"{etag}"'}
+            for key, (size, etag) in sorted(self.buckets[Bucket].items())
+            if key.startswith(Prefix)
+        ]
+        # split in two, so a command that reads only the first page is caught
+        yield {"Contents": items[:1]}
+        yield {"Contents": items[1:]}
+
+    def copy_object(self, Bucket, Key, CopySource):  # noqa: N803
+        if Key in self.failing:
+            raise EndpointConnectionError(endpoint_url="https://r2.example")
+
+        self.copies.append(Key)
+        self.buckets[Bucket][Key] = self.buckets[CopySource["Bucket"]][
+            CopySource["Key"]
+        ]
+
+
+@override_settings(
+    R2_BUCKET_NAME="main",
+    R2_ENDPOINT_URL="https://r2.example",
+    R2_BACKUP_BUCKET_NAME="backup",
+    R2_BACKUP_ACCESS_KEY_ID="key",
+    R2_BACKUP_SECRET_ACCESS_KEY="secret",
+)
+class BackupBucketTests(SimpleTestCase):
+    """
+    R2 has no versioning, so the copy is made by us — with one rule above all
+    the others: this command never deletes anything, anywhere.
+    """
+
+    def run_backup(self, r2, **options):
+        out = StringIO()
+        with mock.patch.object(storage, "backup_client", return_value=r2):
+            call_command("backup_files", stdout=out, stderr=out, **options)
+        return out.getvalue()
+
+    def test_it_copies_what_the_backup_does_not_have_yet(self):
+        r2 = FakeR2(
+            main={"files/1/a/one.pdf": (10, "aaa"), "files/1/b/two.pdf": (20, "bbb")},
+            backup={"files/1/a/one.pdf": (10, "aaa")},
+        )
+
+        output = self.run_backup(r2)
+
+        self.assertEqual(r2.copies, ["files/1/b/two.pdf"])
+        self.assertIn("скопировано: 1", output)
+        self.assertIn("пропущено (уже есть): 1", output)
+
+    def test_running_it_twice_copies_nothing_the_second_time(self):
+        r2 = FakeR2(main={"files/1/a/one.pdf": (10, "aaa")}, backup={})
+
+        self.run_backup(r2)
+        r2.copies.clear()
+        output = self.run_backup(r2)
+
+        self.assertEqual(r2.copies, [])
+        self.assertIn("скопировано: 0", output)
+
+    def test_what_was_deleted_in_the_main_bucket_stays_in_the_backup(self):
+        """The whole reason the backup exists: it is not a mirror."""
+        r2 = FakeR2(
+            main={"files/1/a/one.pdf": (10, "aaa")},
+            backup={"files/1/a/one.pdf": (10, "aaa"), "files/1/z/gone.pdf": (5, "zzz")},
+        )
+
+        output = self.run_backup(r2)
+
+        self.assertIn("files/1/z/gone.pdf", r2.buckets["backup"])
+        self.assertIn("осталось только в резерве: 1", output)
+
+    def test_a_rewritten_object_is_copied_again(self):
+        r2 = FakeR2(
+            main={"files/1/a/one.pdf": (30, "ccc")},
+            backup={"files/1/a/one.pdf": (10, "aaa")},
+        )
+
+        self.run_backup(r2)
+
+        self.assertEqual(r2.copies, ["files/1/a/one.pdf"])
+
+    def test_a_dry_run_copies_nothing(self):
+        r2 = FakeR2(main={"files/1/a/one.pdf": (10, "aaa")}, backup={})
+
+        output = self.run_backup(r2, dry_run=True)
+
+        self.assertEqual(r2.copies, [])
+        self.assertEqual(r2.buckets["backup"], {})
+        self.assertIn("скопировался бы files/1/a/one.pdf", output)
+
+    def test_an_empty_bucket_is_not_an_error(self):
+        """Which is the state of production right now: no files uploaded yet."""
+        r2 = FakeR2(main={}, backup={})
+
+        output = self.run_backup(r2)
+
+        self.assertIn("скопировано: 0", output)
+
+    def test_restoring_walks_the_other_way(self):
+        r2 = FakeR2(
+            main={},
+            backup={"files/1/a/one.pdf": (10, "aaa"), "files/1/b/two.pdf": (20, "bbb")},
+        )
+
+        self.run_backup(r2, restore=True)
+
+        self.assertEqual(len(r2.buckets["main"]), 2)
+        self.assertEqual(len(r2.buckets["backup"]), 2)
+
+    def test_one_unhappy_object_does_not_cost_the_rest_of_the_run(self):
+        r2 = FakeR2(
+            main={"files/1/a/one.pdf": (10, "aaa"), "files/1/b/two.pdf": (20, "bbb")},
+            backup={},
+        )
+        r2.failing.add("files/1/a/one.pdf")
+
+        with self.assertRaises(CommandError) as refusal:
+            self.run_backup(r2)
+
+        # the failure is reported, but the other object did get through
+        self.assertIn("не удалось", str(refusal.exception))
+        self.assertEqual(r2.copies, ["files/1/b/two.pdf"])
+
+    @override_settings(R2_BACKUP_BUCKET_NAME="")
+    def test_it_refuses_when_the_backup_bucket_is_not_configured(self):
+        with self.assertRaises(CommandError) as refusal:
+            self.run_backup(FakeR2(main={}, backup={}))
+
+        self.assertIn("R2_BACKUP_BUCKET_NAME", str(refusal.exception))
+
+
+class NeedsCopyTests(SimpleTestCase):
+    def item(self, size=10, etag="aaa"):
+        return storage.Item(key="files/1/a/one.pdf", size=size, etag=etag)
+
+    def test_a_missing_object_is_copied(self):
+        self.assertTrue(storage.needs_copy(self.item(), None))
+
+    def test_the_same_object_is_not(self):
+        self.assertFalse(storage.needs_copy(self.item(), self.item()))
+
+    def test_a_different_size_wins_over_everything(self):
+        self.assertTrue(storage.needs_copy(self.item(size=20), self.item()))
+
+    def test_a_different_etag_at_the_same_size_still_counts(self):
+        self.assertTrue(storage.needs_copy(self.item(etag="bbb"), self.item()))
+
+    def test_a_multipart_etag_is_not_compared(self):
+        """Its dash means «md5 of the parts», and parts differ per upload."""
+        self.assertFalse(storage.needs_copy(self.item(etag="aaa-2"), self.item()))
 
 
 # --- names and keys ------------------------------------------------------------------
