@@ -259,7 +259,7 @@ describe('planRows несёт id — иначе сшивать не с чем', 
   })
 })
 
-describe('скобка недели', () => {
+describe('недели', () => {
   /** Лента с настоящими неделями: по уроку в понедельник, среду и пятницу. */
   const weeks = (count) =>
     Array.from({ length: count }, (_, index) => {
@@ -280,20 +280,18 @@ describe('скобка недели', () => {
 
   const brackets = (rows, ribbon) =>
     stitchLayout(rows, ribbon).map((row) =>
-      row.week
-        ? [row.week.number, row.week.first, row.week.label, row.week.last]
-        : null,
+      row.week ? [row.week.number, row.week.first, row.week.last] : null,
     )
 
-  it('строка знает свою неделю, края группы и где подпись', () => {
+  it('строка знает свою неделю и края группы', () => {
     const rows = [lesson(1), lesson(2), lesson(3), lesson(4), lesson(5)]
 
     assert.deepEqual(brackets(rows, weeks(6)), [
-      [1, true, false, false],
-      [1, false, true, false], // подпись — на средней строке группы
-      [1, false, false, true],
-      [2, true, true, false],
-      [2, false, false, true],
+      [1, true, false], // подпись стоит в первой строке недели
+      [1, false, false],
+      [1, false, true],
+      [2, true, false],
+      [2, false, true],
     ])
   })
 

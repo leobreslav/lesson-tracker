@@ -155,7 +155,7 @@ test('перетаскивание пересчитывает даты сраз�
   await expect(lessons.first().locator('.plan-date')).toHaveText(firstDate)
 })
 
-test('уроки без слота помечены, а темы показывают диапазон', async ({
+test('уроки без слота помечены', async ({
   page,
   signIn,
   api,
@@ -182,10 +182,10 @@ test('уроки без слота помечены, а темы показыв�
   // и отдельная плашка со счётчиком непоместившихся, она ведёт на раскладку
   await expect(page.locator('[data-card="missing"]')).toBeVisible()
 
-  // тема, часть которой не поместилась, так и говорит
-  await expect(
-    page.locator('.section-head .block-count', { hasText: 'не помещается' }).first(),
-  ).toBeVisible()
+  // у главы дат нет вовсе — только число уроков: даты живут в левой зоне
+  await expect(page.locator('.section-head .block-count').first()).toHaveText(
+    /уроков|урока|урок/,
+  )
 })
 
 test('переключатель дат запоминается и не двигает названия', async ({
@@ -227,49 +227,55 @@ test('переключатель дат запоминается и не дви�
   await expect(page.locator('.plan-date')).toHaveCount(0)
 })
 
-test('недели — скобка слева, а не строки', async ({ page, signIn }) => {
+test('недели: подпись в первой строке и заливка через одну', async ({
+  page,
+  signIn,
+}) => {
   await signIn(PEOPLE.ivanova)
   await openPlan(page)
 
-  // строк у недель нет вовсе: только подписи и линии в левой колонке
-  const labels = page.locator('.week-label')
+  const labels = page.locator('.plan-weekmark', { hasText: 'нед' })
   await expect(labels.first()).toHaveText('нед 1')
   await expect(labels.nth(1)).toHaveText('нед 2')
 
-  // подпись — одна на группу, и стоит она посередине
+  // подпись одна на неделю, и стоит она в её первой строке
   const groups = await page.evaluate(() => {
-    const rows = [...document.querySelectorAll('.plan-row')].filter(
-      (row) => row.querySelector('.plan-weekmark'),
-    )
+    const rows = [...document.querySelectorAll('.plan-row')]
     const runs = []
     rows.forEach((row) => {
-      const line = row.querySelector('.week-line')
-      if (!line) return
-      const label = row.querySelector('.week-label')?.textContent ?? null
-      if (line.classList.contains('first')) runs.push({ rows: 0, labels: [] })
-      const run = runs.at(-1)
-      run.rows += 1
-      if (label) run.labels.push(label)
+      const label = row.querySelector('.plan-weekmark')?.textContent.trim()
+      if (label) runs.push({ labels: 1, striped: row.classList.contains('week-even') })
+      else if (runs.length) {
+        runs.at(-1).striped =
+          runs.at(-1).striped === row.classList.contains('week-even')
+            ? runs.at(-1).striped
+            : 'разошлось'
+      }
     })
     return runs.slice(0, 4)
   })
 
-  for (const run of groups) expect(run.labels).toHaveLength(1)
-  expect(groups[0].rows).toBeGreaterThan(1)
+  // чётные недели закрашены, нечётные нет — и вся неделя одинаково
+  expect(groups.map((run) => run.striped)).toEqual([false, true, false, true])
 })
 
-test('заголовок темы не разрывает скобку недели', async ({ page, signIn }) => {
+test('заголовок главы не разрывает неделю', async ({ page, signIn }) => {
   await signIn(PEOPLE.ivanova)
   await openPlan(page)
 
-  // у полосы темы своя ячейка недели с линией — иначе скобка рвалась бы
-  const broken = await page.evaluate(() =>
-    [...document.querySelectorAll('.plan-row.section-head')].filter((head) => {
-      const next = head.parentElement.querySelector('.plan-children .plan-row.lesson')
-      const line = head.querySelector('.week-line')
-      return next?.querySelector('.week-line') && !line
-    }).length,
-  )
+  // глава закрашена так же, как уроки вокруг неё: она внутри той же недели
+  const broken = await page.evaluate(() => {
+    const rows = [...document.querySelectorAll('.plan-row')]
+    return rows.filter((row, index) => {
+      if (!row.classList.contains('section-head')) return false
+      const next = rows[index + 1]
+      return (
+        next &&
+        !next.querySelector('.plan-weekmark')?.textContent.trim() &&
+        next.classList.contains('week-even') !== row.classList.contains('week-even')
+      )
+    }).length
+  })
 
   expect(broken).toBe(0)
 })
@@ -284,10 +290,10 @@ test('вставленный урок переносит уроки через �
   /** Название урока, у которого стоит подпись «нед 2». */
   const labelled = () =>
     page.evaluate(() => {
-      const label = [...document.querySelectorAll('.week-label')].find(
-        (item) => item.textContent === 'нед 2',
+      const mark = [...document.querySelectorAll('.plan-weekmark')].find(
+        (item) => item.textContent.trim() === 'нед 2',
       )
-      return label?.closest('.plan-row')?.querySelector('.title')?.textContent.trim()
+      return mark?.closest('.plan-row')?.querySelector('.title')?.textContent.trim()
     })
 
   const before = await labelled()
@@ -300,7 +306,7 @@ test('вставленный урок переносит уроки через �
   await form.getByRole('button', { name: 'Добавить' }).click()
   await expect(page.locator('.plan-row', { hasText: 'Ещё урок' })).toBeVisible()
 
-  // недели задаёт расписание, а не план, поэтому съехали уроки, а не скобки
+  // недели задаёт расписание, а не план, поэтому съехали уроки, а не недели
   await expect.poll(labelled).not.toBe(before)
 })
 
@@ -311,17 +317,17 @@ test('недели выключаются отдельно, а без дат и�
   await signIn(PEOPLE.ivanova)
   await openPlan(page)
 
-  await expect(page.locator('.week-label').first()).toBeVisible()
+  await expect(page.locator('.plan-row.week-even').first()).toBeVisible()
 
   await page.getByLabel('Недели').uncheck()
-  await expect(page.locator('.week-label')).toHaveCount(0)
-  // даты на месте: пустая ячейка у полосы темы не в счёт, смотрим на урок
+  await expect(page.locator('.plan-row.week-even')).toHaveCount(0)
+  await expect(page.locator('.plan-weekmark', { hasText: 'нед' })).toHaveCount(0)
+  // даты на месте: пустая ячейка у главы не в счёт, смотрим на урок
   await expect(page.locator('.plan-row.lesson .plan-date').first()).toBeVisible()
 
   await page.getByLabel('Недели').check()
   await page.getByLabel('Даты').uncheck()
-  // без дат номер недели не значит ничего — скобки уходят вместе с ними
-  await expect(page.locator('.week-label')).toHaveCount(0)
+  // без дат номер недели не значит ничего — колонка уходит вместе с ними
   await expect(page.locator('.plan-weekmark')).toHaveCount(0)
 })
 
@@ -339,9 +345,9 @@ test('маркеры, номера и названия стоят по верт�
         ),
       ]
       return {
-        sections: lefts('.section-band > .handle'),
-        lessons: lefts('.plan-row.lesson .handle'),
-        titles: lefts('.plan-row.lesson .title'),
+        sections: lefts('.plan-row.section-head > .handle'),
+        lessons: lefts('.plan-row.lesson > .handle'),
+        titles: lefts('.plan-row .title'),
         numbers: [
           ...new Set(
             [...document.querySelectorAll('.plan-row.lesson .plan-number')].map((el) =>
@@ -349,32 +355,65 @@ test('маркеры, номера и названия стоят по верт�
             ),
           ),
         ],
-        indent: Number(
-          getComputedStyle(document.documentElement)
-            .getPropertyValue('--plan-indent')
-            .replace('rem', ''),
-        ),
+        dates: lefts('.plan-row.lesson .plan-date'),
       }
     })
 
   const before = await columns()
-  // по одной вертикали на каждый столбец: ручки тем, ручки уроков, номера
-  // (по правому краю) и названия — независимо от того, номер однозначный
-  // или двузначный
-  expect(before.sections).toHaveLength(1)
+  // маркеры глав и уроков — одна вертикаль на всех, без исключений
+  expect(before.sections).toEqual(before.lessons)
   expect(before.lessons).toHaveLength(1)
-  expect(before.numbers).toHaveLength(1)
+  // названия начинаются с одной вертикали при любом числе цифр в номере
   expect(before.titles).toHaveLength(1)
-  // урок сдвинут относительно темы ровно на один отступ вложенности
-  expect(before.lessons[0] - before.sections[0]).toBe(before.indent * 16)
+  expect(before.numbers).toHaveLength(1)
+  expect(before.dates).toHaveLength(1)
 
   await page.getByLabel('Даты').uncheck()
   const after = await columns()
 
-  // левая колонка ушла, правая сдвинулась целиком, вертикали внутри целы
-  expect(after.sections).toHaveLength(1)
-  expect(after.lessons).toHaveLength(1)
+  // левая зона ушла, правая встала к краю, вертикали внутри целы
+  expect(after.sections).toEqual(after.lessons)
   expect(after.titles).toHaveLength(1)
-  expect(after.lessons[0] - after.sections[0]).toBe(after.indent * 16)
-  expect(after.sections[0]).toBeLessThan(before.sections[0])
+  expect(after.lessons[0]).toBeLessThan(before.lessons[0])
+})
+
+test('в правой зоне нет ни одной даты', async ({ page, signIn }) => {
+  await signIn(PEOPLE.ivanova)
+  await openPlan(page)
+
+  // дата — только в своей колонке; в строке главы её нет вовсе
+  const strays = await page.evaluate(() => {
+    const dateLike = /\d{2}[./]\d{2}/
+    return [...document.querySelectorAll('.plan-title-cell, .row-actions')]
+      .map((cell) => cell.textContent.trim())
+      .filter((text) => dateLike.test(text))
+  })
+
+  expect(strays).toEqual([])
+})
+
+test('глава — только шрифт, без заливки и полос', async ({ page, signIn }) => {
+  await signIn(PEOPLE.ivanova)
+  await openPlan(page)
+
+  const looks = await page.evaluate(() => {
+    const head = document.querySelector('.plan-row.section-head:not(.week-even)')
+    const title = head.querySelector('.title')
+    const style = getComputedStyle(title)
+    const row = getComputedStyle(head)
+    return {
+      transform: style.textTransform,
+      weight: Number(style.fontWeight),
+      spacing: style.letterSpacing,
+      background: row.backgroundColor,
+      border: row.borderLeftWidth + row.borderBottomWidth,
+    }
+  })
+
+  expect(looks.transform).toBe('uppercase')
+  expect(looks.weight).toBeGreaterThanOrEqual(600)
+  expect(looks.spacing).not.toBe('normal')
+  // ни заливки, ни рамок — иначе они сдвинули бы маркер
+  expect(looks.background).toBe('rgba(0, 0, 0, 0)')
+  expect(looks.border).toBe('0px0px')
 })

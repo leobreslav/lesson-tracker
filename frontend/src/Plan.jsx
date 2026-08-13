@@ -626,29 +626,26 @@ export default function Plan({ onLoggedOut }) {
       : null
 
   /**
-   * Скобка недели в левой колонке: подпись посередине группы, линия во всю
-   * её высоту. Строки она не занимает — в этом весь смысл.
+   * Левая колонка недели: подпись в первой строке группы и больше ничего.
+   *
+   * Саму группу показывает заливка каждой второй недели — линий и рамок
+   * тут нет: строк в таблице сорок, и любой декор на них множится.
    */
   const weekCell = (node) => {
     if (!dated) return null
     const week = layout.byId.get(node.id)?.week
 
-    if (!week || !showWeeks) return <span className="plan-weekmark" />
-
     return (
       <span className="plan-weekmark">
-        {week.label && (
-          <span className="week-label">{t('plan.week', { number: week.number })}</span>
-        )}
-        <span
-          className={
-            'week-line' +
-            (week.first ? ' first' : '') +
-            (week.last ? ' last' : '')
-          }
-        />
+        {showWeeks && week?.first && t('plan.week', { number: week.number })}
       </span>
     )
+  }
+
+  /** Чётные недели закрашены — этим и группируются. */
+  const weekStripe = (node) => {
+    const week = dated && showWeeks && layout.byId.get(node.id)?.week
+    return week && week.number % 2 === 0 ? ' week-even' : ''
   }
 
   /**
@@ -677,6 +674,7 @@ export default function Plan({ onLoggedOut }) {
       id={dragId(node.id)}
       className={
         'plan-row lesson' +
+        weekStripe(node) +
         (dated && !layout.byId.get(node.id)?.slot ? ' no-slot' : '') +
         (dated && layout.byId.get(node.id)?.past ? ' past' : '')
       }
@@ -688,43 +686,46 @@ export default function Plan({ onLoggedOut }) {
               должен встречать данные, а не служебную ручку */}
           {weekCell(node)}
           {dateCells(node)}
-          {/* отступ вложенности отдельной ячейкой, а не padding'ом строки:
-              иначе он сдвинул бы и левую колонку вместе с ней */}
-          {parent && <span className="plan-indent" aria-hidden="true" />}
           {handle}
           <span className="plan-number">{node.number}</span>
-          <button
-            type="button"
-            className="link title"
-            title={node.title}
-            disabled={busy}
-            onClick={() => setOpened(node.id)}
-          >
-            {node.title}
-          </button>
-
-          {/* two separate marks: one says there is a lesson written, the
-              other that something comes with it */}
-          {node.has_content && (
-            <span className="mark" title={t('plan.hasContent')} aria-label={t('plan.hasContent')}>
-              📝
-            </span>
-          )}
-          {node.attachments > 0 && (
-            <span
-              className="mark"
-              title={t('plan.hasAttachments', { count: node.attachments })}
-              aria-label={t('plan.hasAttachments', { count: node.attachments })}
+          <span className="plan-title-cell">
+            <button
+              type="button"
+              className="link title"
+              title={node.title}
+              disabled={busy}
+              onClick={() => setOpened(node.id)}
             >
-              📎
-            </span>
-          )}
+              {node.title}
+            </button>
 
-          {node.note && (
-            <span className="hint note" title={node.note}>
-              {node.note}
-            </span>
-          )}
+            {/* two separate marks: one says there is a lesson written, the
+                other that something comes with it */}
+            {node.has_content && (
+              <span
+                className="mark"
+                title={t('plan.hasContent')}
+                aria-label={t('plan.hasContent')}
+              >
+                📝
+              </span>
+            )}
+            {node.attachments > 0 && (
+              <span
+                className="mark"
+                title={t('plan.hasAttachments', { count: node.attachments })}
+                aria-label={t('plan.hasAttachments', { count: node.attachments })}
+              >
+                📎
+              </span>
+            )}
+
+            {node.note && (
+              <span className="hint note" title={node.note}>
+                {node.note}
+              </span>
+            )}
+          </span>
 
           <span className="row-actions">
             {moveButtons(node, movePlanNode)}
@@ -752,17 +753,6 @@ export default function Plan({ onLoggedOut }) {
     </SortableRow>
   )
 
-  /** Диапазон дат темы: с какой по какую она идёт по раскладке. */
-  const sectionRange = (node) => {
-    const range = layout.byId.get(node.id)?.range
-    if (!range) return null
-    if (!range.from) return t('plan.noSlot')
-
-    return `${dayMonth(range.from)} — ${
-      range.missing ? t('plan.noSlot') : dayMonth(range.to)
-    }`
-  }
-
   const renderSection = (node) => {
     const hidden = collapsed.has(node.id)
     const childIds = node.children.map((child) => dragId(child.id))
@@ -778,11 +768,12 @@ export default function Plan({ onLoggedOut }) {
       >
         {(handle) => (
           <>
-        <div className="plan-row section-head">
+        <div className={`plan-row section-head${weekStripe(node)}`}>
           {weekCell(node)}
           {dateCells(node, true)}
-          <div className="section-band">
           {handle}
+          {/* треугольник стоит в колонке номера: у главы номера нет, а
+              место есть — и свёртка оказывается ровно под номерами */}
           <button
             type="button"
             className="link toggle"
@@ -793,27 +784,26 @@ export default function Plan({ onLoggedOut }) {
           </button>
 
           {editing?.id === node.id ? (
-            editForm()
+            <span className="plan-title-cell">{editForm()}</span>
           ) : (
             <>
-              <button
-                type="button"
-                className="link title"
-                title={t('plan.rename')}
-                disabled={busy}
-                onClick={() => startEdit(node)}
-              >
-                {node.title}
-              </button>
-              <span className="hint block-count">
-                {[
-                  t('common.lessonCount', {
+              <span className="plan-title-cell">
+                <button
+                  type="button"
+                  className="link title"
+                  title={t('plan.rename')}
+                  disabled={busy}
+                  onClick={() => startEdit(node)}
+                >
+                  {node.title}
+                </button>
+                {/* только число уроков: даты этой главы и так стоят в её
+                    строках, а левая колонка — не место для правой зоны */}
+                <span className="hint block-count">
+                  {t('common.lessonCount', {
                     count: blocks.byId.get(node.id)?.lessons ?? 0,
-                  }),
-                  dated && sectionRange(node),
-                ]
-                  .filter(Boolean)
-                  .join(' · ')}
+                  })}
+                </span>
               </span>
 
               <span className="row-actions">
@@ -839,7 +829,6 @@ export default function Plan({ onLoggedOut }) {
               </span>
             </>
           )}
-          </div>
         </div>
 
         {!hidden && (
@@ -1052,7 +1041,7 @@ export default function Plan({ onLoggedOut }) {
                   items={data.nodes.map((node) => dragId(node.id))}
                   strategy={verticalListSortingStrategy}
                 >
-                  <ul className="plan">
+                  <ul className={dated ? 'plan' : 'plan no-dates'}>
                     {data.nodes.map((node) => (
                       <Fragment key={node.id}>
                         {/* черта, выпавшая на первый урок темы, встаёт над
