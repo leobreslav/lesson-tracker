@@ -41,6 +41,33 @@ test('администратор заводит курс и назначает �
   await expect(page.getByText('9А Алгебра')).toBeVisible()
 })
 
+test('длинное название курса сохраняется целиком и не рвёт карточку', async ({
+  page,
+  signIn,
+}) => {
+  // двадцати символов не хватало: в названии пишут ещё группу и поток
+  const NAME = '10 класс, группа B (углублённая математика, вторая подгруппа)'
+
+  await signIn(PEOPLE.admin)
+  await openSection(page, '/school/courses')
+
+  await page.getByPlaceholder('Название курса').fill(NAME)
+  await page.getByLabel('Предмет:').selectOption({ label: 'Алгебра' })
+  await page.getByLabel('Параллель:').selectOption({ index: 1 })
+  await page.getByRole('button', { name: 'Добавить', exact: true }).click()
+
+  // сервер принял имя целиком, а не обрезал его
+  const card = page.locator('.people-list > li', { hasText: NAME })
+  await expect(card).toBeVisible()
+
+  // и карточка осталась внутри своей панели, а не уехала за край
+  const overflow = await card.evaluate((item) => {
+    const panel = item.closest('.panel') ?? item.parentElement
+    return item.getBoundingClientRect().right - panel.getBoundingClientRect().right
+  })
+  expect(overflow).toBeLessThanOrEqual(1)
+})
+
 test('назначение видно и снимается со стороны учителя', async ({ page, signIn }) => {
   await signIn(PEOPLE.admin)
   await openSection(page, '/school/teachers')

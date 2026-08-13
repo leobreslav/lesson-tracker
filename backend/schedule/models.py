@@ -168,7 +168,10 @@ class Course(models.Model):
         on_delete=models.PROTECT,
         verbose_name="grade level",
     )
-    name = models.CharField("name", max_length=20)
+    # as long as a subject name: the label carries a letter and whatever
+    # clarification the school needs («9Б», «10 класс, группа B»), and a limit
+    # that fits «9Б» tells the school how to name its courses
+    name = models.CharField("name", max_length=100)
     created_at = models.DateTimeField(auto_now_add=True)
 
     objects = CourseQuerySet.as_manager()

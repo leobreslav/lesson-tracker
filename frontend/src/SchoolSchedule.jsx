@@ -302,7 +302,7 @@ export default function SchoolSchedule({ onLoggedOut }) {
         lessonsOn={lessonsOn}
         renderLesson={(slot) => (
           <>
-            {slot.course_name}
+            <span className="cell-course">{slot.course_name}</span>
             <span className="cell-topic">
               {slot.teacher_name || t('schoolSchedule.nobody')}
             </span>
@@ -310,6 +310,9 @@ export default function SchoolSchedule({ onLoggedOut }) {
         )}
         lessonClassName={(slot) =>
           slot.teacher ? 'cell lesson' : 'cell lesson unassigned'
+        }
+        lessonTitle={(slot) =>
+          [slot.course_name, slot.teacher_name].filter(Boolean).join(' — ')
         }
         onOpen={(date, slot) => removeSlot(slot)}
         onAdd={(date, number) => setDialog({ type: 'add', date, number })}

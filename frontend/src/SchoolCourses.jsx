@@ -190,7 +190,7 @@ export default function SchoolCourses() {
         <form className="add-form" onSubmit={add}>
           <input
             value={form.name}
-            maxLength={20}
+            maxLength={100}
             placeholder={t('school.courses.placeholder')}
             aria-label={t('school.courses.placeholder')}
             disabled={busy}
@@ -253,7 +253,7 @@ export default function SchoolCourses() {
                     <input
                       autoFocus
                       value={editing.value}
-                      maxLength={20}
+                      maxLength={100}
                       aria-label={t('classes.newNameLabel')}
                       onChange={(event) =>
                         setEditing({ ...editing, value: event.target.value })

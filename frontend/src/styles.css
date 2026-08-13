@@ -2149,6 +2149,16 @@ button.day-head:hover {
   background: #d7ecd9;
 }
 
+/* название курса: в одну строку с обрезкой — колонка узкая, а имя курса
+   длиной с предмет, и полное видно в подсказке ячейки */
+.cell-course {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* тема из плана: мельче, приглушённее и в одну строку с обрезкой */
 .cell-topic {
   display: block;

@@ -582,12 +582,14 @@ export default function Agenda({ onLoggedOut }) {
       }
       renderLesson={(lesson) => (
         <>
-          {lesson.course_name}
+          <span className="cell-course">{lesson.course_name}</span>
           {topicOf(lesson)}
         </>
       )}
       lessonClassName={lessonClassName}
-      lessonTitle={(lesson) => lesson.reason || undefined}
+      lessonTitle={(lesson) =>
+        [lesson.course_name, lesson.reason].filter(Boolean).join(' — ')
+      }
       isFree={(inCell) => !inCell.some((item) => !item.is_cancelled)}
       onPickDay={pickDay}
       onOpen={openLesson}

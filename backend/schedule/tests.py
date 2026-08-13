@@ -87,6 +87,18 @@ class CourseApiTests(SchoolTestMixin, APITestCase):
 
         self.assertEqual(response.status_code, 201, response.content)
 
+    def test_a_long_name_fits(self):
+        """
+        Двадцати символов не хватало: школы пишут в названии курса не только
+        литеру, но и уточнение — группу, поток, язык преподавания.
+        """
+        name = "10 класс, группа B (углублённая математика, вторая подгруппа)"
+
+        response = self.post_class(name)
+
+        self.assertEqual(response.status_code, 201, response.content)
+        self.assertEqual(response.json()["name"], name)
+
     def test_blank_name_is_rejected(self):
         response = self.post_class("   ")
 
