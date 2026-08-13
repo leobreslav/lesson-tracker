@@ -397,15 +397,7 @@ export default function Plan({ onLoggedOut }) {
               rows: result.created_rows,
               sections: result.created_headers,
               lessons: result.created_lessons,
-            })) +
-          (result.warnings.length
-            ? t('plan.importedSkipped', {
-                count: result.warnings.length,
-                details: result.warnings
-                  .map((warning) => t(`warnings.${warning.code}`, warning.params))
-                  .join(' '),
-              })
-            : ''),
+            })),
       )
     } catch (err) {
       handleError(err)
@@ -414,10 +406,10 @@ export default function Plan({ onLoggedOut }) {
     }
   }
 
-  const handleExport = async (withIds = true) => {
+  const handleExport = async () => {
     setError(null)
     try {
-      await downloadPlanCsv(classId, { withIds })
+      await downloadPlanCsv(classId)
     } catch (err) {
       handleError(err)
     }
@@ -830,18 +822,9 @@ export default function Plan({ onLoggedOut }) {
                   type="button"
                   className="secondary"
                   disabled={busy}
-                  onClick={() => handleExport(true)}
+                  onClick={handleExport}
                 >
                   {t('plan.exportCsv')}
-                </button>
-                <button
-                  type="button"
-                  className="secondary"
-                  disabled={busy}
-                  title={t('plan.exportPlainHint')}
-                  onClick={() => handleExport(false)}
-                >
-                  {t('plan.exportPlain')}
                 </button>
               </div>
 

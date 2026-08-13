@@ -1,7 +1,7 @@
 from urllib.parse import quote
 
 from config.access import IsSchoolMember, TeacherScopedViewSet
-from config.errors import Codes, api_error
+from config.errors import Codes, api_error, error_payload
 from django.db import transaction
 from files import services as file_services
 from django.http import HttpResponse
@@ -253,21 +253,46 @@ class PlanNodeViewSet(TeacherScopedViewSet):
         except services.PlanImportError as error:
             api_error(Codes.FILE_UNREADABLE, str(error), field="file")
 
-    def read_mode(self, parsed):
-        mode = self.request.data.get("mode", "replace")
+    def read_mode(self, parsed, *, refusing=True):
+        """
+        Режим обязателен: умолчания у разрушительной операции быть не должно.
+
+        Раньше POST без поля означал replace — то есть «снести план» по
+        умолчанию. Ни один вызов от интерфейса на это не полагался.
+
+        `refusing=False` — для предпросмотра: он ни от чего не отказывается,
+        «синхронизировать не с чем» там такая же строка списка, как
+        остальные ошибки файла.
+        """
+        mode = self.request.data.get("mode")
+        if not mode:
+            api_error(
+                Codes.MODE_REQUIRED,
+                "Choose the mode: «replace», «append» or «sync».",
+                field="mode",
+            )
         if mode not in IMPORT_MODES:
             api_error(
                 Codes.MODE_INVALID,
                 "Mode must be one of «replace», «append», «sync».",
                 field="mode",
             )
-        if mode == "sync" and not parsed.has_ids:
+        if refusing and mode == "sync" and not any(
+            row.node_id for row in parsed.rows
+        ):
             api_error(
-                Codes.CSV_IDS_REQUIRED,
-                "Syncing needs the id column — export the plan first.",
+                Codes.CSV_NOTHING_TO_SYNC,
+                "Nothing to sync with: not a single row carries an id.",
                 field="file",
             )
         return mode
+
+    def refuse(self, errors):
+        """Отказ по первой ошибке — остальные человек уже видел в предпросмотре."""
+        first = errors[0]
+        api_error(
+            first["code"], first["detail"], field="file", **first.get("params", {})
+        )
 
     @action(detail=False, methods=["post"], url_path="import", url_name="import")
     def import_csv(self, request):
@@ -279,6 +304,10 @@ class PlanNodeViewSet(TeacherScopedViewSet):
         """
         course = self.requested_course()
         parsed = self.read_upload()
+        if not parsed.ok:
+            # файл читается строго: непонятная строка отклоняет его целиком,
+            # и до плана дело не доходит вовсе
+            self.refuse(parsed.errors)
         mode = self.read_mode(parsed)
         owner = self.owner_of(course)
 
@@ -287,16 +316,12 @@ class PlanNodeViewSet(TeacherScopedViewSet):
             if not plan.ok:
                 # весь файл или ничего: применить половину значит оставить
                 # человека разбираться, какую именно
-                first = plan.errors[0]
-                api_error(
-                    first["code"], first["detail"], field="file",
-                    **first.get("params", {}),
-                )
+                self.refuse(plan.errors)
 
             with transaction.atomic():
                 done = services.apply_sync(owner, plan)
 
-            return Response({**done, "warnings": parsed.warnings})
+            return Response(done)
 
         with transaction.atomic():
             if mode == "replace":
@@ -313,7 +338,6 @@ class PlanNodeViewSet(TeacherScopedViewSet):
                 "created_rows": created["headers"] + created["lessons"],
                 "created_headers": created["headers"],
                 "created_lessons": created["lessons"],
-                "warnings": parsed.warnings,
             }
         )
 
@@ -328,29 +352,48 @@ class PlanNodeViewSet(TeacherScopedViewSet):
         """
         course = self.requested_course()
         parsed = self.read_upload()
-        mode = self.read_mode(parsed)
+        mode = self.read_mode(parsed, refusing=False)
         owner = self.owner_of(course)
-        nodes = services.plan_nodes(owner)
 
-        if mode == "sync":
+        errors = list(parsed.errors)
+        new_sections = new_lessons = update = 0
+        doomed = []
+
+        if errors:
+            # файл не прочитан — считать по нему нечего, показываем ошибки
+            pass
+        elif mode == "sync" and not any(row.node_id for row in parsed.rows):
+            errors = [
+                error_payload(
+                    Codes.CSV_NOTHING_TO_SYNC,
+                    "Nothing to sync with: not a single row carries an id.",
+                )
+            ]
+        elif mode == "sync":
             plan = services.plan_sync(owner, parsed.rows)
-            create, update, doomed = len(plan.create), len(plan.update), plan.delete
             errors = plan.errors
+            new_sections = sum(1 for row, _, _ in plan.create if row.is_section)
+            new_lessons = len(plan.create) - new_sections
+            update, doomed = len(plan.update), plan.delete
         else:
-            create = len(parsed.rows)
-            update, errors = 0, []
+            new_sections, new_lessons = parsed.sections, parsed.lessons
             # append не удаляет ничего, replace — всё, что было
-            doomed = list(nodes) if mode == "replace" else []
+            doomed = list(services.plan_nodes(owner)) if mode == "replace" else []
 
         return Response(
             {
                 "mode": mode,
-                "has_ids": parsed.has_ids,
-                "create": create,
+                # строк в файле против уроков: расхождение и есть число
+                # строк, которые не прочитались
+                "rows": parsed.data_rows,
+                "lessons": parsed.lessons,
+                "sections": parsed.sections,
+                "create": new_sections + new_lessons,
+                "create_sections": new_sections,
+                "create_lessons": new_lessons,
                 "update": update,
                 "delete": len(doomed),
                 **loss_payload(doomed),
-                "warnings": parsed.warnings,
                 "errors": errors,
             }
         )
@@ -359,10 +402,7 @@ class PlanNodeViewSet(TeacherScopedViewSet):
     def export_csv(self, request):
         """Выгрузка плана в CSV — формат тот же, что понимает импорт."""
         course = self.requested_course()
-        with_ids = request.query_params.get("with_ids", "true").lower() != "false"
-        content = services.build_plan_csv(
-            services.get_tree(self.owner_of(course)), with_ids=with_ids
-        )
+        content = services.build_plan_csv(services.get_tree(self.owner_of(course)))
 
         name = f"план_{course.name}_{timezone.localdate()}.csv"
         response = HttpResponse(content, content_type="text/csv; charset=utf-8")

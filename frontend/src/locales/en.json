@@ -127,9 +127,7 @@
     "weekend": "Weekend"
   },
   "warnings": {
-    "slot_not_study_day": "{{date}} is not a study day ({{statusLabel}}{{titleSuffix}}) — the lesson sits outside the school calendar.",
-    "csv_row_empty": "Row {{row}}: neither a section nor a lesson — skipped.",
-    "csv_row_too_long": "Row {{row}}: the title is longer than {{limit}} characters — skipped."
+    "slot_not_study_day": "{{date}} is not a study day ({{statusLabel}}{{titleSuffix}}) — the lesson sits outside the school calendar."
   },
   "errors": {
     "unknown": "The request failed",
@@ -152,7 +150,7 @@
     "slot_duplicate": "This class already has a lesson with this number on that day.",
     "period_reversed": "The end date is earlier than the start date.",
     "period_required": "Both a start and an end date are required.",
-    "mode_invalid": "The mode must be either «replace» or «append».",
+    "mode_invalid": "The mode must be «replace», «append» or «sync».",
     "section_inside_section": "A section can only live at the top level.",
     "parent_not_section": "A node can only be nested into a section.",
     "parent_other_class": "That section belongs to another class.",
@@ -192,16 +190,23 @@
     "file_type_not_allowed": "This kind of file cannot be attached: «{{extension}}». Allowed: images, pdf, docx, xlsx, pptx, txt, zip.",
     "school_quota_exceeded": "The school has used up its storage quota ({{quota_mb}} MB). Remove some files to make room.",
     "storage_unavailable": "The file store is not answering. Everything else works; try the file again in a moment.",
-    "csv_ids_required": "Syncing needs the id column — export the plan first.",
     "csv_id_unknown": "Row {{row}}: id {{id}} is not in this plan.",
     "csv_id_duplicate": "Row {{row}}: id {{id}} is used twice.",
-    "csv_id_kind_changed": "Row {{row}}: id {{id}} («{{title}}») is of the other kind in the plan — a section cannot become a lesson.",
+    "csv_id_kind_changed": "Row {{row}}: id {{id}} («{{title}}») is a theme in the plan, not a lesson.",
     "grade_in_use": "«{{name}}» is used by {{courses}} courses — change them first.",
     "assignment_in_use": "{{teacher}} has {{slots}} lessons and {{plan_rows}} plan rows in «{{course}}». Unassigning keeps all of it.",
     "member_in_use": "{{email}} teaches {{courses}} courses and has {{slots}} lessons and {{plan_rows}} plan rows. Detaching keeps all of it.",
     "not_assigned": "{{teacher}} is not assigned to «{{course}}» — assign them to the course first.",
     "grade_level_locked": "«{{name}}» is used by {{courses}} courses, so its year of study cannot be moved — every list sorts by it. Rename it instead.",
-    "grade_preset_invalid": "The number of years must be between 1 and {{limit}}."
+    "grade_preset_invalid": "The number of years must be between 1 and {{limit}}.",
+    "mode_required": "Choose the import mode.",
+    "csv_header_invalid": "The first row must be the header «{{expected}}».",
+    "csv_bad_columns": "Row {{row}}: the file must have exactly four columns, this one has {{count}}.",
+    "csv_section_row": "Row {{row}}: «{{title}}» has no lesson. The format has changed: one row is one lesson, and the theme is written on every row of it.",
+    "csv_row_empty": "Row {{row}}: neither a theme nor a lesson.",
+    "csv_row_too_long": "Row {{row}}: the title is longer than {{limit}} characters.",
+    "csv_bad_id": "Row {{row}}: «{{value}}» is not a row id — leave the cell empty for a new lesson.",
+    "csv_nothing_to_sync": "Nothing to sync with: not a single row carries an id. Export the plan first, or import it as «Append»."
   },
   "classPicker": {
     "label": "Classes:",
@@ -228,27 +233,26 @@
   },
   "csv": {
     "title": "Import a plan from CSV",
-    "hint": "Two columns: the section and the lesson, a third one for the note. A section may stand on its own line or be repeated on every lesson row.",
+    "hint": "One format: {{header}}, the header is required. One row is one lesson, the theme is repeated on every row; an empty theme means the lesson sits outside any theme, an empty id means it is new.",
     "dropZone": "Drag a file here or choose one",
     "unreadable": "The file could not be read — a plain text CSV is expected.",
-    "parsed": "Recognised {{rows}} rows ({{sections}} sections, {{lessons}} lessons).",
-    "previewLimit": " The first {{limit}} are shown below.",
-    "section": "section",
+    "readAs": "Rows: {{rows}} · lessons: {{lessons}} · themes: {{sections}}",
+    "willDo": " · new: {{create}} · updated: {{update}} · deleted: {{delete}}",
+    "ofThemWithContent": " (of them with content: {{count}})",
+    "newSections": "New themes: {{count}} — a theme renamed on some rows only splits in two.",
+    "previewLimit": "The first {{limit}} rows are shown.",
+    "moreProblems": "…and {{count}} more.",
+    "section": "theme",
     "lesson": "lesson",
     "submit": "Import",
     "mode": {
       "replace": "Replace",
       "replaceHint": "wipe the plan and build it again from the file",
       "append": "Append",
-      "appendHint": "add the rows to the end, keeping what is there",
+      "appendHint": "add the rows to the end, ids ignored",
       "sync": "Sync",
       "syncHint": "match rows by id, keeping the lesson content",
-      "syncNeedsIds": "needs the id column — export the plan first"
-    },
-    "plan": {
-      "replace": "The whole plan will be replaced with {{create}} rows from the file.",
-      "append": "{{create}} rows will be added to the end.",
-      "sync": "To create: {{create}}, to update: {{update}}, to delete: {{delete}}."
+      "nothingToSync": "no row carries an id — nothing to sync with"
     },
     "loss": "{{lessons}} lessons will be deleted, {{content}} of them with content and {{attachments}} with attachments.",
     "filesLost_one": "{{count}} file will be gone for good.",
@@ -293,7 +297,6 @@
     "importCsv": "Import CSV",
     "exportCsv": "Export CSV",
     "imported": "Created {{rows}} rows ({{sections}} sections, {{lessons}} lessons).",
-    "importedSkipped": " Skipped: {{count}}. {{details}}",
     "dndInstructions": "Press space to pick the item up. Choose a new place with the up and down arrows, press space to drop it, Escape cancels the move. The arrow buttons in the row do the same.",
     "needClass": {
       "title": "A class first",
@@ -321,9 +324,7 @@
     "hasAttachments_one": "{{count}} attachment",
     "hasAttachments_other": "{{count}} attachments",
     "synced": "Synced: {{created}} created, {{updated}} updated, {{deleted}} deleted.",
-    "exportPlain": "Export without ids",
-    "exportPlainHint": "the old format, for handing to somebody else",
-    "exportHint": "The file carries the structure only: titles, sections, notes and ids. Lesson content and attachments stay here — take the file back with «Sync» and they survive."
+    "exportHint": "The file carries the structure only: themes, lesson titles, notes and ids. Lesson content and attachments stay here — take the file back with «Sync» and they survive. A theme without lessons is not written to the file."
   },
   "calendar": {
     "title": "School year",

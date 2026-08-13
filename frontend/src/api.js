@@ -334,9 +334,9 @@ export const previewPlanCsv = (classId, file, mode) =>
  * A plain link will not do: the endpoint wants a token in the header, so the
  * file is fetched and handed to the browser as a blob.
  */
-export const downloadPlanCsv = async (classId, { withIds = true } = {}) => {
+export const downloadPlanCsv = async (classId) => {
   const token = getToken()
-  const query = new URLSearchParams({ course: classId, with_ids: String(withIds) })
+  const query = new URLSearchParams({ course: classId })
   const response = await fetch(`/api/plan/export/?${query}`, {
     headers: token ? { Authorization: `Token ${token}` } : {},
   })

@@ -1,24 +1,26 @@
 /**
- * Client-side parsing of a plan CSV — purely for the preview.
+ * Клиентский разбор CSV учебного плана — зеркало `parse_plan_csv`.
  *
- * A mirror of `parse_plan_csv` from plans/services.py: we show exactly what
- * the server will see. The server still does the import and stays the
- * authority. Warnings carry the same shape as the server's — {code, params} —
- * so both are rendered through the same `warnings.*` keys.
+ * Формат ровно один: `id,Тема,Урок,Заметка`, шапка обязательна, одна строка —
+ * один урок, тема повторяется в каждой строке. Пустая тема значит «урок вне
+ * темы», пустой id — «урок новый». Стилей больше не три и угадывать нечего:
+ * непонятная строка — ошибка всего файла с её номером.
+ *
+ * Зеркало нужно, чтобы предпросмотр показывал ровно то, что положит сервер;
+ * коды ошибок здесь те же самые (`{code, params}`), поэтому и текст один и
+ * тот же — из словаря `errors.*`. Импортирует всё равно сервер.
  */
 
-// header words in both languages: this recognises the file, not the interface
-const HEADER_CELLS = new Set([
-  'тема', 'темы', 'раздел', 'topic', 'section',
-  'урок', 'уроки', 'название', 'тема урока', 'lesson',
-  'заметка', 'заметки', 'примечание', 'комментарий', 'note',
-])
-
-// the first header cell when the file carries the id column
-const ID_CELLS = new Set(['id', 'ид', '№'])
+export const CSV_HEADER = ['id', 'Тема', 'Урок', 'Заметка']
+export const HEADER_TEXT = CSV_HEADER.join(',')
+const HEADER_NORMALIZED = CSV_HEADER.map(normalizedCell)
 
 const TITLE_LIMIT = 200
 export const MAX_ROWS = 2000
+
+function normalizedCell(cell) {
+  return cell.replace(/\s+/g, '').toLowerCase()
+}
 
 /** File bytes into text: UTF-8, else Windows-1251 (Excel on Windows). */
 export function decodeCsv(buffer) {
@@ -86,109 +88,102 @@ export function sniffDelimiter(text) {
   return better ? ';' : ','
 }
 
-function looksLikeHeader(cells) {
-  const filled = cells.map((cell) => cell.trim().toLowerCase()).filter(Boolean)
-  return filled.length > 0 && filled.every((cell) => HEADER_CELLS.has(cell))
-}
-
-function headerWithIds(cells) {
-  if (!cells.length || !ID_CELLS.has(cells[0].trim().toLowerCase())) return false
-  const rest = cells.slice(1)
-  return looksLikeHeader(rest) || !rest.some((cell) => cell.trim())
-}
-
 /**
- * Is the theme written on every lesson row?
+ * Четыре ячейки строки — или null, если столбцов не четыре.
  *
- * That is what decides the meaning of an **empty** theme cell: in a file
- * that repeats the theme, emptiness means «this lesson is outside a
- * section»; in a file written as «a header, then lessons under it» it means
- * nothing at all. Mirrors `uses_spread` on the server.
+ * Пустые столбцы справа Excel дописывает сам; заполненный пятый — уже
+ * другой файл.
  */
-export function usesSpread(rawRows, shift) {
-  return rawRows.some((raw) => {
-    const theme = (raw[shift] ?? '').trim()
-    const lesson = (raw[shift + 1] ?? '').trim()
-    return Boolean(theme && lesson)
-  })
+function rowCells(raw) {
+  const width = CSV_HEADER.length
+  if (raw.length < width) return null
+  if (raw.slice(width).some((cell) => cell.trim())) return null
+  return raw.slice(0, width).map((cell) => cell.trim())
 }
 
-/** Does the file carry an id column? Decided over the file, not per row. */
-export function detectIds(rawRows) {
-  const filled = rawRows.filter((row) => row.some((cell) => cell.trim()))
-  if (!filled.length) return false
-  if (headerWithIds(filled[0])) return true
-  if (Math.max(...filled.map((row) => row.length)) < 4) return false
-
-  const first = filled.map((row) => (row[0] ?? '').trim())
-  return (
-    first.some(Boolean) && first.every((cell) => cell === '' || /^\d+$/.test(cell))
-  )
-}
+const problem = (code, params) => ({ code, params })
 
 export function parsePlanCsv(text) {
-  const rows = []
-  const warnings = []
-  let theme = null
-
   const raws = readRows(text, sniffDelimiter(text))
-  const hasIds = detectIds(raws)
-  const shift = hasIds ? 1 : 0
-  // шапку в счёт не берём: «Тема» и «Урок» в ней стоят рядом заполненными и
-  // выглядят в точности как строка урока с протянутой темой
-  const first = raws[0] ?? []
-  const header = hasIds ? headerWithIds(first) : looksLikeHeader(first)
-  const spread = usesSpread(header ? raws.slice(1) : raws, shift)
 
-  raws.forEach((raw, index) => {
-    const number = index + 1
-    if (number > MAX_ROWS) return
+  if (raws.length > MAX_ROWS + 1) {
+    return { rows: [], errors: [problem('file_too_many_rows', {})], dataRows: 0 }
+  }
 
-    const cells = [0, 1, 2, 3]
-      .slice(0, 3 + shift)
-      .map((position) => (raw[position] ?? '').trim())
-    const [idCell, themeCell, lessonCell, note] = hasIds ? cells : ['', ...cells]
+  const head = raws.length ? rowCells(raws[0]) : null
+  const headerOk =
+    head !== null &&
+    head.every((cell, index) => normalizedCell(cell) === HEADER_NORMALIZED[index])
 
-    if (number === 1 && (hasIds ? headerWithIds(cells) : looksLikeHeader(cells))) return
+  if (!headerOk) {
+    return {
+      rows: [],
+      dataRows: 0,
+      errors: [
+        problem('csv_header_invalid', {
+          expected: HEADER_TEXT,
+          got: raws.length ? raws[0].join(',') : '',
+        }),
+      ],
+    }
+  }
 
-    if (!themeCell && !lessonCell) {
-      if (raw.some((cell) => cell.trim())) {
-        warnings.push({ code: 'csv_row_empty', params: { row: number } })
+  const rows = []
+  const errors = []
+  let currentTheme = null
+  let dataRows = 0
+
+  raws.slice(1).forEach((raw, index) => {
+    const row = index + 2
+    if (!raw.some((cell) => cell.trim())) return // пустая строка от Excel
+
+    dataRows += 1
+
+    const cells = rowCells(raw)
+    if (cells === null) {
+      errors.push(problem('csv_bad_columns', { row, count: raw.length }))
+      return
+    }
+
+    const [idCell, theme, lesson, note] = cells
+
+    if (theme && !lesson) {
+      errors.push(problem('csv_section_row', { row, title: theme }))
+      return
+    }
+
+    if (!theme && !lesson) {
+      errors.push(problem('csv_row_empty', { row }))
+      return
+    }
+
+    if (Math.max(theme.length, lesson.length) > TITLE_LIMIT) {
+      errors.push(problem('csv_row_too_long', { row, limit: TITLE_LIMIT }))
+      return
+    }
+
+    let id = null
+    if (idCell) {
+      if (!/^\d+$/.test(idCell) || Number(idCell) === 0) {
+        errors.push(problem('csv_bad_id', { row, value: idCell }))
+        return
       }
-      return
+      id = Number(idCell)
     }
 
-    if (Math.max(themeCell.length, lessonCell.length) > TITLE_LIMIT) {
-      warnings.push({
-        code: 'csv_row_too_long',
-        params: { row: number, limit: TITLE_LIMIT },
-      })
-      return
-    }
-
-    const id = /^\d+$/.test(idCell) ? Number(idCell) : null
-
-    if (themeCell && !lessonCell) {
-      theme = themeCell
-      rows.push({ is_section: true, title: themeCell, note, id })
-      return
-    }
-
-    if (themeCell && themeCell !== theme) {
-      theme = themeCell
-      rows.push({ is_section: true, title: themeCell, note: '', id: null })
+    if (theme !== currentTheme) {
+      currentTheme = theme
+      if (theme) rows.push({ is_section: true, title: theme, note: '', id: null })
     }
 
     rows.push({
       is_section: false,
-      title: lessonCell,
+      title: lesson,
       note,
       id,
-      // an empty theme cell means «outside a section» only in a file that
-      // writes the theme on every lesson row — see usesSpread
-      at_top_level: spread && !themeCell,
+      at_top_level: !theme,
     })
   })
 
-  return { rows, warnings, hasIds }
+  return { rows, errors, dataRows }
 }

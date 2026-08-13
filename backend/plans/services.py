@@ -258,22 +258,31 @@ def structure_problems(*, course_id, parent, is_section) -> dict:
     return {}
 
 
-# --- CSV: разбор и выгрузка, тоже без ORM ---
 
-CSV_HEADER = ("Тема", "Урок", "Заметка")
+# --- CSV: единственный формат, разбор и выгрузка, тоже без ORM ---
+#
+# Формат один: `id,Тема,Урок,Заметка`, шапка обязательна, одна строка — один
+# урок. Тема повторяется в каждой строке; пустая ячейка темы значит «урок вне
+# темы», пустой id — «урок новый». Отдельной строки-заголовка нет.
+#
+# Стилей было три, и разбор угадывал, какой перед ним. У догадки не бывает
+# неправильного ответа — она всегда «удаётся», — и стоило это фантомных
+# заголовков, уроков, молча уехавших на верхний уровень, и сдвига столбцов
+# на файле, где столбец id не признался. Теперь непонятная строка отклоняет
+# **весь** файл с номером строки: лучше отказ, чем принятый не тот план.
+
+CSV_HEADER = ("id", "Тема", "Урок", "Заметка")
 CSV_MAX_ROWS = 2000
 TITLE_LIMIT = 200
 
-# слова шапки: строка считается шапкой, только если ВСЕ её ячейки такие
-HEADER_CELLS = {
-    "тема", "темы", "раздел", "topic", "section",
-    "урок", "уроки", "название", "тема урока", "lesson",
-    "заметка", "заметки", "примечание", "комментарий", "note",
-}
 
-# первая ячейка шапки, если в файле есть столбец id
-ID_CELLS = {"id", "ид", "№"}
-CSV_HEADER_WITH_IDS = ("id",) + CSV_HEADER
+def normalized_cell(cell: str) -> str:
+    """Ячейка шапки без регистра и пробелов: « Тема » и «тема» — одно."""
+    return "".join(cell.split()).lower()
+
+
+HEADER_NORMALIZED = tuple(normalized_cell(cell) for cell in CSV_HEADER)
+HEADER_TEXT = ",".join(CSV_HEADER)
 
 
 class PlanImportError(Exception):
@@ -292,8 +301,10 @@ class ImportedRow:
     `attachments` — существующие объекты `files.Attachment`, а не их копии:
     перенос делает `files.services.copy_attachments`, и он не трогает байты.
 
-    `node_id` заполняется только при разборе файла со столбцом id: это
-    заявка «эта строка — вот тот узел плана», и проверяет её `plan_sync`.
+    Заголовки в CSV не пишутся: их выводит разбор из смены значения в
+    столбце «Тема», поэтому у такой строки `node_id` пуст всегда — id в
+    файле принадлежит уроку. Кто из тем в плане соответствует блоку,
+    решает `plan_sync` по уроками внутри него.
     """
 
     is_section: bool
@@ -302,12 +313,9 @@ class ImportedRow:
     content: dict | None = None
     attachments: Sequence = ()
     node_id: int | None = None
-    # номер строки в файле — нужен, чтобы ошибка синхронизации могла
-    # показать, где именно смотреть
+    # номер строки в файле — нужен, чтобы ошибка могла показать, где смотреть
     row_number: int = 0
-    # «этот урок не внутри предыдущей темы». Ставит только разбор файла со
-    # столбцом id: там тема написана в каждой строке урока, и пустая ячейка
-    # темы — это утверждение, а не умолчание
+    # «этот урок не внутри предыдущей темы»: в файле у него пустая тема
     at_top_level: bool = False
 
 
@@ -339,20 +347,17 @@ def decode_csv(data: bytes) -> str:
 
 def sniff_delimiter(text: str) -> str:
     """
-    Русский Excel сохраняет с точкой с запятой, остальные — с запятой.
+    Запятая или точка с запятой — по тому, какой даёт ровные записи.
 
-    Считать вхождения бесполезно: запятые бывают внутри названий, и в файле,
-    где каждое название с запятой, победила бы запятая. Смотрим, какой
-    разделитель даёт одинаковое число столбцов в первых записях.
-
-    Именно записях, а не строках: перевод строки внутри кавычек — это часть
-    заметки, и, порезав текст по \n, мы сравнивали бы обрывки. Читаем теми же
-    csv.reader'ами, что и разберут потом, — каждый со своим разделителем.
+    Не по числу вхождений: запятые бывают внутри названий, и файл русского
+    Excel («;» снаружи, запятые внутри) тогда читался бы одним столбцом.
+    Считаем именно записи, а не строки: перевод строки внутри кавычек — это
+    часть заметки, и, порезав текст по `\\n`, мы сравнивали бы обрывки.
     """
+
     def head(candidate):
-        reader = csv.reader(io.StringIO(text), delimiter=candidate)
         rows = []
-        for row in reader:
+        for row in csv.reader(io.StringIO(text), delimiter=candidate):
             if any(cell.strip() for cell in row):
                 rows.append(row)
             if len(rows) == 5:
@@ -368,214 +373,194 @@ def sniff_delimiter(text: str) -> str:
     return ";" if score(";") > score(",") else ","
 
 
-def looks_like_header(cells: Sequence[str]) -> bool:
-    filled = [cell.strip().lower() for cell in cells if cell.strip()]
-    return bool(filled) and all(cell in HEADER_CELLS for cell in filled)
-
-
-def header_with_ids(cells: Sequence[str]) -> bool:
-    """Шапка вида `id,Тема,Урок,Заметка` — та, что выдаёт экспорт."""
-    return bool(cells) and cells[0].strip().lower() in ID_CELLS and (
-        looks_like_header(cells[1:]) or not any(cell.strip() for cell in cells[1:])
-    )
-
-
-def detect_ids(raw_rows: Sequence[Sequence[str]]) -> bool:
+def row_cells(raw: Sequence[str]) -> list | None:
     """
-    Есть ли в файле столбец id — решается по файлу целиком, а не по строке.
+    Четыре ячейки строки — или None, если столбцов не четыре.
 
-    Обычно отвечает шапка: экспорт всегда её пишет. Но шапку часто удаляют,
-    поэтому есть и второй признак: столбцов не меньше четырёх, в первом
-    только числа или пустота, и хотя бы одно число там есть. Без последнего
-    условия трёхстолбцовый файл, у которого Excel дописал пустую колонку, а
-    все темы протянуты пустыми ячейками, был бы разобран со сдвигом — то
-    есть темы уехали бы в уроки.
+    Пустые столбцы справа Excel дописывает сам, и это не повод для отказа;
+    заполненный пятый столбец — уже другой файл.
     """
-    filled = [row for row in raw_rows if any(cell.strip() for cell in row)]
-    if not filled:
-        return False
+    width = len(CSV_HEADER)
+    if len(raw) < width:
+        return None
+    if any(cell.strip() for cell in raw[width:]):
+        return None
 
-    if header_with_ids(filled[0]):
-        return True
-
-    if max(len(row) for row in filled) < 4:
-        return False
-
-    first = [row[0].strip() for row in filled]
-    return any(first) and all(cell == "" or cell.isdigit() for cell in first)
-
-
-def uses_spread(raw_rows: Sequence[Sequence[str]], shift: int) -> bool:
-    """
-    Написана ли тема в каждой строке урока.
-
-    От этого зависит, что означает **пустая** ячейка темы. Если тема
-    повторяется — файл проговаривает принадлежность вслух, и пустая ячейка
-    значит «этот урок вне темы»; так выглядит экспорт с id, и только так
-    урок верхнего уровня после темы вообще выразим. Если тема не
-    повторяется нигде, файл написан в привычном стиле «заголовок, потом
-    уроки под ним», и пустая ячейка не значит ничего.
-
-    Раньше это решал столбец id: с ним пустая тема всегда значила «вне
-    темы». Человек, выгрузивший план и поправивший его в привычном стиле,
-    получал пустые темы и все уроки на верхнем уровне — файл выглядел
-    правильным, а результат нет. Спрашивать нужно у файла, а не у столбца.
-    """
-    for raw in raw_rows:
-        cells = [cell.strip() for cell in raw[shift:shift + 2]] + ["", ""]
-        theme, lesson = cells[0], cells[1]
-        if theme and lesson:
-            return True
-
-    return False
+    return [cell.strip() for cell in raw[:width]]
 
 
 class ParsedPlan(NamedTuple):
-    """Разобранный файл: строки, предупреждения и был ли в нём столбец id."""
+    """Разобранный файл: строки и то, что помешало его принять."""
 
     rows: list
-    warnings: list
-    has_ids: bool
+    errors: list
+    # строк с данными в файле — всех, включая отклонённые. Рядом с числом
+    # уроков это и говорит, сколько строк не прочиталось
+    data_rows: int = 0
+
+    @property
+    def ok(self) -> bool:
+        return not self.errors
+
+    @property
+    def lessons(self) -> int:
+        return sum(1 for row in self.rows if not row.is_section)
+
+    @property
+    def sections(self) -> int:
+        return sum(1 for row in self.rows if row.is_section)
 
 
 def parse_plan_csv(text: str, *, max_rows: int = CSV_MAX_ROWS) -> ParsedPlan:
     """
-    Разбор плана построчно.
+    Разбор файла единственного формата.
 
-    Тема в первом столбце, урок во втором, заметка в третьем. Если тема
-    указана в каждой строке урока («протягивание»), новый заголовок
-    создаётся при её смене. Уроки до первого заголовка остаются вне темы.
-
-    Со столбцом id всё то же самое, только сдвинуто на колонку вправо: сам
-    id ничего в разборе не меняет и просто едет с строкой дальше.
+    Ошибки собираются все разом и ничего не пишут: показать человеку весь
+    список полезнее, чем первую строку, на которой разбор сдался. Отказ
+    всегда целиком — половина применённого файла хуже неприменённого.
     """
     raw_rows = []
     for number, raw in enumerate(csv.reader(io.StringIO(text),
                                             delimiter=sniff_delimiter(text)), start=1):
-        if number > max_rows:
+        # шапка — не урок, поэтому предел считается по строкам данных
+        if number > max_rows + 1:
             raise PlanImportError(
                 f"The file has more than {max_rows} rows — split it into parts."
             )
         raw_rows.append(raw)
 
-    has_ids = detect_ids(raw_rows)
-    shift = 1 if has_ids else 0
-    width = 3 + shift
-
-    # шапку в счёт не берём: «Тема» и «Урок» в ней стоят рядом заполненными
-    # и выглядят в точности как строка урока с протянутой темой
-    first = raw_rows[0] if raw_rows else []
-    header = bool(first) and (
-        header_with_ids(first) if has_ids else looks_like_header(first)
-    )
-    spread = uses_spread(raw_rows[1:] if header else raw_rows, shift)
+    head = row_cells(raw_rows[0]) if raw_rows else None
+    if head is None or tuple(normalized_cell(cell) for cell in head) != HEADER_NORMALIZED:
+        # без шапки читать нечего: порядок столбцов больше не угадывается
+        return ParsedPlan([], [
+            error_payload(
+                Codes.CSV_HEADER_INVALID,
+                f"The first row must be the header «{HEADER_TEXT}».",
+                expected=HEADER_TEXT,
+                got=",".join(raw_rows[0]) if raw_rows else "",
+            )
+        ])
 
     rows: list[ImportedRow] = []
-    warnings: list[dict] = []
+    errors: list[dict] = []
     current_theme: str | None = None
+    data_rows = 0
 
-    for number, raw in enumerate(raw_rows, start=1):
-        # лишние столбцы справа игнорируем, недостающие дополняем
-        cells = [cell.strip() for cell in raw[:width]] + [""] * max(0, width - len(raw))
-        node_id, theme, lesson, note = (
-            (cells[0], *cells[1:]) if has_ids else ("", *cells)
-        )
+    for number, raw in enumerate(raw_rows[1:], start=2):
+        if not any(cell.strip() for cell in raw):
+            # пустая строка в конце файла — обычное дело у Excel
+            continue
 
-        if number == 1 and (
-            header_with_ids(cells) if has_ids else looks_like_header(cells)
-        ):
+        data_rows += 1
+
+        cells = row_cells(raw)
+        if cells is None:
+            errors.append(
+                error_payload(
+                    Codes.CSV_BAD_COLUMNS,
+                    f"Row {number}: the file must have exactly four columns.",
+                    row=number, count=len(raw),
+                )
+            )
+            continue
+
+        id_cell, theme, lesson, note = cells
+
+        if theme and not lesson:
+            # раньше это был заголовок темы; сказать об этом прямо, иначе
+            # человек будет искать опечатку там, где её нет
+            errors.append(
+                error_payload(
+                    Codes.CSV_SECTION_ROW,
+                    f"Row {number}: «{theme}» has no lesson. A theme is written "
+                    f"on every lesson row, not on a row of its own.",
+                    row=number, title=theme,
+                )
+            )
             continue
 
         if not theme and not lesson:
-            if any(cell.strip() for cell in raw):
-                warnings.append(
-                    error_payload(
-                        Codes.CSV_ROW_EMPTY,
-                        f"Row {number}: neither a section nor a lesson — skipped.",
-                        row=number,
-                    )
+            errors.append(
+                error_payload(
+                    Codes.CSV_ROW_EMPTY,
+                    f"Row {number}: neither a theme nor a lesson.",
+                    row=number,
                 )
+            )
             continue
 
         if max(len(theme), len(lesson)) > TITLE_LIMIT:
-            warnings.append(
+            errors.append(
                 error_payload(
                     Codes.CSV_ROW_TOO_LONG,
-                    f"Row {number}: the title is longer than {TITLE_LIMIT} characters — skipped.",
-                    row=number,
-                    limit=TITLE_LIMIT,
+                    f"Row {number}: the title is longer than {TITLE_LIMIT} characters.",
+                    row=number, limit=TITLE_LIMIT,
                 )
             )
             continue
 
-        pk = int(node_id) if node_id.isdigit() else None
-
-        if theme and not lesson:
-            current_theme = theme
-            rows.append(
-                ImportedRow(
-                    is_section=True, title=theme, note=note,
-                    node_id=pk, row_number=number,
+        node_id = None
+        if id_cell:
+            if not id_cell.isdigit() or int(id_cell) == 0:
+                errors.append(
+                    error_payload(
+                        Codes.CSV_BAD_ID,
+                        f"Row {number}: «{id_cell}» is not a row id.",
+                        row=number, value=id_cell,
+                    )
                 )
-            )
-            continue
+                continue
+            node_id = int(id_cell)
 
-        if theme and theme != current_theme:
-            # формат с протягиванием: тема сменилась — сначала заголовок.
-            # id у такого заголовка нет и быть не может: он принадлежит
-            # строке урока, а заголовок здесь выведен из неё
+        if theme != current_theme:
             current_theme = theme
-            rows.append(ImportedRow(is_section=True, title=theme, row_number=number))
+            if theme:
+                rows.append(
+                    ImportedRow(is_section=True, title=theme, row_number=number)
+                )
 
         rows.append(
             ImportedRow(
                 is_section=False, title=lesson, note=note,
-                node_id=pk, row_number=number,
-                # пустая ячейка темы значит «вне темы» только в файле, где
-                # тема написана в каждой строке урока, — см. `uses_spread`
-                at_top_level=spread and not theme,
+                node_id=node_id, row_number=number,
+                at_top_level=not theme,
             )
         )
 
-    return ParsedPlan(rows, warnings, has_ids)
+    return ParsedPlan(rows, errors, data_rows)
 
 
-def build_plan_csv(tree: Iterable[Branch], *, with_ids: bool = True) -> str:
+def build_plan_csv(tree: Iterable[Branch]) -> str:
     """
-    План в CSV, симметрично разбору.
+    План в CSV: одна строка — один урок, тема повторяется в каждой.
 
-    Со столбцом id файл можно вернуть режимом sync: строки узнаются по id,
-    и содержание уроков переживает обновление. Без него — прежний формат,
-    годный для передачи другому человеку: чужие id ему ни о чём не говорят.
+    Формат тот же самый, что понимает импорт, и другого нет: круговой прогон
+    экспорт → импорт в режиме sync не меняет ни строчки.
 
-    Различаются они не только столбцом. В формате с id тема написана в
-    **каждой** строке урока, и это не избыточность: иначе урок верхнего
-    уровня, стоящий после темы, неотличим от урока внутри неё — известный
-    предел трёхстолбцового формата. Синхронизация обязана возвращать план
-    таким, каким он был, поэтому здесь пустая ячейка темы означает ровно
-    «этот урок вне темы».
+    Чего в файле нет: темы без уроков (строки для неё не существует) и
+    заметки самой темы — заметка принадлежит уроку. Обратный импорт такую
+    тему удалит, и предпросмотр это показывает.
 
     BOM в начале — чтобы Excel открыл файл как UTF-8, а не как cp1251.
     """
     buffer = io.StringIO()
     writer = csv.writer(buffer, delimiter=",", lineterminator="\r\n")
+    writer.writerow(CSV_HEADER)
 
-    def put(node, theme, lesson):
-        cells = [theme, lesson, node.note]
-        writer.writerow([node.pk] + cells if with_ids else cells)
-
-    writer.writerow(CSV_HEADER_WITH_IDS if with_ids else CSV_HEADER)
+    def put(node, theme):
+        writer.writerow([node.pk, theme, node.title, node.note])
 
     for branch in tree:
         if branch.node.is_section:
-            put(branch.node, branch.node.title, "")
             for child in branch.children:
-                put(child, branch.node.title if with_ids else "", child.title)
+                put(child, branch.node.title)
         else:
-            put(branch.node, "", branch.node.title)
+            put(branch.node, "")
 
-    # \ufeff — тот самый BOM, в исходнике он невидим, поэтому кодом
-    return "\ufeff" + buffer.getvalue()
+    # ﻿ — тот самый BOM, в исходнике он невидим, поэтому кодом
+    return "﻿" + buffer.getvalue()
+
+
 
 
 # --- from here on the database is involved: node order has to be stored ---
@@ -865,6 +850,58 @@ def _sync_errors(rows, known: dict) -> list:
     return errors
 
 
+def blocks_of(rows: Iterable[ImportedRow]) -> list:
+    """
+    Строки файла как блоки: тема (или None у верхнего уровня) и её уроки.
+
+    Заголовок в файле не написан, он выведен из смены темы, поэтому решать,
+    какой теме плана он соответствует, приходится по урокам внутри блока —
+    а для этого блок сначала нужно увидеть целиком.
+    """
+    blocks: list[tuple] = []
+    section = None
+    lessons: list[ImportedRow] = []
+
+    def flush():
+        if section is not None or lessons:
+            blocks.append((section, lessons))
+
+    for row in rows:
+        if row.is_section:
+            flush()
+            section, lessons = row, []
+        else:
+            if row.at_top_level and section is not None:
+                flush()
+                section, lessons = None, []
+            lessons.append(row)
+
+    flush()
+    return blocks
+
+
+def adopt_section(lessons, known: dict, claimed: set):
+    """
+    Какая тема плана стоит за этим блоком файла.
+
+    Отвечают уроки: у первого же знакомого id спрашиваем, в какой теме он
+    сейчас лежит. Поэтому переименование темы **во всех** строках — это
+    переименование заголовка, а не новая тема со старой на выброс.
+
+    Если ту же тему уже забрал блок выше, второй получает свою новую: тема,
+    переименованная в части строк, разделяется надвое — при протягивании
+    иначе и быть не может, и предпросмотр это показывает числом созданных.
+    """
+    for row in lessons:
+        if row.node_id is None:
+            continue
+        parent_id = known[row.node_id].parent_id
+        if parent_id and parent_id not in claimed and parent_id in known:
+            return known[parent_id]
+
+    return None
+
+
 def plan_sync(owner: PlanOwner, rows: Iterable[ImportedRow]) -> SyncPlan:
     """
     Работает без записи: тем же расчётом пользуются и предпросмотр, и импорт.
@@ -881,38 +918,42 @@ def plan_sync(owner: PlanOwner, rows: Iterable[ImportedRow]) -> SyncPlan:
         # дальше считать нечего: план строится по id, а им нельзя верить
         return SyncPlan(create=[], update=[], delete=[], errors=errors)
 
-    create, update, kept = [], [], set()
-    section_ref = None
+    create, update, kept, claimed = [], [], set(), set()
     top_position = 0
-    section_position = 0
 
-    for row in rows:
-        if row.at_top_level:
-            section_ref = None
-
-        if row.is_section:
-            parent_ref, position = None, top_position
-            top_position += 1
-            section_position = 0
-        elif section_ref is not None:
-            parent_ref, position = section_ref, section_position
-            section_position += 1
-        else:
-            parent_ref, position = None, top_position
-            top_position += 1
-
+    def schedule(row, parent_ref, position):
+        """Строка в create или update, и чем на неё сослаться дальше."""
         if row.node_id is None:
             create.append((row, parent_ref, position))
             # у новой темы id появится только при записи, поэтому её уроки
             # ссылаются на место в списке создаваемых, а не на pk
-            ref = NewNode(len(create) - 1)
-        else:
-            kept.add(row.node_id)
-            update.append((known[row.node_id], row, parent_ref, position))
-            ref = row.node_id
+            return NewNode(len(create) - 1)
 
-        if row.is_section:
-            section_ref = ref
+        kept.add(row.node_id)
+        update.append((known[row.node_id], row, parent_ref, position))
+        return row.node_id
+
+    for section_row, lessons in blocks_of(rows):
+        section_ref = None
+
+        if section_row is not None:
+            node = adopt_section(lessons, known, claimed)
+            if node is None:
+                create.append((section_row, None, top_position))
+                section_ref = NewNode(len(create) - 1)
+            else:
+                claimed.add(node.pk)
+                kept.add(node.pk)
+                update.append((node, section_row, None, top_position))
+                section_ref = node.pk
+            top_position += 1
+
+        for position, row in enumerate(lessons):
+            if section_ref is None:
+                schedule(row, None, top_position)
+                top_position += 1
+            else:
+                schedule(row, section_ref, position)
 
     delete = [node for pk, node in known.items() if pk not in kept]
 
@@ -953,7 +994,10 @@ def apply_sync(owner: PlanOwner, plan: SyncPlan) -> dict:
     changed = []
     for node, row, parent_ref, position in plan.update:
         node.title = row.title
-        node.note = row.note
+        if not row.is_section:
+            # заметка в файле принадлежит уроку; у темы её выражать нечем,
+            # и стирать поэтому нечего — sync не трогает того, чего не видит
+            node.note = row.note
         node.parent_id = pk_of(parent_ref)
         node.position = position
         changed.append(node)

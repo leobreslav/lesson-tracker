@@ -112,6 +112,15 @@ test('перетаскивание меняет порядок и пересчи
   )
 })
 
+const HEAD = 'id,Тема,Урок,Заметка\n'
+
+/** Файл единственного формата: одна строка — один урок. */
+const csvFile = (body) => ({
+  name: 'plan.csv',
+  mimeType: 'text/csv',
+  buffer: Buffer.from(HEAD + body, 'utf-8'),
+})
+
 test('импорт CSV разбирает файл и строит блоки', async ({ page, signIn }) => {
   await signIn(PEOPLE.petrov)
   await openPlan(page, EMPTY_COURSE)
@@ -119,23 +128,18 @@ test('импорт CSV разбирает файл и строит блоки', 
   await page.getByRole('button', { name: 'Импорт CSV' }).click()
 
   const dialog = page.locator('dialog.modal')
-  await dialog.locator('input[type="file"]').setInputFiles({
-    name: 'plan.csv',
-    mimeType: 'text/csv',
-    buffer: Buffer.from(
-      'Тема,Урок,Заметка\n' +
-        'Векторы,,\n' +
-        ',Понятие вектора,\n' +
-        ',Сложение векторов,со звёздочкой\n' +
-        'Окружность,,\n' +
-        ',Касательная,\n',
-      'utf-8',
+  await dialog.locator('input[type="file"]').setInputFiles(
+    csvFile(
+      ',Векторы,Понятие вектора,\n' +
+        ',Векторы,Сложение векторов,со звёздочкой\n' +
+        ',Окружность,Касательная,\n',
     ),
-  })
+  )
 
-  // the preview is parsed in the browser, before anything is sent
-  await expect(dialog).toContainText('Распознано строк: 5')
-  await expect(dialog).toContainText('тем 2')
+  // как файл прочитан, видно до отправки: разбор идёт в браузере
+  await expect(dialog).toContainText('Строк: 3')
+  await expect(dialog).toContainText('уроков: 3')
+  await expect(dialog).toContainText('тем: 2')
 
   await dialog.getByRole('button', { name: 'Импортировать' }).click()
   await expect(dialog).toBeHidden()
@@ -149,12 +153,25 @@ test('импорт CSV разбирает файл и строит блоки', 
   expect(rows.join(' | ')).toContain('3 Касательная')
 })
 
-/** A three-column file: the old format, with no ids in it. */
-const PLAIN_CSV = {
-  name: 'plan.csv',
-  mimeType: 'text/csv',
-  buffer: Buffer.from('Тема,Урок,Заметка\nВекторы,,\n,Понятие вектора,\n', 'utf-8'),
-}
+test('файл прежнего формата отклоняется с объяснением', async ({ page, signIn }) => {
+  await signIn(PEOPLE.petrov)
+  await openPlan(page, EMPTY_COURSE)
+
+  await page.getByRole('button', { name: 'Импорт CSV' }).click()
+  const dialog = page.locator('dialog.modal')
+  await dialog.locator('input[type="file"]').setInputFiles({
+    name: 'plan.csv',
+    mimeType: 'text/csv',
+    buffer: Buffer.from('Тема,Урок,Заметка\nВекторы,,\n,Понятие вектора,\n', 'utf-8'),
+  })
+
+  // отказ виден сразу, без обращения к серверу: разбор строгий с обеих сторон
+  await expect(dialog).toContainText('Первой строкой должна идти шапка')
+  await expect(dialog.getByRole('button', { name: 'Импортировать' })).toBeDisabled()
+})
+
+/** Файл без единого id: синхронизировать с ним нечего. */
+const PLAIN_CSV = csvFile(',Векторы,Понятие вектора,\n')
 
 test('замена предупреждает, что содержание уроков пропадёт', async ({
   page,
@@ -167,6 +184,7 @@ test('замена предупреждает, что содержание ур�
   await page.getByRole('button', { name: 'Импорт CSV' }).click()
   const dialog = page.locator('dialog.modal')
   await dialog.locator('input[type="file"]').setInputFiles(PLAIN_CSV)
+  await dialog.getByRole('radio', { name: /Заменить/ }).check()
 
   // the count comes from the server: only it knows which lessons are written
   await expect(dialog).toContainText('с содержанием')
@@ -178,7 +196,7 @@ test('замена предупреждает, что содержание ур�
   await expect(submit).toBeEnabled()
 })
 
-test('синхронизация недоступна для файла без столбца id', async ({
+test('синхронизация недоступна, пока в файле нет ни одного id', async ({
   page,
   signIn,
 }) => {
@@ -190,7 +208,7 @@ test('синхронизация недоступна для файла без �
   await dialog.locator('input[type="file"]').setInputFiles(PLAIN_CSV)
 
   await expect(dialog.getByRole('radio', { name: /Синхронизовать/ })).toBeDisabled()
-  await expect(dialog).toContainText('нужен столбец id')
+  await expect(dialog).toContainText('синхронизировать не с чем')
 })
 
 test('импорт из библиотеки наполняет пустой план', async ({ page, signIn }) => {
@@ -216,23 +234,17 @@ test('импорт вкладывает уроки в темы, включая �
 
   await page.getByRole('button', { name: 'Импорт CSV' }).click()
   const dialog = page.locator('dialog.modal')
-  await dialog.locator('input[type="file"]').setInputFiles({
-    name: 'plan.csv',
-    mimeType: 'text/csv',
-    buffer: Buffer.from(
-      'Тема,Урок,Заметка\n' +
-        '"Дроби, обыкновенные",,\n' +
-        ',"Сложение, вычитание","№ 12, 13"\n' +
-        ',"Умножение ""в столбик""",\n' +
-        '"Точки; и запятые",,\n' +
-        ',"Урок; третий",\n',
-      'utf-8',
+  await dialog.locator('input[type="file"]').setInputFiles(
+    csvFile(
+      ',"Дроби, обыкновенные","Сложение, вычитание","№ 12, 13"\n' +
+        ',"Дроби, обыкновенные","Умножение ""в столбик""",\n' +
+        ',"Точки; и запятые","Урок; третий",\n',
     ),
-  })
+  )
 
   // предпросмотр считает файл сам, на клиенте — и должен совпасть с тем,
   // что положит сервер
-  await expect(dialog).toContainText('Распознано строк: 5')
+  await expect(dialog).toContainText('уроков: 3')
   await expect(dialog).toContainText('Сложение, вычитание')
   await expect(dialog).toContainText('Умножение "в столбик"')
 
