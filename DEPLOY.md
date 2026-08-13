@@ -58,6 +58,11 @@ cp .env.prod.example ~/secrets/lesson-tracker.env.prod
 chmod 600 ~/secrets/lesson-tracker.env.prod
 ```
 
+Рядом, в том же `~/secrets/`, живёт `lesson-tracker.env.local-prod` — им
+проверяют прод-сборку на `http://localhost`. Он **не боевой**: свой
+`SECRET_KEY`, свой пароль базы и dev-бакет R2. Что из них когда берут —
+в [deploy-cheatsheet.md](deploy-cheatsheet.md).
+
 Путь можно поменять переменной `DEPLOY_ENV_FILE`. Важно только, чтобы он был
 **вне папки проекта**: `git add -A` в `push-deploy.sh` берёт всё подряд, и
 файл внутри репозитория рано или поздно уехал бы в историю. Скрипт это
