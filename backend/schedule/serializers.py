@@ -170,6 +170,7 @@ class CourseSerializer(serializers.ModelSerializer):
     grade_level = serializers.IntegerField(source="grade.level", read_only=True)
     teachers = serializers.SerializerMethodField()
     methodists = serializers.SerializerMethodField()
+    students = serializers.SerializerMethodField()
 
     class Meta:
         model = Course
@@ -184,6 +185,7 @@ class CourseSerializer(serializers.ModelSerializer):
             "grade_level",
             "teachers",
             "methodists",
+            "students",
             "name",
             "created_at",
         )
@@ -197,6 +199,17 @@ class CourseSerializer(serializers.ModelSerializer):
                 message="A course with this name already exists in this year.",
             ),
         ]
+
+    def get_students(self, course) -> int:
+        """
+        Сколько человек учится — число, а не список.
+
+        Список класса это тридцать строк, и в свёрнутой карточке курса им
+        делать нечего; открывают его отдельным окном, где он и нужен.
+        Аннотацию ставит вьюсет: без неё у только что созданного курса
+        учеников ноль, и это правда.
+        """
+        return getattr(course, "active_students", 0)
 
     def get_methodists(self, course) -> list:
         """

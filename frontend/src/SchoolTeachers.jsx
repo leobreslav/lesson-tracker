@@ -52,7 +52,9 @@ export default function SchoolTeachers() {
     () =>
       Promise.all([
         fetchMembers(),
-        fetchInvitations(),
+        // только учительские: ученики приглашаются составом курса, и в
+        // разделе про сотрудников им делать нечего
+        fetchInvitations({ kind: 'teacher' }),
         fetchCourses(null, { scope: 'school' }),
       ])
         .then(([people, invited, all]) => {
@@ -273,6 +275,18 @@ export default function SchoolTeachers() {
                   <span className="hint">
                     {t('school.people.pending')}
                     {invitation.is_school_admin && ` · ${t('school.people.admin')}`}
+                    {/* приглашение, которое уже не сработает: человек успел
+                        войти и оказаться в другой школе */}
+                    {invitation.conflict && (
+                      <span className="warning">
+                        {' · '}
+                        {t(`roster.conflict.${invitation.conflict}`, {
+                          defaultValue: t(`errors.${invitation.conflict}`, {
+                            email: invitation.email,
+                          }),
+                        })}
+                      </span>
+                    )}
                   </span>
                   <button
                     type="button"

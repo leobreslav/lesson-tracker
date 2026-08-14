@@ -205,7 +205,13 @@
     "teachers_only": "This section is for teachers.",
     "students_only": "This section is for students.",
     "email_other_kind": "«{{email}}» is already used by an account of the other kind: one address is either a teacher or a student.",
-    "not_a_student": "A student cannot be an administrator of the school."
+    "not_a_student": "A student cannot be an administrator of the school.",
+    "roster_empty": "There is not a single address in what was pasted.",
+    "roster_no_email": "Line {{line}}: no email address.",
+    "roster_bad_email": "Line {{line}}: «{{email}}» is not an email address.",
+    "roster_two_emails": "Line {{line}}: two addresses in one line.",
+    "roster_too_many_columns": "Line {{line}}: {{columns}} columns — a name and an address are expected.",
+    "roster_too_many_rows": "Not more than {{limit}} lines at a time."
   },
   "classPicker": {
     "label": "Classes:",
@@ -587,7 +593,12 @@
       "nameMethodist": "Make methodist",
       "methodistLabel": "Methodist for {{name}}",
       "dropMethodist": "Remove {{name}} from approving",
-      "teaches": "Teaches the course:"
+      "teaches": "Teaches the course:",
+      "students": "Students:",
+      "noStudents": "nobody is enrolled yet",
+      "studentCount_one": "{{count}} student",
+      "studentCount_other": "{{count}} students",
+      "openRoster": "Roster and adding"
     },
     "people": {
       "admin": "administrator",
@@ -806,5 +817,33 @@
       "hint": "You cannot work in them, but everything you did stays visible."
     },
     "noActive": "You are not enrolled in any course at the moment."
+  },
+  "roster": {
+    "title": "Roster of «{{name}}»",
+    "enrolled_one": "{{count}} student",
+    "enrolled_other": "{{count}} students",
+    "nobody": "Nobody is enrolled yet.",
+    "remove": "Take {{name}} off the course",
+    "waiting_one": "{{count}} invitation waiting for a first sign-in",
+    "waiting_other": "{{count}} invitations waiting for a first sign-in",
+    "withdraw": "Withdraw the invitation for {{email}}",
+    "past_one": "{{count}} person is no longer in the course",
+    "past_other": "{{count}} people are no longer in the course",
+    "restore": "Bring back",
+    "paste": "Paste a list",
+    "pasteHint": "One person per line: an address on its own, or a name and an address separated by a comma or a tab. Repeats are collapsed; a line that cannot be read is named by its number.",
+    "placeholder": "Ivanov Pyotr, ivanov@school.ru",
+    "check": "Check",
+    "enrol": "Enrol",
+    "refused": "The paste cannot be applied:",
+    "willDo": "Will enrol: {{enrol}} · bring back: {{restore}} · invite: {{invite}} · already enrolled: {{already}}.",
+    "blocked_one": "{{count}} address is taken.",
+    "blocked_other": "{{count}} addresses are taken.",
+    "duplicates_one": "{{count}} repeat collapsed.",
+    "duplicates_other": "{{count}} repeats collapsed.",
+    "conflict": {
+      "already_member": "this address is already in another school",
+      "email_other_kind": "this address belongs to a teacher"
+    }
   }
 }

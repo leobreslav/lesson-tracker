@@ -868,6 +868,64 @@ button.chip.active {
   width: min(46rem, calc(100vw - 3rem));
 }
 
+/*
+ * Состав курса: три списка одной формы и поле для вставки.
+ *
+ * Списка три — учатся, ждут первого входа, сняты, — и различаются они не
+ * вёрсткой, а тем, что стоит справа: крестик, крестик и «вернуть». Одна
+ * форма на все три намеренно: это один и тот же вопрос «кто в курсе», и
+ * три разных строки читались бы как три разные сущности.
+ *
+ * Строка — сетка, а не флекс: имя и адрес разной длины, и во флексе адрес
+ * отжимал бы имя в перенос, пока справа пусто.
+ */
+.modal-body.roster-window {
+  width: min(38rem, calc(100vw - 3rem));
+}
+
+.roster {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.roster li {
+  display: grid;
+  grid-template-columns: minmax(6rem, 1fr) minmax(8rem, 1.2fr) auto;
+  align-items: baseline;
+  gap: 0.3rem 0.6rem;
+  padding: 0.3rem 0.5rem;
+  border-radius: var(--row-radius);
+}
+
+/* заливка через строку вместо линий: на тридцати строках линии рябят */
+.roster li:nth-child(even) {
+  background: var(--surface-1);
+}
+
+/* снятые: то же самое, только приглушённее — курс для них в прошлом */
+.roster.past .name {
+  color: #666;
+}
+
+.roster-paste textarea {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 0.5rem 0.65rem;
+  font: inherit;
+  color: inherit;
+  background: #fff;
+  border: 1px solid #c6c6c6;
+  border-radius: 4px;
+  resize: vertical;
+}
+
+.roster-paste textarea:focus {
+  outline: 2px solid #1a73e8;
+  outline-offset: -1px;
+  border-color: #1a73e8;
+}
+
 .modal-body h3 {
   margin: 0;
   font-size: 1.1rem;

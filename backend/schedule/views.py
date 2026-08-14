@@ -11,9 +11,10 @@ from config.access import (
 )
 from config.errors import Codes, api_denied, api_error
 from django.db import transaction
-from django.db.models import Count, F
+from django.db.models import Count, F, Q
 from django.utils import timezone
 from django.db.models import ProtectedError
+from django.shortcuts import get_object_or_404
 from django.utils.dateparse import parse_date
 from rest_framework import status
 from rest_framework.decorators import action
@@ -25,7 +26,7 @@ from rest_framework.views import APIView
 from plans.models import PlanNode
 
 from . import importing, services
-from schools import services as school_services
+from schools import roster, services as school_services
 
 from .models import (
     Course,
@@ -260,6 +261,67 @@ class CourseStudentViewSet(SchoolScopedViewSet):
     def perform_destroy(self, instance):
         school_services.remove_from_course(instance)
 
+    # --- список класса, вставленный целиком ------------------------------------
+
+    def requested_course(self):
+        """Курс из `?course=`, только своей школы: чужой — 404."""
+        raw = self.request.query_params.get("course")
+        if not raw or not raw.isdigit():
+            api_error(
+                Codes.CLASS_REQUIRED,
+                "The «course» query parameter with a course id is required.",
+                field="course",
+            )
+
+        return get_object_or_404(
+            Course.objects.filter(school_id=self.request.user.school_id), pk=raw
+        )
+
+    @action(detail=False, methods=["post"])
+    def preview(self, request):
+        """
+        Что сделает вставка — не делая ничего.
+
+        **Ни от чего не отказывается**, включая нечитаемый текст: ошибки
+        приезжают списком в теле, как у предпросмотра плана. Иначе
+        единственным следом отказа была бы ошибка в консоли браузера — окно
+        показывает список, а кодов HTTP не разбирает.
+        """
+        course = self.requested_course()
+        parsed = roster.parse_roster(request.data.get("text") or "")
+        decisions = roster.plan_roster(parsed.people, course)
+
+        return Response(roster.payload(parsed, decisions))
+
+    @action(detail=False, methods=["post"])
+    def enrol(self, request):
+        """
+        Применить вставку — одной транзакцией.
+
+        Отказ целиком остаётся за ошибками разбора: там непонятно, что
+        имелось в виду, и половина применённого списка хуже неприменённого.
+        Занятый адрес — другое дело: про него сказано поимённо и заранее, а
+        остальные двадцать девять человек ни в чём не виноваты.
+        """
+        course = self.requested_course()
+        parsed = roster.parse_roster(request.data.get("text") or "")
+
+        if parsed.errors:
+            first = parsed.errors[0]
+            api_error(first["code"], first["detail"], field="text", **first["params"])
+
+        if not parsed.people:
+            api_error(
+                Codes.ROSTER_EMPTY,
+                "There is not a single address in what was pasted.",
+                field="text",
+            )
+
+        decisions = roster.plan_roster(parsed.people, course)
+        roster.apply_roster(decisions, course, by=request.user)
+
+        return Response(roster.payload(parsed, decisions))
+
 
 class StudentCoursesView(APIView):
     """
@@ -398,8 +460,19 @@ class CourseViewSet(SchoolScopedViewSet):
             # a non-numeric value must not blow up on a cast
             queryset = queryset.filter(year_id=year) if year.isdigit() else queryset.none()
 
-        return queryset.select_related("year", "subject", "grade").prefetch_related(
-            "assignments__teacher"
+        return (
+            queryset.select_related("year", "subject", "grade")
+            .prefetch_related("assignments__teacher")
+            .annotate(
+                active_students=Count(
+                    "students",
+                    filter=Q(students__removed_at__isnull=True),
+                    distinct=True,
+                )
+            )
+            # группировка стирает порядок из Meta — тот же самый, но теперь
+            # его надо назвать вслух, иначе курсы едут как попало
+            .order_by(*Course._meta.ordering)
         )
 
     def perform_destroy(self, instance):

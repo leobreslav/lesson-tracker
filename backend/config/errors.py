@@ -44,6 +44,14 @@ class Codes:
     ALREADY_MEMBER = "already_member"
     LAST_ADMIN = "last_admin"
 
+    # массовый ввод состава курса
+    ROSTER_EMPTY = "roster_empty"
+    ROSTER_NO_EMAIL = "roster_no_email"
+    ROSTER_BAD_EMAIL = "roster_bad_email"
+    ROSTER_TWO_EMAILS = "roster_two_emails"
+    ROSTER_TOO_MANY_COLUMNS = "roster_too_many_columns"
+    ROSTER_TOO_MANY_ROWS = "roster_too_many_rows"
+
     # school year
     YEAR_DATES_REVERSED = "year_dates_reversed"
     YEAR_NAME_TAKEN = "year_name_taken"

@@ -123,20 +123,32 @@ class InvitationSerializer(serializers.ModelSerializer):
     """
 
     accepted = serializers.BooleanField(source="is_accepted", read_only=True)
+    conflict = serializers.SerializerMethodField()
 
     class Meta:
         model = Invitation
         fields = (
             "id",
             "email",
+            "name",
             "kind",
             "is_school_admin",
             "courses",
             "created_at",
             "accepted_at",
             "accepted",
+            "conflict",
         )
         read_only_fields = ("id", "created_at", "accepted_at")
+
+    def get_conflict(self, invitation) -> str | None:
+        """
+        Код причины, по которой это приглашение уже не сработает.
+
+        Считает не сериализатор — вьюсет, одним запросом на весь список:
+        приглашённых учеников в школе бывает три сотни.
+        """
+        return self.context.get("conflicts", {}).get(invitation.email)
 
     def validate_email(self, value):
         # Google hands back a lowercase address; storing it the same way keeps
@@ -156,19 +168,11 @@ class InvitationSerializer(serializers.ModelSerializer):
                 email=email,
             )
 
-        # адрес занят кем-то другого вида или из другой школы — отказ здесь,
-        # а не молчание при входе: приглашение, которое никогда не сработает,
-        # хуже отказа, потому что администратор считает, что пригласил
+        # адрес занят кем-то другого вида или уже состоит в школе — отказ
+        # здесь, а не молчание при входе: приглашение, которое никогда не
+        # сработает, хуже отказа, потому что администратор считает, что
+        # пригласил
         services.check_address(email, kind)
-
-        member = User.objects.filter(email__iexact=email).first()
-        if member is not None and member.school_id is not None:
-            api_error(
-                Codes.ALREADY_MEMBER,
-                f"«{email}» already belongs to a school.",
-                field="email",
-                email=email,
-            )
 
         if kind == Kind.STUDENT and attrs.get("is_school_admin"):
             api_error(

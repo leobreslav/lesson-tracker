@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 import EmptyState from './EmptyState'
+import RosterDialog from './RosterDialog'
 import {
   createAssignment,
   createCourse,
@@ -43,6 +44,7 @@ export default function SchoolCourses() {
   const [assigning, setAssigning] = useState({}) // course id -> teacher id
   const [naming, setNaming] = useState({}) // course id -> methodist id
   const [expanded, setExpanded] = useState(null) // какой курс раскрыт
+  const [roster, setRoster] = useState(null) // у какого курса открыт состав
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
 
@@ -416,6 +418,27 @@ export default function SchoolCourses() {
                       </div>
 
                       <div className="course-role">
+                        <span className="hint">{t('school.courses.students')}</span>
+                        <div className="row">
+                          <span className="hint">
+                            {course.students === 0
+                              ? t('school.courses.noStudents')
+                              : t('school.courses.studentCount', {
+                                  count: course.students,
+                                })}
+                          </span>
+                          <button
+                            type="button"
+                            className="secondary"
+                            disabled={busy}
+                            onClick={() => setRoster(course)}
+                          >
+                            {t('school.courses.openRoster')}
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="course-role">
                         <span className="hint">{t('school.courses.methodist')}</span>
                         <div className="row courses">
                           {course.methodists.length === 0 ? (
@@ -489,6 +512,14 @@ export default function SchoolCourses() {
           </ul>
         )}
       </section>
+
+      {roster && (
+        <RosterDialog
+          course={roster}
+          onClose={() => setRoster(null)}
+          onChanged={() => reload().catch(handleError)}
+        />
+      )}
     </>
   )
 }

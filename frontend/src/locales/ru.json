@@ -212,7 +212,13 @@
     "teachers_only": "Этот раздел — для учителей.",
     "students_only": "Этот раздел — для учеников.",
     "email_other_kind": "«{{email}}» уже занят учётной записью другого вида: один адрес — либо учитель, либо ученик.",
-    "not_a_student": "Ученик не может быть администратором школы."
+    "not_a_student": "Ученик не может быть администратором школы.",
+    "roster_empty": "Во вставленном тексте нет ни одного адреса.",
+    "roster_no_email": "Строка {{line}}: нет адреса почты.",
+    "roster_bad_email": "Строка {{line}}: «{{email}}» — это не адрес почты.",
+    "roster_two_emails": "Строка {{line}}: два адреса в одной строке.",
+    "roster_too_many_columns": "Строка {{line}}: столбцов {{columns}} — ожидались имя и адрес.",
+    "roster_too_many_rows": "Не больше {{limit}} строк за раз."
   },
   "classPicker": {
     "label": "Классы:",
@@ -608,7 +614,13 @@
       "nameMethodist": "Назначить методиста",
       "methodistLabel": "Методист курса {{name}}",
       "dropMethodist": "Снять {{name}} с утверждения",
-      "teaches": "Ведут курс:"
+      "teaches": "Ведут курс:",
+      "students": "Ученики:",
+      "noStudents": "пока никто не записан",
+      "studentCount_one": "{{count}} ученик",
+      "studentCount_few": "{{count}} ученика",
+      "studentCount_many": "{{count}} учеников",
+      "openRoster": "Состав и добавление"
     },
     "people": {
       "admin": "администратор",
@@ -834,5 +846,38 @@
       "hint": "Работать в них нельзя, но всё сделанное остаётся видно."
     },
     "noActive": "Сейчас вы не записаны ни на один курс."
+  },
+  "roster": {
+    "title": "Состав курса «{{name}}»",
+    "enrolled_one": "{{count}} ученик",
+    "enrolled_few": "{{count}} ученика",
+    "enrolled_many": "{{count}} учеников",
+    "nobody": "Пока никто не записан.",
+    "remove": "Снять {{name}} с курса",
+    "waiting_one": "{{count}} приглашение ждёт первого входа",
+    "waiting_few": "{{count}} приглашения ждут первого входа",
+    "waiting_many": "{{count}} приглашений ждут первого входа",
+    "withdraw": "Отозвать приглашение для {{email}}",
+    "past_one": "{{count}} человек больше не в курсе",
+    "past_few": "{{count}} человека больше не в курсе",
+    "past_many": "{{count}} человек больше не в курсе",
+    "restore": "Вернуть",
+    "paste": "Вставить список",
+    "pasteHint": "По человеку в строке: один адрес, либо имя и адрес через запятую или табуляцию. Повторы схлопываются, непонятная строка называет свой номер.",
+    "placeholder": "Иванов Пётр, ivanov@school.ru",
+    "check": "Проверить",
+    "enrol": "Зачислить",
+    "refused": "Вставку применить нельзя:",
+    "willDo": "Зачислим: {{enrol}} · вернём: {{restore}} · пригласим: {{invite}} · уже в курсе: {{already}}.",
+    "blocked_one": "{{count}} адрес занят.",
+    "blocked_few": "{{count}} адреса заняты.",
+    "blocked_many": "{{count}} адресов заняты.",
+    "duplicates_one": "{{count}} повтор схлопнут.",
+    "duplicates_few": "{{count}} повтора схлопнуты.",
+    "duplicates_many": "{{count}} повторов схлопнуты.",
+    "conflict": {
+      "already_member": "адрес уже в другой школе",
+      "email_other_kind": "адрес принадлежит учителю"
+    }
   }
 }

@@ -184,7 +184,8 @@ export const setMemberRole = (id, isAdmin) =>
     body: { is_school_admin: isAdmin },
   })
 
-export const fetchInvitations = () => request('/api/school/invitations/')
+export const fetchInvitations = (params = {}) =>
+  request(`/api/school/invitations/?${new URLSearchParams(params)}`)
 
 export const createInvitation = (fields) =>
   request('/api/school/invitations/', { method: 'POST', body: fields })
@@ -466,6 +467,34 @@ export const createMethodist = (course, user) =>
 
 export const deleteMethodist = (id) =>
   request(`/api/school/methodists/${id}/`, { method: 'DELETE' })
+
+// --- состав курса ---
+//
+// Снятие не удаляет строку, а ставит `removed_at`: ученик перестаёт работать
+// в курсе, но продолжает видеть сделанное. Поэтому «вернуть» — это тот же
+// POST той же пары, а не новая запись.
+
+export const fetchStudents = (course) =>
+  request(`/api/school/students/?course=${course}`)
+
+export const enrolStudent = (course, student) =>
+  request('/api/school/students/', { method: 'POST', body: { course, student } })
+
+export const removeStudent = (id) =>
+  request(`/api/school/students/${id}/`, { method: 'DELETE' })
+
+/** Что сделает вставка списка — не делая ничего. */
+export const previewRoster = (course, text) =>
+  request(`/api/school/students/preview/?course=${course}`, {
+    method: 'POST',
+    body: { text },
+  })
+
+export const enrolRoster = (course, text) =>
+  request(`/api/school/students/enrol/?course=${course}`, {
+    method: 'POST',
+    body: { text },
+  })
 
 /** Topics across every class for a period: slot_id → the plan lesson. */
 export const fetchLayoutAgenda = (start, end) =>

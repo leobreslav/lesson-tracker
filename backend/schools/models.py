@@ -53,6 +53,16 @@ class Invitation(models.Model):
         verbose_name="school",
     )
     email = models.EmailField("email address")
+    name = models.CharField(
+        "name as written down",
+        max_length=200,
+        blank=True,
+        help_text=(
+            "Как администратор назвал человека при вводе. Ярлык для списка "
+            "ожидающих, а не имя учётки: имя приходит из Google при первом "
+            "входе."
+        ),
+    )
     kind = models.CharField(
         "kind",
         max_length=8,

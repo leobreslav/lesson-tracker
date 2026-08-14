@@ -188,6 +188,23 @@ class MatrixTests(AccessTestCase):
             create={"course": self.course.pk, "student": self.student.pk},
             # состав курса не правят частично: зачислили или сняли
             patch={},
+            # массовый ввод берёт курс из query-строки и ходит в базу своим
+            # кодом: чужой курс не должен отличаться от несуществующего ни
+            # у предпросмотра, ни у самой вставки
+            actions=(
+                {
+                    "name": "coursestudent-preview",
+                    "param": "course",
+                    "method": "post",
+                    "body": {"text": "someone@example.com"},
+                },
+                {
+                    "name": "coursestudent-enrol",
+                    "param": "course",
+                    "method": "post",
+                    "body": {"text": "someone@example.com"},
+                },
+            ),
         )
 
     def test_lesson_slot(self):

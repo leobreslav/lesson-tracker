@@ -18,6 +18,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from . import services
 from .models import Invitation, School
 from .serializers import (
     InvitationSerializer,
@@ -392,7 +393,33 @@ class InvitationViewSet(
     permission_classes = [IsAuthenticated, IsSchoolMember, IsTeacher, IsSchoolAdmin]
 
     def get_queryset(self):
-        return Invitation.objects.filter(school_id=self.request.user.school_id)
+        queryset = Invitation.objects.filter(
+            school_id=self.request.user.school_id
+        ).prefetch_related("courses")
+
+        # два списка, а не один: во вкладке учителей ученикам делать нечего,
+        # а в составе курса — учителям
+        kind = self.request.query_params.get("kind")
+        if kind:
+            queryset = queryset.filter(kind=kind)
+
+        course = self.request.query_params.get("course")
+        if course:
+            queryset = (
+                queryset.filter(courses=course)
+                if course.isdigit()
+                else queryset.none()
+            )
+
+        return queryset
+
+    def get_serializer_context(self):
+        context = super().get_serializer_context()
+        if self.action == "list":
+            # пометка «этот адрес уже в другой школе» — одним запросом на
+            # весь список, а не по запросу на строку
+            context["conflicts"] = services.conflicting_addresses(self.get_queryset())
+        return context
 
     def perform_create(self, serializer):
         serializer.save(

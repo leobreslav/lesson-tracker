@@ -16,6 +16,7 @@ from accounts.models import Kind
 from config.errors import Codes, api_error
 from django.contrib.auth import get_user_model
 from django.db import transaction
+from django.db.models.functions import Lower
 from django.utils import timezone
 
 from .models import Invitation
@@ -129,31 +130,89 @@ def remove_from_course(row) -> None:
 # --- кому можно писать приглашение ----------------------------------------------
 
 
-def check_address(email: str, kind: str) -> None:
+def member_problem(person, kind: str, school=None):
     """
-    Годится ли адрес для приглашения такого вида. Молчит или отказывает.
+    То же, что `address_problem`, но учётку приносит вызывающий.
 
-    Проверка ровно одна: **один адрес — один вид учётки**. Учитель и ученик
-    на одной почте невозможны, и сказать об этом надо на вводе, а не молчать
-    при входе: приглашение, которое никогда не сработает, хуже отказа, потому
-    что администратор считает, что пригласил.
-
-    «Уже состоит в школе» проверяет вызывающий код своим кодом
-    (`already_member`) — это другой вопрос и другой ответ, и он же закрывает
-    ученика в двух школах: `User.school` один, и второе приглашение его не
-    перенесёт.
+    Массовый ввод спрашивает про тридцать адресов разом и уже держит их
+    учётки в памяти: тридцать одинаковых запросов ради одного и того же
+    правила — не то, ради чего правило собрано в одном месте.
     """
-    person = User.objects.filter(email__iexact=email).first()
     if person is None or person.school_id is None:
-        return
+        return None
 
     if person.kind != kind:
-        api_error(
+        return (
             Codes.EMAIL_OTHER_KIND,
-            f"«{email}» is already used by a "
+            f"«{person.email}» is already used by a "
             f"{'student' if person.is_student else 'teacher'}; one address is "
             "one kind of account.",
-            field="email",
-            email=email,
-            kind=person.kind,
         )
+
+    if school is None or person.school_id != school.pk:
+        return (
+            Codes.ALREADY_MEMBER,
+            f"«{person.email}» already belongs to a school.",
+        )
+
+    return None
+
+
+def address_problem(email: str, kind: str, school=None):
+    """
+    Что не так с адресом — или `None`, если всё в порядке.
+
+    Два правила, и оба про уже существующие учётки. **Один адрес — один вид
+    учётки**: учитель и ученик на одной почте невозможны. И **один человек —
+    одна школа**: `User.school` единственный, второе приглашение его не
+    перенесёт.
+
+    `school` разделяет два вопроса, которые задают разные места. Без неё
+    вопрос «кого можно пригласить»: человек, уже состоящий в школе — хоть бы
+    и в этой, — приглашения не ждёт, он уже вошёл. Со школой вопрос «кого
+    можно записать на курс»: ученик **этой** школы как раз и есть тот, кого
+    записывают, а всё остальное — отказ.
+
+    Отвечать надо на вводе, а не молчать при входе: приглашение, которое
+    никогда не сработает, хуже отказа, потому что администратор считает,
+    что пригласил.
+    """
+    return member_problem(
+        User.objects.filter(email__iexact=email).first(), kind, school
+    )
+
+
+def conflicting_addresses(invitations) -> dict:
+    """
+    Приглашения, которые уже никогда не сработают: адрес → код причины.
+
+    Проверка на вводе закрывает всё, кроме одного случая: два приглашения в
+    разные школы, написанные до того, как человек впервые вошёл. Побеждает
+    первый вход, второе приглашение висит вечно — и молча. Поэтому оно
+    помечается на чтении, тем же правилом и в один запрос.
+    """
+    rows = list(invitations)
+    people = {
+        user.email.lower(): user
+        for user in User.objects.annotate(key=Lower("email")).filter(
+            key__in=[row.email.lower() for row in rows]
+        )
+    }
+
+    marks = {}
+    for row in rows:
+        if row.accepted_at is not None:
+            continue
+        problem = member_problem(people.get(row.email.lower()), row.kind)
+        if problem is not None:
+            marks[row.email] = problem[0]
+
+    return marks
+
+
+def check_address(email: str, kind: str) -> None:
+    """`address_problem` для тех, кому нужен отказ, а не ответ."""
+    problem = address_problem(email, kind)
+    if problem is not None:
+        code, detail = problem
+        api_error(code, detail, field="email", email=email)
