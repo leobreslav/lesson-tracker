@@ -3,8 +3,10 @@ import { useTranslation } from 'react-i18next'
 import { BrowserRouter, Link, Route, Routes } from 'react-router-dom'
 import EmptyState from './EmptyState'
 import ErrorBoundary from './ErrorBoundary'
+import StudentWork from './StudentWork'
 import UserMenu from './UserMenu'
-import { fetchStudentCourses } from './api'
+import { fetchStudentCourses, fetchStudentWorks } from './api'
+import { dateTime } from './dates'
 
 /**
  * Интерфейс ученика — отдельная ветка, а не роль внутри учительской.
@@ -42,6 +44,7 @@ export default function StudentApp({ user, onLoggedOut, onLanguageChange }) {
       <ErrorBoundary>
         <Routes>
           <Route path="/" element={<StudentCourses onLoggedOut={onLoggedOut} />} />
+          <Route path="/works/:id" element={<StudentWork />} />
           <Route path="*" element={<StudentNotFound />} />
         </Routes>
       </ErrorBoundary>
@@ -59,6 +62,7 @@ export default function StudentApp({ user, onLoggedOut, onLanguageChange }) {
 function StudentCourses({ onLoggedOut }) {
   const { t } = useTranslation()
   const [courses, setCourses] = useState(null)
+  const [works, setWorks] = useState([])
   const [error, setError] = useState(null)
 
   const handleError = useCallback(
@@ -72,8 +76,14 @@ function StudentCourses({ onLoggedOut }) {
   useEffect(() => {
     let cancelled = false
 
-    fetchStudentCourses()
-      .then((result) => !cancelled && setCourses(result.courses))
+    // курсы и работы одним заходом: экран без второго — половина ответа на
+    // вопрос «что мне делать», а два состояния загрузки подряд мигают
+    Promise.all([fetchStudentCourses(), fetchStudentWorks()])
+      .then(([mine, assigned]) => {
+        if (cancelled) return
+        setCourses(mine.courses)
+        setWorks(assigned.works)
+      })
       .catch((err) => !cancelled && handleError(err))
 
     return () => {
@@ -118,6 +128,7 @@ function StudentCourses({ onLoggedOut }) {
             <li key={course.id}>
               <span className="name">{course.name}</span>
               <span className="hint">{describe(course, t)}</span>
+              <WorkList works={works.filter((work) => work.course_id === course.id)} />
             </li>
           ))}
         </ul>
@@ -132,12 +143,51 @@ function StudentCourses({ onLoggedOut }) {
               <li key={course.id}>
                 <span className="name">{course.name}</span>
                 <span className="hint">{describe(course, t)}</span>
+                <WorkList works={works.filter((work) => work.course_id === course.id)} />
               </li>
             ))}
           </ul>
         </section>
       )}
     </main>
+  )
+}
+
+/**
+ * Работы курса под его названием.
+ *
+ * Ненаступивших здесь не бывает вовсе: до открытия окна работы для ученика
+ * не существует. А закрытая остаётся и остаётся кликабельной — свои ответы
+ * и отметки он читает всегда, и это ровно то, ради чего строка зачисления
+ * не удаляется.
+ */
+function WorkList({ works }) {
+  const { t } = useTranslation()
+
+  if (!works.length) return null
+
+  return (
+    <ul className="work-links">
+      {works.map((work) => (
+        <li key={work.id}>
+          <Link to={`/works/${work.id}`}>{work.title}</Link>
+          <span className={`badge state-${work.state}`}>
+            {t(`works.state.${work.state}`)}
+          </span>
+          <span className="hint">
+            {t('student.work.progress', {
+              answered: work.answered,
+              tasks: work.tasks,
+            })}
+          </span>
+          <span className="hint">
+            {t(work.state === 'open' ? 'student.work.until' : 'student.work.was', {
+              moment: dateTime(work.closes_at),
+            })}
+          </span>
+        </li>
+      ))}
+    </ul>
   )
 }
 

@@ -19,7 +19,8 @@ test('ученик видит свои курсы и ни одного учит�
   await ready(page)
 
   await expect(page.getByRole('heading', { name: 'Мои курсы' })).toBeVisible()
-  await expect(page.locator('.student-courses li')).toHaveCount(1)
+  // прямые дети: внутри курса теперь ещё и список его работ
+  await expect(page.locator('.student-courses > li')).toHaveCount(1)
   await expect(page.locator('.student-courses')).toContainText('Grade 6 Algebra')
 
   // в баре только имя и выход: разделов учителя нет ни одного

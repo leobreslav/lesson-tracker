@@ -93,3 +93,71 @@ test('правка работы, в которой уже отвечали, на
   await expect(dialog).toContainText('уже отвечали')
   await expect(dialog.getByRole('button', { name: 'Сохранить' })).toBeEnabled()
 })
+
+/**
+ * Половина ученика: что он видит и что может отправить.
+ *
+ * Правила подсистемы («попытка расходуется на любой отправке», «ничего не
+ * перезаписывается») проверены питоновскими тестами; здесь — что они
+ * доезжают до экрана и что ученику не показано лишнего.
+ */
+
+test('ученик видит только открытые и закрытые работы своего курса', async ({
+  page,
+  signIn,
+}) => {
+  await signIn(PEOPLE.student)
+  await page.goto('/')
+  await ready(page)
+
+  const links = page.locator('.work-links > li')
+  await expect(links).toHaveCount(2)
+  await expect(links.first()).toContainText('Проверочная')
+  // запланированной для него не существует: окно ещё не открылось
+  await expect(page.locator('body')).not.toContainText('Домашняя работа на каникулы')
+})
+
+test('ответ уходит по одной задаче и попадает в историю', async ({ page, signIn }) => {
+  await signIn(PEOPLE.student)
+  await page.goto('/')
+  await ready(page)
+  await page.getByRole('link', { name: 'Проверочная: формулы сложения' }).click()
+
+  const first = page.locator('.student-task').first()
+  await first.getByRole('textbox').fill('a^2+2ab+b^2')
+  await first.getByRole('button', { name: 'Отправить' }).click()
+
+  // строка журнала и есть подтверждение: ответ на сервере с этой минуты
+  await expect(first.locator('.attempt-list li')).toHaveCount(1)
+  await expect(first.locator('.attempt-list .answer')).toHaveText('a^2+2ab+b^2')
+  await expect(first.locator('.attempt-list .verdict')).toHaveText('не проверено')
+  // попытка израсходована, хотя учитель ещё ничего не смотрел
+  await expect(first).toContainText('осталась 1 попытка')
+
+  await first.getByRole('textbox').fill('передумал')
+  await first.getByRole('button', { name: 'Отправить' }).click()
+
+  // вторая попытка не затирает первую и не оставляет поля для третьей
+  await expect(first.locator('.attempt-list li')).toHaveCount(2)
+  await expect(first).toContainText('Попытки по этой задаче кончились')
+})
+
+test('в закрытой работе ответы видно, а поля ввода нет', async ({ page, signIn }) => {
+  await signIn(PEOPLE.student)
+  await page.goto('/')
+  await ready(page)
+  await page.getByRole('link', { name: 'Контрольная: тригонометрия' }).click()
+
+  await expect(page.getByText('Работа закрыта')).toBeVisible()
+  await expect(page.locator('.attempt-list li').first()).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Отправить' })).toHaveCount(0)
+})
+
+test('учительский раздел работ ученику не показан', async ({ page, signIn }) => {
+  await signIn(PEOPLE.student)
+  await page.goto('/works')
+  await ready(page)
+
+  await expect(page.locator('.work-list')).toHaveCount(0)
+  await expect(page.getByRole('link', { name: 'Мои курсы' })).toBeVisible()
+})

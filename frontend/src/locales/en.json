@@ -835,7 +835,25 @@
       "title": "You are no longer in these courses",
       "hint": "You cannot work in them, but everything you did stays visible."
     },
-    "noActive": "You are not enrolled in any course at the moment."
+    "noActive": "You are not enrolled in any course at the moment.",
+    "work": {
+      "progress": "answered {{answered}} of {{tasks}}",
+      "until": "open until {{moment}}",
+      "was": "was open until {{moment}}",
+      "closed": "The work is closed. Your answers and marks stay here.",
+      "readonly": "You are no longer in this course, so answers are not accepted. What you did stays here.",
+      "noTasks": "There are no tasks in this work yet.",
+      "answer": "your answer",
+      "answerNumber": "Answer to task {{number}}",
+      "send": "Send",
+      "attemptNumber": "attempt {{number}}",
+      "attemptsLeft_one": "{{count}} attempt left",
+      "attemptsLeft_other": "{{count}} attempts left",
+      "noAttempts": "No attempts left for this task.",
+      "correct": "correct",
+      "wrong": "wrong",
+      "unchecked": "not checked yet"
+    }
   },
   "roster": {
     "title": "Roster of «{{name}}»",

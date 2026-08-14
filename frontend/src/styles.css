@@ -122,6 +122,9 @@ body {
 .term-form .row,
 .people-list .row,
 .course-role .row,
+/* строка ответа ученика: поле и кнопка, и высота у них одна — сторож
+   контролов меряет её вместе с остальными рядами проекта */
+.student-task .row,
 .preset-row,
 .plan-add-form,
 .actions,
@@ -2060,6 +2063,103 @@ button.progress-head:hover:not(:disabled) {
 
 .course-head .toggle {
   padding: 0;
+}
+
+/*
+ * Работы у ученика: список под названием курса и экран решения.
+ *
+ * Попытки показаны все и подряд: ученик их сам и писал, а спрятать историю
+ * значило бы делать вид, что новая попытка стирает прошлую. Она не стирает
+ * её нигде — ни здесь, ни у учителя.
+ */
+/* курс ученика — сетка, а не строка: работы идут **под** названием, а во
+   флексе они уезжали в правую половину и жались там в столбик */
+.class-list.student-courses > li {
+  display: grid;
+  grid-template-columns: minmax(8rem, 1fr) auto;
+  align-items: baseline;
+  gap: 0.2rem 0.6rem;
+}
+
+.work-links {
+  grid-column: 1 / -1;
+  margin: 0.3rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* прямым потомком: `.class-list li` и правило выше матчат и вложенный
+   список тоже — на нём работы разъезжались по углам вместе с плашками */
+.work-links > li {
+  display: grid;
+  grid-template-columns: minmax(10rem, 1fr) auto auto auto;
+  align-items: baseline;
+  gap: 0.3rem 0.6rem;
+  padding: 0.25rem 0;
+}
+
+.work-links > li > .badge {
+  justify-self: start;
+}
+
+.student-tasks {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: task;
+}
+
+.student-task {
+  position: relative;
+  padding-left: 2.4rem;
+}
+
+/* номер задачи слева от условия: в тексте он потерялся бы среди формул */
+.student-task::before {
+  position: absolute;
+  left: 1rem;
+  counter-increment: task;
+  content: counter(task) ".";
+  color: #666;
+}
+
+.attempt-list {
+  margin: 0.3rem 0;
+  padding: 0;
+  list-style: none;
+}
+
+.attempt-list li {
+  display: grid;
+  grid-template-columns: auto 1fr auto auto;
+  align-items: baseline;
+  gap: 0.5rem;
+  padding: 0.25rem 0.4rem;
+  border-radius: var(--row-radius);
+  background: var(--surface-1);
+}
+
+.attempt-list li + li {
+  margin-top: 0.2rem;
+}
+
+.attempt-list .answer {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  overflow-wrap: anywhere;
+}
+
+.attempt-list .verdict {
+  font-size: 0.8125rem;
+  color: #666;
+}
+
+/* цветом только вердикт: у строки его роль — «что я ответил», а не оценка */
+.attempt-list .correct .verdict {
+  color: #1a6b23;
+}
+
+.attempt-list .wrong .verdict {
+  color: #b3261e;
 }
 
 /*
