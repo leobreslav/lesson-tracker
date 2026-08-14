@@ -210,7 +210,7 @@ describe('layoutTotals', () => {
   it('баланс и последний урок', () => {
     const rows = [section(10), lesson(1, 10), lesson(2, 10)]
 
-    assert.deepEqual(layoutTotals(rows, ribbon(5)), {
+    assert.deepEqual(layoutTotals(stitchLayout(rows, ribbon(5)), ribbon(5)), {
       slots: 5,
       lessons: 2,
       balance: 3,
@@ -222,7 +222,7 @@ describe('layoutTotals', () => {
   it('дефицит: последнего урока нет, потому что план не помещается', () => {
     const rows = [lesson(1), lesson(2), lesson(3)]
 
-    assert.deepEqual(layoutTotals(rows, ribbon(2)), {
+    assert.deepEqual(layoutTotals(stitchLayout(rows, ribbon(2)), ribbon(2)), {
       slots: 2,
       lessons: 3,
       balance: -1,
@@ -234,7 +234,7 @@ describe('layoutTotals', () => {
   it('сводка сходится со сшивкой', () => {
     const rows = [section(10), lesson(1, 10), lesson(2, 10), lesson(3)]
     const stitched = stitchLayout(rows, ribbon(2))
-    const totals = layoutTotals(rows, ribbon(2))
+    const totals = layoutTotals(stitched, ribbon(2))
 
     assert.equal(
       stitched.filter((row) => !row.is_section && row.slot).length,
@@ -396,7 +396,7 @@ describe('свободные слоты', () => {
     const rows = [section(10), lesson(1, 10), lesson(2, 10)]
 
     assert.deepEqual(
-      freeSlots(rows, ribbon(5)).map((free) => free.slot.date),
+      freeSlots(stitchLayout(rows, ribbon(5)), ribbon(5)).map((free) => free.slot.date),
       ['2026-09-09', '2026-09-10', '2026-09-11'],
     )
   })
@@ -404,7 +404,7 @@ describe('свободные слоты', () => {
   it('при дефиците свободных нет вовсе', () => {
     const rows = [lesson(1), lesson(2), lesson(3)]
 
-    assert.deepEqual(freeSlots(rows, ribbon(2)), [])
+    assert.deepEqual(freeSlots(stitchLayout(rows, ribbon(2)), ribbon(2)), [])
   })
 
   it('подпись недели не повторяется, если неделю начал урок плана', () => {
@@ -412,7 +412,10 @@ describe('свободные слоты', () => {
     const rows = [lesson(1), lesson(2)]
 
     assert.deepEqual(
-      freeSlots(rows, ribbon(7)).map((free) => [free.slot.week, free.labelled]),
+      freeSlots(stitchLayout(rows, ribbon(7)), ribbon(7)).map((free) => [
+        free.slot.week,
+        free.labelled,
+      ]),
       [
         [1, false], // первая неделя уже подписана в плане
         [2, true],
@@ -480,8 +483,8 @@ describe('общие случаи с сервером', () => {
     it(spec.name, () => {
       const rows = rowsOf(spec.plan)
       const ribbon = ribbonOf(spec.slots)
-      const totals = layoutTotals(rows, ribbon)
       const stitched = stitchLayout(rows, ribbon, CASES.today)
+      const totals = layoutTotals(stitched, ribbon)
       const past = stitched.filter((row) => !row.is_section && row.past).length
 
       assert.deepEqual(

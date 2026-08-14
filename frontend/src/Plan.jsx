@@ -202,13 +202,14 @@ export default function Plan({ onLoggedOut }) {
    * плану, поэтому ни дебаунса, ни запроса здесь не нужно.
    */
   const layout = useMemo(() => {
-    const rows = planRows(data?.nodes ?? [])
+    // сшивка одна на всё: и строки таблицы, и сводка, и хвост свободных
+    // слотов — это разные взгляды на один проход, а не три расчёта
+    const stitched = stitchLayout(planRows(data?.nodes ?? []), ribbon, today())
+
     return {
-      byId: new Map(
-        stitchLayout(rows, ribbon, today()).map((row) => [row.id, row]),
-      ),
-      totals: layoutTotals(rows, ribbon),
-      free: freeSlots(rows, ribbon),
+      byId: new Map(stitched.map((row) => [row.id, row])),
+      totals: layoutTotals(stitched, ribbon),
+      free: freeSlots(stitched, ribbon),
     }
   }, [data, ribbon])
 
