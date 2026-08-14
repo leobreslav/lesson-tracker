@@ -100,8 +100,8 @@ def make_grade(school, level=9, name=None):
     grade, _ = GradeLevel.objects.get_or_create(
         school=school, level=level, defaults={"name": name or f"Grade {level}"}
     )
-    # the level exists from the day the school does, so a name asked for here
-    # is a rename — «MYP 4» over the default «Grade 9»
+    # имя, названное здесь для уже существующего уровня, — это
+    # переименование: «MYP 4» поверх умолчания «Grade 9»
     if name and grade.name != name:
         grade.name = name
         grade.save(update_fields=["name"])

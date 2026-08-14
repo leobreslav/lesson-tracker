@@ -35,7 +35,12 @@ import { remember, remembered } from './remember'
  * наверх колбэками: страница знает про `busy`, ошибки и перечитывание
  * дерева, таблица — только про то, как это показать. Перетаскивание
  * поделено по той же линии: сенсоры, попадание курсора и подсветка цели
- * здесь, а запрос на перенос — `onMoveTo` наверх.
+ * здесь, а запрос на перенос — `actions.moveTo` наверх.
+ *
+ * Колбэки собраны в один `actions`, а не разложены по пропсам поодиночке:
+ * их одиннадцать, и списком они читаются как то, что таблица умеет
+ * попросить у страницы, а не как одиннадцать разных настроек. Данные и вид
+ * остались плоскими — их смотрят по одному.
  *
  * **`React.memo` здесь нет, и это решение, а не забывчивость.** Семь
  * колбэков из двадцати пропсов пересоздаются на каждом рендере страницы, и
@@ -75,20 +80,23 @@ export default function PlanTable({
   showFree,
   busy,
   collapsed,
-  onToggleSection,
   editing,
-  onEditingChange,
-  onSubmitEdit,
   adding,
-  onAddingChange,
-  onAdd,
-  onSubmitAdd,
-  onOpenLesson,
-  onRemoveLesson,
-  onRemoveSection,
-  onMove,
-  onMoveTo,
+  actions,
 }) {
+  const {
+    toggleSection,
+    changeEditing,
+    submitEdit,
+    changeAdding,
+    add,
+    submitAdd,
+    openLesson,
+    removeLesson,
+    removeSection,
+    move,
+    moveTo,
+  } = actions
   const { t } = useTranslation()
   // the screen-reader script for dragging: dnd-kit reads it out on pick-up
   const dndInstructions = { draggable: t('plan.dndInstructions') }
@@ -152,7 +160,7 @@ export default function PlanTable({
   }
 
   const handleDragStart = (event) => {
-    onEditingChange(null)
+    changeEditing(null)
     setDragged(items.get(event.active.id) ?? null)
   }
 
@@ -169,7 +177,7 @@ export default function PlanTable({
     setDragged(null)
     setDrop(null)
 
-    if (target && node) onMoveTo(node.id, target.parent, target.index)
+    if (target && node) moveTo(node.id, target.parent, target.index)
   }
 
   // --- editing ---
@@ -181,35 +189,35 @@ export default function PlanTable({
    * title sits above its content. A folder has no content, so a folder is
    * just a name and an inline field is the shortest way to change it.
    */
-  const startEdit = (node) => onEditingChange({ id: node.id, title: node.title })
+  const startEdit = (node) => changeEditing({ id: node.id, title: node.title })
 
   const editKeyDown = (event) => {
-    if (event.key === 'Escape') onEditingChange(null)
+    if (event.key === 'Escape') changeEditing(null)
   }
 
   // --- rendering ---
 
   const editForm = () => (
-    <form className="plan-edit" onSubmit={onSubmitEdit}>
+    <form className="plan-edit" onSubmit={submitEdit}>
       <input
         autoFocus
         value={editing.title}
         maxLength={200}
         aria-label={t('plan.titleLabel')}
-        onChange={(event) => onEditingChange({ ...editing, title: event.target.value })}
+        onChange={(event) => changeEditing({ ...editing, title: event.target.value })}
         onKeyDown={editKeyDown}
       />
       <button type="submit" disabled={busy}>
         {t('common.save')}
       </button>
-      <button type="button" className="secondary" onClick={() => onEditingChange(null)}>
+      <button type="button" className="secondary" onClick={() => changeEditing(null)}>
         {t('common.cancel')}
       </button>
     </form>
   )
 
   const addForm = () => (
-    <form className="plan-add-form" onSubmit={onSubmitAdd}>
+    <form className="plan-add-form" onSubmit={submitAdd}>
       <input
         autoFocus
         value={adding.title}
@@ -218,15 +226,15 @@ export default function PlanTable({
           adding.is_section ? 'plan.sectionPlaceholder' : 'plan.lessonPlaceholder',
         )}
         aria-label={t('plan.titleLabel')}
-        onChange={(event) => onAddingChange({ ...adding, title: event.target.value })}
+        onChange={(event) => changeAdding({ ...adding, title: event.target.value })}
         onKeyDown={(event) => {
-          if (event.key === 'Escape') onAddingChange(null)
+          if (event.key === 'Escape') changeAdding(null)
         }}
       />
       <button type="submit" disabled={busy || !adding.title.trim()}>
         {t('common.add')}
       </button>
-      <button type="button" className="secondary" onClick={() => onAddingChange(null)}>
+      <button type="button" className="secondary" onClick={() => changeAdding(null)}>
         {t('plan.done')}
       </button>
     </form>
@@ -242,7 +250,7 @@ export default function PlanTable({
         className="link"
         title={t('plan.up')}
         disabled={busy}
-        onClick={() => onMove(node.id, 'up', isSection)}
+        onClick={() => move(node.id, 'up', isSection)}
       >
         ↑
       </button>
@@ -251,7 +259,7 @@ export default function PlanTable({
         className="link"
         title={t('plan.down')}
         disabled={busy}
-        onClick={() => onMove(node.id, 'down', isSection)}
+        onClick={() => move(node.id, 'down', isSection)}
       >
         ↓
       </button>
@@ -378,7 +386,7 @@ export default function PlanTable({
                     type="button"
                     className="link title free-slot"
                     disabled={busy}
-                    onClick={() => onAdd({ parent: null })}
+                    onClick={() => add({ parent: null })}
                   >
                     {t('plan.freeSlot')}
                   </button>
@@ -443,7 +451,7 @@ export default function PlanTable({
               className="link title"
               title={node.title}
               disabled={busy}
-              onClick={() => onOpenLesson(node.id)}
+              onClick={() => openLesson(node.id)}
             >
               {node.title}
             </button>
@@ -483,7 +491,7 @@ export default function PlanTable({
               className="link"
               title={t('plan.insertAfter')}
               disabled={busy}
-              onClick={() => onAdd({ parent, after: node.id })}
+              onClick={() => add({ parent, after: node.id })}
             >
               +
             </button>
@@ -492,7 +500,7 @@ export default function PlanTable({
               className="link"
               title={t('common.delete')}
               disabled={busy}
-              onClick={() => onRemoveLesson(node)}
+              onClick={() => removeLesson(node)}
             >
               ✕
             </button>
@@ -527,7 +535,7 @@ export default function PlanTable({
                 type="button"
                 className="link toggle"
                 title={t(hidden ? 'plan.expand' : 'plan.collapse')}
-                onClick={() => onToggleSection(node.id)}
+                onClick={() => toggleSection(node.id)}
               >
                 {hidden ? '▸' : '▾'}
               </button>
@@ -562,7 +570,7 @@ export default function PlanTable({
                       className="link"
                       title={t('plan.addToSection')}
                       disabled={busy}
-                      onClick={() => onAdd({ parent: node.id })}
+                      onClick={() => add({ parent: node.id })}
                     >
                       +
                     </button>
@@ -571,7 +579,7 @@ export default function PlanTable({
                       className="link"
                       title={t('plan.deleteSection')}
                       disabled={busy}
-                      onClick={() => onRemoveSection(node)}
+                      onClick={() => removeSection(node)}
                     >
                       ✕
                     </button>

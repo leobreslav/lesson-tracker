@@ -654,19 +654,23 @@ export default function Plan({ onLoggedOut }) {
                 showFree={showFree}
                 busy={busy}
                 collapsed={collapsed}
-                onToggleSection={toggleSection}
                 editing={editing}
-                onEditingChange={setEditing}
-                onSubmitEdit={submitEdit}
                 adding={adding}
-                onAddingChange={setAdding}
-                onAdd={openAdd}
-                onSubmitAdd={submitAdd}
-                onOpenLesson={setOpened}
-                onRemoveLesson={removeLesson}
-                onRemoveSection={setDeleting}
-                onMove={handleMove}
-                onMoveTo={dropNode}
+                // всё, что таблица умеет попросить у страницы, — одним
+                // списком: сама она в базу не ходит
+                actions={{
+                  toggleSection,
+                  changeEditing: setEditing,
+                  submitEdit,
+                  changeAdding: setAdding,
+                  add: openAdd,
+                  submitAdd,
+                  openLesson: setOpened,
+                  removeLesson,
+                  removeSection: setDeleting,
+                  move: handleMove,
+                  moveTo: dropNode,
+                }}
               />
 
               {!data.nodes.length && (
