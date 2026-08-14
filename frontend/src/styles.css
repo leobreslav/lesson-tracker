@@ -2450,6 +2450,66 @@ button.compact,
   justify-self: start;
 }
 
+/*
+ * Учебный план на странице ученика.
+ *
+ * Три колонки фиксированной раскладки — номер, название, дата, — как в
+ * таблице у учителя и по той же причине: без них номера и даты пляшут от
+ * длины названия, и сорок строк перестают читаться сверху вниз. Ширины
+ * скромнее учительских: правок здесь нет, значит нет ни ручки, ни кнопок.
+ *
+ * Прошедшее приглушено, а не вычеркнуто: это не отмена, а «уже было».
+ */
+.student-plan {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.student-plan > li {
+  display: grid;
+  grid-template-columns: 2rem 1fr auto;
+  align-items: baseline;
+  gap: 0.5rem;
+  padding: 0.2rem 0;
+}
+
+.student-plan > li.past {
+  opacity: 0.55;
+}
+
+/* тема — только типографика, как в таблице у учителя: любая заливка или
+   полоса сдвинула бы её относительно уроков */
+.student-plan > li.section {
+  grid-template-columns: 1fr;
+  margin-top: 0.6rem;
+}
+
+.student-plan .theme {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: #3c4043;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.student-plan > li.section:first-child {
+  margin-top: 0;
+}
+
+.student-plan .number {
+  font-variant-numeric: tabular-nums;
+  color: #666;
+  text-align: right;
+  font-size: 0.85rem;
+}
+
+.student-plan .date {
+  color: #666;
+  font-size: 0.85rem;
+  white-space: nowrap;
+}
+
 .student-tasks {
   margin: 0;
   padding: 0;

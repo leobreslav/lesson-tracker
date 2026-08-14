@@ -19,7 +19,7 @@ test('ученик видит свои курсы и ни одного учит�
   await ready(page)
 
   await expect(page.getByRole('heading', { name: 'Мои курсы' })).toBeVisible()
-  // прямые дети: внутри курса теперь ещё и список его работ
+  // прямые дети: внутри курса теперь ещё и список его открытых работ
   await expect(page.locator('.student-courses > li')).toHaveCount(1)
   await expect(page.locator('.student-courses')).toContainText('Grade 6 Algebra')
 
@@ -40,6 +40,37 @@ test('учительский адрес ученику ничего не пок�
   await expect(page.getByRole('link', { name: 'Мои курсы' })).toBeVisible()
 })
 
+test('в курсе виден учебный план с датами и все работы', async ({ page, signIn }) => {
+  await signIn(PEOPLE.student)
+  await page.goto('/')
+  await ready(page)
+
+  await page.getByRole('link', { name: 'Grade 6 Algebra' }).click()
+  await ready(page)
+
+  // панели ищутся по заголовку, а не по тексту: «работы» встречается и в
+  // названии урока, и фильтр по подстроке хватал обе
+  const panel = (name) =>
+    page.locator('.panel').filter({
+      has: page.getByRole('heading', { name, exact: true }),
+    })
+
+  // план курса — тот же, что у учителя: он принадлежит курсу, и второго нет
+  const plan = panel('Учебный план')
+  await expect(plan.locator('.student-plan > li')).not.toHaveCount(0)
+  await expect(plan.locator('.student-plan .theme').first()).toBeVisible()
+  // даты берутся из расписания курса, а не подписываются вручную
+  await expect(plan.locator('.student-plan .date').first()).not.toBeEmpty()
+
+  // содержание урока остаётся учительским: на экране только названия
+  await expect(page.locator('body')).not.toContainText('Домашнее задание')
+
+  // здесь, в отличие от списка курсов, видны и закрытые работы
+  const works = panel('Работы')
+  await expect(works.locator('.work-links > li')).not.toHaveCount(0)
+  await expect(works).toContainText('Контрольная: тригонометрия')
+})
+
 test('снятый с курса видит его отдельно и с объяснением', async ({ page, signIn }) => {
   await signIn(PEOPLE.removedStudent)
   await page.goto('/')
@@ -50,6 +81,13 @@ test('снятый с курса видит его отдельно и с объ
   const past = page.locator('.panel', { hasText: 'Вы больше не в этих курсах' })
   await expect(past).toContainText('Grade 6 Algebra')
   await expect(past).toContainText('всё сделанное остаётся видно')
+
+  // курс уехал вниз, но остался открытым: год, который человек отучился, с
+  // экрана пропадать не должен
+  await past.getByRole('link', { name: 'Grade 6 Algebra' }).click()
+  await ready(page)
+
+  await expect(page.locator('.student-plan > li')).not.toHaveCount(0)
 })
 
 test('язык переключается и у ученика', async ({ page, signIn }) => {

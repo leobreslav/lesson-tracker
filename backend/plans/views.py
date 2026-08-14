@@ -1,7 +1,12 @@
 from collections import Counter, defaultdict
 from urllib.parse import quote
 
-from config.access import CourseScopedViewSet, IsSchoolMember, IsTeacher
+from config.access import (
+    CourseScopedViewSet,
+    IsSchoolMember,
+    IsStudent,
+    IsTeacher,
+)
 from config.errors import Codes, api_error, error_payload
 from django.db import transaction
 from files import services as file_services
@@ -822,3 +827,111 @@ class PlanReviewViewSet(ReadOnlyModelViewSet):
         approval.send_back(baseline, request.user, comment)
 
         return Response(review_payload(baseline))
+
+
+class StudentCourseView(APIView):
+    """
+    Курс глазами ученика: учебный план с датами.
+
+    Плана у ученика раньше не было вовсе — он видел только название курса и
+    список работ, — и на вопрос «что мы вообще проходим» ответить было
+    нечем. Теперь план курса открыт: он **принадлежит курсу**, значит у
+    ученика и учителя он один и тот же, и второй правды тут нет.
+
+    Показываются только **названия**: цели, ход урока, домашнее задание и
+    вложения остаются учительскими. Показывать их — отдельное решение, и
+    принимать его надо не заодно.
+
+    Год целиком, без окна: ученик спрашивает «что было и что будет», а не
+    «что на этой неделе».
+
+    Даты берутся той же раскладкой, что у учителя (`build_layout` по слотам
+    **курса**), поэтому расходиться им негде. Урок, которому слота не
+    хватило, приезжает без даты — врать про «не помещается» ученику
+    незачем, это разговор учителя с методистом.
+    """
+
+    permission_classes = [IsAuthenticated, IsSchoolMember, IsStudent]
+
+    def get(self, request, pk):
+        from schedule.models import Course, CourseStudent
+
+        # строка зачисления и есть право видеть: снятый с курса читает
+        # сделанное, поэтому берётся любая, а не только действующая
+        enrolment = get_object_or_404(
+            CourseStudent.objects.select_related(
+                "course", "course__subject", "course__grade", "course__year"
+            ).prefetch_related("course__year__terms"),
+            student=request.user,
+            course_id=pk,
+            course__school_id=request.user.school_id,
+        )
+        course = enrolment.course
+
+        slots = LessonSlot.objects.filter(
+            course=course, is_cancelled=False
+        ).order_by("date", "lesson_number")
+        lessons = services.flatten_lessons(course.pk)
+        placed = {
+            entry.lesson.node.pk: entry
+            for entry in services.build_layout(
+                lessons, list(slots), course.year.terms.all()
+            )
+            if entry.lesson is not None
+        }
+
+        today = timezone.localdate()
+        teacher = (
+            Course.objects.filter(pk=course.pk)
+            .values_list("assignments__teacher__first_name",
+                         "assignments__teacher__last_name",
+                         "assignments__teacher__email")
+            .first()
+        )
+
+        rows = []
+        for branch in services.get_tree(course.pk):
+            if branch.node.is_section:
+                rows.append({"id": branch.node.pk, "is_section": True,
+                             "title": branch.node.title})
+                children = branch.children
+            else:
+                children = (branch.node,)
+
+            for node in children:
+                entry = placed.get(node.pk)
+                slot = entry.slot if entry else None
+                rows.append(
+                    {
+                        "id": node.pk,
+                        "is_section": False,
+                        "title": node.title,
+                        "number": entry.lesson.number if entry else None,
+                        "date": slot.date if slot else None,
+                        "past": bool(slot and slot.date < today),
+                        "term": entry.term.name if entry and entry.term else None,
+                    }
+                )
+
+        return Response(
+            {
+                "course": {
+                    "id": course.pk,
+                    "name": course.name,
+                    "subject": course.subject.name if course.subject else None,
+                    "grade": course.grade.name if course.grade else None,
+                    "active": enrolment.is_active,
+                    "teacher": person_name(teacher),
+                },
+                "lessons": rows,
+            }
+        )
+
+
+def person_name(row) -> str | None:
+    """«Имя Фамилия», а нет — адрес; курс без ведущего даёт None."""
+    if row is None or not any(row):
+        return None
+
+    first, last, email = row
+    return f"{first or ''} {last or ''}".strip() or email

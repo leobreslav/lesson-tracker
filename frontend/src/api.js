@@ -506,6 +506,9 @@ export const recheckTask = (id) =>
 
 export const fetchStudentCourses = () => request('/api/student/courses/')
 
+/** Курс ученика целиком: учебный план с датами. Работы приходят отдельно. */
+export const fetchStudentCourse = (id) => request(`/api/student/courses/${id}/`)
+
 /** Работы ученика: открытые и закрытые, с его продвижением по ним. */
 export const fetchStudentWorks = () => request('/api/student/works/')
 

@@ -18,6 +18,7 @@ urlpatterns = [
     # разделы ученика: у него другой интерфейс целиком, и адреса тоже свои
     path('api/student/', include('schedule.student_urls')),
     path('api/student/', include('works.student_urls')),
+    path('api/student/', include('plans.student_urls')),
     path('api/library/', include('library.urls')),
     path('api/works/', include('works.urls')),
     path('api/', include('files.urls')),

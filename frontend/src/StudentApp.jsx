@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { BrowserRouter, Link, Route, Routes } from 'react-router-dom'
 import EmptyState from './EmptyState'
 import ErrorBoundary from './ErrorBoundary'
+import StudentCourse from './StudentCourse'
 import StudentWork from './StudentWork'
 import UserMenu from './UserMenu'
 import { fetchStudentCourses, fetchStudentWorks } from './api'
@@ -16,7 +17,8 @@ import { dateTime } from './dates'
  * ученику они ответят отказом. Дешевле не звать их вовсе, чем учить каждый
  * из них молчать.
  *
- * Разделов у ученика пока один — свои курсы. Бар всё равно свой: учительский
+ * Разделов у ученика два — список курсов и курс целиком. Бар всё равно свой:
+ * учительский
  * состоит из пунктов, которых у него нет, и общего в них только правый угол
  * (`UserMenu`), который и вынесен.
  *
@@ -44,6 +46,10 @@ export default function StudentApp({ user, onLoggedOut, onLanguageChange }) {
       <ErrorBoundary>
         <Routes>
           <Route path="/" element={<StudentCourses onLoggedOut={onLoggedOut} />} />
+          <Route
+            path="/courses/:id"
+            element={<StudentCourse onLoggedOut={onLoggedOut} />}
+          />
           <Route path="/works/:id" element={<StudentWork />} />
           <Route path="*" element={<StudentNotFound />} />
         </Routes>
@@ -58,6 +64,11 @@ export default function StudentApp({ user, onLoggedOut, onLanguageChange }) {
  * Два списка, а не один. Снятый с курса продолжает видеть, что уже сделал, —
  * и должен понимать, почему курс уехал вниз: курс, исчезнувший без
  * объяснения, читается как поломка.
+ *
+ * Название курса ведёт на его страницу — там учебный план и все работы. А
+ * здесь под ним остаются только **открытые** работы: этот экран отвечает на
+ * вопрос «что делать сейчас», и закрытые в нём были бы архивом поверх
+ * ответа. Архив живёт на странице курса, одним нажатием ниже.
  */
 function StudentCourses({ onLoggedOut }) {
   const { t } = useTranslation()
@@ -126,9 +137,11 @@ function StudentCourses({ onLoggedOut }) {
         <ul className="class-list student-courses">
           {active.map((course) => (
             <li key={course.id}>
-              <span className="name">{course.name}</span>
+              <Link className="name" to={`/courses/${course.id}`}>
+                {course.name}
+              </Link>
               <span className="hint">{describe(course, t)}</span>
-              <WorkList works={works.filter((work) => work.course_id === course.id)} />
+              <WorkList works={openIn(works, course)} />
             </li>
           ))}
         </ul>
@@ -141,9 +154,10 @@ function StudentCourses({ onLoggedOut }) {
           <ul className="class-list student-courses past">
             {past.map((course) => (
               <li key={course.id}>
-                <span className="name">{course.name}</span>
+                <Link className="name" to={`/courses/${course.id}`}>
+                  {course.name}
+                </Link>
                 <span className="hint">{describe(course, t)}</span>
-                <WorkList works={works.filter((work) => work.course_id === course.id)} />
               </li>
             ))}
           </ul>
@@ -153,13 +167,17 @@ function StudentCourses({ onLoggedOut }) {
   )
 }
 
+/** Открытые работы курса: то, за что можно взяться прямо сейчас. */
+const openIn = (works, course) =>
+  works.filter((work) => work.course_id === course.id && work.state === 'open')
+
 /**
- * Работы курса под его названием.
+ * Открытые работы под названием курса.
  *
  * Ненаступивших здесь не бывает вовсе: до открытия окна работы для ученика
- * не существует. А закрытая остаётся и остаётся кликабельной — свои ответы
- * и отметки он читает всегда, и это ровно то, ради чего строка зачисления
- * не удаляется.
+ * не существует. Закрытые есть, но не здесь — они на странице курса, вместе
+ * с планом: свои ответы и отметки он читает всегда, и это ровно то, ради
+ * чего строка зачисления не удаляется.
  */
 function WorkList({ works }) {
   const { t } = useTranslation()

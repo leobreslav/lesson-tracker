@@ -817,6 +817,12 @@
       "hint": "You cannot work in them, but everything you did stays visible."
     },
     "noActive": "You are not enrolled in any course at the moment.",
+    "course": {
+      "plan": "Curriculum map",
+      "noPlan": "The curriculum map for this course is not written yet.",
+      "works": "Assignments",
+      "noWorks": "No assignments in this course yet."
+    },
     "work": {
       "progress": "answered {{answered}} of {{tasks}}",
       "until": "open until {{moment}}",
