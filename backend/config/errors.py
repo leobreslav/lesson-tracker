@@ -58,6 +58,7 @@ class Codes:
     YEAR_WEEKEND_INVALID = "year_weekend_invalid"
     YEAR_WEEKEND_FULL = "year_weekend_full"
     YEAR_SHRINK_CUTS_EXCEPTIONS = "year_shrink_cuts_exceptions"
+    YEAR_SHRINK_CUTS_SLOTS = "year_shrink_cuts_slots"
     YEAR_IN_USE = "year_in_use"
 
     # calendar markup

@@ -211,7 +211,8 @@
     "roster_bad_email": "Line {{line}}: «{{email}}» is not an email address.",
     "roster_two_emails": "Line {{line}}: two addresses in one line.",
     "roster_too_many_columns": "Line {{line}}: {{columns}} columns — a name and an address are expected.",
-    "roster_too_many_rows": "Not more than {{limit}} lines at a time."
+    "roster_too_many_rows": "Not more than {{limit}} lines at a time.",
+    "year_shrink_cuts_slots": "The new boundaries leave {{slots}} lessons and {{master_slots}} timetable rows outside the year. They are not deleted, but they stop being part of it."
   },
   "classPicker": {
     "label": "Classes:",

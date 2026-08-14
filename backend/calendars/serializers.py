@@ -1,4 +1,5 @@
 from config.errors import Codes, api_error
+from django.db.models import Q
 from rest_framework import serializers
 from rest_framework.validators import UniqueTogetherValidator
 
@@ -219,4 +220,46 @@ class SchoolYearSerializer(serializers.ModelSerializer):
                     end=str(outside[0].end_date),
                 )
 
+            self.check_the_timetable(start_date, end_date)
+
         return attrs
+
+    def check_the_timetable(self, start_date, end_date):
+        """
+        Уроки, оказавшиеся снаружи новых границ.
+
+        Разметку сужение года проверяло всегда, а расписание — нет, и это
+        было единственное обычное административное действие, тихо портящее
+        чужую работу: уроки не удаляются, но перестают быть частью года.
+        `build_days` их не покрывает, календарь показывает «вне года», а
+        завести такой урок заново API уже не даст.
+
+        Отказ, а не предупреждение: цена ошибки — чужой год, а исправить
+        его потом можно только вернув границы обратно. Но иногда сузить год
+        поверх уроков надо осознанно (расписание нарисовали не туда),
+        поэтому есть `?force=true` — тот же разговор, что при отвязке
+        участника.
+        """
+        from schedule.models import LessonSlot, MasterSlot
+
+        outside = Q(date__lt=start_date) | Q(date__gt=end_date)
+        slots = LessonSlot.objects.filter(outside, year=self.instance).count()
+        master = MasterSlot.objects.filter(outside, year=self.instance).count()
+        if not slots and not master:
+            return
+
+        request = self.context.get("request")
+        forced = getattr(request, "query_params", {}).get("force", "").lower() == "true"
+        if forced:
+            return
+
+        api_error(
+            Codes.YEAR_SHRINK_CUTS_SLOTS,
+            f"The new boundaries leave {slots} personal lessons and {master} "
+            "rows of the school timetable outside the year. They are not "
+            "deleted, but they stop being part of it; repeat with force=true "
+            "to confirm.",
+            field="start_date",
+            slots=slots,
+            master_slots=master,
+        )

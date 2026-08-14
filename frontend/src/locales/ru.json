@@ -218,7 +218,8 @@
     "roster_bad_email": "Строка {{line}}: «{{email}}» — это не адрес почты.",
     "roster_two_emails": "Строка {{line}}: два адреса в одной строке.",
     "roster_too_many_columns": "Строка {{line}}: столбцов {{columns}} — ожидались имя и адрес.",
-    "roster_too_many_rows": "Не больше {{limit}} строк за раз."
+    "roster_too_many_rows": "Не больше {{limit}} строк за раз.",
+    "year_shrink_cuts_slots": "За новыми границами останутся уроков: {{slots}} и строк школьного расписания: {{master_slots}}. Они не удаляются, но перестают быть частью года."
   },
   "classPicker": {
     "label": "Классы:",

@@ -148,6 +148,48 @@ class SchoolYearApiTests(CalendarApiTestCase):
 
         self.assertEqual(response.status_code, 400, response.content)
 
+    def test_shrinking_the_year_past_a_lesson_is_rejected_and_can_be_forced(self):
+        """
+        Единственное административное действие, тихо портившее чужую работу.
+
+        Уроки не удаляются, но перестают быть частью года: `build_days` их не
+        покрывает, календарь показывает «вне года», а завести такой урок
+        заново API уже не даст.
+        """
+        course = make_course(self.school, self.year)
+        CourseAssignment.objects.get_or_create(course=course, teacher=self.user)
+        make_slot(self.user, course, day=date(2027, 5, 12))
+        make_master_slot(course, self.user, day=date(2027, 5, 13), number=3)
+        url = reverse("schoolyear-detail", args=[self.year.pk])
+
+        refused = self.client.patch(url, {"end_date": "2027-05-01"}, format="json")
+
+        self.assertEqual(refused.status_code, 400, refused.content)
+        self.assertEqual(refused.json()["code"], "year_shrink_cuts_slots")
+        self.assertEqual(refused.json()["params"], {"slots": 1, "master_slots": 1})
+
+        forced = self.client.patch(
+            f"{url}?force=true", {"end_date": "2027-05-01"}, format="json"
+        )
+
+        self.assertEqual(forced.status_code, 200, forced.content)
+        self.year.refresh_from_db()
+        self.assertEqual(self.year.end_date, date(2027, 5, 1))
+
+    def test_growing_the_year_asks_nothing(self):
+        """Расширение границ ничего не отрезает — разговора быть не должно."""
+        course = make_course(self.school, self.year)
+        CourseAssignment.objects.get_or_create(course=course, teacher=self.user)
+        make_slot(self.user, course, day=date(2027, 5, 12))
+
+        response = self.client.patch(
+            reverse("schoolyear-detail", args=[self.year.pk]),
+            {"end_date": "2027-06-30"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200, response.content)
+
     def test_detail_includes_exceptions(self):
         self.make_exception(
             date(2026, 11, 4), date(2026, 11, 4), services.KIND_HOLIDAY, "День единства"
