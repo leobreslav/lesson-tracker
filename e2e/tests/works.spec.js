@@ -175,8 +175,12 @@ test('отметка учителя доезжает до ученика сам�
   await first.getByRole('button', { name: 'Отправить' }).click()
   await expect(first.locator('.attempt-list .verdict')).toHaveText('не проверено')
 
-  const answers = await teacher.get('/api/works/submissions/?work=' + (await workId(teacher)))
-  const mine = answers.body.find((row) => row.answer === 'a^2+2ab+b^2')
+  // берём последнюю отправку задачи, а не «ту, где такой текст»: в демо у
+  // задачи полтора десятка ответов, и верный текст встречается не раз
+  const task = await firstTask(teacher)
+  const answers = await teacher.get(`/api/works/submissions/?task=${task.id}`)
+  const mine = answers.body.at(-1)
+  expect(mine.answer).toBe('a^2+2ab+b^2')
   await teacher.patch(`/api/works/submissions/${mine.id}/`, { is_correct: true })
 
   // страницу не трогаем: отметка приезжает опросом
@@ -186,11 +190,13 @@ test('отметка учителя доезжает до ученика сам�
   await expect(first.locator('.attempt-list li')).toHaveClass(/correct/)
 })
 
-/** id работы «Проверочная» — ученик отвечает в ней, учитель её проверяет. */
-async function workId(teacher) {
+/** Первая задача «Проверочной» — в ней ученик отвечает, а учитель проверяет. */
+async function firstTask(teacher) {
   const courses = await teacher.get('/api/courses/')
   const course = courses.body.find((item) => item.name === 'Grade 6 Algebra')
   const works = await teacher.get(`/api/works/?course=${course.id}`)
+  const work = works.body.find((item) => item.title.startsWith('Проверочная'))
+  const tasks = await teacher.get(`/api/works/tasks/?work=${work.id}`)
 
-  return works.body.find((item) => item.title.startsWith('Проверочная')).id
+  return tasks.body[0]
 }

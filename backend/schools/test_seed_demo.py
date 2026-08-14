@@ -15,7 +15,18 @@ from django.core.management.base import CommandError
 from django.test import TestCase, override_settings
 from plans.models import PlanNode
 from schedule.models import Course, CourseStudent, LessonSlot
+from collections import defaultdict
+
 from works.models import Submission, Work
+
+
+def state_of(history):
+    """Состояние клетки по её журналу — как его считает сводная таблица."""
+    last = history[-1]
+    if last.is_correct is None:
+        checked_before = any(row.is_correct is not None for row in history[:-1])
+        return "redone" if checked_before else "unchecked"
+    return "correct" if last.is_correct else "wrong"
 
 from .models import Invitation, School
 
@@ -66,9 +77,17 @@ class SeedTests(TestCase):
         """
         seed()
 
+        # число берётся из самого списка: класс в демо должен быть
+        # похож на класс, и подгонять тест под каждого нового ученика — не
+        # то же самое, что проверять три состояния
+        from schools.management.commands.seed_demo import STUDENTS
+
         enrolments = CourseStudent.objects.all()
-        self.assertEqual(enrolments.filter(removed_at__isnull=True).count(), 5)
+        self.assertEqual(
+            enrolments.filter(removed_at__isnull=True).count(), len(STUDENTS) - 1
+        )
         self.assertEqual(enrolments.filter(removed_at__isnull=False).count(), 1)
+        self.assertGreater(len(STUDENTS), 10, "класс из пяти человек — не класс")
         self.assertEqual(
             Invitation.objects.filter(kind="student", accepted_at__isnull=True).count(),
             1,
@@ -200,14 +219,25 @@ class WorksTests(TestCase):
 
         self.assertEqual(states, ["closed", "open", "planned"])
 
-    def test_the_closed_one_has_answers_to_look_at(self):
-        """Пустая сетка сводной таблицы не проверяет ничего."""
+    def test_the_answers_show_every_state_a_cell_can_have(self):
+        """
+        Пустая сетка не проверяет ничего, а ровная — проверяет только один
+        случай из пяти. В демо есть все: пусто, отправлено, верно, неверно
+        и переделано после проверки.
+        """
         seed()
 
-        checked = Submission.objects.filter(is_correct__isnull=False)
-        self.assertGreater(Submission.objects.count(), 5)
-        self.assertGreater(checked.count(), 0)
-        self.assertGreater(Submission.objects.filter(is_correct__isnull=True).count(), 0)
+        closed = Work.objects.get(title__startswith="Контрольная")
+        cells = defaultdict(list)
+        for row in Submission.objects.filter(task__work=closed).order_by(
+            "created_at", "id"
+        ):
+            cells[(row.task_id, row.student_id)].append(row)
+
+        states = {state_of(history) for history in cells.values()}
+        self.assertEqual(states, {"correct", "wrong", "unchecked", "redone"})
+        # и пустые клетки: не у всех есть ответ на каждую задачу
+        self.assertLess(len(cells), closed.tasks.count() * CourseStudent.objects.count())
 
     def test_running_it_twice_does_not_double_the_answers(self):
         seed()

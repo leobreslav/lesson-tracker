@@ -27,8 +27,9 @@ test('в составе курса видно всех троих: учатся,
   await signIn(PEOPLE.admin)
   const dialog = await openRoster(page, 'Grade 6 Algebra')
 
-  // пятеро учатся, шестая снята, седьмой приглашён и ни разу не входил
-  await expect(dialog.locator('.roster.enrolled li')).toHaveCount(5)
+  // класс целиком: тринадцать учатся, одна снята, один приглашён и ни
+  // разу не входил
+  await expect(dialog.locator('.roster.enrolled li')).toHaveCount(13)
   await expect(dialog.locator('.roster.waiting li')).toHaveCount(1)
   await expect(dialog.locator('.roster.past li')).toHaveCount(1)
   await expect(dialog.locator('.roster.past')).toContainText('Ева Морозова')
@@ -89,10 +90,10 @@ test('ученик виден в школе, и снятый курс помеч
   await page.goto('/school/students')
   await ready(page)
 
-  // шестеро: пятеро учатся и снятая — она из списка не исчезает, но её
-  // курс помечен как прошлый
+  // все ученики школы, включая снятую с курса: она из списка не исчезает,
+  // но её курс помечен как прошлый
   const rows = page.locator('.people-list li')
-  await expect(rows).toHaveCount(6)
+  await expect(rows).toHaveCount(14)
   await expect(rows.filter({ hasText: 'Ева Морозова' }).locator('.tag.past')).toHaveCount(1)
   await expect(rows.filter({ hasText: 'Артём Степанов' }).locator('.tag.past')).toHaveCount(0)
 

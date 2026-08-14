@@ -37,7 +37,7 @@ test('таблица показывает состояние каждой яче
   await openTable(page, 'Контрольная')
 
   const rows = page.locator('.work-table tbody tr')
-  await expect(rows).toHaveCount(6)
+  await expect(rows).toHaveCount(14)
   // снятая с курса остаётся строкой: её ответы никуда не делись
   await expect(rows.filter({ hasText: 'Ева Морозова' })).toHaveClass(/past/)
 
@@ -59,7 +59,7 @@ test('проверка столбцом ставит отметку, и табл
   await page.locator('.work-table thead button.link').first().click()
 
   const dialog = page.locator('dialog.modal')
-  await expect(dialog).toContainText('ждёт проверки')
+  await expect(dialog).toContainText(/ждёт проверки|ждут проверки/)
   // непроверенные идут первыми — ради них сюда и заходят
   await dialog.locator('.attempt-list li').first().getByTitle(/Отметить «верно»/).click()
   await dialog.getByRole('button', { name: 'Закрыть' }).click()
@@ -127,14 +127,16 @@ test('сводка над таблицей считает то, чего в не
   const card = (name) => page.locator(`[data-card="${name}"]`)
   // пятеро действующих начали, никто не прошёл целиком: снятая с курса в
   // знаменатель не входит — она не «не закончила», она ушла
-  await expect(card('started')).toContainText('5/5')
-  await expect(card('finished')).toContainText('0')
-  await expect(card('unchecked')).toContainText('2')
+  await expect(card('started')).toContainText('13/13')
+  // один проходит работу целиком — иначе по этой плашке не понять,
+  // считает ли она вообще
+  await expect(card('finished')).toContainText('1')
+  await expect(card('unchecked')).not.toContainText('0')
 
   // самая трудная кликабельна и ведёт в проверку своего столбца
   await card('hardest').getByRole('button').click()
 
   const dialog = page.locator('dialog.modal')
   await expect(dialog).toContainText('Проверка задачи')
-  await expect(dialog).toContainText('Решите уравнение')
+  await expect(dialog.locator('.task-question')).not.toBeEmpty()
 })

@@ -79,6 +79,14 @@ STUDENTS = (
     ("orlov@example.com", "Кирилл", "Орлов"),
     ("zaytseva@example.com", "Полина", "Зайцева"),
     ("belov@example.com", "Никита", "Белов"),
+    ("gusev@example.com", "Матвей", "Гусев"),
+    ("titova@example.com", "Софья", "Титова"),
+    ("noskov@example.com", "Егор", "Носков"),
+    ("lebedeva@example.com", "Алиса", "Лебедева"),
+    ("kuznetsov@example.com", "Тимур", "Кузнецов"),
+    ("mironova@example.com", "Варвара", "Миронова"),
+    ("shilov@example.com", "Даниил", "Шилов"),
+    ("panova@example.com", "Ксения", "Панова"),
     # снят с курса: видит сделанное, работать не может. Состояние редкое, но
     # именно на нём разъезжаются экраны, поэтому оно есть в демо
     ("morozova@example.com", "Ева", "Морозова"),
@@ -293,6 +301,9 @@ PAST_TASKS = (
     ("Вычислите $\\sin(30°) + \\cos(60°)$", ("1",)),
     ("Решите уравнение $2x = 10$", ("5", "x=5")),
     ("Назовите формулу синуса суммы", ("sin(a+b)=sin a cos b + cos a sin b",)),
+    ("Чему равен $\\cos(0)$?", ("1",)),
+    ("Упростите $\\sin^2 x + \\cos^2 x$", ("1",)),
+    ("Решите $\\tg x = 0$ на $[0; \\pi]$", ("0", "x=0", "0, pi")),
 )
 
 
@@ -440,13 +451,18 @@ class Command(BaseCommand):
             },
         )
         if created:
-            tasks = [
+            for position, (question, answers) in enumerate(PAST_TASKS):
                 Task.objects.create(
                     work=past, position=position, question=question, answers=list(answers)
                 )
-                for position, (question, answers) in enumerate(PAST_TASKS)
-            ]
-            self.past_answers(tasks, students, teacher, now)
+
+        # ответы досеваются на каждом прогоне, а не только при создании
+        # работы: ученик, появившийся позже, иначе остался бы с пустой
+        # строкой навсегда, а таблица — с дырой, которой в жизни не бывает
+        self.answers(list(past.tasks.all()), students, teacher, now, checked=True)
+        self.answers(
+            list(open_work.tasks.all()), students, teacher, now, checked=False
+        )
 
         Work.objects.get_or_create(
             course=course,
@@ -460,29 +476,74 @@ class Command(BaseCommand):
             },
         )
 
-    def past_answers(self, tasks, students, teacher, now):
+    def answers(self, tasks, students, teacher, now, *, checked):
         """
-        Ответы в закрытой работе: проверенные, неверные и непроверенные.
+        Ответы в работе. Не случайные — по списку состояний клетки.
 
-        Разнобой намеренный — сводная таблица тем и живёт, что в ней видно
-        столбец, с которым не справилась половина класса.
+        Сводная таблица тем и живёт, что в ней видно **разное**: пустая
+        клетка, ответ без отметки, верный, неверный и переделанный после
+        проверки. Ровный набор из одних галочек выглядит правильно на любой
+        вёрстке, а разъезжается она как раз на смеси, поэтому состояния
+        перечислены здесь списком и раскладываются по сетке по остатку.
+
+        `checked=False` — открытая работа: отметок в ней почти нет, её ещё
+        решают, и она нужна, чтобы посмотреть на «17 ответов на проверку».
+
+        Идемпотентность: пара «задача и ученик», у которой уже есть хоть
+        одна отправка, пропускается целиком. Иначе второй прогон дописывал
+        бы всем по второй попытке.
         """
+        if not tasks:
+            return
+
+        # состояния клетки по кругу; пропуск — тоже состояние, и его в
+        # списке два, чтобы таблица не выглядела заполненной сплошь
+        pattern = ("correct", "wrong", "unchecked", "skip", "correct", "redone", "skip")
+
         for index, student in enumerate(students):
+            # первый в списке открытую работу ещё не открывал: пустой экран
+            # решения — тоже состояние, и посмотреть на него надо уметь
+            if index == 0 and not checked:
+                continue
+
             for position, task in enumerate(tasks):
-                # каждый третий пропускает задачу: пустая ячейка — такое же
-                # состояние, как остальные, и рисуется она отдельно
-                if (index + position) % 3 == 0:
+                if Submission.objects.filter(task=task, student=student).exists():
                     continue
 
-                correct = (index + position) % 2 == 0
-                Submission.objects.create(
+                state = pattern[(index + position) % len(pattern)]
+                # первый отвечает на всё: иначе плашка «прошли работу
+                # целиком» всегда ноль, и по ней не понять, считает ли она
+                if index == 0 and state == "skip":
+                    state = "correct"
+                if state == "skip":
+                    continue
+                if not checked and state in ("correct", "wrong"):
+                    # открытую ещё не проверяли: пусть ждёт очереди
+                    state = "unchecked"
+
+                right = task.answers[0] if task.answers else "мой ответ"
+                wrong = "не знаю"
+                minutes = index * 3 + position
+
+                first = Submission.objects.create(
                     task=task,
                     student=student,
-                    answer=task.answers[0] if correct else "не знаю",
-                    is_correct=None if index == 1 else correct,
-                    checked_at=None if index == 1 else now - timedelta(days=7),
-                    checked_by=None if index == 1 else teacher,
+                    answer=right if state in ("correct", "redone") else wrong,
+                    is_correct=None if state == "unchecked" else state == "correct",
+                    checked_at=None if state == "unchecked" else now - timedelta(days=6),
+                    checked_by=None if state == "unchecked" else teacher,
                 )
+                Submission.objects.filter(pk=first.pk).update(
+                    created_at=now - timedelta(days=7, minutes=-minutes)
+                )
+
+                if state == "redone":
+                    # проверенный ответ переделали: отметка осталась на
+                    # прошлой строке, клетка вернулась в «не проверено»
+                    Submission.objects.filter(pk=first.pk).update(is_correct=False)
+                    Submission.objects.create(
+                        task=task, student=student, answer=right
+                    )
 
     # --- building blocks ------------------------------------------------------
 
