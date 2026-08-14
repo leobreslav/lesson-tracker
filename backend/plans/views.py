@@ -152,9 +152,17 @@ class PlanNodeViewSet(CourseScopedViewSet):
         return Response(tree_payload(self.requested_course().pk))
 
     def layout_entries(self, course):
-        """Matching the plan to the schedule. Queries here, maths in services."""
+        """
+        Сопоставление плана с расписанием. Запросы здесь, арифметика в services.
+
+        Слоты берутся **по курсу**, а не по себе. Курс ведёт один человек, но
+        он мог смениться среди года, и тогда сентябрь лежит у предшественника:
+        считая только свои, новый ведущий получал бы «в январе вас ждёт урок
+        №1», то есть заново весь сентябрь. Расписание пока личное, а вот
+        раскладка отвечает на вопрос курса — сколько его плана уже прошло.
+        """
         slots = LessonSlot.objects.filter(
-            teacher=self.request.user, course=course, is_cancelled=False
+            course=course, is_cancelled=False
         ).order_by("date", "lesson_number")
 
         return services.build_layout(
@@ -267,7 +275,7 @@ class PlanNodeViewSet(CourseScopedViewSet):
         """
         course = self.requested_course()
         slots = LessonSlot.objects.filter(
-            teacher=request.user, course=course, is_cancelled=False
+            course=course, is_cancelled=False
         ).order_by("date", "lesson_number")
         breaks = course.year.exceptions.filter(
             kind=DayException.Kind.VACATION
@@ -356,11 +364,17 @@ class PlanNodeViewSet(CourseScopedViewSet):
             [course.pk for course in courses]
         )
 
+        # раскладка считается по **всем** слотам курса, иначе у нового
+        # ведущего темы поехали бы на число уроков предшественника, — а в
+        # ответ уходят только свои: это моё расписание, а не курса
         slots_by_course = defaultdict(list)
+        mine = set()
         for slot in LessonSlot.objects.filter(
-            teacher=request.user, course__in=courses, is_cancelled=False
+            course__in=courses, is_cancelled=False
         ).order_by("date", "lesson_number"):
             slots_by_course[slot.course_id].append(slot)
+            if slot.teacher_id == request.user.pk:
+                mine.add(slot.pk)
 
         slots = {}
         for course in courses:
@@ -371,6 +385,8 @@ class PlanNodeViewSet(CourseScopedViewSet):
             )
             for entry in entries:
                 if entry.slot is None or entry.lesson is None:
+                    continue
+                if entry.slot.pk not in mine:
                     continue
                 if not start <= entry.slot.date <= end:
                     continue
@@ -654,7 +670,7 @@ class PlanNodeViewSet(CourseScopedViewSet):
     def layout_summary(self, request):
         course = self.requested_course()
         cancelled = LessonSlot.objects.filter(
-            teacher=request.user, course=course, is_cancelled=True
+            course=course, is_cancelled=True
         ).count()
 
         return Response(

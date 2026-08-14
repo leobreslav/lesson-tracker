@@ -112,14 +112,14 @@ def current_year(user):
 
 def course_summary(course, user, today: date) -> dict:
     """
-    One course as this teacher sees it.
+    Один курс так, как он выглядит на главной.
 
-    The course is shared, the numbers are not: another teacher's lessons in
-    the same course are none of this one's business.
+    Слоты берутся по **курсу**, как и в раскладке: ведущий у курса один, но
+    он мог смениться среди года, и «сколько дней у этого курса» — вопрос
+    курса, а не человека. Считать по себе значило бы показать два разных
+    баланса на двух экранах.
     """
-    slots = LessonSlot.objects.filter(
-        teacher=user, course=course, is_cancelled=False
-    )
+    slots = LessonSlot.objects.filter(course=course, is_cancelled=False)
     total = slots.count()
     past = slots.filter(date__lt=today).count()
     lessons = PlanNode.objects.filter(course=course, is_section=False).count()

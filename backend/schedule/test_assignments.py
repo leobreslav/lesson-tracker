@@ -223,7 +223,14 @@ class UnassignTests(AssignmentTestCase):
         self.assertEqual(body["params"]["slots"], 1)
         self.assertTrue(CourseAssignment.objects.filter(pk=self.link.pk).exists())
 
-    def test_a_plan_counts_as_well(self):
+    def test_a_plan_alone_does_not_hold_the_assignment(self):
+        """
+        План принадлежит курсу, значит у снимаемого в нём ничего не пропадает.
+
+        Отказывать из-за плана было бы ложной тревогой: подтверждать нечего.
+        Но в счётчиках он назван — чтобы администратор видел, что программа
+        остаётся и достанется следующему ведущему.
+        """
         make_node(self.user, self.algebra, "Урок")
         # the fixture assigns as it writes, so read the row back
         self.link = CourseAssignment.objects.get(
@@ -234,6 +241,22 @@ class UnassignTests(AssignmentTestCase):
             reverse("courseassignment-detail", args=[self.link.pk])
         )
 
+        self.assertEqual(response.status_code, 204, response.content)
+        self.assertFalse(CourseAssignment.objects.filter(pk=self.link.pk).exists())
+        self.assertTrue(PlanNode.objects.filter(course=self.algebra).exists())
+
+    def test_lessons_name_the_plan_that_stays(self):
+        make_slot(self.user, self.algebra)
+        make_node(self.user, self.algebra, "Урок")
+        self.link = CourseAssignment.objects.get(
+            course=self.algebra, teacher=self.user
+        )
+
+        response = self.client.delete(
+            reverse("courseassignment-detail", args=[self.link.pk])
+        )
+
+        self.assertEqual(response.status_code, 400)
         self.assertEqual(response.json()["params"]["plan_rows"], 1)
 
     def test_forcing_it_removes_the_link_and_keeps_the_work(self):

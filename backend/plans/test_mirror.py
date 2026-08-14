@@ -67,8 +67,11 @@ class LayoutNumbersMirrorTests(PlanTestCase):
                     position += 1
 
         for number, slot in enumerate(case["slots"], start=1):
+            # «previous» — уроки прежнего ведущего: слот личный, а раскладка
+            # считает по курсу, и это ровно то, что случай проверяет
+            owner = self.colleague if slot.get("teacher") == "previous" else self.user
             LessonSlot.objects.create(
-                teacher=self.user,
+                teacher=owner,
                 year=self.course.year,
                 course=self.course,
                 date=date.fromisoformat(slot["date"]),

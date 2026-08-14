@@ -268,12 +268,11 @@ class MemberViewSet(
         if instance.is_student:
             return self.detach_student(instance)
 
+        # строки плана здесь не считаются: план принадлежит курсу, а не
+        # человеку, и отвязка его не касается — курс останется без ведущего,
+        # а программа на нём цела
         slots = LessonSlot.objects.filter(teacher=instance).count()
         courses = CourseAssignment.objects.filter(teacher=instance).count()
-        # строки плана здесь больше не считаются: план принадлежит курсу, а
-        # не человеку, и отвязка его не касается — курс просто останется без
-        # ведущего, а программа на нём цела
-        rows = 0
 
         forced = self.request.query_params.get("force", "").lower() == "true"
         if (slots or courses) and not forced:
@@ -285,7 +284,6 @@ class MemberViewSet(
                 email=instance.email,
                 courses=courses,
                 slots=slots,
-                plan_rows=rows,
             )
 
         # a person can be the last administrator only while they are here
@@ -334,7 +332,6 @@ class MemberViewSet(
                 email=instance.email,
                 courses=courses,
                 slots=0,
-                plan_rows=0,
             )
 
         with transaction.atomic():

@@ -418,8 +418,11 @@ class CourseAssignmentViewSet(SchoolScopedViewSet):
             course=instance.course, teacher=instance.teacher
         ).count()
 
+        # план в условие не входит: он принадлежит курсу, и у снимаемого в
+        # нём ничего не пропадает. Назван он затем, чтобы администратор
+        # видел, что программа остаётся и достанется следующему ведущему
         forced = self.request.query_params.get("force", "").lower() == "true"
-        if (slots or rows or master) and not forced:
+        if (slots or master) and not forced:
             api_error(
                 Codes.ASSIGNMENT_IN_USE,
                 f"{full_name(instance.teacher)} has {slots} lessons and "
