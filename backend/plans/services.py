@@ -300,39 +300,91 @@ def summary_by_term(entries: Sequence[LayoutEntry], terms: Iterable = ()) -> lis
     return rows
 
 
-def layout_summary(
-    entries: Iterable[LayoutEntry],
-    today,
-    cancelled_count: int = 0,
-    terms: Iterable = (),
-) -> dict:
+@dataclass(frozen=True)
+class Numbers:
     """
-    Итоги раскладки. `today` влияет только на счётчики «прошло/осталось»,
-    но не на само сопоставление.
+    Всё, что можно сосчитать по готовой раскладке. Один расчёт на всех.
+
+    Считалось это дважды — в сводке раскладки и в ответе «Состояния
+    курсов», — под разными именами и по разным формулировкам: `balance` и
+    `reserve`, `past_lessons` и `done`. Числа совпадали, но держались на
+    том, что обе копии правили вместе; сторож их сверял, а не выводил из
+    одного места.
+
+    Имена в ответах остались прежними: их читают страницы и словарь, и
+    переименование ради красоты стоило бы правок в трёх местах ради нуля.
+    Обёртки ниже — это перевод одного расчёта на два словаря.
+    """
+
+    lessons_total: int
+    slots_total: int
+    balance: int
+    missing: int
+    past_slots: int
+    remaining_slots: int
+    past_lessons: int
+    remaining_lessons: int
+    extra: int
+    last_lesson_date: object | None
+    # уроки плана, до которых ещё не дошли: «где я» и «что дальше»
+    upcoming: Sequence[LayoutEntry] = ()
+
+
+def count_layout(entries: Iterable[LayoutEntry], today) -> Numbers:
+    """
+    Единственный расчёт чисел раскладки.
+
+    `today` влияет только на «прошло/осталось» и на список ближайших
+    уроков, но не на само сопоставление: раскладка позиционная и о
+    сегодняшнем дне не знает.
     """
     entries = list(entries)
     with_slot = [entry for entry in entries if entry.slot is not None]
     with_lesson = [entry for entry in entries if entry.lesson is not None]
     matched = [entry for entry in entries if entry.status == STATUS_MATCHED]
 
-    past_slots = [entry for entry in with_slot if entry.slot.date < today]
-    past_lessons = [entry for entry in matched if entry.slot.date < today]
+    past_slots = sum(1 for entry in with_slot if entry.slot.date < today)
+    past_lessons = sum(1 for entry in matched if entry.slot.date < today)
 
     # план не помещается — последнего урока в году просто нет
     fits = len(matched) == len(with_lesson)
-    last_lesson_date = matched[-1].slot.date if fits and matched else None
+
+    return Numbers(
+        lessons_total=len(with_lesson),
+        slots_total=len(with_slot),
+        balance=len(with_slot) - len(with_lesson),
+        missing=len(with_lesson) - len(matched),
+        past_slots=past_slots,
+        remaining_slots=len(with_slot) - past_slots,
+        past_lessons=past_lessons,
+        remaining_lessons=len(with_lesson) - past_lessons,
+        extra=sum(1 for entry in with_slot if entry.slot.is_extra),
+        last_lesson_date=matched[-1].slot.date if fits and matched else None,
+        upcoming=[entry for entry in matched if entry.slot.date >= today],
+    )
+
+
+def layout_summary(
+    entries: Iterable[LayoutEntry],
+    today,
+    cancelled_count: int = 0,
+    terms: Iterable = (),
+) -> dict:
+    """Итоги раскладки для `/layout/summary/`: числа плюс разбивка по термам."""
+    entries = list(entries)
+    numbers = count_layout(entries, today)
 
     return {
-        "lessons_total": len(with_lesson),
-        "slots_total": len(with_slot),
-        "balance": len(with_slot) - len(with_lesson),
-        "past_slots": len(past_slots),
-        "remaining_slots": len(with_slot) - len(past_slots),
-        "past_lessons": len(past_lessons),
-        "remaining_lessons": len(with_lesson) - len(past_lessons),
-        "last_lesson_date": last_lesson_date,
+        "lessons_total": numbers.lessons_total,
+        "slots_total": numbers.slots_total,
+        "balance": numbers.balance,
+        "past_slots": numbers.past_slots,
+        "remaining_slots": numbers.remaining_slots,
+        "past_lessons": numbers.past_lessons,
+        "remaining_lessons": numbers.remaining_lessons,
+        "last_lesson_date": numbers.last_lesson_date,
         "cancelled_count": cancelled_count,
-        "extra_count": sum(1 for entry in with_slot if entry.slot.is_extra),
+        "extra_count": numbers.extra,
         "terms": summary_by_term(entries, terms),
     }
 
@@ -363,28 +415,21 @@ def course_progress(
     Расхождение с эталоном (`baseline_diff`) считает вызывающий код: снимок
     живёт в базе, а эта функция работает над готовой раскладкой.
     """
-    entries = list(entries)
-    matched = [entry for entry in entries if entry.status == STATUS_MATCHED]
-    with_slot = [entry for entry in entries if entry.slot is not None]
-    lessons_total = sum(1 for entry in entries if entry.lesson is not None)
-    slots_total = len(with_slot)
-
-    done = sum(1 for entry in matched if entry.slot.date < today)
-
-    upcoming = [entry for entry in matched if entry.slot.date >= today]
-    fits = len(matched) == lessons_total
+    numbers = count_layout(entries, today)
 
     return {
-        "lessons_total": lessons_total,
-        "slots_total": slots_total,
-        "done": done,
-        "reserve": slots_total - lessons_total,
-        "current": lesson_position(upcoming[0]) if upcoming else None,
-        "next": [lesson_position(entry) for entry in upcoming[:ahead]],
-        "last_lesson_date": matched[-1].slot.date if fits and matched else None,
-        "missing": lessons_total - len(matched),
+        "lessons_total": numbers.lessons_total,
+        "slots_total": numbers.slots_total,
+        "done": numbers.past_lessons,
+        "reserve": numbers.balance,
+        "current": (
+            lesson_position(numbers.upcoming[0]) if numbers.upcoming else None
+        ),
+        "next": [lesson_position(entry) for entry in numbers.upcoming[:ahead]],
+        "last_lesson_date": numbers.last_lesson_date,
+        "missing": numbers.missing,
         "cancelled": sum(1 for _ in cancelled),
-        "extra": sum(1 for entry in with_slot if entry.slot.is_extra),
+        "extra": numbers.extra,
     }
 
 

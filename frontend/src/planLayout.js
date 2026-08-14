@@ -142,18 +142,31 @@ function markWeeks(rows) {
   }
 }
 
-/** Сводка сверху: сколько слотов, сколько уроков и чем это кончится. */
+/**
+ * Сводка сверху: сколько слотов, сколько уроков и чем это кончится.
+ *
+ * Числа берутся из **сшитых** строк, а не считаются заново по ленте. Так
+ * сводка по построению говорит то же, что стоит в таблице: пока это были
+ * два независимых прохода, у них было два ответа на вопрос «поместился ли
+ * план» — таблица могла показать дату у последнего урока, а сводка рядом
+ * написать «не помещается».
+ *
+ * Лишний проход по сорока строкам стоит меньше, чем эта возможность.
+ */
 export function layoutTotals(rows, ribbon) {
-  const lessons = rows.filter((row) => !row.is_section).length
-  const slots = ribbon.length
+  const lessons = stitchLayout(rows, ribbon).filter((row) => !row.is_section)
+  const placed = lessons.filter((row) => row.slot)
 
   return {
-    slots,
-    lessons,
-    balance: slots - lessons,
+    slots: ribbon.length,
+    lessons: lessons.length,
+    balance: ribbon.length - lessons.length,
     // последний урок плана есть только тогда, когда план поместился целиком
-    lastDate: lessons > 0 && lessons <= slots ? ribbon[lessons - 1].date : null,
-    missing: Math.max(0, lessons - slots),
+    lastDate:
+      placed.length === lessons.length && lessons.length
+        ? lessons[lessons.length - 1].slot.date
+        : null,
+    missing: lessons.length - placed.length,
   }
 }
 
@@ -169,10 +182,13 @@ export function layoutTotals(rows, ribbon) {
  * уроками плана.
  */
 export function freeSlots(rows, ribbon) {
-  const lessons = rows.filter((row) => !row.is_section).length
-  let previous = lessons > 0 ? (ribbon[lessons - 1]?.week ?? null) : null
+  // сколько слотов заняли уроки — оттуда и начинается хвост; берётся из той
+  // же сшивки, что и сводка, чтобы «свободных 59» и «баланс +59» не
+  // расходились на единицу
+  const taken = stitchLayout(rows, ribbon).filter((row) => row.slot).length
+  let previous = taken > 0 ? (ribbon[taken - 1]?.week ?? null) : null
 
-  return ribbon.slice(lessons).map((slot) => {
+  return ribbon.slice(taken).map((slot) => {
     const labelled = slot.week != null && slot.week !== previous
     previous = slot.week
     return { slot, labelled }
