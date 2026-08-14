@@ -63,7 +63,8 @@ class ImportTestCase(SchoolTestMixin, APITestCase):
         )
 
     def mine(self):
-        return LessonSlot.objects.filter(teacher=self.user)
+        """Уроки моих курсов: расписание принадлежит курсу, не человеку."""
+        return LessonSlot.objects.filter(course__in=(self.algebra, self.geometry))
 
 
 class ScopeTests(ImportTestCase):
@@ -75,11 +76,12 @@ class ScopeTests(ImportTestCase):
         self.assertEqual(self.mine().count(), 3)
         self.assertFalse(self.mine().filter(course=self.theirs).exists())
 
-    def test_the_lessons_belong_to_the_importer(self):
+    def test_the_lessons_land_in_the_importers_courses(self):
         self.run_import()
 
         self.assertEqual(
-            {slot.teacher for slot in LessonSlot.objects.all()}, {self.user}
+            {slot.course for slot in LessonSlot.objects.all()},
+            {self.algebra, self.geometry},
         )
 
     def test_a_colleague_imports_their_own_and_only_theirs(self):
@@ -88,7 +90,7 @@ class ScopeTests(ImportTestCase):
         self.run_import()
 
         self.assertEqual(
-            [slot.course for slot in LessonSlot.objects.filter(teacher=self.colleague)],
+            [slot.course for slot in LessonSlot.objects.filter(course=self.theirs)],
             [self.theirs],
         )
 
@@ -115,7 +117,7 @@ class ScopeTests(ImportTestCase):
 
         self.assertEqual(response.status_code, 200, response.content)
         self.assertEqual(response.json()["created"], 0)
-        self.assertFalse(LessonSlot.objects.filter(teacher=self.stranger).exists())
+        self.assertFalse(LessonSlot.objects.exists())
 
     def test_another_schools_year_cannot_even_be_named(self):
         self.sign_in(self.stranger)
@@ -203,12 +205,13 @@ class ModeTests(ImportTestCase):
         self.assertEqual(self.mine().count(), 3)
 
     def test_replace_touches_only_the_chosen_courses(self):
-        untouched = make_slot(self.user, self.theirs, MONDAY, 7)
-
+        """Не выбранный курс не трогается — ни его уроки, ни его ручные пометки."""
         self.run_import(mode="replace", courses=[self.geometry.pk])
 
-        self.assertTrue(self.mine().filter(pk=untouched.pk).exists())
+        # алгебру не выбирали: её ручной урок на месте, а расписание не
+        # переписано
         self.assertTrue(self.mine().filter(pk=self.handmade.pk).exists())
+        self.assertFalse(self.mine().filter(course=self.algebra, lesson_number=1).exists())
 
     def test_replace_touches_only_the_chosen_period(self):
         far = make_slot(self.user, self.algebra, MONDAY + timedelta(days=60), 1)

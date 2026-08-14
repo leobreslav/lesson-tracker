@@ -189,11 +189,11 @@ def make_exception(year, day=date(2026, 11, 4), kind="holiday", title="Праз�
 
 def make_slot(teacher, course, day=MONDAY, number=1, **flags):
     """
-    One lesson. The year follows the course — never passed separately.
+    Один урок. Год берётся у курса — отдельно он не передаётся никогда.
 
-    Assigning the teacher to the course on the way: a lesson in a course
-    nobody handed you is a state the API refuses, and a fixture that can
-    express it would test something the product cannot reach.
+    Учитель здесь остался, хотя у слота его больше нет: расписание
+    принадлежит курсу, а по дороге фикстура назначает человека ведущим —
+    урок в курсе, который никому не поручен, API так же не даёт завести.
     """
     from schedule.models import LessonSlot
 
@@ -201,7 +201,6 @@ def make_slot(teacher, course, day=MONDAY, number=1, **flags):
 
     return LessonSlot.objects.create(
         year=course.year,
-        teacher=teacher,
         course=course,
         date=day,
         lesson_number=number,

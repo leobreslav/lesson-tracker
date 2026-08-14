@@ -139,7 +139,7 @@ class AccessRulesMixin:
         Ученику закрыто всё учительское — чтение в том числе.
 
         Читать список курсов или календарь школы ему незачем, а главное —
-        `TeacherScopedViewSet` без этой проверки позволил бы ему **писать**
+        `CourseScopedViewSet` без этой проверки позволил бы ему **писать**
         свои уроки и строки плана в любом курсе школы.
         """
         self.sign_in(self.student)
@@ -259,17 +259,18 @@ class AccessRulesMixin:
             actions=actions, obj=obj, people=(self.stranger, self.alien_admin)
         )
 
-    # --- rule 3: an object owned by one teacher ------------------------------
+    # --- правило 4: объект курса ---------------------------------------------
 
-    def assertPersonalObjectRules(
+    def assertCourseObjectRules(
         self, *, list_url, detail_url, obj, patch, actions=()
     ):
         """
-        The whole matrix for a model that belongs to one teacher.
+        Вся матрица для модели, принадлежащей курсу.
 
-        Nobody else reaches it — not a colleague sharing the course, not an
-        administrator of the school, not another school. The role governs the
-        school's shared objects, never somebody's work.
+        Никто, кроме назначенного ведущего, до неё не добирается — ни
+        коллега из той же школы, ни её администратор, ни чужая школа. Роль
+        администратора распоряжается общими объектами школы, а не тем, что
+        внутри курса.
 
         `actions` проверяются строже, чем у школьного объекта: коллега и
         администратор своей школы тоже не должны отличать чужой урок от

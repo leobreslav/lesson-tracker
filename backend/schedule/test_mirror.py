@@ -70,7 +70,6 @@ class CopyMirrorTests(SchoolTestMixin, APITestCase):
 
             LessonSlot.objects.create(
                 year=year,
-                teacher=self.user,
                 course=courses[name],
                 date=day(slot["date"]),
                 lesson_number=slot["number"],

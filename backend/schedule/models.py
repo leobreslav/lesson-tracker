@@ -104,25 +104,23 @@ class GradeLevel(models.Model):
 class CourseQuerySet(models.QuerySet):
     def for_teacher(self, user):
         """
-        The courses a teacher works in: assigned, or already worked in.
+        Курсы учителя — это курсы, на которые его назначили. И только.
 
-        Assignment is the answer to «what do I teach», and normally it is the
-        only one. The second half is there because an assignment can be taken
-        away while the lessons stay (see `CourseAssignment`) — hiding a
-        colleague's own work behind an administrator's edit would be worse
-        than a slightly longer list.
+        Условие было длиннее: назначенные **плюс** те, где у него уже есть
+        уроки или строки плана. Вторая половина защищала от того, что
+        снятие назначения спрячет от человека его собственную работу. Теперь
+        прятать нечего: план, работы и расписание принадлежат курсу, личного
+        внутри курса не осталось вовсе, и «моё» ровно совпадает с «мне его
+        поручили».
 
-        Про план здесь речи нет, и это правильно: план принадлежит курсу, а
-        не человеку, и «у меня тут есть строки плана» больше никого не
-        опознаёт. Расписание же личное, поэтому опознаёт по-прежнему.
+        Отсюда и цена, названная прямо: у кого сняли назначение, тот курса
+        больше не видит. Работа при этом цела и достаётся следующему
+        ведущему целиком — ради этого всё и переносилось.
         """
         if user is None or not user.is_authenticated or user.school_id is None:
             return self.none()
 
-        return self.filter(
-            models.Q(assignments__teacher=user) | models.Q(slots__teacher=user),
-            school_id=user.school_id,
-        ).distinct()
+        return self.filter(assignments__teacher=user, school_id=user.school_id)
 
     def for_student(self, user, *, active_only=True):
         """
@@ -541,16 +539,31 @@ class MasterSlot(models.Model):
 
 class LessonSlot(models.Model):
     """
-    One lesson of one teacher in one course on one day.
+    Один урок курса в конкретный день.
 
-    There is no separate "timetable" entity: a teacher's schedule for the year
-    is every slot of theirs inside the year's boundaries. There is no lesson
-    kind either, only two flags: a regular lesson has both False, a cancelled
-    one has is_cancelled, an unplanned one (a substitution, a club) has
-    is_extra. The combination is allowed — an extra lesson can be cancelled.
+    Отдельной сущности «расписание» нет: расписание курса на год — это все
+    его слоты внутри границ года. Вида урока тоже нет, только два флага:
+    обычный — оба False, отменённый — `is_cancelled`, внезапный (замена,
+    кружок) — `is_extra`; комбинация допустима.
 
-    The slot is personal. Two teachers may share a course and still keep
-    completely separate schedules inside it.
+    **Слот принадлежит курсу, а не учителю.** Личным он был по аналогии с
+    тем, что «двое ведут одну параллель, и неделя у каждого своя», — но
+    ведущий у курса теперь один, и аналогия отпала вместе с ним. А вот цена
+    личного расписания осталась бы: при смене ведущего сентябрь оставался у
+    предшественника, январь появлялся у нового, и ни один экран не мог
+    сложить их в один год без костыля — отметки о передаче, даты передачи
+    или переноса слотов на нового человека. Теперь складывать нечего: у
+    курса одно расписание, и передача курса не событие, а смена строки в
+    `CourseAssignment`.
+
+    Уникальность стала такой же, как у `MasterSlot`: `(course, date,
+    lesson_number)` — «курс не может стоять в двух местах одновременно».
+    Проверка «учитель не может вести два урока разом» никуда не делась, но
+    идёт теперь через назначение, см. `find_conflict`.
+
+    Чего это стоило, названо честно: у прежнего ведущего свой прошлый год по
+    этому курсу с экрана уходит. Слот отвечает на вопрос «когда у курса
+    урок», а не «когда я работал».
     """
 
     year = models.ForeignKey(
@@ -558,12 +571,6 @@ class LessonSlot(models.Model):
         related_name="slots",
         on_delete=models.CASCADE,
         verbose_name="school year",
-    )
-    teacher = models.ForeignKey(
-        settings.AUTH_USER_MODEL,
-        related_name="slots",
-        on_delete=models.CASCADE,
-        verbose_name="teacher",
     )
     course = models.ForeignKey(
         Course,
@@ -588,13 +595,13 @@ class LessonSlot(models.Model):
         verbose_name_plural = "lesson slots"
         ordering = ("date", "lesson_number")
         indexes = [
-            models.Index(fields=("teacher", "date"), name="slot_teacher_date_idx"),
+            models.Index(fields=("year", "date"), name="slot_year_date_idx"),
             models.Index(fields=("course", "date"), name="slot_course_date_idx"),
         ]
         constraints = [
             models.UniqueConstraint(
-                fields=("teacher", "course", "date", "lesson_number"),
-                name="unique_slot_per_teacher_course_day",
+                fields=("course", "date", "lesson_number"),
+                name="unique_slot_per_course_day",
             ),
             models.CheckConstraint(
                 condition=models.Q(lesson_number__gte=1)
@@ -614,14 +621,20 @@ class LessonSlot(models.Model):
     @classmethod
     def find_conflict(cls, *, teacher_id, year, date, lesson_number, exclude_pk=None):
         """
-        The teacher's own lesson already holding that number that day.
+        Урок того же учителя, уже занявший этот номер в этот день.
 
-        Physically nobody teaches two courses at once, and unique_together
-        does not catch it: its key includes the course. A cancelled lesson
-        frees the slot — another course can take it.
+        Физически никто не ведёт два урока разом, а уникальность этого не
+        ловит: её ключ — курс. Отменённый урок место освобождает: на него
+        можно поставить другой курс.
+
+        Учитель ищется через назначение, а не через сам слот: слот теперь
+        принадлежит курсу, и «чей это урок» — вопрос к тому, кто курс ведёт.
         """
+        if teacher_id is None:
+            return None
+
         queryset = cls.objects.filter(
-            teacher_id=teacher_id,
+            course__assignments__teacher_id=teacher_id,
             year=year,
             date=date,
             lesson_number=lesson_number,
@@ -633,14 +646,25 @@ class LessonSlot(models.Model):
 
         return queryset.first()
 
+    def lead_teacher_id(self):
+        """Кто ведёт курс этого слота; None — нагрузку ещё не раздали."""
+        if not self.course_id:
+            return None
+
+        return (
+            CourseAssignment.objects.filter(course_id=self.course_id)
+            .values_list("teacher_id", flat=True)
+            .first()
+        )
+
     def conflict(self):
-        if self.is_cancelled or not (self.year_id and self.course_id and self.teacher_id):
+        if self.is_cancelled or not (self.year_id and self.course_id):
             return None
         if self.date is None or self.lesson_number is None:
             return None
 
         return self.find_conflict(
-            teacher_id=self.teacher_id,
+            teacher_id=self.lead_teacher_id(),
             year=self.year,
             date=self.date,
             lesson_number=self.lesson_number,

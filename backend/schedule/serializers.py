@@ -288,9 +288,8 @@ class CourseSerializer(serializers.ModelSerializer):
 
 
 class LessonSlotSerializer(serializers.ModelSerializer):
-    # the teacher comes from the token: the body cannot name somebody else,
-    # and unique_together needs the field to exist on the serializer
-    teacher = serializers.HiddenField(default=serializers.CurrentUserDefault())
+    # учителя у слота нет вовсе: расписание принадлежит курсу, и «чей это
+    # урок» отвечает назначение
     # the year follows from the course and need not be sent
     year = serializers.PrimaryKeyRelatedField(
         queryset=SchoolYear.objects.none(), required=False
@@ -301,7 +300,6 @@ class LessonSlotSerializer(serializers.ModelSerializer):
         model = LessonSlot
         fields = (
             "id",
-            "teacher",
             "year",
             "course",
             "date",
@@ -314,11 +312,12 @@ class LessonSlotSerializer(serializers.ModelSerializer):
         )
         read_only_fields = ("created_at",)
         validators = [
-            # teacher is not in the body either — it comes from the token
+            # та же уникальность, что у школьного расписания: курс не может
+            # стоять в двух местах одновременно
             UniqueTogetherValidator(
                 queryset=LessonSlot.objects.all(),
-                fields=("teacher", "course", "date", "lesson_number"),
-                message="You already have a lesson with this number in this course that day.",
+                fields=("course", "date", "lesson_number"),
+                message="This course already has a lesson with that number that day.",
             ),
         ]
 

@@ -3,11 +3,11 @@ from collections import defaultdict
 from calendars import services as calendar_services
 from calendars.models import SchoolYear
 from config.access import (
+    CourseScopedViewSet,
     IsSchoolMember,
     IsStudent,
     IsTeacher,
     SchoolScopedViewSet,
-    TeacherScopedViewSet,
 )
 from config.errors import Codes, api_denied, api_error
 from django.db import transaction
@@ -410,9 +410,7 @@ class CourseAssignmentViewSet(SchoolScopedViewSet):
         на нём и достаётся следующему ведущему целиком. Названы они здесь
         ровно затем, чтобы это было видно до нажатия.
         """
-        slots = LessonSlot.objects.filter(
-            course=instance.course, teacher=instance.teacher
-        ).count()
+        slots = LessonSlot.objects.filter(course=instance.course).count()
         rows = PlanNode.objects.filter(course=instance.course).count()
         master = MasterSlot.objects.filter(
             course=instance.course, teacher=instance.teacher
@@ -500,19 +498,19 @@ class CourseViewSet(SchoolScopedViewSet):
             slots = instance.slots.count()
             rows = instance.plan_nodes.count()
             works = instance.works.count()
+            # кто ведёт — один человек, и всё перечисленное теперь его: план,
+            # расписание и работы принадлежат курсу целиком
             teachers = sorted(
-                {
-                    str(name or email)
-                    for name, email in instance.slots.values_list(
-                        "teacher__first_name", "teacher__email"
-                    )
-                }
+                str(name or email)
+                for name, email in instance.assignments.values_list(
+                    "teacher__first_name", "teacher__email"
+                )
             )
             api_error(
                 Codes.COURSE_IN_USE,
-                f"«{instance.name}» is in use: {rows} plan rows, plus {slots} "
-                f"lessons and {works} works belonging to "
-                f"{', '.join(teachers) or 'nobody'}. Clear it first.",
+                f"«{instance.name}» is in use: {rows} plan rows, {slots} "
+                f"lessons and {works} assignments. "
+                f"Ask {', '.join(teachers) or 'its teacher'} to clear it first.",
                 name=instance.name,
                 slots=slots,
                 plan_rows=rows,
@@ -521,19 +519,25 @@ class CourseViewSet(SchoolScopedViewSet):
             )
 
 
-class LessonSlotViewSet(TeacherScopedViewSet):
+class LessonSlotViewSet(CourseScopedViewSet):
     """
-    Lesson slots — personal to the teacher inside a shared course.
+    Расписание курса. Принадлежит курсу, как план и работы.
 
-    The list is filtered by `course`, `start` and `end`; beyond CRUD there are
-    the bulk operations: copy, bulk and stats.
+    «Моё расписание» осталось видом, а не собственностью: это уроки моих
+    курсов. Личным слот быть перестал вместе с правилом «ведущий у курса
+    один» — см. `LessonSlot`.
+
+    Список фильтруется по `course`, `start` и `end`; сверх CRUD есть
+    массовые операции: copy, bulk и stats.
     """
 
     serializer_class = LessonSlotSerializer
     queryset = LessonSlot.objects.all()
+    course_path = "course"
 
     def own_slots(self):
-        return LessonSlot.objects.filter(teacher=self.request.user)
+        """Уроки моих курсов — то, что человек называет своим расписанием."""
+        return LessonSlot.objects.filter(course__in=self.my_courses())
 
     def get_queryset(self):
         queryset = super().get_queryset().select_related("course", "year")
@@ -566,7 +570,6 @@ class LessonSlotViewSet(TeacherScopedViewSet):
         """
         target = (data["target_start"], data["target_end"])
         year = course.year
-        teacher = self.request.user
 
         source_numbers = defaultdict(list)
         source_slots = self.own_slots().filter(
@@ -604,8 +607,8 @@ class LessonSlotViewSet(TeacherScopedViewSet):
             .values_list("date", "lesson_number")
         )
 
-        # numbers this teacher already spends on their other courses: nobody
-        # runs two lessons at once, so such slots are skipped with a report
+        # номера, уже занятые другими курсами этого учителя: двух уроков
+        # разом не бывает, поэтому такие слоты пропускаются с отчётом
         busy = {
             (slot.date, slot.lesson_number): slot.course.name
             for slot in self.own_slots()
@@ -621,7 +624,6 @@ class LessonSlotViewSet(TeacherScopedViewSet):
             busy=busy,
             make=lambda day, number: LessonSlot(
                 year=year,
-                teacher=teacher,
                 course=course,
                 date=day,
                 lesson_number=number,
@@ -685,7 +687,7 @@ class LessonSlotViewSet(TeacherScopedViewSet):
 
     @action(detail=False, methods=["delete"])
     def bulk(self, request):
-        """Remove this teacher's lessons in a course over a period."""
+        """Убрать уроки курса за период."""
         params = request.query_params
         form = BulkDeleteSerializer(
             data={
@@ -713,7 +715,7 @@ class LessonSlotViewSet(TeacherScopedViewSet):
     @action(detail=False, methods=["get"])
     def agenda(self, request):
         """
-        This teacher's whole schedule for a period, every course at once.
+        Расписание всех своих курсов за период, одним ответом.
 
         Lessons are grouped by date, next to the day markup: whether it is a
         study day and what the exception is called. Dates outside every school

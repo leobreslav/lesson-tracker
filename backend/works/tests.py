@@ -412,19 +412,8 @@ class OwnershipTests(WorkTestCase):
         self.assertTrue(submission.is_correct)
         self.assertEqual(submission.checked_by, self.colleague)
 
-    def test_somebody_who_only_has_lessons_in_the_course_reads_but_writes_not(self):
-        """Та же граница, что у плана: работать в курсе и вести его — разное."""
-        from schedule.models import LessonSlot
-
-        # слот заводится напрямую: `make_slot` заодно назначает, а ведущий
-        # у курса один — фикстура отобрала бы курс у настоящего
-        LessonSlot.objects.create(
-            year=self.year,
-            teacher=self.colleague,
-            course=self.course,
-            date=self.year.start_date,
-            lesson_number=1,
-        )
+    def test_a_colleague_who_does_not_lead_the_course_reaches_nothing(self):
+        """Курс мой ровно потому, что мне его поручили, — иначе его нет."""
         self.sign_in(self.colleague)
 
         listed = self.client.get(reverse("work-list"), {"course": self.course.pk})
@@ -434,9 +423,8 @@ class OwnershipTests(WorkTestCase):
             format="json",
         )
 
-        self.assertEqual([row["id"] for row in listed.json()], [self.work.pk])
-        self.assertEqual(refused.status_code, 403)
-        self.assertEqual(refused.json()["code"], "not_course_teacher")
+        self.assertEqual(listed.json(), [])
+        self.assertEqual(refused.status_code, 404)
 
 
 class QueryCountTests(WorkTestCase):

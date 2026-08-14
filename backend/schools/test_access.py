@@ -211,7 +211,7 @@ class MatrixTests(AccessTestCase):
         )
 
     def test_lesson_slot(self):
-        self.assertPersonalObjectRules(
+        self.assertCourseObjectRules(
             list_url="lessonslot-list",
             detail_url="lessonslot-detail",
             obj=self.slot,
@@ -225,7 +225,7 @@ class MatrixTests(AccessTestCase):
         для них он неотличим от несуществующего. Что видит тот, кто в курсе
         работает, проверяет `CourseObjectTests` ниже.
         """
-        self.assertPersonalObjectRules(
+        self.assertCourseObjectRules(
             list_url="lessonslot-list",
             detail_url="plannode-detail",
             obj=self.node,
@@ -252,7 +252,7 @@ class MatrixTests(AccessTestCase):
     def test_work(self):
         work = make_work(self.user, self.course)
 
-        self.assertPersonalObjectRules(
+        self.assertCourseObjectRules(
             list_url="work-list",
             detail_url="work-detail",
             obj=work,
@@ -265,7 +265,7 @@ class MatrixTests(AccessTestCase):
     def test_task(self):
         task = make_task(make_work(self.user, self.course))
 
-        self.assertPersonalObjectRules(
+        self.assertCourseObjectRules(
             list_url="task-list",
             detail_url="task-detail",
             obj=task,
@@ -291,7 +291,7 @@ class MatrixTests(AccessTestCase):
             task=task, student=self.student, answer="4"
         )
 
-        self.assertPersonalObjectRules(
+        self.assertCourseObjectRules(
             list_url="submission-list",
             detail_url="submission-detail",
             obj=submission,
@@ -323,44 +323,36 @@ class ForeignKeyDoorTests(AccessTestCase):
 
 class CourseObjectTests(AccessTestCase):
     """
-    Правило 4: план принадлежит курсу, а пишет в него ведущий учитель.
+    Правило 4: план, работы и расписание принадлежат курсу.
 
-    Тут две границы, и обе легко перепутать. Первая — «работаю в курсе»:
-    её проходит и тот, у кого назначение сняли, но остались уроки, — иначе
-    правка администратора прятала бы от человека программу курса, в котором
-    он ещё ведёт занятия. Вторая — «назначен ведущим», и только она
-    открывает запись.
+    Имя владельца лежит не на объекте, а в назначении, и проверять надо
+    именно это: курс, который человеку не поручен, для него не существует —
+    ни по прямому адресу, ни через `?course=`.
+
+    Через `?course=` — отдельным тестом, и не для полноты: действия импорта
+    и выгрузки идут мимо `get_object`, то есть мимо фильтра queryset'а. Пока
+    `requested_course` смотрел только на школу, любой учитель школы мог
+    прочитать чужой план целиком, а по прямому адресу получал 404.
     """
 
-    def setUp(self):
-        super().setUp()
-        # коллега работает в курсе — у него там урок, — но ведущий не он:
-        # слот заводится напрямую, потому что `make_slot` заодно назначает,
-        # а назначение теперь одно на курс
-        LessonSlot.objects.create(
-            year=self.course.year,
-            teacher=self.colleague,
-            course=self.course,
-            date=MONDAY,
-            lesson_number=5,
-        )
-
-    def tree(self):
+    def tree(self, course=None):
         return self.client.get(
-            reverse("plannode-list"), {"course": self.course.pk}
+            reverse("plannode-list"), {"course": (course or self.course).pk}
         )
 
-    def test_somebody_who_works_in_the_course_reads_the_plan(self):
-        self.sign_in(self.colleague)
+    def test_the_lead_teacher_reads_and_writes(self):
+        answer = self.client.patch(
+            reverse("plannode-detail", args=[self.node.pk]),
+            {"title": "Переименовал"},
+            format="json",
+        )
 
-        answer = self.tree()
-
-        self.assertEqual(answer.status_code, 200)
+        self.assertEqual(answer.status_code, 200, answer.content)
         self.assertEqual(
-            [row["id"] for row in answer.json()["nodes"]], [self.node.pk]
+            [row["id"] for row in self.tree().json()["nodes"]], [self.node.pk]
         )
 
-    def test_somebody_who_works_in_the_course_still_cannot_write(self):
+    def test_a_colleague_of_the_same_school_reaches_nothing(self):
         self.sign_in(self.colleague)
 
         refused = self.client.patch(
@@ -369,32 +361,23 @@ class CourseObjectTests(AccessTestCase):
             format="json",
         )
 
-        self.assertEqual(refused.status_code, 403)
-        self.assertEqual(refused.json()["code"], "not_course_teacher")
+        self.assertEqual(refused.status_code, 404)
         self.node.refresh_from_db()
         self.assertNotEqual(self.node.title, "По-моему, так лучше")
 
-    def test_the_lead_teacher_writes(self):
-        answer = self.client.patch(
-            reverse("plannode-detail", args=[self.node.pk]),
-            {"title": "Переименовал"},
-            format="json",
-        )
-
-        self.assertEqual(answer.status_code, 200, answer.content)
-
-    def test_importing_needs_the_assignment_too(self):
-        """У импорта объекта на входе нет — проверка стоит на ?course=."""
+    def test_the_query_parameter_is_scoped_too(self):
+        """`?course=` идёт мимо queryset'а, и это дыра ровно того размера."""
         self.sign_in(self.colleague)
 
-        refused = self.client.post(
-            f"{reverse('plannode-import')}?course={self.course.pk}",
-            {"mode": "append"},
-            format="multipart",
+        self.assertEqual(self.tree().status_code, 404)
+        self.assertEqual(
+            self.client.post(
+                f"{reverse('plannode-import')}?course={self.course.pk}",
+                {"mode": "append"},
+                format="multipart",
+            ).status_code,
+            404,
         )
-
-        self.assertEqual(refused.status_code, 403)
-        self.assertEqual(refused.json()["code"], "not_course_teacher")
 
 
 class PersonalObjectTests(AccessTestCase):
@@ -455,9 +438,16 @@ class PersonalObjectTests(AccessTestCase):
 
         self.assertEqual(response.status_code, 404)
 
-    def test_two_teachers_keep_separate_schedules_in_one_course(self):
-        """The same number on the same day, two people — both are fine."""
-        # one course, two teachers on it: that is what an assignment allows
+    def test_one_hour_of_a_course_holds_one_lesson(self):
+        """
+        Расписание принадлежит курсу, и второй такой же час завести нельзя —
+        кем бы курс ни вели. Та же уникальность, что у школьного расписания.
+
+        Раньше их было два: у каждого ведущего своя неделя внутри общего
+        курса. Двух ведущих больше не бывает, а вместе с ними ушла и вторая
+        неделя — вместе со всеми костылями, которые нужны были, чтобы потом
+        сложить их в один год.
+        """
         assign(self.colleague, self.course)
         self.sign_in(self.colleague)
 
@@ -467,9 +457,9 @@ class PersonalObjectTests(AccessTestCase):
             format="json",
         )
 
-        self.assertEqual(response.status_code, 201, response.content)
+        self.assertEqual(response.status_code, 400, response.content)
         self.assertEqual(
-            LessonSlot.objects.filter(course=self.course, date=MONDAY).count(), 2
+            LessonSlot.objects.filter(course=self.course, date=MONDAY).count(), 1
         )
 
 

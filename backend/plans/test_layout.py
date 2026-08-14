@@ -171,7 +171,6 @@ class LayoutApiTestCase(PlanTestCase):
 
     def add_slot(self, day=None, number=1, course=None, **flags):
         return LessonSlot.objects.create(
-            teacher=self.user,
             year=(course or self.course).year,
             course=course or self.course,
             date=day or self.slot_date,

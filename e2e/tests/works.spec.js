@@ -120,7 +120,7 @@ test('правка работы, в которой уже отвечали, на
  * доезжают до экрана и что ученику не показано лишнего.
  */
 
-test('ученик видит только открытые и закрытые работы своего курса', async ({
+test('на главной у ученика только открытые работы, остальное — в курсе', async ({
   page,
   signIn,
 }) => {
@@ -128,10 +128,19 @@ test('ученик видит только открытые и закрытые 
   await page.goto('/')
   await ready(page)
 
+  // список курсов отвечает на вопрос «что делать сейчас»
   const links = page.locator('.work-links > li')
-  await expect(links).toHaveCount(2)
+  await expect(links).toHaveCount(1)
   await expect(links.first()).toContainText('Проверочная')
-  // запланированной для него не существует: окно ещё не открылось
+  await expect(page.locator('body')).not.toContainText('Контрольная: тригонометрия')
+  // запланированной для него не существует нигде: окно ещё не открылось
+  await expect(page.locator('body')).not.toContainText('Домашняя работа на каникулы')
+
+  await page.getByRole('link', { name: 'Grade 6 Algebra' }).click()
+  await ready(page)
+
+  // а в курсе — и закрытые: свои ответы и отметки он читает всегда
+  await expect(page.locator('.work-links > li')).toHaveCount(2)
   await expect(page.locator('body')).not.toContainText('Домашняя работа на каникулы')
 })
 
@@ -163,6 +172,9 @@ test('ответ уходит по одной задаче и попадает �
 test('в закрытой работе ответы видно, а поля ввода нет', async ({ page, signIn }) => {
   await signIn(PEOPLE.student)
   await page.goto('/')
+  await ready(page)
+  // закрытые работы живут на странице курса, а не в списке курсов
+  await page.getByRole('link', { name: 'Grade 6 Algebra' }).click()
   await ready(page)
   await page.getByRole('link', { name: 'Контрольная: тригонометрия' }).click()
 

@@ -19,7 +19,6 @@ from config.access import (
     IsSuperuser,
     IsTeacher,
     SchoolScopedViewSet,
-    TeacherScopedViewSet,
 )
 from pathlib import Path
 
@@ -151,33 +150,6 @@ class ApiWiringTests(SimpleTestCase):
                 self.assertEqual(
                     model.__name__, "School", f"{complaint} ведёт не в School"
                 )
-
-    def test_teacher_scoped_viewsets_point_at_a_user(self):
-        """
-        `teacher_path` — такой же путь, как `school_path`, и идти по нему
-        надо так же: у задачи внутри работы владелец лежит через связь
-        (`work__teacher`), и однополевая проверка объявила бы это ошибкой.
-        """
-        for name, (_, view) in sorted(api_views().items()):
-            if not issubclass(view, TeacherScopedViewSet):
-                continue
-
-            with self.subTest(name):
-                model = view.queryset.model
-                complaint = f"{name}.teacher_path = {view.teacher_path!r}"
-
-                for step in view.teacher_path.split("__"):
-                    try:
-                        field = model._meta.get_field(step)
-                    except FieldDoesNotExist:
-                        self.fail(f"{complaint}: у {model.__name__} нет поля {step!r}")
-                    model = field.related_model
-                    self.assertIsNotNone(model, f"{complaint}: {step!r} — не связь")
-
-                self.assertEqual(
-                    model.__name__, "User", f"{complaint} ведёт не в User"
-                )
-
 
     def test_course_scoped_viewsets_point_at_a_course(self):
         """

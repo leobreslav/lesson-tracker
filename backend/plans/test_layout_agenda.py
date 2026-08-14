@@ -107,13 +107,13 @@ class LayoutAgendaTests(LayoutApiTestCase):
         second = Course.objects.create(
             school=self.school, year=self.course.year, name="10А"
         )
+        assign(self.user, second)
         PlanNode.objects.create(
             course=second, parent=None, position=0, is_section=False,
             title="Своя тема",
         )
         mine = self.fill_slots(1)[0]
         other = LessonSlot.objects.create(
-            teacher=self.user,
             year=second.year, course=second, date=MONDAY,
             lesson_number=2
         )
@@ -129,7 +129,6 @@ class LayoutAgendaTests(LayoutApiTestCase):
             is_section=False, title="Чужой урок",
         )
         alien_slot = LessonSlot.objects.create(
-            teacher=self.stranger,
             year=self.alien_class.year,
             course=self.alien_class,
             date=MONDAY,

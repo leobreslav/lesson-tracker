@@ -1,8 +1,8 @@
 """
-Copying the school timetable into one teacher's own schedule.
+Copying the school timetable into the schedule of the teacher's courses.
 
 A one-way, one-time operation. What lands in `LessonSlot` is an ordinary
-lesson of that teacher's, with no link back: editing the timetable afterwards
+lesson of that course, with no link back: editing the timetable afterwards
 does not reach it, and editing the copy does not reach the timetable. That is
 the whole point — a schedule somebody has already annotated must not be
 rewritten under them by an edit made elsewhere.
@@ -67,8 +67,9 @@ def plan_import(*, teacher, year, courses=None, start, end, mode=MERGE):
         by_course[row.course].append(row)
 
     course_ids = {course.pk for course in by_course}
+    # расписание принадлежит курсу, поэтому «моё» — это уроки моих курсов
     mine = LessonSlot.objects.filter(
-        teacher=teacher, date__range=(start, end)
+        course__in=Course.objects.for_teacher(teacher), date__range=(start, end)
     ).select_related("course")
 
     doomed = {slot.pk for slot in mine if slot.course_id in course_ids} if mode == REPLACE else set()
@@ -99,7 +100,6 @@ def plan_import(*, teacher, year, courses=None, start, end, mode=MERGE):
             busy=others,
             make=lambda day, number, course=course: LessonSlot(
                 year=year,
-                teacher=teacher,
                 course=course,
                 date=day,
                 lesson_number=number,

@@ -51,7 +51,6 @@ class StudentCourseTestCase(SchoolTestMixin, APITestCase):
         for index in range(count):
             LessonSlot.objects.create(
                 year=self.year,
-                teacher=self.user,
                 course=self.course,
                 date=start + timedelta(days=index),
                 lesson_number=1,

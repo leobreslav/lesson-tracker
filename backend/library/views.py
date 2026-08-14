@@ -1,9 +1,4 @@
-from config.access import (
-    IsSchoolMember,
-    IsTeacher,
-    SchoolScopedViewSet,
-    require_course_teacher,
-)
+from config.access import IsSchoolMember, IsTeacher, SchoolScopedViewSet
 from config.errors import Codes, api_denied, api_error
 from django.db import transaction
 from django.db.models import Prefetch
@@ -291,7 +286,6 @@ class ImportFromTemplateView(APIView):
         form.is_valid(raise_exception=True)
         data = form.validated_data
 
-        require_course_teacher(request.user, data["course"])
         result = services.import_into_course(
             template=data["template"],
             course_id=data["course"].pk,

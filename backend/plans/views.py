@@ -130,13 +130,17 @@ class PlanNodeViewSet(CourseScopedViewSet):
 
     def requested_course(self, *, write=False):
         """
-        The course from ?course=, limited to the requester's school.
+        Курс из ?course=, только из своих.
 
-        A course of another school is a 404 — the course must not even be
-        namable. `write=True` вдобавок требует, чтобы спрашивающий был
-        назначен ведущим: действия без объекта на входе (импорт, отправка
-        на утверждение) мимо `get_object` проходят, и проверять их надо
-        здесь — другого общего места у них нет.
+        Чужой курс — 404, и не важно, своей он школы или чужой: план,
+        расписание и работы принадлежат курсу, а курс — тому, кому его
+        поручили. Действия без объекта на входе (импорт, экспорт, отправка
+        на утверждение) идут мимо `get_object`, и другого общего места для
+        этой проверки у них нет.
+
+        `write` оставлен ради читаемости вызовов: он ничего не добавляет,
+        пока читают и пишут одни и те же, — но говорит, что действие
+        разрушительное.
         """
         raw = self.request.query_params.get("course")
         if not raw or not raw.isdigit():
@@ -146,12 +150,7 @@ class PlanNodeViewSet(CourseScopedViewSet):
                 field="course",
             )
 
-        course = get_object_or_404(
-            Course.objects.filter(school_id=self.request.user.school_id), pk=raw
-        )
-        if write:
-            self.require_lead(course)
-        return course
+        return get_object_or_404(self.my_courses(), pk=raw)
 
     def list(self, request, *args, **kwargs):
         return Response(tree_payload(self.requested_course().pk))
@@ -349,10 +348,10 @@ class PlanNodeViewSet(CourseScopedViewSet):
                 field="end",
             )
 
-        # courses where this teacher has anything at all in the period
+        # свои курсы, в которых за период вообще что-то есть
         courses = list(
-            Course.objects.filter(
-                slots__teacher=request.user,
+            Course.objects.for_teacher(request.user)
+            .filter(
                 slots__date__range=(start, end),
                 slots__is_cancelled=False,
             )
@@ -369,17 +368,11 @@ class PlanNodeViewSet(CourseScopedViewSet):
             [course.pk for course in courses]
         )
 
-        # раскладка считается по **всем** слотам курса, иначе у нового
-        # ведущего темы поехали бы на число уроков предшественника, — а в
-        # ответ уходят только свои: это моё расписание, а не курса
         slots_by_course = defaultdict(list)
-        mine = set()
         for slot in LessonSlot.objects.filter(
             course__in=courses, is_cancelled=False
         ).order_by("date", "lesson_number"):
             slots_by_course[slot.course_id].append(slot)
-            if slot.teacher_id == request.user.pk:
-                mine.add(slot.pk)
 
         slots = {}
         for course in courses:
@@ -390,8 +383,6 @@ class PlanNodeViewSet(CourseScopedViewSet):
             )
             for entry in entries:
                 if entry.slot is None or entry.lesson is None:
-                    continue
-                if entry.slot.pk not in mine:
                     continue
                 if not start <= entry.slot.date <= end:
                     continue

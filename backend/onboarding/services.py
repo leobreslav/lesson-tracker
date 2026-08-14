@@ -19,7 +19,7 @@ from calendars.services import KIND_VACATION
 from django.db.models import Count, Q
 from django.utils import timezone
 from plans.models import PlanNode
-from schedule.models import Course, LessonSlot
+from schedule.models import Course, CourseAssignment, LessonSlot
 
 # учебный год начинается в сентябре: до июня «текущим» считаем прошлый сентябрь
 SCHOOL_YEAR_STARTS_IN = 6
@@ -433,11 +433,14 @@ def create_demo(user) -> dict:
         course = Course.objects.create(
             school=user.school, year=year, name=template["name"]
         )
+        # назначение обязательно: курс мой ровно потому, что мне его
+        # поручили, — расписание и план принадлежат курсу и никого не
+        # опознают
+        CourseAssignment.objects.create(course=course, teacher=user)
 
         slots = [
             LessonSlot(
                 year=year,
-                teacher=user,
                 course=course,
                 date=day,
                 lesson_number=number,

@@ -100,11 +100,11 @@ class StatusTests(OnboardingTestCase):
 
         today = timezone.localdate()
         LessonSlot.objects.create(
-            year=year, teacher=self.user, course=first,
+            year=year, course=first,
             date=date(2026, 9, 7), lesson_number=1,
         )
         LessonSlot.objects.create(
-            year=year, teacher=self.user, course=second,
+            year=year, course=second,
             date=date(2026, 9, 8), lesson_number=1,
         )
         PlanNode.objects.create(
@@ -130,7 +130,7 @@ class StatusTests(OnboardingTestCase):
         year = self.make_year()
         course = self.make_class(year)
         LessonSlot.objects.create(
-            year=year, teacher=self.user, course=course, date=date(2026, 9, 7),
+            year=year, course=course, date=date(2026, 9, 7),
             lesson_number=1, is_cancelled=True, reason="Болезнь",
         )
 
@@ -149,7 +149,7 @@ class StatusTests(OnboardingTestCase):
         alien_year = self.make_year(school=self.alien_school, name="чужой")
         alien_class = self.make_class(alien_year, "чужой класс")
         LessonSlot.objects.create(
-            year=alien_year, teacher=self.stranger, course=alien_class,
+            year=alien_year, course=alien_class,
             date=date(2026, 9, 7), lesson_number=1,
         )
 
@@ -190,13 +190,13 @@ class DemoTests(OnboardingTestCase):
         vacation = DayException.objects.filter(year=year).first()
         self.assertFalse(
             LessonSlot.objects.filter(
-                teacher=self.user,
+                course__in=Course.objects.for_teacher(self.user),
                 date__range=(vacation.start_date, vacation.end_date),
             ).exists()
         )
         weekend_slots = [
             slot
-            for slot in LessonSlot.objects.filter(teacher=self.user)
+            for slot in LessonSlot.objects.filter(course__in=Course.objects.for_teacher(self.user))
             if slot.date.weekday() >= 5
         ]
         self.assertEqual(weekend_slots, [])
@@ -206,7 +206,7 @@ class DemoTests(OnboardingTestCase):
         self.create()
 
         pairs = list(
-            LessonSlot.objects.filter(teacher=self.user)
+            LessonSlot.objects.filter(course__in=Course.objects.for_teacher(self.user))
             .values_list("date", "lesson_number")
         )
 

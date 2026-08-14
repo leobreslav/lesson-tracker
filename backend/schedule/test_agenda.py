@@ -107,7 +107,6 @@ class OccupiedSlotTests(SlotTestCase):
         self.make_slot(MONDAY, 3)
         duplicate = LessonSlot(
             year=self.year,
-            teacher=self.user,
             course=self.second,
             date=MONDAY,
             lesson_number=3,
@@ -122,7 +121,6 @@ class OccupiedSlotTests(SlotTestCase):
         self.make_slot(MONDAY, 3)
         duplicate = LessonSlot(
             year=self.year,
-            teacher=self.user,
             course=self.second,
             date=MONDAY,
             lesson_number=3,
@@ -283,18 +281,20 @@ class CopyEverythingTests(SlotTestCase):
         self.assertTrue(LessonSlot.objects.filter(pk=kept.pk).exists())
         self.assertEqual(self.slots_on(MONDAY + days(9)), [2])
 
-    def test_other_teachers_schedule_is_untouched(self):
-        """A colleague in the same course keeps their own week."""
-        theirs = self.make_slot(MONDAY, 7, teacher=self.colleague)
+    def test_a_colleagues_course_is_untouched(self):
+        """Копируется своё: расписание чужого курса ни при чём."""
+        theirs = Course.objects.create(
+            school=self.school, year=self.year, name="11Г"
+        )
+        assign(self.colleague, theirs)
+        kept = LessonSlot.objects.create(
+            year=self.year, course=theirs, date=MONDAY, lesson_number=7
+        )
 
         self.copy()
 
-        self.assertEqual(
-            LessonSlot.objects.filter(teacher=self.colleague).count(), 1
-        )
-        self.assertEqual(
-            LessonSlot.objects.get(pk=theirs.pk).lesson_number, 7
-        )
+        self.assertEqual(LessonSlot.objects.filter(course=theirs).count(), 1)
+        self.assertEqual(LessonSlot.objects.get(pk=kept.pk).lesson_number, 7)
 
     def test_classes_of_a_year_outside_the_target_are_skipped(self):
         other_year = self.year.__class__.objects.create(
@@ -406,8 +406,15 @@ class AgendaTests(SlotTestCase):
         self.assertFalse(data["days"]["2026-08-20"]["is_study"])
         self.assertTrue(data["days"]["2026-09-01"]["is_study"])
 
-    def test_other_teachers_lessons_are_invisible(self):
-        self.make_slot(MONDAY, 5, course=self.course, teacher=self.colleague)
+    def test_lessons_of_a_course_i_do_not_lead_are_invisible(self):
+        """Своё расписание — это уроки своих курсов, и ничьи больше."""
+        theirs = Course.objects.create(
+            school=self.school, year=self.year, name="11Д"
+        )
+        assign(self.colleague, theirs)
+        LessonSlot.objects.create(
+            year=self.year, course=theirs, date=MONDAY, lesson_number=5
+        )
 
         data = self.agenda().json()
 

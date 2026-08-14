@@ -121,7 +121,6 @@ class TaskViewSet(CourseScopedViewSet):
 
     def perform_create(self, serializer):
         work = serializer.validated_data["work"]
-        self.require_lead(work.course)
         serializer.save(position=services.next_position(work))
 
     def perform_destroy(self, instance):

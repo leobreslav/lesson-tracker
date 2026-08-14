@@ -767,14 +767,12 @@ class Command(BaseCommand):
                 continue
 
             course = courses[name]
-            teacher = people[email]
-            if LessonSlot.objects.filter(teacher=teacher, course=course).exists():
+            if LessonSlot.objects.filter(course=course).exists():
                 continue
 
             LessonSlot.objects.bulk_create(
                 LessonSlot(
                     year=year,
-                    teacher=teacher,
                     course=course,
                     date=day,
                     lesson_number=number,
@@ -787,8 +785,6 @@ class Command(BaseCommand):
 
     def mark_by_hand(self, courses, people):
         """Cancellations and extra lessons — the states a uniform seed lacks."""
-        teachers = {name: email for name, _, _, email, _ in COURSES}
-
         for name, index, reason in CANCELLED:
             slot = self.nth_slot(courses[name], index)
             if slot is not None and not slot.is_cancelled:
@@ -798,10 +794,7 @@ class Command(BaseCommand):
 
         for name, reason in EXTRA:
             course = courses[name]
-            teacher = people[teachers[name]]
-            if LessonSlot.objects.filter(
-                teacher=teacher, course=course, is_extra=True
-            ).exists():
+            if LessonSlot.objects.filter(course=course, is_extra=True).exists():
                 continue
 
             anchor = self.nth_slot(course, 5)
@@ -809,7 +802,6 @@ class Command(BaseCommand):
                 continue
             LessonSlot.objects.create(
                 year=anchor.year,
-                teacher=teacher,
                 course=course,
                 # a number the weekly template never uses, on the next day
                 date=anchor.date + timedelta(days=1),

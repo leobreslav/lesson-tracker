@@ -35,10 +35,14 @@ class SlotTestCase(SchoolTestMixin, APITestCase):
         self.alien_class = make_course(self.alien_school, self.alien_year, "9А")
 
     def make_slot(self, slot_date, number, course=None, teacher=None, **flags):
+        """
+        Урок курса. Учителя у слота нет — есть назначение, и фикстура его
+        ставит: урок в курсе, который никому не поручен, API не даёт завести.
+        """
         course = course or self.course
+        assign(teacher or self.user, course)
         return LessonSlot.objects.create(
             year=course.year,
-            teacher=teacher or self.user,
             course=course,
             date=slot_date,
             lesson_number=number,
@@ -141,7 +145,7 @@ class SlotCrudTests(SlotTestCase):
         self.assertEqual(response.status_code, 400)
         self.assertEqual(
             response.json()["non_field_errors"],
-            ["You already have a lesson with this number in this course that day."],
+            ["This course already has a lesson with that number that day."],
         )
         self.assertEqual(LessonSlot.objects.count(), 1)
 
@@ -230,12 +234,23 @@ class SlotCrudTests(SlotTestCase):
 
 
 class SlotIsolationTests(SlotTestCase):
+    """
+    Расписание принадлежит курсу, поэтому «чужое» — это чужой курс.
+
+    Уроков одного курса у двух людей больше не бывает: ведущий один, и
+    видит он ровно курсы, которые ему поручили.
+    """
+
     def setUp(self):
         super().setUp()
-        self.alien_slot = self.make_slot(MONDAY, 1, teacher=self.colleague)
+        theirs = make_course(self.school, self.year, "10А")
+        assign(self.colleague, theirs)
+        self.alien_slot = LessonSlot.objects.create(
+            year=self.year, course=theirs, date=MONDAY, lesson_number=1
+        )
         self.mine = self.make_slot(MONDAY, 2)
 
-    def test_list_shows_only_own_slots(self):
+    def test_list_shows_only_slots_of_my_courses(self):
         response = self.client.get(reverse("lessonslot-list"))
 
         self.assertEqual([item["id"] for item in response.json()], [self.mine.pk])

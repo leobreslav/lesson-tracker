@@ -153,7 +153,6 @@
     "email_not_verified": "Google has not verified this email address.",
     "no_school": "You do not belong to any school yet.",
     "school_admin_required": "Only a school administrator can change this.",
-    "not_course_teacher": "Only the teacher assigned to this course can change its curriculum map.",
     "course_teacher_taken": "«{{course}}» is already taught by {{teacher}}. Remove that assignment first.",
     "other_school": "That object belongs to another school.",
     "course_in_use": "«{{name}}» is in use: it holds {{plan_rows}} curriculum rows, plus {{slots}} lessons and {{works}} assignments. Clear it first.",

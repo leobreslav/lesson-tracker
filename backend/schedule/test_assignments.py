@@ -31,7 +31,7 @@ from schools.testing import (
     make_year,
 )
 
-from .models import Course, CourseAssignment, GradeLevel, MasterSlot
+from .models import Course, CourseAssignment, GradeLevel, LessonSlot, MasterSlot
 
 
 class AssignmentTestCase(SchoolTestMixin, APITestCase):
@@ -88,21 +88,25 @@ class VisibleCoursesTests(AssignmentTestCase):
 
         self.assertEqual(response.status_code, 400, response.content)
 
-    def test_work_already_done_stays_visible_without_an_assignment(self):
+    def test_an_unassigned_course_leaves_the_list_with_its_work_intact(self):
         """
-        An assignment can be taken away; a year of lessons cannot.
+        Курс мой ровно потому, что мне его поручили.
 
-        Hiding somebody's own work behind an administrator's edit would be
-        the worse half of the two evils, so the list keeps it.
+        Условие было длиннее — «плюс те, где у меня уже есть уроки», — и
+        защищало от того, что снятие назначения спрячет от человека его
+        собственную работу. Теперь прятать нечего: расписание, план и работы
+        принадлежат курсу, личного внутри него не осталось, и работа целиком
+        достаётся следующему ведущему.
         """
-        make_slot(self.user, self.algebra)
+        slot = make_slot(self.user, self.algebra)
         CourseAssignment.objects.filter(
             course=self.algebra, teacher=self.user
         ).delete()
 
         ids = [item["id"] for item in self.my_courses()]
 
-        self.assertIn(self.algebra.pk, ids)
+        self.assertNotIn(self.algebra.pk, ids)
+        self.assertTrue(LessonSlot.objects.filter(pk=slot.pk).exists())
 
 
 # --- writing the link from either side -------------------------------------------
