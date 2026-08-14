@@ -2365,9 +2365,9 @@ button.compact,
   display: grid;
   /* номер попытки в колонке своей ширины: у всех строк он одинаков, и
      ответ должен начинаться на одной вертикали, а не съезжать за ним */
-  grid-template-columns: 5rem 1fr auto auto;
+  grid-template-columns: 4.5rem 1fr auto auto;
   align-items: center;
-  gap: 0.5rem;
+  gap: 0.3rem 0.8rem;
   padding: 0.3rem 0.5rem;
   border-radius: var(--row-radius);
   background: var(--surface-1);
@@ -2384,7 +2384,6 @@ button.compact,
   padding-right: 0.5rem;
   font-size: 0.75rem;
   color: #80868b;
-  text-align: right;
   white-space: nowrap;
   border-right: 1px solid #dfe3e6;
 }
