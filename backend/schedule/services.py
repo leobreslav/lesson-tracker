@@ -3,6 +3,9 @@
 
 Учебные дни здесь не вычисляются: их считает calendars.services, а сюда
 приходит уже готовое множество дат.
+
+Здесь же — умолчание для имени параллели: это тоже чистая функция, и она
+нужна и вьюхе, и фикстурам.
 """
 
 from __future__ import annotations
@@ -12,6 +15,18 @@ from typing import Iterable, Mapping, Sequence
 
 # форматирование дат общее для приложений и живёт в календаре
 from calendars.services import format_day, iter_dates
+
+
+# Имя параллели по умолчанию. Это **контент в базе**, а не интерфейс:
+# записывается один раз и при смене языка не переписывается — то же правило,
+# что у типовых каникул и четвертей в `onboarding.services`. Школа, нажавшая
+# «Добавить 1–11» в русском интерфейсе, получала «Grade 1», хотя рядом те же
+# кнопки заводят «1 четверть».
+GRADE_NAMES = {"en": "Grade {level}", "ru": "{level} класс"}
+
+
+def grade_name(level: int, language: str = "en") -> str:
+    return GRADE_NAMES.get(language, GRADE_NAMES["en"]).format(level=level)
 
 
 def place_copies(*, plan, skipped, occupied, busy, make) -> dict:

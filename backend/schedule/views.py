@@ -133,7 +133,11 @@ class GradeLevelViewSet(SchoolScopedViewSet):
             GradeLevel.objects.filter(school=school).values_list("level", flat=True)
         )
         created = GradeLevel.objects.bulk_create(
-            GradeLevel(school=school, level=level, name=f"Grade {level}")
+            GradeLevel(
+                school=school,
+                level=level,
+                name=services.grade_name(level, request.user.language),
+            )
             for level in range(1, through + 1)
             if level not in known
         )

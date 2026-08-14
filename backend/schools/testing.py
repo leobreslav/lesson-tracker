@@ -96,9 +96,10 @@ def make_grade(school, level=9, name=None):
     year groups at all — eleven guessed rows were worse than an empty list.
     """
     from schedule.models import GradeLevel
+    from schedule.services import grade_name
 
     grade, _ = GradeLevel.objects.get_or_create(
-        school=school, level=level, defaults={"name": name or f"Grade {level}"}
+        school=school, level=level, defaults={"name": name or grade_name(level)}
     )
     # имя, названное здесь для уже существующего уровня, — это
     # переименование: «MYP 4» поверх умолчания «Grade 9»

@@ -380,6 +380,25 @@ class GradeLevelTests(AssignmentTestCase):
         self.assertEqual([item.level for item in levels], list(range(1, 14)))
         self.assertEqual(levels.last().name, "Grade 13")
 
+    def test_the_names_are_written_in_the_language_of_the_school(self):
+        """
+        Имя параллели — контент в базе, а не интерфейс.
+
+        Записывается один раз и при смене языка не переписывается — то же
+        правило, что у типовых каникул и четвертей. Русская школа получала
+        «Grade 1» от кнопки, которая рядом заводит «1 четверть».
+        """
+        self.as_admin()
+        self.admin.language = "ru"
+        self.admin.save(update_fields=["language"])
+
+        self.client.post(reverse("gradelevel-preset"), {"through": 2}, format="json")
+
+        self.assertEqual(
+            [item.name for item in GradeLevel.objects.filter(school=self.school)],
+            ["1 класс", "2 класс"],
+        )
+
     def test_the_preset_adds_only_what_is_missing(self):
         self.as_admin()
         ninth = make_grade(self.school, 9, "MYP 4")

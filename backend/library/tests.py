@@ -422,6 +422,42 @@ class UpdateFromPlanTests(LibraryTestCase):
         self.assertEqual(response.status_code, 200, response.content)
         self.assertIn((False, "Новый урок"), self.rows_of(self.template))
 
+    def test_the_year_of_study_follows_the_course(self):
+        """
+        Предмет и год берутся у курса заново, а не замерзают при публикации.
+
+        Администратор поправил год обучения параллели — шаблон, обновлённый
+        после этого, обязан переехать вместе с курсом: иначе он остаётся на
+        полке под старым годом, и по фильтру его не найти.
+        """
+        self.course.grade = make_grade(self.school, level=10, name="10 класс")
+        self.course.save(update_fields=["grade"])
+
+        self.client.post(
+            reverse("plantemplate-update-from-plan", args=[self.template.pk]),
+            {"course": self.course.pk},
+            format="json",
+        )
+
+        self.template.refresh_from_db()
+        self.assertEqual(self.template.grade, 10)
+
+    def test_a_course_without_a_grade_leaves_the_template_alone(self):
+        """Спрашивать нечего — остаётся то, что назвали при публикации."""
+        self.course.grade = None
+        self.course.subject = None
+        self.course.save(update_fields=["grade", "subject"])
+
+        self.client.post(
+            reverse("plantemplate-update-from-plan", args=[self.template.pk]),
+            {"course": self.course.pk},
+            format="json",
+        )
+
+        self.template.refresh_from_db()
+        self.assertEqual(self.template.grade, 9)
+        self.assertEqual(self.template.subject, self.subject)
+
     def test_a_colleague_cannot_refresh_it(self):
         self.sign_in(self.colleague)
 

@@ -151,6 +151,12 @@ class PlanTemplateViewSet(SchoolScopedViewSet):
 
         Nobody who has already taken a copy is affected — their plan stopped
         being connected the moment they took it.
+
+        Предмет и год берутся у курса заново — тем же правилом, что при
+        снятии. Иначе они замерзали бы в момент публикации: администратор
+        поправил год обучения параллели, автор нажал «Обновить», строки
+        переписались, а на полке шаблон остался под старым годом, и найти
+        его по фильтру стало нельзя.
         """
         template = self.get_object()
         self.check_object_permissions(request, template)
@@ -158,7 +164,8 @@ class PlanTemplateViewSet(SchoolScopedViewSet):
         form = UpdateFromPlanSerializer(data=request.data, context={"request": request})
         form.is_valid(raise_exception=True)
 
-        rows = services.plan_as_rows(self.owner_for(form.validated_data["course"]))
+        course = form.validated_data["course"]
+        rows = services.plan_as_rows(self.owner_for(course))
         if not rows:
             api_error(
                 Codes.PLAN_EMPTY,
@@ -167,6 +174,18 @@ class PlanTemplateViewSet(SchoolScopedViewSet):
             )
 
         services.write_rows(template, rows)
+        # у курса, заведённого до справочников, спрашивать нечего — тогда у
+        # шаблона остаётся то, что назвали при публикации
+        moved = {}
+        if course.subject_id and course.subject_id != template.subject_id:
+            moved["subject"] = course.subject
+        if course.grade and course.grade.level != template.grade:
+            moved["grade"] = course.grade.level
+
+        if moved:
+            for field, value in moved.items():
+                setattr(template, field, value)
+            template.save(update_fields=list(moved))
 
         return Response(
             PlanTemplateDetailSerializer(
