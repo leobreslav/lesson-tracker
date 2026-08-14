@@ -23,8 +23,13 @@ class SchoolSerializer(serializers.ModelSerializer):
     # все привязанные к школе, ученики в том числе: число отвечает на вопрос
     # «кто мешает её удалить», а мешают все — `User.school` стоит на PROTECT.
     # Внутри школы «учителей» считает обзор, и там сужение по виду есть
-    members = serializers.IntegerField(source="members.count", read_only=True)
+    # число приходит аннотацией вьюсета: `source="members.count"` — запрос
+    # на школу, а список школ у суперпользователя как раз список
+    members = serializers.SerializerMethodField()
     admins = serializers.SerializerMethodField()
+
+    def get_members(self, school) -> int:
+        return getattr(school, "member_count", school.members.count())
 
     class Meta:
         model = School

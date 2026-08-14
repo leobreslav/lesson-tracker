@@ -2,8 +2,11 @@
 
 from datetime import timedelta
 
+from django.db import connection
+from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 from schedule.models import Course, LessonSlot
+from schools.testing import assign, make_course
 
 from .models import PlanNode
 from .test_layout import MONDAY, LayoutApiTestCase
@@ -148,3 +151,32 @@ class LayoutAgendaTests(LayoutApiTestCase):
 
         self.assertNotIn(str(created[0].pk), payload)
         self.assertEqual(payload[str(created[1].pk)]["title"], "Синус суммы")
+
+    def test_the_number_of_queries_does_not_grow_with_the_courses(self):
+        """
+        Запрос уходит на каждую навигацию по расписанию и повторяется после
+        любой правки: отмена урока сдвигает темы у всех последующих слотов.
+        Цикл по курсам здесь стоил бы дороже, чем на главной.
+
+        Проверяется не число — оно поедет от соседней правки, — а то, что
+        от числа курсов оно не зависит.
+        """
+        self.fill_slots(3)
+
+        with CaptureQueriesContext(connection) as one_course:
+            self.agenda()
+
+        for index in range(3):
+            extra = make_course(self.school, year=self.course.year, name=f"9{index}")
+            assign(self.user, extra)
+            self.add_slot(course=extra, number=index + 3)
+
+        with CaptureQueriesContext(connection) as four_courses:
+            self.agenda()
+
+        self.assertEqual(
+            len(four_courses),
+            len(one_course),
+            f"запросы растут с курсами: {len(one_course)} против "
+            f"{len(four_courses)}",
+        )

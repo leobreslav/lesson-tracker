@@ -13,6 +13,8 @@ lists.
 """
 
 from django.core.exceptions import ValidationError
+from django.db import connection
+from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 from plans.models import PlanNode
 from rest_framework.test import APITestCase
@@ -358,6 +360,32 @@ class ImportRespectsAssignmentTests(AssignmentTestCase):
 
 
 class GradeLevelTests(AssignmentTestCase):
+    def test_the_number_of_queries_does_not_grow_with_the_rows(self):
+        """
+        Счётчик курсов — аннотация, а не `source="courses.count"`.
+
+        Второе стоит запроса на строку, и это шаблон, который копируется в
+        каждый следующий справочник: одиннадцать параллелей — одиннадцать
+        лишних запросов ради одиннадцати чисел.
+        """
+        make_grade(self.school, level=1)
+
+        with CaptureQueriesContext(connection) as one_row:
+            self.client.get(reverse("gradelevel-list"))
+
+        for level in range(2, 12):
+            make_grade(self.school, level=level)
+
+        with CaptureQueriesContext(connection) as eleven_rows:
+            response = self.client.get(reverse("gradelevel-list"))
+
+        self.assertEqual(len(response.json()), 11)
+        self.assertEqual(
+            len(eleven_rows),
+            len(one_row),
+            f"запросы растут со строками: {len(one_row)} против {len(eleven_rows)}",
+        )
+
     def test_a_new_school_starts_with_none_of_them(self):
         """
         Eleven guessed rows were worse than an empty list.

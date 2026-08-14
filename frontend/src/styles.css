@@ -955,13 +955,6 @@ button.chip.active {
   border-color: #1a73e8;
 }
 
-.modal-body .row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.75rem;
-  align-items: center;
-}
-
 .modal-body label {
   display: flex;
   align-items: center;
@@ -1723,10 +1716,6 @@ button.progress-head:hover:not(:disabled) {
   font-variant-numeric: lining-nums tabular-nums;
 }
 
-.hint.warning {
-  color: #b06000;
-}
-
 /* состояние утверждения над планом: одна строка, цвет по состоянию */
 .hint.approval.pending {
   color: #1967d2;
@@ -2423,12 +2412,6 @@ button.link.free-summary {
 
 .section-head:hover {
   background: none;
-}
-
-/* вложенность рисует не список, а ячейка отступа внутри строки: иначе
-   сдвинулась бы и левая колонка с датами */
-.plan-children {
-  margin: 0;
 }
 
 .plan-children .empty {

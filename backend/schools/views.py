@@ -11,7 +11,7 @@ from config.errors import Codes, api_error
 from django.contrib.auth import get_user_model
 from django.db import transaction
 from django.utils import timezone
-from django.db.models import ProtectedError
+from django.db.models import Count, ProtectedError
 from rest_framework import mixins, viewsets
 from rest_framework.decorators import action
 from rest_framework.generics import RetrieveUpdateAPIView
@@ -137,7 +137,11 @@ class SchoolViewSet(viewsets.ModelViewSet):
 
     serializer_class = SchoolSerializer
     permission_classes = [IsAuthenticated, IsSuperuser]
-    queryset = School.objects.prefetch_related("members").order_by("name")
+    queryset = (
+        School.objects.prefetch_related("members")
+        .annotate(member_count=Count("members"))
+        .order_by("name")
+    )
 
     def perform_destroy(self, instance):
         """
@@ -190,105 +194,6 @@ class SchoolViewSet(viewsets.ModelViewSet):
             InvitationSerializer(invitation).data, status=201 if created else 200
         )
 
-
-class MemberViewSet(
-    mixins.ListModelMixin,
-    mixins.RetrieveModelMixin,
-    mixins.UpdateModelMixin,
-    mixins.DestroyModelMixin,
-    viewsets.GenericViewSet,
-):
-    """
-    The people of the school.
-
-    Everybody sees the list — knowing who else teaches here is not a secret
-    and the schedule shows their names anyway. Only an administrator hands
-    the role over or detaches somebody.
-    """
-
-    serializer_class = MemberSerializer
-    permission_classes = [
-        IsAuthenticated,
-        IsSchoolMember,
-        IsTeacher,
-        IsSchoolAdminForWrite,
-    ]
-    http_method_names = ["get", "patch", "delete", "head", "options"]
-
-    def get_queryset(self):
-        """
-        Люди школы одного вида: по умолчанию сотрудники.
-
-        Один вьюсет на оба списка, потому что вопрос один — «кто здесь», — а
-        различаются они только тем, чем человек связан с курсами: учитель
-        назначением, ученик зачислением. Умолчание учительское намеренно:
-        роль администратора и школьное расписание спрашивают именно
-        сотрудников, и адрес без параметра должен отвечать им.
-        """
-        people = User.objects.filter(
-            school_id=self.request.user.school_id
-        ).order_by("first_name", "last_name", "email")
-
-        # сужает только список: человек, найденный по id, — участник этой
-        # школы, и вид его известен из него самого
-        if self.action == "list":
-            kind = self.request.query_params.get("kind") or User.Kind.TEACHER
-            people = people.filter(
-                kind=kind if kind in User.Kind.values else User.Kind.TEACHER
-            )
-
-        return people.prefetch_related("course_assignments__course", "enrolments__course")
-
-    def perform_destroy(self, instance):
-        """
-        A school with anything in it stays. Several PROTECTs say so.
-
-        People are the usual blocker — deleting the school would strand their
-        calendar, courses and lessons — but not the only one: subjects and
-        stored files hold it too, and a school can outlive its last member.
-        So the answer names what is actually in the way rather than assuming
-        it is people; a message that says «2 members» about three files sends
-        somebody looking in the wrong place.
-        """
-        try:
-            instance.delete()
-        except ProtectedError as blocked:
-            api_error(
-                Codes.SCHOOL_IN_USE,
-                f"«{instance.name}» is still in use: {describe(blocked)}. "
-                "Clear it first.",
-                name=instance.name,
-                members=instance.members.count(),
-                blocked_by=describe(blocked),
-            )
-
-    @action(detail=True, methods=["post"])
-    def invite(self, request, pk=None):
-        """
-        Invite the first administrator of a school.
-
-        The same invitation a school admin would write, only from outside:
-        the person signs in through Google on that address and arrives with
-        the role already granted.
-        """
-        school = self.get_object()
-        form = SchoolInviteSerializer(data=request.data)
-        form.is_valid(raise_exception=True)
-        email = form.validated_data["email"]
-
-        invitation, created = Invitation.objects.get_or_create(
-            school=school,
-            email=email,
-            defaults={"is_school_admin": True, "created_by": request.user},
-        )
-        if not created and not invitation.is_school_admin:
-            # the address was already invited as a plain teacher — promote it
-            invitation.is_school_admin = True
-            invitation.save(update_fields=["is_school_admin"])
-
-        return Response(
-            InvitationSerializer(invitation).data, status=201 if created else 200
-        )
 
 
 class MemberViewSet(

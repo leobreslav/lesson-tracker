@@ -6,6 +6,7 @@ import ClearDialog from './ClearDialog'
 import EmptyState from './EmptyState'
 import CopyDialog from './CopyDialog'
 import ImportSchoolDialog from './ImportSchoolDialog'
+import { remember, remembered } from './remember'
 import WeekGrid from './WeekGrid'
 import {
   clearSlots,
@@ -47,25 +48,9 @@ const NUMBERS = Array.from({ length: MAX_LESSON_NUMBER }, (_, index) => index + 
 
 const EMPTY = { lessons: {}, days: {} }
 
-// the "lesson topics" checkbox survives a reload: this is an ordinary web
-// application, localStorage fits here and costs nothing
+// «Темы уроков» переживают перезагрузку — тем же хранилищем, что флажки
+// над таблицей плана: своя копия этих четырёх строк тут уже была
 const TOPICS_KEY = 'agendaShowTopics'
-
-function readTopicsFlag() {
-  try {
-    return localStorage.getItem(TOPICS_KEY) === '1'
-  } catch {
-    return false
-  }
-}
-
-function saveTopicsFlag(value) {
-  try {
-    localStorage.setItem(TOPICS_KEY, value ? '1' : '0')
-  } catch {
-    // private mode — we simply do not remember
-  }
-}
 
 /** Lessons from the agenda answer as a flat list, each carrying its date. */
 function flatten(lessons) {
@@ -118,7 +103,7 @@ export default function Agenda({ onLoggedOut }) {
   // plan topics per lesson: slot_id → {title, section_title};
   // null means not loaded yet, so "no topic" is not printed for nothing
   const [topics, setTopics] = useState(null)
-  const [showTopics, setShowTopics] = useState(readTopicsFlag)
+  const [showTopics, setShowTopics] = useState(() => remembered(TOPICS_KEY, false))
 
   const tempId = useRef(0)
 
@@ -207,7 +192,7 @@ export default function Agenda({ onLoggedOut }) {
 
   const toggleTopics = (value) => {
     setShowTopics(value)
-    saveTopicsFlag(value)
+    remember(TOPICS_KEY, value)
   }
 
   const dates = useMemo(

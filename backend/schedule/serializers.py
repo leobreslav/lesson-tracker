@@ -69,7 +69,12 @@ class SubjectSerializer(serializers.ModelSerializer):
     """A subject of the school. Administrators keep the list."""
 
     school = serializers.HiddenField(default=CurrentSchoolDefault())
-    courses = serializers.IntegerField(source="courses.count", read_only=True)
+    # аннотация из вьюсета, а не `source="courses.count"`: второе — запрос
+    # на строку, и на одиннадцати параллелях это одиннадцать лишних
+    courses = serializers.SerializerMethodField()
+
+    def get_courses(self, subject) -> int:
+        return getattr(subject, "course_count", 0)
 
     class Meta:
         model = Subject
@@ -87,7 +92,12 @@ class GradeLevelSerializer(serializers.ModelSerializer):
     """A year group of the school. Administrators keep the list."""
 
     school = serializers.HiddenField(default=CurrentSchoolDefault())
-    courses = serializers.IntegerField(source="courses.count", read_only=True)
+    # аннотация из вьюсета, а не `source="courses.count"`: второе — запрос
+    # на строку, и на одиннадцати параллелях это одиннадцать лишних
+    courses = serializers.SerializerMethodField()
+
+    def get_courses(self, grade) -> int:
+        return getattr(grade, "course_count", 0)
 
     class Meta:
         model = GradeLevel

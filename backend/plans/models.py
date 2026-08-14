@@ -159,6 +159,15 @@ class PlanBaseline(models.Model):
         verbose_name = "plan baseline"
         verbose_name_plural = "plan baselines"
         ordering = ("-created_at",)
+        indexes = [
+            # ровно по этой тройке ходят обе выборки — утверждённый эталон и
+            # висящий запрос, — и ходят пачками: главная и экран методиста
+            # спрашивают их сразу по всем парам
+            models.Index(
+                fields=("teacher", "course", "status"),
+                name="baseline_owner_status_idx",
+            )
+        ]
 
     def __str__(self):
         return f"{self.course} — {self.created_at:%Y-%m-%d} ({self.status})"

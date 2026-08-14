@@ -336,15 +336,41 @@ class PlanNodeViewSet(TeacherScopedViewSet):
             )
 
         # courses where this teacher has anything at all in the period
-        courses = Course.objects.filter(
-            slots__teacher=request.user,
-            slots__date__range=(start, end),
-            slots__is_cancelled=False,
-        ).distinct()
+        courses = list(
+            Course.objects.filter(
+                slots__teacher=request.user,
+                slots__date__range=(start, end),
+                slots__is_cancelled=False,
+            )
+            .distinct()
+            .select_related("year")
+            .prefetch_related("year__terms")
+        )
+
+        # все выборки до цикла: запрос уходит на каждую навигацию по
+        # расписанию и повторяется после любой правки, а курсов у учителя
+        # пять. Расчёт при этом тот же самый — `build_layout` по всему плану
+        # и всему расписанию курса, период только режет ответ
+        owners = [
+            services.PlanOwner(teacher_id=request.user.pk, course_id=course.pk)
+            for course in courses
+        ]
+        lessons_by_owner = services.lessons_by_owner(owners)
+
+        slots_by_course = defaultdict(list)
+        for slot in LessonSlot.objects.filter(
+            teacher=request.user, course__in=courses, is_cancelled=False
+        ).order_by("date", "lesson_number"):
+            slots_by_course[slot.course_id].append(slot)
 
         slots = {}
-        for course in courses:
-            for entry in self.layout_entries(course):
+        for course, owner in zip(courses, owners):
+            entries = services.build_layout(
+                lessons_by_owner[owner],
+                slots_by_course[course.pk],
+                course.year.terms.all(),
+            )
+            for entry in entries:
                 if entry.slot is None or entry.lesson is None:
                     continue
                 if not start <= entry.slot.date <= end:

@@ -625,10 +625,30 @@ class CleanupCommandTests(SchoolTestMixin, APITestCase):
         self.course = make_course(self.school, name="9Б Алгебра")
         self.lesson = make_node(self.user, self.course, "Урок")
 
-    def run_cleanup(self, delete=False):
+    def run_cleanup(self, delete=False, quiet=False):
         out = StringIO()
-        call_command("cleanup_orphaned_files", delete=delete, stdout=out, stderr=out)
+        call_command(
+            "cleanup_orphaned_files",
+            delete=delete,
+            quiet=quiet,
+            stdout=out,
+            stderr=out,
+        )
         return out.getvalue()
+
+    def test_quiet_says_nothing_when_there_is_nothing(self):
+        """
+        Так эта команда и стоит в cron: пустой лог — это «всё в порядке».
+
+        Еженедельная строка «сирот нет» через год стала бы всем логом, и
+        настоящую находку в нём никто бы не заметил.
+        """
+        self.assertEqual(self.run_cleanup(quiet=True).strip(), "")
+
+    def test_quiet_still_reports_a_find(self):
+        stored = make_stored_file(self.school, self.user)
+
+        self.assertIn(stored.key, self.run_cleanup(quiet=True))
 
     def test_it_only_reports_until_told_otherwise(self):
         stored = make_stored_file(self.school, self.user)

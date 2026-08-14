@@ -180,6 +180,12 @@ class PlanTemplateViewSet(SchoolScopedViewSet):
         Nobody who has already taken a copy is affected — their plan stopped
         being connected the moment they took it.
 
+        Курс при этом **любой свой**, не обязательно тот, с которого шаблон
+        сняли. Так и надо: курс привязан к учебному году, в сентябре «9Б
+        Алгебра» — уже другая запись, и обновлять полку с неё — обычный
+        годовой цикл. Ограничение «только исходный курс» сломало бы ровно
+        его.
+
         Предмет и год берутся у курса заново — тем же правилом, что при
         снятии. Иначе они замерзали бы в момент публикации: администратор
         поправил год обучения параллели, автор нажал «Обновить», строки
@@ -201,7 +207,6 @@ class PlanTemplateViewSet(SchoolScopedViewSet):
                 field="course",
             )
 
-        services.write_rows(template, rows)
         # у курса, заведённого до справочников, спрашивать нечего — тогда у
         # шаблона остаётся то, что назвали при публикации
         moved = {}
@@ -210,10 +215,15 @@ class PlanTemplateViewSet(SchoolScopedViewSet):
         if course.grade and course.grade.level != template.grade:
             moved["grade"] = course.grade.level
 
-        if moved:
-            for field, value in moved.items():
-                setattr(template, field, value)
-            template.save(update_fields=list(moved))
+        # обе записи одной транзакцией: строки уже свежие, а предмет и год
+        # ещё старые — состояние, которого никто потом не объяснит, и найти
+        # такой шаблон по фильтру нельзя
+        with transaction.atomic():
+            services.write_rows(template, rows)
+            if moved:
+                for field, value in moved.items():
+                    setattr(template, field, value)
+                template.save(update_fields=list(moved))
 
         return Response(
             PlanTemplateDetailSerializer(

@@ -31,9 +31,17 @@ class Command(BaseCommand):
             action="store_true",
             help="actually remove what was found (otherwise it is only listed)",
         )
+        parser.add_argument(
+            "--quiet",
+            action="store_true",
+            help="say nothing when there is nothing to say (for cron)",
+        )
 
     def handle(self, *args, **options):
         delete = options["delete"]
+        # еженедельная строка «сирот нет» через год станет всем логом, а
+        # пустой лог — это и есть «всё в порядке»
+        self.quiet = options["quiet"]
 
         unreferenced = list(
             StoredFile.objects.annotate(references=Count("attachments")).filter(
@@ -57,12 +65,17 @@ class Command(BaseCommand):
             self.report_objects(sorted(keys_in_store - known), delete)
 
         if not delete:
-            self.stdout.write("\nничего не удалено; повторите с --delete")
+            self.say("\nничего не удалено; повторите с --delete")
 
     # --- rows with nothing pointing at them ---
 
+    def say(self, text, found=False):
+        """Печатать, если есть о чём — или если тишину не просили."""
+        if found or not self.quiet:
+            self.stdout.write(text)
+
     def report_records(self, rows, delete):
-        self.stdout.write(f"\nзаписи без единого вложения: {len(rows)}")
+        self.say(f"\nзаписи без единого вложения: {len(rows)}", found=bool(rows))
 
         for stored in rows:
             self.stdout.write(f"  {stored.key}  ({stored.size} Б, {stored.original_name})")
@@ -81,7 +94,7 @@ class Command(BaseCommand):
     # --- objects nobody knows about ---
 
     def report_objects(self, keys, delete):
-        self.stdout.write(f"\nобъекты в хранилище без записи: {len(keys)}")
+        self.say(f"\nобъекты в хранилище без записи: {len(keys)}", found=bool(keys))
 
         for key in keys:
             self.stdout.write(f"  {key}")

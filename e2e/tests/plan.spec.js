@@ -379,6 +379,34 @@ test('черновик публикуется и снимается с публ�
   await expect(row.locator('.badge')).toHaveText('черновик')
 })
 
+test('просмотр шаблона показывает уроки до того, как его взяли', async ({
+  page,
+  signIn,
+}) => {
+  await signIn(PEOPLE.petrov)
+  await openPlan(page, 'Grade 9 Algebra')
+  await page.getByRole('button', { name: 'Из библиотеки' }).click()
+
+  const shelf = page.locator('dialog.modal').first()
+  await shelf
+    .locator('li', { hasText: 'Алгебра 6' })
+    .getByRole('button', { name: 'Посмотреть' })
+    .click()
+
+  // просмотр открывается **поверх** полки: закрыв его, человек остаётся
+  // там же, где выбирал, а не начинает поиск заново
+  const preview = page.locator('dialog.modal').last()
+  await expect(preview.locator('.plan-preview li').first()).toBeVisible()
+  await expect(
+    preview.getByRole('button', { name: 'Импортировать в курс' }),
+  ).toBeEnabled()
+
+  await preview.getByRole('button', { name: 'Закрыть' }).click()
+
+  await expect(page.locator('dialog.modal')).toHaveCount(1)
+  await expect(shelf.locator('.template-list')).toBeVisible()
+})
+
 test('поиск сужает полку, «только мои» прячет чужое', async ({
   page,
   signIn,

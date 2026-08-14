@@ -508,13 +508,23 @@ crontab -e
 ```cron
 30 3 * * * /home/leobreslav/lesson-tracker/scripts/backup-db.sh >> /home/leobreslav/backups/backup.log 2>&1
 0 4 * * * /home/leobreslav/lesson-tracker/scripts/backup-files.sh >> /home/leobreslav/backups/files.log 2>&1
+0 5 * * 1 /home/leobreslav/lesson-tracker/scripts/check-orphaned-files.sh >> /home/leobreslav/backups/orphans.log 2>&1
 ```
+
+Третья строка — не копия, а сверка: раз в неделю ищет расхождения между
+бакетом и базой и **ничего не удаляет**. Сирот в норме не бывает вовсе, но
+обе половины обычного удаления умеют падать (объект без записи — откат
+транзакции после загрузки; запись без ссылок — отказ R2 в момент сноса), и
+заметить это было нечем. Лог пустой, пока всё в порядке: команда идёт с
+`--quiet`. Появились строки — смотреть руками и, если это правда мусор,
+повторить с `--delete`.
 
 Проверьте оба сразу, не дожидаясь ночи:
 
 ```bash
 ~/lesson-tracker/scripts/backup-db.sh
 ~/lesson-tracker/scripts/backup-files.sh --dry-run
+~/lesson-tracker/scripts/check-orphaned-files.sh
 ls -lh ~/backups/lesson-tracker/
 tail ~/backups/backup.log ~/backups/files.log
 ```

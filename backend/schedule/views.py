@@ -79,7 +79,7 @@ class SubjectViewSet(SchoolScopedViewSet):
     """
 
     serializer_class = SubjectSerializer
-    queryset = Subject.objects.all()
+    queryset = Subject.objects.annotate(course_count=Count("courses"))
 
     def perform_destroy(self, instance):
         """A subject a course still points at stays: PROTECT says so."""
@@ -103,7 +103,7 @@ class GradeLevelViewSet(SchoolScopedViewSet):
     """
 
     serializer_class = GradeLevelSerializer
-    queryset = GradeLevel.objects.all()
+    queryset = GradeLevel.objects.annotate(course_count=Count("courses"))
 
     def perform_destroy(self, instance):
         """A level a course still points at stays: PROTECT says so."""
