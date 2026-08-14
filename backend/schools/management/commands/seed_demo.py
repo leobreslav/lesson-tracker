@@ -34,11 +34,13 @@ from library.models import PlanTemplate, PlanTemplateRow
 from schedule.models import (
     Course,
     CourseAssignment,
+    CourseStudent,
     GradeLevel,
     LessonSlot,
     MasterSlot,
     Subject,
 )
+from schools import services as school_services
 from schools.models import Invitation, School
 
 User = get_user_model()
@@ -65,6 +67,27 @@ PEOPLE = (
     ("ivanova@example.com", "Мария", "Иванова", False),
     ("petrov@example.com", "Пётр", "Петров", False),
 )
+
+# Ученики: имя, фамилия и адрес. Шестеро на курс — столько же, сколько в
+# небольшой группе, и достаточно, чтобы сводная таблица работ выглядела как
+# таблица, а не как строка.
+STUDENTS = (
+    ("stepanov@example.com", "Артём", "Степанов"),
+    ("volkova@example.com", "Дарья", "Волкова"),
+    ("orlov@example.com", "Кирилл", "Орлов"),
+    ("zaytseva@example.com", "Полина", "Зайцева"),
+    ("belov@example.com", "Никита", "Белов"),
+    # снят с курса: видит сделанное, работать не может. Состояние редкое, но
+    # именно на нём разъезжаются экраны, поэтому оно есть в демо
+    ("morozova@example.com", "Ева", "Морозова"),
+)
+
+# в каком курсе учится группа
+STUDENT_COURSE = "Grade 6 Algebra"
+REMOVED_STUDENT = "morozova@example.com"
+
+# приглашён, но ещё не входил: администратор видит его в списке ожидающих
+INVITED_STUDENT = "sokolov@example.com"
 
 # (course name, teacher email, weekly slots as (weekday, lesson number))
 # weekday numbers are ours: Monday is 0, as in date.weekday()
@@ -296,6 +319,7 @@ class Command(BaseCommand):
             subjects = self.subjects(school)
             grades = self.grades(school)
             courses = self.courses(school, year, subjects, grades, people)
+            self.students(school, courses)
 
             self.timetable(year, courses, people)
 
@@ -307,6 +331,51 @@ class Command(BaseCommand):
             attached = self.attach(school, options["email"])
 
         self.summary(school, people, courses, options, attached)
+
+    def students(self, school, courses):
+        """
+        Группа учеников в одном курсе плюс два особых случая.
+
+        Первый — снятый с курса: строка остаётся, `removed_at` стоит, и он
+        по-прежнему видит сделанное. Второй — приглашённый, который ещё ни
+        разу не входил: у администратора он в списке ожидающих, учётки нет.
+
+        Оба нужны здесь, а не в тестах: на ровном списке из шести человек
+        экраны выглядят одинаково правильно, а расходятся они как раз на
+        этих двух.
+        """
+        course = courses[STUDENT_COURSE]
+        enrolled = []
+
+        for email, first, last in STUDENTS:
+            student, _ = User.objects.get_or_create(
+                email=email,
+                defaults={
+                    "first_name": first,
+                    "last_name": last,
+                    "school": school,
+                    "kind": User.Kind.STUDENT,
+                    "language": LANGUAGE,
+                },
+            )
+            EmailAddress.objects.get_or_create(
+                user=student,
+                email=student.email,
+                defaults={"verified": True, "primary": True},
+            )
+            row = school_services.enrol(student, course)
+            if email == REMOVED_STUDENT:
+                school_services.remove_from_course(row)
+            enrolled.append(student)
+
+        invitation, _ = Invitation.objects.get_or_create(
+            school=school,
+            email=INVITED_STUDENT,
+            defaults={"kind": User.Kind.STUDENT},
+        )
+        invitation.courses.set([course])
+
+        return enrolled
 
     # --- building blocks ------------------------------------------------------
 
@@ -803,6 +872,12 @@ class Command(BaseCommand):
         )
         self.stdout.write(f"  курсы:     {', '.join(courses)}")
         self.stdout.write(f"  учителя:   {', '.join(people)}")
+        self.stdout.write(
+            f"  ученики:   {CourseStudent.objects.filter(removed_at__isnull=True).count()}"
+            f" в «{STUDENT_COURSE}», 1 снят с курса, "
+            f"{Invitation.objects.filter(kind='student', accepted_at__isnull=True).count()}"
+            " ждёт первого входа"
+        )
 
         if options["minimal"]:
             self.stdout.write("  расписание и планы: пропущены (--minimal)")

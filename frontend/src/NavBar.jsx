@@ -1,8 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link, NavLink, useLocation } from 'react-router-dom'
-import { logout } from './api'
-import { LANGUAGES } from './i18n'
+import UserMenu, { useDismissable } from './UserMenu'
 
 const SECTIONS = [
   { to: '/schedule', key: 'schedule', needs: 'classes' },
@@ -32,31 +31,6 @@ function reasonKeyFor(needs, status) {
   return null
 }
 
-/** Closing on an outside click and on Escape — shared by both bar menus. */
-function useDismissable(open, close) {
-  const ref = useRef(null)
-
-  useEffect(() => {
-    if (!open) return undefined
-
-    const onPointerDown = (event) => {
-      if (ref.current && !ref.current.contains(event.target)) close()
-    }
-    const onKeyDown = (event) => {
-      if (event.key === 'Escape') close()
-    }
-
-    document.addEventListener('mousedown', onPointerDown)
-    document.addEventListener('keydown', onKeyDown)
-    return () => {
-      document.removeEventListener('mousedown', onPointerDown)
-      document.removeEventListener('keydown', onKeyDown)
-    }
-  }, [open, close])
-
-  return ref
-}
-
 export default function NavBar({
   user,
   status,
@@ -64,39 +38,15 @@ export default function NavBar({
   onLoggedOut,
   onLanguageChange,
 }) {
-  const { t, i18n } = useTranslation()
+  const { t } = useTranslation()
   const [menuOpen, setMenuOpen] = useState(false)
-  const [userOpen, setUserOpen] = useState(false)
   const location = useLocation()
 
   const closeMenu = useCallback(() => setMenuOpen(false), [])
-  const closeUser = useCallback(() => setUserOpen(false), [])
-
   const menuRef = useDismissable(menuOpen, closeMenu)
-  const userRef = useDismissable(userOpen, closeUser)
 
-  // following a link closes both the burger and the user menu
-  useEffect(() => {
-    setMenuOpen(false)
-    setUserOpen(false)
-  }, [location.pathname])
-
-  const handleLogout = async () => {
-    try {
-      await logout()
-    } finally {
-      onLoggedOut()
-    }
-  }
-
-  // имя и адрес — две строки одной кнопки: под именем в школе ходят
-  // тёзки, а входят все через Google, и адрес — единственное, чем один
-  // «Иванов» отличается от другого. Имени нет — остаётся адрес, и второй
-  // раз его повторять незачем
-  const name = user
-    ? [user.first_name, user.last_name].filter(Boolean).join(' ') || user.email
-    : '…'
-  const email = user && name !== user.email ? user.email : null
+  // following a link closes the burger
+  useEffect(() => setMenuOpen(false), [location.pathname])
 
   return (
     <header className="topbar">
@@ -148,54 +98,12 @@ export default function NavBar({
           })}
         </nav>
 
-        <div className="user-menu" ref={userRef}>
-          <button
-            type="button"
-            className="secondary"
-            aria-haspopup="menu"
-            aria-expanded={userOpen}
-            onClick={() => setUserOpen((open) => !open)}
-          >
-            <span className="who">
-              <span className="name">{name}</span>
-              {email && <span className="email">{email}</span>}
-            </span>
-            <span aria-hidden="true">▾</span>
-          </button>
-
-          {userOpen && (
-            <ul className="dropdown" role="menu">
-              <li role="none">
-                <Link role="menuitem" to="/profile">
-                  {t('nav.profile')}
-                </Link>
-              </li>
-              <li className="dropdown-languages" role="none">
-                <span className="hint">{t('language.label')}</span>
-                <div className="actions">
-                  {LANGUAGES.map((language) => (
-                    <button
-                      key={language.code}
-                      type="button"
-                      role="menuitem"
-                      className={
-                        language.code === i18n.language ? 'chip active' : 'chip'
-                      }
-                      onClick={() => onLanguageChange(language.code)}
-                    >
-                      {language.label}
-                    </button>
-                  ))}
-                </div>
-              </li>
-              <li role="none">
-                <button type="button" role="menuitem" onClick={handleLogout}>
-                  {t('nav.logout')}
-                </button>
-              </li>
-            </ul>
-          )}
-        </div>
+        <UserMenu
+          user={user}
+          profileTo="/profile"
+          onLoggedOut={onLoggedOut}
+          onLanguageChange={onLanguageChange}
+        />
       </div>
     </header>
   )

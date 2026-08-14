@@ -14,7 +14,7 @@ from django.core.management import call_command
 from django.core.management.base import CommandError
 from django.test import TestCase, override_settings
 from plans.models import PlanNode
-from schedule.models import Course, LessonSlot
+from schedule.models import Course, CourseStudent, LessonSlot
 
 from .models import Invitation, School
 
@@ -55,8 +55,27 @@ class SeedTests(TestCase):
         self.assertEqual(year.name, "2026/2027")
         self.assertEqual(Term.objects.filter(year=year).count(), 4)
         self.assertEqual(Course.objects.filter(school=school).count(), 4)
-        self.assertEqual(User.objects.filter(school=school).count(), 3)
+        self.assertEqual(User.objects.filter(school=school, kind="teacher").count(), 3)
         self.assertEqual(User.objects.filter(is_school_admin=True).count(), 1)
+
+    def test_the_students_come_with_their_three_states(self):
+        """
+        Демо показывает не ровный список, а состояния, на которых экраны и
+        расходятся: обычный ученик, снятый с курса и ещё не входивший.
+        """
+        seed()
+
+        enrolments = CourseStudent.objects.all()
+        self.assertEqual(enrolments.filter(removed_at__isnull=True).count(), 5)
+        self.assertEqual(enrolments.filter(removed_at__isnull=False).count(), 1)
+        self.assertEqual(
+            Invitation.objects.filter(kind="student", accepted_at__isnull=True).count(),
+            1,
+        )
+        # у ученика есть учётка со своим видом, а не «учитель без курсов»
+        self.assertTrue(
+            User.objects.get(email="stepanov@example.com").is_student
+        )
 
     def test_the_markup_has_breaks_and_holidays(self):
         seed()

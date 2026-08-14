@@ -793,5 +793,18 @@
     "returned": "returned",
     "waiting_one": "{{count}} plan is waiting for your answer.",
     "waiting_other": "{{count}} plans are waiting for your answer."
+  },
+  "student": {
+    "title": "My courses",
+    "noSubject": "no subject",
+    "empty": {
+      "title": "You are not enrolled anywhere yet",
+      "hint": "Courses will appear here once your school administrator enrols you."
+    },
+    "past": {
+      "title": "You are no longer in these courses",
+      "hint": "You cannot work in them, but everything you did stays visible."
+    },
+    "noActive": "You are not enrolled in any course at the moment."
   }
 }

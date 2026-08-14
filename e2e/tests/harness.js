@@ -124,6 +124,9 @@ export const PEOPLE = {
   admin: 'director@example.com',
   ivanova: 'ivanova@example.com',
   petrov: 'petrov@example.com',
+  // второй вид пользователя: у него другой интерфейс целиком
+  student: 'stepanov@example.com',
+  removedStudent: 'morozova@example.com',
 }
 
 /**

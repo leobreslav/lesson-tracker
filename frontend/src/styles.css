@@ -623,6 +623,18 @@ form .success {
   background: #1765cc;
 }
 
+/* Курсы ученика: строка — название и предмет, снятые приглушены.
+   Своё имя, а не `.course-list` из раздела «Школа»: там это свёрнутая
+   строка с рамкой и раскрытием, и общего у них только слово. */
+.student-courses .name {
+  font-weight: 500;
+}
+
+.student-courses.past li {
+  background: var(--surface-1);
+  box-shadow: none;
+}
+
 .empty-state {
   margin: 0;
 }

@@ -439,6 +439,13 @@ export const submitBaseline = (classId, reviewer) =>
     body: reviewer ? { reviewer } : {},
   })
 
+// --- ученик ---
+//
+// Единственный пока адрес его половины приложения: где учусь и где учился.
+// Снятый курс из ответа не исчезает, у него стоит `active: false`.
+
+export const fetchStudentCourses = () => request('/api/student/courses/')
+
 /** Очередь методиста: планы по его предметам, присланные на утверждение. */
 export const fetchReviews = () => request('/api/plan/reviews/')
 

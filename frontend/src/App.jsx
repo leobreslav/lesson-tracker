@@ -13,6 +13,7 @@ import NotFound from './NotFound'
 import Plan from './Plan'
 import Profile from './Profile'
 import School from './School'
+import StudentApp from './StudentApp'
 import SchoolCourses from './SchoolCourses'
 import SchoolOverview from './SchoolOverview'
 import SchoolReference from './SchoolReference'
@@ -86,11 +87,40 @@ export default function App() {
   // no bar on the login page: there is nothing and nobody to show it to
   if (!token) return <Login onLoggedIn={handleLoggedIn} />
 
+  // Пока неизвестно, кто вошёл, не рисуем ничего.
+  //
+  // Раньше учительская оболочка появлялась сразу, а имя доезжало следом —
+  // мелкая любезность, которая со вторым видом пользователя стала ошибкой:
+  // ученик на долю секунды получал учительский экран, и тот успевал сходить
+  // за шагами первого входа и получить 403. Один запрос `/api/me/` того не
+  // стоит.
+  if (!user) {
+    return (
+      <main className="page">
+        <p>{i18n.t('common.loading')}</p>
+      </main>
+    )
+  }
+
+  // ученик — другое приложение целиком, и ветка стоит **выше** роутера и
+  // фоновых наблюдателей: на каждую навигацию они спрашивают шаги первого
+  // входа и очередь методиста, а ученику оба ответят отказом. Дешевле не
+  // звать их вовсе, чем учить каждый молчать
+  if (user.kind === 'student') {
+    return (
+      <StudentApp
+        user={user}
+        onLoggedOut={handleLoggedOut}
+        onLanguageChange={handleLanguageChange}
+      />
+    )
+  }
+
   // signed in but invited by nobody: every section would answer 403, so one
   // honest screen replaces five identical refusals. A superuser is the
   // exception — they are the one who creates the schools, and locking them
   // out of that screen is how an installation ends up with no way in.
-  if (user && !user.school && !user.is_superuser) {
+  if (!user.school && !user.is_superuser) {
     return <NoSchool user={user} onLoggedOut={handleLoggedOut} />
   }
 
