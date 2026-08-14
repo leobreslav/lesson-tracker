@@ -144,7 +144,14 @@ class TeacherBriefSerializer(serializers.ModelSerializer):
 
 
 class CourseAssignmentSerializer(serializers.ModelSerializer):
-    """Who teaches what. Written from either side, stored in one place."""
+    """
+    Кто ведёт курс. Пишется с обеих сторон, хранится в одном месте.
+
+    Ведущий у курса **один**: так и бывает в школе — ассистенты бывают, а
+    разработчик программы один, и план у курса тоже один. Второй человек на
+    том же курсе отклоняется кодом `course_teacher_taken`, называя того, кто
+    там уже стоит: «занято» без имени отправляет искать его руками.
+    """
 
     teacher_name = serializers.SerializerMethodField()
     course_name = serializers.CharField(source="course.name", read_only=True)
@@ -170,6 +177,30 @@ class CourseAssignmentSerializer(serializers.ModelSerializer):
         fields["course"].queryset = school_courses(self)
         fields["teacher"].queryset = school_teachers(self)
         return fields
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        course = attrs.get("course")
+        if course is None:
+            return attrs
+
+        taken = (
+            CourseAssignment.objects.filter(course=course)
+            .exclude(pk=self.instance.pk if self.instance else None)
+            .select_related("teacher")
+            .first()
+        )
+        if taken is not None:
+            api_error(
+                Codes.COURSE_TEACHER_TAKEN,
+                f"«{course.name}» is already taught by "
+                f"{full_name(taken.teacher)}. Remove that assignment first.",
+                field="teacher",
+                course=course.name,
+                teacher=full_name(taken.teacher),
+            )
+
+        return attrs
 
 
 class CourseSerializer(serializers.ModelSerializer):

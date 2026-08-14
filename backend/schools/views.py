@@ -258,7 +258,6 @@ class MemberViewSet(
         The first attempt is refused with the counts; `?force=true` confirms.
         """
         from schedule.models import CourseAssignment, LessonSlot
-        from plans.models import PlanNode
 
         if instance.pk == self.request.user.pk:
             api_error(
@@ -270,16 +269,19 @@ class MemberViewSet(
             return self.detach_student(instance)
 
         slots = LessonSlot.objects.filter(teacher=instance).count()
-        rows = PlanNode.objects.filter(teacher=instance).count()
         courses = CourseAssignment.objects.filter(teacher=instance).count()
+        # строки плана здесь больше не считаются: план принадлежит курсу, а
+        # не человеку, и отвязка его не касается — курс просто останется без
+        # ведущего, а программа на нём цела
+        rows = 0
 
         forced = self.request.query_params.get("force", "").lower() == "true"
-        if (slots or rows or courses) and not forced:
+        if (slots or courses) and not forced:
             api_error(
                 Codes.MEMBER_IN_USE,
                 f"{instance.email} teaches {courses} courses and has {slots} "
-                f"lessons and {rows} plan rows. Detaching keeps all of it but "
-                "removes their assignments; repeat with force=true to confirm.",
+                "lessons. Detaching keeps all of it but removes their "
+                "assignments; repeat with force=true to confirm.",
                 email=instance.email,
                 courses=courses,
                 slots=slots,

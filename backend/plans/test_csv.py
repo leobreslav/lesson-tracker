@@ -381,7 +381,7 @@ class ImportApiTests(PlanTestCase):
         self.assertEqual(response.json()["code"], "file_unreadable")
         self.assertIn("2000", response.json()["detail"])
         self.assertFalse(
-            PlanNode.objects.filter(teacher=self.user, course=self.course).exists()
+            PlanNode.objects.filter(course=self.course).exists()
         )
 
     def test_missing_file_is_rejected(self):

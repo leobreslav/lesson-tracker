@@ -14,6 +14,7 @@ of a reviewer.
 """
 
 from config.access import (
+    CourseScopedViewSet,
     IsStudent,
     IsSuperuser,
     IsTeacher,
@@ -175,6 +176,33 @@ class ApiWiringTests(SimpleTestCase):
 
                 self.assertEqual(
                     model.__name__, "User", f"{complaint} ведёт не в User"
+                )
+
+
+    def test_course_scoped_viewsets_point_at_a_course(self):
+        """
+        `course_path` — прямая связь на курс, и однополевой она остаётся
+        намеренно: писать в объект, до курса которого два шага, пока некому,
+        а `getattr(obj, course_path)` такого пути и не пройдёт.
+        """
+        for name, (_, view) in sorted(api_views().items()):
+            if not issubclass(view, CourseScopedViewSet):
+                continue
+
+            with self.subTest(name):
+                model = view.queryset.model
+                complaint = f"{name}.course_path = {view.course_path!r}"
+
+                self.assertNotIn("__", view.course_path, f"{complaint}: не путь")
+                try:
+                    field = model._meta.get_field(view.course_path)
+                except FieldDoesNotExist:
+                    self.fail(f"{complaint}: у {model.__name__} такого поля нет")
+
+                self.assertEqual(
+                    getattr(field.related_model, "__name__", None),
+                    "Course",
+                    f"{complaint} ведёт не в Course",
                 )
 
 

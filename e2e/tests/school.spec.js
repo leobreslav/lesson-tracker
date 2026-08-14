@@ -76,7 +76,20 @@ test('длинное название курса сохраняется цели
   expect(overflow).toBeLessThanOrEqual(1)
 })
 
-test('назначение видно и снимается со стороны учителя', async ({ page, signIn }) => {
+test('назначение видно и снимается со стороны учителя', async ({ page, signIn, api }) => {
+  // ведущий у курса один, поэтому назначать нужно свободный курс: все
+  // демонстрационные уже кем-то заняты
+  const admin = await api(PEOPLE.admin)
+  const years = await admin.get('/api/calendar/years/')
+  const subjects = await admin.get('/api/school/subjects/')
+  const grades = await admin.get('/api/school/grades/')
+  await admin.post('/api/courses/', {
+    year: years.body[0].id,
+    subject: subjects.body[0].id,
+    grade: grades.body[0].id,
+    name: 'Свободный курс',
+  })
+
   await signIn(PEOPLE.admin)
   await openSection(page, '/school/teachers')
 
@@ -84,14 +97,14 @@ test('назначение видно и снимается со стороны 
   // то же самое отношение, показанное с другого конца
   await expect(card.locator('.tag').first()).toContainText('Grade 6 Algebra')
 
-  await card.getByLabel('Курс для Мария Иванова').selectOption({ label: 'Grade 9 Geometry' })
+  await card.getByLabel('Курс для Мария Иванова').selectOption({ label: 'Свободный курс' })
   await card.getByRole('button', { name: 'Назначить', exact: true }).click()
 
-  await expect(card.locator('.tag', { hasText: 'Grade 9 Geometry' })).toBeVisible()
+  await expect(card.locator('.tag', { hasText: 'Свободный курс' })).toBeVisible()
 
   // и обратно, с карточки курса
   await openSection(page, '/school/courses')
-  const course = page.locator('.course-row', { hasText: 'Grade 9 Geometry' })
+  const course = page.locator('.course-row', { hasText: 'Свободный курс' })
   // в свёрнутой строке учителя перечислены прямо, без раскрытия
   await expect(course.locator('.who')).toContainText('Мария Иванова')
 })

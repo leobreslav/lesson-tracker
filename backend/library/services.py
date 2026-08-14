@@ -21,7 +21,7 @@ def _content_of(row) -> dict:
     return {field: getattr(row, field) for field in CONTENT_FIELDS}
 
 
-def plan_as_rows(owner) -> list[plan_services.ImportedRow]:
+def plan_as_rows(course_id: int) -> list[plan_services.ImportedRow]:
     """
     A teacher's plan flattened into header/lesson lines, in display order.
 
@@ -44,7 +44,7 @@ def plan_as_rows(owner) -> list[plan_services.ImportedRow]:
             attachments=() if node.is_section else file_services.attachments_of(node),
         )
 
-    for branch in plan_services.get_tree(owner):
+    for branch in plan_services.get_tree(course_id):
         rows.append(line(branch.node))
         rows.extend(line(child) for child in branch.children)
 
@@ -105,9 +105,9 @@ def write_rows(template, rows) -> int:
 
 
 @transaction.atomic
-def import_into_course(*, template, owner, append: bool) -> dict:
+def import_into_course(*, template, course_id: int, append: bool) -> dict:
     """
-    Copy a template into somebody's plan for a course.
+    Copy a template into the plan of a course.
 
     Straight through `apply_import`, the same call the CSV import makes, so
     numbering and the replace/append behaviour cannot drift between the two
@@ -119,12 +119,10 @@ def import_into_course(*, template, owner, append: bool) -> dict:
     the plan. Removing it from one plan leaves every other one intact.
     """
     if not append:
-        PlanNode.objects.filter(
-            teacher_id=owner.teacher_id, course_id=owner.course_id
-        ).delete()
+        PlanNode.objects.filter(course_id=course_id).delete()
 
     created = plan_services.apply_import(
-        owner, template_as_rows(template), append=append
+        course_id, template_as_rows(template), append=append
     )
 
     files = 0

@@ -113,12 +113,11 @@ class WorkSerializer(serializers.ModelSerializer):
     def get_fields(self):
         fields = super().get_fields()
         fields["course"].queryset = teacher_courses(self)
-        # урок плана — только свой и только этого курса; поле необязательное
+        # урок плана — из планов своих курсов; поле необязательное
         from plans.models import PlanNode
 
-        user = getattr(self.context.get("request"), "user", None)
         fields["lesson"].queryset = PlanNode.objects.filter(
-            teacher=user, is_section=False
+            course__in=fields["course"].queryset, is_section=False
         )
         return fields
 

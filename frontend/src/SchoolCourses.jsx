@@ -356,6 +356,9 @@ export default function SchoolCourses() {
                     <div className="course-body">
                       {/* две роли курса, и формы у них одинаковые: вопросы
                           разные, а действие одно — назвать человека */}
+                      {/* ведущий у курса один: пока он есть, формы выбора
+                          нет вовсе — иначе она обещала бы то, чего сервер
+                          не сделает */}
                       <div className="course-role">
                         <span className="hint">{t('school.courses.teaches')}</span>
                         <div className="row courses">
@@ -380,41 +383,38 @@ export default function SchoolCourses() {
                             ))
                           )}
                         </div>
-                        <div className="row">
-                          <select
-                            value={assigning[course.id] ?? ''}
-                            aria-label={t('school.courses.assignLabel', {
-                              name: course.name,
-                            })}
-                            disabled={busy}
-                            onChange={(event) =>
-                              setAssigning((current) => ({
-                                ...current,
-                                [course.id]: event.target.value,
-                              }))
-                            }
-                          >
-                            <option value="">{t('school.courses.pickTeacher')}</option>
-                            {members
-                              .filter(
-                                (person) =>
-                                  !course.teachers.some((item) => item.id === person.id),
-                              )
-                              .map((person) => (
+                        {course.teachers.length === 0 && (
+                          <div className="row">
+                            <select
+                              value={assigning[course.id] ?? ''}
+                              aria-label={t('school.courses.assignLabel', {
+                                name: course.name,
+                              })}
+                              disabled={busy}
+                              onChange={(event) =>
+                                setAssigning((current) => ({
+                                  ...current,
+                                  [course.id]: event.target.value,
+                                }))
+                              }
+                            >
+                              <option value="">{t('school.courses.pickTeacher')}</option>
+                              {members.map((person) => (
                                 <option key={person.id} value={person.id}>
                                   {fullName(person)}
                                 </option>
                               ))}
-                          </select>
-                          <button
-                            type="button"
-                            className="secondary"
-                            disabled={busy || !assigning[course.id]}
-                            onClick={() => assign(course)}
-                          >
-                            {t('school.teachers.assign')}
-                          </button>
-                        </div>
+                            </select>
+                            <button
+                              type="button"
+                              className="secondary"
+                              disabled={busy || !assigning[course.id]}
+                              onClick={() => assign(course)}
+                            >
+                              {t('school.teachers.assign')}
+                            </button>
+                          </div>
+                        )}
                       </div>
 
                       <div className="course-role">

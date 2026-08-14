@@ -219,6 +219,12 @@ class MatrixTests(AccessTestCase):
         )
 
     def test_plan_node(self):
+        """
+        План принадлежит курсу, но матрица личного объекта ему всё ещё
+        подходит: ни коллега, ни администратор в этом курсе не работают, и
+        для них он неотличим от несуществующего. Что видит тот, кто в курсе
+        работает, проверяет `CourseObjectTests` ниже.
+        """
         self.assertPersonalObjectRules(
             list_url="lessonslot-list",
             detail_url="plannode-detail",
@@ -315,6 +321,82 @@ class ForeignKeyDoorTests(AccessTestCase):
         self.assertIn("year", response.json())
 
 
+class CourseObjectTests(AccessTestCase):
+    """
+    Правило 4: план принадлежит курсу, а пишет в него ведущий учитель.
+
+    Тут две границы, и обе легко перепутать. Первая — «работаю в курсе»:
+    её проходит и тот, у кого назначение сняли, но остались уроки, — иначе
+    правка администратора прятала бы от человека программу курса, в котором
+    он ещё ведёт занятия. Вторая — «назначен ведущим», и только она
+    открывает запись.
+    """
+
+    def setUp(self):
+        super().setUp()
+        # коллега работает в курсе — у него там урок, — но ведущий не он:
+        # слот заводится напрямую, потому что `make_slot` заодно назначает,
+        # а назначение теперь одно на курс
+        LessonSlot.objects.create(
+            year=self.course.year,
+            teacher=self.colleague,
+            course=self.course,
+            date=MONDAY,
+            lesson_number=5,
+        )
+
+    def tree(self):
+        return self.client.get(
+            reverse("plannode-list"), {"course": self.course.pk}
+        )
+
+    def test_somebody_who_works_in_the_course_reads_the_plan(self):
+        self.sign_in(self.colleague)
+
+        answer = self.tree()
+
+        self.assertEqual(answer.status_code, 200)
+        self.assertEqual(
+            [row["id"] for row in answer.json()["nodes"]], [self.node.pk]
+        )
+
+    def test_somebody_who_works_in_the_course_still_cannot_write(self):
+        self.sign_in(self.colleague)
+
+        refused = self.client.patch(
+            reverse("plannode-detail", args=[self.node.pk]),
+            {"title": "По-моему, так лучше"},
+            format="json",
+        )
+
+        self.assertEqual(refused.status_code, 403)
+        self.assertEqual(refused.json()["code"], "not_course_teacher")
+        self.node.refresh_from_db()
+        self.assertNotEqual(self.node.title, "По-моему, так лучше")
+
+    def test_the_lead_teacher_writes(self):
+        answer = self.client.patch(
+            reverse("plannode-detail", args=[self.node.pk]),
+            {"title": "Переименовал"},
+            format="json",
+        )
+
+        self.assertEqual(answer.status_code, 200, answer.content)
+
+    def test_importing_needs_the_assignment_too(self):
+        """У импорта объекта на входе нет — проверка стоит на ?course=."""
+        self.sign_in(self.colleague)
+
+        refused = self.client.post(
+            f"{reverse('plannode-import')}?course={self.course.pk}",
+            {"mode": "append"},
+            format="multipart",
+        )
+
+        self.assertEqual(refused.status_code, 403)
+        self.assertEqual(refused.json()["code"], "not_course_teacher")
+
+
 class PersonalObjectTests(AccessTestCase):
     """Rule 3: lessons and plan rows belong to one teacher, role or no role."""
 
@@ -326,13 +408,17 @@ class PersonalObjectTests(AccessTestCase):
         tree = self.client.get(reverse("plannode-list"), {"course": self.course.pk})
         self.assertEqual(len(tree.json()["nodes"]), 1)
 
-    def test_a_colleague_sees_nothing_of_mine_in_the_same_course(self):
-        """The course is shared; what happens inside it is not."""
+    def test_a_colleague_sees_no_lessons_of_mine_in_the_same_course(self):
+        """
+        Расписание личное, план — курса.
+
+        Уроки коллеги не видны: у каждого своя неделя. А план в курсе один,
+        и коллега его читает — но правит только назначенный ведущий, это
+        проверяет матрица.
+        """
         self.sign_in(self.colleague)
 
         self.assertEqual(self.client.get(reverse("lessonslot-list")).json(), [])
-        tree = self.client.get(reverse("plannode-list"), {"course": self.course.pk})
-        self.assertEqual(tree.json()["nodes"], [])
 
     def test_an_administrator_has_no_power_over_my_lessons(self):
         """The role governs the school's shared objects, not people's work."""
@@ -923,7 +1009,7 @@ class ActionDoorTests(AccessTestCase):
     def test_plan_review(self):
         """Утвердить и вернуть может только методист курса — остальным 404."""
         baseline = PlanBaseline.objects.create(
-            teacher=self.user,
+            submitted_by=self.user,
             course=self.course,
             status=PlanBaseline.Status.PENDING,
             submitted_at=timezone.now(),

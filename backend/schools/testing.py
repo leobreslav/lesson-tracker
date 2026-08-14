@@ -116,9 +116,16 @@ def make_grade(school, level=9, name=None):
 
 
 def assign(teacher, course):
-    """Put a teacher on a course — the link everything personal hangs off."""
+    """
+    Поставить учителя на курс — связь, на которой висит всё личное.
+
+    Ведущий у курса один, поэтому назначение **заменяет** прежнее, а не
+    добавляется рядом: фикстура, обходящая уникальность, выражала бы
+    состояние, недостижимое через приложение.
+    """
     from schedule.models import CourseAssignment
 
+    CourseAssignment.objects.filter(course=course).exclude(teacher=teacher).delete()
     return CourseAssignment.objects.get_or_create(course=course, teacher=teacher)[0]
 
 
@@ -222,13 +229,18 @@ def make_master_slot(course, teacher=None, day=MONDAY, number=1):
 
 
 def make_node(teacher, course, title="Урок", *, parent=None, position=0, section=False):
-    """A plan row. Assigns the teacher to the course, like `make_slot`."""
+    """
+    Строка плана. Как и `make_slot`, назначает учителя на курс.
+
+    Учитель здесь остался, хотя у самой строки его больше нет: план
+    принадлежит курсу, а править его может только назначенный — и тесты
+    прав спрашивают именно про это.
+    """
     from plans.models import PlanNode
 
     assign(teacher, course)
 
     return PlanNode.objects.create(
-        teacher=teacher,
         course=course,
         parent=parent,
         position=position,

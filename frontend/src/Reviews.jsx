@@ -47,8 +47,8 @@ export default function Reviews({ onLoggedOut }) {
     [onLoggedOut],
   )
 
-  /** Строку опознаёт пара: курс общий, планов в нём столько же, сколько людей. */
-  const key = (plan) => (plan ? `${plan.teacher.id}:${plan.id}` : null)
+  /** Строку опознаёт курс: план принадлежит ему, и ведущий у курса один. */
+  const key = (plan) => (plan ? plan.id : null)
 
   const load = useCallback(
     () =>
@@ -119,7 +119,9 @@ export default function Reviews({ onLoggedOut }) {
             /* одной ячейкой: в шапке сетка на четыре колонки, и две
                отдельные пометки разъехались бы по разным местам */
             <span className="whose">
-              {plan.teacher.name}
+              {/* курс без ведущего — нормальное состояние: нагрузку ещё не
+                  раздали, и методисту это как раз видно */}
+              {plan.teacher?.name ?? t('reviews.noTeacher')}
               {plan.review?.status === 'pending' && (
                 <span className="badge waiting">{t('reviews.mark')}</span>
               )}
@@ -178,7 +180,8 @@ export default function Reviews({ onLoggedOut }) {
       {opened && (
         <Modal onClose={() => setOpened(null)}>
           <h3>
-            {opened.course.name} · {opened.teacher.name}
+            {opened.course.name}
+            {opened.teacher && ` · ${opened.teacher.name}`}
           </h3>
 
           <div className="cards">

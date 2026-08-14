@@ -8,9 +8,14 @@
 разошёлся с эталоном, — и считать его дважды значило бы завести два ответа
 на один вопрос.
 
-Поэтому здесь одна функция: на вход пары «учитель и курс», на выход
-готовые строки. Кто эти пары собрал — дело вызывающего: у учителя это его
-курсы, у методиста — курсы, где он назначен.
+Поэтому здесь одна функция: на вход курсы, на выход готовые строки. Кто
+эти курсы собрал — дело вызывающего: у учителя это его курсы, у методиста
+— курсы, где он назначен.
+
+Единица — курс, а не пара «учитель и курс»: план принадлежит курсу, и
+ведущий учитель у курса один. Пока их могло быть двое, у одного курса
+было два плана и две строки — и это как раз то состояние, ради которого
+`CourseAssignment` теперь уникален по курсу.
 
 Запросы делаются **до** цикла: раньше каждый курс стоил шести, и экран,
 который открывают из бара, обходился в тридцать семь. Расчёт при этом не
@@ -23,128 +28,91 @@ from __future__ import annotations
 from collections import Counter, defaultdict
 
 from django.contrib.auth import get_user_model
-from django.db.models import Q
 from schedule.models import Course, CourseAssignment, CourseMethodist, LessonSlot
 
 from . import approval, services
-from .models import PlanNode
 from .serializers import person, request_payload
 
 User = get_user_model()
 
 
-def own_pairs(user) -> list[tuple]:
-    """Свои курсы: пары «я и курс», в порядке года и названия."""
-    courses = (
+def own_courses(user) -> list:
+    """Свои курсы, в порядке года и названия."""
+    return list(
         Course.objects.for_teacher(user)
         .select_related("year")
         .prefetch_related("year__terms")
         .order_by("year__start_date", "name")
     )
-    return [(user, course) for course in courses]
 
 
-def supervised_pairs(user) -> list[tuple]:
+def supervised_courses(user) -> list:
     """
-    Планы, которые ведёт методист: пары «учитель и курс».
+    Курсы, планы которых ведёт методист.
 
-    Курс общий, а план внутри него у каждого свой, поэтому единицей здесь
-    служит пара, а не курс: методист «9Б Алгебры», которую ведут двое,
-    отвечает за два плана.
-
-    Кто считается ведущим курс — то же правило, что и в списке курсов
-    учителя (`Course.objects.for_teacher`): назначенные плюс те, у кого в
-    курсе уже есть план. Вторая половина нужна, потому что назначение
-    можно снять, а работа остаётся, и пропадать из-под надзора она не
-    должна.
-
-    Назначенный без плана в списке всё равно есть, и это не оплошность:
-    «ещё не начал» — то, что методисту как раз нужно видеть.
+    Курс без назначенного учителя в списке всё равно есть, и это не
+    оплошность: «нагрузку ещё не раздали» — то, что методисту как раз
+    нужно видеть, как и «назначили, но план не начат».
     """
-    courses = list(
-        Course.objects.filter(methodists__user=user)
+    return list(
+        Course.objects.filter(methodists__user=user, school_id=user.school_id)
         .select_related("year")
         .prefetch_related("year__terms")
         .order_by("year__start_date", "name")
     )
+
+
+def teachers_of(courses) -> dict:
+    """Ведущий учитель по каждому курсу: `{course_id: user | None}`."""
+    courses = list(courses)
     if not courses:
-        return []
+        return {}
 
-    people = defaultdict(dict)
-    assignments = CourseAssignment.objects.filter(
-        course__in=courses
-    ).select_related("teacher")
-    for row in assignments:
-        people[row.course_id][row.teacher_id] = row.teacher
-
-    # `values_list` вместо `distinct(...)`: у модели свой `ordering`, а
-    # Postgres требует, чтобы DISTINCT ON совпадал с началом ORDER BY
-    authors = (
-        PlanNode.objects.filter(course__in=courses)
-        .values_list("course_id", "teacher_id")
-        .distinct()
-    )
-    missing = {teacher_id for _, teacher_id in authors} - {
-        teacher.pk for row in people.values() for teacher in row.values()
+    return {
+        row.course_id: row.teacher
+        for row in CourseAssignment.objects.filter(
+            course__in=courses
+        ).select_related("teacher")
     }
-    known = {user.pk: user for user in User.objects.filter(pk__in=missing)}
-    for course_id, teacher_id in authors:
-        if teacher_id in known:
-            people[course_id].setdefault(teacher_id, known[teacher_id])
-
-    pairs = []
-    for course in courses:
-        for teacher in sorted(
-            people[course.pk].values(), key=lambda item: (item.first_name, item.email)
-        ):
-            pairs.append((teacher, course))
-
-    return pairs
 
 
-def rows_for(pairs, today, ahead: int = 2) -> list[dict]:
+def rows_for(courses, today, ahead: int = 2) -> list[dict]:
     """
-    Строка состояния на каждую пару — то, из чего собраны обе страницы.
+    Строка состояния на каждый курс — то, из чего собраны обе страницы.
 
     Поля одни и те же, включая `teacher`: у себя на главной учитель его не
     показывает, но два ответа с разными наборами полей развели бы и два
     компонента, которые сейчас один.
     """
-    pairs = list(pairs)
-    if not pairs:
+    courses = list(courses)
+    if not courses:
         return []
 
-    owners = [
-        services.PlanOwner(teacher_id=teacher.pk, course_id=course.pk)
-        for teacher, course in pairs
-    ]
-    lessons_by_owner = services.lessons_by_owner(owners)
-    baselines = approval.approved_baselines(owners)
-    requests = approval.open_requests(owners)
+    course_ids = [course.pk for course in courses]
+    lessons_by_course = services.lessons_by_course(course_ids)
+    baselines = approval.approved_baselines(course_ids)
+    requests = approval.open_requests(course_ids)
+    teachers = teachers_of(courses)
 
-    condition = Q()
-    for owner in owners:
-        condition |= Q(teacher_id=owner.teacher_id, course_id=owner.course_id)
-
-    slots_by_owner = defaultdict(list)
-    cancelled_by_owner = Counter()
-    for slot in LessonSlot.objects.filter(condition).order_by(
+    slots_by_course = defaultdict(list)
+    cancelled_by_course = Counter()
+    for slot in LessonSlot.objects.filter(course_id__in=course_ids).order_by(
         "date", "lesson_number"
     ):
-        key = (slot.teacher_id, slot.course_id)
         if slot.is_cancelled:
-            cancelled_by_owner[key] += 1
+            cancelled_by_course[slot.course_id] += 1
         else:
-            slots_by_owner[key].append(slot)
+            slots_by_course[slot.course_id].append(slot)
 
     rows = []
-    for (teacher, course), owner in zip(pairs, owners):
-        key = tuple(owner)
-        lessons = lessons_by_owner[owner]
+    for course in courses:
+        key = course.pk
+        lessons = lessons_by_course[key]
         entries = services.build_layout(
-            lessons, slots_by_owner[key], course.year.terms.all()
+            lessons, slots_by_course[key], course.year.terms.all()
         )
         baseline = baselines.get(key)
+        teacher = teachers.get(key)
 
         rows.append(
             {
@@ -152,7 +120,7 @@ def rows_for(pairs, today, ahead: int = 2) -> list[dict]:
                 "name": course.name,
                 "year": course.year.name,
                 "year_end": course.year.end_date,
-                "teacher": person(teacher),
+                "teacher": person(teacher) if teacher else None,
                 # метрики считаются только от **утверждённого** эталона:
                 # пока план не приняли, сравнивать не с чем
                 "baseline": (
@@ -167,7 +135,7 @@ def rows_for(pairs, today, ahead: int = 2) -> list[dict]:
                 ),
                 "review": request_payload(requests.get(key)),
                 **services.course_progress(
-                    entries, today, cancelled_by_owner[key], ahead=ahead
+                    entries, today, cancelled_by_course[key], ahead=ahead
                 ),
             }
         )

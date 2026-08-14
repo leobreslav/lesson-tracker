@@ -29,7 +29,6 @@ from files import storage as file_storage
 from files.models import KIND_FILE, KIND_LINK, Attachment, StoredFile
 from onboarding.services import typical_terms, typical_vacations
 from plans.models import PlanNode
-from plans.services import PlanOwner
 from library import services as library_services
 from library.models import PlanTemplate, PlanTemplateRow
 from schedule.models import (
@@ -885,9 +884,7 @@ class Command(BaseCommand):
                 course, teacher = blocks
                 library_services.write_rows(
                     template,
-                    library_services.plan_as_rows(
-                        PlanOwner(teacher_id=teacher.pk, course_id=course.pk)
-                    ),
+                    library_services.plan_as_rows(course.pk),
                 )
                 continue
 
@@ -910,12 +907,11 @@ class Command(BaseCommand):
             PlanTemplateRow.objects.bulk_create(rows)
 
     def write_plan(self, course, teacher, blocks):
-        if PlanNode.objects.filter(teacher=teacher, course=course).exists():
+        if PlanNode.objects.filter(course=course).exists():
             return
 
         for position, (title, lessons) in enumerate(blocks):
             section = PlanNode.objects.create(
-                teacher=teacher,
                 course=course,
                 parent=None,
                 position=position,
@@ -924,7 +920,6 @@ class Command(BaseCommand):
             )
             PlanNode.objects.bulk_create(
                 PlanNode(
-                    teacher=teacher,
                     course=course,
                     parent=section,
                     position=index,
@@ -953,9 +948,7 @@ class Command(BaseCommand):
         """Files and links on the lessons that have content."""
         lessons = {
             node.title: node
-            for node in PlanNode.objects.filter(
-                teacher=teacher, course=course, is_section=False
-            )
+            for node in PlanNode.objects.filter(course=course, is_section=False)
         }
 
         for title, name, kind, text in DEMO_FILES:

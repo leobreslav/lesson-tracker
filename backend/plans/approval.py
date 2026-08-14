@@ -20,7 +20,6 @@ from __future__ import annotations
 import logging
 
 from django.db import transaction
-from django.db.models import Q
 from django.utils import timezone
 from schedule.models import CourseMethodist
 
@@ -43,10 +42,10 @@ def notify(event: str, baseline: PlanBaseline) -> None:
     искать все переходы по вьюхам.
     """
     logger.info(
-        "plan review: %s course=%s teacher=%s reviewer=%s",
+        "plan review: %s course=%s submitted_by=%s reviewer=%s",
         event,
         baseline.course_id,
-        baseline.teacher_id,
+        baseline.submitted_by_id,
         baseline.reviewer_id,
     )
 
@@ -64,66 +63,52 @@ def methodists_for(course) -> list:
     )
 
 
-def approved_baseline(teacher_id: int, course_id: int):
+def approved_baseline(course_id: int):
     """Утверждённый эталон — тот, относительно которого считают расхождение."""
     return (
         PlanBaseline.objects.filter(
-            teacher_id=teacher_id,
-            course_id=course_id,
-            status=PlanBaseline.Status.APPROVED,
+            course_id=course_id, status=PlanBaseline.Status.APPROVED
         )
         .order_by("-approved_at", "-id")
         .first()
     )
 
 
-def _owned(owners) -> Q:
-    """Условие «любая из этих пар (учитель, курс)» одним запросом."""
-    condition = Q()
-    for owner in owners:
-        condition |= Q(teacher_id=owner.teacher_id, course_id=owner.course_id)
-    return condition
-
-
-def approved_baselines(owners) -> dict:
+def approved_baselines(course_ids) -> dict:
     """
-    Утверждённые эталоны сразу по нескольким владельцам:
-    `{(teacher_id, course_id): baseline}`.
+    Утверждённые эталоны сразу по нескольким курсам: `{course_id: baseline}`.
 
     Порядок тот же, что у `approved_baseline`, и это важнее краткости:
     выборка идёт по возрастанию, а в словаре остаётся последний — то есть
     самый свежий, ровно тот, который вернул бы одиночный запрос.
 
-    Ключ — пара, а не курс: у методиста один курс встречается столько раз,
-    сколько человек его ведёт, и эталон у каждого свой.
-
     Строки снимка тянутся сразу: без них `baseline_diff` сходит за запросом
-    на каждую пару.
+    на каждый курс.
     """
-    owners = list(owners)
-    if not owners:
+    course_ids = list(course_ids)
+    if not course_ids:
         return {}
 
     return {
-        (baseline.teacher_id, baseline.course_id): baseline
+        baseline.course_id: baseline
         for baseline in PlanBaseline.objects.filter(
-            _owned(owners), status=PlanBaseline.Status.APPROVED
+            course_id__in=course_ids, status=PlanBaseline.Status.APPROVED
         )
         .order_by("approved_at", "id")
         .prefetch_related("rows")
     }
 
 
-def open_requests(owners) -> dict:
-    """Запросы в работе по нескольким владельцам — так же, как `open_request`."""
-    owners = list(owners)
-    if not owners:
+def open_requests(course_ids) -> dict:
+    """Запросы в работе по нескольким курсам — так же, как `open_request`."""
+    course_ids = list(course_ids)
+    if not course_ids:
         return {}
 
     return {
-        (baseline.teacher_id, baseline.course_id): baseline
+        baseline.course_id: baseline
         for baseline in PlanBaseline.objects.filter(
-            _owned(owners),
+            course_id__in=course_ids,
             status__in=(PlanBaseline.Status.PENDING, PlanBaseline.Status.RETURNED),
         )
         .select_related("reviewer")
@@ -131,11 +116,10 @@ def open_requests(owners) -> dict:
     }
 
 
-def open_request(teacher_id: int, course_id: int):
+def open_request(course_id: int):
     """Запрос в работе: поданный или возвращённый с замечанием."""
     return (
         PlanBaseline.objects.filter(
-            teacher_id=teacher_id,
             course_id=course_id,
             status__in=(PlanBaseline.Status.PENDING, PlanBaseline.Status.RETURNED),
         )
@@ -145,7 +129,7 @@ def open_request(teacher_id: int, course_id: int):
 
 
 @transaction.atomic
-def submit(owner: services.PlanOwner, course, reviewer) -> PlanBaseline:
+def submit(course, reviewer, sender) -> PlanBaseline:
     """
     Отправить план на утверждение.
 
@@ -156,23 +140,35 @@ def submit(owner: services.PlanOwner, course, reviewer) -> PlanBaseline:
 
     Утверждённый эталон при этом остаётся: пока новый не принят,
     расхождение считается от него.
+
+    Кто отправил, запоминается — но владельцем не делает: план и эталон
+    принадлежат курсу, и смена ведущего учителя ничего здесь не отзывает.
     """
-    baseline = open_request(owner.teacher_id, owner.course_id)
+    baseline = open_request(course.pk)
 
     if baseline is None:
         baseline = PlanBaseline.objects.create(
-            teacher_id=owner.teacher_id,
-            course_id=owner.course_id,
+            course=course,
             status=PlanBaseline.Status.PENDING,
             submitted_at=timezone.now(),
+            submitted_by=sender,
             reviewer=reviewer,
         )
     else:
         baseline.status = PlanBaseline.Status.PENDING
         baseline.submitted_at = timezone.now()
+        baseline.submitted_by = sender
         baseline.reviewer = reviewer
         baseline.comment = ""
-        baseline.save(update_fields=["status", "submitted_at", "reviewer", "comment"])
+        baseline.save(
+            update_fields=[
+                "status",
+                "submitted_at",
+                "submitted_by",
+                "reviewer",
+                "comment",
+            ]
+        )
 
     notify(SUBMITTED, baseline)
     return baseline
@@ -186,9 +182,6 @@ def approve(baseline: PlanBaseline, reviewer) -> PlanBaseline:
     Эталоном становится ровно то, что приняли. План с момента отправки не
     менялся: правка отозвала бы запрос, и утверждать было бы нечего.
     """
-    owner = services.PlanOwner(
-        teacher_id=baseline.teacher_id, course_id=baseline.course_id
-    )
     baseline.rows.all().delete()
     PlanBaselineRow.objects.bulk_create(
         PlanBaselineRow(
@@ -198,7 +191,7 @@ def approve(baseline: PlanBaseline, reviewer) -> PlanBaseline:
             title=row.title,
             node_id=row.node_id,
         )
-        for position, row in enumerate(services.plan_snapshot(owner))
+        for position, row in enumerate(services.plan_snapshot(baseline.course_id))
     )
 
     baseline.status = PlanBaseline.Status.APPROVED
@@ -240,6 +233,6 @@ def review_queue(user):
             status=PlanBaseline.Status.PENDING,
             course_id__in=list(courses),
         )
-        .select_related("course", "teacher", "course__subject")
+        .select_related("course", "submitted_by", "course__subject")
         .order_by("submitted_at")
     )

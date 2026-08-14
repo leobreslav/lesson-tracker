@@ -32,8 +32,9 @@ class ApprovalTestCase(PlanTestCase):
         self.algebra = Subject.objects.create(school=self.school, name="Алгебра")
         self.course.subject = self.algebra
         self.course.save(update_fields=["subject"])
+        # методист курс не ведёт: ведущий у курса один, а утверждает
+        # обычно как раз не он
         self.methodist = self.colleague
-        assign(self.methodist, self.course)
 
     def make_methodist(self, person, course=None):
         return CourseMethodist.objects.create(
@@ -59,14 +60,10 @@ class ApprovalTestCase(PlanTestCase):
         """Что видит методист: все планы под его надзором, не только запросы."""
         return self.client.get(reverse("planreview-list")).json()["plans"]
 
-    def supervised_of(self, teacher, course=None):
-        """Строка конкретного учителя: курс ведут несколько, и планов столько же."""
+    def supervised_row(self, course=None):
+        """Строка курса: план принадлежит курсу, и строка у него одна."""
         course = course or self.course
-        return next(
-            row
-            for row in self.supervised()
-            if row["teacher"]["id"] == teacher.pk and row["id"] == course.pk
-        )
+        return next(row for row in self.supervised() if row["id"] == course.pk)
 
     def approve(self, pk):
         return self.client.post(reverse("planreview-approve", args=[pk]))
@@ -161,7 +158,7 @@ class ReviewTests(ApprovalTestCase):
     def test_the_methodist_sees_the_request_as_a_mark_on_the_row(self):
         self.client.force_authenticate(self.methodist)
 
-        row = self.supervised_of(self.user)
+        row = self.supervised_row()
 
         self.assertEqual(row["name"], self.course.name)
         self.assertEqual(row["lessons_total"], 7)
@@ -227,7 +224,7 @@ class ReviewTests(ApprovalTestCase):
             reverse("planreview-detail", args=[self.baseline.pk])
         ).json()
 
-        self.assertEqual(self.supervised_of(self.user)["review"]["status"], "pending")
+        self.assertEqual(self.supervised_row()["review"]["status"], "pending")
         self.assertIn("Дописанный после отправки", [row["title"] for row in body["rows"]])
 
         self.approve(self.baseline.pk)
@@ -252,7 +249,8 @@ class ReviewTests(ApprovalTestCase):
 
         self.client.force_authenticate(self.stranger)
 
-        self.assertEqual(self.supervised(), [])
+        # свой курс он видит, наш — нет
+        self.assertNotIn(self.course.pk, [row["id"] for row in self.supervised()])
         self.assertEqual(
             self.client.get(
                 reverse("planreview-detail", args=[self.baseline.pk])
@@ -284,7 +282,7 @@ class ReviewTests(ApprovalTestCase):
         CourseMethodist.objects.create(course=self.alien_class, user=self.alien_admin)
         self.client.force_authenticate(self.alien_admin)
 
-        self.assertEqual(self.supervised(), [])
+        self.assertNotIn(self.course.pk, [row["id"] for row in self.supervised()])
 
     def test_an_administrator_approves_nothing_by_default(self):
         """Администратор распоряжается школой, а не содержанием предмета."""
@@ -310,7 +308,7 @@ class SupervisionTests(ApprovalTestCase):
         self.client.force_authenticate(self.methodist)
 
     def test_a_plan_shows_up_without_any_request(self):
-        row = self.supervised_of(self.user)
+        row = self.supervised_row()
 
         self.assertIsNone(row["review"])
         self.assertEqual(row["lessons_total"], 7)
@@ -323,7 +321,7 @@ class SupervisionTests(ApprovalTestCase):
         make_slot(self.user, self.course, day=MONDAY, number=1)
         make_slot(self.user, self.course, day=MONDAY + timedelta(days=1), number=1)
 
-        seen_by_methodist = self.supervised_of(self.user)
+        seen_by_methodist = self.supervised_row()
         self.client.force_authenticate(self.user)
         seen_by_teacher = self.progress()
 
@@ -332,20 +330,23 @@ class SupervisionTests(ApprovalTestCase):
                 seen_by_methodist[field], seen_by_teacher[field], field
             )
 
-    def test_every_teacher_of_the_course_has_their_own_row(self):
-        """План личный: курс на двоих — это два плана и две строки."""
+    def test_a_course_has_exactly_one_row(self):
+        """План принадлежит курсу, и ведущий у курса один — строка одна."""
         rows = [row for row in self.supervised() if row["id"] == self.course.pk]
 
-        self.assertEqual(
-            sorted(row["teacher"]["id"] for row in rows),
-            sorted([self.user.pk, self.methodist.pk]),
-        )
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["teacher"]["id"], self.user.pk)
 
     def test_a_teacher_who_has_not_started_is_visible_too(self):
         """«Ещё не начал» — то, что методисту как раз нужно видеть."""
-        row = self.supervised_of(self.methodist)
+        fresh = make_course(self.school, year=self.course.year, name="9Г")
+        assign(self.colleague, fresh)
+        self.make_methodist(self.methodist, course=fresh)
+
+        row = self.supervised_row(fresh)
 
         self.assertEqual(row["lessons_total"], 0)
+        self.assertEqual(row["teacher"]["id"], self.colleague.pk)
         self.assertIsNone(row["review"])
 
     def test_courses_without_the_role_are_not_there(self):
@@ -364,7 +365,7 @@ class SupervisionTests(ApprovalTestCase):
         with CaptureQueriesContext(connection) as many:
             rows = self.supervised()
 
-        self.assertGreater(len(rows), 4)
+        self.assertGreaterEqual(len(rows), 4)
         self.assertLess(
             len(many),
             15,

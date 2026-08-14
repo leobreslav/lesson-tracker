@@ -405,13 +405,15 @@ class CourseAssignmentViewSet(SchoolScopedViewSet):
 
         Nothing is hidden afterwards either: `Course.objects.for_teacher`
         keeps a course visible to whoever already has work in it.
+
+        Строки плана считаются, но принадлежат они **курсу**: план остаётся
+        на нём и достаётся следующему ведущему целиком. Названы они здесь
+        ровно затем, чтобы это было видно до нажатия.
         """
         slots = LessonSlot.objects.filter(
             course=instance.course, teacher=instance.teacher
         ).count()
-        rows = PlanNode.objects.filter(
-            course=instance.course, teacher=instance.teacher
-        ).count()
+        rows = PlanNode.objects.filter(course=instance.course).count()
         master = MasterSlot.objects.filter(
             course=instance.course, teacher=instance.teacher
         ).count()
@@ -420,8 +422,9 @@ class CourseAssignmentViewSet(SchoolScopedViewSet):
         if (slots or rows or master) and not forced:
             api_error(
                 Codes.ASSIGNMENT_IN_USE,
-                f"{full_name(instance.teacher)} has {slots} lessons, {rows} plan "
-                f"rows and {master} timetable rows in «{instance.course.name}». "
+                f"{full_name(instance.teacher)} has {slots} lessons and "
+                f"{master} timetable rows in «{instance.course.name}», and the "
+                f"course keeps its {rows} plan rows. "
                 "Unassigning keeps all of it; repeat with force=true to confirm.",
                 teacher=full_name(instance.teacher),
                 course=instance.course.name,
@@ -499,18 +502,14 @@ class CourseViewSet(SchoolScopedViewSet):
                     str(name or email)
                     for name, email in instance.slots.values_list(
                         "teacher__first_name", "teacher__email"
-                    ).union(
-                        instance.plan_nodes.values_list(
-                            "teacher__first_name", "teacher__email"
-                        )
                     )
                 }
             )
             api_error(
                 Codes.COURSE_IN_USE,
-                f"«{instance.name}» is in use: {slots} lessons, {rows} plan "
-                f"rows and {works} works belong to {', '.join(teachers)}. "
-                "Ask them to clear it first.",
+                f"«{instance.name}» is in use: {rows} plan rows, plus {slots} "
+                f"lessons and {works} works belonging to "
+                f"{', '.join(teachers) or 'nobody'}. Clear it first.",
                 name=instance.name,
                 slots=slots,
                 plan_rows=rows,

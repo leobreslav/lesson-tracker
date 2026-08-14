@@ -7,16 +7,20 @@ Who may see and change what.
 школе перестала означать «сотрудник», поэтому `IsSchoolMember` больше не
 значит «можно» — рядом с ним стоит `IsTeacher`.
 
-There are exactly three access shapes in the project, and they live here
+There are exactly four access shapes in the project, and they live here
 rather than in twenty querysets:
 
 1. a school object, reading — the user belongs to the same school;
 2. a school object, writing — plus the administrator role;
 3. a personal object — it belongs to this teacher, inside a course of their
-   own school.
+   own school;
+4. объект курса — читает тот, кто в курсе работает, пишет назначенный
+   ведущий учитель. Так устроен учебный план: он принадлежит курсу, и
+   ведущий у курса один.
 
 Every viewset picks a base class below and says which ORM path leads from its
-model to the school (``school_path``) or to the teacher (``teacher_path``).
+model to the school (``school_path``), to the teacher (``teacher_path``) or
+to the course (``course_path``).
 Nothing else filters by hand: a forgotten filter is exactly the hole this
 module exists to close.
 
@@ -162,6 +166,74 @@ class SchoolScopedViewSet(viewsets.ModelViewSet):
         return super().get_queryset().filter(
             **{self.school_path: self.request.user.school_id}
         )
+
+
+def require_course_teacher(user, course):
+    """
+    Правит план тот, кого на курс назначили, — и только он.
+
+    Отдельной функцией, потому что спрашивают это из двух мест: из вьюсета
+    плана и из «взять шаблон с полки» в библиотеке, которая пишет в тот же
+    план мимо него.
+    """
+    from schedule.models import CourseAssignment
+
+    if not CourseAssignment.objects.filter(course=course, teacher=user).exists():
+        api_denied(
+            Codes.NOT_COURSE_TEACHER,
+            "Only the teacher assigned to this course can change its plan.",
+        )
+
+
+class CourseScopedViewSet(viewsets.ModelViewSet):
+    """
+    Объект курса: читает тот, кто в курсе работает, пишет ведущий учитель.
+
+    Четвёртая форма доступа, и появилась она вместе с правилом «ведущий
+    учитель у курса один». Учебный план принадлежит **курсу**, а не
+    человеку: пока он был личным, у одного курса могло оказаться два плана
+    — свой у каждого ведущего, — а смена ведущего оставляла программу
+    висеть на том, кто ушёл.
+
+    Читают все, кто в курсе работает (`Course.objects.for_teacher`):
+    назначенный плюс тот, у кого в курсе остались уроки — назначение
+    снимают, а расписание остаётся, и прятать от человека программу курса,
+    в котором он ещё ведёт занятия, незачем.
+
+    Пишет только назначенный: иначе один и тот же план правили бы двое, и
+    мы вернулись бы туда, откуда ушли.
+
+    `course_path` — прямая связь на курс, а не путь через `__`: писать в
+    объект, до курса которого два шага, пока некому.
+    """
+
+    course_path = "course"
+    permission_classes = [IsAuthenticated, IsSchoolMember, IsTeacher]
+
+    def my_courses(self):
+        from schedule.models import Course
+
+        return Course.objects.for_teacher(self.request.user)
+
+    def get_queryset(self):
+        return (
+            super()
+            .get_queryset()
+            .filter(**{f"{self.course_path}__in": self.my_courses()})
+        )
+
+    def require_lead(self, course):
+        require_course_teacher(self.request.user, course)
+
+    def get_object(self):
+        obj = super().get_object()
+        if self.request.method not in SAFE_METHODS:
+            self.require_lead(getattr(obj, self.course_path))
+        return obj
+
+    def perform_create(self, serializer):
+        self.require_lead(serializer.validated_data[self.course_path])
+        serializer.save()
 
 
 class TeacherScopedViewSet(viewsets.ModelViewSet):

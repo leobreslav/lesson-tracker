@@ -1,4 +1,9 @@
-from config.access import IsSchoolMember, IsTeacher, SchoolScopedViewSet
+from config.access import (
+    IsSchoolMember,
+    IsTeacher,
+    SchoolScopedViewSet,
+    require_course_teacher,
+)
 from config.errors import Codes, api_denied, api_error
 from django.db import transaction
 from django.db.models import Prefetch
@@ -128,11 +133,6 @@ class PlanTemplateViewSet(SchoolScopedViewSet):
             is_published=serializer.validated_data.get("is_published", False),
         )
 
-    def owner_for(self, course):
-        return plan_services.PlanOwner(
-            teacher_id=self.request.user.pk, course_id=course.pk
-        )
-
     @action(detail=False, methods=["post"], url_path="from-plan")
     def from_plan(self, request):
         """
@@ -145,7 +145,7 @@ class PlanTemplateViewSet(SchoolScopedViewSet):
         form.is_valid(raise_exception=True)
         data = form.validated_data
 
-        rows = services.plan_as_rows(self.owner_for(data["course"]))
+        rows = services.plan_as_rows(data["course"].pk)
         if not rows:
             api_error(
                 Codes.PLAN_EMPTY,
@@ -199,7 +199,7 @@ class PlanTemplateViewSet(SchoolScopedViewSet):
         form.is_valid(raise_exception=True)
 
         course = form.validated_data["course"]
-        rows = services.plan_as_rows(self.owner_for(course))
+        rows = services.plan_as_rows(course.pk)
         if not rows:
             api_error(
                 Codes.PLAN_EMPTY,
@@ -291,11 +291,11 @@ class ImportFromTemplateView(APIView):
         form.is_valid(raise_exception=True)
         data = form.validated_data
 
-        owner = plan_services.PlanOwner(
-            teacher_id=request.user.pk, course_id=data["course"].pk
-        )
+        require_course_teacher(request.user, data["course"])
         result = services.import_into_course(
-            template=data["template"], owner=owner, append=data["mode"] == "append"
+            template=data["template"],
+            course_id=data["course"].pk,
+            append=data["mode"] == "append",
         )
 
         return Response(result)

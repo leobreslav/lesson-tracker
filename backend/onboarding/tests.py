@@ -108,7 +108,7 @@ class StatusTests(OnboardingTestCase):
             date=date(2026, 9, 8), lesson_number=1,
         )
         PlanNode.objects.create(
-            teacher=self.user, course=first, position=0, is_section=False, title="Урок"
+            course=first, position=0, is_section=False, title="Урок"
         )
 
         data = self.status()
@@ -215,8 +215,9 @@ class DemoTests(OnboardingTestCase):
     def test_demo_plan_is_a_two_level_tree(self):
         self.create()
 
-        sections = PlanNode.objects.filter(teacher=self.user, is_section=True)
-        lessons = PlanNode.objects.filter(teacher=self.user, is_section=False)
+        mine = Course.objects.for_teacher(self.user)
+        sections = PlanNode.objects.filter(course__in=mine, is_section=True)
+        lessons = PlanNode.objects.filter(course__in=mine, is_section=False)
 
         self.assertEqual(sections.count(), 7)
         self.assertEqual(lessons.count(), 44)

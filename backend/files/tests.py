@@ -28,7 +28,6 @@ from django.urls import reverse
 from library.models import PlanTemplateRow
 from library.services import import_into_course
 from plans.models import PlanNode
-from plans.services import PlanOwner
 from rest_framework.test import APITestCase
 from schools.testing import (
     assign,
@@ -302,13 +301,20 @@ class LifecycleTests(FilesTestCase):
         self.assertTrue(Attachment.objects.filter(pk=self.theirs.pk).exists())
         self.assertTrue(self.in_store(self.stored.key))
 
-    def test_deleting_the_teacher_takes_the_files_with_them(self):
+    def test_the_files_outlive_the_teacher_who_uploaded_them(self):
+        """
+        План принадлежит курсу, и вложения вместе с ним.
+
+        Раньше уход человека уносил его план каскадом, а с планом — файлы.
+        Теперь программа курса переживает смену ведущего целиком: следующий
+        открывает её со всеми материалами.
+        """
         with self.captureOnCommitCallbacks(execute=True):
             self.user.delete()
 
-        self.assertFalse(Attachment.objects.exists())
-        self.assertFalse(StoredFile.objects.exists())
-        self.assertFalse(self.in_store(self.stored.key))
+        self.assertTrue(Attachment.objects.filter(pk=self.mine.pk).exists())
+        self.assertTrue(StoredFile.objects.filter(pk=self.stored.pk).exists())
+        self.assertTrue(self.in_store(self.stored.key))
 
     def test_a_course_with_a_plan_still_refuses_to_be_deleted(self):
         """PROTECT on the plan already guards this; files must not weaken it."""
@@ -407,10 +413,9 @@ class SharedThroughLibraryTests(FilesTestCase):
 
     def test_taking_a_template_copies_no_bytes(self):
         colleague_course = make_course(self.school, self.course.year, name="9В Алгебра")
-        owner = PlanOwner(teacher_id=self.colleague.pk, course_id=colleague_course.pk)
 
         result = import_into_course(
-            template=self.template, owner=owner, append=False
+            template=self.template, course_id=colleague_course.pk, append=False
         )
 
         self.assertEqual(result["created_attachments"], 1)
@@ -419,21 +424,18 @@ class SharedThroughLibraryTests(FilesTestCase):
         self.assertEqual(StoredFile.objects.count(), 1)
         self.assertEqual(self.stored.attachments.count(), 3)
 
-        theirs = PlanNode.objects.get(teacher=self.colleague)
+        theirs = PlanNode.objects.get(course=colleague_course)
         self.assertEqual(theirs.body, MARKDOWN)
         self.assertEqual(theirs.attachments.get().stored_file_id, self.stored.pk)
 
     def test_the_colleague_who_took_it_can_download_the_file(self):
         colleague_course = make_course(self.school, self.course.year, name="9В Алгебра")
+        assign(self.colleague, colleague_course)
         import_into_course(
-            template=self.template,
-            owner=PlanOwner(
-                teacher_id=self.colleague.pk, course_id=colleague_course.pk
-            ),
-            append=False,
+            template=self.template, course_id=colleague_course.pk, append=False
         )
 
-        theirs = PlanNode.objects.get(teacher=self.colleague).attachments.get()
+        theirs = PlanNode.objects.get(course=colleague_course).attachments.get()
         self.sign_in(self.colleague)
 
         answer = self.client.get(
@@ -444,14 +446,11 @@ class SharedThroughLibraryTests(FilesTestCase):
 
     def test_the_colleague_deleting_their_copy_leaves_mine(self):
         colleague_course = make_course(self.school, self.course.year, name="9В Алгебра")
+        assign(self.colleague, colleague_course)
         import_into_course(
-            template=self.template,
-            owner=PlanOwner(
-                teacher_id=self.colleague.pk, course_id=colleague_course.pk
-            ),
-            append=False,
+            template=self.template, course_id=colleague_course.pk, append=False
         )
-        theirs = PlanNode.objects.get(teacher=self.colleague).attachments.get()
+        theirs = PlanNode.objects.get(course=colleague_course).attachments.get()
 
         self.sign_in(self.colleague)
         with self.captureOnCommitCallbacks(execute=True):
@@ -562,8 +561,9 @@ class AttachmentAccessTests(FilesTestCase):
         self.assertEqual(answer.status_code, 403)
         self.assertEqual(answer.data["code"], "no_school")
 
-    def test_an_upload_cannot_name_a_colleagues_lesson(self):
-        their_lesson = PlanNode.objects.get(teacher=self.colleague)
+    def test_an_upload_cannot_name_a_lesson_of_another_course(self):
+        theirs = make_course(self.school, self.course.year, name="9Г Алгебра")
+        their_lesson = make_node(self.colleague, theirs, "Их урок")
 
         refused = self.client.post(
             reverse("attachment-list"),

@@ -108,7 +108,7 @@ class LayoutAgendaTests(LayoutApiTestCase):
             school=self.school, year=self.course.year, name="10А"
         )
         PlanNode.objects.create(
-            teacher=self.user, course=second, parent=None, position=0, is_section=False,
+            course=second, parent=None, position=0, is_section=False,
             title="Своя тема",
         )
         mine = self.fill_slots(1)[0]
@@ -125,7 +125,7 @@ class LayoutAgendaTests(LayoutApiTestCase):
 
     def test_another_users_slots_are_invisible(self):
         PlanNode.objects.create(
-            teacher=self.stranger, course=self.alien_class, parent=None, position=0,
+            course=self.alien_class, parent=None, position=0,
             is_section=False, title="Чужой урок",
         )
         alien_slot = LessonSlot.objects.create(

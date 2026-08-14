@@ -49,7 +49,6 @@ class LayoutNumbersMirrorTests(PlanTestCase):
             parent = None
             if block.get("section"):
                 parent = PlanNode.objects.create(
-                    teacher=self.user,
                     course=self.course,
                     title=block["section"],
                     is_section=True,
@@ -59,7 +58,6 @@ class LayoutNumbersMirrorTests(PlanTestCase):
 
             for index, title in enumerate(block["lessons"]):
                 PlanNode.objects.create(
-                    teacher=self.user,
                     course=self.course,
                     parent=parent,
                     title=title,

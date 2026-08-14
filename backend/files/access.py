@@ -32,7 +32,7 @@ def school_attachments(user):
         return Attachment.objects.none()
 
     return Attachment.objects.filter(
-        Q(plan_row__teacher__school_id=user.school_id)
+        Q(plan_row__course__school_id=user.school_id)
         | Q(template_row__template__school_id=user.school_id)
     )
 
@@ -44,18 +44,26 @@ def readable_attachments(user):
     A colleague's draft is absent here for the same reason it is absent from
     the library list — not hidden, not there.
     """
+    from schedule.models import Course
+
     if user is None or not user.is_authenticated or user.school_id is None:
         return Attachment.objects.none()
 
     return Attachment.objects.filter(
-        Q(plan_row__teacher=user)
+        Q(plan_row__course__in=Course.objects.for_teacher(user))
         | Q(template_row__template__in=visible_templates(user))
     )
 
 
 def can_read(user, attachment) -> bool:
     if attachment.plan_row_id is not None:
-        return attachment.plan_row.teacher_id == user.pk
+        from schedule.models import Course
+
+        return (
+            Course.objects.for_teacher(user)
+            .filter(pk=attachment.plan_row.course_id)
+            .exists()
+        )
 
     template = attachment.template_row.template
     return template.school_id == user.school_id and (
@@ -72,16 +80,27 @@ def can_write(user, attachment) -> bool:
     what counts here.
     """
     if attachment.plan_row_id is not None:
-        return attachment.plan_row.teacher_id == user.pk
+        from schedule.models import CourseAssignment
+
+        return CourseAssignment.objects.filter(
+            course_id=attachment.plan_row.course_id, teacher=user
+        ).exists()
 
     return attachment.template_row.template.author_id == user.pk
 
 
 def writable_plan_rows(user):
-    """Plan lessons this person may attach something to. Headers cannot."""
+    """
+    Уроки плана, к которым этот человек может приложить файл.
+
+    Планы курсов, где он назначен ведущим: план принадлежит курсу, и правит
+    его назначенный — то же правило, что у самих строк.
+    """
     if user is None or not user.is_authenticated:
         return PlanNode.objects.none()
-    return PlanNode.objects.filter(teacher=user, is_section=False)
+    return PlanNode.objects.filter(
+        course__assignments__teacher=user, is_section=False
+    )
 
 
 def writable_template_rows(user):

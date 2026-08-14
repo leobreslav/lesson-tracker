@@ -20,16 +20,18 @@ def requester(serializer):
 
 def own_nodes(serializer):
     """
-    Any node of one's own — not only sections.
+    Любой узел из планов своих курсов — не только папка.
 
-    Only a section may be a parent, but `structure_problems` is what says so:
-    that way the user reads a sentence instead of PrimaryKeyRelatedField's
-    flat «object does not exist».
+    Родителем может быть только папка, но говорит об этом
+    `structure_problems`: так человек читает фразу, а не сухое «object does
+    not exist» от PrimaryKeyRelatedField.
     """
+    from schedule.models import Course
+
     user = requester(serializer)
     if user is None or not user.is_authenticated:
         return PlanNode.objects.none()
-    return PlanNode.objects.filter(teacher=user)
+    return PlanNode.objects.filter(course__in=Course.objects.for_teacher(user))
 
 
 def node_payload(node, number=None) -> dict:
@@ -50,8 +52,8 @@ def node_payload(node, number=None) -> dict:
     }
 
 
-def tree_payload(owner) -> dict:
-    tree = services.get_tree(owner)
+def tree_payload(course_id: int) -> dict:
+    tree = services.get_tree(course_id)
     numbers = services.lesson_numbers(tree)
 
     nodes = []
@@ -162,12 +164,12 @@ class PlanNodeCreateSerializer(serializers.ModelSerializer):
         parent = validated_data.get("parent")
 
         # the position is settled by place(); any value does until then
-        node = PlanNode.objects.create(
-            position=0, teacher=self.context["request"].user, **validated_data
-        )
+        node = PlanNode.objects.create(position=0, **validated_data)
 
         index = (
-            after.position + 1 if after is not None else len(services.level(node, parent))
+            after.position + 1
+            if after is not None
+            else len(services.level(node.course_id, parent))
         )
         services.place(node, parent, index)
 
@@ -318,7 +320,7 @@ def review_payload(baseline, rows=None) -> dict:
     """
     payload = {
         **request_payload(baseline),
-        "teacher": person(baseline.teacher),
+        "teacher": person(baseline.submitted_by),
         "course": {
             "id": baseline.course_id,
             "name": baseline.course.name,

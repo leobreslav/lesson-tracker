@@ -340,7 +340,7 @@ class LayoutApiTests(LayoutApiTestCase):
         self.assertEqual(len(response.json()["entries"]), 7)
 
     def test_empty_plan_and_schedule_do_not_break(self):
-        PlanNode.objects.filter(teacher=self.user, course=self.course).delete()
+        PlanNode.objects.filter(course=self.course).delete()
 
         response = self.layout()
 

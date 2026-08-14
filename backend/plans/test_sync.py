@@ -21,7 +21,7 @@ Replace и append читают файл как весь план целиком,
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.urls import reverse
 from files.models import Attachment
-from schools.testing import make_attachment, make_stored_file
+from schools.testing import make_attachment, make_course, make_stored_file
 
 from . import services
 from .models import PlanNode
@@ -331,9 +331,10 @@ class SyncRefusalTests(SyncTestCase):
         self.assertUntouched(response, "csv_id_unknown")
         self.assertTrue(PlanNode.objects.filter(pk=alien.pk).exists())
 
-    def test_a_colleagues_row_in_the_same_course_is_refused(self):
-        """Курс общий, план — нет: id коллеги в моём плане не значит ничего."""
-        theirs = self.add("Их урок", teacher=self.colleague)
+    def test_a_row_of_another_course_is_refused(self):
+        """План принадлежит курсу: чужой курс — чужие id, и они не значат ничего."""
+        other = make_course(self.school, year=self.course.year, name="9Д")
+        theirs = self.add("Их урок", course=other, teacher=self.colleague)
 
         response = self.send(self.file(f"{theirs.pk},,Синус суммы,"))
 
@@ -420,7 +421,7 @@ class RoundTripTests(SyncTestCase):
         """Идемпотентность: id не переезжают, темы не пересоздаются."""
         self.send(self.export())
         pks = list(
-            PlanNode.objects.filter(course=self.course, teacher=self.user)
+            PlanNode.objects.filter(course=self.course)
             .order_by("pk")
             .values_list("pk", flat=True)
         )
@@ -430,7 +431,7 @@ class RoundTripTests(SyncTestCase):
         self.assertEqual(response.json()["created"], 0)
         self.assertEqual(
             list(
-                PlanNode.objects.filter(course=self.course, teacher=self.user)
+                PlanNode.objects.filter(course=self.course)
                 .order_by("pk")
                 .values_list("pk", flat=True)
             ),

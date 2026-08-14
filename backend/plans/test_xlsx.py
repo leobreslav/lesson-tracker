@@ -271,9 +271,7 @@ class ImportTests(PlanTestCase):
                 self.assertEqual(response.status_code, 400, response.content)
                 self.assertEqual(response.json()["code"], code)
                 self.assertFalse(
-                    PlanNode.objects.filter(
-                        teacher=self.user, course=self.course
-                    ).exists()
+                    PlanNode.objects.filter(course=self.course).exists()
                 )
 
     def test_the_old_xls_format_is_refused_clearly(self):

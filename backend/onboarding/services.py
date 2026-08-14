@@ -122,9 +122,7 @@ def course_summary(course, user, today: date) -> dict:
     )
     total = slots.count()
     past = slots.filter(date__lt=today).count()
-    lessons = PlanNode.objects.filter(
-        teacher=user, course=course, is_section=False
-    ).count()
+    lessons = PlanNode.objects.filter(course=course, is_section=False).count()
 
     return {
         "id": course.pk,
@@ -453,7 +451,6 @@ def create_demo(user) -> dict:
 
         for position, (section_title, lessons) in enumerate(template["plan"]):
             section = PlanNode.objects.create(
-                teacher=user,
                 course=course,
                 parent=None,
                 position=position,
@@ -462,7 +459,6 @@ def create_demo(user) -> dict:
             )
             PlanNode.objects.bulk_create(
                 PlanNode(
-                    teacher=user,
                     course=course,
                     parent=section,
                     position=index,

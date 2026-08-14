@@ -31,10 +31,10 @@ class MasterSlotTestCase(SchoolTestMixin, APITestCase):
         self.year = make_year(self.school)
         self.algebra = make_course(self.school, self.year, "9Б Алгебра")
         self.geometry = make_course(self.school, self.year, "9Б Геометрия")
-        # в школьном расписании можно назвать только назначенного учителя
+        # в школьном расписании можно назвать только назначенного учителя,
+        # а ведущий у курса один — поэтому оба курса ведёт один человек
         for course in (self.algebra, self.geometry):
             assign(self.user, course)
-            assign(self.colleague, course)
         self.sign_in(self.admin)
 
     def post(self, **fields):
@@ -87,9 +87,11 @@ class CreationTests(MasterSlotTestCase):
 
     def test_two_teachers_may_share_an_hour(self):
         make_master_slot(self.algebra, self.user, MONDAY, 1)
+        theirs = make_course(self.school, self.year, "9Б Химия")
+        assign(self.colleague, theirs)
 
         response = self.post(
-            course=self.geometry.pk, teacher=self.colleague.pk, lesson_number=1
+            course=theirs.pk, teacher=self.colleague.pk, lesson_number=1
         )
 
         self.assertEqual(response.status_code, 201, response.content)

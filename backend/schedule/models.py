@@ -108,17 +108,19 @@ class CourseQuerySet(models.QuerySet):
 
         Assignment is the answer to «what do I teach», and normally it is the
         only one. The second half is there because an assignment can be taken
-        away while the lessons and the plan stay (see `CourseAssignment`) —
-        hiding a colleague's own work behind an administrator's edit would be
-        worse than a slightly longer list.
+        away while the lessons stay (see `CourseAssignment`) — hiding a
+        colleague's own work behind an administrator's edit would be worse
+        than a slightly longer list.
+
+        Про план здесь речи нет, и это правильно: план принадлежит курсу, а
+        не человеку, и «у меня тут есть строки плана» больше никого не
+        опознаёт. Расписание же личное, поэтому опознаёт по-прежнему.
         """
         if user is None or not user.is_authenticated or user.school_id is None:
             return self.none()
 
         return self.filter(
-            models.Q(assignments__teacher=user)
-            | models.Q(slots__teacher=user)
-            | models.Q(plan_nodes__teacher=user),
+            models.Q(assignments__teacher=user) | models.Q(slots__teacher=user),
             school_id=user.school_id,
         ).distinct()
 
@@ -345,9 +347,14 @@ class CourseAssignment(models.Model):
     saw an empty list everywhere. Load and timetable are different questions
     and now have different tables.
 
-    Many-to-many in both directions: a course can be taught by several people
-    (parallel groups, a stand-in), and a teacher naturally has several
-    courses.
+    **Ведущий учитель у курса один.** Так и в жизни: бывают ассистенты, но
+    программу разрабатывает и ведёт один человек. Двое назначенных означали
+    бы два расписания под одним курсом — это ещё полбеды — и, пока план был
+    личным, две разные программы, о расхождении которых никто бы не узнал.
+    Ассистент, если понадобится, будет отдельной ролью: читать и проверять,
+    но не править программу.
+
+    У учителя курсов по-прежнему сколько угодно.
 
     Removing an assignment does **not** touch the lessons or the plan written
     under it — see the delete endpoint. The row is a statement about the
@@ -373,9 +380,7 @@ class CourseAssignment(models.Model):
         verbose_name_plural = "course assignments"
         ordering = ("course__name", "teacher__last_name", "teacher__email")
         constraints = [
-            models.UniqueConstraint(
-                fields=("course", "teacher"), name="unique_course_assignment"
-            ),
+            models.UniqueConstraint(fields=("course",), name="one_teacher_per_course"),
         ]
 
     def __str__(self):

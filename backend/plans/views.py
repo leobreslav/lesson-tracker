@@ -1,7 +1,7 @@
 from collections import Counter, defaultdict
 from urllib.parse import quote
 
-from config.access import IsSchoolMember, IsTeacher, TeacherScopedViewSet
+from config.access import CourseScopedViewSet, IsSchoolMember, IsTeacher
 from config.errors import Codes, api_error, error_payload
 from django.db import transaction
 from files import services as file_services
@@ -101,12 +101,15 @@ def perform_move(node, data) -> Response:
     return Response({"moved": moved})
 
 
-class PlanNodeViewSet(TeacherScopedViewSet):
+class PlanNodeViewSet(CourseScopedViewSet):
     """
-    A teacher's plan inside a course.
+    Учебный план курса.
 
-    The list returns the whole tree rather than a flat set of nodes: without
-    order and nesting it is useless.
+    План принадлежит курсу, а не человеку: читает его всякий, кто в курсе
+    работает, правит — назначенный ведущий учитель (`CourseScopedViewSet`).
+
+    Список отдаёт дерево целиком, а не плоский набор узлов: без порядка и
+    вложенности он бесполезен.
     """
 
     queryset = PlanNode.objects.select_related("course", "parent")
@@ -120,12 +123,15 @@ class PlanNodeViewSet(TeacherScopedViewSet):
             return PlanNodeDetailSerializer
         return PlanNodeUpdateSerializer
 
-    def requested_course(self):
+    def requested_course(self, *, write=False):
         """
         The course from ?course=, limited to the requester's school.
 
-        A course of another school is a 404 — the plan inside it is personal
-        anyway, but the course itself must not even be namable.
+        A course of another school is a 404 — the course must not even be
+        namable. `write=True` вдобавок требует, чтобы спрашивающий был
+        назначен ведущим: действия без объекта на входе (импорт, отправка
+        на утверждение) мимо `get_object` проходят, и проверять их надо
+        здесь — другого общего места у них нет.
         """
         raw = self.request.query_params.get("course")
         if not raw or not raw.isdigit():
@@ -135,18 +141,15 @@ class PlanNodeViewSet(TeacherScopedViewSet):
                 field="course",
             )
 
-        return get_object_or_404(
+        course = get_object_or_404(
             Course.objects.filter(school_id=self.request.user.school_id), pk=raw
         )
-
-    def owner_of(self, course):
-        """Whose plan in which course — everything below needs the pair."""
-        return services.PlanOwner(
-            teacher_id=self.request.user.pk, course_id=course.pk
-        )
+        if write:
+            self.require_lead(course)
+        return course
 
     def list(self, request, *args, **kwargs):
-        return Response(tree_payload(self.owner_of(self.requested_course())))
+        return Response(tree_payload(self.requested_course().pk))
 
     def layout_entries(self, course):
         """Matching the plan to the schedule. Queries here, maths in services."""
@@ -155,7 +158,7 @@ class PlanNodeViewSet(TeacherScopedViewSet):
         ).order_by("date", "lesson_number")
 
         return services.build_layout(
-            services.flatten_lessons(self.owner_of(course)),
+            services.flatten_lessons(course.pk),
             list(slots),
             course.year.terms.all(),
         )
@@ -173,7 +176,7 @@ class PlanNodeViewSet(TeacherScopedViewSet):
         return Response(
             {
                 "courses": progress.rows_for(
-                    progress.own_pairs(request.user), timezone.localdate()
+                    progress.own_courses(request.user), timezone.localdate()
                 )
             }
         )
@@ -189,12 +192,11 @@ class PlanNodeViewSet(TeacherScopedViewSet):
         спрашивала бы это тремя запросами и показывала бы полусостояние.
         """
         course = self.requested_course()
-        owner = self.owner_of(course)
 
         return Response(
             baseline_payload(
-                approval.approved_baseline(owner.teacher_id, owner.course_id),
-                approval.open_request(owner.teacher_id, owner.course_id),
+                approval.approved_baseline(course.pk),
+                approval.open_request(course.pk),
                 approval.methodists_for(course),
                 subject=course.name,
             )
@@ -210,8 +212,7 @@ class PlanNodeViewSet(TeacherScopedViewSet):
         подставляется сам. Ни одного — отказ с объяснением: молчаливое «не
         получилось» отправило бы человека искать ошибку у себя.
         """
-        course = self.requested_course()
-        owner = self.owner_of(course)
+        course = self.requested_course(write=True)
         methodists = approval.methodists_for(course)
 
         if not methodists:
@@ -242,11 +243,11 @@ class PlanNodeViewSet(TeacherScopedViewSet):
                 field="reviewer",
             )
 
-        baseline = approval.submit(owner, course, reviewer)
+        baseline = approval.submit(course, reviewer, request.user)
 
         return Response(
             baseline_payload(
-                approval.approved_baseline(owner.teacher_id, owner.course_id),
+                approval.approved_baseline(course.pk),
                 baseline,
                 methodists,
                 subject=course.name,
@@ -351,11 +352,9 @@ class PlanNodeViewSet(TeacherScopedViewSet):
         # расписанию и повторяется после любой правки, а курсов у учителя
         # пять. Расчёт при этом тот же самый — `build_layout` по всему плану
         # и всему расписанию курса, период только режет ответ
-        owners = [
-            services.PlanOwner(teacher_id=request.user.pk, course_id=course.pk)
-            for course in courses
-        ]
-        lessons_by_owner = services.lessons_by_owner(owners)
+        lessons_by_course = services.lessons_by_course(
+            [course.pk for course in courses]
+        )
 
         slots_by_course = defaultdict(list)
         for slot in LessonSlot.objects.filter(
@@ -364,9 +363,9 @@ class PlanNodeViewSet(TeacherScopedViewSet):
             slots_by_course[slot.course_id].append(slot)
 
         slots = {}
-        for course, owner in zip(courses, owners):
+        for course in courses:
             entries = services.build_layout(
-                lessons_by_owner[owner],
+                lessons_by_course[course.pk],
                 slots_by_course[course.pk],
                 course.year.terms.all(),
             )
@@ -484,50 +483,49 @@ class PlanNodeViewSet(TeacherScopedViewSet):
     @action(detail=False, methods=["post"], url_path="import", url_name="import")
     def import_csv(self, request):
         """Импорт плана из CSV."""
-        return self.run_import(*self.read_upload())
+        # право спрашивается до чтения файла: разбирать присланное у того,
+        # кому сюда нельзя, незачем
+        return self.run_import(self.requested_course(write=True), *self.read_upload())
 
     @action(detail=False, methods=["post"], url_path="import-xlsx",
             url_name="import-xlsx")
     def import_xlsx(self, request):
         """Импорт плана из книги Excel — тем же путём, что и CSV."""
-        return self.run_import(*self.read_workbook())
+        return self.run_import(
+            self.requested_course(write=True), *self.read_workbook()
+        )
 
-    def run_import(self, parsed, about):
+    def run_import(self, course, parsed, about):
         """
         Либо файл заезжает целиком, либо ничего.
 
         Разбор идёт до транзакции: непригодный файл не должен успеть снести
         существующий план в режиме replace.
         """
-        request = self.request
-        course = self.requested_course()
         if not parsed.ok:
             # файл читается строго: непонятная строка отклоняет его целиком,
             # и до плана дело не доходит вовсе
             self.refuse(parsed.errors)
         mode = self.read_mode(parsed)
-        owner = self.owner_of(course)
 
         if mode == "sync":
-            plan = services.plan_sync(owner, parsed.rows)
+            plan = services.plan_sync(course.pk, parsed.rows)
             if not plan.ok:
                 # весь файл или ничего: применить половину значит оставить
                 # человека разбираться, какую именно
                 self.refuse(plan.errors)
 
             with transaction.atomic():
-                done = services.apply_sync(owner, plan)
+                done = services.apply_sync(course.pk, plan)
 
             return Response({**done, **about})
 
         with transaction.atomic():
             if mode == "replace":
-                PlanNode.objects.filter(
-                    teacher=request.user, course=course
-                ).delete()
+                PlanNode.objects.filter(course=course).delete()
 
             created = services.apply_import(
-                owner, parsed.rows, append=(mode == "append")
+                course.pk, parsed.rows, append=(mode == "append")
             )
 
         return Response(
@@ -564,7 +562,6 @@ class PlanNodeViewSet(TeacherScopedViewSet):
         """
         course = self.requested_course()
         mode = self.read_mode(parsed, refusing=False)
-        owner = self.owner_of(course)
 
         errors = list(parsed.errors)
         new_sections = new_lessons = update = 0
@@ -581,7 +578,7 @@ class PlanNodeViewSet(TeacherScopedViewSet):
                 )
             ]
         elif mode == "sync":
-            plan = services.plan_sync(owner, parsed.rows)
+            plan = services.plan_sync(course.pk, parsed.rows)
             errors = plan.errors
             new_sections = sum(1 for row, _, _ in plan.create if row.is_section)
             new_lessons = len(plan.create) - new_sections
@@ -589,7 +586,7 @@ class PlanNodeViewSet(TeacherScopedViewSet):
         else:
             new_sections, new_lessons = parsed.sections, parsed.lessons
             # append не удаляет ничего, replace — всё, что было
-            doomed = list(services.plan_nodes(owner)) if mode == "replace" else []
+            doomed = list(services.plan_nodes(course.pk)) if mode == "replace" else []
 
         return Response(
             {
@@ -617,7 +614,7 @@ class PlanNodeViewSet(TeacherScopedViewSet):
     def export_csv(self, request):
         """Выгрузка плана в CSV — формат тот же, что понимает импорт."""
         course = self.requested_course()
-        content = services.build_plan_csv(services.get_tree(self.owner_of(course)))
+        content = services.build_plan_csv(services.get_tree(course.pk))
 
         return self.as_download(
             content, course, "csv", "text/csv; charset=utf-8"
@@ -633,7 +630,7 @@ class PlanNodeViewSet(TeacherScopedViewSet):
         столбец id) живёт в `plans/xlsx.py` — здесь только выдача файла.
         """
         course = self.requested_course()
-        content = xlsx.build_plan_xlsx(services.get_tree(self.owner_of(course)))
+        content = xlsx.build_plan_xlsx(services.get_tree(course.pk))
 
         return self.as_download(
             content,
@@ -682,9 +679,9 @@ class PlanNodeViewSet(TeacherScopedViewSet):
                 services.dissolve_section(node)
             else:
                 parent_id = node.parent_id
-                # the node is needed as the (teacher, course) pair afterwards
+                # узел ещё нужен: по нему берут курс, чтобы перенумеровать
                 node.delete()
-                services.reindex(node, parent_id)
+                services.reindex(node.course_id, parent_id)
 
         return Response(status=status.HTTP_204_NO_CONTENT)
 
@@ -723,7 +720,10 @@ class SectionMoveView(APIView):
 
     def post(self, request, pk):
         section = get_object_or_404(
-            PlanNode.objects.filter(teacher=request.user, is_section=True), pk=pk
+            PlanNode.objects.filter(
+                course__assignments__teacher=request.user, is_section=True
+            ),
+            pk=pk,
         )
         return perform_move(section, request.data)
 
@@ -762,7 +762,7 @@ class PlanReviewViewSet(ReadOnlyModelViewSet):
         return Response(
             {
                 "plans": progress.rows_for(
-                    progress.supervised_pairs(request.user), timezone.localdate()
+                    progress.supervised_courses(request.user), timezone.localdate()
                 )
             }
         )
@@ -770,12 +770,8 @@ class PlanReviewViewSet(ReadOnlyModelViewSet):
     def retrieve(self, request, pk=None):
         baseline = self.get_object()
         course = baseline.course
-        slots = LessonSlot.objects.filter(
-            teacher=baseline.teacher, course=course, is_cancelled=False
-        ).count()
-        rows = services.plan_snapshot(
-            services.PlanOwner(teacher_id=baseline.teacher_id, course_id=course.pk)
-        )
+        slots = LessonSlot.objects.filter(course=course, is_cancelled=False).count()
+        rows = services.plan_snapshot(course.pk)
         lessons = sum(1 for row in rows if not row.is_section)
 
         return Response(

@@ -17,6 +17,7 @@ from django.db import connection
 from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 from plans.models import PlanNode
+from schedule.serializers import full_name
 from rest_framework.test import APITestCase
 from schools.testing import (
     MONDAY,
@@ -134,13 +135,19 @@ class TwoSidesTests(AssignmentTestCase):
             ["9Б Алгебра", "9Б Геометрия"],
         )
 
-    def test_one_course_can_be_taught_by_several_people(self):
+    def test_a_course_has_one_lead_teacher(self):
+        """Ассистенты бывают, а ведущий один — и план у курса поэтому один."""
         self.as_admin()
-
         self.post_assignment(self.algebra, self.user)
-        self.post_assignment(self.algebra, self.colleague)
 
-        self.assertEqual(self.algebra.assignments.count(), 2)
+        refused = self.post_assignment(self.algebra, self.colleague)
+
+        self.assertEqual(refused.status_code, 400)
+        body = refused.json()
+        self.assertEqual(body["code"], "course_teacher_taken")
+        # называем того, кто там стоит: «занято» без имени бесполезно
+        self.assertEqual(body["params"]["teacher"], full_name(self.user))
+        self.assertEqual(self.algebra.assignments.count(), 1)
 
     def test_the_same_pair_cannot_be_written_twice(self):
         self.as_admin()

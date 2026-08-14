@@ -17,11 +17,9 @@ class PlanTestCase(SchoolTestMixin, APITestCase):
         assign(self.user, self.course)
         self.alien_class = self.make_course(self.alien_school, "9А")
 
-    def owner(self, teacher=None, course=None):
-        """The (teacher, course) pair every plan query needs."""
-        return services.PlanOwner(
-            teacher_id=(teacher or self.user).pk, course_id=(course or self.course).pk
-        )
+    def owner(self, course=None):
+        """Курс, которому принадлежит план: ключ всех выборок ниже."""
+        return (course or self.course).pk
 
     def make_course(self, school, name):
         return make_course(school, name=name)
@@ -261,7 +259,6 @@ class CreateTests(PlanTestCase):
     def test_model_clean_forbids_nested_section(self):
         trig, _, _ = self.build_sample()
         node = PlanNode(
-            teacher=self.user,
             course=self.course,
             parent=trig,
             position=9,
@@ -276,9 +273,7 @@ class CreateTests(PlanTestCase):
 
     def test_model_clean_forbids_duplicate_position(self):
         self.build_sample()
-        node = PlanNode(
-            teacher=self.user, course=self.course, parent=None, position=0, title="Дубль"
-        )
+        node = PlanNode(course=self.course, parent=None, position=0, title="Дубль")
 
         with self.assertRaises(ValidationError) as caught:
             node.full_clean()

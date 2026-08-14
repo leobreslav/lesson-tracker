@@ -82,11 +82,8 @@ class LibraryTestCase(SchoolTestMixin, APITestCase):
         """
         from plans import services
 
-        owner = services.PlanOwner(
-            teacher_id=(teacher or self.user).pk, course_id=(course or self.course).pk
-        )
         rows = []
-        for branch in services.get_tree(owner):
+        for branch in services.get_tree((course or self.course).pk):
             rows.append((branch.node.is_section, branch.node.title, None))
             rows.extend(
                 (False, child.title, branch.node.title) for child in branch.children
@@ -421,18 +418,19 @@ class FromPlanTests(LibraryTestCase):
         self.assertEqual(response.json()["code"], "plan_empty")
         self.assertFalse(PlanTemplate.objects.exists())
 
-    def test_a_colleagues_plan_in_the_same_course_is_not_taken(self):
-        """The course is shared; the plan inside it is not."""
-        self.build_plan(teacher=self.colleague)
+    def test_a_plan_of_a_course_i_do_not_teach_is_not_taken(self):
+        """Снять шаблон можно со своего курса — чужой в поле не пройдёт."""
+        theirs = make_course(self.school, self.year, "9Ж")
+        self.build_plan(teacher=self.colleague, course=theirs)
 
         response = self.client.post(
             reverse("plantemplate-from-plan"),
-            {"course": self.course.pk, "title": "Чужой план"},
+            {"course": theirs.pk, "title": "Чужой план"},
             format="json",
         )
 
         self.assertEqual(response.status_code, 400, response.content)
-        self.assertEqual(response.json()["code"], "plan_empty")
+        self.assertIn("course", response.json())
 
 
 class UpdateFromPlanTests(LibraryTestCase):
@@ -512,13 +510,16 @@ class UpdateFromPlanTests(LibraryTestCase):
         self.template.is_published = True
         self.template.save(update_fields=["is_published"])
 
+        theirs = make_course(self.school, self.year, "9Е")
+        assign(self.colleague, theirs)
+
         self.sign_in(self.colleague)
         self.client.post(
             reverse("plan-import-from-template"),
-            {"course": self.course.pk, "template": self.template.pk},
+            {"course": theirs.pk, "template": self.template.pk},
             format="json",
         )
-        before = self.structure(teacher=self.colleague)
+        before = self.structure(course=theirs)
 
         self.sign_in(self.user)
         make_node(self.user, self.course, "Добавленный позже", position=9)
@@ -528,7 +529,7 @@ class UpdateFromPlanTests(LibraryTestCase):
             format="json",
         )
 
-        self.assertEqual(self.structure(teacher=self.colleague), before)
+        self.assertEqual(self.structure(course=theirs), before)
 
 
 class ImportTests(LibraryTestCase):
@@ -574,12 +575,14 @@ class ImportTests(LibraryTestCase):
         self.assertEqual(structure[0], (False, "Старый урок", None))
         self.assertEqual(len(structure), len(SAMPLE) + 1)
 
-    def test_it_writes_into_my_plan_and_not_the_authors(self):
+    def test_it_writes_into_the_named_course_and_no_other(self):
+        untouched = make_course(self.school, self.year, "9З")
+        assign(self.colleague, untouched)
+
         self.use()
 
-        self.assertFalse(
-            PlanNode.objects.filter(teacher=self.colleague, course=self.course).exists()
-        )
+        self.assertTrue(PlanNode.objects.filter(course=self.course).exists())
+        self.assertFalse(PlanNode.objects.filter(course=untouched).exists())
 
     def test_three_courses_get_three_independent_plans(self):
         second = make_course(self.school, self.year, "9В")
