@@ -1,0 +1,95 @@
+import { PEOPLE, expect, ready, test } from './harness.js'
+
+/**
+ * Работы глазами учителя: список, окно времени, задачи с эталонами.
+ *
+ * Через браузер это стоит гонять из-за двух вещей, которые молча ломаются:
+ * состояние работы приходит с сервера (у браузера часы свои), а условие
+ * задачи — Markdown с формулами, то есть путь через KaTeX, который сборка
+ * не проверяет.
+ */
+
+const openWorks = async (page, course = 'Grade 6 Algebra') => {
+  await page.goto('/works')
+  await ready(page)
+  await page.getByRole('button', { name: course, exact: true }).click()
+
+  return page.locator('.work-list')
+}
+
+test('три состояния работы видны сразу и подписаны', async ({ page, signIn }) => {
+  await signIn(PEOPLE.ivanova)
+  const list = await openWorks(page)
+
+  await expect(list.locator('.course-row')).toHaveCount(3)
+  await expect(list.locator('.badge.state-open')).toHaveText('открыта')
+  await expect(list.locator('.badge.state-closed')).toHaveText('закрыта')
+  await expect(list.locator('.badge.state-planned')).toHaveText('запланирована')
+})
+
+test('задачи видны с формулами и эталонами, порядок меняется', async ({
+  page,
+  signIn,
+}) => {
+  await signIn(PEOPLE.ivanova)
+  const list = await openWorks(page)
+
+  const work = list.locator('.course-row', { hasText: 'Проверочная' })
+  await work.locator('.toggle').click()
+
+  // формула отрисована KaTeX, а не осталась долларами в тексте
+  await expect(work.locator('.task-question .katex').first()).toBeVisible()
+  // два эталона у одной задачи: «x+3» и «3+x» верны одинаково
+  const second = work.locator('.task-list li').nth(1)
+  await expect(second.locator('.answers .tag')).toHaveCount(2)
+
+  const first = work.locator('.task-list li').first()
+  await expect(first).toContainText('Раскройте скобки')
+  await second.getByRole('button', { name: 'Ниже' }).click()
+
+  await expect(work.locator('.task-list li').nth(2)).toContainText('Упростите')
+})
+
+test('новая работа заводится с окном времени и получает задачу', async ({
+  page,
+  signIn,
+}) => {
+  await signIn(PEOPLE.ivanova)
+  const list = await openWorks(page, 'Grade 6 Geometry')
+
+  await page.getByRole('button', { name: 'Новая работа' }).click()
+  const dialog = page.locator('dialog.modal')
+  await dialog.getByLabel('Название').fill('Проверочная по углам')
+  await dialog.getByRole('button', { name: 'Сохранить' }).click()
+
+  const work = list.locator('.course-row', { hasText: 'Проверочная по углам' })
+  // окно в будущем и есть «черновик»: работа запланирована, а не открыта
+  await expect(work.locator('.badge')).toHaveText('запланирована')
+
+  await work.locator('.toggle').click()
+  await work.getByRole('button', { name: 'Добавить задачу' }).click()
+  const task = page.locator('dialog.modal')
+  await task.getByLabel('Условие').fill('Сумма углов треугольника?')
+  await task.getByLabel('Ответ 1').fill('180')
+  await task.getByRole('button', { name: 'Сохранить' }).click()
+
+  await expect(work.locator('.task-list li')).toHaveCount(1)
+  await expect(work).toContainText('180')
+})
+
+test('правка работы, в которой уже отвечали, называет цену', async ({
+  page,
+  signIn,
+}) => {
+  await signIn(PEOPLE.ivanova)
+  const list = await openWorks(page)
+
+  const work = list.locator('.course-row', { hasText: 'Контрольная' })
+  await work.locator('.toggle').click()
+  await work.getByRole('button', { name: 'Настройки' }).click()
+
+  // не запрет, а число: правка проходит, но человек знает, чего она стоит
+  const dialog = page.locator('dialog.modal')
+  await expect(dialog).toContainText('уже отвечали')
+  await expect(dialog.getByRole('button', { name: 'Сохранить' })).toBeEnabled()
+})

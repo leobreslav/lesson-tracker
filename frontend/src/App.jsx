@@ -18,6 +18,7 @@ import SchoolCourses from './SchoolCourses'
 import SchoolOverview from './SchoolOverview'
 import SchoolReference from './SchoolReference'
 import SchoolStudents from './SchoolStudents'
+import Works from './Works'
 import SchoolTeachers from './SchoolTeachers'
 import SchoolSchedule from './SchoolSchedule'
 import Schools from './Schools'
@@ -159,6 +160,7 @@ export default function App() {
           <Route path="/schedule" element={guarded(Agenda)} />
           <Route path="/reviews" element={guarded(Reviews)} />
           <Route path="/plan" element={guarded(Plan)} />
+          <Route path="/works" element={guarded(Works)} />
           <Route path="/classes" element={guarded(Classes, { user })} />
           {/* «Школа» — не одна страница, а четыре: рамка с подменю и
               вложенные маршруты под ней */}

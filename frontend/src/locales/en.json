@@ -45,7 +45,8 @@
     "needClass": "add a class first",
     "school": "School",
     "schools": "Schools",
-    "reviews": "For approval"
+    "reviews": "For approval",
+    "works": "Works"
   },
   "auth": {
     "prompt": "Sign in to continue.",
@@ -212,7 +213,13 @@
     "roster_two_emails": "Line {{line}}: two addresses in one line.",
     "roster_too_many_columns": "Line {{line}}: {{columns}} columns — a name and an address are expected.",
     "roster_too_many_rows": "Not more than {{limit}} lines at a time.",
-    "year_shrink_cuts_slots": "The new boundaries leave {{slots}} lessons and {{master_slots}} timetable rows outside the year. They are not deleted, but they stop being part of it."
+    "year_shrink_cuts_slots": "The new boundaries leave {{slots}} lessons and {{master_slots}} timetable rows outside the year. They are not deleted, but they stop being part of it.",
+    "work_not_open": "This work has not opened yet.",
+    "work_closed": "The work is closed: answers are no longer accepted.",
+    "not_in_course": "You are no longer in this course. What you have done stays visible.",
+    "attempts_exhausted": "No attempts left for this task.",
+    "work_dates_reversed": "The work closes before it opens.",
+    "task_question_required": "A task needs a question."
   },
   "classPicker": {
     "label": "Classes:",
@@ -856,6 +863,58 @@
     "conflict": {
       "already_member": "this address is already in another school",
       "email_other_kind": "this address belongs to a teacher"
+    }
+  },
+  "works": {
+    "title": "Works of the course",
+    "hint": "Tests, quizzes and homework — the same thing with different settings. A work appears for the students the moment its window opens, so there is no draft state to remember.",
+    "none": "No works in this course yet.",
+    "add": "New work",
+    "edit": "Work settings",
+    "settings": "Settings",
+    "workTitle": "Title",
+    "opensAt": "Opens",
+    "closesAt": "Closes",
+    "windowHint": "Students see the work only while the window is open. Set it in the future and the work stays hidden until then.",
+    "limited": "Limit the attempts",
+    "attempts": "Attempts per task",
+    "attemptsHint": "An attempt is spent on every submission, whether you have checked it or not.",
+    "showResult": "Show the verdict to the student straight away",
+    "impact": "{{students}} students have already answered here: {{answers}} answers. Editing is allowed — they will see the change immediately.",
+    "taskCount_one": "{{count}} task",
+    "taskCount_other": "{{count}} tasks",
+    "attemptsFree": "attempts: unlimited",
+    "attemptsLimited_one": "{{count}} attempt per task",
+    "attemptsLimited_other": "{{count}} attempts per task",
+    "resultShown": "the verdict is shown at once",
+    "resultHidden": "the verdict is shown after the window closes",
+    "delete": "Delete «{{name}}»?",
+    "deleteWithTasks": "Delete «{{name}}» with its {{count}} tasks? The answers of the students go with it.",
+    "state": {
+      "planned": "planned",
+      "open": "open",
+      "closed": "closed"
+    },
+    "needCourse": {
+      "title": "No courses yet",
+      "hint": "A work belongs to a course, and courses are created by the school administrator."
+    },
+    "task": {
+      "add": "Add a task",
+      "edit": "Task",
+      "none": "No tasks yet — a work without them shows the students an empty page.",
+      "question": "Question",
+      "preview": "Preview",
+      "write": "Write",
+      "answers": "Accepted answers",
+      "answersHint": "One per line. «x+3» and «3+x» are both right, so write both. Leave empty if you check this one by hand.",
+      "answerNumber": "Answer {{number}}",
+      "noAnswers": "checked by hand",
+      "delete": "Delete the task",
+      "deleteConfirm": "Delete this task? The answers to it go with it.",
+      "impact": "{{answers}} answers already, {{checked}} of them checked.",
+      "recheck_one": "Clear {{count}} verdict",
+      "recheck_other": "Clear {{count}} verdicts"
     }
   }
 }

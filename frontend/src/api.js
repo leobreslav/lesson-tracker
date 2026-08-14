@@ -441,12 +441,59 @@ export const submitBaseline = (classId, reviewer) =>
     body: reviewer ? { reviewer } : {},
   })
 
+// --- работы: контрольные, проверочные, домашние ---
+//
+// У учителя своя половина (сами работы и задачи), у ученика своя (что
+// открыто и что он ответил). Адреса разные, потому что и вопросы разные.
+
+export const fetchWorks = (course) =>
+  request(`/api/works/?course=${course}`)
+
+export const createWork = (fields) =>
+  request('/api/works/', { method: 'POST', body: fields })
+
+export const updateWork = (id, fields) =>
+  request(`/api/works/${id}/`, { method: 'PATCH', body: fields })
+
+export const deleteWork = (id) => request(`/api/works/${id}/`, { method: 'DELETE' })
+
+/** Что стоит за работой прямо сейчас: сколько ответов и проверок. */
+export const fetchWorkImpact = (id) => request(`/api/works/${id}/impact/`)
+
+export const fetchTasks = (work) => request(`/api/works/tasks/?work=${work}`)
+
+export const createTask = (fields) =>
+  request('/api/works/tasks/', { method: 'POST', body: fields })
+
+export const updateTask = (id, fields) =>
+  request(`/api/works/tasks/${id}/`, { method: 'PATCH', body: fields })
+
+export const deleteTask = (id) =>
+  request(`/api/works/tasks/${id}/`, { method: 'DELETE' })
+
+export const moveTask = (id, direction) =>
+  request(`/api/works/tasks/${id}/move/`, { method: 'POST', body: { direction } })
+
+export const fetchTaskImpact = (id) => request(`/api/works/tasks/${id}/impact/`)
+
+/** Снять вердикты со всех отправок задачи — «перепроверить». */
+export const recheckTask = (id) =>
+  request(`/api/works/tasks/${id}/recheck/`, { method: 'POST' })
+
 // --- ученик ---
 //
 // Единственный пока адрес его половины приложения: где учусь и где учился.
 // Снятый курс из ответа не исчезает, у него стоит `active: false`.
 
 export const fetchStudentCourses = () => request('/api/student/courses/')
+
+/** Работы ученика: открытые и закрытые, с его продвижением по ним. */
+export const fetchStudentWorks = () => request('/api/student/works/')
+
+export const fetchStudentWork = (id) => request(`/api/student/works/${id}/`)
+
+export const sendAnswer = (task, answer) =>
+  request(`/api/student/tasks/${task}/answer/`, { method: 'POST', body: { answer } })
 
 /** Очередь методиста: планы по его предметам, присланные на утверждение. */
 export const fetchReviews = () => request('/api/plan/reviews/')

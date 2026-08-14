@@ -80,3 +80,30 @@ function addIsoDays(iso, count) {
   const day = String(date.getDate()).padStart(2, '0')
   return `${date.getFullYear()}-${month}-${day}`
 }
+
+
+/**
+ * Момент времени — дата и часы, в языке пользователя.
+ *
+ * У работ время значимо: «открыта до 23:59 воскресенья» и «до 09:00
+ * понедельника» — разные обещания, и одной датой их не различить.
+ */
+export const dateTime = (iso) =>
+  formatter({ dateStyle: 'short', timeStyle: 'short' }).format(new Date(iso))
+
+/**
+ * ISO → значение для `<input type="datetime-local">` и обратно.
+ *
+ * Поле работает в **местном** времени и без зоны, сервер — в UTC с зоной.
+ * Перевод нужен в обе стороны и ровно один раз: посчитанное «на глазок»
+ * смещение однажды разъедется на переводе часов.
+ */
+export function toLocalInput(iso) {
+  if (!iso) return ''
+  const moment = new Date(iso)
+  const shifted = new Date(moment.getTime() - moment.getTimezoneOffset() * 60000)
+  return shifted.toISOString().slice(0, 16)
+}
+
+export const fromLocalInput = (value) =>
+  value ? new Date(value).toISOString() : null

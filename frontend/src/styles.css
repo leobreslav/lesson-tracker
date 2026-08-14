@@ -967,6 +967,25 @@ button.chip.active {
   font-weight: 400;
 }
 
+/* правило выше — про строку «чекбокс и подпись», и в колонке оно
+   центрирует подпись над полем. Поле с подписью сверху раскладывает себя
+   само, поэтому исключение стоит здесь же, рядом с причиной */
+.modal-body label.field-with-hint {
+  align-items: stretch;
+}
+
+.modal-body textarea {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 0.5rem 0.65rem;
+  font: inherit;
+  color: inherit;
+  background: #fff;
+  border: 1px solid #c6c6c6;
+  border-radius: 4px;
+  resize: vertical;
+}
+
 .modal-body select {
   padding: 0.35rem 0.4rem;
   font: inherit;
@@ -2041,6 +2060,112 @@ button.progress-head:hover:not(:disabled) {
 
 .course-head .toggle {
   padding: 0;
+}
+
+/*
+ * Работы: та же строка, что у курса, только колонки другие.
+ *
+ * Пять колонок вместо четырёх — название, состояние, окно, число задач, — и
+ * состояние отдельной плашкой: «открыта» это первое, что ищут глазами, и
+ * искать его внутри даты пришлось бы читая.
+ */
+.work-list .course-head {
+  grid-template-columns: 1.5rem minmax(8rem, 1.5fr) auto minmax(9rem, 1fr) auto auto;
+}
+
+/* у курса в теле две колонки ролей, у работы — одна лента задач: условия
+   многострочные, и в колонку шириной в треть экрана они не читаются */
+.work-list .course-body {
+  display: block;
+}
+
+.work-list .course-body > * + * {
+  margin-top: 0.5rem;
+}
+
+.badge.state-open {
+  background: #d7f0d9;
+  color: #1a6b23;
+}
+
+.badge.state-planned {
+  background: #e3e8f0;
+  color: #45526b;
+}
+
+.badge.state-closed {
+  background: #f1f3f4;
+  color: #666;
+}
+
+/* задачи: условие во всю ширину, эталоны плашками, кнопки справа */
+.task-list {
+  margin: 0;
+  padding-left: 1.4rem;
+}
+
+.task-list li {
+  padding: 0.4rem 0;
+  border-top: 1px solid #eceff1;
+}
+
+.task-list li:first-child {
+  border-top: none;
+}
+
+.task-question p:first-child {
+  margin-top: 0;
+}
+
+.task-question p:last-child {
+  margin-bottom: 0;
+}
+
+.task-list .answers {
+  margin-top: 0.2rem;
+}
+
+/* эталон — это строка, с которой сверяются посимвольно: моноширинный шрифт
+   и рамка, потому что «x + 3» и «x+3» должны отличаться на глаз */
+.task-list .answers .tag {
+  padding: 0.1rem 0.4rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.8rem;
+  background: #fff;
+  border: 1px solid #dfe3e6;
+}
+
+.task-actions {
+  display: flex;
+  gap: 0.4rem;
+  margin-top: 0.2rem;
+}
+
+/* окно задачи: условие и эталоны, оба на всю ширину окна */
+.task-preview {
+  min-height: 6rem;
+  padding: 0.5rem 0.65rem;
+  background: var(--surface-1);
+  border-radius: 4px;
+}
+
+.answer-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.answer-list li + li {
+  margin-top: 0.3rem;
+}
+
+.answer-list input {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 0.4rem 0.6rem;
+  font: inherit;
+  border: 1px solid #c6c6c6;
+  border-radius: 4px;
 }
 
 .course-body {
