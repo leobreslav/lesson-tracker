@@ -2258,7 +2258,15 @@ button.compact,
 
 /* проверка столбцом: ответы подряд, отметка справа от каждого */
 .attempt-list.checking li {
-  grid-template-columns: minmax(6rem, auto) 1fr auto;
+  grid-template-columns: minmax(8rem, 10rem) 1fr auto;
+}
+
+/* имя в проверке столбцом отрезано так же, как номер попытки: слева «кто»,
+   справа «что ответил», и путать их нельзя */
+.attempt-list.checking .hint {
+  padding-right: 0.5rem;
+  text-align: right;
+  border-right: 1px solid #dfe3e6;
 }
 
 .verdict-buttons {
@@ -2342,20 +2350,42 @@ button.compact,
 
 .attempt-list li {
   display: grid;
-  grid-template-columns: auto 1fr auto auto;
-  align-items: baseline;
+  /* номер попытки в колонке своей ширины: у всех строк он одинаков, и
+     ответ должен начинаться на одной вертикали, а не съезжать за ним */
+  grid-template-columns: 5rem 1fr auto auto;
+  align-items: center;
   gap: 0.5rem;
-  padding: 0.25rem 0.4rem;
+  padding: 0.3rem 0.5rem;
   border-radius: var(--row-radius);
   background: var(--surface-1);
+}
+
+/*
+ * «попытка 2» — пометка, а не часть ответа.
+ *
+ * Стояла вплотную к ответу тем же кеглем, и строка читалась как «попытка 2
+ * пять»: глаз не отделял подпись от того, что написал ученик. Поэтому она
+ * мельче, приглушена и отрезана чертой — ответ начинается за ней.
+ */
+.attempt-list .attempt {
+  padding-right: 0.5rem;
+  font-size: 0.75rem;
+  color: #80868b;
+  text-align: right;
+  white-space: nowrap;
+  border-right: 1px solid #dfe3e6;
 }
 
 .attempt-list li + li {
   margin-top: 0.2rem;
 }
 
+/* ответ — главное в строке: моноширинный, чтобы «x + 3» и «x+3»
+   отличались на глаз, и не мельче соседей */
 .attempt-list .answer {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.95rem;
+  color: #202124;
   overflow-wrap: anywhere;
 }
 

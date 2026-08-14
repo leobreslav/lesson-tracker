@@ -143,7 +143,7 @@ function TaskCard({ task, number, canAnswer, onSent, onError }) {
         <ul className="attempt-list">
           {task.submissions.map((submission, index) => (
             <li key={submission.id} className={verdictClass(submission.verdict)}>
-              <span className="hint">
+              <span className="attempt">
                 {t('student.work.attemptNumber', { number: index + 1 })}
               </span>
               <span className="answer">{submission.answer}</span>
