@@ -3,6 +3,7 @@ from config.access import (
     IsSchoolAdminForWrite,
     IsSchoolMember,
     IsSuperuser,
+    IsTeacher,
 )
 from collections import Counter
 
@@ -45,7 +46,12 @@ class MySchoolView(RetrieveUpdateAPIView):
     """
 
     serializer_class = SchoolSerializer
-    permission_classes = [IsAuthenticated, IsSchoolMember, IsSchoolAdminForWrite]
+    permission_classes = [
+        IsAuthenticated,
+        IsSchoolMember,
+        IsTeacher,
+        IsSchoolAdminForWrite,
+    ]
     http_method_names = ["get", "patch", "head", "options"]
 
     def get_object(self):
@@ -61,7 +67,7 @@ class SchoolOverviewView(APIView):
     five chances to show a half-drawn page.
     """
 
-    permission_classes = [IsAuthenticated, IsSchoolMember]
+    permission_classes = [IsAuthenticated, IsSchoolMember, IsTeacher]
 
     def get(self, request):
         from calendars.models import SchoolYear
@@ -77,7 +83,9 @@ class SchoolOverviewView(APIView):
         return Response(
             {
                 "school": {"id": school.pk, "name": school.name},
-                "teachers": User.objects.filter(school=school).count(),
+                "teachers": User.objects.filter(
+                    school=school, kind=User.Kind.TEACHER
+                ).count(),
                 "admins": User.objects.filter(
                     school=school, is_school_admin=True
                 ).count(),
@@ -197,12 +205,21 @@ class MemberViewSet(
     """
 
     serializer_class = MemberSerializer
-    permission_classes = [IsAuthenticated, IsSchoolMember, IsSchoolAdminForWrite]
+    permission_classes = [
+        IsAuthenticated,
+        IsSchoolMember,
+        IsTeacher,
+        IsSchoolAdminForWrite,
+    ]
     http_method_names = ["get", "patch", "delete", "head", "options"]
 
     def get_queryset(self):
+        # участники — это сотрудники: ученики той же школы сюда не попадают
+        # и роль администратора получить не могут
         return (
-            User.objects.filter(school_id=self.request.user.school_id)
+            User.objects.filter(
+                school_id=self.request.user.school_id, kind=User.Kind.TEACHER
+            )
             .prefetch_related("course_assignments__course")
             .order_by("first_name", "last_name", "email")
         )
@@ -275,12 +292,21 @@ class MemberViewSet(
     """
 
     serializer_class = MemberSerializer
-    permission_classes = [IsAuthenticated, IsSchoolMember, IsSchoolAdminForWrite]
+    permission_classes = [
+        IsAuthenticated,
+        IsSchoolMember,
+        IsTeacher,
+        IsSchoolAdminForWrite,
+    ]
     http_method_names = ["get", "patch", "delete", "head", "options"]
 
     def get_queryset(self):
+        # участники — это сотрудники: ученики той же школы сюда не попадают
+        # и роль администратора получить не могут
         return (
-            User.objects.filter(school_id=self.request.user.school_id)
+            User.objects.filter(
+                school_id=self.request.user.school_id, kind=User.Kind.TEACHER
+            )
             .prefetch_related("course_assignments__course")
             .order_by("first_name", "last_name", "email")
         )
@@ -363,7 +389,7 @@ class InvitationViewSet(
 
     serializer_class = InvitationSerializer
     # admins in both directions, so IsSchoolAdmin rather than …ForWrite
-    permission_classes = [IsAuthenticated, IsSchoolMember, IsSchoolAdmin]
+    permission_classes = [IsAuthenticated, IsSchoolMember, IsTeacher, IsSchoolAdmin]
 
     def get_queryset(self):
         return Invitation.objects.filter(school_id=self.request.user.school_id)

@@ -31,6 +31,11 @@ class AccessRulesMixin:
     Own school without the role: **403** with a code — the object is right
     there, it is simply not yours to change.
 
+    Ученик: **403 с кодом** на всё учительское. Он законный пользователь этой
+    школы, просто раздел не его; прятать существование разделов, про которые
+    он и так знает, смысла нет. Проверяется на каждой модели одним блоком —
+    иначе следующая модель приедет без этой проверки.
+
     Another school: the answer must not reveal that the object exists at all.
     For somebody carrying the admin role that means 404 from the queryset; a
     plain teacher of another school is stopped one step earlier, by the role
@@ -129,6 +134,25 @@ class AccessRulesMixin:
             return reverse(name, args=[pk])
         return f"{reverse(name)}?{param}={pk}"
 
+    def assertClosedToStudents(self, *, listing, detail, create, patch):
+        """
+        Ученику закрыто всё учительское — чтение в том числе.
+
+        Читать список курсов или календарь школы ему незачем, а главное —
+        `TeacherScopedViewSet` без этой проверки позволил бы ему **писать**
+        свои уроки и строки плана в любом курсе школы.
+        """
+        self.sign_in(self.student)
+
+        for response in (
+            self.client.get(listing),
+            self.client.get(detail),
+            self.client.post(listing, create, format="json"),
+            self.client.patch(detail, patch, format="json"),
+            self.client.delete(detail),
+        ):
+            self.assertAnswer(response, 403, "teachers_only")
+
     # --- rule 1 and 2: an object owned by the school -------------------------
 
     def assertSchoolObjectRules(
@@ -226,6 +250,11 @@ class AccessRulesMixin:
                 self.client.post(listing, create, format="json"), 403, "no_school"
             )
 
+        with self.subTest(f"{list_url}: ученику закрыто"):
+            self.assertClosedToStudents(
+                listing=listing, detail=detail, create=create, patch=patch
+            )
+
         self.assertActionRules(
             actions=actions, obj=obj, people=(self.stranger, self.alien_admin)
         )
@@ -272,3 +301,14 @@ class AccessRulesMixin:
         with self.subTest(f"{list_url}: без школы — no_school"):
             self.sign_in(self.outsider)
             self.assertAnswer(self.client.get(listing), 403, "no_school")
+
+        with self.subTest(f"{list_url}: ученику закрыто"):
+            self.assertClosedToStudents(
+                listing=listing, detail=detail, create=patch, patch=patch
+            )
+
+        self.assertActionRules(
+            actions=actions,
+            obj=obj,
+            people=(self.colleague, self.admin, self.stranger),
+        )

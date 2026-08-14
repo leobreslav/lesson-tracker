@@ -37,16 +37,22 @@ def make_school(name="Test school") -> School:
     return School.objects.create(name=name)
 
 
-def make_user(school=None, email="teacher@example.com", *, admin=False, root=False):
+def make_user(
+    school=None, email="teacher@example.com", *, admin=False, root=False, student=False
+):
     """
     A member of the school; `school=None` gives somebody nobody invited.
 
     `root` is a Django superuser — the only role that means anything outside
     a school, and only in the section that creates them.
+
+    `student` — второй вид пользователя. Он тоже в школе, но учительские
+    разделы ему закрыты, и проверяет это матрица прав.
     """
     return User.objects.create_user(
         email=email,
         school=school,
+        kind=User.Kind.STUDENT if student else User.Kind.TEACHER,
         is_school_admin=admin,
         is_superuser=root,
         is_staff=root,
@@ -293,6 +299,7 @@ class SchoolTestMixin:
     * `stranger` / `alien_admin` — the same two roles in another school;
     * `outsider` — signed in, invited by nobody;
     * `root` — a Django superuser, built on demand by `make_root()`.
+    * `student` — ученик своей школы: в школе состоит, учителем не является.
     """
 
     def setUp(self):
@@ -308,6 +315,8 @@ class SchoolTestMixin:
             self.alien_school, "alien-admin@example.com", admin=True
         )
         self.outsider = make_user(None, "nobody@example.com")
+        # ученик своей школы: членство есть, учительские разделы закрыты
+        self.student = make_user(self.school, "student@example.com", student=True)
 
         sign_in(self.client, self.user)
 

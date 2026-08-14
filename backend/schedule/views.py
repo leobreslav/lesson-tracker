@@ -2,7 +2,12 @@ from collections import defaultdict
 
 from calendars import services as calendar_services
 from calendars.models import SchoolYear
-from config.access import IsSchoolMember, SchoolScopedViewSet, TeacherScopedViewSet
+from config.access import (
+    IsSchoolMember,
+    IsTeacher,
+    SchoolScopedViewSet,
+    TeacherScopedViewSet,
+)
 from config.errors import Codes, api_denied, api_error
 from django.db import transaction
 from django.db.models import Count
@@ -853,7 +858,7 @@ class ImportFromSchoolView(APIView):
     timetable has no hold on them.
     """
 
-    permission_classes = [IsAuthenticated, IsSchoolMember]
+    permission_classes = [IsAuthenticated, IsSchoolMember, IsTeacher]
 
     def post(self, request):
         form = ImportFromSchoolSerializer(
@@ -882,7 +887,7 @@ class ImportPreviewView(APIView):
     only turn conflicts into replacements, never add new ones.
     """
 
-    permission_classes = [IsAuthenticated, IsSchoolMember]
+    permission_classes = [IsAuthenticated, IsSchoolMember, IsTeacher]
 
     def get(self, request):
         params = request.query_params

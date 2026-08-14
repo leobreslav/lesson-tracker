@@ -1,4 +1,4 @@
-from config.access import IsSchoolMember, SchoolScopedViewSet
+from config.access import IsSchoolMember, IsTeacher, SchoolScopedViewSet
 from config.errors import Codes, api_denied, api_error
 from django.db import transaction
 from django.db.models import Prefetch
@@ -67,7 +67,12 @@ class PlanTemplateViewSet(SchoolScopedViewSet):
     school, in the list and in every foreign key that names one.
     """
 
-    permission_classes = [IsAuthenticated, IsSchoolMember, IsAuthorOrReadOnly]
+    permission_classes = [
+        IsAuthenticated,
+        IsSchoolMember,
+        IsTeacher,
+        IsAuthorOrReadOnly,
+    ]
     queryset = PlanTemplate.objects.select_related("subject", "author")
 
     def get_serializer_class(self):
@@ -269,7 +274,7 @@ class ImportFromTemplateView(APIView):
     plan is worse than none.
     """
 
-    permission_classes = [IsAuthenticated, IsSchoolMember]
+    permission_classes = [IsAuthenticated, IsSchoolMember, IsTeacher]
 
     def post(self, request):
         form = UseTemplateSerializer(data=request.data, context={"request": request})

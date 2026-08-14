@@ -57,6 +57,26 @@ class UserManager(BaseUserManager):
         return self._create_user(email, password, **extra_fields)
 
 
+class Kind(models.TextChoices):
+    """
+    Учитель или ученик. Второй вид пользователя, а не роль внутри первого.
+
+    Роль (`is_school_admin`) — это права над общими объектами школы у того же
+    учителя; переключаться между ролями не нужно, интерфейс один. Ученик —
+    другое дело: у него другой интерфейс целиком, он не должен видеть ни
+    расписания, ни планов, поэтому ветвление идёт на входе, а не внутри
+    экранов.
+
+    Вид проставляется один раз, при приёме приглашения, и не меняется:
+    один адрес — либо учитель, либо ученик. Учительскую и ученическую
+    учётку на одной почте держать нельзя, и это проверяется при
+    приглашении, а не при входе.
+    """
+
+    TEACHER = "teacher", "teacher"
+    STUDENT = "student", "student"
+
+
 class Language(models.TextChoices):
     """UI languages. English is the default; the value is a plain ISO code."""
 
@@ -66,7 +86,7 @@ class Language(models.TextChoices):
 
 class User(AbstractUser):
     """
-    A teacher, and possibly an administrator of their school.
+    A teacher, and possibly an administrator of their school — or a student.
 
     One user belongs to one school: a teacher working in two places would need
     two accounts, and that is a fair trade for keeping every query scoped by a
@@ -78,10 +98,23 @@ class User(AbstractUser):
 
     `school` stays nullable because a signed-in user without a school is a
     real state: Google let them in, but nobody has invited them yet.
+
+    `kind` делит пользователей на два интерфейса. Принадлежность школе
+    перестала означать «сотрудник»: ученик тоже в школе, и каждое место,
+    где выборка «люди школы» подразумевала учителей, сужено явно.
     """
+
+    Kind = Kind
 
     username = None
     email = models.EmailField(_("email address"), unique=True)
+    kind = models.CharField(
+        "kind",
+        max_length=8,
+        choices=Kind,
+        default=Kind.TEACHER,
+        help_text="Учитель или ученик: у них разные интерфейсы целиком.",
+    )
     language = models.CharField(
         _("interface language"),
         max_length=5,
@@ -104,6 +137,10 @@ class User(AbstractUser):
     REQUIRED_FIELDS = []
 
     objects = UserManager()
+
+    @property
+    def is_student(self) -> bool:
+        return self.kind == Kind.STUDENT
 
     def __str__(self):
         return self.email

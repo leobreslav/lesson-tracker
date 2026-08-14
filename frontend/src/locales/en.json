@@ -201,7 +201,8 @@
     "not_a_methodist": "That person does not approve the plan of this course.",
     "comment_required": "Say what to fix — a plan returned without a word is a riddle.",
     "review_closed": "This request is no longer waiting for a decision.",
-    "year_in_use": "The year is in use: its courses hold {{slots}} lessons and {{plan_rows}} plan rows. Their teachers have to clear them first."
+    "year_in_use": "The year is in use: its courses hold {{slots}} lessons and {{plan_rows}} plan rows. Their teachers have to clear them first.",
+    "teachers_only": "This section is for teachers."
   },
   "classPicker": {
     "label": "Classes:",

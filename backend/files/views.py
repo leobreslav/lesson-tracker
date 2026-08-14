@@ -1,4 +1,4 @@
-from config.access import IsSchoolMember
+from config.access import IsSchoolMember, IsTeacher
 from config.errors import Codes, api_denied, api_error, api_unavailable
 from django.http import HttpResponseRedirect
 from django.shortcuts import get_object_or_404
@@ -29,7 +29,7 @@ class AttachmentViewSet(viewsets.ModelViewSet):
     read rule is finer than "everyone in the school" — see `access`.
     """
 
-    permission_classes = [IsAuthenticated, IsSchoolMember]
+    permission_classes = [IsAuthenticated, IsSchoolMember, IsTeacher]
     serializer_class = AttachmentSerializer
 
     def get_queryset(self):

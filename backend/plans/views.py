@@ -1,7 +1,7 @@
 from collections import Counter, defaultdict
 from urllib.parse import quote
 
-from config.access import IsSchoolMember, TeacherScopedViewSet
+from config.access import IsSchoolMember, IsTeacher, TeacherScopedViewSet
 from config.errors import Codes, api_error, error_payload
 from django.db import transaction
 from files import services as file_services
@@ -693,7 +693,7 @@ class PlanNodeViewSet(TeacherScopedViewSet):
 class SectionMoveView(APIView):
     """Moving a whole section against its neighbours on the top level."""
 
-    permission_classes = [IsAuthenticated, IsSchoolMember]
+    permission_classes = [IsAuthenticated, IsSchoolMember, IsTeacher]
 
     def post(self, request, pk):
         section = get_object_or_404(
@@ -722,7 +722,7 @@ class PlanReviewViewSet(ReadOnlyModelViewSet):
     иначе учитель однажды обнаружил бы у себя чужие уроки.
     """
 
-    permission_classes = [IsAuthenticated, IsSchoolMember]
+    permission_classes = [IsAuthenticated, IsSchoolMember, IsTeacher]
     serializer_class = None
 
     def get_queryset(self):

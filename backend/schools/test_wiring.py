@@ -14,10 +14,8 @@ of a reviewer.
 """
 
 from config.access import (
-    IsSchoolAdmin,
-    IsSchoolAdminForWrite,
-    IsSchoolMember,
     IsSuperuser,
+    IsTeacher,
     SchoolScopedViewSet,
     TeacherScopedViewSet,
 )
@@ -32,20 +30,24 @@ from django.urls import URLPattern, URLResolver, get_resolver
 EXEMPT = {
     "GoogleLoginView": "signing in: there is no user yet",
     "LogoutView": "signing out: only deletes the caller's own token",
-    "MeView": "the caller's own profile, taken from the token, never from a URL",
     "APIRootView": (
         "DRF's router index: lists the endpoint URLs of a router and no data. "
         "Authenticated like everything else, and every URL it names is itself "
         "scoped — checked by this very test"
     ),
-    "StatusView": (
-        "onboarding status: deliberately answers a user with no school, "
-        "so the interface can show them the right screen instead of a 403"
+    "MeView": (
+        "the caller's own profile, taken from the token, never from a URL — "
+        "и ученику она нужна ровно так же, как учителю"
     ),
 }
 
-# The permission classes that count as "this view knows about schools".
-SCOPING = (IsSchoolMember, IsSchoolAdmin, IsSchoolAdminForWrite, IsSuperuser)
+# Права, которые отвечают на вопрос «а ученику можно».
+#
+# Раньше здесь стоял `IsSchoolMember` и его родня: пока пользователи были
+# одни учителя, «состоит в школе» и значило «можно». С появлением учеников
+# это перестало быть правдой — членство есть и у них, — поэтому засчитывается
+# только явный ответ про вид пользователя.
+KIND_AWARE = (IsTeacher, IsSuperuser)
 
 
 def api_views(prefix="api/"):
@@ -77,16 +79,27 @@ class ApiWiringTests(SimpleTestCase):
         for expected in ("CourseViewSet", "LessonSlotViewSet", "PlanNodeViewSet"):
             self.assertIn(expected, found)
 
-    def test_every_view_is_scoped_or_listed_as_exempt(self):
+    def test_every_view_answers_whether_a_student_may(self):
+        """
+        Каждая вьюха отвечает, кому она предназначена, — или объясняет себя.
+
+        Базовые классы несут `IsTeacher` сами, поэтому наследнику ничего
+        добавлять не нужно — но проверяется не происхождение, а список прав:
+        снятое с базового класса право открыло бы двенадцать вьюсетов разом.
+        Забыть здесь значит открыть учительский раздел ученику, и по классу
+        вьюхи этого не увидеть — членство в школе у него есть.
+        """
         unscoped = []
 
         for name, (route, view) in sorted(api_views().items()):
             if name in EXEMPT:
                 continue
-            if issubclass(view, (SchoolScopedViewSet, TeacherScopedViewSet)):
-                continue
+            # базовым классам поблажки нет: право смотрится у самой вьюхи,
+            # пусть и унаследованное. Иначе снятое с базового класса
+            # `IsTeacher` открыло бы разом двенадцать вьюсетов, а сторож
+            # продолжал бы засчитывать их по фамилии предка
             if any(
-                issubclass(permission, SCOPING)
+                issubclass(permission, KIND_AWARE)
                 for permission in getattr(view, "permission_classes", [])
             ):
                 continue
@@ -95,8 +108,8 @@ class ApiWiringTests(SimpleTestCase):
         self.assertEqual(
             unscoped,
             [],
-            "эти вьюхи не проходят через config.access и не перечислены в "
-            "EXEMPT — добавьте базовый класс или запишите причину",
+            "эти вьюхи не говорят, кому они предназначены: добавьте базовый "
+            "класс, IsTeacher/IsSuperuser — или причину в EXEMPT",
         )
 
     def test_exempt_views_still_exist(self):

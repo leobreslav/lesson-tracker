@@ -542,7 +542,9 @@ class SuperuserSchoolTests(AccessTestCase):
         rows = {item["name"]: item for item in self.client.get(reverse("school-list")).json()}
 
         self.assertEqual(rows["Test school"]["admins"], ["admin@example.com"])
-        self.assertEqual(rows["Test school"]["members"], 4)
+        # считаются все привязанные к школе, ученики в том числе: это число
+        # отвечает на вопрос «кто мешает удалить школу», а мешают все
+        self.assertEqual(rows["Test school"]["members"], 5)
 
     def test_a_school_admin_is_not_a_superuser(self):
         """The role runs a school; it does not create them."""
@@ -651,6 +653,94 @@ class SuperuserSchoolTests(AccessTestCase):
         )
 
         self.assertCode(response, 403, "school_admin_required")
+
+
+class StudentTests(AccessTestCase):
+    """
+    Второй вид пользователя: в школе состоит, учителем не является.
+
+    Матрица проверяет каждую модель по отдельности; здесь то, что мимо неё:
+    что именно ученику всё-таки можно и что вид не переписывается сам.
+    """
+
+    def test_the_profile_stays_open(self):
+        """`/api/me/` нужна ученику ровно так же: имя, язык, выход."""
+        self.sign_in(self.student)
+
+        response = self.client.get(reverse("me"))
+
+        self.assertEqual(response.status_code, 200, response.content)
+        self.assertEqual(response.json()["email"], self.student.email)
+
+    def test_the_language_is_still_theirs_to_change(self):
+        self.sign_in(self.student)
+
+        response = self.client.patch(reverse("me"), {"language": "ru"}, format="json")
+
+        self.assertEqual(response.status_code, 200, response.content)
+        self.student.refresh_from_db()
+        self.assertEqual(self.student.language, "ru")
+
+    def test_the_kind_is_not_editable_from_the_profile(self):
+        """Вид назначается приглашением, а не заявляется о себе в профиле."""
+        self.sign_in(self.student)
+
+        self.client.patch(reverse("me"), {"kind": "teacher"}, format="json")
+
+        self.student.refresh_from_db()
+        self.assertTrue(self.student.is_student)
+
+    def test_the_first_steps_are_not_theirs(self):
+        """У ученика другая главная, и считать шаги первого входа ему нечего."""
+        self.sign_in(self.student)
+
+        self.assertCode(self.client.get(reverse("onboarding-status")), 403, "teachers_only")
+
+    def test_a_teacher_without_a_school_still_gets_the_steps(self):
+        """
+        Права `IsTeacher` и `IsSchoolMember` разведены нарочно: школы может
+        ещё не быть, и это состояние объясняет ответ, а не отказ.
+        """
+        self.sign_in(self.outsider)
+
+        response = self.client.get(reverse("onboarding-status"))
+
+        self.assertEqual(response.status_code, 200, response.content)
+        self.assertIsNone(response.json()["school"])
+
+    def test_a_student_is_not_a_school_member_in_the_lists(self):
+        """
+        «Люди школы» перестало значить «учителя», и все такие места сужены.
+
+        Иначе ученик попал бы и в список участников, и в выбор «кто ведёт
+        урок» школьного расписания.
+        """
+        self.sign_in(self.admin)
+
+        members = self.client.get(reverse("member-list")).json()
+        self.assertNotIn(
+            self.student.pk, [item["id"] for item in members]
+        )
+
+        overview = self.client.get(reverse("school-overview")).json()
+        self.assertEqual(overview["teachers"], len(members))
+
+    def test_a_student_cannot_be_named_as_the_teacher_of_a_lesson(self):
+        self.sign_in(self.admin)
+
+        response = self.client.post(
+            reverse("masterslot-list"),
+            {
+                "year": self.year.pk,
+                "course": self.course.pk,
+                "teacher": self.student.pk,
+                "date": str(MONDAY),
+                "lesson_number": 5,
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400, response.content)
 
 
 class ActionDoorTests(AccessTestCase):

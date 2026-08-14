@@ -16,6 +16,9 @@ class SchoolSerializer(serializers.ModelSerializer):
     /api/schools/.
     """
 
+    # все привязанные к школе, ученики в том числе: число отвечает на вопрос
+    # «кто мешает её удалить», а мешают все — `User.school` стоит на PROTECT.
+    # Внутри школы «учителей» считает обзор, и там сужение по виду есть
     members = serializers.IntegerField(source="members.count", read_only=True)
     admins = serializers.SerializerMethodField()
 
@@ -28,7 +31,9 @@ class SchoolSerializer(serializers.ModelSerializer):
         """Who runs this school — the list a superuser needs to see."""
         return [
             member.email
-            for member in obj.members.filter(is_school_admin=True).order_by("email")
+            for member in obj.members.filter(
+                is_school_admin=True, kind=User.Kind.TEACHER
+            ).order_by("email")
         ]
 
 

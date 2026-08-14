@@ -1,6 +1,12 @@
 """
 Who may see and change what.
 
+Пользователей два вида, и это первое, что здесь проверяется. Ученик —
+не роль внутри учительского интерфейса, а другой интерфейс целиком: ни
+расписания, ни планов, ни библиотеки он видеть не должен. Принадлежность
+школе перестала означать «сотрудник», поэтому `IsSchoolMember` больше не
+значит «можно» — рядом с ним стоит `IsTeacher`.
+
 There are exactly three access shapes in the project, and they live here
 rather than in twenty querysets:
 
@@ -48,6 +54,30 @@ class IsSchoolMember(BasePermission):
             api_denied(
                 Codes.NO_SCHOOL,
                 "You do not belong to any school yet.",
+            )
+        return True
+
+
+class IsTeacher(BasePermission):
+    """
+    Учитель, а не ученик. Стоит рядом с `IsSchoolMember`, а не вместо него.
+
+    Разделены нарочно: школы у человека может ещё не быть (никто не
+    пригласил), и учительские экраны обязаны это состояние объяснять, а не
+    отказывать. Вид же известен всегда, поэтому проверка вида отдельная и
+    применима там, где школа необязательна — например к статусу первого
+    входа.
+
+    Ученику отвечаем 403 с кодом, а не 404: он законный пользователь этой
+    школы, просто раздел не его. Прятать существование учительских разделов
+    смысла нет — про них он и так знает.
+    """
+
+    def has_permission(self, request, view):
+        if getattr(request.user, "is_student", False):
+            api_denied(
+                Codes.TEACHERS_ONLY,
+                "This section is for teachers.",
             )
         return True
 
@@ -107,7 +137,12 @@ class SchoolScopedViewSet(viewsets.ModelViewSet):
     """
 
     school_path = "school"
-    permission_classes = [IsAuthenticated, IsSchoolMember, IsSchoolAdminForWrite]
+    permission_classes = [
+        IsAuthenticated,
+        IsSchoolMember,
+        IsTeacher,
+        IsSchoolAdminForWrite,
+    ]
 
     def get_queryset(self):
         # the filter closes reading and writing at once: an object from
@@ -126,7 +161,7 @@ class TeacherScopedViewSet(viewsets.ModelViewSet):
     """
 
     teacher_path = "teacher"
-    permission_classes = [IsAuthenticated, IsSchoolMember]
+    permission_classes = [IsAuthenticated, IsSchoolMember, IsTeacher]
 
     def get_queryset(self):
         return super().get_queryset().filter(**{self.teacher_path: self.request.user})

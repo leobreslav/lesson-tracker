@@ -25,12 +25,18 @@ def full_name(person) -> str:
     return f"{person.first_name} {person.last_name}".strip() or person.email
 
 
-def school_members(serializer):
-    """People of the requester's school — the only ones a lesson can name."""
+def school_teachers(serializer):
+    """
+    Учителя школы — единственные, кого можно назвать в уроке.
+
+    Именно учителя, а не «люди школы»: с появлением учеников это перестало
+    быть одним и тем же, и без сужения администратор поставил бы ученика
+    вести урок.
+    """
     user = getattr(serializer.context.get("request"), "user", None)
     if user is None or not user.is_authenticated or user.school_id is None:
         return User.objects.none()
-    return User.objects.filter(school_id=user.school_id)
+    return User.objects.filter(school_id=user.school_id, kind=User.Kind.TEACHER)
 
 
 def school_courses(serializer):
@@ -151,7 +157,7 @@ class CourseAssignmentSerializer(serializers.ModelSerializer):
         fields = super().get_fields()
         # both ends stay inside the requester's school
         fields["course"].queryset = school_courses(self)
-        fields["teacher"].queryset = school_members(self)
+        fields["teacher"].queryset = school_teachers(self)
         return fields
 
 
@@ -373,7 +379,7 @@ class MasterSlotSerializer(serializers.ModelSerializer):
         fields = super().get_fields()
         fields["course"].queryset = school_courses(self)
         fields["year"].queryset = school_years(self)
-        fields["teacher"].queryset = school_members(self)
+        fields["teacher"].queryset = school_teachers(self)
         return fields
 
     def get_teacher_name(self, obj):

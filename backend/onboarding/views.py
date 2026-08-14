@@ -1,4 +1,4 @@
-from config.access import IsSchoolAdmin, IsSchoolMember
+from config.access import IsSchoolAdmin, IsSchoolMember, IsTeacher
 from django.db import transaction
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -14,7 +14,13 @@ class StatusView(APIView):
     Deliberately open to a user with no school — the answer simply says so,
     and the interface shows the "ask your administrator" screen instead of
     guessing from a 403.
+
+    Отсюда и права: `IsTeacher` **без** `IsSchoolMember`. Школы у учителя
+    может ещё не быть, и объяснить это должен ответ, а не отказ; вид же
+    известен всегда, и ученику здесь считать нечего — у него другая главная.
     """
+
+    permission_classes = [IsAuthenticated, IsTeacher]
 
     def get(self, request):
         return Response(services.build_status(request.user))
@@ -35,7 +41,7 @@ class DemoView(APIView):
     года есть отдельный экран, который считает цену заранее.
     """
 
-    permission_classes = [IsAuthenticated, IsSchoolMember, IsSchoolAdmin]
+    permission_classes = [IsAuthenticated, IsSchoolMember, IsTeacher, IsSchoolAdmin]
 
     def post(self, request):
         with transaction.atomic():
