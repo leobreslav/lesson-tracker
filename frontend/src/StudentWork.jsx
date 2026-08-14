@@ -143,12 +143,14 @@ function TaskCard({ task, number, canAnswer, onSent, onError }) {
         <ul className="attempt-list">
           {task.submissions.map((submission, index) => (
             <li key={submission.id} className={verdictClass(submission.verdict)}>
-              <span className="attempt">
-                {t('student.work.attemptNumber', { number: index + 1 })}
-              </span>
-              <span className="answer">{submission.answer}</span>
-              <span className="hint">{dateTime(submission.created_at)}</span>
-              <span className="verdict">{verdictLabel(submission.verdict, t)}</span>
+              <div className="cells">
+                <span className="attempt">
+                  {t('student.work.attemptNumber', { number: index + 1 })}
+                </span>
+                <span className="answer">{submission.answer}</span>
+                <span className="hint">{dateTime(submission.created_at)}</span>
+                <span className="verdict">{verdictLabel(submission.verdict, t)}</span>
+              </div>
             </li>
           ))}
         </ul>

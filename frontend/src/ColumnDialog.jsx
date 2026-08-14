@@ -65,8 +65,10 @@ export default function ColumnDialog({ task, onChanged, onClose }) {
           <ul className="attempt-list checking">
             {[...waiting, ...done].map((row) => (
               <li key={row.id} className={verdictClass(row.is_correct)}>
-                <span className="hint">{row.student_name}</span>
-                <span className="answer">{row.answer}</span>
+                <div className="cells">
+                  <span className="hint">{row.student_name}</span>
+                  <span className="answer">{row.answer}</span>
+                </div>
                 <Verdict submission={row} onChanged={checked} onError={setError} />
               </li>
             ))}

@@ -71,11 +71,13 @@ export default function CellDialog({ student, task, onChanged, onClose }) {
         <ul className="attempt-list">
           {rows.map((row, index) => (
             <li key={row.id} className={verdictClass(row.is_correct)}>
-              <span className="attempt">
-                {t('student.work.attemptNumber', { number: index + 1 })}
-              </span>
-              <span className="answer">{row.answer}</span>
-              <span className="hint">{dateTime(row.created_at)}</span>
+              <div className="cells">
+                <span className="attempt">
+                  {t('student.work.attemptNumber', { number: index + 1 })}
+                </span>
+                <span className="answer">{row.answer}</span>
+                <span className="hint">{dateTime(row.created_at)}</span>
+              </div>
               <Verdict submission={row} onChanged={checked} onError={setError} />
             </li>
           ))}
