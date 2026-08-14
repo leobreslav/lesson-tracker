@@ -52,7 +52,7 @@ test('задачи видны с формулами и эталонами, по�
   // вспомнить, что в работе, и ответы в нём шум
   const second = work.locator('.task-list li').nth(1)
   await expect(second.locator('.answers .tag')).toHaveCount(0)
-  await work.getByRole('button', { name: 'Показать ответы' }).click()
+  await work.getByRole('button', { name: 'Ответы' }).click()
   // два эталона у одной задачи: «x+3» и «3+x» верны одинаково
   await expect(second.locator('.answers .tag')).toHaveCount(2)
 
@@ -87,7 +87,7 @@ test('новая работа заводится с окном времени и
   await task.getByRole('button', { name: 'Сохранить' }).click()
 
   await expect(work.locator('.task-list li')).toHaveCount(1)
-  await work.getByRole('button', { name: 'Показать ответы' }).click()
+  await work.getByRole('button', { name: 'Ответы' }).click()
   await expect(work).toContainText('180')
 
   // окно в будущем и есть «черновик»: работа запланирована, а не открыта

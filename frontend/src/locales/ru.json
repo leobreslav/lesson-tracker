@@ -962,8 +962,7 @@
       "recheck_few": "Снять {{count}} отметки",
       "recheck_many": "Снять {{count}} отметок"
     },
-    "showAnswers": "Показать ответы",
-    "hideAnswers": "Скрыть ответы"
+    "answers": "Ответы"
   },
   "table": {
     "open": "Проверка",

@@ -926,8 +926,7 @@
       "recheck_one": "Clear {{count}} verdict",
       "recheck_other": "Clear {{count}} verdicts"
     },
-    "showAnswers": "Show answers",
-    "hideAnswers": "Hide answers"
+    "answers": "Answers"
   },
   "table": {
     "open": "Check",

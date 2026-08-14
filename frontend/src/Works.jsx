@@ -209,9 +209,23 @@ export default function Works({ onLoggedOut }) {
                       {work.title}
                     </button>
 
-                    {/* в шапке только имя и два действия: окно, попытки и
-                        число задач — это разговор о настройках, и живут
-                        они там, где их правят */}
+                    {/* в шапке только имя и то, что с работой делают:
+                        окно, попытки и число задач — разговор о настройках,
+                        и живут они там, где их правят */}
+                    {open && tasks.length > 0 && (
+                      <button
+                        type="button"
+                        className={showAnswers ? 'chip active' : 'chip'}
+                        aria-pressed={showAnswers}
+                        onClick={() => {
+                          setShowAnswers(!showAnswers)
+                          remember(ANSWERS_KEY, !showAnswers)
+                        }}
+                      >
+                        {t('works.answers')}
+                      </button>
+                    )}
+
                     <button
                       type="button"
                       className="secondary compact"
@@ -245,25 +259,6 @@ export default function Works({ onLoggedOut }) {
 
                   {open && (
                     <div className="course-body">
-                      {/* ответы по просьбе: список задач читают, чтобы
-                          вспомнить, что в работе, и эталоны в нём шум, пока
-                          не проверяешь. Переключатель помнится: кому они
-                          нужны, нужны каждый раз */}
-                      {tasks.length > 0 && (
-                        <div className="row answers-toggle">
-                          <button
-                            type="button"
-                            className="link"
-                            onClick={() => {
-                              setShowAnswers(!showAnswers)
-                              remember(ANSWERS_KEY, !showAnswers)
-                            }}
-                          >
-                            {t(showAnswers ? 'works.hideAnswers' : 'works.showAnswers')}
-                          </button>
-                        </div>
-                      )}
-
                       {tasks.length === 0 ? (
                         <p className="hint">{t('works.task.none')}</p>
                       ) : (
