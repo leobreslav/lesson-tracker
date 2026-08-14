@@ -45,6 +45,9 @@ test('задачи видны с формулами и эталонами, по�
 
   const first = work.locator('.task-list li').first()
   await expect(first).toContainText('Раскройте скобки')
+  // кнопки строки появляются при наведении: двенадцать значков разом
+  // заслоняли сами условия
+  await second.hover()
   await second.getByRole('button', { name: 'Ниже' }).click()
 
   await expect(work.locator('.task-list li').nth(2)).toContainText('Упростите')

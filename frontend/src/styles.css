@@ -125,6 +125,9 @@ body {
 /* строка ответа ученика: поле и кнопка, и высота у них одна — сторож
    контролов меряет её вместе с остальными рядами проекта */
 .student-task .row,
+/* и действия работы: «настройки» с «проверкой» стоят в конце строки, в
+   которой слева написано, что это за работа */
+.work-list .course-body .row,
 .preset-row,
 .plan-add-form,
 .actions,
@@ -754,6 +757,12 @@ form .success {
   display: flex;
   gap: 0.5rem;
   align-items: center;
+}
+
+/* заголовок и действие по краям: кнопка под заголовком читается как первая
+   строка содержимого, а не как то, что делают с карточкой */
+.panel-head.spread {
+  justify-content: space-between;
 }
 
 .help-toggle {
@@ -2074,6 +2083,53 @@ button.progress-head:hover:not(:disabled) {
  * стоит значок состояния, а не ответ, иначе тридцать на десять не влезет
  * ни на один экран.
  */
+/*
+ * Кнопка вполсилы: действие второго ряда, стоящее внутри строки текста.
+ *
+ * Обычная кнопка ростом с поле ввода — правильная величина для формы, но
+ * внутри карточки таких кнопок три-четыре, и вместе они читаются как ряд
+ * прямоугольников, а не как действия у своей строки. Здесь важнее, чтобы
+ * они не спорили с содержимым.
+ */
+button.compact,
+.row button.compact {
+  min-height: 1.75rem;
+  padding: 0.15rem 0.6rem;
+  font-size: 0.85rem;
+}
+
+/* действия работы уезжают в конец строки, к правому краю карточки: слева
+   написано, что это за работа, справа — что с ней можно сделать */
+.work-actions .hint {
+  margin-right: auto;
+}
+
+/*
+ * Кнопки задачи появляются при наведении — как в таблице плана.
+ *
+ * Три задачи по четыре кнопки это двенадцать значков, из-за которых не
+ * видно самих условий. На сенсорном экране наведения не бывает, там они
+ * остаются на месте.
+ */
+@media (hover: hover) {
+  .task-list .task-actions {
+    visibility: hidden;
+  }
+
+  .task-list li:hover .task-actions,
+  .task-list li:focus-within .task-actions {
+    visibility: visible;
+  }
+}
+
+/* фокус на названии работы: браузерная рамка по умолчанию чёрная и толстая,
+   и кнопка-ссылка в ней выглядит полем ввода */
+.work-list button.link:focus-visible {
+  outline: 2px solid #1a73e8;
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
 /* сводка над таблицей: плашки как у плана, только уже — их четыре, и
    каждая отвечает на свой вопрос одним числом */
 .work-summary {
@@ -2378,10 +2434,24 @@ button.progress-head:hover:not(:disabled) {
   border: 1px solid #dfe3e6;
 }
 
+.task-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+  margin-top: 0.2rem;
+}
+
+.task-line .answers {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  margin-right: auto;
+}
+
 .task-actions {
   display: flex;
   gap: 0.4rem;
-  margin-top: 0.2rem;
 }
 
 /* окно задачи: условие и эталоны, оба на всю ширину окна */

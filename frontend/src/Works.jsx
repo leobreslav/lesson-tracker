@@ -167,7 +167,7 @@ export default function Works({ onLoggedOut }) {
       </div>
 
       <section className="panel">
-        <div className="row">
+        <div className="panel-head spread">
           <h3>{t('works.title')}</h3>
           <button type="button" disabled={busy} onClick={() => setEditing({ work: null })}>
             {t('works.add')}
@@ -231,7 +231,7 @@ export default function Works({ onLoggedOut }) {
 
                   {open && (
                     <div className="course-body">
-                      <div className="row">
+                      <div className="row work-actions">
                         <span className="hint">
                           {work.attempts === null
                             ? t('works.attemptsFree')
@@ -241,7 +241,7 @@ export default function Works({ onLoggedOut }) {
                         </span>
                         <button
                           type="button"
-                          className="secondary"
+                          className="secondary compact"
                           disabled={busy}
                           onClick={() => setEditing({ work })}
                         >
@@ -251,7 +251,7 @@ export default function Works({ onLoggedOut }) {
                             человек в раскрытой строке не помещается */}
                         <button
                           type="button"
-                          className="secondary"
+                          className="secondary compact"
                           disabled={busy}
                           onClick={() => navigate(`/works/${work.id}`)}
                         >
@@ -268,18 +268,24 @@ export default function Works({ onLoggedOut }) {
                               <div className="task-question">
                                 <Markdown text={task.question} />
                               </div>
-                              <div className="row answers">
-                                {task.answers.length === 0 ? (
-                                  <span className="hint">{t('works.task.noAnswers')}</span>
-                                ) : (
-                                  task.answers.map((answer, position) => (
-                                    <span className="tag" key={position}>
-                                      {answer}
+                              {/* эталоны и кнопки одной строкой: спрятанные
+                                  до наведения кнопки не должны оставлять
+                                  за собой пустую строку */}
+                              <div className="task-line">
+                                <div className="answers">
+                                  {task.answers.length === 0 ? (
+                                    <span className="hint">
+                                      {t('works.task.noAnswers')}
                                     </span>
-                                  ))
-                                )}
-                              </div>
-                              <div className="task-actions">
+                                  ) : (
+                                    task.answers.map((answer, position) => (
+                                      <span className="tag" key={position}>
+                                        {answer}
+                                      </span>
+                                    ))
+                                  )}
+                                </div>
+                                <div className="task-actions">
                                 <button
                                   type="button"
                                   className="link"
@@ -318,6 +324,7 @@ export default function Works({ onLoggedOut }) {
                                 >
                                   ✕
                                 </button>
+                                </div>
                               </div>
                             </li>
                           ))}
@@ -327,7 +334,7 @@ export default function Works({ onLoggedOut }) {
                       <div className="row">
                         <button
                           type="button"
-                          className="secondary"
+                          className="secondary compact"
                           disabled={busy}
                           onClick={() => setEditingTask({ task: null })}
                         >
