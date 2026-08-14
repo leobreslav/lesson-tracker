@@ -418,27 +418,6 @@ export default function SchoolCourses() {
                       </div>
 
                       <div className="course-role">
-                        <span className="hint">{t('school.courses.students')}</span>
-                        <div className="row">
-                          <span className="hint">
-                            {course.students === 0
-                              ? t('school.courses.noStudents')
-                              : t('school.courses.studentCount', {
-                                  count: course.students,
-                                })}
-                          </span>
-                          <button
-                            type="button"
-                            className="secondary"
-                            disabled={busy}
-                            onClick={() => setRoster(course)}
-                          >
-                            {t('school.courses.openRoster')}
-                          </button>
-                        </div>
-                      </div>
-
-                      <div className="course-role">
                         <span className="hint">{t('school.courses.methodist')}</span>
                         <div className="row courses">
                           {course.methodists.length === 0 ? (
@@ -501,6 +480,27 @@ export default function SchoolCourses() {
                             onClick={() => nameMethodist(course)}
                           >
                             {t('school.courses.nameMethodist')}
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="course-role">
+                        <span className="hint">{t('school.courses.students')}</span>
+                        <div className="row">
+                          <span className="hint">
+                            {course.students === 0
+                              ? t('school.courses.noStudents')
+                              : t('school.courses.studentCount', {
+                                  count: course.students,
+                                })}
+                          </span>
+                          <button
+                            type="button"
+                            className="secondary"
+                            disabled={busy}
+                            onClick={() => setRoster(course)}
+                          >
+                            {t('school.courses.openRoster')}
                           </button>
                         </div>
                       </div>
