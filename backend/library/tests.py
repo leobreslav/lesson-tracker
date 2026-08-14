@@ -6,6 +6,8 @@ published entry is the school's — and independence: taking a template gives
 you a plan of your own, and nothing afterwards links the two.
 """
 
+from django.db import connection
+from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 from plans.models import PlanNode
 from rest_framework.test import APITestCase
@@ -179,6 +181,37 @@ class VisibilityTests(LibraryTestCase):
 
         self.assertEqual(
             self.client.get(reverse("plantemplate-list"), {"grade": "девять"}).json(), []
+        )
+
+
+class TemplateReadTests(LibraryTestCase):
+    def test_the_number_of_queries_does_not_grow_with_the_rows(self):
+        """
+        Просмотр шаблона — обычное действие: кнопка «Посмотреть» на полке.
+
+        Строки сериализуются вместе с вложениями, и каждая ходила за ними
+        сама: полсотни уроков — полсотни запросов. Проверяется не конкретное
+        число (оно поедет от соседней правки), а то, что оно не зависит от
+        длины шаблона.
+        """
+        small = make_template(self.school, self.user, rows=SAMPLE)
+        big = make_template(
+            self.school,
+            self.user,
+            title="Длинный",
+            rows=tuple((False, f"Урок {i}") for i in range(60)),
+        )
+
+        with CaptureQueriesContext(connection) as few:
+            self.client.get(reverse("plantemplate-detail", args=[small.pk]))
+        with CaptureQueriesContext(connection) as many:
+            response = self.client.get(reverse("plantemplate-detail", args=[big.pk]))
+
+        self.assertEqual(len(response.json()["rows"]), 60)
+        self.assertEqual(
+            len(many),
+            len(few),
+            f"запросы растут со строками: {len(few)} против {len(many)}",
         )
 
 

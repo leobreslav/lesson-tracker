@@ -43,11 +43,24 @@ class TemplateRowSerializer(serializers.ModelSerializer):
         extra_kwargs = CONTENT_EXTRA_KWARGS
 
     def get_attachments(self, obj):
+        """
+        Вложения строки. Считанные заранее — берём как есть.
+
+        `with_sharing` навешивает `annotate`, а он поверх предвыбранного
+        менеджера означает новый запрос: у шаблона в полсотни строк это
+        полсотни запросов на одно окно просмотра. Поэтому просмотр шаблона
+        приносит их уже посчитанными (см. `PlanTemplateViewSet.get_queryset`),
+        а поодиночке считаем только там, где предвыборки нет.
+        """
         from files.serializers import AttachmentSerializer, with_sharing
 
-        return AttachmentSerializer(
-            with_sharing(obj.attachments.all()), many=True
-        ).data
+        prefetched = getattr(obj, "_prefetched_objects_cache", {})
+        rows = (
+            obj.attachments.all()
+            if "attachments" in prefetched
+            else with_sharing(obj.attachments.all())
+        )
+        return AttachmentSerializer(rows, many=True).data
 
     def validate(self, attrs):
         problems = content_problems(

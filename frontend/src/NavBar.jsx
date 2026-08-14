@@ -89,9 +89,14 @@ export default function NavBar({
     }
   }
 
+  // имя и адрес — две строки одной кнопки: под именем в школе ходят
+  // тёзки, а входят все через Google, и адрес — единственное, чем один
+  // «Иванов» отличается от другого. Имени нет — остаётся адрес, и второй
+  // раз его повторять незачем
   const name = user
     ? [user.first_name, user.last_name].filter(Boolean).join(' ') || user.email
     : '…'
+  const email = user && name !== user.email ? user.email : null
 
   return (
     <header className="topbar">
@@ -151,7 +156,11 @@ export default function NavBar({
             aria-expanded={userOpen}
             onClick={() => setUserOpen((open) => !open)}
           >
-            {name} ▾
+            <span className="who">
+              <span className="name">{name}</span>
+              {email && <span className="email">{email}</span>}
+            </span>
+            <span aria-hidden="true">▾</span>
           </button>
 
           {userOpen && (

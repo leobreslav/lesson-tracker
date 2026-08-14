@@ -256,10 +256,41 @@ body {
   margin-left: auto;
 }
 
+/*
+ * Кнопка меню пользователя: имя и адрес в две строки, стрелка сбоку.
+ *
+ * Обрезается адрес, а не имя: длинный адрес — обычное дело, а имя короткое
+ * и по нему кнопку узнают. Обе строки на одной кнопке, потому что тёзки в
+ * школе бывают, а адрес у каждого свой.
+ */
 .user-menu > button {
-  max-width: 14rem;
-  overflow: hidden;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  max-width: 16rem;
+  padding-block: 0.3rem;
+  text-align: left;
+}
+
+.user-menu .who {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  line-height: 1.2;
+}
+
+.user-menu .name {
   font-size: 0.9rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.user-menu .email {
+  font-size: 0.75rem;
+  font-weight: 400;
+  color: #5f6368;
+  overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }

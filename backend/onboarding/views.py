@@ -27,9 +27,12 @@ class DemoView(APIView):
     Administrators only, because the year and the courses it creates belong
     to the school. The lessons and the plan inside are the caller's own.
 
-    Deleting removes the caller's lessons and plan, and — for an
-    administrator — the school's year and courses with them. A course another
-    teacher already works in refuses to go, which is the point of PROTECT.
+    Обратной кнопки нет намеренно. Раньше здесь был `DELETE`, сносивший
+    **все** данные вызывающего, а у администратора — ещё и год со всеми
+    курсами школы. Одно нажатие на главной, и год работы коллег держался
+    только на `PROTECT`; ради разового «убрать пример» это слишком дорого.
+    Демо разбирается теми же экранами, что и настоящие данные, а на снос
+    года есть отдельный экран, который считает цену заранее.
     """
 
     permission_classes = [IsAuthenticated, IsSchoolMember, IsSchoolAdmin]
@@ -41,12 +44,4 @@ class DemoView(APIView):
         return Response(
             {"created": created, "status": services.build_status(request.user)},
             status=201,
-        )
-
-    def delete(self, request):
-        with transaction.atomic():
-            removed = services.wipe(request.user)
-
-        return Response(
-            {"removed": removed, "status": services.build_status(request.user)}
         )

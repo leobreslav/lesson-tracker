@@ -222,33 +222,6 @@ class DemoTests(OnboardingTestCase):
         self.assertEqual(lessons.count(), 44)
         self.assertTrue(all(lesson.parent_id is not None for lesson in lessons))
 
-    def test_delete_removes_everything(self):
-        self.create()
-
-        response = self.client.delete(reverse("onboarding-demo"))
-
-        self.assertEqual(response.status_code, 200, response.content)
-        self.assertFalse(response.json()["status"]["year"]["exists"])
-        self.assertFalse(SchoolYear.objects.filter(school=self.school).exists())
-        self.assertFalse(Course.objects.filter(school=self.school).exists())
-        self.assertFalse(
-            LessonSlot.objects.filter(teacher=self.user).exists()
-        )
-        self.assertFalse(
-            PlanNode.objects.filter(teacher=self.user).exists()
-        )
-        self.assertFalse(Term.objects.filter(year__school=self.school).exists())
-
-    def test_delete_reports_what_was_removed(self):
-        self.create()
-
-        removed = self.client.delete(reverse("onboarding-demo")).json()["removed"]
-
-        self.assertEqual(removed["years"], 1)
-        self.assertEqual(removed["classes"], 2)
-        self.assertGreater(removed["slots"], 100)
-        self.assertEqual(removed["plan_nodes"], 51)  # 7 тем и 44 урока
-
     def test_demo_follows_the_user_language(self):
         """Демо-данные — контент в базе, поэтому заводятся на языке учителя."""
         self.user.language = "ru"
@@ -275,42 +248,6 @@ class DemoTests(OnboardingTestCase):
             sorted(Course.objects.filter(school=self.school).values_list("name", flat=True)),
             ["Grade 9B Algebra", "Grade 9B Geometry"],
         )
-
-    def test_delete_does_not_touch_other_users(self):
-        alien_year = self.make_year(school=self.alien_school, name="чужой")
-        alien_class = self.make_class(alien_year, "чужой класс")
-        LessonSlot.objects.create(
-            year=alien_year, teacher=self.stranger, course=alien_class,
-            date=date(2026, 9, 7), lesson_number=1,
-        )
-        PlanNode.objects.create(
-            teacher=self.stranger, course=alien_class, position=0,
-            is_section=False, title="Чужой урок",
-        )
-        self.create()
-
-        self.client.delete(reverse("onboarding-demo"))
-
-        self.assertTrue(SchoolYear.objects.filter(pk=alien_year.pk).exists())
-        self.assertTrue(Course.objects.filter(pk=alien_class.pk).exists())
-        self.assertEqual(
-            LessonSlot.objects.filter(course__school=self.alien_school).count(), 1
-        )
-        self.assertEqual(
-            PlanNode.objects.filter(course__school=self.alien_school).count(), 1
-        )
-
-    def test_delete_on_empty_account_is_harmless(self):
-        response = self.client.delete(reverse("onboarding-demo"))
-
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json()["removed"]["years"], 0)
-
-    def test_demo_can_be_recreated_after_deletion(self):
-        self.create()
-        self.client.delete(reverse("onboarding-demo"))
-
-        self.assertEqual(self.create().status_code, 201)
 
 
 class DefaultsTests(APITestCase):

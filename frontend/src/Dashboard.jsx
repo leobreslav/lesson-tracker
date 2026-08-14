@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 import CourseStatus from './CourseStatus'
-import { createDemoData, wipeAllData } from './api'
+import { createDemoData } from './api'
 import { dateRange } from './dates'
 
 /**
@@ -136,11 +136,6 @@ export default function Dashboard({ user, status, onStatusChange, onLoggedOut })
     }
   }
 
-  const removeEverything = () => {
-    const confirmed = window.confirm(t('dashboard.wipe.confirm'))
-    if (confirmed) run(wipeAllData)
-  }
-
   return (
     <main className="page">
       <header className="page-header">
@@ -202,32 +197,20 @@ export default function Dashboard({ user, status, onStatusChange, onLoggedOut })
 
       <CourseStatus onLoggedOut={onLoggedOut} />
 
-      {/* the demo builds a year and courses, which belong to the school */}
-      {status.is_school_admin && (
-      <section className="panel">
-        {empty ? (
-          <>
-            <h3>{t('dashboard.demo.title')}</h3>
-            <p className="hint">{t('dashboard.demo.hint')}</p>
-            <button type="button" disabled={busy} onClick={() => run(createDemoData)}>
-              {busy ? t('dashboard.demo.busy') : t('dashboard.demo.action')}
-            </button>
-          </>
-        ) : (
-          <>
-            <h3>{t('dashboard.wipe.title')}</h3>
-            <p className="hint">{t('dashboard.wipe.hint')}</p>
-            <button
-              type="button"
-              className="secondary"
-              disabled={busy}
-              onClick={removeEverything}
-            >
-              {busy ? t('dashboard.wipe.busy') : t('dashboard.wipe.action')}
-            </button>
-          </>
-        )}
-      </section>
+      {/* демо заводит год и курсы, а они школьные — отсюда роль. Кнопка
+          показывается только пустому аккаунту: дальше на главной есть что
+          читать, и предлагать «посмотреть пример» поверх своих данных
+          незачем. Обратной кнопки нет — снос всего заведённого одним
+          нажатием стоил дороже, чем разовое удобство: демо разбирается
+          теми же экранами, что и настоящие данные */}
+      {status.is_school_admin && empty && (
+        <section className="panel">
+          <h3>{t('dashboard.demo.title')}</h3>
+          <p className="hint">{t('dashboard.demo.hint')}</p>
+          <button type="button" disabled={busy} onClick={() => run(createDemoData)}>
+            {busy ? t('dashboard.demo.busy') : t('dashboard.demo.action')}
+          </button>
+        </section>
       )}
     </main>
   )

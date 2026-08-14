@@ -400,39 +400,6 @@ def demo_classes(language: str) -> tuple:
     return DEMO_CLASSES.get(language, DEMO_CLASSES_EN)
 
 
-def wipe(user) -> dict:
-    """
-    Remove the example: this teacher's own work, then the school's shell.
-
-    The order matters. Slots and plan rows hold their course under PROTECT,
-    so they go first; only then can the years take the courses with them.
-
-    A teacher who is not an administrator clears their own lessons and plan
-    and leaves the school's calendar alone — it is not theirs to delete.
-    """
-    slots = LessonSlot.objects.filter(teacher=user)
-    nodes = PlanNode.objects.filter(teacher=user)
-    counts = {"slots": slots.count(), "plan_nodes": nodes.count()}
-
-    nodes.delete()
-    slots.delete()
-
-    if user.is_school_admin and user.school_id is not None:
-        years = SchoolYear.objects.filter(school_id=user.school_id)
-        courses = Course.objects.filter(school_id=user.school_id)
-        counts["years"] = years.count()
-        counts["classes"] = courses.count()
-        # somebody else's lessons still holding a course make this refuse,
-        # and that is the right answer: the example is not theirs to erase
-        courses.delete()
-        years.delete()
-    else:
-        counts["years"] = 0
-        counts["classes"] = 0
-
-    return counts
-
-
 def create_demo(user) -> dict:
     """
     A full set of data that shows how everything hangs together.

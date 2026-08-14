@@ -106,13 +106,6 @@
       "action": "Show me an example",
       "busy": "Creating…"
     },
-    "wipe": {
-      "title": "Start over",
-      "hint": "Removes all your data: years, classes, schedules and plans.",
-      "action": "Delete all data",
-      "busy": "Deleting…",
-      "confirm": "Delete all your data: the year, classes, schedule and plans? This cannot be undone."
-    },
     "adminDoes": "the school administrator does this"
   },
   "dayStatus": {

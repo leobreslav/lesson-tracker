@@ -89,10 +89,6 @@ export const fetchOnboarding = () => request('/api/onboarding/status/')
 export const createDemoData = () =>
   request('/api/onboarding/demo/', { method: 'POST' })
 
-/** Removes ALL of the user's data, not only the example. */
-export const wipeAllData = () =>
-  request('/api/onboarding/demo/', { method: 'DELETE' })
-
 // --- school years and the calendar ---
 
 export const fetchSchoolYears = () => request('/api/calendar/years/')

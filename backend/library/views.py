@@ -1,6 +1,9 @@
 from config.access import IsSchoolMember, SchoolScopedViewSet
 from config.errors import Codes, api_denied, api_error
 from django.db import transaction
+from django.db.models import Prefetch
+from files.models import Attachment
+from files.serializers import with_sharing
 from plans import services as plan_services
 from plans.content import CONTENT_FIELDS
 from plans.models import PlanNode
@@ -76,6 +79,26 @@ class PlanTemplateViewSet(SchoolScopedViewSet):
         queryset = visible_templates(self.request.user).select_related(
             "subject", "author"
         )
+
+        # Строки и их вложения тянутся только при просмотре одного шаблона:
+        # список их не показывает, а запрос на строку стоил сорока восьми
+        # лишних на шаблон в полсотни уроков — и это на кнопку «Посмотреть»
+        # в полке, то есть на обычное действие.
+        #
+        # Только `retrieve`, и это важно: `update-from-plan` перезаписывает
+        # строки после `get_object()`, и предвыбранный кэш показал бы в
+        # ответе старые.
+        if self.action == "retrieve":
+            # именно `Prefetch` с готовым `with_sharing`: сериализатор строки
+            # просит вложения уже посчитанными, а всякий `annotate` поверх
+            # менеджера кэш предвыборки отбрасывает и снова идёт в базу
+            queryset = queryset.prefetch_related(
+                Prefetch(
+                    "rows__attachments",
+                    queryset=with_sharing(Attachment.objects.all()),
+                )
+            )
+
         params = self.request.query_params
 
         for param, lookup in (("subject", "subject_id"), ("grade", "grade")):
