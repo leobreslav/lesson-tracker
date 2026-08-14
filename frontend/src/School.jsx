@@ -5,11 +5,12 @@ const TABS = [
   { to: '/school', key: 'overview', end: true },
   { to: '/school/teachers', key: 'teachers' },
   { to: '/school/courses', key: 'courses' },
+  { to: '/school/students', key: 'students' },
   { to: '/school/reference', key: 'reference' },
 ]
 
 /**
- * The administrator's section, split into four.
+ * The administrator's section, split into five.
  *
  * It used to be one page holding the school's name, its courses, its people,
  * its invitations and a form for adding subjects — everything the school

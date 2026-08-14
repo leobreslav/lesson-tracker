@@ -361,6 +361,70 @@ class CourseDeletionTests(AccessTestCase):
 class MembersAndInvitationsTests(AccessTestCase):
     """The people of the school: who sees the list and who edits it."""
 
+    def test_the_list_is_teachers_unless_students_are_asked_for(self):
+        """
+        Два списка одним адресом: без параметра — сотрудники.
+
+        Ученик тоже в школе, и если бы он попадал в список участников,
+        администратор выдал бы ему роль или поставил вести урок.
+        """
+        enrol_student(self.student, self.course, by=self.admin)
+
+        staff = self.client.get(reverse("member-list")).json()
+        students = self.client.get(reverse("member-list"), {"kind": "student"}).json()
+
+        self.assertNotIn(self.student.email, [item["email"] for item in staff])
+        self.assertEqual([item["email"] for item in students], [self.student.email])
+        self.assertEqual(
+            [course["name"] for course in students[0]["courses"]], [self.course.name]
+        )
+
+    def test_a_student_cannot_be_made_an_administrator(self):
+        self.sign_in(self.admin)
+
+        self.assertCode(
+            self.client.patch(
+                reverse("member-detail", args=[self.student.pk]),
+                {"is_school_admin": True},
+                format="json",
+            ),
+            400,
+            "not_a_student",
+        )
+
+    def test_detaching_a_student_is_refused_first_and_then_confirmed(self):
+        """
+        Ошиблись адресом при вставке — исправить это надо чем-то.
+
+        Отвязка устроена как у учителя: сперва отказ со счётчиком, потом
+        `force`. Зачисления снимаются вместе со школой, но строки остаются:
+        они и есть след того, что человек здесь учился.
+        """
+        row = enrol_student(self.student, self.course, by=self.admin)
+        self.sign_in(self.admin)
+        url = reverse("member-detail", args=[self.student.pk])
+
+        refused = self.client.delete(url)
+        self.assertCode(refused, 400, "member_in_use")
+        self.assertEqual(refused.json()["params"]["courses"], 1)
+
+        self.assertEqual(self.client.delete(f"{url}?force=true").status_code, 204)
+
+        self.student.refresh_from_db()
+        row.refresh_from_db()
+        self.assertIsNone(self.student.school)
+        self.assertIsNotNone(row.removed_at)
+
+    def test_a_detached_student_does_not_see_the_old_school(self):
+        enrol_student(self.student, self.course, by=self.admin)
+        self.student.school = None
+        self.student.save(update_fields=["school"])
+        self.sign_in(self.student)
+
+        self.assertCode(
+            self.client.get(reverse("student-courses")), 403, "no_school"
+        )
+
     def test_every_member_sees_the_people(self):
         response = self.client.get(reverse("member-list"))
 

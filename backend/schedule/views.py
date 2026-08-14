@@ -337,7 +337,12 @@ class StudentCoursesView(APIView):
 
     def get(self, request):
         rows = (
-            CourseStudent.objects.filter(student=request.user)
+            # только курсы своей школы: строки прошлой школы остаются в базе
+            # — они след того, что человек там учился, — но в его списке им
+            # места нет
+            CourseStudent.objects.filter(
+                student=request.user, course__school_id=request.user.school_id
+            )
             .select_related("course", "course__subject", "course__grade")
             # активные сверху: снятые уезжают вниз, как их и показывают
             .order_by(F("removed_at").asc(nulls_first=True), "course__name")

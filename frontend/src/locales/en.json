@@ -616,7 +616,8 @@
       "overview": "Overview",
       "teachers": "Teachers",
       "courses": "Courses",
-      "reference": "Reference lists"
+      "reference": "Reference lists",
+      "students": "Students"
     },
     "overview": {
       "title": "How the school stands",
@@ -677,6 +678,16 @@
       "clearUnused_other": "Delete {{count}} unused year groups",
       "clearConfirm_one": "Delete {{count}} year group no course uses?",
       "clearConfirm_other": "Delete {{count}} year groups no course uses?"
+    },
+    "students": {
+      "title": "Students of the school",
+      "hint": "Everybody enrolled in any course. Enrolment itself happens in the course card; here you can find a person and detach them from the school.",
+      "none": "There are no students yet",
+      "noneHint": "Students are added to a course roster:",
+      "noCourses": "not enrolled anywhere",
+      "removed": "no longer in this course",
+      "detach": "Detach from the school",
+      "detachKeeps": "Nothing is deleted: the person is taken off every course, and what they have done stays."
     }
   },
   "schools": {

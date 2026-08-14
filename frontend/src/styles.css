@@ -1279,6 +1279,15 @@ button.link.hint.level {
   font-size: 0.85rem;
 }
 
+/* курс, из которого ученика сняли: он остаётся в списке, потому что
+   сделанное там никуда не делось, но говорит о прошлом */
+.tag.past {
+  padding-right: 0.5rem;
+  color: #666;
+  background: transparent;
+  border: 1px dashed #c6c6c6;
+}
+
 button.link.name {
   flex: 1;
   padding: 0.25rem 0.4rem;

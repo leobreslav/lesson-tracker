@@ -10,6 +10,7 @@ from collections import Counter
 from config.errors import Codes, api_error
 from django.contrib.auth import get_user_model
 from django.db import transaction
+from django.utils import timezone
 from django.db.models import ProtectedError
 from rest_framework import mixins, viewsets
 from rest_framework.decorators import action
@@ -215,15 +216,28 @@ class MemberViewSet(
     http_method_names = ["get", "patch", "delete", "head", "options"]
 
     def get_queryset(self):
-        # участники — это сотрудники: ученики той же школы сюда не попадают
-        # и роль администратора получить не могут
-        return (
-            User.objects.filter(
-                school_id=self.request.user.school_id, kind=User.Kind.TEACHER
+        """
+        Люди школы одного вида: по умолчанию сотрудники.
+
+        Один вьюсет на оба списка, потому что вопрос один — «кто здесь», — а
+        различаются они только тем, чем человек связан с курсами: учитель
+        назначением, ученик зачислением. Умолчание учительское намеренно:
+        роль администратора и школьное расписание спрашивают именно
+        сотрудников, и адрес без параметра должен отвечать им.
+        """
+        people = User.objects.filter(
+            school_id=self.request.user.school_id
+        ).order_by("first_name", "last_name", "email")
+
+        # сужает только список: человек, найденный по id, — участник этой
+        # школы, и вид его известен из него самого
+        if self.action == "list":
+            kind = self.request.query_params.get("kind") or User.Kind.TEACHER
+            people = people.filter(
+                kind=kind if kind in User.Kind.values else User.Kind.TEACHER
             )
-            .prefetch_related("course_assignments__course")
-            .order_by("first_name", "last_name", "email")
-        )
+
+        return people.prefetch_related("course_assignments__course", "enrolments__course")
 
     def perform_destroy(self, instance):
         """
@@ -302,19 +316,32 @@ class MemberViewSet(
     http_method_names = ["get", "patch", "delete", "head", "options"]
 
     def get_queryset(self):
-        # участники — это сотрудники: ученики той же школы сюда не попадают
-        # и роль администратора получить не могут
-        return (
-            User.objects.filter(
-                school_id=self.request.user.school_id, kind=User.Kind.TEACHER
+        """
+        Люди школы одного вида: по умолчанию сотрудники.
+
+        Один вьюсет на оба списка, потому что вопрос один — «кто здесь», — а
+        различаются они только тем, чем человек связан с курсами: учитель
+        назначением, ученик зачислением. Умолчание учительское намеренно:
+        роль администратора и школьное расписание спрашивают именно
+        сотрудников, и адрес без параметра должен отвечать им.
+        """
+        people = User.objects.filter(
+            school_id=self.request.user.school_id
+        ).order_by("first_name", "last_name", "email")
+
+        # сужает только список: человек, найденный по id, — участник этой
+        # школы, и вид его известен из него самого
+        if self.action == "list":
+            kind = self.request.query_params.get("kind") or User.Kind.TEACHER
+            people = people.filter(
+                kind=kind if kind in User.Kind.values else User.Kind.TEACHER
             )
-            .prefetch_related("course_assignments__course")
-            .order_by("first_name", "last_name", "email")
-        )
+
+        return people.prefetch_related("course_assignments__course", "enrolments__course")
 
     def perform_destroy(self, instance):
         """
-        Detaching a teacher from the school. Their work is not deleted.
+        Detaching a person from the school. Their work is not deleted.
 
         `school` is set to None and the assignments go with them, because an
         assignment is a statement about this school. The lessons and the plan
@@ -333,6 +360,9 @@ class MemberViewSet(
                 Codes.LAST_ADMIN,
                 "You cannot detach yourself from the school.",
             )
+
+        if instance.is_student:
+            return self.detach_student(instance)
 
         slots = LessonSlot.objects.filter(teacher=instance).count()
         rows = PlanNode.objects.filter(teacher=instance).count()
@@ -369,6 +399,41 @@ class MemberViewSet(
             instance.school = None
             instance.is_school_admin = False
             instance.save(update_fields=["school", "is_school_admin"])
+
+    def detach_student(self, instance):
+        """
+        То же самое для ученика, и по той же причине два разных действия.
+
+        Зачисление — утверждение об этой школе, поэтому уходит вместе с
+        ней: ученик снимается со всех курсов. Но **строки остаются** — они
+        и есть след того, что человек здесь учился, и к ним будут привязаны
+        его ответы. Снятие, а не удаление, ровно как когда его снимают с
+        одного курса.
+        """
+        from schedule.models import CourseStudent
+
+        rows = CourseStudent.objects.filter(
+            student=instance, removed_at__isnull=True
+        )
+        courses = rows.count()
+
+        forced = self.request.query_params.get("force", "").lower() == "true"
+        if courses and not forced:
+            api_error(
+                Codes.MEMBER_IN_USE,
+                f"{instance.email} is enrolled in {courses} courses. "
+                "Detaching keeps what they have done but takes them off "
+                "every course; repeat with force=true to confirm.",
+                email=instance.email,
+                courses=courses,
+                slots=0,
+                plan_rows=0,
+            )
+
+        with transaction.atomic():
+            rows.update(removed_at=timezone.now())
+            instance.school = None
+            instance.save(update_fields=["school"])
 
 
 class InvitationViewSet(

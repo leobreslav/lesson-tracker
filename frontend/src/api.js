@@ -176,7 +176,8 @@ export const deleteSchool = (id) =>
 export const inviteSchoolAdmin = (id, email) =>
   request(`/api/schools/${id}/invite/`, { method: 'POST', body: { email } })
 
-export const fetchMembers = () => request('/api/school/members/')
+export const fetchMembers = (params = {}) =>
+  request(`/api/school/members/?${new URLSearchParams(params)}`)
 
 export const setMemberRole = (id, isAdmin) =>
   request(`/api/school/members/${id}/`, {

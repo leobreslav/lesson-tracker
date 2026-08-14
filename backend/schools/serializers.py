@@ -68,32 +68,58 @@ class MemberSerializer(serializers.ModelSerializer):
     """
 
     courses = serializers.SerializerMethodField()
+    kind = serializers.CharField(read_only=True)
 
     class Meta:
         model = User
         fields = (
-            "id", "email", "first_name", "last_name", "is_school_admin", "courses",
+            "id", "email", "first_name", "last_name", "kind",
+            "is_school_admin", "courses",
         )
-        read_only_fields = ("id", "email", "first_name", "last_name")
+        read_only_fields = ("id", "email", "first_name", "last_name", "kind")
 
     def get_courses(self, person) -> list:
         """
-        What this person teaches — the other half of the assignment table.
+        Чем человек связан с курсами: учитель назначением, ученик
+        зачислением.
 
-        The course card shows its teachers, the teacher card shows their
-        courses, and both are read from the same rows: one link, two ways of
-        looking for it.
+        Ответ у обоих одной формы — «курс и строка связи», — потому что
+        экраны с ним делают одно и то же: показывают список и снимают
+        связь. Различие в одном поле: у ученика зачисление бывает снятым, и
+        он всё равно остаётся в списке.
         """
+        if person.is_student:
+            return [
+                {
+                    "id": row.course_id,
+                    "name": row.course.name,
+                    "row": row.pk,
+                    "active": row.is_active,
+                }
+                for row in person.enrolments.all()
+            ]
+
         return [
             {
                 "id": item.course_id,
                 "name": item.course.name,
                 "assignment": item.pk,
             }
-            for item in person.course_assignments.select_related("course")
+            # `.all()`, а не `select_related`: второй игнорирует предвыборку
+            # вьюсета и снова идёт в базу — запрос на человека
+            for item in person.course_assignments.all()
         ]
 
     def validate_is_school_admin(self, value):
+        # роль администратора — про общие объекты школы, а ученик в них не
+        # заходит вовсе; запрет тот же, что у приглашения
+        if self.instance is not None and self.instance.is_student:
+            api_error(
+                Codes.NOT_A_STUDENT,
+                "A student cannot be an administrator of the school.",
+                field="is_school_admin",
+            )
+
         if value:
             return value
 

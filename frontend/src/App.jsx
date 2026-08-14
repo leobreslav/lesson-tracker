@@ -17,6 +17,7 @@ import StudentApp from './StudentApp'
 import SchoolCourses from './SchoolCourses'
 import SchoolOverview from './SchoolOverview'
 import SchoolReference from './SchoolReference'
+import SchoolStudents from './SchoolStudents'
 import SchoolTeachers from './SchoolTeachers'
 import SchoolSchedule from './SchoolSchedule'
 import Schools from './Schools'
@@ -172,6 +173,7 @@ export default function App() {
             <Route index element={<SchoolOverview />} />
             <Route path="teachers" element={<SchoolTeachers />} />
             <Route path="courses" element={<SchoolCourses />} />
+            <Route path="students" element={<SchoolStudents />} />
             <Route path="reference" element={<SchoolReference />} />
           </Route>
           <Route path="/schools" element={guarded(Schools, { user })} />

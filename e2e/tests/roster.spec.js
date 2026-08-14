@@ -83,3 +83,24 @@ test('строка, которую не прочитать, отменяет в�
   await expect(dialog).toContainText('Строка 1: нет адреса почты')
   await expect(dialog.getByRole('button', { name: 'Зачислить' })).toBeDisabled()
 })
+
+test('ученик виден в школе, и снятый курс помечен', async ({ page, signIn }) => {
+  await signIn(PEOPLE.admin)
+  await page.goto('/school/students')
+  await ready(page)
+
+  // шестеро: пятеро учатся и снятая — она из списка не исчезает, но её
+  // курс помечен как прошлый
+  const rows = page.locator('.people-list li')
+  await expect(rows).toHaveCount(6)
+  await expect(rows.filter({ hasText: 'Ева Морозова' }).locator('.tag.past')).toHaveCount(1)
+  await expect(rows.filter({ hasText: 'Артём Степанов' }).locator('.tag.past')).toHaveCount(0)
+
+  // отвязка сюда не поехала намеренно: первый отказ со счётчиком — это
+  // 400, а слушатель консоли считает ошибкой любой такой ответ, и глушить
+  // его ради одного сценария значит ослепить сторожа. Отказ и
+  // подтверждение проверены питоновскими тестами
+  await expect(
+    rows.first().getByRole('button', { name: 'Отвязать от школы' }),
+  ).toBeVisible()
+})
