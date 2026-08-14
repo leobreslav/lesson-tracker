@@ -91,9 +91,9 @@ def make_grade(school, level=9, name=None):
     """
     A year group of the school.
 
-    `get_or_create` because every school starts with levels 1..11 (see
-    `schools.signals`): asking for «the ninth» twice means the same row, and
-    the unique constraint agrees.
+    `get_or_create` because a test may ask for «the ninth» twice: that is the
+    same row, and the unique constraint agrees. New schools start with no
+    year groups at all — eleven guessed rows were worse than an empty list.
     """
     from schedule.models import GradeLevel
 

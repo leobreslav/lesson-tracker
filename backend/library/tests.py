@@ -291,6 +291,28 @@ class FromPlanTests(LibraryTestCase):
         self.assertEqual(template.subject, self.subject)
         self.assertEqual(template.grade, 9)
 
+    def test_the_thirteenth_year_of_study_is_publishable(self):
+        """
+        Верхней границы у года обучения нет — ни у параллели, ни у шаблона.
+
+        Одиннадцать лет это местная система; в британской и IB-школе их
+        тринадцать. Ограничение уже дважды всплывало в разных местах, и
+        второй раз — прямо в форме публикации, где `max={11}` не давал
+        снять шаблон с двенадцатого и тринадцатого года.
+        """
+        self.build_plan()
+        self.course.grade = make_grade(self.school, level=13, name="Year 13")
+        self.course.save(update_fields=["grade"])
+
+        response = self.client.post(
+            reverse("plantemplate-from-plan"),
+            {"course": self.course.pk, "title": "Из плана"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 201, response.content)
+        self.assertEqual(PlanTemplate.objects.get().grade, 13)
+
     def test_a_course_without_a_subject_asks_for_one(self):
         self.build_plan()
         self.course.subject = None

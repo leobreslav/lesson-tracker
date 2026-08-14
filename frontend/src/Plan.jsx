@@ -1058,10 +1058,12 @@ function PublishDialog({ course, subjects, existing, busy, onSubmit, onClose }) 
           </label>
           <label>
             {t('library.grade')}
+            {/* верхней границы нет: одиннадцать лет — местная система, а в
+                британской и IB-школе их тринадцать. То же правило, что у
+                параллелей в справочнике */}
             <input
               type="number"
               min={1}
-              max={11}
               value={grade}
               onChange={(event) => setGrade(Number(event.target.value))}
             />

@@ -432,9 +432,9 @@ class Command(BaseCommand):
 
     def grades(self, school):
         """
-        Year groups. The school already has «Grade 1..11» from the signal —
-        two of them are renamed to show that the name and the year of study
-        are different things, which is the whole reason the table exists.
+        Year groups. Заводятся здесь же: новая школа не получает ни одной,
+        а две из них переименованы, чтобы было видно — имя и год обучения
+        разные вещи, ради чего справочник и заведён.
         """
         levels = {
             level.level: level
