@@ -265,6 +265,10 @@ export default function Works({ onLoggedOut }) {
                         <ol className="task-list">
                           {tasks.map((task, index) => (
                             <li key={task.id}>
+                              {/* номер рисуем сами, а не маркером списка:
+                                  по нему ищут задачу глазами, и ему нужны
+                                  и вес, и своя колонка */}
+                              <span className="task-number">{index + 1}.</span>
                               <div className="task-question">
                                 <Markdown text={task.question} />
                               </div>
@@ -331,16 +335,17 @@ export default function Works({ onLoggedOut }) {
                         </ol>
                       )}
 
-                      <div className="row">
-                        <button
-                          type="button"
-                          className="secondary compact"
-                          disabled={busy}
-                          onClick={() => setEditingTask({ task: null })}
-                        >
-                          {t('works.task.add')}
-                        </button>
-                      </div>
+                      {/* «добавить» — последняя строка списка, а не третья
+                          кнопка в стороне: добавляют после последней задачи,
+                          там ей и место */}
+                      <button
+                        type="button"
+                        className="task-add"
+                        disabled={busy}
+                        onClick={() => setEditingTask({ task: null })}
+                      >
+                        + {t('works.task.add')}
+                      </button>
                     </div>
                   )}
                 </li>

@@ -150,8 +150,10 @@ export default function WorkTable() {
       <details className="panel">
         <summary>{t('table.questions')}</summary>
         <ol className="task-list">
-          {table.tasks.map((task) => (
+          {table.tasks.map((task, index) => (
             <li key={task.id}>
+              {/* номер тот же, что в шапке столбца: по нему их и сличают */}
+              <span className="task-number">{index + 1}.</span>
               <div className="task-question">
                 <Markdown text={task.question} />
               </div>
