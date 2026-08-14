@@ -4,13 +4,14 @@ from calendars import services as calendar_services
 from calendars.models import SchoolYear
 from config.access import (
     IsSchoolMember,
+    IsStudent,
     IsTeacher,
     SchoolScopedViewSet,
     TeacherScopedViewSet,
 )
 from config.errors import Codes, api_denied, api_error
 from django.db import transaction
-from django.db.models import Count
+from django.db.models import Count, F
 from django.utils import timezone
 from django.db.models import ProtectedError
 from django.utils.dateparse import parse_date
@@ -24,10 +25,13 @@ from rest_framework.views import APIView
 from plans.models import PlanNode
 
 from . import importing, services
+from schools import services as school_services
+
 from .models import (
     Course,
     CourseAssignment,
     CourseMethodist,
+    CourseStudent,
     GradeLevel,
     LessonSlot,
     MasterSlot,
@@ -36,6 +40,7 @@ from .models import (
 from .serializers import (
     BulkDeleteSerializer,
     CourseMethodistSerializer,
+    CourseStudentSerializer,
     SubjectSerializer,
     CopySerializer,
     CourseAssignmentSerializer,
@@ -210,6 +215,86 @@ class CourseMethodistViewSet(SchoolScopedViewSet):
 
     def perform_create(self, serializer):
         serializer.save(assigned_by=self.request.user)
+
+
+class CourseStudentViewSet(SchoolScopedViewSet):
+    """
+    Состав курса. Ставит и снимает администратор, как и всё школьное.
+
+    Снятие **не удаляет строку**: ученик перестаёт работать в курсе, но
+    продолжает видеть, что уже сделал, и строка — это и есть его право
+    читать. Повторный `POST` той же пары возвращает снятого: пара одна и та
+    же навсегда.
+    """
+
+    serializer_class = CourseStudentSerializer
+    queryset = CourseStudent.objects.select_related("course", "student")
+    school_path = "course__school"
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        course = self.request.query_params.get("course")
+        if course:
+            queryset = (
+                queryset.filter(course_id=course)
+                if course.isdigit()
+                else queryset.none()
+            )
+
+        return queryset
+
+    def create(self, request, *args, **kwargs):
+        """Зачислить — или вернуть снятого той же строкой."""
+        form = self.get_serializer(data=request.data)
+        form.is_valid(raise_exception=True)
+        row = school_services.enrol(
+            form.validated_data["student"],
+            form.validated_data["course"],
+            by=request.user,
+        )
+
+        return Response(
+            self.get_serializer(row).data, status=status.HTTP_201_CREATED
+        )
+
+    def perform_destroy(self, instance):
+        school_services.remove_from_course(instance)
+
+
+class StudentCoursesView(APIView):
+    """
+    Курсы ученика: где он учится и где учился.
+
+    Два списка, а не один. Снятый с курса продолжает видеть, что уже
+    сделал, — и должен понимать, почему курс уехал вниз и почему в нём
+    ничего не нажимается. Курс, исчезнувший без объяснения, читается как
+    поломка.
+    """
+
+    permission_classes = [IsAuthenticated, IsSchoolMember, IsStudent]
+
+    def get(self, request):
+        rows = (
+            CourseStudent.objects.filter(student=request.user)
+            .select_related("course", "course__subject", "course__grade")
+            # активные сверху: снятые уезжают вниз, как их и показывают
+            .order_by(F("removed_at").asc(nulls_first=True), "course__name")
+        )
+
+        return Response(
+            {
+                "courses": [
+                    {
+                        "id": row.course_id,
+                        "name": row.course.name,
+                        "subject": row.course.subject.name if row.course.subject else None,
+                        "grade": row.course.grade.name if row.course.grade else None,
+                        "active": row.is_active,
+                    }
+                    for row in rows
+                ]
+            }
+        )
 
 
 class CourseAssignmentViewSet(SchoolScopedViewSet):

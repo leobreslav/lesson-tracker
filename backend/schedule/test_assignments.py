@@ -24,6 +24,7 @@ from schools.testing import (
     make_grade,
     make_node,
     make_slot,
+    make_user,
     make_year,
 )
 
@@ -628,3 +629,100 @@ class SubjectIsolationTests(AssignmentTestCase):
 
         self.assertEqual(response.status_code, 400)
         self.assertEqual(response.json()["code"], "subject_in_use")
+
+
+class EnrolmentTests(SchoolTestMixin, APITestCase):
+    """
+    Состав курса: администратор записывает и снимает, ученик видит своё.
+
+    Снятие не удаляет строку — она и есть право ученика видеть сделанное в
+    курсе. Поэтому «снять» и «удалить» здесь разные слова, и второго нет.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.year = make_year(self.school)
+        self.course = make_course(self.school, self.year, "9Б Алгебра")
+        self.other = make_course(self.school, self.year, "9Б Геометрия")
+        self.sign_in(self.admin)
+
+    def enrol(self, student=None, course=None):
+        return self.client.post(
+            reverse("coursestudent-list"),
+            {"course": (course or self.course).pk, "student": (student or self.student).pk},
+            format="json",
+        )
+
+    def roster(self, course=None):
+        return self.client.get(
+            reverse("coursestudent-list"), {"course": (course or self.course).pk}
+        ).json()
+
+    def test_an_admin_enrols_a_student(self):
+        response = self.enrol()
+
+        self.assertEqual(response.status_code, 201, response.content)
+        self.assertTrue(response.json()["active"])
+        self.assertEqual([row["student"] for row in self.roster()], [self.student.pk])
+
+    def test_a_teacher_cannot_enrol(self):
+        """Состав курса ведёт администратор — как и всё школьное."""
+        self.sign_in(self.user)
+
+        self.assertEqual(self.enrol().status_code, 403)
+
+    def test_removing_keeps_the_row_and_the_history(self):
+        row_id = self.enrol().json()["id"]
+
+        response = self.client.delete(reverse("coursestudent-detail", args=[row_id]))
+
+        self.assertEqual(response.status_code, 204)
+        row = self.roster()[0]
+        self.assertFalse(row["active"])
+        self.assertIsNotNone(row["removed_at"])
+
+    def test_enrolling_again_brings_the_removed_one_back(self):
+        row_id = self.enrol().json()["id"]
+        self.client.delete(reverse("coursestudent-detail", args=[row_id]))
+
+        response = self.enrol()
+
+        self.assertEqual(response.status_code, 201, response.content)
+        self.assertEqual(response.json()["id"], row_id)
+        self.assertTrue(response.json()["active"])
+        self.assertEqual(len(self.roster()), 1)
+
+    def test_a_teacher_cannot_be_enrolled_as_a_student(self):
+        response = self.enrol(student=self.colleague)
+
+        self.assertEqual(response.status_code, 400, response.content)
+
+    def test_a_student_of_another_school_is_not_offered(self):
+        alien = make_user(self.alien_school, "alien-student@example.com", student=True)
+
+        self.assertEqual(self.enrol(student=alien).status_code, 400)
+
+    def test_the_student_sees_their_courses_split_in_two(self):
+        """
+        Снятый курс не исчезает, а уезжает вниз с пометкой: курс, пропавший
+        без объяснения, читается как поломка.
+        """
+        self.enrol(course=self.course)
+        removed = self.enrol(course=self.other).json()["id"]
+        self.client.delete(reverse("coursestudent-detail", args=[removed]))
+
+        self.sign_in(self.student)
+        body = self.client.get(reverse("student-courses")).json()
+
+        self.assertEqual(
+            [(row["name"], row["active"]) for row in body["courses"]],
+            [("9Б Алгебра", True), ("9Б Геометрия", False)],
+        )
+
+    def test_a_teacher_has_no_student_section(self):
+        self.sign_in(self.user)
+
+        response = self.client.get(reverse("student-courses"))
+
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response.json()["code"], "students_only")

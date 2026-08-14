@@ -11,8 +11,11 @@ from django.contrib.auth import get_user_model
 from django.test import Client, TestCase
 from django.urls import reverse
 
+from schedule.models import Course
+
+from . import services
 from .models import Invitation, School
-from .testing import make_school, make_user
+from .testing import make_course, make_school, make_user, make_year
 
 User = get_user_model()
 
@@ -137,6 +140,124 @@ class InvitationAcceptanceTests(TestCase):
 
         self.assertEqual(
             User.objects.get(email="newcomer@example.com").school, self.school
+        )
+
+
+class StudentEnrolmentTests(TestCase):
+    """
+    Ученик приходит по приглашению и попадает в названные курсы.
+
+    Ключевое правило подсистемы: **приглашение расходуется однажды**. Если бы
+    оно доносило курсы при каждом входе, снятый с курса возвращался бы туда
+    сам, стоило ему войти, — и администратор не смог бы никого отчислить.
+    """
+
+    def setUp(self):
+        self.school = make_school("Test school")
+        self.admin = make_user(self.school, "admin@example.com", admin=True)
+        self.year = make_year(self.school)
+        self.algebra = make_course(self.school, self.year, "9Б Алгебра")
+        self.geometry = make_course(self.school, self.year, "9Б Геометрия")
+
+    def invite_student(self, email="newcomer@example.com", courses=()):
+        invitation = Invitation.objects.create(
+            school=self.school, email=email, kind="student", created_by=self.admin
+        )
+        invitation.courses.set(courses)
+        return invitation
+
+    def test_a_student_joins_the_school_and_the_courses(self):
+        self.invite_student(courses=[self.algebra, self.geometry])
+
+        google_login()
+
+        user = User.objects.get(email="newcomer@example.com")
+        self.assertTrue(user.is_student)
+        self.assertEqual(user.school, self.school)
+        self.assertEqual(
+            sorted(row.course.name for row in user.enrolments.all()),
+            ["9Б Алгебра", "9Б Геометрия"],
+        )
+
+    def test_a_removed_student_does_not_come_back_by_signing_in(self):
+        """
+        То, ради чего приглашение расходуется однажды.
+
+        Администратор снял ученика с курса; следующий вход не должен
+        возвращать его обратно — иначе отчислить никого нельзя.
+        """
+        self.invite_student(courses=[self.algebra])
+        google_login()
+        user = User.objects.get(email="newcomer@example.com")
+        services.remove_from_course(user.enrolments.get())
+
+        google_login()
+
+        row = user.enrolments.get()
+        self.assertIsNotNone(row.removed_at)
+        self.assertFalse(row.is_active)
+
+    def test_returning_revives_the_same_row(self):
+        """Пара «курс и ученик» одна навсегда: возврат не заводит вторую."""
+        self.invite_student(courses=[self.algebra])
+        google_login()
+        user = User.objects.get(email="newcomer@example.com")
+        row = user.enrolments.get()
+        services.remove_from_course(row)
+
+        services.enrol(user, self.algebra, by=self.admin)
+
+        self.assertEqual(user.enrolments.count(), 1)
+        self.assertIsNone(user.enrolments.get().removed_at)
+
+    def test_a_teacher_invitation_does_not_make_a_student(self):
+        Invitation.objects.create(
+            school=self.school, email="newcomer@example.com", created_by=self.admin
+        )
+
+        google_login()
+
+        self.assertFalse(User.objects.get(email="newcomer@example.com").is_student)
+
+    def test_the_kind_is_set_once_and_never_flips(self):
+        """
+        Один адрес — один вид учётки.
+
+        Приглашение уже пришедшего человека вторым видом не срабатывает: он
+        в школе, а второе приглашение никого не переносит.
+        """
+        self.invite_student(courses=[self.algebra])
+        google_login()
+        user = User.objects.get(email="newcomer@example.com")
+
+        Invitation.objects.create(
+            school=make_school("Другая школа"),
+            email=user.email,
+            created_by=self.admin,
+        )
+        google_login()
+
+        user.refresh_from_db()
+        self.assertTrue(user.is_student)
+        self.assertEqual(user.school, self.school)
+
+    def test_only_the_active_courses_are_the_ones_to_work_in(self):
+        """Два вопроса — два ответа, и оба даёт менеджер курсов."""
+        self.invite_student(courses=[self.algebra, self.geometry])
+        google_login()
+        user = User.objects.get(email="newcomer@example.com")
+        services.remove_from_course(user.enrolments.get(course=self.geometry))
+
+        self.assertEqual(
+            [course.name for course in Course.objects.for_student(user)],
+            ["9Б Алгебра"],
+        )
+        self.assertEqual(
+            sorted(
+                course.name
+                for course in Course.objects.for_student(user, active_only=False)
+            ),
+            ["9Б Алгебра", "9Б Геометрия"],
         )
 
 

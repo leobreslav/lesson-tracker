@@ -82,6 +82,18 @@ class IsTeacher(BasePermission):
         return True
 
 
+class IsStudent(BasePermission):
+    """Зеркало `IsTeacher`: разделы ученика учителю тоже незачем."""
+
+    def has_permission(self, request, view):
+        if not getattr(request.user, "is_student", False):
+            api_denied(
+                Codes.STUDENTS_ONLY,
+                "This section is for students.",
+            )
+        return True
+
+
 class IsSchoolAdminForWrite(BasePermission):
     """Reading is for every member of the school, writing for its admins."""
 

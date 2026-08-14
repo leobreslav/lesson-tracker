@@ -1,3 +1,4 @@
+from accounts.models import Kind
 from django.conf import settings
 from django.db import models
 
@@ -34,6 +35,15 @@ class Invitation(models.Model):
 
     Accepting stamps `accepted_at` and keeps the row: it is the record of who
     invited whom and when.
+
+    **Приглашение расходуется однажды.** Ученику оно вдобавок называет
+    курсы, в которые его записать при первом появлении. Дальше зачисление —
+    прямое действие администратора: если бы приглашение доносило курсы при
+    каждом входе, снятый с курса возвращался бы в него сам, стоило ему
+    войти.
+
+    Поэтому и правило вставки такое: есть учётка — зачисляем немедленно,
+    нет — записываем сюда и ждём.
     """
 
     school = models.ForeignKey(
@@ -43,7 +53,21 @@ class Invitation(models.Model):
         verbose_name="school",
     )
     email = models.EmailField("email address")
+    kind = models.CharField(
+        "kind",
+        max_length=8,
+        choices=Kind,
+        default=Kind.TEACHER,
+        help_text="Кем человек войдёт: учителем или учеником.",
+    )
     is_school_admin = models.BooleanField("grants the admin role", default=False)
+    courses = models.ManyToManyField(
+        "schedule.Course",
+        related_name="pending_students",
+        blank=True,
+        verbose_name="courses to enrol into",
+        help_text="Только у ученика: куда записать при первом входе.",
+    )
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         related_name="sent_invitations",
@@ -61,6 +85,12 @@ class Invitation(models.Model):
         constraints = [
             models.UniqueConstraint(
                 fields=("school", "email"), name="unique_invitation_per_school"
+            ),
+            # ученик не бывает администратором школы: роль про общие объекты
+            # школы, а он в них не заходит вовсе
+            models.CheckConstraint(
+                condition=~models.Q(kind="student", is_school_admin=True),
+                name="student_invitation_grants_no_role",
             ),
         ]
 

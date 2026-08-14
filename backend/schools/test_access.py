@@ -22,6 +22,7 @@ from schedule.models import Course, LessonSlot
 
 from .matrix import AccessRulesMixin
 from .models import Invitation, School
+from .services import enrol as enrol_student
 from .testing import (
     assign,
     MONDAY,
@@ -175,6 +176,18 @@ class MatrixTests(AccessTestCase):
                 {"name": "masterslot-bulk", "param": "course", "method": "delete"},
                 {"name": "import-preview", "param": "year", "method": "get"},
             ),
+        )
+
+    def test_course_student(self):
+        student_row = enrol_student(self.student, self.course, by=self.admin)
+
+        self.assertSchoolObjectRules(
+            list_url="coursestudent-list",
+            detail_url="coursestudent-detail",
+            obj=student_row,
+            create={"course": self.course.pk, "student": self.student.pk},
+            # состав курса не правят частично: зачислили или сняли
+            patch={},
         )
 
     def test_lesson_slot(self):

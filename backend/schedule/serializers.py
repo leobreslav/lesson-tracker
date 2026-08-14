@@ -11,6 +11,7 @@ from .models import (
     Course,
     CourseAssignment,
     CourseMethodist,
+    CourseStudent,
     GradeLevel,
     LessonSlot,
     MasterSlot,
@@ -560,6 +561,54 @@ class BulkDeleteSerializer(serializers.Serializer):
                 field="end",
             )
         return attrs
+
+
+class CourseStudentSerializer(serializers.ModelSerializer):
+    """
+    Кто учится на курсе. Форма та же, что у назначения и методиста.
+
+    Снятый с курса из списка не исчезает — у него стоит `removed_at`, и
+    интерфейс показывает его отдельно: он всё ещё видит своё прошлое в
+    курсе, и вернуть его нужно уметь той же кнопкой.
+    """
+
+    student_name = serializers.SerializerMethodField()
+    student_email = serializers.CharField(source="student.email", read_only=True)
+    course_name = serializers.CharField(source="course.name", read_only=True)
+    active = serializers.BooleanField(source="is_active", read_only=True)
+
+    class Meta:
+        model = CourseStudent
+        fields = (
+            "id",
+            "course",
+            "student",
+            "student_name",
+            "student_email",
+            "course_name",
+            "active",
+            "created_at",
+            "removed_at",
+        )
+        read_only_fields = ("created_at", "removed_at")
+        # уникальность пары DRF выводит из модели сам, и она здесь мешает:
+        # повторное зачисление той же пары означает «верните снятого», а не
+        # «такая строка уже есть». Возврат делает вьюха, строка одна и та же
+        validators = []
+
+    def get_student_name(self, row) -> str:
+        return full_name(row.student)
+
+    def get_fields(self):
+        fields = super().get_fields()
+        school_id = getattr(self.context.get("request").user, "school_id", None)
+        fields["course"].queryset = Course.objects.filter(school_id=school_id)
+        # только ученики своей школы: учителя здесь не бывает по построению,
+        # а чужой id так же не существует, как и несуществующий
+        fields["student"].queryset = get_user_model().objects.filter(
+            school_id=school_id, kind=get_user_model().Kind.STUDENT
+        )
+        return fields
 
 
 class CourseMethodistSerializer(serializers.ModelSerializer):

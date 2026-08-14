@@ -14,6 +14,7 @@ of a reviewer.
 """
 
 from config.access import (
+    IsStudent,
     IsSuperuser,
     IsTeacher,
     SchoolScopedViewSet,
@@ -41,13 +42,13 @@ EXEMPT = {
     ),
 }
 
-# Права, которые отвечают на вопрос «а ученику можно».
+# Права, которые отвечают на вопрос «кому предназначена эта вьюха».
 #
 # Раньше здесь стоял `IsSchoolMember` и его родня: пока пользователи были
 # одни учителя, «состоит в школе» и значило «можно». С появлением учеников
 # это перестало быть правдой — членство есть и у них, — поэтому засчитывается
 # только явный ответ про вид пользователя.
-KIND_AWARE = (IsTeacher, IsSuperuser)
+KIND_AWARE = (IsTeacher, IsStudent, IsSuperuser)
 
 
 def api_views(prefix="api/"):

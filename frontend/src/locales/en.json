@@ -202,7 +202,10 @@
     "comment_required": "Say what to fix — a plan returned without a word is a riddle.",
     "review_closed": "This request is no longer waiting for a decision.",
     "year_in_use": "The year is in use: its courses hold {{slots}} lessons and {{plan_rows}} plan rows. Their teachers have to clear them first.",
-    "teachers_only": "This section is for teachers."
+    "teachers_only": "This section is for teachers.",
+    "students_only": "This section is for students.",
+    "email_other_kind": "«{{email}}» is already used by an account of the other kind: one address is either a teacher or a student.",
+    "not_a_student": "A student cannot be an administrator of the school."
   },
   "classPicker": {
     "label": "Classes:",

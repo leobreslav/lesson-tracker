@@ -122,6 +122,25 @@ class CourseQuerySet(models.QuerySet):
             school_id=user.school_id,
         ).distinct()
 
+    def for_student(self, user, *, active_only=True):
+        """
+        Курсы ученика. Два вопроса одной функцией — и это не удобство.
+
+        «Можно работать» и «можно видеть своё» — разные права: снятый с
+        курса продолжает читать сделанное, но ничего в нём не делает. Пока
+        оба ответа даёт одно место, разойтись им негде; разложенные по
+        queryset'ам, они разойдутся в первом же забытом фильтре — с
+        учительскими выборками это уже происходило.
+        """
+        if user is None or not user.is_authenticated or user.school_id is None:
+            return self.none()
+
+        enrolled = self.filter(students__student=user, school_id=user.school_id)
+        if active_only:
+            enrolled = enrolled.filter(students__removed_at__isnull=True)
+
+        return enrolled.distinct()
+
 
 class Course(models.Model):
     """
@@ -240,6 +259,80 @@ class CourseMethodist(models.Model):
 
     def __str__(self):
         return f"{self.user} — {self.course}"
+
+
+class CourseStudent(models.Model):
+    """
+    Кто учится на этом курсе.
+
+    Третья таблица той же формы, что `CourseAssignment` и `CourseMethodist`
+    рядом: пара «курс и человек», уникальная, ставит её администратор. И тот
+    же принцип — курс общий, а привязка к нему личная.
+
+    Разница одна, и она важная: **строка не удаляется**. Снятый с курса
+    ученик перестаёт в нём работать, но продолжает видеть, что уже сделал:
+    его ответы и результаты никуда не делись, и право их читать — это и есть
+    строка. Поэтому снятие ставит `removed_at`, а возврат его снимает; пара
+    остаётся одна и та же, второй строки не заводится.
+
+    Отсюда два разных вопроса, и оба задаются часто:
+
+    * **можно ли работать в курсе** — строка есть и `removed_at` пуст;
+    * **можно ли видеть своё в курсе** — строка есть, любая.
+
+    Оба ответа даёт менеджер курсов (`Course.objects.for_student`), чтобы
+    они не разъехались по queryset'ам, как это уже случалось с учителями.
+
+    Истории приходов и уходов нет намеренно: она никому не понадобилась, а у
+    ответов будут собственные метки времени.
+    """
+
+    course = models.ForeignKey(
+        Course,
+        related_name="students",
+        on_delete=models.CASCADE,
+        verbose_name="course",
+    )
+    student = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        related_name="enrolments",
+        on_delete=models.CASCADE,
+        verbose_name="student",
+    )
+    added_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        related_name="students_enrolled",
+        null=True,
+        on_delete=models.SET_NULL,
+        verbose_name="enrolled by",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    removed_at = models.DateTimeField(
+        "removed at",
+        null=True,
+        blank=True,
+        help_text="Снят с курса: работать нельзя, своё прошлое видно.",
+    )
+
+    class Meta:
+        verbose_name = "course student"
+        verbose_name_plural = "course students"
+        ordering = ("course__name", "student__last_name", "student__email")
+        constraints = [
+            models.UniqueConstraint(
+                fields=("course", "student"), name="one_enrolment_row_per_course"
+            ),
+        ]
+        indexes = [
+            models.Index(fields=("student", "removed_at"), name="active_enrolment_idx"),
+        ]
+
+    def __str__(self):
+        return f"{self.student} — {self.course}"
+
+    @property
+    def is_active(self) -> bool:
+        return self.removed_at is None
 
 
 class CourseAssignment(models.Model):

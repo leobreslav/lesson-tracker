@@ -25,6 +25,9 @@ class Codes:
     # school membership and roles
     NO_SCHOOL = "no_school"
     TEACHERS_ONLY = "teachers_only"
+    STUDENTS_ONLY = "students_only"
+    EMAIL_OTHER_KIND = "email_other_kind"
+    NOT_A_STUDENT = "not_a_student"
     SUPERUSER_REQUIRED = "superuser_required"
     SCHOOL_IN_USE = "school_in_use"
     SCHOOL_ADMIN_REQUIRED = "school_admin_required"

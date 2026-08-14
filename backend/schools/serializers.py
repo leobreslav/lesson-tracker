@@ -1,6 +1,10 @@
+from accounts.models import Kind
 from config.errors import Codes, api_error
 from django.contrib.auth import get_user_model
 from rest_framework import serializers
+from schedule.models import Course
+
+from . import services
 
 from .models import Invitation, School
 
@@ -110,6 +114,14 @@ class MemberSerializer(serializers.ModelSerializer):
 
 
 class InvitationSerializer(serializers.ModelSerializer):
+    """
+    Приглашение в школу — учителю или ученику.
+
+    Вид назван здесь, а не выведен из чего-то: адрес становится учительским
+    или ученическим в момент приглашения, и одна почта не бывает и тем и
+    другим. Проверка адреса общая на все входы — `services.check_address`.
+    """
+
     accepted = serializers.BooleanField(source="is_accepted", read_only=True)
 
     class Meta:
@@ -117,7 +129,9 @@ class InvitationSerializer(serializers.ModelSerializer):
         fields = (
             "id",
             "email",
+            "kind",
             "is_school_admin",
+            "courses",
             "created_at",
             "accepted_at",
             "accepted",
@@ -127,24 +141,50 @@ class InvitationSerializer(serializers.ModelSerializer):
     def validate_email(self, value):
         # Google hands back a lowercase address; storing it the same way keeps
         # the lookup on sign-in an exact match
-        value = value.strip().lower()
-        school = self.context["request"].user.school
+        return value.strip().lower()
 
-        if Invitation.objects.filter(school=school, email=value).exists():
+    def validate(self, attrs):
+        school = self.context["request"].user.school
+        email = attrs["email"]
+        kind = attrs.get("kind", Kind.TEACHER)
+
+        if Invitation.objects.filter(school=school, email=email).exists():
             api_error(
                 Codes.INVITATION_EXISTS,
-                f"«{value}» has already been invited to this school.",
+                f"«{email}» has already been invited to this school.",
                 field="email",
-                email=value,
+                email=email,
             )
 
-        member = User.objects.filter(email__iexact=value).first()
+        # адрес занят кем-то другого вида или из другой школы — отказ здесь,
+        # а не молчание при входе: приглашение, которое никогда не сработает,
+        # хуже отказа, потому что администратор считает, что пригласил
+        services.check_address(email, kind)
+
+        member = User.objects.filter(email__iexact=email).first()
         if member is not None and member.school_id is not None:
             api_error(
                 Codes.ALREADY_MEMBER,
-                f"«{value}» already belongs to a school.",
+                f"«{email}» already belongs to a school.",
                 field="email",
-                email=value,
+                email=email,
             )
 
-        return value
+        if kind == Kind.STUDENT and attrs.get("is_school_admin"):
+            api_error(
+                Codes.NOT_A_STUDENT,
+                "A student invitation cannot grant the administrator role.",
+                field="is_school_admin",
+            )
+
+        return attrs
+
+    def get_fields(self):
+        fields = super().get_fields()
+        # контекста может не быть вовсе: суперпользователь приглашает первого
+        # администратора и сериализует ответ без запроса
+        user = getattr(self.context.get("request"), "user", None)
+        fields["courses"].child_relation.queryset = Course.objects.filter(
+            school_id=getattr(user, "school_id", None)
+        )
+        return fields

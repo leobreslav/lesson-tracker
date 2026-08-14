@@ -54,6 +54,7 @@ class UserSerializer(serializers.ModelSerializer):
         fields = (
             "id",
             "email",
+            "kind",
             "first_name",
             "last_name",
             "language",
@@ -67,6 +68,8 @@ class UserSerializer(serializers.ModelSerializer):
         read_only_fields = (
             "id",
             "email",
+            # вид назначается приглашением, а не заявляется о себе в профиле
+            "kind",
             "school",
             "is_school_admin",
             "is_superuser",
