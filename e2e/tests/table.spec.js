@@ -128,16 +128,14 @@ test('сводка над таблицей считает то, чего в не
   await openTable(page, 'Контрольная')
 
   const card = (name) => page.locator(`[data-card="${name}"]`)
-  // пятеро действующих начали, никто не прошёл целиком: снятая с курса в
+  // тринадцать действующих начали, один прошёл целиком: снятая с курса в
   // знаменатель не входит — она не «не закончила», она ушла
   await expect(card('started')).toContainText('13/13')
-  // один проходит работу целиком — иначе по этой плашке не понять,
-  // считает ли она вообще
-  await expect(card('finished')).toContainText('1')
+  await expect(card('started')).toContainText('прошли целиком 1')
   await expect(card('unchecked')).not.toContainText('0')
 
-  // самая трудная кликабельна и ведёт в проверку своего столбца
-  await card('hardest').getByRole('button').click()
+  // «на проверку» кликабельна и ведёт в столбец, где эти ответы лежат
+  await card('unchecked').getByRole('button').click()
 
   const dialog = page.locator('dialog.modal')
   await expect(dialog).toContainText('Проверка задачи')

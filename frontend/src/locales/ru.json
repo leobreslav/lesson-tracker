@@ -980,14 +980,10 @@
     "markWrong": "Отметить «неверно» (повторное нажатие снимает)",
     "newAnswer": "Ученик отправил новый ответ, пока вы читали.",
     "show": "Показать",
-    "startedLabel": "начали",
-    "finishedLabel": "прошли работу целиком",
     "uncheckedLabel": "ответов на проверку",
-    "taskNumber": "задача {{number}}",
-    "hardestLabel": "самая трудная: верно {{correct}} из {{checked}}",
-    "noHardest": "проверенных ответов пока нет",
     "expected_one": "Правильный ответ:",
     "expected_few": "Правильные ответы:",
-    "expected_many": "Правильные ответы:"
+    "expected_many": "Правильные ответы:",
+    "progressLabel": "начали · прошли целиком {{finished}}"
   }
 }

@@ -943,13 +943,9 @@
     "markWrong": "Mark as wrong (press again to clear)",
     "newAnswer": "The student has sent a new answer while you were reading.",
     "show": "Show it",
-    "startedLabel": "have started",
-    "finishedLabel": "answered every question",
     "uncheckedLabel": "answers to check",
-    "taskNumber": "question {{number}}",
-    "hardestLabel": "the hardest: {{correct}} right of {{checked}}",
-    "noHardest": "nothing checked yet",
     "expected_one": "Correct answer:",
-    "expected_other": "Correct answers:"
+    "expected_other": "Correct answers:",
+    "progressLabel": "have started · {{finished}} answered everything"
   }
 }

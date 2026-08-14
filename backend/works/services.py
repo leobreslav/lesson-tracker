@@ -427,10 +427,10 @@ def summarise(students, columns) -> dict:
     считаем все: работа учителя не становится меньше оттого, что автор
     ответа больше не в курсе.
 
-    «Самая трудная» — та, где меньше всего доля верных среди
-    **проверенных**. Непроверенная задача в кандидаты не попадает вовсе:
-    иначе самой трудной всегда оказывалась бы та, до которой не дошли
-    руки.
+    «Самой трудной задачи» здесь больше нет: числа по столбцу и так стоят
+    в его шапке, а плашка повторяла их отдельно и требовала объяснять, что
+    непроверенная задача в кандидаты не идёт. Число, которое надо
+    объяснять дважды, дешевле не показывать.
     """
     active = [row for row in students if row["active"]]
     tasks = len(columns)
@@ -443,15 +443,6 @@ def summarise(students, columns) -> dict:
     correct = sum(column["correct"] for column in columns)
     checked = sum(column["correct"] + column["wrong"] for column in columns)
 
-    judged = [
-        column for column in columns if column["correct"] + column["wrong"] > 0
-    ]
-    hardest = min(
-        judged,
-        key=lambda column: column["correct"] / (column["correct"] + column["wrong"]),
-        default=None,
-    )
-
     return {
         "students": len(active),
         "started": started,
@@ -460,13 +451,6 @@ def summarise(students, columns) -> dict:
         "unchecked": unchecked,
         "correct": correct,
         "checked": checked,
-        "hardest": hardest
-        and {
-            "id": hardest["id"],
-            "position": hardest["position"],
-            "correct": hardest["correct"],
-            "checked": hardest["correct"] + hardest["wrong"],
-        },
     }
 
 

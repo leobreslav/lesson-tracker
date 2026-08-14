@@ -661,38 +661,6 @@ class SummaryTests(WorkTestCase):
         self.assertEqual(numbers["answers"], 1)
         self.assertEqual(numbers["unchecked"], 1)
 
-    def test_the_hardest_task_is_the_one_they_failed(self):
-        self.answer_as(self.student, self.task, "верно")
-        self.answer_as(self.other, self.task, "верно")
-        self.answer_as(self.student, self.second, "мимо")
-        self.answer_as(self.other, self.second, "мимо")
-        for submission in Submission.objects.filter(task=self.task):
-            self.mark(submission, True)
-        for submission in Submission.objects.filter(task=self.second):
-            self.mark(submission, False)
-
-        hardest = self.summary()["hardest"]
-
-        self.assertEqual(hardest["id"], self.second.pk)
-        self.assertEqual((hardest["correct"], hardest["checked"]), (0, 2))
-
-    def test_an_unchecked_task_is_not_the_hardest_one(self):
-        """
-        Иначе самой трудной всегда была бы та, до которой не дошли руки.
-        """
-        self.answer_as(self.student, self.task, "проверенный")
-        self.answer_as(self.student, self.second, "непроверенный")
-        self.mark(Submission.objects.get(task=self.task), True)
-
-        hardest = self.summary()["hardest"]
-
-        self.assertEqual(hardest["id"], self.task.pk)
-
-    def test_without_a_single_verdict_there_is_no_hardest(self):
-        self.answer_as(self.student, self.task, "ответ")
-
-        self.assertIsNone(self.summary()["hardest"])
-
     def test_the_summary_agrees_with_the_grid_it_was_counted_from(self):
         """
         Сводка и таблица обязаны говорить одно и то же: два расчёта над
