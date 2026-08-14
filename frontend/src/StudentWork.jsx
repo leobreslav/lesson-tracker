@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link, useParams } from 'react-router-dom'
 import Markdown from './Markdown'
 import { fetchStudentWork, sendAnswer } from './api'
 import { dateTime } from './dates'
+import { POLL_MS } from './polling'
 
 /**
  * Решение работы: задачи одна под другой, ответ уходит по каждой отдельно.
@@ -15,6 +16,11 @@ import { dateTime } from './dates'
  * История попыток видна ученику полностью. Она у него и так есть — он сам
  * это писал, — а прятать её значило бы делать вид, что попытка стирает
  * прошлую: она её не стирает нигде, в том числе у учителя.
+ *
+ * Страница опрашивается так же, как таблица у учителя: отметка приходит
+ * ученику без его участия, и обновлять её руками он не должен. Черновик в
+ * поле ответа при этом цел — состояние ввода живёт в самой карточке задачи,
+ * а перерисовка приходит сверху и его не касается.
  */
 export default function StudentWork() {
   const { id } = useParams()
@@ -22,13 +28,26 @@ export default function StudentWork() {
   const [work, setWork] = useState(null)
   const [error, setError] = useState(null)
 
+  const version = useRef(null)
+
   const load = useCallback(
-    () => fetchStudentWork(id).then(setWork),
+    async ({ polling = false } = {}) => {
+      const answer = await fetchStudentWork(id, polling ? version.current : null)
+      version.current = answer.version
+      // «не изменилось» — не повод перерисовывать: лишний рендер посреди
+      // набора ответа человеку ничего не сообщает
+      if (answer.changed !== false) setWork(answer)
+    },
     [id],
   )
 
   useEffect(() => {
     load().catch((err) => setError(err.message))
+  }, [load])
+
+  useEffect(() => {
+    const timer = setInterval(() => load({ polling: true }).catch(() => {}), POLL_MS)
+    return () => clearInterval(timer)
   }, [load])
 
   if (work === null) {

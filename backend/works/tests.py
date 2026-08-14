@@ -712,3 +712,64 @@ class SummaryTests(WorkTestCase):
             table["summary"]["correct"],
             sum(row["correct"] for row in table["students"]),
         )
+
+
+class StudentPollingTests(WorkTestCase):
+    """
+    Ученик опрашивает свою работу так же, как учитель — таблицу.
+
+    Отметка приходит к нему без его участия, и страница, которую надо
+    обновлять руками, — это страница, которой не верят.
+    """
+
+    def version(self):
+        return self.my_work().json()["version"]
+
+    def test_an_unchanged_page_is_cheap(self):
+        version = self.version()
+
+        answer = self.client.get(
+            reverse("student-work", args=[self.work.pk]), {"version": version}
+        ).json()
+
+        self.assertFalse(answer["changed"])
+        self.assertNotIn("tasks", answer)
+
+    def test_a_verdict_moves_the_version(self):
+        self.answer("ответ")
+        before = self.version()
+
+        self.sign_in(self.user)
+        self.client.patch(
+            reverse("submission-detail", args=[Submission.objects.get().pk]),
+            {"is_correct": True},
+            format="json",
+        )
+        self.sign_in(self.student)
+
+        self.assertNotEqual(self.version(), before)
+        self.assertTrue(
+            self.my_work().json()["tasks"][0]["submissions"][0]["verdict"]
+        )
+
+    def test_an_edited_task_moves_the_version_too(self):
+        """
+        Правка открытой работы разрешена и названа ценой — значит ученик
+        должен увидеть новое условие, а не то, что было при загрузке.
+        """
+        before = self.version()
+
+        self.sign_in(self.user)
+        self.client.patch(
+            reverse("task-detail", args=[self.task.pk]),
+            {"question": "Другое условие"},
+            format="json",
+        )
+        self.client.patch(
+            reverse("work-detail", args=[self.work.pk]),
+            {"title": "Переименована"},
+            format="json",
+        )
+        self.sign_in(self.student)
+
+        self.assertNotEqual(self.version(), before)

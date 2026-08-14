@@ -161,3 +161,36 @@ test('учительский раздел работ ученику не пок�
   await expect(page.locator('.work-list')).toHaveCount(0)
   await expect(page.getByRole('link', { name: 'Мои курсы' })).toBeVisible()
 })
+
+test('отметка учителя доезжает до ученика сама', async ({ page, signIn, api }) => {
+  const teacher = await api(PEOPLE.ivanova)
+
+  await signIn(PEOPLE.student)
+  await page.goto('/')
+  await ready(page)
+  await page.getByRole('link', { name: 'Проверочная: формулы сложения' }).click()
+
+  const first = page.locator('.student-task').first()
+  await first.getByRole('textbox').fill('a^2+2ab+b^2')
+  await first.getByRole('button', { name: 'Отправить' }).click()
+  await expect(first.locator('.attempt-list .verdict')).toHaveText('не проверено')
+
+  const answers = await teacher.get('/api/works/submissions/?work=' + (await workId(teacher)))
+  const mine = answers.body.find((row) => row.answer === 'a^2+2ab+b^2')
+  await teacher.patch(`/api/works/submissions/${mine.id}/`, { is_correct: true })
+
+  // страницу не трогаем: отметка приезжает опросом
+  await expect(first.locator('.attempt-list .verdict')).toHaveText('верно', {
+    timeout: 15000,
+  })
+  await expect(first.locator('.attempt-list li')).toHaveClass(/correct/)
+})
+
+/** id работы «Проверочная» — ученик отвечает в ней, учитель её проверяет. */
+async function workId(teacher) {
+  const courses = await teacher.get('/api/courses/')
+  const course = courses.body.find((item) => item.name === 'Grade 6 Algebra')
+  const works = await teacher.get(`/api/works/?course=${course.id}`)
+
+  return works.body.find((item) => item.title.startsWith('Проверочная')).id
+}

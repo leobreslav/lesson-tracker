@@ -259,6 +259,14 @@ class StudentWorkView(APIView):
 
     def get(self, request, pk):
         work = get_object_or_404(services.visible_works(request.user), pk=pk)
+
+        # опрос у ученика такой же, как у учителя, и по той же причине:
+        # отметка приходит к нему без его участия, а страница, которую
+        # приходится обновлять руками, — это страница, которой не верят
+        version = services.student_version(work, request.user)
+        if request.query_params.get("version") == version:
+            return Response({"version": version, "changed": False})
+
         tasks = list(work.tasks.all())
         journal = services.my_answers(request.user, tasks)
         active = request.user.enrolments.filter(
@@ -267,6 +275,7 @@ class StudentWorkView(APIView):
 
         return Response(
             {
+                "version": version,
                 "id": work.pk,
                 "title": work.title,
                 "course_name": work.course.name,

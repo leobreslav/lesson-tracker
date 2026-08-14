@@ -508,7 +508,10 @@ export const fetchStudentCourses = () => request('/api/student/courses/')
 /** Работы ученика: открытые и закрытые, с его продвижением по ним. */
 export const fetchStudentWorks = () => request('/api/student/works/')
 
-export const fetchStudentWork = (id) => request(`/api/student/works/${id}/`)
+export const fetchStudentWork = (id, version) =>
+  request(
+    `/api/student/works/${id}/${version ? `?version=${encodeURIComponent(version)}` : ''}`,
+  )
 
 export const sendAnswer = (task, answer) =>
   request(`/api/student/tasks/${task}/answer/`, { method: 'POST', body: { answer } })

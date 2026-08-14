@@ -296,6 +296,34 @@ def table_version(work) -> str:
     )
 
 
+def student_version(work, student) -> str:
+    """
+    Метка «у ученика что-то изменилось» — тем же приёмом, что у таблицы.
+
+    Смотрит на **его** отправки и на саму работу: отметка учителя приходит
+    к нему так же неожиданно, как его ответ — к учителю, и опрашивать без
+    дешёвого «не изменилось» здесь нельзя ровно по той же причине.
+
+    `updated_at` работы и число задач в метке потому, что учитель правит
+    открытую работу — это разрешено и названо ценой, — и ученик должен
+    увидеть новое условие, а не то, которое было при загрузке страницы.
+    """
+    numbers = Submission.objects.filter(task__work=work, student=student).aggregate(
+        total=Count("id"), last=Max("created_at"), checked=Max("checked_at")
+    )
+
+    return "|".join(
+        str(part)
+        for part in (
+            work.tasks.count(),
+            work.updated_at.timestamp(),
+            numbers["total"],
+            numbers["last"] and numbers["last"].timestamp(),
+            numbers["checked"] and numbers["checked"].timestamp(),
+        )
+    )
+
+
 def build_table(work) -> dict:
     """
     Ученики по строкам, задачи по столбцам. Всё одним проходом.

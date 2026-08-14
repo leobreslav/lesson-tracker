@@ -5,10 +5,7 @@ import CellDialog from './CellDialog'
 import ColumnDialog from './ColumnDialog'
 import Markdown from './Markdown'
 import { fetchWorkTable } from './api'
-
-// опрос: тридцать учеников нагрузки не создают, а ответ «ничего не
-// изменилось» стоит один агрегат — версия и заведена ради этого
-const POLL_MS = 3000
+import { POLL_MS } from './polling'
 
 /**
  * Сводная таблица работы: ученики по строкам, задачи по столбцам.
