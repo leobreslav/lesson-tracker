@@ -875,7 +875,7 @@
       "answer": "ваш ответ",
       "answerNumber": "Ответ на задачу {{number}}",
       "send": "Отправить",
-      "attemptNumber": "попытка {{number}}",
+      "attemptNumber": "Попытка {{number}}",
       "attemptsLeft_one": "осталась {{count}} попытка",
       "attemptsLeft_few": "осталось {{count}} попытки",
       "attemptsLeft_many": "осталось {{count}} попыток",

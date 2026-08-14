@@ -846,7 +846,7 @@
       "answer": "your answer",
       "answerNumber": "Answer to task {{number}}",
       "send": "Send",
-      "attemptNumber": "attempt {{number}}",
+      "attemptNumber": "Attempt {{number}}",
       "attemptsLeft_one": "{{count}} attempt left",
       "attemptsLeft_other": "{{count}} attempts left",
       "noAttempts": "No attempts left for this task.",
