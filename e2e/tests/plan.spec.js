@@ -287,8 +287,9 @@ test('импорт из библиотеки наполняет пустой п�
 
   await page.getByRole('button', { name: 'Из библиотеки' }).click()
 
+  // полка теперь список с поиском: шаблон выбирается нажатием на название
   const dialog = page.locator('dialog.modal')
-  await dialog.getByRole('combobox').selectOption({ index: 0 })
+  await dialog.locator('.template-list .name').first().click()
   await dialog.getByRole('button', { name: 'Импортировать в курс' }).click()
 
   await expect(dialog).toBeHidden()
@@ -341,4 +342,61 @@ test('импорт вкладывает уроки в темы, включая �
     'Дроби, обыкновенные: Сложение, вычитание / Умножение "в столбик"',
     'Точки; и запятые: Урок; третий',
   ])
+})
+
+/**
+ * Полка планов живёт в окне на странице плана: отдельного раздела больше
+ * нет. Вместе со страницей сюда переехало то, чего нигде больше нет —
+ * публикация черновика и удаление. Без первого шаблон, снятый с плана,
+ * навсегда остался бы виден одному автору: `from-plan` кладёт его
+ * черновиком.
+ */
+test('черновик публикуется и снимается с публикации прямо на полке', async ({
+  page,
+  signIn,
+  api,
+}) => {
+  const teacher = await api(PEOPLE.petrov)
+  const courses = await teacher.get('/api/courses/')
+  const course = courses.body.find((item) => item.name === 'Grade 9 Algebra')
+  await teacher.post('/api/library/templates/from-plan/', {
+    course: course.id,
+    title: 'Свежий черновик',
+  })
+
+  await signIn(PEOPLE.petrov)
+  await openPlan(page, 'Grade 9 Algebra')
+  await page.getByRole('button', { name: 'Из библиотеки' }).click()
+
+  const shelf = page.locator('dialog.modal')
+  const row = shelf.locator('li', { hasText: 'Свежий черновик' })
+  await expect(row.locator('.badge')).toHaveText('черновик')
+
+  await row.getByRole('button', { name: 'Опубликовать' }).click()
+  await expect(row.locator('.badge')).toHaveCount(0)
+
+  await row.getByRole('button', { name: 'Вернуть в черновики' }).click()
+  await expect(row.locator('.badge')).toHaveText('черновик')
+})
+
+test('поиск сужает полку, «только мои» прячет чужое', async ({
+  page,
+  signIn,
+}) => {
+  await signIn(PEOPLE.petrov)
+  await openPlan(page, 'Grade 9 Algebra')
+  await page.getByRole('button', { name: 'Из библиотеки' }).click()
+
+  const shelf = page.locator('dialog.modal')
+  const rows = shelf.locator('.template-list li')
+  const total = await rows.count()
+  expect(total).toBeGreaterThan(1)
+
+  await shelf.getByRole('searchbox').fill('геометри')
+  await expect(rows).toHaveCount(1)
+
+  await shelf.getByRole('searchbox').fill('')
+  await shelf.getByLabel('только мои').check()
+  // у Петрова на полке свой черновик, чужая «Алгебра 6» уходит
+  await expect(shelf.getByText('Алгебра 6, по учебнику')).toHaveCount(0)
 })

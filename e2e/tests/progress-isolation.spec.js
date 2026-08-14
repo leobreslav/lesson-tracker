@@ -70,12 +70,12 @@ test('отмена урока сдвигает даты в плане', async ({
   expect(after[1]).toBe(before[2])
 })
 
-test('«Состояние курсов» — строка на курс и подробности по нажатию', async ({
+test('главной — строка на курс и подробности по нажатию', async ({
   page,
   signIn,
 }) => {
   await signIn(PEOPLE.ivanova)
-  await page.goto('/status')
+  await page.goto('/')
   await ready(page)
 
   // строка на курс: где я, резерв, плашка состояния
@@ -136,22 +136,31 @@ test('второй учитель не видит ни уроков, ни пла
   expect(hers.body.some((slot) => hisIds.has(slot.id))).toBe(false)
 })
 
-test('черновик чужого шаблона не виден в библиотеке', async ({ page, signIn }) => {
+/** Полка открывается с плана: отдельного раздела у неё больше нет. */
+async function openShelf(page, course) {
+  await page.goto('/plan')
+  await ready(page)
+  await page.getByRole('button', { name: course, exact: true }).click()
+  await expect(page.locator('.plan-cards')).toBeVisible()
+  await page.getByRole('button', { name: 'Из библиотеки' }).click()
+  await expect(page.locator('dialog.modal')).toBeVisible()
+  return page.locator('dialog.modal')
+}
+
+test('черновик чужого шаблона не виден на полке', async ({ page, signIn }) => {
   // the seeded draft belongs to Petrov
   await signIn(PEOPLE.ivanova)
-  await page.goto('/library')
-  await ready(page)
+  const shelf = await openShelf(page, 'Grade 6 Algebra')
 
-  await expect(page.getByText('Алгебра 6, по учебнику')).toBeVisible()
-  await expect(page.getByText('Алгебра 9, черновик')).toHaveCount(0)
+  await expect(shelf.getByText('Алгебра 6, по учебнику')).toBeVisible()
+  await expect(shelf.getByText('Алгебра 9, черновик')).toHaveCount(0)
 })
 
 test('автор свой черновик видит и помечен меткой', async ({ page, signIn }) => {
   await signIn(PEOPLE.petrov)
-  await page.goto('/library')
-  await ready(page)
+  const shelf = await openShelf(page, 'Grade 9 Algebra')
 
-  const draft = page.locator('li', { hasText: 'Алгебра 9, черновик' })
+  const draft = shelf.locator('li', { hasText: 'Алгебра 9, черновик' })
   await expect(draft).toBeVisible()
   await expect(draft.locator('.badge')).toHaveText('черновик')
 })
@@ -175,7 +184,7 @@ test('рост к утверждённому эталону виден на «С
   await teacher.post(`/api/plan/reviews/${queue.body.reviews[0].id}/approve/`)
 
   await signIn(PEOPLE.ivanova)
-  await page.goto('/status')
+  await page.goto('/')
   await ready(page)
   const row = page.locator('.progress-list > li').first()
   await row.locator('.progress-head').click()
@@ -194,7 +203,7 @@ test('рост к утверждённому эталону виден на «С
   await form.getByRole('button', { name: 'Добавить' }).click()
   await expect(page.locator('.plan-row', { hasText: 'Лишний урок' })).toBeVisible()
 
-  await page.goto('/status')
+  await page.goto('/')
   await ready(page)
   await page.locator('.progress-list > li').first().locator('.progress-head').click()
   const growth = page.locator('.progress-list > li').first().locator('[data-card="growth"]')
@@ -205,7 +214,7 @@ test('рост к утверждённому эталону виден на «С
 
 test('плашек четыре, и все одного роста', async ({ page, signIn }) => {
   await signIn(PEOPLE.ivanova)
-  await page.goto('/status')
+  await page.goto('/')
   await ready(page)
 
   // курс с планом и курс без плана: пустые случаи ростом отличаться не должны
@@ -225,7 +234,7 @@ test('плашек четыре, и все одного роста', async ({ pa
 
 test('прогресс по плану: три числа одной плашкой', async ({ page, signIn }) => {
   await signIn(PEOPLE.ivanova)
-  await page.goto('/status')
+  await page.goto('/')
   await ready(page)
 
   const row = page.locator('.progress-list > li').first()
@@ -263,7 +272,7 @@ test('дефицит виден словами в шапке, а числа пл
   )
 
   await signIn(PEOPLE.ivanova)
-  await page.goto('/status')
+  await page.goto('/')
   await ready(page)
 
   const row = page.locator('.progress-list > li', { hasText: 'Grade 6 Algebra' })
@@ -280,7 +289,7 @@ test('дефицит виден словами в шапке, а числа пл
 
 test('пустой план не показывает «0 из 0»', async ({ page, signIn }) => {
   await signIn(PEOPLE.ivanova)
-  await page.goto('/status')
+  await page.goto('/')
   await ready(page)
 
   const row = page.locator('.progress-list > li', { hasText: 'Grade 6 Geometry' })

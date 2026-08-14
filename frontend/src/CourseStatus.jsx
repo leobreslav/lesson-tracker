@@ -1,24 +1,32 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
-import EmptyState from './EmptyState'
 import { fetchProgress } from './api'
 import { longDate, shortDate, shortWeekday } from './dates'
 
 /**
- * «Состояние курсов» — экран состояния, а не список уроков.
+ * Состояние курсов — блок главной страницы, а не отдельный раздел.
+ *
+ * Своим экраном это было, и экран был правильный, но заходить на него
+ * приходилось нарочно: «как идут дела» — это первый вопрос дня, и отвечать
+ * на него должна страница, которая открывается сама. Главная как раз и
+ * отвечала на него хуже — списком классов с одним числом в строке.
  *
  * Ленту с датами забрал себе учебный план: там она рабочая, там же её и
  * правят. Здесь остаётся то, чего в плане нет и не должно быть: где курс
- * идёт сейчас, успевает ли, что впереди и как разложился год по четвертям —
- * и всё это **сразу по всем курсам**. План всегда про один курс, раскладка
- * про все: учитель ведёт пять и хочет одним взглядом понять, где проблема.
+ * идёт сейчас, успевает ли и что впереди — и всё это **сразу по всем
+ * курсам**. План всегда про один курс, этот блок про все: учитель ведёт
+ * пять и хочет одним взглядом понять, где проблема.
  *
  * Числа приходят одним запросом `/api/plan/progress/`, который считает их
  * тем же `build_layout`, что и остальные ответы про раскладку. Своих
- * расчётов на странице нет вовсе — иначе они однажды разошлись бы с планом.
+ * расчётов здесь нет вовсе — иначе они однажды разошлись бы с планом.
+ *
+ * Данные берёт сам, а не получает пропсом: у главной свой запрос состояния
+ * (`/api/onboarding/status/`), и мешать их в один — значит заставлять
+ * шаги первого входа ждать раскладку по всем курсам.
  */
-export default function Layout({ onLoggedOut }) {
+export default function CourseStatus({ onLoggedOut }) {
   const { t } = useTranslation()
   const navigate = useNavigate()
   const [courses, setCourses] = useState(null)
@@ -188,7 +196,7 @@ export default function Layout({ onLoggedOut }) {
                 <span>{theme.title ?? t('status.looseTheme')}</span>
                 <b>{signed(theme.added)}</b>
               </li>
-            ))}
+        ))}
           </ul>
         </section>
       )}
@@ -225,19 +233,16 @@ export default function Layout({ onLoggedOut }) {
   )
 
   if (courses === null) {
-    return (
-      <main className="page wide">
-        <p>{error ? <span className="error">{error}</span> : t('common.loading')}</p>
-      </main>
-    )
+    return <p>{error ? <span className="error">{error}</span> : t('common.loading')}</p>
   }
 
-  return (
-    <main className="page wide">
-      <header className="page-header">
-        <h1>{t('status.title')}</h1>
-      </header>
+  // курсов нет вовсе — на главной об этом уже сказали шаги первого входа,
+  // и второй раз повторять незачем
+  if (!courses.length) return null
 
+  return (
+    <>
+      <h2 className="section-title">{t('status.title')}</h2>
       <p className="hint">{t('status.hint')}</p>
 
       {error && (
@@ -246,55 +251,42 @@ export default function Layout({ onLoggedOut }) {
         </p>
       )}
 
-      {!courses.length ? (
-        <EmptyState
-          title={t('status.needClass.title')}
-          actions={
-            <button type="button" onClick={() => navigate('/classes')}>
-              {t('status.needClass.action')}
+      <ul className="progress-list">
+        {courses.map((course) => (
+          <li className="panel" key={course.id} data-course={course.id}>
+            <button
+              type="button"
+              className="progress-head"
+              aria-expanded={opened === course.id}
+              onClick={() => setOpened(opened === course.id ? null : course.id)}
+            >
+              <span className="course">
+                {opened === course.id ? '▾' : '▸'} {course.name}
+              </span>
+              <span className="where">{whereText(course)}</span>
+              {/* число со знаком, а не «резерв −28 уроков»: смысл минуса
+                  проговаривает плашка справа, и повторять его словами
+                  значит спорить с ней на полстроки */}
+              {/* дефицит говорит словами и рядом с плашкой состояния, а
+                  не мелким текстом внизу: это главное, что нужно узнать */}
+              {course.missing > 0 ? (
+                <span className="reserve overflow">
+                  {t('status.overflow', { count: course.missing })}
+                </span>
+              ) : (
+                <span className="reserve">
+                  {t('status.reserveLabel')}: {signed(course.reserve)}
+                </span>
+              )}
+              <span className={`badge state ${short(course) ? 'bad' : 'good'}`}>
+                {statusText(course)}
+              </span>
             </button>
-          }
-        >
-          {t('status.needClass.hint')}
-        </EmptyState>
-      ) : (
-        <ul className="progress-list">
-          {courses.map((course) => (
-            <li className="panel" key={course.id} data-course={course.id}>
-              <button
-                type="button"
-                className="progress-head"
-                aria-expanded={opened === course.id}
-                onClick={() => setOpened(opened === course.id ? null : course.id)}
-              >
-                <span className="course">
-                  {opened === course.id ? '▾' : '▸'} {course.name}
-                </span>
-                <span className="where">{whereText(course)}</span>
-                {/* число со знаком, а не «резерв −28 уроков»: смысл минуса
-                    проговаривает плашка справа, и повторять его словами
-                    значит спорить с ней на полстроки */}
-                {/* дефицит говорит словами и рядом с плашкой состояния, а
-                    не мелким текстом внизу: это главное, что нужно узнать */}
-                {course.missing > 0 ? (
-                  <span className="reserve overflow">
-                    {t('status.overflow', { count: course.missing })}
-                  </span>
-                ) : (
-                  <span className="reserve">
-                    {t('status.reserveLabel')}: {signed(course.reserve)}
-                  </span>
-                )}
-                <span className={`badge state ${short(course) ? 'bad' : 'good'}`}>
-                  {statusText(course)}
-                </span>
-              </button>
 
-              {opened === course.id && details(course)}
-            </li>
-          ))}
-        </ul>
-      )}
-    </main>
+            {opened === course.id && details(course)}
+          </li>
+        ))}
+      </ul>
+    </>
   )
 }

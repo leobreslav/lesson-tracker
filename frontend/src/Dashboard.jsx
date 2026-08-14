@@ -1,8 +1,19 @@
 import { useState } from 'react'
-import { Trans, useTranslation } from 'react-i18next'
+import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
+import CourseStatus from './CourseStatus'
 import { createDemoData, wipeAllData } from './api'
 import { dateRange } from './dates'
+
+/**
+ * Главная: как идут курсы, а до того — с чего начать.
+ *
+ * Раньше это были две страницы. «Состояние курсов» отвечало на первый
+ * вопрос дня — где я и успеваю ли, — но заходить туда приходилось нарочно,
+ * а главная встречала списком классов с одним числом в строке: те же
+ * данные, только беднее. Теперь состояние курсов и есть главная, а шаги
+ * первого входа живут над ним, пока не пройдены.
+ */
 
 /**
  * The steps of a first visit.
@@ -131,7 +142,7 @@ export default function Dashboard({ user, status, onStatusChange, onLoggedOut })
   }
 
   return (
-    <main className="page narrow">
+    <main className="page">
       <header className="page-header">
         <h1>{name ? t('dashboard.greeting', { name }) : t('app.name')}</h1>
       </header>
@@ -142,41 +153,9 @@ export default function Dashboard({ user, status, onStatusChange, onLoggedOut })
         </p>
       )}
 
-      {everythingDone ? (
-        <>
-          <p className="hint">{t('dashboard.allDone')}</p>
-
-          <ul className="class-summary">
-            {status.classes.items.map((item) => (
-              <li key={item.id} className="panel">
-                <strong>{item.name}</strong>
-                <span className="hint">
-                  {t('dashboard.classLine', {
-                    slots: item.slots,
-                    past: item.past,
-                    remaining: item.remaining,
-                    plan: item.plan_lessons,
-                  })}
-                </span>
-                <span
-                  className={`balance ${item.balance < 0 ? 'bad' : 'good'}`}
-                  title={t('dashboard.balanceHint')}
-                >
-                  {item.balance > 0 ? '+' : ''}
-                  {item.balance}
-                </span>
-              </li>
-            ))}
-          </ul>
-
-          <p className="hint">
-            <Trans i18nKey="dashboard.more">
-              <Link to="/schedule">schedule</Link>
-              <Link to="/layout">layout</Link>
-            </Trans>
-          </p>
-        </>
-      ) : (
+      {/* шаги показываются, пока есть что настраивать: пройденные они
+          повторяли бы то, что и так видно в состоянии курсов ниже */}
+      {!everythingDone && (
         <>
           <p className="hint">{t('dashboard.intro')}</p>
 
@@ -220,6 +199,8 @@ export default function Dashboard({ user, status, onStatusChange, onLoggedOut })
           </ol>
         </>
       )}
+
+      <CourseStatus onLoggedOut={onLoggedOut} />
 
       {/* the demo builds a year and courses, which belong to the school */}
       {status.is_school_admin && (

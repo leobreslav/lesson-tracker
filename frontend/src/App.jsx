@@ -5,9 +5,7 @@ import Agenda from './Agenda'
 import Calendar from './Calendar'
 import Classes from './Classes'
 import Dashboard from './Dashboard'
-import Layout from './Layout'
 import Reviews from './Reviews'
-import Library from './Library'
 import Login from './Login'
 import NavBar from './NavBar'
 import NoSchool from './NoSchool'
@@ -128,10 +126,8 @@ export default function App() {
             }
           />
           <Route path="/schedule" element={guarded(Agenda)} />
-          <Route path="/status" element={guarded(Layout)} />
           <Route path="/reviews" element={guarded(Reviews)} />
           <Route path="/plan" element={guarded(Plan)} />
-          <Route path="/library" element={guarded(Library)} />
           <Route path="/classes" element={guarded(Classes, { user })} />
           {/* «Школа» — не одна страница, а четыре: рамка с подменю и
               вложенные маршруты под ней */}

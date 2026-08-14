@@ -12,10 +12,8 @@ import { PEOPLE, expect, ready, test } from './harness.js'
 const SECTIONS = [
   ['/', 'main'],
   ['/schedule', 'schedule'],
-  ['/status', 'status'],
   ['/plan', 'plan'],
   ['/classes', 'courses'],
-  ['/library', 'library'],
   ['/year', 'calendar'],
   ['/school', 'school'],
   ['/school/schedule', 'timetable'],

@@ -592,40 +592,6 @@ form .success {
   background: #1765cc;
 }
 
-.class-summary {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.class-summary li {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 0.5rem;
-}
-
-.class-summary li + li {
-  margin-top: 0.5rem;
-}
-
-.class-summary .hint {
-  margin: 0;
-}
-
-.class-summary .balance {
-  margin-left: auto;
-  font-weight: 600;
-}
-
-.class-summary .balance.good {
-  color: #1c7a34;
-}
-
-.class-summary .balance.bad {
-  color: #b00020;
-}
-
 .empty-state {
   margin: 0;
 }
@@ -685,6 +651,13 @@ form .success {
   align-items: baseline;
   justify-content: space-between;
   gap: 1rem;
+}
+
+/* Заголовок блока внутри страницы: главная собрана из двух — шаги первого
+   входа и состояние курсов, — и второму нужно имя, а не ещё один <h1>. */
+.section-title {
+  margin: 0.5rem 0 0;
+  font-size: 1.3rem;
 }
 
 .page-header h1 {
@@ -846,6 +819,12 @@ button.chip.active {
   padding: 1.25rem;
 }
 
+/* полка планов: строка тут — название, описание и три действия, и в
+   тридцати ремах они складываются в гармошку */
+.modal-body.shelf {
+  width: min(46rem, calc(100vw - 3rem));
+}
+
 .modal-body h3 {
   margin: 0;
   font-size: 1.1rem;
@@ -964,21 +943,45 @@ button.chip.active {
   margin-top: var(--row-gap);
 }
 
-/* Полка библиотеки: две колонки текста и кнопка.
-   Название делит место с описанием пополам, а кнопка не тянется и не
-   переносится — иначе заголовок ломался в три строки, пока справа пусто.
-   Селектор с элементом: правило `button.link.name` выше специфичнее класса. */
+/*
+ * Полка планов внутри окна: название с описанием слева, действия справа.
+ *
+ * Строка держится сеткой, а не флексом: в ней четыре разных по природе
+ * ячейки, и во флексе они делили место пропорционально содержимому —
+ * название ломалось в три строки, пока справа оставалось пусто.
+ *
+ * Выбранная запись подсвечена рамкой: выбирают нажатием на название, и без
+ * пометки нажатие выглядит как «ничего не произошло».
+ */
+.template-list li {
+  display: grid;
+  grid-template-columns: minmax(8rem, 1fr) minmax(9rem, 1.2fr) auto;
+  align-items: baseline;
+  gap: 0.35rem 0.6rem;
+}
+
 .template-list button.link.name {
-  flex: 1 1 45%;
+  text-align: left;
+  font-weight: 600;
 }
 
 .template-list .hint {
-  flex: 1 1 45%;
   min-width: 0;
 }
 
-.template-list li > button:not(.link) {
-  flex: 0 0 auto;
+.template-list .badge {
+  grid-column: 1;
+  grid-row: 2;
+  justify-self: start;
+}
+
+.template-list li.chosen {
+  background: #e8f0fe;
+}
+
+.template-list .row-actions {
+  display: flex;
+  gap: 0.6rem;
   white-space: nowrap;
 }
 

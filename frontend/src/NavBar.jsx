@@ -6,9 +6,7 @@ import { LANGUAGES } from './i18n'
 
 const SECTIONS = [
   { to: '/schedule', key: 'schedule', needs: 'classes' },
-  { to: '/status', key: 'status', needs: 'classes' },
   { to: '/plan', key: 'plan', needs: 'classes' },
-  { to: '/library', key: 'library', needs: null },
   // раздел методиста: роль не иерархическая, у большинства назначений нет,
   // и пустой раздел в баре был бы обещанием работы, которой нет
   { to: '/reviews', key: 'reviews', needs: null, methodistOnly: true },

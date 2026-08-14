@@ -36,7 +36,6 @@
   "nav": {
     "menu": "Sections menu",
     "schedule": "My schedule",
-    "status": "Course Status",
     "plan": "Lesson plan",
     "classes": "Classes",
     "year": "School year",
@@ -46,7 +45,6 @@
     "needClass": "add a class first",
     "school": "School",
     "schools": "Schools",
-    "library": "Library",
     "reviews": "For approval"
   },
   "auth": {
@@ -73,10 +71,6 @@
   "dashboard": {
     "greeting": "Hello, {{name}}",
     "intro": "The sections build on each other: the year sets the boundaries, classes live inside it, and each class has a schedule and a plan. The list below walks you through it.",
-    "allDone": "Everything is set up. Here is how your classes are doing.",
-    "classLine": "lessons {{slots}} · past {{past}} · left {{remaining}} · plan {{plan}}",
-    "balanceHint": "slots minus plan lessons",
-    "more": "More detail: <0>schedule</0> and <1>layout</1>.",
     "steps": {
       "year": {
         "title": "School year",
@@ -415,11 +409,6 @@
       "noPlan": "no plan yet",
       "finished": "the plan is finished: {{count}} lessons"
     },
-    "needClass": {
-      "title": "A course first",
-      "hint": "This page shows how each course is going through the year — and both the plan and the schedule belong to a course.",
-      "action": "Add a course"
-    },
     "changes": "change in lessons",
     "changesDetail": "{{cancelled}} cancelled · {{extra}} added",
     "addedToPlan": "added to the plan",
@@ -734,27 +723,22 @@
     "nothing": "The school timetable has nothing for you in this period."
   },
   "library": {
-    "title": "Plan library",
-    "hint": "Plans colleagues have put on the shelf. Taking one gives you a copy: later changes to the template will not follow it.",
     "subject": "Subject:",
     "grade": "Grade:",
-    "anySubject": "any subject",
-    "anyGrade": "any grade",
     "onlyMine": "only mine",
     "draft": "draft",
     "line": "{{subject}}, grade {{grade}} · {{author}} · {{lessons}}",
     "use": "Use in a course",
-    "useTitle": "Use «{{title}}»",
     "once": "The plan is copied into the course. Later changes to the template will not affect your copy.",
-    "preview": "{{lessons}} in {{blocks}} blocks will be added",
-    "imported": "Added {{lessons}} in {{blocks}} blocks.",
     "publish": "Publish",
     "unpublish": "Return to drafts",
     "deleteConfirm": "Delete «{{title}}» from the library?",
     "empty": {
-      "title": "The library is empty",
       "hint": "Nothing has been put on the shelf yet. Publish one of your plans, or write a new one."
-    }
+    },
+    "search": "Search by title or subject",
+    "nothingFound": "Nothing matches.",
+    "look": "Look inside"
   },
   "lesson": {
     "fields": {

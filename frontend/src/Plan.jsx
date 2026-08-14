@@ -11,6 +11,7 @@ import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
 import EmptyState from './EmptyState'
 import ImportDialog from './ImportDialog'
+import LibraryDialog, { TemplateView } from './LibraryDialog'
 import PlanCsvHelp from './PlanCsvHelp'
 import PlanTable from './PlanTable'
 import Modal from './Modal'
@@ -21,9 +22,12 @@ import { remember, remembered } from './remember'
 import { applyMove, countBlocks, planRows } from './planLogic'
 import {
   createPlanNode,
+  deleteTemplate,
   fetchSubjects,
+  fetchTemplate,
   fetchTemplates,
   importTemplate,
+  updateTemplate,
   publishPlan,
   refreshTemplate,
   deletePlanNode,
@@ -89,6 +93,8 @@ export default function Plan({ onLoggedOut }) {
   // whether this plan is already on the shelf under my name
   const [dialog, setDialog] = useState(null)
   const [templates, setTemplates] = useState([])
+  // шаблон, раскрытый на просмотр: его строки приезжают отдельным запросом
+  const [preview, setPreview] = useState(null)
   const [subjects, setSubjects] = useState([])
   const [notice, setNotice] = useState(null)
   // свёрнутые темы живут здесь, а не в таблице: при смене курса таблица
@@ -266,6 +272,32 @@ export default function Plan({ onLoggedOut }) {
     () => classes?.find((item) => item.id === classId) ?? null,
     [classes, classId],
   )
+
+  const loadShelf = useCallback(
+    () => fetchTemplates().then(setTemplates).catch(() => {}),
+    [],
+  )
+
+  /**
+   * Опубликовать черновик или снять с публикации.
+   *
+   * Единственное место, где это делается: `from-plan` кладёт шаблон на полку
+   * черновиком, и без этой кнопки он остался бы виден одному автору.
+   */
+  const publishTemplate = (template, published) =>
+    run(() => updateTemplate(template.id, { is_published: published })).then(loadShelf)
+
+  const removeTemplate = (template) => {
+    if (!window.confirm(t('library.deleteConfirm', { title: template.title }))) return
+    setPreview(null)
+    run(() => deleteTemplate(template.id)).then(loadShelf)
+  }
+
+  const takeTemplate = ({ template, mode }) =>
+    run(() => importTemplate({ course: classId, template, mode })).then(() => {
+      setDialog(null)
+      setPreview(null)
+    })
 
   /** A template of mine matching this course's subject and grade, if any. */
   const mineOnShelf = useMemo(() => {
@@ -521,7 +553,7 @@ export default function Plan({ onLoggedOut }) {
                       type="button"
                       data-card="free"
                       className="panel card-stat link-card"
-                      onClick={() => navigate('/status')}
+                      onClick={() => navigate('/')}
                     >
                       <h2>{layout.totals.balance}</h2>
                       <p className="hint">{t('plan.summary.free')}</p>
@@ -532,7 +564,7 @@ export default function Plan({ onLoggedOut }) {
                       type="button"
                       data-card="missing"
                       className="panel card-stat bad link-card"
-                      onClick={() => navigate('/status')}
+                      onClick={() => navigate('/')}
                     >
                       <h2>{layout.totals.missing}</h2>
                       <p className="hint">{t('plan.summary.missing')}</p>
@@ -815,17 +847,25 @@ export default function Plan({ onLoggedOut }) {
       )}
 
       {dialog?.type === 'library' && (
-        <UseLibraryDialog
-          templates={templates.filter(
-            (item) => !course?.subject || item.subject === course.subject,
-          )}
+        <LibraryDialog
+          templates={templates}
           busy={busy}
-          onSubmit={({ template, mode }) =>
-            run(() => importTemplate({ course: classId, template, mode })).then(() =>
-              setDialog(null),
-            )
+          onTake={takeTemplate}
+          onOpen={(item) =>
+            fetchTemplate(item.id).then(setPreview).catch(handleError)
           }
+          onPublish={publishTemplate}
+          onDelete={removeTemplate}
           onClose={() => setDialog(null)}
+        />
+      )}
+
+      {preview && (
+        <TemplateView
+          template={preview}
+          busy={busy}
+          onUse={() => takeTemplate({ template: preview.id, mode: 'replace' })}
+          onClose={() => setPreview(null)}
         />
       )}
 
@@ -915,81 +955,6 @@ export default function Plan({ onLoggedOut }) {
   )
 }
 
-
-/** Taking a plan off the shelf into this course. */
-function UseLibraryDialog({ templates, busy, onSubmit, onClose }) {
-  const { t } = useTranslation()
-  const [template, setTemplate] = useState(templates[0]?.id ?? null)
-  const [mode, setMode] = useState('replace')
-
-  return (
-    <Modal onClose={onClose}>
-      <form
-        onSubmit={(event) => {
-          event.preventDefault()
-          if (template) onSubmit({ template, mode })
-        }}
-      >
-        <h3>{t('plan.importLibrary')}</h3>
-
-        {!templates.length ? (
-          <p className="hint">{t('library.empty.hint')}</p>
-        ) : (
-          <>
-            <label>
-              {t('library.title')}
-              <select
-                autoFocus
-                value={template ?? ''}
-                disabled={busy}
-                onChange={(event) => setTemplate(Number(event.target.value))}
-              >
-                {templates.map((item) => (
-                  <option key={item.id} value={item.id}>
-                    {item.title} — {item.subject_name}, {item.grade}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            <div className="row">
-              <label className="checkbox">
-                <input
-                  type="radio"
-                  name="library-mode"
-                  checked={mode === 'replace'}
-                  onChange={() => setMode('replace')}
-                />
-                {t('csv.modeReplace')}
-              </label>
-              <label className="checkbox">
-                <input
-                  type="radio"
-                  name="library-mode"
-                  checked={mode === 'append'}
-                  onChange={() => setMode('append')}
-                />
-                {t('csv.modeAppend')}
-              </label>
-            </div>
-
-            {mode === 'replace' && <p className="error">{t('csv.replaceWarning')}</p>}
-            <p className="hint">{t('library.once')}</p>
-          </>
-        )}
-
-        <div className="actions">
-          <button type="submit" disabled={busy || !templates.length}>
-            {t('library.use')}
-          </button>
-          <button type="button" className="secondary" onClick={onClose}>
-            {t('common.cancel')}
-          </button>
-        </div>
-      </form>
-    </Modal>
-  )
-}
 
 /**
  * Putting this plan on the shelf, or refreshing what is already there.
