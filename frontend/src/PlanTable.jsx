@@ -517,90 +517,90 @@ export default function PlanTable({
       >
         {(handle) => (
           <>
-        <div className={`plan-row section-head${weekStripe(node)}`}>
-          {weekCell(node)}
-          {dateCells(node, true)}
-          {handle}
-          {/* треугольник стоит в колонке номера: у главы номера нет, а
-              место есть — и свёртка оказывается ровно под номерами */}
-          <button
-            type="button"
-            className="link toggle"
-            title={t(hidden ? 'plan.expand' : 'plan.collapse')}
-            onClick={() => onToggleSection(node.id)}
-          >
-            {hidden ? '▸' : '▾'}
-          </button>
+            <div className={`plan-row section-head${weekStripe(node)}`}>
+              {weekCell(node)}
+              {dateCells(node, true)}
+              {handle}
+              {/* треугольник стоит в колонке номера: у главы номера нет, а
+                  место есть — и свёртка оказывается ровно под номерами */}
+              <button
+                type="button"
+                className="link toggle"
+                title={t(hidden ? 'plan.expand' : 'plan.collapse')}
+                onClick={() => onToggleSection(node.id)}
+              >
+                {hidden ? '▸' : '▾'}
+              </button>
 
-          {editing?.id === node.id ? (
-            <span className="plan-title-cell">{editForm()}</span>
-          ) : (
-            <>
-              <span className="plan-title-cell">
-                <button
-                  type="button"
-                  className="link title"
-                  title={t('plan.rename')}
-                  disabled={busy}
-                  onClick={() => startEdit(node)}
-                >
-                  {node.title}
-                </button>
-                {/* только число уроков: даты этой главы и так стоят в её
-                    строках, а левая колонка — не место для правой зоны */}
-                <span className="hint block-count">
-                  {t('common.lessonCount', {
-                    count: blocks.byId.get(node.id)?.lessons ?? 0,
-                  })}
-                </span>
-              </span>
+              {editing?.id === node.id ? (
+                <span className="plan-title-cell">{editForm()}</span>
+              ) : (
+                <>
+                  <span className="plan-title-cell">
+                    <button
+                      type="button"
+                      className="link title"
+                      title={t('plan.rename')}
+                      disabled={busy}
+                      onClick={() => startEdit(node)}
+                    >
+                      {node.title}
+                    </button>
+                    {/* только число уроков: даты этой главы и так стоят в её
+                        строках, а левая колонка — не место для правой зоны */}
+                    <span className="hint block-count">
+                      {t('common.lessonCount', {
+                        count: blocks.byId.get(node.id)?.lessons ?? 0,
+                      })}
+                    </span>
+                  </span>
 
-              <span className="row-actions">
-                {moveButtons(node, true)}
-                <button
-                  type="button"
-                  className="link"
-                  title={t('plan.addToSection')}
-                  disabled={busy}
-                  onClick={() => onAdd({ parent: node.id })}
-                >
-                  +
-                </button>
-                <button
-                  type="button"
-                  className="link"
-                  title={t('plan.deleteSection')}
-                  disabled={busy}
-                  onClick={() => onRemoveSection(node)}
-                >
-                  ✕
-                </button>
-              </span>
-            </>
-          )}
-        </div>
-
-        {!hidden && (
-          <SortableContext items={childIds} strategy={verticalListSortingStrategy}>
-            <ul className="plan-children">
-              {node.children.map((child, index) => (
-                <Fragment key={child.id}>
-                  {/* у первого урока черта уже нарисована над полосой темы */}
-                  {index > 0 && marks(child, 'before')}
-                  {renderLesson(child, node.id)}
-                  {addFormFor(node.id, child.id)}
-                </Fragment>
-              ))}
-              {addFormFor(node.id, null)}
-              {!node.children.length && (
-                <EmptyDropZone
-                  sectionId={node.id}
-                  active={drop?.overId === emptyZoneId(node.id)}
-                />
+                  <span className="row-actions">
+                    {moveButtons(node, true)}
+                    <button
+                      type="button"
+                      className="link"
+                      title={t('plan.addToSection')}
+                      disabled={busy}
+                      onClick={() => onAdd({ parent: node.id })}
+                    >
+                      +
+                    </button>
+                    <button
+                      type="button"
+                      className="link"
+                      title={t('plan.deleteSection')}
+                      disabled={busy}
+                      onClick={() => onRemoveSection(node)}
+                    >
+                      ✕
+                    </button>
+                  </span>
+                </>
               )}
-            </ul>
-          </SortableContext>
-        )}
+            </div>
+
+            {!hidden && (
+              <SortableContext items={childIds} strategy={verticalListSortingStrategy}>
+                <ul className="plan-children">
+                  {node.children.map((child, index) => (
+                    <Fragment key={child.id}>
+                      {/* у первого урока черта уже нарисована над полосой темы */}
+                      {index > 0 && marks(child, 'before')}
+                      {renderLesson(child, node.id)}
+                      {addFormFor(node.id, child.id)}
+                    </Fragment>
+                  ))}
+                  {addFormFor(node.id, null)}
+                  {!node.children.length && (
+                    <EmptyDropZone
+                      sectionId={node.id}
+                      active={drop?.overId === emptyZoneId(node.id)}
+                    />
+                  )}
+                </ul>
+              </SortableContext>
+            )}
           </>
         )}
       </SortableRow>
