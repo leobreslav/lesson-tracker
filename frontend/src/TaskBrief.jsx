@@ -19,15 +19,19 @@ export default function TaskBrief({ task }) {
         <Markdown text={task.question} />
       </div>
       <div className="row answers">
-        <span className="hint">{t('table.expected')}</span>
         {task.answers.length === 0 ? (
           <span className="hint">{t('works.task.noAnswers')}</span>
         ) : (
-          task.answers.map((answer, index) => (
-            <span className="tag" key={index}>
-              {answer}
+          <>
+            <span className="hint">
+              {t('table.expected', { count: task.answers.length })}
             </span>
-          ))
+            {task.answers.map((answer, index) => (
+              <span className="tag answer-text" key={index}>
+                {answer}
+              </span>
+            ))}
+          </>
         )}
       </div>
     </div>

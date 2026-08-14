@@ -995,6 +995,8 @@
     "taskNumber": "задача {{number}}",
     "hardestLabel": "самая трудная: верно {{correct}} из {{checked}}",
     "noHardest": "проверенных ответов пока нет",
-    "expected": "Верно:"
+    "expected_one": "Правильный ответ:",
+    "expected_few": "Правильные ответы:",
+    "expected_many": "Правильные ответы:"
   }
 }

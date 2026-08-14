@@ -2260,13 +2260,18 @@ button.compact,
 /* шапка окна проверки: условие и эталоны отделены от ответов чертой —
    выше «что спрашивали», ниже «что ответили», и путать их нельзя */
 .task-brief {
-  padding-bottom: 0.5rem;
+  padding-bottom: 0.7rem;
   border-bottom: 1px solid #eceff1;
 }
 
 .task-brief .answers {
   align-items: center;
+  margin-top: 0.5rem;
   gap: 0.3rem;
+}
+
+.task-brief .hint {
+  font-size: 0.75rem;
 }
 
 /* проверка столбцом: ответы подряд, отметка справа от каждого */
@@ -2400,29 +2405,41 @@ button.compact,
  */
 .attempt-list .attempt {
   padding-right: 0.5rem;
-  font-size: 0.75rem;
-  color: #80868b;
   white-space: nowrap;
   border-right: 1px solid #dfe3e6;
+}
+
+/* всё мелкое и приглушённое в строке — одного размера: подпись, время,
+   словесная отметка. Три размера подряд читаются как три разных сорта
+   текста, хотя это один и тот же шёпот на полях */
+.attempt-list .attempt,
+.attempt-list .hint,
+.attempt-list .verdict {
+  font-size: 0.75rem;
+  color: #80868b;
 }
 
 .attempt-list li + li {
   margin-top: 0.2rem;
 }
 
-/* ответ — главное в строке: моноширинный, чтобы «x + 3» и «x+3»
-   отличались на глаз, и не мельче соседей */
+/*
+ * Текст ответа — один вид на эталон и на то, что написал ученик.
+ *
+ * Моноширинный он ровно по одной причине: «x + 3» и «x+3» должны
+ * отличаться на глаз, а в обычном шрифте пробел почти не виден. Раз
+ * причина одна, то и вид один: два разных начертания для одного и того же
+ * читались бы как две разные сущности.
+ */
+.answer-text,
 .attempt-list .answer {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 0.95rem;
+  font-size: 0.875rem;
   color: #202124;
   overflow-wrap: anywhere;
 }
 
-.attempt-list .verdict {
-  font-size: 0.8125rem;
-  color: #666;
-}
+
 
 /* цветом только вердикт: у строки его роль — «что я ответил», а не оценка */
 .attempt-list .correct .verdict {
@@ -2500,7 +2517,7 @@ button.compact,
    и рамка, потому что «x + 3» и «x+3» должны отличаться на глаз */
 .task-list .answers .tag {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 0.8rem;
+  font-size: 0.875rem;
   background: #fff;
   border: 1px solid #dfe3e6;
 }

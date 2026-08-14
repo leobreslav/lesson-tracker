@@ -956,6 +956,7 @@
     "taskNumber": "task {{number}}",
     "hardestLabel": "the hardest: {{correct}} right of {{checked}}",
     "noHardest": "nothing checked yet",
-    "expected": "Accepted:"
+    "expected_one": "Correct answer:",
+    "expected_other": "Correct answers:"
   }
 }
