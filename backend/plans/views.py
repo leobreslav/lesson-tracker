@@ -1,3 +1,4 @@
+from collections import Counter, defaultdict
 from urllib.parse import quote
 
 from config.access import IsSchoolMember, TeacherScopedViewSet
@@ -168,27 +169,44 @@ class PlanNodeViewSet(TeacherScopedViewSet):
         курсов и хочет одним взглядом понять, где проблема. Считает всё то
         же `build_layout`, что и остальные ответы про раскладку, поэтому
         числа не могут разойтись с планом.
+
+        Запросы сделаны **до** цикла, а не в нём: каждый курс добавлял по
+        шесть — уроки, отмены, план, термы, эталон и его строки, — и на
+        шести курсах экран, который открывают из бара, стоил тридцати семи
+        запросов. Теперь их семь при любом числе курсов, а группировка идёт
+        в памяти: расчёт остался тем же самым, поменялось только то, откуда
+        ему приносят данные.
         """
-        courses = (
+        courses = list(
             Course.objects.for_teacher(request.user)
             .select_related("year")
+            .prefetch_related("year__terms")
             .order_by("year__start_date", "name")
         )
+        ids = [course.pk for course in courses]
+
+        lessons_by_course = services.lessons_by_course(request.user.pk, ids)
+        slots_by_course = defaultdict(list)
+        cancelled_by_course = Counter()
+        for slot in LessonSlot.objects.filter(
+            teacher=request.user, course_id__in=ids
+        ).order_by("date", "lesson_number"):
+            if slot.is_cancelled:
+                cancelled_by_course[slot.course_id] += 1
+            else:
+                slots_by_course[slot.course_id].append(slot)
+
+        baselines = approval.approved_baselines(request.user.pk, ids)
+        requests = approval.open_requests(request.user.pk, ids)
+        today = timezone.localdate()
 
         rows = []
         for course in courses:
-            owner = self.owner_of(course)
-            slots = LessonSlot.objects.filter(
-                teacher=request.user, course=course, is_cancelled=False
-            ).order_by("date", "lesson_number")
-            cancelled = LessonSlot.objects.filter(
-                teacher=request.user, course=course, is_cancelled=True
-            )
-            lessons = services.flatten_lessons(owner)
+            lessons = lessons_by_course[course.pk]
             entries = services.build_layout(
-                lessons, list(slots), course.year.terms.all()
+                lessons, slots_by_course[course.pk], course.year.terms.all()
             )
-            baseline = approval.approved_baseline(request.user.pk, course.pk)
+            baseline = baselines.get(course.pk)
 
             rows.append(
                 {
@@ -208,11 +226,9 @@ class PlanNodeViewSet(TeacherScopedViewSet):
                         if baseline
                         else None
                     ),
-                    "review": request_payload(
-                        approval.open_request(request.user.pk, course.pk)
-                    ),
+                    "review": request_payload(requests.get(course.pk)),
                     **services.course_progress(
-                        entries, timezone.localdate(), cancelled
+                        entries, today, cancelled_by_course[course.pk]
                     ),
                 }
             )

@@ -4,7 +4,9 @@ from datetime import date, timedelta
 
 from calendars import services as calendar_services
 from calendars.models import DayException, Term
+from django.db import connection
 from django.test import SimpleTestCase
+from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 from django.utils import timezone
 from schedule.models import Course, LessonSlot
@@ -915,6 +917,34 @@ class ProgressTests(LayoutApiTestCase):
         row = self.courses()[self.course.name]
 
         self.assertGreater(row["last_lesson_date"], str(row["year_end"]))
+
+    def test_the_number_of_queries_does_not_grow_with_the_courses(self):
+        """
+        Экран открывают из бара, и стоил он по шесть запросов на курс:
+        уроки, отмены, план, термы, эталон и его строки. Проверяется не
+        конкретное число — оно поедет от любой соседней правки, — а то, что
+        от числа курсов оно не зависит вовсе.
+        """
+        self.fill_slots(9)
+
+        with CaptureQueriesContext(connection) as one_course:
+            self.progress()
+
+        for index in range(3):
+            extra = make_course(self.school, year=self.course.year, name=f"9{index}")
+            assign(self.user, extra)
+            self.add_slot(course=extra, number=index + 3)
+
+        with CaptureQueriesContext(connection) as four_courses:
+            response = self.progress()
+
+        self.assertEqual(len(response.json()["courses"]), 4)
+        self.assertEqual(
+            len(four_courses),
+            len(one_course),
+            f"запросы растут с курсами: {len(one_course)} против "
+            f"{len(four_courses)}",
+        )
 
     def test_another_teachers_course_is_not_there(self):
         other = make_course(

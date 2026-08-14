@@ -76,6 +76,41 @@ def approved_baseline(teacher_id: int, course_id: int):
     )
 
 
+def approved_baselines(teacher_id: int, course_ids) -> dict:
+    """
+    Утверждённые эталоны сразу по нескольким курсам: `{course_id: baseline}`.
+
+    Порядок тот же, что у `approved_baseline`, и это важнее краткости:
+    выборка идёт по возрастанию, а в словаре остаётся последний — то есть
+    самый свежий, ровно тот, который вернул бы одиночный запрос.
+
+    Строки снимка тянутся сразу: без них `baseline_diff` сходит за запросом
+    на каждый курс.
+    """
+    return {
+        baseline.course_id: baseline
+        for baseline in PlanBaseline.objects.filter(
+            teacher_id=teacher_id,
+            course_id__in=course_ids,
+            status=PlanBaseline.Status.APPROVED,
+        )
+        .order_by("approved_at", "id")
+        .prefetch_related("rows")
+    }
+
+
+def open_requests(teacher_id: int, course_ids) -> dict:
+    """Запросы в работе по нескольким курсам — так же, как `open_request`."""
+    return {
+        baseline.course_id: baseline
+        for baseline in PlanBaseline.objects.filter(
+            teacher_id=teacher_id,
+            course_id__in=course_ids,
+            status__in=(PlanBaseline.Status.PENDING, PlanBaseline.Status.RETURNED),
+        ).order_by("created_at", "id")
+    }
+
+
 def open_request(teacher_id: int, course_id: int):
     """Запрос в работе: поданный или возвращённый с замечанием."""
     return (

@@ -392,7 +392,7 @@ def layout_summary(
 def course_progress(
     entries: Sequence[LayoutEntry],
     today,
-    cancelled: Iterable = (),
+    cancelled_count: int = 0,
     ahead: int = 2,
 ) -> dict:
     """
@@ -428,7 +428,7 @@ def course_progress(
         "next": [lesson_position(entry) for entry in numbers.upcoming[:ahead]],
         "last_lesson_date": numbers.last_lesson_date,
         "missing": numbers.missing,
-        "cancelled": sum(1 for _ in cancelled),
+        "cancelled": cancelled_count,
         "extra": numbers.extra,
     }
 
@@ -1322,6 +1322,29 @@ def plan_nodes(owner: PlanOwner):
 
 def get_tree(owner: PlanOwner) -> list[Branch]:
     return build_tree(plan_nodes(owner))
+
+
+def lessons_by_course(teacher_id: int, course_ids: Sequence[int]) -> dict:
+    """
+    Уроки плана сразу по нескольким курсам: `{course_id: [Lesson, ...]}`.
+
+    Один запрос вместо запроса на курс. Правил здесь нет ни одного —
+    выборка группируется по курсу и уходит в те же `build_tree` и
+    `number_lessons`, что и одиночный `flatten_lessons`: экран «Состояние
+    курсов» не должен считать план как-то по-своему.
+    """
+    from .models import PlanNode
+
+    grouped = defaultdict(list)
+    for node in PlanNode.objects.filter(
+        teacher_id=teacher_id, course_id__in=course_ids
+    ).annotate(attachment_count=Count("attachments")):
+        grouped[node.course_id].append(node)
+
+    return {
+        course_id: number_lessons(build_tree(grouped.get(course_id, ())))
+        for course_id in course_ids
+    }
 
 
 class SnapshotRow(NamedTuple):
