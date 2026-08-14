@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link, useLocation } from 'react-router-dom'
-import { logout } from './api'
+import { fetchTestPeople, loginAsTestUser, logout } from './api'
 import { LANGUAGES } from './i18n'
 
 /**
@@ -14,6 +14,12 @@ import { LANGUAGES } from './i18n'
  *
  * Профиль в списке есть только у того, у кого он есть: `profileTo` пустой —
  * пункт не рисуется.
+ *
+ * Последним пунктом — «войти как», и только на стенде разработки. Гугл-
+ * аккаунтов на четырнадцать учеников не напасёшься, а плюс-адреса не
+ * годятся вовсе: под алиасом в Google не войти. Список приезжает из
+ * дев-двери, которой в проде нет: там запрос отвечает 404, и пункт не
+ * появляется — это проверка фактом, а не переменной сборки.
  */
 
 /** Закрытие по клику мимо и по Escape. */
@@ -117,8 +123,73 @@ export default function UserMenu({ user, profileTo = null, onLoggedOut, onLangua
               {t('nav.logout')}
             </button>
           </li>
+
+          <SwitchUser />
         </ul>
       )}
     </div>
   )
 }
+
+
+/**
+ * «Войти как» — переключатель аккаунтов на стенде разработки.
+ *
+ * Берёт токен той же дверью, которой пользуются браузерные тесты, кладёт
+ * его туда же, откуда его читает `App.jsx`, и перезагружает страницу: вид
+ * пользователя решается на входе, и половинчатая смена личности без
+ * перезагрузки означала бы учительскую оболочку вокруг ученика.
+ */
+function SwitchUser() {
+  const { t } = useTranslation()
+  const [people, setPeople] = useState(null)
+
+  useEffect(() => {
+    let cancelled = false
+
+    fetchTestPeople()
+      .then((result) => !cancelled && setPeople(result.people))
+      .catch(() => {
+        // двери нет — значит это не стенд разработки, и пункта тоже нет
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  if (!people?.length) return null
+
+  const enter = async (email) => {
+    const { key } = await loginAsTestUser(email)
+    localStorage.setItem('authToken', key)
+    window.location.assign('/')
+  }
+
+  return (
+    <li className="dropdown-switch" role="none">
+      <span className="hint">{t('devSwitch.label')}</span>
+      <ul>
+        {people.map((person) => (
+          <li key={person.email} role="none">
+            <button type="button" role="menuitem" onClick={() => enter(person.email)}>
+              {person.name}
+              <span className="hint">{describeRole(person, t)}</span>
+            </button>
+          </li>
+        ))}
+      </ul>
+    </li>
+  )
+}
+
+const describeRole = (person, t) =>
+  t(
+    person.is_superuser
+      ? 'devSwitch.root'
+      : person.kind === 'student'
+        ? 'devSwitch.student'
+        : person.is_school_admin
+          ? 'devSwitch.admin'
+          : 'devSwitch.teacher',
+  )

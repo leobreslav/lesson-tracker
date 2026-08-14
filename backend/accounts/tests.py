@@ -246,7 +246,7 @@ class E2EDoorTests(APITestCase):
 
         self.assertFalse(settings.E2E_TEST_LOGIN, "флаг не должен быть включён")
 
-        for name in ("e2e-login", "e2e-reset"):
+        for name in ("e2e-login", "e2e-people", "e2e-reset"):
             with self.subTest(name), self.assertRaises(NoReverseMatch):
                 reverse(name)
 
@@ -255,6 +255,10 @@ class E2EDoorTests(APITestCase):
             with self.subTest(path):
                 self.assertEqual(self.client.post(path).status_code, 404)
 
+        # список людей закрыт так же: он говорит, кто есть в базе, и в
+        # чужих руках это готовый перечень адресов школы
+        self.assertEqual(self.client.get("/api/test/people/").status_code, 404)
+
     def test_the_view_refuses_even_if_wired_by_hand(self):
         """
         A second lock: the check is in the view, not only in the routing.
@@ -262,10 +266,12 @@ class E2EDoorTests(APITestCase):
         DRF turns the Http404 into a response rather than letting it fly, so
         the status is what there is to look at.
         """
-        from accounts.e2e import TestLoginView
+        from accounts.e2e import TestLoginView, TestPeopleView
 
         request = APIRequestFactory().post("/", {"email": "teacher@example.com"})
 
         response = TestLoginView.as_view()(request)
+        listing = TestPeopleView.as_view()(APIRequestFactory().get("/"))
 
         self.assertEqual(response.status_code, 404)
+        self.assertEqual(listing.status_code, 404)

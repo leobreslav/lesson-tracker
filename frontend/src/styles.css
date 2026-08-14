@@ -2128,6 +2128,51 @@ button.compact,
 }
 
 /*
+ * «Войти как» в меню пользователя — только на стенде разработки.
+ *
+ * Список длинный (класс целиком), поэтому он прокручивается внутри себя, а
+ * не растягивает меню на весь экран. Отделён чертой: это не действие над
+ * своим аккаунтом, а смена личности.
+ */
+/* с переключателем меню шире: имена в нём длиннее «Профиля» и «Выйти», а
+   перенос имени на две строки читается как две записи */
+.user-menu:has(.dropdown-switch) .dropdown {
+  min-width: 16rem;
+}
+
+.dropdown-switch {
+  margin-top: 0.3rem;
+  padding-top: 0.3rem;
+  border-top: 1px solid #e6e9eb;
+}
+
+.dropdown-switch > .hint {
+  display: block;
+  padding: 0.2rem 0.75rem;
+  font-size: 0.75rem;
+}
+
+.dropdown-switch ul {
+  max-height: 14rem;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.dropdown-switch button {
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+  white-space: nowrap;
+}
+
+.dropdown-switch button .hint {
+  margin-left: auto;
+  font-size: 0.75rem;
+}
+
+/*
  * Название работы — прописными, как заголовок темы в учебном плане.
  *
  * Это одна и та же роль: строка, под которой лежит список. Раз роль одна,

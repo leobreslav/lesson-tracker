@@ -12,6 +12,14 @@ an in-memory backend is what is actually worth checking — is the object still
 there after this, and gone after that. Whether R2 signs a URL correctly is
 R2's business and cannot be tested without R2 anyway; that part is verified by
 hand against the development bucket.
+
+**И дверь для разработки здесь же закрывается.** На стенде разработки
+`E2E_TEST_LOGIN=true` — иначе не войти четырнадцатью учениками без
+четырнадцати гугл-аккаунтов. Но сторож двери проверяет ровно обратное: что
+при выключенном флаге маршрутов нет вовсе. Если бы он читал окружение, он
+проверял бы не код, а `.env` того, кто запустил тесты. Поэтому прогон всегда
+идёт с закрытой дверью; браузерному стенду это не мешает — там работает
+gunicorn, а не тест-раннер.
 """
 
 from django.test.runner import DiscoverRunner
@@ -34,7 +42,12 @@ class Runner(DiscoverRunner):
         super().setup_test_environment(**kwargs)
         self._storages = override_settings(STORAGES=MEMORY_STORAGES)
         self._storages.enable()
+        # до первого разбора адресов: маршруты двери регистрируются при
+        # импорте urls.py, и позже флаг уже ничего не решает
+        self._door = override_settings(E2E_TEST_LOGIN=False)
+        self._door.enable()
 
     def teardown_test_environment(self, **kwargs):
+        self._door.disable()
         self._storages.disable()
         super().teardown_test_environment(**kwargs)

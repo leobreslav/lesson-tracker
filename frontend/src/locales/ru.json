@@ -967,5 +967,12 @@
     "studentsTotal_one": "{{count}} ученик в курсе",
     "studentsTotal_few": "{{count}} ученика в курсе",
     "studentsTotal_many": "{{count}} учеников в курсе"
+  },
+  "devSwitch": {
+    "label": "Войти как (только на стенде)",
+    "teacher": "учитель",
+    "admin": "администратор",
+    "student": "ученик",
+    "root": "суперпользователь"
   }
 }

@@ -649,3 +649,15 @@ export const clearSlots = ({ classId, start, end, onlyRegular }) => {
   })
   return request(`/api/slots/bulk/?${query}`, { method: 'DELETE' })
 }
+
+
+// --- дев-дверь: вход кем угодно без Google ---
+//
+// Живёт за флагом `E2E_TEST_LOGIN`, и при выключенном флаге маршрутов нет
+// вовсе — поэтому «есть ли дверь» проверяется запросом, а не переменной
+// сборки: в проде он честно отвечает 404, и переключателя не будет.
+
+export const fetchTestPeople = () => request('/api/test/people/')
+
+export const loginAsTestUser = (email) =>
+  request('/api/test/login/', { method: 'POST', body: { email } })

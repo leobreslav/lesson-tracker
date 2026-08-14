@@ -71,6 +71,46 @@ class TestLoginView(E2EView):
         )
 
 
+class TestPeopleView(E2EView):
+    """
+    Кто есть в базе — чтобы можно было войти кем угодно в один клик.
+
+    Своих гугл-аккаунтов на четырнадцать учеников не напасёшься, а
+    плюс-адреса тут не работают вовсе: под алиасом в Google не войти, и
+    id_token всё равно придёт с канонического адреса. Поэтому список людей
+    отдаётся сюда, а переключатель в меню меняет токен в браузере — тем же
+    путём, каким входят браузерные тесты.
+
+    Живёт за тем же флагом, что и вход: без него маршрут не существует.
+    """
+
+    def get(self, request):
+        # сотрудники первыми: переключаются чаще к ним, а класс целиком —
+        # это тринадцать строк, за которыми учителя было бы не видно
+        people = User.objects.select_related("school").order_by(
+            "-kind", "first_name", "last_name", "email"
+        )
+
+        return Response(
+            {
+                "people": [
+                    {
+                        "email": person.email,
+                        "name": " ".join(
+                            filter(None, (person.first_name, person.last_name))
+                        )
+                        or person.email,
+                        "kind": person.kind,
+                        "school": person.school.name if person.school else None,
+                        "is_school_admin": person.is_school_admin,
+                        "is_superuser": person.is_superuser,
+                    }
+                    for person in people
+                ]
+            }
+        )
+
+
 class TestResetView(E2EView):
     """
     Put the database back to the seeded state.

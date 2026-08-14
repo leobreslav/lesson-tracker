@@ -928,5 +928,12 @@
     "finishedLabel": "answered everything",
     "studentsTotal_one": "{{count}} student in the course",
     "studentsTotal_other": "{{count}} students in the course"
+  },
+  "devSwitch": {
+    "label": "Sign in as (dev only)",
+    "teacher": "teacher",
+    "admin": "administrator",
+    "student": "student",
+    "root": "superuser"
   }
 }

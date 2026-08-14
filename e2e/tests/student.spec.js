@@ -71,3 +71,29 @@ test('ученический раздел учителю закрыт', async ({
   expect(response.status).toBe(403)
   expect(response.body.code).toBe('students_only')
 })
+
+test('переключатель «войти как» берёт токен нужного человека', async ({
+  page,
+  signIn,
+}) => {
+  await signIn(PEOPLE.ivanova)
+  await page.goto('/')
+  await ready(page)
+
+  await page.locator('.user-menu > button').click()
+  const switcher = page.locator('.dropdown-switch')
+  // сотрудники первыми, ученики ниже — и у каждого написано, кто он
+  await expect(switcher.getByRole('menuitem', { name: 'Ольга Дирекова' })).toContainText(
+    'администратор',
+  )
+
+  // смотрим на запрос, а не на экран после перезагрузки: оснастка тестов
+  // прописывает свой токен init-скриптом на **каждую** загрузку страницы и
+  // вернула бы Иванову. Тело ответа тоже не прочитать — страница уходит на
+  // перезагрузку раньше. Остаётся то, что и проверяем: за чьим токеном
+  // переключатель пошёл
+  const asked = page.waitForRequest('**/api/test/login/')
+  await switcher.getByRole('menuitem', { name: 'Артём Степанов' }).click()
+
+  expect((await asked).postDataJSON().email).toBe(PEOPLE.student)
+})
