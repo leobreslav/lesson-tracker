@@ -130,9 +130,10 @@ test('сводка над таблицей считает то, чего в не
   const card = (name) => page.locator(`[data-card="${name}"]`)
   // тринадцать действующих начали, один прошёл целиком: снятая с курса в
   // знаменатель не входит — она не «не закончила», она ушла
-  await expect(card('started')).toContainText('13/13')
-  await expect(card('started')).toContainText('1/13')
+  await expect(card('started')).toContainText('начали')
   await expect(card('started')).toContainText('прошли целиком')
+  // знаменатель — один на обе строки и стоит внизу мелким
+  await expect(card('started')).toContainText('13 учеников в курсе')
   await expect(card('unchecked')).not.toContainText('0')
 
   // «на проверку» кликабельна и ведёт в столбец, где эти ответы лежат

@@ -2220,6 +2220,14 @@ button.compact,
   gap: 0.2rem 0.6rem;
 }
 
+/* знаменатель обеих строк — внизу и мелким: в самих строках он
+   повторялся бы дважды и ничего не добавлял */
+.stat-rows .total {
+  grid-column: 1 / -1;
+  margin-top: 0.15rem;
+  font-size: 0.75rem;
+}
+
 .stat-rows b {
   font-size: 1.5rem;
   font-weight: 500;

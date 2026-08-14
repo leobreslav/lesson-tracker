@@ -985,6 +985,9 @@
     "expected_few": "Правильные ответы:",
     "expected_many": "Правильные ответы:",
     "startedLabel": "начали",
-    "finishedLabel": "прошли целиком"
+    "finishedLabel": "прошли целиком",
+    "studentsTotal_one": "{{count}} ученик в курсе",
+    "studentsTotal_few": "{{count}} ученика в курсе",
+    "studentsTotal_many": "{{count}} учеников в курсе"
   }
 }

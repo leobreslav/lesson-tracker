@@ -947,6 +947,8 @@
     "expected_one": "Correct answer:",
     "expected_other": "Correct answers:",
     "startedLabel": "have started",
-    "finishedLabel": "answered everything"
+    "finishedLabel": "answered everything",
+    "studentsTotal_one": "{{count}} student in the course",
+    "studentsTotal_other": "{{count}} students in the course"
   }
 }
