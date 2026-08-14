@@ -1,30 +1,35 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import CourseRow from './CourseRow'
 import EmptyState from './EmptyState'
 import Modal from './Modal'
-import {
-  approveReview,
-  fetchReview,
-  fetchReviews,
-  returnReview,
-} from './api'
+import { approveReview, fetchReview, fetchReviews, returnReview } from './api'
 import { longDate } from './dates'
 
 /**
- * «На утверждение» — очередь методиста.
+ * «На утверждение» — все планы, которые ведёт методист.
  *
- * Раздел виден только тем, у кого есть назначения по предметам: роль не
- * иерархическая, у большинства список пуст, и пустой раздел в баре был бы
- * обещанием работы, которой нет.
+ * Очередью запросов это было, и очередь оказалась слишком узкой: методист
+ * видел тех, кто прислал план, и ровно ничего — про остальных. А спрашивают
+ * с него как раз про остальных: кто отстаёт, у кого план не помещается в
+ * год, кто переписал половину после утверждения. Поэтому список полный, а
+ * ожидающий запрос — пометка в строке.
  *
- * Методист читает и решает: утвердить или вернуть с замечанием. Править
- * чужой план он не может — не из вежливости, а чтобы учитель однажды не
+ * Строки те же, что учитель видит у себя на главной (`CourseRow`), и числа
+ * в них считает тот же серверный расчёт: методист и учитель должны смотреть
+ * на одно и то же, иначе разговор про «отстаёшь» начинается со спора о
+ * цифрах. Отличий два — в шапке стоит имя учителя, а под подробностями
+ * появляется кнопка разбора, если план ждёт ответа.
+ *
+ * Читать и решать: утвердить или вернуть с замечанием. Править чужой план
+ * методист не может — не из вежливости, а чтобы учитель однажды не
  * обнаружил у себя чужие уроки.
  */
 export default function Reviews({ onLoggedOut }) {
   const { t } = useTranslation()
-  const [reviews, setReviews] = useState(null)
+  const [plans, setPlans] = useState(null)
   const [opened, setOpened] = useState(null)
+  const [expanded, setExpanded] = useState(null)
   const [comment, setComment] = useState('')
   const [returning, setReturning] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -38,8 +43,22 @@ export default function Reviews({ onLoggedOut }) {
     [onLoggedOut],
   )
 
+  /** Строку опознаёт пара: курс общий, планов в нём столько же, сколько людей. */
+  const key = (plan) => (plan ? `${plan.teacher.id}:${plan.id}` : null)
+
   const load = useCallback(
-    () => fetchReviews().then((result) => setReviews(result.reviews)),
+    () =>
+      fetchReviews().then((result) => {
+        setPlans(result.plans)
+        // разворачиваем то, что ждёт ответа: за этим сюда и заходят. Ждать
+        // нечему — разворачиваем проблемный план, а если и таких нет,
+        // список остаётся свёрнутым
+        const waiting = result.plans.find(
+          (plan) => plan.review?.status === 'pending',
+        )
+        const trouble = result.plans.find((plan) => plan.reserve < 0)
+        setExpanded((current) => current ?? key(waiting ?? trouble))
+      }),
     [],
   )
 
@@ -77,7 +96,7 @@ export default function Reviews({ onLoggedOut }) {
     }
   }
 
-  if (reviews === null) {
+  if (plans === null) {
     return (
       <main className="page wide">
         <p>{error ? <span className="error">{error}</span> : t('common.loading')}</p>
@@ -85,13 +104,19 @@ export default function Reviews({ onLoggedOut }) {
     )
   }
 
+  const waiting = plans.filter((plan) => plan.review?.status === 'pending').length
+
   return (
     <main className="page wide">
       <header className="page-header">
         <h1>{t('reviews.title')}</h1>
       </header>
 
-      <p className="hint">{t('reviews.hint')}</p>
+      <p className="hint">
+        {waiting
+          ? t('reviews.waiting', { count: waiting })
+          : t('reviews.hint')}
+      </p>
 
       {error && (
         <p className="error" role="alert">
@@ -99,31 +124,52 @@ export default function Reviews({ onLoggedOut }) {
         </p>
       )}
 
-      {!reviews.length ? (
+      {!plans.length ? (
         <EmptyState title={t('reviews.empty.title')}>
           {t('reviews.empty.hint')}
         </EmptyState>
       ) : (
-        <ul className="people-list">
-          {reviews.map((review) => (
-            <li key={review.id}>
-              <div className="row">
-                <span className="who">{review.teacher.name}</span>
-                <span>{review.course.name}</span>
-                <span className="hint">{review.course.subject}</span>
-                <span className="hint">
-                  {t('reviews.sentOn', {
-                    date: longDate(review.submitted_at.slice(0, 10)),
-                  })}
+        <ul className="progress-list">
+          {plans.map((plan) => (
+            <CourseRow
+              key={key(plan)}
+              row={plan}
+              open={expanded === key(plan)}
+              onToggle={() =>
+                setExpanded(expanded === key(plan) ? null : key(plan))
+              }
+              mark={
+                /* одной ячейкой: в шапке сетка на четыре колонки, и две
+                   отдельные пометки разъехались бы по разным местам */
+                <span className="whose">
+                  {plan.teacher.name}
+                  {plan.review?.status === 'pending' && (
+                    <span className="badge waiting">{t('reviews.mark')}</span>
+                  )}
+                  {plan.review?.status === 'returned' && (
+                    <span className="badge">{t('reviews.returned')}</span>
+                  )}
                 </span>
-                <span className="hint">
-                  {t('common.lessonCount', { count: review.lessons })}
-                </span>
-                <button type="button" onClick={() => open(review.id)}>
-                  {t('reviews.open')}
-                </button>
-              </div>
-            </li>
+              }
+              actions={
+                plan.review?.status === 'pending' ? (
+                  <div className="actions wrap">
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() => open(plan.review.id)}
+                    >
+                      {t('reviews.open')}
+                    </button>
+                    <span className="hint">
+                      {t('reviews.sentOn', {
+                        date: longDate(plan.review.submitted_at.slice(0, 10)),
+                      })}
+                    </span>
+                  </div>
+                ) : null
+              }
+            />
           ))}
         </ul>
       )}

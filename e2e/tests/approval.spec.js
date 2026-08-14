@@ -140,3 +140,69 @@ test('раздела «На утверждение» у обычного учи�
     page.getByRole('link', { name: 'На утверждение' }),
   ).toHaveCount(0)
 })
+
+/**
+ * Экран методиста — это надзор, а не очередь.
+ *
+ * Пока он показывал только присланное, про тех, кто ничего не присылал,
+ * методист не знал ничего — а спрашивают с него как раз про них.
+ */
+test('методист видит план, который никто не присылал, с теми же числами', async ({
+  page,
+  signIn,
+  api,
+}) => {
+  await makeMethodist(api, PEOPLE.petrov, 'Grade 6 Algebra')
+
+  // числа, которые видит у себя учитель
+  await signIn(PEOPLE.ivanova)
+  await page.goto('/')
+  await ready(page)
+  const hers = page.locator('.progress-list > li', { hasText: 'Grade 6 Algebra' })
+  await hers.locator('.progress-head').click()
+  const reserve = await hers.locator('.reserve').textContent()
+  const progress = await hers.locator('[data-card="progress"] h2').textContent()
+
+  // ничего не отправляли — и всё равно план виден методисту
+  await signIn(PEOPLE.petrov)
+  await page.goto('/reviews')
+  await ready(page)
+  await expect(page.locator('.nav-count')).toHaveCount(0)
+
+  const row = page.locator('.progress-list > li', { hasText: 'Grade 6 Algebra' })
+  await expect(row.locator('.whose')).toContainText('Мария Иванова')
+  await expect(row.locator('.badge.waiting')).toHaveCount(0)
+  await row.locator('.progress-head').click()
+
+  // те же числа: разговор про «отстаёшь» не должен начинаться со спора о них
+  await expect(row.locator('.reserve')).toHaveText(reserve)
+  await expect(row.locator('[data-card="progress"] h2')).toHaveText(progress)
+
+  // чужой план — не свой: звать методиста заполнять его нечем
+  await expect(row.getByRole('button', { name: 'Заполнить план' })).toHaveCount(0)
+  await expect(row.getByRole('button', { name: 'Открыть план' })).toHaveCount(0)
+})
+
+test('ожидающий план помечен, остальные — нет', async ({ page, signIn, api }) => {
+  await makeMethodist(api, PEOPLE.petrov, 'Grade 6 Algebra')
+  await makeMethodist(api, PEOPLE.petrov, 'Grade 6 Geometry')
+
+  const teacher = await api(PEOPLE.ivanova)
+  const courses = await teacher.get('/api/courses/')
+  const algebra = courses.body.find((item) => item.name === 'Grade 6 Algebra')
+  await teacher.post(`/api/plan/baseline/submit/?course=${algebra.id}`, {})
+
+  await signIn(PEOPLE.petrov)
+  await page.goto('/reviews')
+  await ready(page)
+
+  const rows = page.locator('.progress-list > li')
+  expect(await rows.count()).toBeGreaterThan(1)
+  await expect(page.locator('.badge.waiting')).toHaveCount(1)
+  await expect(
+    page.locator('.progress-list > li', { hasText: 'Grade 6 Algebra' }).locator(
+      '.badge.waiting',
+    ),
+  ).toHaveText('ждёт ответа')
+  await expect(page.locator('.nav-count')).toHaveText('1')
+})

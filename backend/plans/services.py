@@ -21,7 +21,7 @@ from dataclasses import dataclass
 from typing import Iterable, NamedTuple, Sequence
 
 from calendars.services import find_term
-from django.db.models import Count
+from django.db.models import Count, Q
 
 from config.errors import Codes, error_payload
 
@@ -1324,26 +1324,37 @@ def get_tree(owner: PlanOwner) -> list[Branch]:
     return build_tree(plan_nodes(owner))
 
 
-def lessons_by_course(teacher_id: int, course_ids: Sequence[int]) -> dict:
+def lessons_by_owner(owners: Iterable[PlanOwner]) -> dict:
     """
-    Уроки плана сразу по нескольким курсам: `{course_id: [Lesson, ...]}`.
+    Уроки плана сразу по нескольким владельцам: `{(teacher, course): [...]}`.
 
-    Один запрос вместо запроса на курс. Правил здесь нет ни одного —
-    выборка группируется по курсу и уходит в те же `build_tree` и
-    `number_lessons`, что и одиночный `flatten_lessons`: экран «Состояние
-    курсов» не должен считать план как-то по-своему.
+    Один запрос вместо запроса на пару. Правил здесь нет ни одного — выборка
+    группируется по владельцу и уходит в те же `build_tree` и
+    `number_lessons`, что и одиночный `flatten_lessons`: ни «Состояние
+    курсов», ни экран методиста не должны считать план как-то по-своему.
+
+    Ключ — пара, а не курс: у методиста в списке один курс встречается
+    столько раз, сколько человек его ведёт, и планы у них разные.
     """
     from .models import PlanNode
 
+    owners = list(owners)
+    if not owners:
+        return {}
+
+    condition = Q()
+    for owner in owners:
+        condition |= Q(teacher_id=owner.teacher_id, course_id=owner.course_id)
+
     grouped = defaultdict(list)
-    for node in PlanNode.objects.filter(
-        teacher_id=teacher_id, course_id__in=course_ids
-    ).annotate(attachment_count=Count("attachments")):
-        grouped[node.course_id].append(node)
+    for node in PlanNode.objects.filter(condition).annotate(
+        attachment_count=Count("attachments")
+    ):
+        grouped[(node.teacher_id, node.course_id)].append(node)
 
     return {
-        course_id: number_lessons(build_tree(grouped.get(course_id, ())))
-        for course_id in course_ids
+        owner: number_lessons(build_tree(grouped.get(tuple(owner), ())))
+        for owner in owners
     }
 
 

@@ -11,9 +11,13 @@
 план не приняли, сравнивать не с чем.
 """
 
+from datetime import timedelta
+
+from django.db import connection
+from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 from schedule.models import CourseMethodist, Subject
-from schools.testing import assign, make_course
+from schools.testing import MONDAY, assign, make_course, make_node, make_slot
 
 from .models import PlanBaseline, PlanNode
 from .tests import PlanTestCase
@@ -51,8 +55,18 @@ class ApprovalTestCase(PlanTestCase):
             reverse("plannode-baseline"), {"course": (course or self.course).pk}
         ).json()
 
-    def queue(self):
-        return self.client.get(reverse("planreview-list")).json()["reviews"]
+    def supervised(self):
+        """Что видит методист: все планы под его надзором, не только запросы."""
+        return self.client.get(reverse("planreview-list")).json()["plans"]
+
+    def supervised_of(self, teacher, course=None):
+        """Строка конкретного учителя: курс ведут несколько, и планов столько же."""
+        course = course or self.course
+        return next(
+            row
+            for row in self.supervised()
+            if row["teacher"]["id"] == teacher.pk and row["id"] == course.pk
+        )
 
     def approve(self, pk):
         return self.client.post(reverse("planreview-approve", args=[pk]))
@@ -144,15 +158,15 @@ class ReviewTests(ApprovalTestCase):
         self.submit()
         self.baseline = PlanBaseline.objects.get()
 
-    def test_the_methodist_sees_the_request(self):
+    def test_the_methodist_sees_the_request_as_a_mark_on_the_row(self):
         self.client.force_authenticate(self.methodist)
 
-        queue = self.queue()
+        row = self.supervised_of(self.user)
 
-        self.assertEqual(len(queue), 1)
-        self.assertEqual(queue[0]["teacher"]["id"], self.user.pk)
-        self.assertEqual(queue[0]["course"]["name"], self.course.name)
-        self.assertEqual(queue[0]["lessons"], 7)
+        self.assertEqual(row["name"], self.course.name)
+        self.assertEqual(row["lessons_total"], 7)
+        # запрос — пометка в строке, а не причина её существования
+        self.assertEqual(row["review"]["status"], "pending")
 
     def test_the_request_opens_with_the_plan_and_the_numbers(self):
         """Методист смотрит живой план: правка отозвала бы запрос."""
@@ -213,7 +227,7 @@ class ReviewTests(ApprovalTestCase):
             reverse("planreview-detail", args=[self.baseline.pk])
         ).json()
 
-        self.assertEqual(len(self.queue()), 1)
+        self.assertEqual(self.supervised_of(self.user)["review"]["status"], "pending")
         self.assertIn("Дописанный после отправки", [row["title"] for row in body["rows"]])
 
         self.approve(self.baseline.pk)
@@ -238,7 +252,7 @@ class ReviewTests(ApprovalTestCase):
 
         self.client.force_authenticate(self.stranger)
 
-        self.assertEqual(self.queue(), [])
+        self.assertEqual(self.supervised(), [])
         self.assertEqual(
             self.client.get(
                 reverse("planreview-detail", args=[self.baseline.pk])
@@ -249,7 +263,7 @@ class ReviewTests(ApprovalTestCase):
     def test_a_teacher_without_the_role_sees_no_queue(self):
         self.client.force_authenticate(self.user)
 
-        self.assertEqual(self.queue(), [])
+        self.assertEqual(self.supervised(), [])
 
     def test_the_methodist_cannot_edit_the_plan_they_review(self):
         """Утвердить или вернуть — да; править чужую работу — нет."""
@@ -270,14 +284,92 @@ class ReviewTests(ApprovalTestCase):
         CourseMethodist.objects.create(course=self.alien_class, user=self.alien_admin)
         self.client.force_authenticate(self.alien_admin)
 
-        self.assertEqual(self.queue(), [])
+        self.assertEqual(self.supervised(), [])
 
     def test_an_administrator_approves_nothing_by_default(self):
         """Администратор распоряжается школой, а не содержанием предмета."""
         self.client.force_authenticate(self.admin)
 
-        self.assertEqual(self.queue(), [])
+        self.assertEqual(self.supervised(), [])
         self.assertEqual(self.approve(self.baseline.pk).status_code, 404)
+
+
+class SupervisionTests(ApprovalTestCase):
+    """
+    Экран методиста показывает **все** планы под его надзором.
+
+    Очередь на утверждение отвечала на вопрос «что мне подписать», а
+    спрашивают с методиста другое: кто отстаёт, у кого план не помещается в
+    год, кто переписал половину после утверждения. Про тех, кто ничего не
+    присылал, очередь молчала — а это как раз те, к кому есть вопросы.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.make_methodist(self.methodist)
+        self.client.force_authenticate(self.methodist)
+
+    def test_a_plan_shows_up_without_any_request(self):
+        row = self.supervised_of(self.user)
+
+        self.assertIsNone(row["review"])
+        self.assertEqual(row["lessons_total"], 7)
+
+    def test_the_numbers_are_the_ones_the_teacher_sees(self):
+        """
+        Один расчёт на два экрана — иначе разговор про «отстаёшь» начинался
+        бы со спора о цифрах.
+        """
+        make_slot(self.user, self.course, day=MONDAY, number=1)
+        make_slot(self.user, self.course, day=MONDAY + timedelta(days=1), number=1)
+
+        seen_by_methodist = self.supervised_of(self.user)
+        self.client.force_authenticate(self.user)
+        seen_by_teacher = self.progress()
+
+        for field in ("lessons_total", "slots_total", "reserve", "done", "missing"):
+            self.assertEqual(
+                seen_by_methodist[field], seen_by_teacher[field], field
+            )
+
+    def test_every_teacher_of_the_course_has_their_own_row(self):
+        """План личный: курс на двоих — это два плана и две строки."""
+        rows = [row for row in self.supervised() if row["id"] == self.course.pk]
+
+        self.assertEqual(
+            sorted(row["teacher"]["id"] for row in rows),
+            sorted([self.user.pk, self.methodist.pk]),
+        )
+
+    def test_a_teacher_who_has_not_started_is_visible_too(self):
+        """«Ещё не начал» — то, что методисту как раз нужно видеть."""
+        row = self.supervised_of(self.methodist)
+
+        self.assertEqual(row["lessons_total"], 0)
+        self.assertIsNone(row["review"])
+
+    def test_courses_without_the_role_are_not_there(self):
+        other = make_course(self.school, year=self.course.year, name="9В")
+        assign(self.user, other)
+
+        self.assertNotIn(other.pk, [row["id"] for row in self.supervised()])
+
+    def test_the_queries_do_not_grow_with_the_plans(self):
+        for index in range(3):
+            extra = make_course(self.school, year=self.course.year, name=f"9-{index}")
+            assign(self.user, extra)
+            self.make_methodist(self.methodist, course=extra)
+            make_node(self.user, extra, f"Урок {index}")
+
+        with CaptureQueriesContext(connection) as many:
+            rows = self.supervised()
+
+        self.assertGreater(len(rows), 4)
+        self.assertLess(
+            len(many),
+            15,
+            f"на {len(rows)} планов ушло {len(many)} запросов",
+        )
 
 
 class SelfApprovalTests(ApprovalTestCase):

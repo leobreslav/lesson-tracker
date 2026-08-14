@@ -180,8 +180,12 @@ test('рост к утверждённому эталону виден на «С
 
   const teacher = await api(PEOPLE.ivanova)
   await teacher.post(`/api/plan/baseline/submit/?course=${course.id}`, {})
-  const queue = await teacher.get('/api/plan/reviews/')
-  await teacher.post(`/api/plan/reviews/${queue.body.reviews[0].id}/approve/`)
+  // экран методиста показывает все свои планы, запрос — пометка в строке
+  const supervised = await teacher.get('/api/plan/reviews/')
+  const waiting = supervised.body.plans.find(
+    (plan) => plan.review?.status === 'pending',
+  )
+  await teacher.post(`/api/plan/reviews/${waiting.review.id}/approve/`)
 
   await signIn(PEOPLE.ivanova)
   await page.goto('/')

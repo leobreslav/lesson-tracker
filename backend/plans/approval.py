@@ -20,6 +20,7 @@ from __future__ import annotations
 import logging
 
 from django.db import transaction
+from django.db.models import Q
 from django.utils import timezone
 from schedule.models import CourseMethodist
 
@@ -76,38 +77,57 @@ def approved_baseline(teacher_id: int, course_id: int):
     )
 
 
-def approved_baselines(teacher_id: int, course_ids) -> dict:
+def _owned(owners) -> Q:
+    """Условие «любая из этих пар (учитель, курс)» одним запросом."""
+    condition = Q()
+    for owner in owners:
+        condition |= Q(teacher_id=owner.teacher_id, course_id=owner.course_id)
+    return condition
+
+
+def approved_baselines(owners) -> dict:
     """
-    Утверждённые эталоны сразу по нескольким курсам: `{course_id: baseline}`.
+    Утверждённые эталоны сразу по нескольким владельцам:
+    `{(teacher_id, course_id): baseline}`.
 
     Порядок тот же, что у `approved_baseline`, и это важнее краткости:
     выборка идёт по возрастанию, а в словаре остаётся последний — то есть
     самый свежий, ровно тот, который вернул бы одиночный запрос.
 
+    Ключ — пара, а не курс: у методиста один курс встречается столько раз,
+    сколько человек его ведёт, и эталон у каждого свой.
+
     Строки снимка тянутся сразу: без них `baseline_diff` сходит за запросом
-    на каждый курс.
+    на каждую пару.
     """
+    owners = list(owners)
+    if not owners:
+        return {}
+
     return {
-        baseline.course_id: baseline
+        (baseline.teacher_id, baseline.course_id): baseline
         for baseline in PlanBaseline.objects.filter(
-            teacher_id=teacher_id,
-            course_id__in=course_ids,
-            status=PlanBaseline.Status.APPROVED,
+            _owned(owners), status=PlanBaseline.Status.APPROVED
         )
         .order_by("approved_at", "id")
         .prefetch_related("rows")
     }
 
 
-def open_requests(teacher_id: int, course_ids) -> dict:
-    """Запросы в работе по нескольким курсам — так же, как `open_request`."""
+def open_requests(owners) -> dict:
+    """Запросы в работе по нескольким владельцам — так же, как `open_request`."""
+    owners = list(owners)
+    if not owners:
+        return {}
+
     return {
-        baseline.course_id: baseline
+        (baseline.teacher_id, baseline.course_id): baseline
         for baseline in PlanBaseline.objects.filter(
-            teacher_id=teacher_id,
-            course_id__in=course_ids,
+            _owned(owners),
             status__in=(PlanBaseline.Status.PENDING, PlanBaseline.Status.RETURNED),
-        ).order_by("created_at", "id")
+        )
+        .select_related("reviewer")
+        .order_by("created_at", "id")
     }
 
 

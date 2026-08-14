@@ -167,7 +167,13 @@ function ReviewWatcher({ onChange }) {
     let cancelled = false
 
     fetchReviews()
-      .then((data) => !cancelled && onChange(data.reviews.length))
+      .then(
+        (data) =>
+          !cancelled &&
+          onChange(
+            data.plans.filter((plan) => plan.review?.status === 'pending').length,
+          ),
+      )
       .catch(() => {
         // не ответили — счётчика просто не будет
       })

@@ -771,7 +771,7 @@
   },
   "reviews": {
     "title": "For approval",
-    "hint": "Plans sent to you as a methodist of the subject. You approve or return them with a comment — editing somebody else's plan is not yours to do.",
+    "hint": "Every plan you supervise, with the same numbers its teacher sees. A plan waiting for your answer is marked.",
     "open": "Open",
     "sentOn": "sent {{date}}",
     "lessons": "lessons in the plan",
@@ -784,6 +784,10 @@
     "empty": {
       "title": "Nothing waiting",
       "hint": "When a teacher sends a plan on your subject, it appears here."
-    }
+    },
+    "mark": "waiting for you",
+    "returned": "returned",
+    "waiting_one": "{{count}} plan is waiting for your answer.",
+    "waiting_other": "{{count}} plans are waiting for your answer."
   }
 }

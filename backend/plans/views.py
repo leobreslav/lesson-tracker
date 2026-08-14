@@ -19,7 +19,7 @@ from rest_framework.viewsets import ReadOnlyModelViewSet
 from calendars.models import DayException
 from schedule.models import Course, LessonSlot
 
-from . import approval, services, xlsx
+from . import approval, progress, services, xlsx
 from .models import PlanBaseline, PlanNode
 from .serializers import (
     MoveSerializer,
@@ -163,77 +163,20 @@ class PlanNodeViewSet(TeacherScopedViewSet):
     @action(detail=False, methods=["get"])
     def progress(self, request):
         """
-        Как идут дела **по всем курсам сразу** — экран «Ход года».
+        Как идут дела **по всем своим курсам сразу** — главная страница.
 
-        План всегда про один курс, этот экран — про все: учитель ведёт пять
-        курсов и хочет одним взглядом понять, где проблема. Считает всё то
-        же `build_layout`, что и остальные ответы про раскладку, поэтому
-        числа не могут разойтись с планом.
-
-        Запросы сделаны **до** цикла, а не в нём: каждый курс добавлял по
-        шесть — уроки, отмены, план, термы, эталон и его строки, — и на
-        шести курсах экран, который открывают из бара, стоил тридцати семи
-        запросов. Теперь их семь при любом числе курсов, а группировка идёт
-        в памяти: расчёт остался тем же самым, поменялось только то, откуда
-        ему приносят данные.
+        План всегда про один курс, главная — про все: учитель ведёт пять и
+        хочет одним взглядом понять, где проблема. Считает это `progress`,
+        и тем же расчётом пользуется экран методиста: вопрос у них один, и
+        двух ответов на него быть не должно.
         """
-        courses = list(
-            Course.objects.for_teacher(request.user)
-            .select_related("year")
-            .prefetch_related("year__terms")
-            .order_by("year__start_date", "name")
+        return Response(
+            {
+                "courses": progress.rows_for(
+                    progress.own_pairs(request.user), timezone.localdate()
+                )
+            }
         )
-        ids = [course.pk for course in courses]
-
-        lessons_by_course = services.lessons_by_course(request.user.pk, ids)
-        slots_by_course = defaultdict(list)
-        cancelled_by_course = Counter()
-        for slot in LessonSlot.objects.filter(
-            teacher=request.user, course_id__in=ids
-        ).order_by("date", "lesson_number"):
-            if slot.is_cancelled:
-                cancelled_by_course[slot.course_id] += 1
-            else:
-                slots_by_course[slot.course_id].append(slot)
-
-        baselines = approval.approved_baselines(request.user.pk, ids)
-        requests = approval.open_requests(request.user.pk, ids)
-        today = timezone.localdate()
-
-        rows = []
-        for course in courses:
-            lessons = lessons_by_course[course.pk]
-            entries = services.build_layout(
-                lessons, slots_by_course[course.pk], course.year.terms.all()
-            )
-            baseline = baselines.get(course.pk)
-
-            rows.append(
-                {
-                    "id": course.pk,
-                    "name": course.name,
-                    "year": course.year.name,
-                    "year_end": course.year.end_date,
-                    # метрики считаются только от **утверждённого** эталона:
-                    # пока план не приняли, сравнивать не с чем
-                    "baseline": (
-                        {
-                            "created_at": baseline.created_at,
-                            "approved_at": baseline.approved_at,
-                            "self_approved": baseline.self_approved,
-                            **services.baseline_diff(baseline.rows.all(), lessons),
-                        }
-                        if baseline
-                        else None
-                    ),
-                    "review": request_payload(requests.get(course.pk)),
-                    **services.course_progress(
-                        entries, today, cancelled_by_course[course.pk]
-                    ),
-                }
-            )
-
-        return Response({"courses": rows})
 
     @action(detail=False, methods=["get"])
     def baseline(self, request):
@@ -761,7 +704,18 @@ class SectionMoveView(APIView):
 
 class PlanReviewViewSet(ReadOnlyModelViewSet):
     """
-    Очередь методиста: планы по его предметам, присланные на утверждение.
+    Экран методиста: **все** планы, которые он ведёт.
+
+    Очередью на утверждение это было, и очередь оказалась слишком узкой:
+    методист видел только тех, кто прислал план, и ровно ничего — про
+    остальных. А спрашивают с него как раз про остальных: кто отстаёт, у
+    кого план не помещается в год, кто переписал половину после
+    утверждения. Поэтому список теперь полный, а ожидающий запрос — просто
+    пометка в строке.
+
+    Числа те же, что учитель видит у себя на главной, и считает их тот же
+    `progress.rows_for`: методист и учитель должны смотреть на одно и то же,
+    иначе разговор про «отстаёшь» начинается со спора о цифрах.
 
     Читать — и только: методист утверждает или возвращает, но не правит.
     Чужой план правится только его автором, и это не вопрос вежливости —
@@ -772,6 +726,7 @@ class PlanReviewViewSet(ReadOnlyModelViewSet):
     serializer_class = None
 
     def get_queryset(self):
+        """Для `retrieve`, `approve` и `return` — только поданные запросы."""
         return approval.review_queue(self.request.user)
 
     def get_object(self):
@@ -780,17 +735,9 @@ class PlanReviewViewSet(ReadOnlyModelViewSet):
     def list(self, request):
         return Response(
             {
-                "reviews": [
-                    review_payload(
-                        row,
-                        rows=services.plan_snapshot(
-                            services.PlanOwner(
-                                teacher_id=row.teacher_id, course_id=row.course_id
-                            )
-                        ),
-                    )
-                    for row in self.get_queryset()
-                ]
+                "plans": progress.rows_for(
+                    progress.supervised_pairs(request.user), timezone.localdate()
+                )
             }
         )
 

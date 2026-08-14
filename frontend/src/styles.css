@@ -1538,6 +1538,24 @@ button.progress-head {
   cursor: pointer;
 }
 
+/* Чей это план: имя под названием курса, пометка рядом с именем.
+   Отдельной ячейкой — иначе пятый ребёнок сетки растягивается на колонку
+   соседа, и «ждёт ответа» превращается в полосу во всю строку. */
+.progress-head .whose {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  grid-column: 1;
+  justify-self: start;
+  color: #5f6368;
+  font-size: 0.9rem;
+}
+
+.badge.waiting {
+  background: #fde7c8;
+  color: #8a4b00;
+}
+
 button.progress-head:hover:not(:disabled) {
   background: #f8faff;
 }
