@@ -12,7 +12,6 @@ row, because that is the whole reason for having one table instead of two
 lists.
 """
 
-from django.core.exceptions import ValidationError
 from django.db import connection
 from django.test.utils import CaptureQueriesContext
 from django.urls import reverse

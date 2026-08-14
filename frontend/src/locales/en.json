@@ -697,7 +697,7 @@
   },
   "schoolSchedule": {
     "title": "School timetable",
-    "hint": "Who teaches what and when. Teachers read it and may copy their own lessons into their schedule once; only an administrator edits it.",
+    "hint": "Who teaches what and when. Everybody reads it; the course teacher or an administrator edits it — one schedule, not a copy.",
     "open": "Open the timetable",
     "summary": "{{total}} lessons laid out, {{teachers}} teachers involved",
     "unassigned": "{{count}} with no teacher yet",
@@ -710,7 +710,7 @@
     "addTitle": "Lesson {{number}}",
     "deleteConfirm": "Remove «{{name}}» from the timetable?",
     "copyTitle": "Copy the timetable week",
-    "copyNote": "Teachers who have already imported their lessons keep them: a copy is not a sync.",
+    "copyNote": "Cancellations and substitutions are neither copied nor wiped when a period is replaced: bulk edits leave hand-made markup alone.",
     "copied": "Created {{created}}, skipped {{skipped}}."
   },
   "library": {

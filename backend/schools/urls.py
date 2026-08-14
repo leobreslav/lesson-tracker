@@ -1,7 +1,7 @@
 from django.urls import include, path
 from rest_framework.routers import DefaultRouter
-# the timetable is a schedule model, but it is the school's, so it answers
-# under /api/school/ next to the courses and the people
+# назначения, методисты и состав — модели расписания, но принадлежат школе,
+# поэтому отвечают под /api/school/ рядом с курсами и людьми
 from schedule.views import (
     CourseAssignmentViewSet,
     CourseMethodistViewSet,
@@ -15,7 +15,6 @@ from .views import (
     MemberViewSet,
     MySchoolView,
     SchoolOverviewView,
-    SchoolViewSet,
 )
 
 router = DefaultRouter()
