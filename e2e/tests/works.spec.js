@@ -17,14 +17,22 @@ const openWorks = async (page, course = 'Grade 6 Algebra') => {
   return page.locator('.work-list')
 }
 
-test('три состояния работы видны сразу и подписаны', async ({ page, signIn }) => {
+test('в списке — имя и два действия, состояние видно в проверке', async ({
+  page,
+  signIn,
+}) => {
   await signIn(PEOPLE.ivanova)
   const list = await openWorks(page)
 
+  // в строке только имя и то, что с работой делают: окно и попытки живут
+  // в настройках, где их и правят
   await expect(list.locator('.course-row')).toHaveCount(3)
-  await expect(list.locator('.badge.state-open')).toHaveText('открыта')
-  await expect(list.locator('.badge.state-closed')).toHaveText('закрыта')
-  await expect(list.locator('.badge.state-planned')).toHaveText('запланирована')
+  const closed = list.locator('.course-row', { hasText: 'Контрольная' })
+  await expect(closed.getByRole('button', { name: 'Настройки' })).toBeVisible()
+
+  await closed.getByRole('button', { name: 'Проверка' }).click()
+
+  await expect(page.locator('.page-header')).toContainText('закрыта')
 })
 
 test('задачи видны с формулами и эталонами, порядок меняется', async ({
@@ -39,8 +47,13 @@ test('задачи видны с формулами и эталонами, по�
 
   // формула отрисована KaTeX, а не осталась долларами в тексте
   await expect(work.locator('.task-question .katex').first()).toBeVisible()
-  // два эталона у одной задачи: «x+3» и «3+x» верны одинаково
+
+  // эталоны в списке спрятаны, пока их не попросят: список читают, чтобы
+  // вспомнить, что в работе, и ответы в нём шум
   const second = work.locator('.task-list li').nth(1)
+  await expect(second.locator('.answers .tag')).toHaveCount(0)
+  await work.getByRole('button', { name: 'Показать ответы' }).click()
+  // два эталона у одной задачи: «x+3» и «3+x» верны одинаково
   await expect(second.locator('.answers .tag')).toHaveCount(2)
 
   const first = work.locator('.task-list li').first()
@@ -66,9 +79,6 @@ test('новая работа заводится с окном времени и
   await dialog.getByRole('button', { name: 'Сохранить' }).click()
 
   const work = list.locator('.course-row', { hasText: 'Проверочная по углам' })
-  // окно в будущем и есть «черновик»: работа запланирована, а не открыта
-  await expect(work.locator('.badge')).toHaveText('запланирована')
-
   await work.locator('.toggle').click()
   await work.getByRole('button', { name: 'Добавить задачу' }).click()
   const task = page.locator('dialog.modal')
@@ -77,7 +87,12 @@ test('новая работа заводится с окном времени и
   await task.getByRole('button', { name: 'Сохранить' }).click()
 
   await expect(work.locator('.task-list li')).toHaveCount(1)
+  await work.getByRole('button', { name: 'Показать ответы' }).click()
   await expect(work).toContainText('180')
+
+  // окно в будущем и есть «черновик»: работа запланирована, а не открыта
+  await work.getByRole('button', { name: 'Проверка' }).click()
+  await expect(page.locator('.page-header')).toContainText('запланирована')
 })
 
 test('правка работы, в которой уже отвечали, называет цену', async ({

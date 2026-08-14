@@ -18,7 +18,11 @@ import {
   updateTask,
   updateWork,
 } from './api'
-import { dateTime } from './dates'
+import { remember, remembered } from './remember'
+
+// показывать ли эталоны в списке задач: это переключатель вида, а не
+// настройка работы, поэтому он помнится браузером, а не хранится в базе
+const ANSWERS_KEY = 'worksShowAnswers'
 
 /**
  * Работы курса: контрольные, проверочные, домашние.
@@ -41,6 +45,7 @@ export default function Works({ onLoggedOut }) {
   const [tasks, setTasks] = useState([])
   const [editing, setEditing] = useState(null) // {work} | {work: null}
   const [editingTask, setEditingTask] = useState(null) // {task} | {task: null}
+  const [showAnswers, setShowAnswers] = useState(() => remembered(ANSWERS_KEY, false))
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
 
@@ -173,8 +178,6 @@ export default function Works({ onLoggedOut }) {
             {t('works.add')}
           </button>
         </div>
-        <p className="hint">{t('works.hint')}</p>
-
         {works === null ? (
           <p>{t('common.loading')}</p>
         ) : works.length === 0 ? (
@@ -206,17 +209,28 @@ export default function Works({ onLoggedOut }) {
                       {work.title}
                     </button>
 
-                    <span className={`badge state-${work.state}`}>
-                      {t(`works.state.${work.state}`)}
-                    </span>
+                    {/* в шапке только имя и два действия: окно, попытки и
+                        число задач — это разговор о настройках, и живут
+                        они там, где их правят */}
+                    <button
+                      type="button"
+                      className="secondary compact"
+                      disabled={busy}
+                      onClick={() => setEditing({ work })}
+                    >
+                      {t('works.settings')}
+                    </button>
 
-                    <span className="hint what">
-                      {dateTime(work.opens_at)} — {dateTime(work.closes_at)}
-                    </span>
-
-                    <span className="hint">
-                      {t('works.taskCount', { count: work.tasks_count })}
-                    </span>
+                    {/* проверка — своя страница: таблица на тридцать человек
+                        в раскрытой строке не помещается */}
+                    <button
+                      type="button"
+                      className="secondary compact"
+                      disabled={busy}
+                      onClick={() => navigate(`/works/${work.id}`)}
+                    >
+                      {t('table.open')}
+                    </button>
 
                     <button
                       type="button"
@@ -231,33 +245,24 @@ export default function Works({ onLoggedOut }) {
 
                   {open && (
                     <div className="course-body">
-                      <div className="row work-actions">
-                        <span className="hint">
-                          {work.attempts === null
-                            ? t('works.attemptsFree')
-                            : t('works.attemptsLimited', { count: work.attempts })}
-                          {' · '}
-                          {t(work.show_result ? 'works.resultShown' : 'works.resultHidden')}
-                        </span>
-                        <button
-                          type="button"
-                          className="secondary compact"
-                          disabled={busy}
-                          onClick={() => setEditing({ work })}
-                        >
-                          {t('works.settings')}
-                        </button>
-                        {/* проверка — своя страница: таблица на тридцать
-                            человек в раскрытой строке не помещается */}
-                        <button
-                          type="button"
-                          className="secondary compact"
-                          disabled={busy}
-                          onClick={() => navigate(`/works/${work.id}`)}
-                        >
-                          {t('table.open')}
-                        </button>
-                      </div>
+                      {/* ответы по просьбе: список задач читают, чтобы
+                          вспомнить, что в работе, и эталоны в нём шум, пока
+                          не проверяешь. Переключатель помнится: кому они
+                          нужны, нужны каждый раз */}
+                      {tasks.length > 0 && (
+                        <div className="row answers-toggle">
+                          <button
+                            type="button"
+                            className="link"
+                            onClick={() => {
+                              setShowAnswers(!showAnswers)
+                              remember(ANSWERS_KEY, !showAnswers)
+                            }}
+                          >
+                            {t(showAnswers ? 'works.hideAnswers' : 'works.showAnswers')}
+                          </button>
+                        </div>
+                      )}
 
                       {tasks.length === 0 ? (
                         <p className="hint">{t('works.task.none')}</p>
@@ -269,25 +274,12 @@ export default function Works({ onLoggedOut }) {
                                   по нему ищут задачу глазами, и ему нужны
                                   и вес, и своя колонка */}
                               <span className="task-number">{index + 1}.</span>
-                              <div className="task-question">
-                                <Markdown text={task.question} />
-                              </div>
-                              {/* эталоны и кнопки одной строкой: спрятанные
-                                  до наведения кнопки не должны оставлять
-                                  за собой пустую строку */}
-                              <div className="task-line">
-                                <div className="answers">
-                                  {task.answers.length === 0 ? (
-                                    <span className="hint">
-                                      {t('works.task.noAnswers')}
-                                    </span>
-                                  ) : (
-                                    task.answers.map((answer, position) => (
-                                      <span className="tag" key={position}>
-                                        {answer}
-                                      </span>
-                                    ))
-                                  )}
+                              {/* кнопки — в строке условия, а не под ней:
+                                  спрятанные до наведения, они иначе держат
+                                  за собой пустую строку в каждой задаче */}
+                              <div className="task-head">
+                                <div className="task-question">
+                                  <Markdown text={task.question} />
                                 </div>
                                 <div className="task-actions">
                                 <button
@@ -330,6 +322,22 @@ export default function Works({ onLoggedOut }) {
                                 </button>
                                 </div>
                               </div>
+
+                              {showAnswers && (
+                                <div className="answers">
+                                  {task.answers.length === 0 ? (
+                                    <span className="hint">
+                                      {t('works.task.noAnswers')}
+                                    </span>
+                                  ) : (
+                                    task.answers.map((answer, position) => (
+                                      <span className="tag" key={position}>
+                                        {answer}
+                                      </span>
+                                    ))
+                                  )}
+                                </div>
+                              )}
                             </li>
                           ))}
                         </ol>

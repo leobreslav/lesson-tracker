@@ -2111,19 +2111,12 @@ button.compact,
   font-size: 0.85rem;
 }
 
-/*
- * Шапка развёрнутой работы: слева написано, что это за работа, справа —
- * что с ней можно сделать. Черта под ней отделяет разговор о работе
- * целиком от списка её задач: без неё «настройки» и «проверка» читались
- * как действия над первой задачей.
- */
-.work-actions {
-  padding-bottom: 0.5rem;
+/* переключатель эталонов: он про список задач, поэтому стоит над ним и
+   у правого края — где обычно стоят переключатели вида */
+.answers-toggle {
+  justify-content: flex-end;
+  padding-bottom: 0.3rem;
   border-bottom: 1px solid #e6e9eb;
-}
-
-.work-actions .hint {
-  margin-right: auto;
 }
 
 /*
@@ -2466,8 +2459,10 @@ button.compact,
  * состояние отдельной плашкой: «открыта» это первое, что ищут глазами, и
  * искать его внутри даты пришлось бы читая.
  */
+/* имя, два действия и крестик: в шапке работы больше ничего нет — окно и
+   попытки живут в настройках, где их и правят */
 .work-list .course-head {
-  grid-template-columns: 1.5rem minmax(8rem, 1.5fr) auto minmax(9rem, 1fr) auto auto;
+  grid-template-columns: 1.5rem 1fr auto auto auto;
 }
 
 /* у курса в теле две колонки ролей, у работы — одна лента задач: условия
@@ -2576,19 +2571,23 @@ button.compact,
   border: 1px solid #dfe3e6;
 }
 
-.task-line {
+/* условие и кнопки в одной строке: кнопки прижаты к правому краю, а
+   условие занимает всё остальное */
+.task-head {
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.4rem;
-  margin-top: 0.2rem;
+  align-items: baseline;
+  gap: 0.5rem;
 }
 
-.task-line .answers {
+.task-head .task-question {
+  flex: 1;
+}
+
+.task-list .answers {
   display: flex;
   flex-wrap: wrap;
   gap: 0.3rem;
-  margin-right: auto;
+  margin-top: 0.2rem;
 }
 
 .task-actions {

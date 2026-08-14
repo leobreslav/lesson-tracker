@@ -885,7 +885,6 @@
   },
   "works": {
     "title": "Assignments in this course",
-    "hint": "Tests, quizzes and homework — the same thing with different settings. An assignment appears for the students the moment its window opens, so there is no draft state to remember.",
     "none": "No assignments in this course yet.",
     "add": "New assignment",
     "edit": "Assignment settings",
@@ -899,13 +898,6 @@
     "attemptsHint": "An attempt is spent on every submission, whether you have checked it or not.",
     "showResult": "Show the verdict to the student straight away",
     "impact": "{{students}} students have already answered here: {{answers}} answers. Editing is allowed — they will see the change immediately.",
-    "taskCount_one": "{{count}} question",
-    "taskCount_other": "{{count}} questions",
-    "attemptsFree": "attempts: unlimited",
-    "attemptsLimited_one": "{{count}} attempt per question",
-    "attemptsLimited_other": "{{count}} attempts per question",
-    "resultShown": "the verdict is shown at once",
-    "resultHidden": "the verdict is shown after the window closes",
     "delete": "Delete «{{name}}»?",
     "deleteWithTasks": "Delete «{{name}}» with its {{count}} questions? The answers of the students go with it.",
     "state": {
@@ -933,7 +925,9 @@
       "impact": "{{answers}} answers already, {{checked}} of them checked.",
       "recheck_one": "Clear {{count}} verdict",
       "recheck_other": "Clear {{count}} verdicts"
-    }
+    },
+    "showAnswers": "Show answers",
+    "hideAnswers": "Hide answers"
   },
   "table": {
     "open": "Check",
