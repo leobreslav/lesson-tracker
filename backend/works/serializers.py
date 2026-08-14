@@ -123,6 +123,43 @@ class WorkSerializer(serializers.ModelSerializer):
         return fields
 
 
+class SubmissionSerializer(serializers.ModelSerializer):
+    """
+    Отправка глазами учителя: ответ, время и отметка.
+
+    Из полей меняется одно — `is_correct`. Ответ ученика не правится ни при
+    каких обстоятельствах: это его слова, а не наша запись о них.
+    """
+
+    student_name = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Submission
+        fields = (
+            "id",
+            "task",
+            "student",
+            "student_name",
+            "answer",
+            "created_at",
+            "is_correct",
+            "checked_at",
+        )
+        read_only_fields = (
+            "id",
+            "task",
+            "student",
+            "answer",
+            "created_at",
+            "checked_at",
+        )
+
+    def get_student_name(self, submission) -> str:
+        from . import services
+
+        return services.full_name(submission.student)
+
+
 # --- то же самое, но для ученика --------------------------------------------------
 
 

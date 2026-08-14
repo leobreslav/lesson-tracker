@@ -10,6 +10,7 @@ from config.access import IsSchoolMember, IsStudent, IsTeacher, TeacherScopedVie
 from config.errors import Codes, api_error
 from django.db.models import Count
 from django.shortcuts import get_object_or_404
+from django.utils import timezone
 from rest_framework import status
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
@@ -18,7 +19,12 @@ from rest_framework.views import APIView
 
 from . import services
 from .models import Submission, Task, Work
-from .serializers import StudentSubmissionSerializer, TaskSerializer, WorkSerializer
+from .serializers import (
+    StudentSubmissionSerializer,
+    SubmissionSerializer,
+    TaskSerializer,
+    WorkSerializer,
+)
 
 
 class WorkViewSet(TeacherScopedViewSet):
@@ -64,6 +70,24 @@ class WorkViewSet(TeacherScopedViewSet):
         work = self.get_object()
 
         return Response(services.impact_of(work))
+
+    @action(detail=True, methods=["get"])
+    def table(self, request, pk=None):
+        """
+        Сводная таблица: ученики по строкам, задачи по столбцам.
+
+        `?version=` делает опрос дешёвым. Экран спрашивает раз в несколько
+        секунд, воркеров у прода два, и ответ «ничего не изменилось» обязан
+        стоить один агрегат, а не сборку трёхсот ячеек. Совпала версия —
+        отвечаем `changed: false` и больше ничем.
+        """
+        work = self.get_object()
+        version = services.table_version(work)
+
+        if request.query_params.get("version") == version:
+            return Response({"version": version, "changed": False})
+
+        return Response(services.build_table(work))
 
 
 class TaskViewSet(TeacherScopedViewSet):
@@ -127,6 +151,58 @@ class TaskViewSet(TeacherScopedViewSet):
         сами ответы.
         """
         return Response({"reset": services.reset_verdicts(self.get_object())})
+
+
+class SubmissionViewSet(TeacherScopedViewSet):
+    """
+    Отправки учеников: читать и отмечать. Больше ничего.
+
+    Ни создать, ни удалить: журнал пишет ученик, и строка в нём — событие,
+    а не запись, которую правят. Учителю принадлежит **отметка**, и она
+    здесь единственное изменяемое поле.
+
+    Проверяют чаще по задачам, чем по ученикам: открыть столбец и пройти
+    все ответы подряд — глаз настроен на один эталон. Поэтому список
+    сужается и по задаче, и по ученику, а ячейка таблицы — это тот же
+    список из одной пары.
+    """
+
+    serializer_class = SubmissionSerializer
+    queryset = Submission.objects.select_related("student", "task")
+    teacher_path = "task__work__teacher"
+    http_method_names = ["get", "patch", "head", "options"]
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+
+        for param, lookup in (
+            ("task", "task_id"),
+            ("student", "student_id"),
+            ("work", "task__work_id"),
+        ):
+            raw = self.request.query_params.get(param)
+            if raw:
+                queryset = (
+                    queryset.filter(**{lookup: raw})
+                    if raw.isdigit()
+                    else queryset.none()
+                )
+
+        return queryset.order_by("created_at", "id")
+
+    def perform_update(self, serializer):
+        """
+        Отметка ставится и снимается одним и тем же PATCH.
+
+        `null` — «снять»: учитель передумал или увидел, что смотрел не ту
+        отправку. Попытку это не расходует и журнал не трогает: отметка
+        живёт на строке, а строка неизменна.
+        """
+        checked = serializer.validated_data.get("is_correct") is not None
+        serializer.save(
+            checked_at=timezone.now() if checked else None,
+            checked_by=self.request.user if checked else None,
+        )
 
 
 # --- половина ученика --------------------------------------------------------------

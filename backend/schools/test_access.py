@@ -19,6 +19,7 @@ from django.utils import timezone
 from plans.models import PlanBaseline, PlanNode
 from rest_framework.test import APITestCase
 from schedule.models import Course, LessonSlot
+from works.models import Submission
 
 from .matrix import AccessRulesMixin
 from .models import Invitation, School
@@ -250,9 +251,9 @@ class MatrixTests(AccessTestCase):
             detail_url="work-detail",
             obj=work,
             patch={"title": "Другое название"},
-            # цена правки считается по чужим ответам, и спрашивать её про
-            # чужую работу нельзя даже коллеге по курсу
-            actions=("work-impact",),
+            # цена правки и сводная таблица считаются по чужим ответам, и
+            # спрашивать их про чужую работу нельзя даже коллеге по курсу
+            actions=("work-impact", "work-table"),
         )
 
     def test_task(self):
@@ -268,6 +269,27 @@ class MatrixTests(AccessTestCase):
                 "task-impact",
                 {"name": "task-recheck", "method": "post"},
             ),
+        )
+
+
+    def test_submission(self):
+        """
+        Отправка ученика: читает и отмечает её только учитель этой работы.
+
+        Коллега по курсу здесь тоже посторонний — работа личная, и его
+        ученики отвечали на его же контрольной, а не на этой.
+        """
+        work = make_work(self.user, self.course)
+        task = make_task(work)
+        submission = Submission.objects.create(
+            task=task, student=self.student, answer="4"
+        )
+
+        self.assertPersonalObjectRules(
+            list_url="submission-list",
+            detail_url="submission-detail",
+            obj=submission,
+            patch={"is_correct": True},
         )
 
 

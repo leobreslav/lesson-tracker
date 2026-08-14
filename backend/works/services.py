@@ -9,7 +9,7 @@
 from collections import defaultdict
 
 from config.errors import Codes, api_error
-from django.db.models import Count, Q
+from django.db.models import Count, Max
 from django.utils import timezone
 
 from .models import CLOSED, OPEN, PLANNED, Submission, Task, Work
@@ -262,3 +262,151 @@ def totals_for(works, *, student=None) -> dict:
 def enrolled_count(course) -> int:
     """Сколько человек сейчас учится — знаменатель в «ответили 17 из 24»."""
     return course.students.filter(removed_at__isnull=True).count()
+
+
+# --- сводная таблица ---------------------------------------------------------------
+
+
+def table_version(work) -> str:
+    """
+    Метка «в таблице что-то изменилось» — одним запросом.
+
+    Опрос идёт раз в несколько секунд у каждого открытого экрана, а воркеров
+    у прода два: ответ «ничего не изменилось» обязан быть дешёвым, иначе
+    первый же тяжёлый сосед начнёт копить очередь. Считаются три вещи, и
+    вместе они меняются при любом событии таблицы: появилась отправка,
+    поставили или сняли отметку, удалили задачу.
+
+    Не хэш содержимого: хэш пришлось бы собирать по всем строкам, то есть
+    делать ровно ту работу, которой опрос и должен избегать.
+    """
+    numbers = Submission.objects.filter(task__work=work).aggregate(
+        total=Count("id"), last=Max("created_at"), checked=Max("checked_at")
+    )
+    tasks = work.tasks.count()
+
+    return "|".join(
+        str(part)
+        for part in (
+            tasks,
+            numbers["total"],
+            numbers["last"] and numbers["last"].timestamp(),
+            numbers["checked"] and numbers["checked"].timestamp(),
+        )
+    )
+
+
+def build_table(work) -> dict:
+    """
+    Ученики по строкам, задачи по столбцам. Всё одним проходом.
+
+    В ячейке — **последняя** отправка: она и есть текущий ответ. Прошлые
+    никуда не делись, их показывает история ячейки, а в клетке таблицы
+    нужен один ответ, иначе таблицу не прочитать.
+
+    Снятые с курса остаются строками и помечены: их ответы никуда не
+    делись, и смешивать их с работающими нельзя — это разные ответы на
+    вопрос «кто не справился».
+    """
+    from schedule.models import CourseStudent
+
+    rows = list(
+        CourseStudent.objects.filter(course_id=work.course_id)
+        .select_related("student")
+        .order_by("student__first_name", "student__last_name", "student__email")
+    )
+    tasks = list(work.tasks.all())
+
+    # одна выборка на всю таблицу: тридцать учеников на десять задач — это
+    # триста ячеек, и запрос на ячейку убил бы экран первым же классом
+    journal = defaultdict(list)
+    for row in Submission.objects.filter(task__work=work).order_by("created_at", "id"):
+        journal[(row.task_id, row.student_id)].append(row)
+
+    students = []
+    per_task = {task.pk: {"answered": 0, "correct": 0, "wrong": 0, "unchecked": 0} for task in tasks}
+
+    for enrolment in rows:
+        cells = []
+        answered = correct = 0
+
+        for task in tasks:
+            history = journal[(task.pk, enrolment.student_id)]
+            cells.append(cell_of(task, history))
+            if not history:
+                continue
+
+            answered += 1
+            last = history[-1]
+            per_task[task.pk]["answered"] += 1
+            if last.is_correct is True:
+                correct += 1
+                per_task[task.pk]["correct"] += 1
+            elif last.is_correct is False:
+                per_task[task.pk]["wrong"] += 1
+            else:
+                per_task[task.pk]["unchecked"] += 1
+
+        students.append(
+            {
+                "id": enrolment.student_id,
+                "name": full_name(enrolment.student),
+                "email": enrolment.student.email,
+                "active": enrolment.is_active,
+                "answered": answered,
+                "correct": correct,
+                "cells": cells,
+            }
+        )
+
+    return {
+        "version": table_version(work),
+        "changed": True,
+        "work": {
+            "id": work.pk,
+            "title": work.title,
+            "state": work.state(),
+            "course_name": work.course.name,
+        },
+        "tasks": [
+            {
+                "id": task.pk,
+                "position": task.position,
+                "question": task.question,
+                "answers": task.answers,
+                **per_task[task.pk],
+            }
+            for task in tasks
+        ],
+        "students": students,
+    }
+
+
+def cell_of(task, history) -> dict:
+    """
+    Одна клетка: последняя отправка и то, что о ней надо знать сразу.
+
+    `redone` — «переделал после проверки»: последняя отправка не проверена,
+    а раньше отметка уже стояла. Это и есть весь ответ на гонку «учитель
+    проверял, пока ученик отправлял»: отметка осталась на прошлой строке,
+    и видно, что смотрели не то.
+    """
+    if not history:
+        return {"task": task.pk, "submission": None, "attempts": 0}
+
+    last = history[-1]
+    checked_before = any(row.is_correct is not None for row in history[:-1])
+
+    return {
+        "task": task.pk,
+        "submission": last.pk,
+        "attempts": len(history),
+        "answer": last.answer,
+        "verdict": last.is_correct,
+        "at": last.created_at,
+        "redone": last.is_correct is None and checked_before,
+    }
+
+
+def full_name(person) -> str:
+    return " ".join(filter(None, (person.first_name, person.last_name))) or person.email

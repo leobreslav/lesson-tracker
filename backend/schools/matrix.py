@@ -283,6 +283,12 @@ class AccessRulesMixin:
             self.sign_in(self.user)
             self.assertEqual(self.client.get(detail).status_code, 200)
 
+        # id, которого никогда не было: удаление сверяется с ним, а не с
+        # числом 404. Модель, которую не удаляют вовсе (журнал отправок),
+        # отвечает 405 и своим, и чужим — это тоже неотличимость, и
+        # требовать от неё именно 404 значит требовать удаляемости
+        missing = reverse(detail_url, args=[10**9])
+
         with self.subTest(f"{list_url}: чужие не видят и не правят"):
             for person in (self.colleague, self.admin, self.stranger):
                 self.sign_in(person)
@@ -290,7 +296,10 @@ class AccessRulesMixin:
                 self.assertEqual(
                     self.client.patch(detail, patch, format="json").status_code, 404
                 )
-                self.assertEqual(self.client.delete(detail).status_code, 404)
+                self.assertEqual(
+                    self.client.delete(detail).status_code,
+                    self.client.delete(missing).status_code,
+                )
                 self.assertNotIn(
                     obj.pk, [item["id"] for item in self.client.get(listing).json()]
                 )

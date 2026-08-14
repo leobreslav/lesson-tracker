@@ -17,6 +17,7 @@ from schools.testing import (
     SchoolTestMixin,
     make_course,
     make_task,
+    make_user,
     make_work,
     make_year,
 )
@@ -385,3 +386,213 @@ class QueryCountTests(WorkTestCase):
             len(one_work),
             f"запросы растут с работами: {len(one_work)} против {len(six_works)}",
         )
+
+
+# --- сводная таблица ------------------------------------------------------------
+
+
+class TableTests(WorkTestCase):
+    """
+    Ученики по строкам, задачи по столбцам — и три состояния ячейки.
+
+    Проверяется то, из-за чего таблицу вообще собирают на сервере: ячейка
+    показывает **последнюю** отправку, снятые с курса остаются строками, а
+    «переделал после проверки» видно не по времени, а само.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.second = make_task(self.work, "Вторая", position=1)
+        self.sign_in(self.user)
+
+    def table(self, params=None):
+        return self.client.get(reverse("work-table", args=[self.work.pk]), params or {})
+
+    def answer_as(self, student, task, text):
+        self.sign_in(student)
+        self.client.post(
+            reverse("student-answer", args=[task.pk]), {"answer": text}, format="json"
+        )
+        self.sign_in(self.user)
+
+    def test_the_grid_has_a_row_per_student_and_a_column_per_task(self):
+        answer = self.table().json()
+
+        self.assertEqual([task["id"] for task in answer["tasks"]],
+                         [self.task.pk, self.second.pk])
+        self.assertEqual([row["id"] for row in answer["students"]], [self.student.pk])
+        self.assertEqual(len(answer["students"][0]["cells"]), 2)
+
+    def test_an_empty_cell_is_a_state_of_its_own(self):
+        cell = self.table().json()["students"][0]["cells"][0]
+
+        self.assertIsNone(cell["submission"])
+        self.assertEqual(cell["attempts"], 0)
+
+    def test_the_cell_shows_the_last_answer_and_counts_the_rest(self):
+        self.answer_as(self.student, self.task, "сначала")
+        self.answer_as(self.student, self.task, "потом")
+
+        cell = self.table().json()["students"][0]["cells"][0]
+
+        self.assertEqual(cell["answer"], "потом")
+        self.assertEqual(cell["attempts"], 2)
+
+    def test_redone_after_checking_is_marked(self):
+        """
+        Весь ответ на гонку «учитель проверял, пока ученик отправлял».
+
+        Отметка осталась на прошлой строке, ячейка вернулась в «не
+        проверено», и видно, что смотрели не то.
+        """
+        self.answer_as(self.student, self.task, "раз")
+        first = Submission.objects.get()
+        self.client.patch(
+            reverse("submission-detail", args=[first.pk]),
+            {"is_correct": True},
+            format="json",
+        )
+
+        self.answer_as(self.student, self.task, "два")
+
+        cell = self.table().json()["students"][0]["cells"][0]
+        self.assertTrue(cell["redone"])
+        self.assertIsNone(cell["verdict"])
+
+    def test_a_removed_student_stays_a_row_and_is_marked(self):
+        """Его ответы никуда не делись, и смешивать их с работающими нельзя."""
+        self.answer_as(self.student, self.task, "успел")
+        remove_from_course(self.enrolment)
+
+        row = self.table().json()["students"][0]
+
+        self.assertFalse(row["active"])
+        self.assertEqual(row["answered"], 1)
+
+    def test_the_column_counts_who_managed_it(self):
+        """Столбец, с которым не справилась половина класса, — весь смысл."""
+        self.answer_as(self.student, self.task, "верно")
+        self.client.patch(
+            reverse("submission-detail", args=[Submission.objects.get().pk]),
+            {"is_correct": False},
+            format="json",
+        )
+
+        column = self.table().json()["tasks"][0]
+
+        self.assertEqual(
+            (column["answered"], column["correct"], column["wrong"], column["unchecked"]),
+            (1, 0, 1, 0),
+        )
+
+    def test_the_version_makes_an_unchanged_answer_cheap(self):
+        version = self.table().json()["version"]
+
+        answer = self.table({"version": version}).json()
+
+        self.assertFalse(answer["changed"])
+        self.assertNotIn("students", answer)
+
+    def test_any_event_moves_the_version(self):
+        version = self.table().json()["version"]
+
+        self.answer_as(self.student, self.task, "ответ")
+        after_answer = self.table().json()["version"]
+        self.assertNotEqual(after_answer, version)
+
+        self.client.patch(
+            reverse("submission-detail", args=[Submission.objects.get().pk]),
+            {"is_correct": True},
+            format="json",
+        )
+        after_verdict = self.table().json()["version"]
+        self.assertNotEqual(after_verdict, after_answer)
+
+    def test_the_number_of_queries_does_not_grow_with_the_students(self):
+        """Тридцать учеников на десять задач — это триста ячеек."""
+        from django.db import connection
+        from django.test.utils import CaptureQueriesContext
+
+        self.answer_as(self.student, self.task, "ответ")
+
+        with CaptureQueriesContext(connection) as one_student:
+            self.table()
+
+        for index in range(5):
+            extra = make_user(
+                self.school, f"pupil{index}@example.com", student=True
+            )
+            enrol(extra, self.course, by=self.admin)
+            self.answer_as(extra, self.task, f"ответ {index}")
+
+        with CaptureQueriesContext(connection) as six_students:
+            answer = self.table()
+
+        self.assertEqual(len(answer.json()["students"]), 6)
+        self.assertEqual(
+            len(six_students),
+            len(one_student),
+            f"запросы растут с учениками: {len(one_student)} против "
+            f"{len(six_students)}",
+        )
+
+
+class VerdictTests(WorkTestCase):
+    def setUp(self):
+        super().setUp()
+        self.answer("4")
+        self.submission = Submission.objects.get()
+        self.sign_in(self.user)
+
+    def patch(self, value):
+        return self.client.patch(
+            reverse("submission-detail", args=[self.submission.pk]),
+            {"is_correct": value},
+            format="json",
+        )
+
+    def test_a_verdict_stamps_who_and_when(self):
+        self.patch(True)
+
+        self.submission.refresh_from_db()
+        self.assertTrue(self.submission.is_correct)
+        self.assertEqual(self.submission.checked_by, self.user)
+        self.assertIsNotNone(self.submission.checked_at)
+
+    def test_a_verdict_can_be_taken_back(self):
+        self.patch(False)
+
+        self.patch(None)
+
+        self.submission.refresh_from_db()
+        self.assertIsNone(self.submission.is_correct)
+        self.assertIsNone(self.submission.checked_at)
+        self.assertIsNone(self.submission.checked_by)
+
+    def test_the_answer_itself_is_never_editable(self):
+        """Это слова ученика, а не наша запись о них."""
+        self.client.patch(
+            reverse("submission-detail", args=[self.submission.pk]),
+            {"answer": "подправил за него"},
+            format="json",
+        )
+
+        self.submission.refresh_from_db()
+        self.assertEqual(self.submission.answer, "4")
+
+    def test_the_journal_is_read_by_task_for_checking_a_column(self):
+        """Проверяют столбцом: открыть задачу и пройти ответы подряд."""
+        rows = self.client.get(
+            reverse("submission-list"), {"task": self.task.pk}
+        ).json()
+
+        self.assertEqual([row["answer"] for row in rows], ["4"])
+        self.assertEqual(rows[0]["student_name"], self.student.email)
+
+    def test_a_submission_cannot_be_deleted(self):
+        answer = self.client.delete(
+            reverse("submission-detail", args=[self.submission.pk])
+        )
+
+        self.assertEqual(answer.status_code, 405)
+        self.assertTrue(Submission.objects.exists())
