@@ -86,11 +86,15 @@ export default function WorkTable() {
       {table.tasks.length === 0 ? (
         <p className="hint">{t('works.task.none')}</p>
       ) : (
-        <div className="table-scroll">
+        <section className="panel table-scroll">
           <table className="work-table">
             <thead>
               <tr>
                 <th className="who">{t('table.student')}</th>
+                {/* под номером задачи ничего не пишем: числа по столбцу
+                    были третьей строкой мелким шрифтом и делали шапку
+                    шумной. Кто справился — видно по самой колонке, а
+                    подробности живут в окне проверки и в сводке */}
                 {table.tasks.map((task, index) => (
                   <th key={task.id}>
                     <button
@@ -101,14 +105,6 @@ export default function WorkTable() {
                     >
                       {index + 1}
                     </button>
-                    <span className="hint">
-                      {task.unchecked > 0
-                        ? t('table.unchecked', { count: task.unchecked })
-                        : t('table.correctOf', {
-                            correct: task.correct,
-                            answered: task.answered,
-                          })}
-                    </span>
                   </th>
                 ))}
                 <th className="total">{t('table.total')}</th>
@@ -143,7 +139,7 @@ export default function WorkTable() {
               ))}
             </tbody>
           </table>
-        </div>
+        </section>
       )}
 
       <details className="panel">

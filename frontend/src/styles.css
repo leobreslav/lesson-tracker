@@ -2100,11 +2100,18 @@ button.progress-head:hover:not(:disabled) {
   margin: 0;
 }
 
+/* таблица живёт в карточке и занимает её целиком: узкая таблица рядом с
+   плашками во всю ширину читалась как обрезанная */
 .table-scroll {
   overflow-x: auto;
 }
 
 .work-table {
+  /* фиксированная раскладка: имя и итог заданы, а лишнюю ширину поровну
+     делят колонки задач. Иначе её забирало бы имя, и значки сбивались бы
+     в кучу у правого края — таблица перестаёт читаться как сетка */
+  width: 100%;
+  table-layout: fixed;
   border-collapse: collapse;
   font-size: 0.9rem;
 }
@@ -2120,19 +2127,15 @@ button.progress-head:hover:not(:disabled) {
   vertical-align: bottom;
 }
 
-.work-table thead .hint {
-  display: block;
-  font-size: 0.7rem;
-  white-space: nowrap;
-}
-
 .work-table th.who {
+  width: 30%;
   min-width: 10rem;
   font-weight: 400;
   text-align: left;
 }
 
 .work-table .total {
+  width: 5rem;
   padding-left: 0.6rem;
   color: #666;
 }
