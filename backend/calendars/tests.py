@@ -3,10 +3,20 @@ from datetime import date
 
 from django.urls import reverse
 from rest_framework.test import APITestCase
-from schools.testing import YEAR_END, YEAR_START, SchoolTestMixin, make_year
+from schedule.models import Course, CourseAssignment, MasterSlot
+from schools.testing import (
+    YEAR_END,
+    YEAR_START,
+    SchoolTestMixin,
+    make_course,
+    make_master_slot,
+    make_node,
+    make_slot,
+    make_year,
+)
 
 from . import services
-from .models import DayException, SchoolYear
+from .models import DayException, SchoolYear, Term
 
 class CalendarApiTestCase(SchoolTestMixin, APITestCase):
     """The calendar belongs to the school, so an admin is signed in here."""
@@ -155,6 +165,91 @@ class SchoolYearApiTests(CalendarApiTestCase):
 
         self.assertEqual(response.status_code, 204)
         self.assertFalse(DayException.objects.exists())
+
+
+class YearDeletionTests(CalendarApiTestCase):
+    """
+    Удаление года — самая разрушительная кнопка в приложении.
+
+    Курсы висят на годе каскадом, а на курсах — назначения, методисты и всё
+    школьное расписание. Держат это только личные уроки и строки плана
+    через PROTECT, и раньше их сопротивление приезжало пятисоткой.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.course = make_course(self.school, year=self.year, name="9Б Алгебра")
+
+    def usage(self):
+        return self.client.get(reverse("schoolyear-usage", args=[self.year.pk]))
+
+    def delete(self):
+        return self.client.delete(reverse("schoolyear-detail", args=[self.year.pk]))
+
+    def test_usage_counts_everything_the_year_would_take(self):
+        make_master_slot(self.course, self.user)
+        self.make_exception(date(2026, 11, 4), date(2026, 11, 4), services.KIND_HOLIDAY)
+        Term.objects.create(
+            year=self.year,
+            name="1 четверть",
+            start_date=YEAR_START,
+            end_date=date(2026, 10, 25),
+            position=0,
+        )
+
+        body = self.usage().json()
+
+        self.assertEqual(body["courses"], 1)
+        # make_master_slot назначает учителя на курс, как и остальные билдеры
+        self.assertEqual(body["assignments"], 1)
+        self.assertEqual(body["master_slots"], 1)
+        self.assertEqual(body["terms"], 1)
+        self.assertEqual(body["exceptions"], 1)
+        self.assertEqual((body["slots"], body["plan_rows"]), (0, 0))
+
+    def test_lessons_refuse_the_deletion_with_a_code(self):
+        make_slot(self.user, self.course)
+
+        response = self.delete()
+
+        self.assertEqual(response.status_code, 400, response.content)
+        body = response.json()
+        self.assertEqual(body["code"], "year_in_use")
+        self.assertEqual(body["params"]["slots"], 1)
+        self.assertTrue(SchoolYear.objects.filter(pk=self.year.pk).exists())
+
+    def test_a_plan_alone_refuses_it_too(self):
+        """У курса может не быть ни одного урока, а план уже написан."""
+        make_node(self.user, self.course, "Первый урок")
+
+        response = self.delete()
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json()["params"]["plan_rows"], 1)
+
+    def test_an_empty_year_goes_and_takes_its_courses(self):
+        """Отказ — только про чужую работу; пустой год удаляется как прежде."""
+        make_master_slot(self.course, self.user)
+
+        response = self.delete()
+
+        self.assertEqual(response.status_code, 204, response.content)
+        self.assertFalse(SchoolYear.objects.filter(pk=self.year.pk).exists())
+        self.assertFalse(Course.objects.filter(pk=self.course.pk).exists())
+
+    def test_the_usage_numbers_say_what_the_deletion_did(self):
+        """
+        Сторож против расхождения: показанное в окне и снесённое на сервере
+        должны быть одним и тем же числом.
+        """
+        make_master_slot(self.course, self.user)
+        before = self.usage().json()
+
+        self.assertEqual(self.delete().status_code, 204)
+
+        self.assertEqual(before["courses"], 1)
+        self.assertEqual(before["master_slots"], MasterSlot.objects.count() + 1)
+        self.assertEqual(before["assignments"], CourseAssignment.objects.count() + 1)
 
 
 class DayExceptionApiTests(CalendarApiTestCase):

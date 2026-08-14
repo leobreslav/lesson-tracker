@@ -213,7 +213,8 @@
     "reviewer_required": "This course has several methodists — choose one.",
     "not_a_methodist": "That person does not approve the plan of this course.",
     "comment_required": "Say what to fix — a plan returned without a word is a riddle.",
-    "review_closed": "This request is no longer waiting for a decision."
+    "review_closed": "This request is no longer waiting for a decision.",
+    "year_in_use": "The year is in use: its courses hold {{slots}} lessons and {{plan_rows}} plan rows. Their teachers have to clear them first."
   },
   "classPicker": {
     "label": "Classes:",
@@ -286,7 +287,6 @@
     "drag": "Drag",
     "dropHere": "Drop a lesson here",
     "title": "Lesson plan",
-    "counts": "Lessons: <0>{{lessons}}</0>. Sections: {{sections}}.",
     "loose": " Outside the blocks: {{count}}.",
     "titleLabel": "Title",
     "noteLabel": "Note",
@@ -328,7 +328,6 @@
     "refreshTemplate": "Update in the library",
     "refreshHint": "«{{title}}» will be overwritten with the current plan of this course. Colleagues who already took a copy keep theirs.",
     "published": "«{{title}}» is on the shelf.",
-    "openLesson": "Open the lesson",
     "hasContent": "The lesson has content",
     "hasAttachments_one": "{{count}} attachment",
     "hasAttachments_other": "{{count}} attachments",
@@ -437,7 +436,6 @@
     "studyDaysOf": "study days between {{start}} and {{end}}",
     "totalDays": "days in total",
     "deleteYear": "Delete the year",
-    "deleteYearConfirm": "Delete the school year «{{name}}» together with its markup?",
     "empty": {
       "title": "No school year yet",
       "hint": "A school year sets the boundaries lessons are counted inside. Breaks, holidays and terms are marked up here too.",
@@ -476,16 +474,29 @@
       "deleteConfirm": "Delete the term «{{name}}»?",
       "emptyReadOnly": "No quarters have been marked up in this school yet."
     },
-    "readOnly": "The calendar belongs to the school — only an administrator edits it."
+    "readOnly": "The calendar belongs to the school — only an administrator edits it.",
+    "removeYear": {
+      "title": "Delete the school year «{{name}}»?",
+      "hint": "It will take with it:",
+      "courses_one": "{{count}} course of the school",
+      "courses_other": "{{count}} courses of the school",
+      "assignments_one": "{{count}} teaching assignment",
+      "assignments_other": "{{count}} teaching assignments",
+      "masterSlots_one": "{{count}} lesson of the school timetable",
+      "masterSlots_other": "{{count}} lessons of the school timetable",
+      "terms_one": "{{count}} term",
+      "terms_other": "{{count}} terms",
+      "exceptions_one": "{{count}} day of calendar markup",
+      "exceptions_other": "{{count}} days of calendar markup",
+      "blocked": "The courses of this year hold other people's work: {{slots}} lessons and {{rows}} plan rows. The year cannot be deleted while they are there — their teachers have to clear them first.",
+      "confirm": "Delete the year"
+    }
   },
   "classes": {
     "title": "Classes",
-    "placeholder": "Class name, for example 9B",
-    "nameLabel": "Class name",
     "newNameLabel": "New class name",
     "rename": "Rename",
     "delete": "Delete the class {{name}}",
-    "deleteConfirm": "Delete the class «{{name}}»?",
     "stats": "lessons {{total}} · past {{past}} · left {{remaining}} · cancelled {{cancelled}}",
     "needYear": {
       "title": "A school year first",
@@ -577,7 +588,6 @@
       "deleteConfirm": "Delete the course «{{name}}»?",
       "pickSubject": "subject…",
       "newSubject": "New subject name",
-      "addSubject": "Add a subject",
       "pickGrade": "year group…",
       "noTeacher": "nobody teaches it yet",
       "unassign": "Take {{name}} off this course",
@@ -593,15 +603,11 @@
       "teaches": "Teaches the course:"
     },
     "people": {
-      "title": "Teachers",
-      "hint": "An invitation is written before the person first signs in: they get in with the Google account on that address.",
       "admin": "administrator",
       "emailPlaceholder": "Email address",
       "inviteAsAdmin": "invite as an administrator",
       "invite": "Invite",
-      "invited": "Invitations",
       "pending": "waiting for the first sign-in",
-      "accepted": "accepted",
       "withdraw": "Withdraw the invitation"
     },
     "profile": {

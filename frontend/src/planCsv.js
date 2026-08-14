@@ -11,12 +11,12 @@
  * тот же — из словаря `errors.*`. Импортирует всё равно сервер.
  */
 
-export const CSV_HEADER = ['id', 'Тема', 'Урок', 'Заметка']
-export const HEADER_TEXT = CSV_HEADER.join(',')
+const CSV_HEADER = ['id', 'Тема', 'Урок', 'Заметка']
+const HEADER_TEXT = CSV_HEADER.join(',')
 const HEADER_NORMALIZED = CSV_HEADER.map(normalizedCell)
 
 const TITLE_LIMIT = 200
-export const MAX_ROWS = 2000
+const MAX_ROWS = 2000
 
 function normalizedCell(cell) {
   return cell.replace(/\s+/g, '').toLowerCase()

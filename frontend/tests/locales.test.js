@@ -214,3 +214,42 @@ test('the week starts on Monday, whatever the language', () => {
     assert.deepEqual(weekOrder(language), [0, 1, 2, 3, 4, 5, 6], String(language))
   }
 })
+
+test('the dictionary has no keys the code stopped asking for', () => {
+  // Обратная сторона проверки выше. Та ловит опечатку в `t()`, эта — мусор:
+  // раздел переделали, ключи остались, и через полгода никто не отличит
+  // живую фразу от памятника прошлой версии экрана. Ключей шестьсот, руками
+  // это не проверяется вовсе.
+  const dir = fileURLToPath(new URL('../src', import.meta.url))
+  const literal = new Set()
+  const prefixes = []
+
+  for (const name of readdirSync(dir)) {
+    if (!/\.(js|jsx)$/.test(name) || name === 'i18n.js') continue
+
+    const source = readFileSync(join(dir, name), 'utf8')
+    // берём любую строку, похожую на ключ, а не только сразу после `t(`:
+    // ключ приезжает и тернарником, и списком, и через переменную —
+    // ложно живой ключ здесь дешевле ложно мёртвого
+    for (const [, key] of source.matchAll(/['"`]([a-z][\w]*(?:\.[\w]+)+)['"`]/g)) {
+      literal.add(key)
+    }
+    // ключи, собираемые на лету: `t(`nav.${section}`)` — живым считается
+    // весь раздел, потому что имена значений код знает, а тест нет
+    for (const [, key] of source.matchAll(/\bt\(\s*`([\w.]+\.)\$\{/g)) prefixes.push(key)
+  }
+
+  assert.ok(prefixes.length > 0, 'no dynamic keys found — did the scan break?')
+
+  // коды ошибок и предупреждений приходят с сервера, в коде их нет
+  prefixes.push('errors.', 'warnings.')
+
+  const stale = leaves(en)
+    // счётчик зовут по базовому имени, суффикс подставляет i18next
+    .map((key) => key.replace(/_(one|few|many|other)$/, ''))
+    .filter(
+      (key) => !literal.has(key) && !prefixes.some((prefix) => key.startsWith(prefix)),
+    )
+
+  assert.deepEqual([...new Set(stale)], [], 'keys in en.json that nothing asks for')
+})

@@ -346,6 +346,10 @@ def course_progress(
     """
     Где курс идёт по году: положение, резерв, потери и ближайшие уроки.
 
+    Отменённые считаются числом, без разбивки по причинам: на экране она
+    была единственным местом, где высота плашки зависела от данных, а
+    причины видны в расписании, где отмену и ставили.
+
     **Главное число — резерв**: `слоты минус уроки плана`. Плюс значит, что
     в году есть незанятые дни, минус — что план не помещается и его придётся
     сократить. Порогов и промежуточных состояний нет: либо помещается, либо
@@ -370,10 +374,6 @@ def course_progress(
     upcoming = [entry for entry in matched if entry.slot.date >= today]
     fits = len(matched) == lessons_total
 
-    by_reason: dict[str, int] = {}
-    for slot in cancelled:
-        by_reason[slot.reason or ""] = by_reason.get(slot.reason or "", 0) + 1
-
     return {
         "lessons_total": lessons_total,
         "slots_total": slots_total,
@@ -383,62 +383,8 @@ def course_progress(
         "next": [lesson_position(entry) for entry in upcoming[:ahead]],
         "last_lesson_date": matched[-1].slot.date if fits and matched else None,
         "missing": lessons_total - len(matched),
-        "cancelled": sum(by_reason.values()),
-        "cancelled_by_reason": by_reason,
+        "cancelled": sum(1 for _ in cancelled),
         "extra": sum(1 for entry in with_slot if entry.slot.is_extra),
-    }
-
-
-def baseline_diff(rows: Iterable, lessons: Sequence[Lesson]) -> dict:
-    """
-    Насколько план разошёлся с зафиксированным эталоном.
-
-    Две категории, а не сальдо: **добавлено** и **удалено**. Обе плохие, но
-    по-разному — рост съедает резерв, удаление означает выкинутый материал,
-    и «плюс три минус три» тут не ноль, а шесть событий.
-
-    Считается по id узлов, а не по названиям: переименованный урок остаётся
-    тем же уроком, а два «Контрольная работа» в разных темах — разными.
-    Удалённый и заново заведённый урок честно считается и удалённым, и
-    добавленным: это и есть две правки.
-
-    По темам показывается только рост: дефицита по теме не бывает — тема,
-    из которой убрали урок, просто стала короче, а не «должна» его.
-    """
-    known = {row.node_id for row in rows if row.node_id}
-    alive = {lesson.node.pk for lesson in lessons}
-
-    added = [lesson for lesson in lessons if lesson.node.pk not in known]
-    removed = sum(
-        1
-        for row in rows
-        if not row.is_section and row.node_id and row.node_id not in alive
-    )
-
-    grown: dict[str | None, int] = {}
-    for lesson in added:
-        title = lesson.section.title if lesson.section else None
-        grown[title] = grown.get(title, 0) + 1
-
-    return {
-        "added": len(added),
-        "removed": removed,
-        "themes": [
-            {"title": title, "added": count}
-            for title, count in sorted(
-                grown.items(), key=lambda item: (-item[1], item[0] or "")
-            )
-        ],
-    }
-
-
-def lesson_position(entry: LayoutEntry) -> dict:
-    """Урок плана вместе с датой, на которую он попал."""
-    return {
-        "number": entry.lesson.number,
-        "title": entry.lesson.node.title,
-        "section_title": entry.lesson.section.title if entry.lesson.section else None,
-        "date": entry.slot.date if entry.slot else None,
     }
 
 

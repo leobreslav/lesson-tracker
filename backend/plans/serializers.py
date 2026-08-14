@@ -66,22 +66,6 @@ def tree_payload(owner) -> dict:
     return {"nodes": nodes, "counts": services.counts(tree)}
 
 
-def flat_payload(owner) -> dict:
-    lessons = services.flatten_lessons(owner)
-
-    return {
-        "lessons": [
-            {
-                **node_payload(item.node, item.number),
-                "section_id": item.section.pk if item.section else None,
-                "section_title": item.section.title if item.section else "",
-            }
-            for item in lessons
-        ],
-        "counts": services.counts(services.get_tree(owner)),
-    }
-
-
 def layout_payload(entries) -> dict:
     """The layout as JSON. Stored nowhere — recomputed on every request."""
 

@@ -15,13 +15,15 @@ by accident, which is the right way round.
 
 import logging
 from contextlib import contextmanager
-from io import StringIO
+from datetime import date, timedelta
+from io import BytesIO, StringIO
 from unittest import mock
 
 from botocore.exceptions import EndpointConnectionError
 from django.core.management import call_command
 from django.core.management.base import CommandError
 from django.test import SimpleTestCase, TestCase, override_settings
+from django.utils import timezone
 from django.urls import reverse
 from library.models import PlanTemplateRow
 from library.services import import_into_course
@@ -41,6 +43,7 @@ from schools.testing import (
 )
 
 from . import services, storage
+from .management.commands import backup_db
 from .models import Attachment, StoredFile
 
 # a lesson body worth round-tripping: two kinds of maths, a blank line and a
@@ -689,6 +692,7 @@ class FakeR2:
         # {bucket: {key: (size, etag)}}
         self.buckets = {name: dict(items) for name, items in buckets.items()}
         self.copies = []
+        self.deleted = []
         self.failing = set()
 
     def get_paginator(self, name):
@@ -713,6 +717,13 @@ class FakeR2:
         self.buckets[Bucket][Key] = self.buckets[CopySource["Bucket"]][
             CopySource["Key"]
         ]
+
+    def put_object(self, Bucket, Key, Body):  # noqa: N803
+        self.buckets[Bucket][Key] = (len(Body), "put")
+
+    def delete_object(self, Bucket, Key):  # noqa: N803
+        self.deleted.append(Key)
+        self.buckets[Bucket].pop(Key, None)
 
 
 @override_settings(
@@ -885,3 +896,88 @@ class KeyTests(TestCase):
         self.assertIn("attachment;", header)
         self.assertIn("filename*=UTF-8''", header)
         self.assertIn("%D0%9A", header)
+
+
+# --- the database dump ----------------------------------------------------------------
+
+
+@override_settings(
+    R2_ENDPOINT_URL="https://r2.example",
+    R2_BACKUP_BUCKET_NAME="backup",
+    R2_BACKUP_ACCESS_KEY_ID="key",
+    R2_BACKUP_SECRET_ACCESS_KEY="secret",
+)
+class DatabaseDumpTests(SimpleTestCase):
+    """
+    Дамп базы уезжает в тот же резервный бакет, но под своим префиксом и со
+    своим сроком жизни: копия двухмесячной давности — это уже не резерв.
+    """
+
+    def run_backup(self, r2, body=b"gzipped dump", **options):
+        out = StringIO()
+        options.setdefault("name", "lessons_2026-08-14_0330.sql.gz")
+        with mock.patch.object(storage, "backup_client", return_value=r2):
+            call_command(
+                "backup_db", stdout=out, stderr=out, stdin=BytesIO(body), **options
+            )
+        return out.getvalue()
+
+    def test_the_dump_lands_under_its_own_prefix(self):
+        """
+        Префикс `db/` — не косметика: `backup_files` ходит по `files/`, и с
+        общим префиксом `--restore` вернул бы дампы в бакет вложений.
+        """
+        r2 = FakeR2(backup={})
+
+        output = self.run_backup(r2)
+
+        self.assertIn("db/lessons_2026-08-14_0330.sql.gz", r2.buckets["backup"])
+        self.assertIn("загружено", output)
+
+    def test_an_empty_dump_is_refused(self):
+        """Пустой объект в бакете выглядит копией — до того дня, когда нужен."""
+        with self.assertRaises(CommandError):
+            self.run_backup(FakeR2(backup={}), body=b"")
+
+    def dump_key(self, days_ago: int) -> str:
+        """Имя дампа, снятого столько-то дней назад. Считается от сегодня:
+        зашитые даты в тесте про срок хранения протухают вместе с ним."""
+        return f"db/lessons_{timezone.localdate() - timedelta(days=days_ago)}_0330.sql.gz"
+
+    def test_old_copies_go_and_fresh_ones_stay(self):
+        old, fresh = self.dump_key(30), self.dump_key(1)
+        r2 = FakeR2(backup={old: (10, "a"), fresh: (10, "b")})
+
+        self.run_backup(r2, keep_days=7)
+
+        self.assertEqual(r2.deleted, [old])
+        self.assertIn(fresh, r2.buckets["backup"])
+
+    def test_it_never_touches_the_attachments(self):
+        """Вложения живут в том же бакете и удаляться не должны никогда."""
+        old = self.dump_key(30)
+        r2 = FakeR2(backup={"files/1/a/one.pdf": (10, "a"), old: (10, "b")})
+
+        self.run_backup(r2, keep_days=1)
+
+        self.assertEqual(r2.deleted, [old])
+        self.assertIn("files/1/a/one.pdf", r2.buckets["backup"])
+
+    def test_a_name_it_cannot_read_is_left_alone(self):
+        """Не понял, что за объект, — не удаляй."""
+        self.assertEqual(
+            backup_db.expired(
+                ["db/dump.sql.gz", "db/lessons_вчера.sql.gz"], 7, date(2030, 1, 1)
+            ),
+            [],
+        )
+
+    def test_a_slash_in_the_name_is_refused(self):
+        with self.assertRaises(CommandError):
+            self.run_backup(FakeR2(backup={}), name="../files/1/a/one.pdf")
+
+    def test_without_backup_keys_it_says_so(self):
+        with override_settings(R2_BACKUP_ACCESS_KEY_ID=""), self.assertRaises(
+            CommandError
+        ):
+            self.run_backup(FakeR2(backup={}))

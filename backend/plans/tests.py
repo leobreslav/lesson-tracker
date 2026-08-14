@@ -152,15 +152,19 @@ class TreeApiTests(PlanTestCase):
             {"lessons": 7, "sections": 3},
         )
 
-    def test_flat_endpoint_lists_lessons_in_order(self):
-        response = self.client.get(
-            reverse("plannode-flat"), {"course": self.course.pk}
-        )
+    def test_lessons_come_out_in_order_with_their_sections(self):
+        """
+        Последовательность уроков — та самая, что ложится на слоты.
 
-        lessons = response.json()["lessons"]
-        self.assertEqual([item["number"] for item in lessons], list(range(1, 8)))
-        self.assertEqual(lessons[0]["section_title"], "Тригонометрия")
-        self.assertEqual(lessons[4]["section_title"], "")
+        Раньше её проверяли через `/api/plan/flat/`; эндпоинт убран как
+        никем не вызываемый, а сама последовательность нужна по-прежнему —
+        на ней держится вся раскладка, поэтому проверяем функцию.
+        """
+        lessons = services.flatten_lessons(self.owner())
+
+        self.assertEqual([item.number for item in lessons], list(range(1, 8)))
+        self.assertEqual(lessons[0].section.title, "Тригонометрия")
+        self.assertIsNone(lessons[4].section)
 
     def test_another_users_class_is_not_found(self):
         response = self.tree(self.alien_class)

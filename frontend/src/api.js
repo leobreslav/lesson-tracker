@@ -105,6 +105,10 @@ export const createSchoolYear = (fields) =>
 export const deleteSchoolYear = (id) =>
   request(`/api/calendar/years/${id}/`, { method: 'DELETE' })
 
+// что стоит на годе: спрашиваем до удаления, потому что каскад уносит
+// курсы и школьное расписание, а не только разметку календаря
+export const fetchYearUsage = (id) => request(`/api/calendar/years/${id}/usage/`)
+
 export const fetchYearDays = (id) => request(`/api/calendar/years/${id}/days/`)
 
 export const fetchYearStats = (id) => request(`/api/calendar/years/${id}/stats/`)
@@ -155,8 +159,6 @@ export const renameCourse = (id, name) =>
 
 export const deleteCourse = (id) =>
   request(`/api/courses/${id}/`, { method: 'DELETE' })
-
-export const fetchSchool = () => request('/api/school/')
 
 export const renameMySchool = (name) =>
   request('/api/school/', { method: 'PATCH', body: { name } })
@@ -379,9 +381,6 @@ export const downloadPlan = async (classId, format = 'xlsx') => {
 /** The whole of one lesson, content included — the tree only carries flags. */
 export const fetchPlanNode = (id) => request(`/api/plan/${id}/`)
 
-export const fetchAttachments = (params) =>
-  request(`/api/attachments/?${new URLSearchParams(params)}`)
-
 export const uploadAttachment = ({ planRow, templateRow, file, title }) => {
   const form = new FormData()
   if (planRow) form.append('plan_row', planRow)
@@ -520,9 +519,6 @@ export const importFromSchool = (payload) =>
   request('/api/schedule/import-from-school/', { method: 'POST', body: payload })
 
 // --- schedule lessons ---
-
-export const fetchSlots = (classId) =>
-  request(`/api/slots/?course=${encodeURIComponent(classId)}`)
 
 export const fetchSlotStats = (classId) =>
   request(`/api/slots/stats/?course=${encodeURIComponent(classId)}`)

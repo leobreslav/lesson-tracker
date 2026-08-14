@@ -102,3 +102,74 @@ test('термы показаны и считают свои учебные дн
   await expect(terms.getByText('1 четверть')).toBeVisible()
   await expect(terms.locator('.terms li').first()).toContainText(/учебн/)
 })
+
+/**
+ * Удаление года: окно называет цену, а чужая работа его останавливает.
+ *
+ * Каскад года уносит курсы школы, а с ними назначения и всё школьное
+ * расписание. Раньше подтверждение обещало «разметку», а на школе с
+ * импортированными уроками приходила пятисотка.
+ */
+test('окно удаления года перечисляет, что уйдёт вместе с ним', async ({
+  page,
+  signIn,
+  api,
+}) => {
+  const admin = await api(PEOPLE.admin)
+  const year = await admin.post('/api/calendar/years/', {
+    name: '2030/2031',
+    start_date: '2030-09-02',
+    end_date: '2031-05-31',
+  })
+  const course = await admin.post('/api/courses/', {
+    year: year.body.id,
+    name: 'Пробный курс',
+  })
+  const members = await admin.get('/api/school/members/')
+  const her = members.body.find((item) => item.email === PEOPLE.ivanova)
+  await admin.post('/api/school/assignments/', {
+    course: course.body.id,
+    teacher: her.id,
+  })
+  await admin.post('/api/school/master-slots/', {
+    year: year.body.id,
+    course: course.body.id,
+    teacher: her.id,
+    date: '2030-09-02',
+    lesson_number: 1,
+  })
+
+  await signIn(PEOPLE.admin)
+  await page.goto('/year')
+  await ready(page)
+  await page.getByRole('button', { name: '2030/2031', exact: true }).click()
+  await page.getByRole('button', { name: 'Удалить год' }).click()
+
+  const dialog = page.locator('dialog.modal')
+  await expect(dialog).toContainText('1 курс школы')
+  await expect(dialog).toContainText('1 назначение')
+  await expect(dialog).toContainText('1 урок школьного расписания')
+
+  await dialog.getByRole('button', { name: 'Удалить год' }).click()
+  await expect(dialog).toBeHidden()
+  await expect(page.getByRole('button', { name: '2030/2031', exact: true })).toHaveCount(0)
+})
+
+test('год с чужими уроками не удаляется, и окно объясняет почему', async ({
+  page,
+  signIn,
+}) => {
+  // у засеянного года уроки уже есть — их поставила Иванова
+  await signIn(PEOPLE.admin)
+  await page.goto('/year')
+  await ready(page)
+  await page.getByRole('button', { name: 'Удалить год' }).click()
+
+  const dialog = page.locator('dialog.modal')
+  await expect(dialog).toContainText('чужая работа')
+  // подтверждения в этом окне нет вовсе: нажимать нечего
+  await expect(dialog.getByRole('button', { name: 'Удалить год' })).toHaveCount(0)
+
+  await dialog.getByRole('button', { name: 'Закрыть' }).click()
+  await expect(page.locator('.calendar-side')).toBeVisible()
+})

@@ -28,7 +28,6 @@ from .serializers import (
     PlanNodeUpdateSerializer,
     baseline_payload,
     check_structure,
-    flat_payload,
     layout_payload,
     request_payload,
     review_payload,
@@ -147,11 +146,6 @@ class PlanNodeViewSet(TeacherScopedViewSet):
 
     def list(self, request, *args, **kwargs):
         return Response(tree_payload(self.owner_of(self.requested_course())))
-
-    @action(detail=False, methods=["get"])
-    def flat(self, request):
-        """Only the lessons, in order — the sequence the schedule will get."""
-        return Response(flat_payload(self.owner_of(self.requested_course())))
 
     def layout_entries(self, course):
         """Matching the plan to the schedule. Queries here, maths in services."""

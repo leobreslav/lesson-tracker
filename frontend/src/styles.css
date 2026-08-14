@@ -2456,6 +2456,15 @@ button.link.toggle {
   margin: 0 0 0.35rem;
 }
 
+/* что унесёт операция: список, а не абзац — пять чисел подряд в строку
+   не читаются, а глазами считают именно их */
+.loss-list {
+  margin: 0;
+  padding-left: 1.1rem;
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
 .csv-cost.losing {
   border-color: #e57373;
   background: #fff5f5;

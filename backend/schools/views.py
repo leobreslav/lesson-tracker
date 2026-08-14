@@ -284,39 +284,6 @@ class MemberViewSet(
             .order_by("first_name", "last_name", "email")
         )
 
-    @action(detail=True, methods=["put"])
-    def methodist(self, request, pk=None):
-        """
-        По каким предметам человек утверждает планы — списком целиком.
-
-        Список, а не «добавить/убрать по одному»: набор короткий, а замена
-        целиком не оставляет полусостояний, если запрос потерялся. Назначает
-        только администратор школы; предметы принимаются лишь свои — чужой
-        id так же не существует, как и несуществующий.
-        """
-        from schedule.models import Subject
-
-        person = self.get_object()
-        school = request.user.school
-        wanted = set(
-            Subject.objects.filter(
-                school=school, pk__in=request.data.get("subjects") or []
-            ).values_list("pk", flat=True)
-        )
-
-        with transaction.atomic():
-            SubjectMethodist.objects.filter(user=person).exclude(
-                subject_id__in=wanted
-            ).delete()
-            for subject_id in wanted:
-                SubjectMethodist.objects.get_or_create(
-                    user=person,
-                    subject_id=subject_id,
-                    defaults={"school": school, "assigned_by": request.user},
-                )
-
-        return Response(self.get_serializer(person).data)
-
     def perform_destroy(self, instance):
         """
         Detaching a teacher from the school. Their work is not deleted.

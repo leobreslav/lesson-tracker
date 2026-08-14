@@ -833,8 +833,28 @@ class ProgressTests(LayoutApiTestCase):
 
         self.assertEqual(row["extra"], 1)
         self.assertEqual(row["cancelled"], 3)
-        self.assertEqual(row["cancelled_by_reason"], {"Болезнь": 2, "": 1})
+        # причин здесь нет: их место в расписании, где отмену и ставили
+        self.assertNotIn("cancelled_by_reason", row)
         self.assertEqual(row["reserve"], 3)
+
+    def test_a_plan_can_end_past_the_end_of_the_year(self):
+        """
+        Проверка достижимости, а не арифметики.
+
+        Урок всегда стоит внутри границ года — так его валидирует сервер, —
+        и казалось бы, последний урок плана не может оказаться позже конца
+        года. Может: границы года правятся **после**, и сужение проверяет
+        только разметку календаря, но не расписание. Предупреждение на
+        экране состояния живёт ровно ради этого случая.
+        """
+        self.fill_slots(9)
+        year = self.course.year
+        year.end_date = MONDAY + timedelta(days=1)
+        year.save(update_fields=["end_date"])
+
+        row = self.courses()[self.course.name]
+
+        self.assertGreater(row["last_lesson_date"], str(row["year_end"]))
 
     def test_another_teachers_course_is_not_there(self):
         other = make_course(

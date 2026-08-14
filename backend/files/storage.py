@@ -312,3 +312,28 @@ def copy_object(client, key: str, *, source: str, target: str) -> None:
             Key=key,
             CopySource={"Bucket": source, "Key": key},
         )
+
+
+def put_object(client, bucket: str, key: str, body: bytes) -> None:
+    """
+    Write bytes straight into a bucket.
+
+    Only the database dump comes this way. Attachments never do: they go
+    through django-storages, which the rest of this module wraps — but a dump
+    is not a file of the application, has no `StoredFile` behind it and lives
+    in the backup bucket, which the app's own token cannot even see.
+    """
+    with as_unavailable():
+        client.put_object(Bucket=bucket, Key=key, Body=body)
+
+
+def delete_object(client, bucket: str, key: str) -> None:
+    """
+    Remove one object from a bucket.
+
+    Deliberately not used by `backup_files`: that one never deletes, and this
+    exists for the dumps, which do expire — a copy of the database from two
+    months ago is not a backup, it is a leak with a date on it.
+    """
+    with as_unavailable():
+        client.delete_object(Bucket=bucket, Key=key)

@@ -20,11 +20,11 @@ export const KIND_VACATION = 'vacation'
 export const KIND_WORKDAY = 'workday'
 
 export const STATUS_STUDY = 'study'
-export const STATUS_HOLIDAY = 'holiday'
+const STATUS_HOLIDAY = 'holiday'
 export const STATUS_VACATION = 'vacation'
 export const STATUS_WEEKEND = 'weekend'
 
-export const WEEKDAYS = 7
+const WEEKDAYS = 7
 
 export const STATUSES = [STATUS_STUDY, STATUS_HOLIDAY, STATUS_VACATION, STATUS_WEEKEND]
 

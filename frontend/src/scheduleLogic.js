@@ -1,13 +1,17 @@
 /**
- * The schedule on the client: the copy layout and the counters.
+ * The schedule on the client: the layout a copy would produce.
  *
- * A mirror of schedule/services.py and schedule/views.py::stats — needed for
- * the "how many will be created" preview and for recomputing the panel right
- * after an edit. The server stays the authority: the state is re-read once it
- * answers. Change the rules there, change them here.
+ * A mirror of schedule/services.py — needed for the "how many will be
+ * created" preview. The server stays the authority: the state is re-read
+ * once it answers. Change the rules there, change them here.
+ *
+ * The counters used to be mirrored here too (`buildStats`, a copy of
+ * /api/slots/stats/). Nothing called it: every page that shows counters
+ * reads them from the server. A hand-kept mirror nobody uses is not a
+ * spare — it is a second version of the truth waiting to be believed.
  */
 
-import { addDays, daysBetween, eachDate, formatDate } from './calendarLogic'
+import { addDays, daysBetween, eachDate } from './calendarLogic'
 
 export const MAX_LESSON_NUMBER = 10
 
@@ -115,33 +119,4 @@ export function planClear({ slots, start, end, onlyRegular, classIds = null }) {
       (!classIds || classIds.has(slot.course_id)) &&
       (!onlyRegular || isRegular(slot)),
   ).length
-}
-
-export function buildStats(slots, today = formatDate(new Date())) {
-  const live = slots.filter((slot) => !slot.is_cancelled)
-  const past = live.filter((slot) => slot.date < today).length
-  const cancelled = slots.filter((slot) => slot.is_cancelled)
-
-  const counted = {}
-  cancelled.forEach((slot) => {
-    counted[slot.reason] = (counted[slot.reason] || 0) + 1
-  })
-
-  // the server sorts reasons from frequent to rare — keep the same order, or
-  // the panel list jumps between the local and the server answer
-  const byReason = Object.fromEntries(
-    Object.entries(counted).sort(
-      ([leftReason, left], [rightReason, right]) =>
-        right - left || leftReason.localeCompare(rightReason),
-    ),
-  )
-
-  return {
-    total: live.length,
-    past,
-    remaining: live.length - past,
-    cancelled: cancelled.length,
-    extra: live.filter((slot) => slot.is_extra).length,
-    cancelled_by_reason: byReason,
-  }
 }

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import CalendarGrid, { CalendarLegend } from './CalendarGrid'
 import EmptyState from './EmptyState'
+import Modal from './Modal'
 import TermsPanel from './TermsPanel'
 import RangeDialog from './RangeDialog'
 import {
@@ -17,6 +18,7 @@ import {
   fetchSchoolYears,
   fetchYearDays,
   fetchYearStats,
+  fetchYearUsage,
 } from './api'
 import {
   KIND_HOLIDAY,
@@ -71,6 +73,8 @@ export default function Calendar({ user, onLoggedOut }) {
   const [yearForm, setYearForm] = useState(null) // new-year form; null is closed
   const [rangeForm, setRangeForm] = useState(null) // {start_date, end_date, title}
   const [terms, setTerms] = useState([])
+  // что унесёт удаление года: null — окно закрыто
+  const [removing, setRemoving] = useState(null)
 
   // id of an optimistically added exception until the server answers
   const tempId = useRef(0)
@@ -332,17 +336,35 @@ export default function Calendar({ user, onLoggedOut }) {
     }
   }
 
-  const handleDeleteYear = async () => {
-    if (!window.confirm(t('calendar.deleteYearConfirm', { name: year.name }))) return
+  /**
+   * Удаление года спрашивают окном, а не `confirm`, и с числами.
+   *
+   * Каскад уносит курсы школы, а с ними назначения и всё школьное
+   * расписание — «удалить разметку?» об этом умалчивало. Числа берём с
+   * сервера: только он знает, что там накопилось.
+   */
+  const askDeleteYear = async () => {
+    setSaving(true)
+    try {
+      setRemoving(await fetchYearUsage(year.id))
+    } catch (err) {
+      handleError(err)
+    } finally {
+      setSaving(false)
+    }
+  }
 
+  const handleDeleteYear = async () => {
     setSaving(true)
     try {
       await deleteSchoolYear(year.id)
       const rest = years.filter((item) => item.id !== year.id)
       setYears(rest)
       setYearId(rest[0]?.id ?? null)
+      setRemoving(null)
     } catch (err) {
       handleError(err)
+      setRemoving(null)
     } finally {
       setSaving(false)
     }
@@ -571,7 +593,7 @@ export default function Calendar({ user, onLoggedOut }) {
                   type="button"
                   className="secondary"
                   disabled={saving}
-                  onClick={handleDeleteYear}
+                  onClick={askDeleteYear}
                 >
                   {t('calendar.deleteYear')}
                 </button>
@@ -588,6 +610,59 @@ export default function Calendar({ user, onLoggedOut }) {
           onSubmit={handleCreateVacation}
           onCancel={() => setRangeForm(null)}
         />
+      )}
+
+      {removing && (
+        <Modal onClose={() => setRemoving(null)}>
+          <h3>{t('calendar.removeYear.title', { name: year.name })}</h3>
+
+          {removing.slots || removing.plan_rows ? (
+            /* уроки и планы держат курсы через PROTECT: сервер откажет, и
+               сказать об этом лучше здесь, чем показать ошибку после нажатия */
+            <>
+              <p className="hint warning">
+                {t('calendar.removeYear.blocked', {
+                  slots: removing.slots,
+                  rows: removing.plan_rows,
+                })}
+              </p>
+              <div className="actions">
+                <button type="button" onClick={() => setRemoving(null)}>
+                  {t('common.close')}
+                </button>
+              </div>
+            </>
+          ) : (
+            <>
+              <p>{t('calendar.removeYear.hint')}</p>
+              <ul className="loss-list">
+                {[
+                  ['courses', removing.courses],
+                  ['assignments', removing.assignments],
+                  ['masterSlots', removing.master_slots],
+                  ['terms', removing.terms],
+                  ['exceptions', removing.exceptions],
+                ]
+                  .filter(([, count]) => count > 0)
+                  .map(([key, count]) => (
+                    <li key={key}>{t(`calendar.removeYear.${key}`, { count })}</li>
+                  ))}
+              </ul>
+              <div className="actions">
+                <button type="button" disabled={saving} onClick={handleDeleteYear}>
+                  {t('calendar.removeYear.confirm')}
+                </button>
+                <button
+                  type="button"
+                  className="secondary"
+                  onClick={() => setRemoving(null)}
+                >
+                  {t('common.cancel')}
+                </button>
+              </div>
+            </>
+          )}
+        </Modal>
       )}
     </main>
   )
