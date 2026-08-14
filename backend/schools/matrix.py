@@ -17,6 +17,8 @@ Read the helpers as the specification: if a rule ever changes, it changes in
 one place and every model is re-checked at once.
 """
 
+import re
+
 from django.urls import reverse
 
 
@@ -43,15 +45,105 @@ class AccessRulesMixin:
         if code is not None:
             self.assertEqual(response.json().get("code"), code, response.content)
 
+    # --- дополнительные действия вьюсета -------------------------------------
+
+    def assertActionRules(self, *, actions, obj, people):
+        """
+        То же правило неотличимости, но для `@action`.
+
+        Базовый класс вьюхи закрывает список и `detail`, а действие внутри
+        ходит в модели своим кодом: `get_object_or_404` по queryset'у, а то и
+        просто `objects.filter(pk=...)`. Сторож поверх роутеров такого не
+        видит — класс на месте, права объявлены, — поэтому действия
+        перечисляются здесь, рядом с моделью, которой они принадлежат.
+
+        Проверяется ровно одно: ответ на **наш** id совпадает с ответом на
+        id, которого никогда не было — и кодом, и телом. Что именно вернётся,
+        зависит от действия и от того, кто спрашивает, и утверждением не
+        является: у отфильтрованного списка это законные `200` и пустота, у
+        действия по id — отказ. Важно, что по ответу нельзя узнать о
+        существовании объекта, а тело сверяется потому, что как раз через
+        него утечка и выглядела бы: пустой список против непустого при
+        одинаковом коде.
+
+        Действие описывается либо именем маршрута (id уезжает в путь), либо
+        парой «имя, параметр» — тогда id уходит в query-строку, как у
+        `/api/plan/?course=`.
+        """
+        missing = 10**9
+
+        for spec in actions:
+            name, param, method, body = self.normalize_action(spec)
+
+            for person in people:
+                with self.subTest(f"{name} ({method}) для {person.email}"):
+                    self.sign_in(person)
+                    call = getattr(self.client, method)
+
+                    ours = call(
+                        self.action_url(name, param, obj.pk), body, format="json"
+                    )
+                    unknown = call(
+                        self.action_url(name, param, missing), body, format="json"
+                    )
+
+                    self.assertEqual(
+                        (ours.status_code, self.without_id(ours, obj.pk)),
+                        (unknown.status_code, self.without_id(unknown, missing)),
+                        f"{name} выдаёт существование объекта: "
+                        f"{ours.status_code} {ours.content} против "
+                        f"{unknown.status_code} {unknown.content}",
+                    )
+
+    @staticmethod
+    def without_id(response, pk):
+        """
+        Тело ответа без самого id.
+
+        Отказ DRF повторяет присланное значение («Invalid pk "10"»), и
+        сравнивать такие тела дословно нельзя: они различаются тем, что мы
+        сами и прислали. Всё остальное в теле сравнивается как есть —
+        пустой список против непустого при одинаковом коде это и есть та
+        утечка, которую ищем.
+        """
+        return re.sub(rf"\b{pk}\b", "<id>", response.content.decode())
+
+    @staticmethod
+    def normalize_action(spec):
+        """`"name"` | `("name", "param")` | `{...}` — к одному виду."""
+        if isinstance(spec, str):
+            spec = {"name": spec}
+        elif isinstance(spec, tuple):
+            spec = dict(zip(("name", "param"), spec))
+
+        return (
+            spec["name"],
+            spec.get("param"),
+            spec.get("method", "get"),
+            spec.get("body", {}),
+        )
+
+    @staticmethod
+    def action_url(name, param, pk):
+        if param is None:
+            return reverse(name, args=[pk])
+        return f"{reverse(name)}?{param}={pk}"
+
     # --- rule 1 and 2: an object owned by the school -------------------------
 
-    def assertSchoolObjectRules(self, *, list_url, detail_url, obj, create, patch):
+    def assertSchoolObjectRules(
+        self, *, list_url, detail_url, obj, create, patch, actions=()
+    ):
         """
         The whole matrix for one school-owned model.
 
         `create` is a body that must succeed for an administrator; `patch` a
         body that must change the existing object. Both are sent by several
         people, so they must not depend on who is signed in.
+
+        `actions` — дополнительные действия вьюсета: их закрывает не базовый
+        класс, а собственный код внутри, и проверяются они тем же правилом
+        неотличимости.
         """
         detail = reverse(detail_url, args=[obj.pk])
         listing = reverse(list_url)
@@ -134,15 +226,25 @@ class AccessRulesMixin:
                 self.client.post(listing, create, format="json"), 403, "no_school"
             )
 
+        self.assertActionRules(
+            actions=actions, obj=obj, people=(self.stranger, self.alien_admin)
+        )
+
     # --- rule 3: an object owned by one teacher ------------------------------
 
-    def assertPersonalObjectRules(self, *, list_url, detail_url, obj, patch):
+    def assertPersonalObjectRules(
+        self, *, list_url, detail_url, obj, patch, actions=()
+    ):
         """
         The whole matrix for a model that belongs to one teacher.
 
         Nobody else reaches it — not a colleague sharing the course, not an
         administrator of the school, not another school. The role governs the
         school's shared objects, never somebody's work.
+
+        `actions` проверяются строже, чем у школьного объекта: коллега и
+        администратор своей школы тоже не должны отличать чужой урок от
+        несуществующего.
         """
         detail = reverse(detail_url, args=[obj.pk])
         listing = reverse(list_url)

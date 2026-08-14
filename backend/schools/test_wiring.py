@@ -21,6 +21,8 @@ from config.access import (
     SchoolScopedViewSet,
     TeacherScopedViewSet,
 )
+from pathlib import Path
+
 from django.core.exceptions import FieldDoesNotExist
 from django.test import SimpleTestCase
 from django.urls import URLPattern, URLResolver, get_resolver
@@ -143,3 +145,89 @@ class ApiWiringTests(SimpleTestCase):
             with self.subTest(name):
                 field = view.queryset.model._meta.get_field(view.teacher_path)
                 self.assertEqual(field.related_model.__name__, "User")
+
+
+# Действия, у которых нет объекта на входе: спрашивать «а отличается ли
+# ответ на чужой id» тут не о чем. Причина у каждого своя, и она нужна:
+# ошибиться легко именно здесь, приписав сюда действие с id в теле.
+ACTIONS_WITHOUT_ID = {
+    "lessonslot-agenda": "период и только он: своё расписание за даты",
+    "plannode-layout-agenda": "то же самое, темы уроков за период",
+    "plannode-progress": "все свои курсы разом, id на входе нет",
+    "gradelevel-preset": "«завести 1..N», на вход одно число",
+    "gradelevel-delete-unused": "убрать все параллели без курсов",
+}
+
+
+class ActionCoverageTests(SimpleTestCase):
+    """
+    Сторож для матрицы: каждое действие должно быть в ней перечислено.
+
+    `test_wiring` выше следит за классами вьюх, но действие внутри класса
+    ходит в модели своим кодом — фильтрует руками или не фильтрует вовсе, а
+    класс при этом на месте и права объявлены. Матрица такие действия
+    проверяет (`assertActionRules`), но список в ней ручной, и новое
+    действие в него никто не обязан добавлять.
+
+    Поэтому список сверяется с роутером: появилось действие — либо оно
+    названо в `test_access.py`, либо записано сюда с причиной.
+    """
+
+    STANDARD = {
+        "list",
+        "create",
+        "retrieve",
+        "update",
+        "partial_update",
+        "destroy",
+    }
+
+    def extra_actions(self):
+        """Имена маршрутов всех `@action` под /api/."""
+        found = {}
+
+        def walk(patterns, route=""):
+            for entry in patterns:
+                here = route + str(entry.pattern)
+                if isinstance(entry, URLResolver):
+                    walk(entry.url_patterns, here)
+                    continue
+
+                actions = getattr(entry.callback, "actions", None)
+                if not here.startswith("api/") or not actions:
+                    continue
+                if set(actions.values()) - self.STANDARD:
+                    found[entry.name] = here
+
+        walk(get_resolver().url_patterns)
+        return found
+
+    def test_every_action_is_in_the_matrix_or_excused(self):
+        source = (
+            Path(__file__).resolve().parent / "test_access.py"
+        ).read_text(encoding="utf-8")
+
+        found = self.extra_actions()
+        self.assertGreater(len(found), 20, f"обход сломался: {found}")
+
+        missing = sorted(
+            name
+            for name in found
+            if name not in ACTIONS_WITHOUT_ID and f'"{name}"' not in source
+        )
+
+        self.assertEqual(
+            missing,
+            [],
+            "эти действия не проверены матрицей: добавьте их в actions= "
+            "нужной модели или в ACTIONS_WITHOUT_ID с причиной",
+        )
+
+    def test_the_excuses_still_point_at_something(self):
+        found = self.extra_actions()
+
+        self.assertEqual(
+            sorted(name for name in ACTIONS_WITHOUT_ID if name not in found),
+            [],
+            "в ACTIONS_WITHOUT_ID остались действия, которых больше нет",
+        )

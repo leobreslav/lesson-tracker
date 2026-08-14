@@ -15,7 +15,8 @@ from datetime import date
 
 from calendars.models import DayException, SchoolYear, Term
 from django.urls import reverse
-from plans.models import PlanNode
+from django.utils import timezone
+from plans.models import PlanBaseline, PlanNode
 from rest_framework.test import APITestCase
 from schedule.models import Course, LessonSlot
 
@@ -26,11 +27,13 @@ from .testing import (
     MONDAY,
     YEAR_START,
     SchoolTestMixin,
+    make_attachment,
     make_course,
     make_exception,
     make_master_slot,
     make_node,
     make_slot,
+    make_template,
     make_term,
     make_year,
 )
@@ -80,6 +83,8 @@ class MatrixTests(AccessTestCase):
                 "end_date": "2028-05-31",
             },
             patch={"name": "переименован"},
+            # три действия читают год по id из пути, каждое своим кодом
+            actions=("schoolyear-usage", "schoolyear-days", "schoolyear-stats"),
         )
 
     def test_course(self):
@@ -89,6 +94,37 @@ class MatrixTests(AccessTestCase):
             obj=self.course,
             create={"name": "10А", "year": self.year.pk},
             patch={"name": "9В"},
+            # всё, что берёт курс параметром: план, раскладка, эталон,
+            # выгрузка, импорт и счётчики расписания. Курс школьный, поэтому
+            # спрашивают чужие; свой коллега тут видит **свой** план в общем
+            # курсе, и это правильно
+            actions=(
+                ("plannode-list", "course"),
+                ("plannode-layout", "course"),
+                ("plannode-layout-slots", "course"),
+                ("plannode-layout-summary", "course"),
+                ("plannode-baseline", "course"),
+                ("plannode-export", "course"),
+                ("plannode-export-xlsx", "course"),
+                ("lessonslot-list", "course"),
+                ("lessonslot-stats", "course"),
+                {"name": "plannode-baseline-submit", "param": "course", "method": "post"},
+                {"name": "plannode-import", "param": "course", "method": "post"},
+                {"name": "plannode-import-xlsx", "param": "course", "method": "post"},
+                {"name": "plannode-import-preview", "param": "course", "method": "post"},
+                {
+                    "name": "plannode-import-preview-xlsx",
+                    "param": "course",
+                    "method": "post",
+                },
+                {"name": "lessonslot-bulk", "param": "course", "method": "delete"},
+                {"name": "plantemplate-from-plan", "param": "course", "method": "post"},
+                {
+                    "name": "plan-import-from-template",
+                    "param": "course",
+                    "method": "post",
+                },
+            ),
         )
 
     def test_term(self):
@@ -133,6 +169,12 @@ class MatrixTests(AccessTestCase):
                 "lesson_number": 4,
             },
             patch={"lesson_number": 6},
+            actions=(
+                ("masterslot-list", "course"),
+                ("masterslot-summary", "year"),
+                {"name": "masterslot-bulk", "param": "course", "method": "delete"},
+                {"name": "import-preview", "param": "year", "method": "get"},
+            ),
         )
 
     def test_lesson_slot(self):
@@ -149,6 +191,22 @@ class MatrixTests(AccessTestCase):
             detail_url="plannode-detail",
             obj=self.node,
             patch={"title": "Правка"},
+            # перемещение берёт узел по id из пути: строка плана личная, и
+            # чужой узел не должен отличаться от несуществующего даже для
+            # коллеги по тому же курсу
+            actions=(
+                {"name": "plannode-move", "method": "post", "body": {"direction": "up"}},
+                {
+                    "name": "plannode-move-to",
+                    "method": "post",
+                    "body": {"parent": None, "position": 0},
+                },
+                {
+                    "name": "plansection-move",
+                    "method": "post",
+                    "body": {"direction": "up"},
+                },
+            ),
         )
 
 
@@ -593,3 +651,117 @@ class SuperuserSchoolTests(AccessTestCase):
         )
 
         self.assertCode(response, 403, "school_admin_required")
+
+
+class ActionDoorTests(AccessTestCase):
+    """
+    Действия вьюсетов, у которых нет своей строки в матрице.
+
+    Матрица заводится на модель, а часть `@action` висит на объектах, чьи
+    правила описаны отдельно: вложение отвечает «не ваше» внутри школы,
+    запрос на утверждение виден только методисту курса, шаблон — только
+    своей школе. Правило неотличимости у всех одно, и проверяется оно тем же
+    помощником.
+
+    Сторож поверх роутеров (`test_wiring.py`) сюда не дотягивается: он
+    смотрит на класс вьюхи, а действие внутри ходит в модели своим кодом.
+    """
+
+    def test_attachment_download(self):
+        """
+        Скачивание — единственное место, где ссылку подписывают.
+
+        Внутри школы вложение честно отвечает «не ваше» (это отступление
+        описано в разделе про доступ), поэтому спрашивают только чужие: для
+        них урока коллеги не существует.
+        """
+        attachment = make_attachment(self.node)
+
+        self.assertActionRules(
+            actions=("attachment-download",),
+            obj=attachment,
+            people=(self.stranger, self.alien_admin),
+        )
+
+    def test_plan_review(self):
+        """Утвердить и вернуть может только методист курса — остальным 404."""
+        baseline = PlanBaseline.objects.create(
+            teacher=self.user,
+            course=self.course,
+            status=PlanBaseline.Status.PENDING,
+            submitted_at=timezone.now(),
+        )
+
+        self.assertActionRules(
+            actions=(
+                {"name": "planreview-approve", "method": "post"},
+                {
+                    "name": "planreview-return",
+                    "method": "post",
+                    "body": {"comment": "нет"},
+                },
+            ),
+            obj=baseline,
+            # ни коллега, ни администратор школы методистом не назначены:
+            # роль висит на паре «курс и человек», а не на должности
+            people=(self.colleague, self.admin, self.stranger, self.alien_admin),
+        )
+
+    def test_plan_template(self):
+        """Шаблон школьный: чужая школа не должна отличать его от пустого id."""
+        template = make_template(self.school, self.user)
+
+        self.assertActionRules(
+            actions=(
+                {"name": "plantemplate-update-from-plan", "method": "post"},
+                {"name": "plantemplate-rows", "method": "put", "body": {"rows": []}},
+            ),
+            obj=template,
+            people=(self.stranger, self.alien_admin),
+        )
+
+    def test_school_invite(self):
+        """Приглашение первого администратора — только суперпользователю."""
+        self.assertActionRules(
+            actions=(
+                {
+                    "name": "school-invite",
+                    "method": "post",
+                    "body": {"email": "new@example.com"},
+                },
+            ),
+            obj=self.school,
+            people=(self.user, self.admin, self.stranger, self.alien_admin),
+        )
+
+    def test_copying_takes_the_course_from_the_body(self):
+        """
+        У копирования id курса едет в теле, а не в пути.
+
+        Проверять это тем же правилом стоит именно потому, что тело мимо
+        queryset'а вьюхи проходит: ограничивает его сериализатор, и забыть
+        там ограничение так же легко, как и во вьюхе.
+        """
+        period = {
+            "source_start": "2026-09-07",
+            "source_end": "2026-09-13",
+            "target_start": "2026-09-14",
+            "target_end": "2026-09-20",
+        }
+
+        for name, field in (("lessonslot-copy", "course_id"), ("masterslot-copy", "course")):
+            for person in (self.stranger, self.alien_admin):
+                with self.subTest(f"{name} для {person.email}"):
+                    self.sign_in(person)
+                    ours = self.client.post(
+                        reverse(name), {**period, field: self.course.pk}, format="json"
+                    )
+                    unknown = self.client.post(
+                        reverse(name), {**period, field: 10**9}, format="json"
+                    )
+
+                    self.assertEqual(
+                        (ours.status_code, self.without_id(ours, self.course.pk)),
+                        (unknown.status_code, self.without_id(unknown, 10**9)),
+                        f"{name} выдаёт существование курса: {ours.content}",
+                    )
