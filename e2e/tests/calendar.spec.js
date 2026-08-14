@@ -106,9 +106,9 @@ test('термы показаны и считают свои учебные дн
 /**
  * Удаление года: окно называет цену, а чужая работа его останавливает.
  *
- * Каскад года уносит курсы школы, а с ними назначения и всё школьное
- * расписание. Раньше подтверждение обещало «разметку», а на школе с
- * импортированными уроками приходила пятисотка.
+ * Каскад года уносит курсы школы, а с ними назначения. Раньше
+ * подтверждение обещало «разметку», а на школе с расписанием приходила
+ * пятисотка.
  */
 test('окно удаления года перечисляет, что уйдёт вместе с ним', async ({
   page,
@@ -131,13 +131,6 @@ test('окно удаления года перечисляет, что уйдё
     course: course.body.id,
     teacher: her.id,
   })
-  await admin.post('/api/school/master-slots/', {
-    year: year.body.id,
-    course: course.body.id,
-    teacher: her.id,
-    date: '2030-09-02',
-    lesson_number: 1,
-  })
 
   await signIn(PEOPLE.admin)
   await page.goto('/year')
@@ -148,7 +141,6 @@ test('окно удаления года перечисляет, что уйдё
   const dialog = page.locator('dialog.modal')
   await expect(dialog).toContainText('1 курс школы')
   await expect(dialog).toContainText('1 назначение')
-  await expect(dialog).toContainText('1 урок школьного расписания')
 
   await dialog.getByRole('button', { name: 'Удалить год' }).click()
   await expect(dialog).toBeHidden()

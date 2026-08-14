@@ -7,13 +7,17 @@ Who may see and change what.
 школе перестала означать «сотрудник», поэтому `IsSchoolMember` больше не
 значит «можно» — рядом с ним стоит `IsTeacher`.
 
-There are exactly three access shapes in the project, and they live here
+There are exactly four access shapes in the project, and they live here
 rather than in twenty querysets:
 
 1. a school object, reading — the user belongs to the same school;
 2. a school object, writing — plus the administrator role;
 3. объект курса — и читает, и пишет его назначенный ведущий учитель. Так
-   устроены учебный план, расписание и работы.
+   устроены учебный план и работы;
+4. расписание — читает вся школа, пишет ведущий курса **или**
+   администратор. Единственный объект такой формы, и форма у него такая
+   потому, что расписание одновременно и общий артефакт школы (по нему
+   живут все), и содержимое курса (его правит тот, кто курс ведёт).
 
 Личной формы больше нет. Она была, и держалась на том, что курс могут
 вести двое: тогда расписание, план и работы законно различались у двух
@@ -167,6 +171,44 @@ class SchoolScopedViewSet(viewsets.ModelViewSet):
         # another school is simply not found, on any action including detail
         return super().get_queryset().filter(
             **{self.school_path: self.request.user.school_id}
+        )
+
+
+class IsCourseTeacherOrSchoolAdmin(BasePermission):
+    """
+    Расписание: читает вся школа, пишет ведущий курса или администратор.
+
+    Проверка объектная, потому что «можно ли писать» зависит от курса, а не
+    от человека вообще: свой курс учитель правит целиком, чужой не трогает.
+    Администратор правит любой — расписание школы составляет он, и чинить
+    сломанную неделю тоже ему.
+    """
+
+    def has_permission(self, request, view):
+        return True
+
+    def has_object_permission(self, request, view, obj):
+        if request.method in SAFE_METHODS:
+            return True
+        return allowed_to_write_schedule(request.user, obj.course)
+
+
+def allowed_to_write_schedule(user, course) -> bool:
+    from schedule.models import CourseAssignment
+
+    if user.is_school_admin and course.school_id == user.school_id:
+        return True
+
+    return CourseAssignment.objects.filter(course=course, teacher=user).exists()
+
+
+def require_schedule_write(user, course):
+    """Тот же вопрос там, где объекта на входе нет: курс приходит в теле."""
+    if not allowed_to_write_schedule(user, course):
+        api_denied(
+            Codes.NOT_COURSE_TEACHER,
+            "Only the teacher of this course or a school administrator "
+            "can change its schedule.",
         )
 
 

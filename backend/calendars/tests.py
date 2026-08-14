@@ -3,13 +3,13 @@ from datetime import date
 
 from django.urls import reverse
 from rest_framework.test import APITestCase
-from schedule.models import Course, CourseAssignment, MasterSlot
+from schedule.models import Course, CourseAssignment
 from schools.testing import (
     YEAR_END,
     YEAR_START,
     SchoolTestMixin,
+    assign,
     make_course,
-    make_master_slot,
     make_node,
     make_slot,
     make_year,
@@ -159,14 +159,13 @@ class SchoolYearApiTests(CalendarApiTestCase):
         course = make_course(self.school, self.year)
         CourseAssignment.objects.get_or_create(course=course, teacher=self.user)
         make_slot(self.user, course, day=date(2027, 5, 12))
-        make_master_slot(course, self.user, day=date(2027, 5, 13), number=3)
         url = reverse("schoolyear-detail", args=[self.year.pk])
 
         refused = self.client.patch(url, {"end_date": "2027-05-01"}, format="json")
 
         self.assertEqual(refused.status_code, 400, refused.content)
         self.assertEqual(refused.json()["code"], "year_shrink_cuts_slots")
-        self.assertEqual(refused.json()["params"], {"slots": 1, "master_slots": 1})
+        self.assertEqual(refused.json()["params"], {"slots": 1})
 
         forced = self.client.patch(
             f"{url}?force=true", {"end_date": "2027-05-01"}, format="json"
@@ -229,7 +228,7 @@ class YearDeletionTests(CalendarApiTestCase):
         return self.client.delete(reverse("schoolyear-detail", args=[self.year.pk]))
 
     def test_usage_counts_everything_the_year_would_take(self):
-        make_master_slot(self.course, self.user)
+        assign(self.user, self.course)
         self.make_exception(date(2026, 11, 4), date(2026, 11, 4), services.KIND_HOLIDAY)
         Term.objects.create(
             year=self.year,
@@ -242,9 +241,7 @@ class YearDeletionTests(CalendarApiTestCase):
         body = self.usage().json()
 
         self.assertEqual(body["courses"], 1)
-        # make_master_slot назначает учителя на курс, как и остальные билдеры
         self.assertEqual(body["assignments"], 1)
-        self.assertEqual(body["master_slots"], 1)
         self.assertEqual(body["terms"], 1)
         self.assertEqual(body["exceptions"], 1)
         self.assertEqual((body["slots"], body["plan_rows"]), (0, 0))
@@ -271,7 +268,7 @@ class YearDeletionTests(CalendarApiTestCase):
 
     def test_an_empty_year_goes_and_takes_its_courses(self):
         """Отказ — только про чужую работу; пустой год удаляется как прежде."""
-        make_master_slot(self.course, self.user)
+        assign(self.user, self.course)
 
         response = self.delete()
 
@@ -284,13 +281,12 @@ class YearDeletionTests(CalendarApiTestCase):
         Сторож против расхождения: показанное в окне и снесённое на сервере
         должны быть одним и тем же числом.
         """
-        make_master_slot(self.course, self.user)
+        assign(self.user, self.course)
         before = self.usage().json()
 
         self.assertEqual(self.delete().status_code, 204)
 
-        self.assertEqual(before["courses"], 1)
-        self.assertEqual(before["master_slots"], MasterSlot.objects.count() + 1)
+        self.assertEqual(before["courses"], Course.objects.count() + 1)
         self.assertEqual(before["assignments"], CourseAssignment.objects.count() + 1)
 
 

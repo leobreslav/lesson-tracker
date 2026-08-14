@@ -31,6 +31,7 @@ class Codes:
     SUPERUSER_REQUIRED = "superuser_required"
     SCHOOL_IN_USE = "school_in_use"
     SCHOOL_ADMIN_REQUIRED = "school_admin_required"
+    NOT_COURSE_TEACHER = "not_course_teacher"
     COURSE_TEACHER_TAKEN = "course_teacher_taken"
     OTHER_SCHOOL = "other_school"
     COURSE_IN_USE = "course_in_use"

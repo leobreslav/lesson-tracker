@@ -73,14 +73,17 @@ class SchoolOverviewView(APIView):
 
     def get(self, request):
         from calendars.models import SchoolYear
-        from schedule.models import Course, CourseAssignment, GradeLevel, MasterSlot, Subject
+        from schedule.models import Course, CourseAssignment, GradeLevel, Subject
+        from schedule.models import LessonSlot
 
         school = request.user.school
         year = (
             SchoolYear.objects.filter(school=school).order_by("-start_date").first()
         )
         courses = Course.objects.filter(school=school)
-        master = MasterSlot.objects.filter(school=school)
+        # расписание школы — это все уроки её курсов: отдельной таблицы у
+        # него больше нет
+        lessons = LessonSlot.objects.filter(course__school=school)
 
         return Response(
             {
@@ -114,8 +117,10 @@ class SchoolOverviewView(APIView):
                         "terms": year.terms.count(),
                     }
                 ),
-                "master_slots": master.count(),
-                "master_slots_unassigned": master.filter(teacher__isnull=True).count(),
+                "master_slots": lessons.count(),
+                "master_slots_unassigned": lessons.filter(
+                    course__assignments=None
+                ).count(),
             }
         )
 
@@ -252,8 +257,8 @@ class MemberViewSet(
         assignment is a statement about this school. The lessons and the plan
         stay: they are the person's own, and «remove from the list» must not
         mean «erase a year of teaching». The school timetable keeps their
-        rows too — `MasterSlot.teacher` is SET_NULL, so the grid survives as
-        unassigned load rather than disappearing.
+        rows too: расписание принадлежит курсу и остаётся на нём — курс
+        просто становится курсом без ведущего.
 
         The first attempt is refused with the counts; `?force=true` confirms.
         """

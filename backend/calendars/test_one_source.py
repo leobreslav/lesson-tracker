@@ -119,16 +119,14 @@ class TimetableAcceptsWeekdaysTests(SchoolTestMixin, APITestCase):
         self.course = make_course(self.school, self.year, "9Б Алгебра")
         assign(self.user, self.course)
 
-    def test_the_school_timetable_takes_a_lesson_on_a_weekday(self):
+    def test_the_admin_lays_out_a_lesson_on_a_weekday(self):
+        """Расписание школы — те же слоты, только чужого курса."""
         self.sign_in(self.admin)
-        assign(self.admin, self.course)
 
         response = self.client.post(
-            reverse("masterslot-list"),
+            reverse("lessonslot-list"),
             {
-                "year": self.year.pk,
                 "course": self.course.pk,
-                "teacher": self.admin.pk,
                 "date": WEEKDAY.isoformat(),
                 "lesson_number": 1,
             },

@@ -37,7 +37,6 @@ from schedule.models import (
     CourseStudent,
     GradeLevel,
     LessonSlot,
-    MasterSlot,
     Subject,
 )
 from schools import services as school_services
@@ -100,10 +99,6 @@ INVITED_STUDENT = "sokolov@example.com"
 
 # (course name, teacher email, weekly slots as (weekday, lesson number))
 # weekday numbers are ours: Monday is 0, as in date.weekday()
-# the course handed to the developer's own account: it has timetable rows and
-# no personal schedule, so importing it visibly does something
-IMPORTABLE_COURSE = "Grade 9 Geometry"
-
 # (course name, subject, grade, teacher email, weekly slots)
 COURSES = (
     ("Grade 6 Algebra", "Алгебра", 6, "ivanova@example.com", ((0, 1), (2, 1), (4, 2))),
@@ -347,8 +342,6 @@ class Command(BaseCommand):
             courses = self.courses(school, year, subjects, grades, people)
             students = self.students(school, courses)
 
-            self.timetable(year, courses, people)
-
             if not options["minimal"]:
                 self.works(courses, people, students)
                 self.schedule(year, courses, people)
@@ -566,7 +559,6 @@ class Command(BaseCommand):
         # cascade into them), so the objects are removed here instead
         self.flush_files()
         LessonSlot.objects.all().delete()
-        MasterSlot.objects.all().delete()
         Course.objects.all().update(subject=None)
         Subject.objects.all().delete()
         SchoolYear.objects.all().delete()  # carries courses, terms, markup
@@ -711,46 +703,6 @@ class Command(BaseCommand):
             )
             courses[name] = course
         return courses
-
-    def timetable(self, year, courses, people):
-        """
-        The school-wide timetable, so the teacher's import has a source.
-
-        Deliberately not a copy of the personal schedule below. One course —
-        the one nobody teaches personally — is laid out with **no teacher**:
-        that is both the «load not shared out yet» state an administrator
-        sees, and the course handed to the developer's own account so that
-        pressing «import» visibly does something.
-        """
-        study_days = [day.date for day in year.build_days() if day.is_study]
-        rows = []
-
-        for name, _, _, email, week in COURSES:
-            course = courses[name]
-            # the importable course waits for a real account to claim it
-            teacher = None if name == IMPORTABLE_COURSE else people[email]
-            if MasterSlot.objects.filter(course=course).exists():
-                continue
-
-            # the course with no personal schedule still gets a timetable:
-            # that is the one worth importing
-            template = week or ((1, 3), (3, 3))
-
-            rows.extend(
-                MasterSlot(
-                    school=course.school,
-                    year=year,
-                    course=course,
-                    teacher=teacher,
-                    date=day,
-                    lesson_number=number,
-                )
-                for day in study_days
-                for weekday, number in template
-                if day.weekday() == weekday
-            )
-
-        MasterSlot.objects.bulk_create(rows)
 
     def schedule(self, year, courses, people):
         """
@@ -997,23 +949,7 @@ class Command(BaseCommand):
         user.school = school
         user.is_school_admin = True
         user.save(update_fields=["school", "is_school_admin"])
-        claimed = self.give_timetable(user)
-        note = f", в расписании школы за вами {claimed} уроков" if claimed else ""
-        return f"{email} (администратор школы{note})"
-
-    def give_timetable(self, user) -> int:
-        """
-        Hand the importable course to this account, so import has an effect.
-
-        Its rows are seeded with no teacher precisely so that a real person
-        can claim them. Nothing of theirs can clash: the course has no
-        personal schedule anywhere in the seed.
-        """
-        rows = MasterSlot.objects.filter(course__name=IMPORTABLE_COURSE)
-        if rows.filter(teacher=user).exists():
-            return rows.filter(teacher=user).count()
-
-        return rows.filter(teacher__isnull=True).update(teacher=user)
+        return f"{email} (администратор школы)"
 
     # --- what happened --------------------------------------------------------
 
@@ -1067,11 +1003,6 @@ class Command(BaseCommand):
             f"  библиотека: {PlanTemplate.objects.count()} шаблонов "
             f"({PlanTemplate.objects.filter(is_published=False).count()} черновик)"
         )
-        self.stdout.write(
-            f"  расписание школы: {MasterSlot.objects.count()} уроков "
-            f"({MasterSlot.objects.filter(teacher__isnull=True).count()} без учителя)"
-        )
-
         if attached:
             self.stdout.write(self.style.SUCCESS(f"\n  войти как: {attached}"))
         else:

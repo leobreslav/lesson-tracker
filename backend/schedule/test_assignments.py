@@ -31,7 +31,7 @@ from schools.testing import (
     make_year,
 )
 
-from .models import Course, CourseAssignment, GradeLevel, LessonSlot, MasterSlot
+from .models import Course, CourseAssignment, GradeLevel, LessonSlot
 
 
 class AssignmentTestCase(SchoolTestMixin, APITestCase):
@@ -80,13 +80,18 @@ class VisibleCoursesTests(AssignmentTestCase):
         self.assertEqual(names, ["9Б Алгебра", "9Б Геометрия"])
 
     def test_a_lesson_cannot_be_created_in_a_course_nobody_gave_you(self):
+        """
+        Курс школы виден всем — расписание общее, — поэтому отказ именной:
+        «это не ваш курс», а не «нет такого курса».
+        """
         response = self.client.post(
             reverse("lessonslot-list"),
             {"course": self.algebra.pk, "date": MONDAY, "lesson_number": 1},
             format="json",
         )
 
-        self.assertEqual(response.status_code, 400, response.content)
+        self.assertEqual(response.status_code, 403, response.content)
+        self.assertEqual(response.json()["code"], "not_course_teacher")
 
     def test_an_unassigned_course_leaves_the_list_with_its_work_intact(self):
         """
@@ -227,25 +232,28 @@ class UnassignTests(AssignmentTestCase):
         self.assertEqual(body["params"]["slots"], 1)
         self.assertTrue(CourseAssignment.objects.filter(pk=self.link.pk).exists())
 
-    def test_a_plan_alone_does_not_hold_the_assignment(self):
+    def test_the_confirmation_is_about_losing_sight_of_the_course(self):
         """
-        План принадлежит курсу, значит у снимаемого в нём ничего не пропадает.
+        Работа принадлежит курсу и не пропадает — а курс из списков уходит.
 
-        Отказывать из-за плана было бы ложной тревогой: подтверждать нечего.
-        Но в счётчиках он назван — чтобы администратор видел, что программа
-        остаётся и достанется следующему ведущему.
+        Раньше подтверждение спрашивали про чужую работу; теперь спрашивать
+        про неё нечего, и осталось единственное настоящее последствие:
+        снятый перестаёт видеть курс вообще.
         """
         make_node(self.user, self.algebra, "Урок")
         # the fixture assigns as it writes, so read the row back
         self.link = CourseAssignment.objects.get(
             course=self.algebra, teacher=self.user
         )
+        url = reverse("courseassignment-detail", args=[self.link.pk])
 
-        response = self.client.delete(
-            reverse("courseassignment-detail", args=[self.link.pk])
-        )
+        refused = self.client.delete(url)
+        self.assertEqual(refused.status_code, 400)
+        self.assertEqual(refused.json()["params"]["plan_rows"], 1)
 
-        self.assertEqual(response.status_code, 204, response.content)
+        confirmed = self.client.delete(f"{url}?force=true")
+
+        self.assertEqual(confirmed.status_code, 204, confirmed.content)
         self.assertFalse(CourseAssignment.objects.filter(pk=self.link.pk).exists())
         self.assertTrue(PlanNode.objects.filter(course=self.algebra).exists())
 
@@ -278,119 +286,6 @@ class UnassignTests(AssignmentTestCase):
         self.assertFalse(CourseAssignment.objects.filter(pk=self.link.pk).exists())
         self.assertTrue(type(slot).objects.filter(pk=slot.pk).exists())
         self.assertTrue(PlanNode.objects.filter(pk=node.pk).exists())
-
-
-# --- the school timetable needs the same link --------------------------------------
-
-
-class MasterSlotNeedsAssignmentTests(AssignmentTestCase):
-    def post_master(self, course, teacher, number=1):
-        return self.client.post(
-            reverse("masterslot-list"),
-            {
-                "year": self.year.pk,
-                "course": course.pk,
-                "teacher": teacher.pk if teacher else None,
-                "date": MONDAY,
-                "lesson_number": number,
-            },
-            format="json",
-        )
-
-    def test_an_unassigned_teacher_is_refused(self):
-        self.as_admin()
-
-        response = self.post_master(self.algebra, self.user)
-
-        self.assertEqual(response.status_code, 400, response.content)
-        self.assertFalse(MasterSlot.objects.exists())
-
-    def test_the_same_row_is_accepted_once_the_course_is_theirs(self):
-        self.as_admin()
-        assign(self.user, self.algebra)
-
-        response = self.post_master(self.algebra, self.user)
-
-        self.assertEqual(response.status_code, 201, response.content)
-
-    def test_a_row_with_nobody_on_it_is_still_fine(self):
-        """Load not shared out yet is a normal state of the grid."""
-        self.as_admin()
-
-        response = self.post_master(self.algebra, None)
-
-        self.assertEqual(response.status_code, 201, response.content)
-
-    def test_the_model_refuses_it_too(self):
-        row = MasterSlot(
-            school=self.school,
-            year=self.year,
-            course=self.algebra,
-            teacher=self.user,
-            date=MONDAY,
-            lesson_number=1,
-        )
-
-        with self.assertRaises(ValidationError) as refusal:
-            row.full_clean()
-
-        self.assertIn("teacher", refusal.exception.message_dict)
-
-    def test_copying_the_timetable_cannot_smuggle_one_in(self):
-        """
-        Copying goes through the same door.
-
-        A row is only copied for the teacher already on it, and that teacher
-        was already checked when the row was written — so the copy inherits
-        the guarantee rather than re-deriving it.
-        """
-        self.as_admin()
-        assign(self.user, self.algebra)
-        self.post_master(self.algebra, self.user)
-        CourseAssignment.objects.filter(course=self.algebra, teacher=self.user).delete()
-
-        response = self.client.post(
-            reverse("masterslot-copy"),
-            {
-                "source_start": "2026-09-07",
-                "source_end": "2026-09-13",
-                "target_start": "2026-09-14",
-                "target_end": "2026-09-20",
-                "mode": "merge",
-            },
-            format="json",
-        )
-
-        self.assertEqual(response.status_code, 400, response.content)
-        self.assertEqual(response.json()["code"], "not_assigned")
-        self.assertEqual(MasterSlot.objects.count(), 1)
-
-
-# --- the import brings back only your own courses -----------------------------------
-
-
-class ImportRespectsAssignmentTests(AssignmentTestCase):
-    def test_a_course_taken_away_is_not_imported(self):
-        assign(self.user, self.algebra)
-        MasterSlot.objects.create(
-            school=self.school,
-            year=self.year,
-            course=self.algebra,
-            teacher=self.user,
-            date=MONDAY,
-            lesson_number=1,
-        )
-        CourseAssignment.objects.filter(course=self.algebra, teacher=self.user).delete()
-
-        preview = self.client.get(
-            reverse("import-preview"),
-            {"year": self.year.pk, "start": "2026-09-07", "end": "2026-09-13"},
-        ).json()
-
-        self.assertEqual(preview["available"], 0)
-
-
-# --- year groups --------------------------------------------------------------------
 
 
 class GradeLevelTests(AssignmentTestCase):

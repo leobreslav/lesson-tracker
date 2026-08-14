@@ -6,13 +6,13 @@ import EmptyState from './EmptyState'
 import Modal from './Modal'
 import WeekGrid from './WeekGrid'
 import {
-  clearMasterSlots,
-  copyMasterSlots,
-  createMasterSlot,
-  deleteMasterSlot,
+  clearSlots,
+  copySlots,
+  createSlot,
+  deleteSlot,
   fetchCourses,
-  fetchMasterSlots,
-  fetchMasterSummary,
+  fetchSchoolSlots,
+  fetchScheduleSummary,
   fetchMembers,
   fetchSchoolYears,
   fetchYearDays,
@@ -100,8 +100,8 @@ export default function SchoolSchedule({ onLoggedOut }) {
     if (!yearId) return Promise.resolve()
 
     return Promise.all([
-      fetchMasterSlots({ year: yearId, start: period.start, end: period.end }),
-      fetchMasterSummary({ year: yearId }),
+      fetchSchoolSlots({ year: yearId, start: period.start, end: period.end }),
+      fetchScheduleSummary({ year: yearId }),
     ])
       .then(([rows, totals]) => {
         setSlots(rows)
@@ -144,7 +144,7 @@ export default function SchoolSchedule({ onLoggedOut }) {
 
   const addSlot = (fields) =>
     run(() =>
-      createMasterSlot({
+      createSlot({
         year: yearId,
         date: dialog.date,
         lesson_number: dialog.number,
@@ -155,7 +155,7 @@ export default function SchoolSchedule({ onLoggedOut }) {
   const removeSlot = (slot) => {
     if (!window.confirm(t('schoolSchedule.deleteConfirm', { name: slot.course_name })))
       return
-    run(() => deleteMasterSlot(slot.id))
+    run(() => deleteSlot(slot.id))
   }
 
   if (years === null) {
@@ -319,11 +319,10 @@ export default function SchoolSchedule({ onLoggedOut }) {
       />
 
       {dialog?.type === 'add' && (
-        <AddMasterSlot
+        <AddSchoolSlot
           date={dialog.date}
           number={dialog.number}
           courses={courses}
-          members={members}
           busy={busy}
           onSubmit={addSlot}
           onClose={() => setDialog(null)}
@@ -347,7 +346,7 @@ export default function SchoolSchedule({ onLoggedOut }) {
           onSubmit={({ target_start, target_end, mode }) =>
             run(
               () =>
-                copyMasterSlots({
+                copySlots({
                   source_start: period.start,
                   source_end: period.end,
                   target_start,
@@ -376,7 +375,11 @@ export default function SchoolSchedule({ onLoggedOut }) {
               async () => {
                 let deleted = 0
                 for (const courseId of classIds) {
-                  const part = await clearMasterSlots({ ...period, courseId })
+                  const part = await clearSlots({
+                    classId: courseId,
+                    ...period,
+                    onlyRegular: true,
+                  })
                   deleted += part.deleted
                 }
                 return { deleted }
@@ -398,17 +401,27 @@ function clampToYear(day, year) {
   return day
 }
 
-/** Who teaches what at this hour — the one thing an administrator adds. */
-function AddMasterSlot({ date, number, courses, members, busy, onSubmit, onClose }) {
+/**
+ * Поставить урок в сетку школы: выбирается **курс**, и только он.
+ *
+ * Учителя тут не выбирают, потому что выбирать нечего: расписание
+ * принадлежит курсу, а кто его ведёт — отдельное решение со своей строкой
+ * (`CourseAssignment`) и своим местом в карточке курса. Пока у слота было
+ * собственное поле учителя, эти два ответа могли разойтись: сетку рисовали
+ * на одного, курс вёл другой.
+ */
+function AddSchoolSlot({ date, number, courses, busy, onSubmit, onClose }) {
   const { t } = useTranslation()
   const [courseId, setCourseId] = useState(courses[0]?.id ?? null)
-  const [teacherId, setTeacherId] = useState('')
 
   const submit = (event) => {
     event.preventDefault()
     if (!courseId) return
-    onSubmit({ course: courseId, teacher: teacherId || null })
+    onSubmit({ course: courseId })
   }
+
+  const chosen = courses.find((course) => course.id === courseId)
+  const leads = (chosen?.teachers ?? []).map((teacher) => teacher.name).join(', ')
 
   return (
     <Modal onClose={onClose}>
@@ -431,22 +444,12 @@ function AddMasterSlot({ date, number, courses, members, busy, onSubmit, onClose
           </select>
         </label>
 
-        <label>
-          {t('schoolSchedule.teacher')}
-          <select
-            value={teacherId}
-            disabled={busy}
-            onChange={(event) => setTeacherId(event.target.value)}
-          >
-            <option value="">{t('schoolSchedule.nobody')}</option>
-            {members.map((member) => (
-              <option key={member.id} value={member.id}>
-                {[member.first_name, member.last_name].filter(Boolean).join(' ') ||
-                  member.email}
-              </option>
-            ))}
-          </select>
-        </label>
+        {/* кто ведёт — показываем, но не спрашиваем: это свойство курса */}
+        <p className="hint">
+          {t('schoolSchedule.leadIs', {
+            name: leads || t('schoolSchedule.nobody'),
+          })}
+        </p>
 
         <div className="actions">
           <button type="submit" disabled={busy || !courseId}>

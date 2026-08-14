@@ -639,7 +639,6 @@ export default function Calendar({ user, onLoggedOut }) {
                 {[
                   ['courses', removing.courses],
                   ['assignments', removing.assignments],
-                  ['masterSlots', removing.master_slots],
                   ['terms', removing.terms],
                   ['exceptions', removing.exceptions],
                 ]

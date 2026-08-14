@@ -7,7 +7,6 @@ from schedule.views import (
     CourseMethodistViewSet,
     CourseStudentViewSet,
     GradeLevelViewSet,
-    MasterSlotViewSet,
     SubjectViewSet,
 )
 
@@ -20,7 +19,6 @@ from .views import (
 )
 
 router = DefaultRouter()
-router.register("master-slots", MasterSlotViewSet, basename="masterslot")
 router.register("subjects", SubjectViewSet, basename="subject")
 router.register("grades", GradeLevelViewSet, basename="gradelevel")
 router.register("assignments", CourseAssignmentViewSet, basename="courseassignment")

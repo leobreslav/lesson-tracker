@@ -28,13 +28,12 @@ def usage_of(year) -> dict:
     Импорты локальные: `schedule` и `plans` уже импортируют `calendars`.
     """
     from plans.models import PlanNode
-    from schedule.models import Course, CourseAssignment, LessonSlot, MasterSlot
+    from schedule.models import Course, CourseAssignment, LessonSlot
     from works.models import Work
 
     return {
         "courses": Course.objects.filter(year=year).count(),
         "assignments": CourseAssignment.objects.filter(course__year=year).count(),
-        "master_slots": MasterSlot.objects.filter(year=year).count(),
         "terms": year.terms.count(),
         "exceptions": year.exceptions.count(),
         # то, что удержит: чужая работа внутри курсов этого года

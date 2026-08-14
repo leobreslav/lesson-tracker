@@ -3,11 +3,12 @@ from collections import defaultdict
 from calendars import services as calendar_services
 from calendars.models import SchoolYear
 from config.access import (
-    CourseScopedViewSet,
+    IsCourseTeacherOrSchoolAdmin,
     IsSchoolMember,
     IsStudent,
     IsTeacher,
     SchoolScopedViewSet,
+    require_schedule_write,
 )
 from config.errors import Codes, api_denied, api_error
 from django.db import transaction
@@ -25,7 +26,7 @@ from rest_framework.views import APIView
 
 from plans.models import PlanNode
 
-from . import importing, services
+from . import services
 from schools import roster, services as school_services
 
 from .models import (
@@ -35,7 +36,6 @@ from .models import (
     CourseStudent,
     GradeLevel,
     LessonSlot,
-    MasterSlot,
     Subject,
 )
 from .serializers import (
@@ -47,9 +47,7 @@ from .serializers import (
     CourseAssignmentSerializer,
     CourseSerializer,
     GradeLevelSerializer,
-    ImportFromSchoolSerializer,
     LessonSlotSerializer,
-    MasterSlotSerializer,
     PeriodSerializer,
     full_name,
 )
@@ -393,45 +391,38 @@ class CourseAssignmentViewSet(SchoolScopedViewSet):
 
     def perform_destroy(self, instance):
         """
-        Taking a course away from somebody. The work stays where it is.
+        Забрать у человека курс. Работа при этом никуда не девается.
 
-        Three answers were possible and only one of them is honest. Deleting
-        the lessons and the plan along with the assignment would destroy a
-        colleague's year from an administrator's screen — never. Refusing
-        while anything exists would deadlock the moment a teacher leaves the
-        school. So: the assignment goes, everything written under it stays,
-        and the first attempt is refused with the counts so that nobody does
-        it by accident. `?force=true` is the confirmation.
+        Раньше подтверждение спрашивали потому, что снятие грозило чужой
+        работой: расписание, план и контрольные были личными. Теперь они
+        принадлежат курсу и достаются следующему ведущему целиком, — а
+        подтверждение осталось, потому что осталось другое последствие:
+        **курс пропадёт из списков этого человека**. `Course.objects
+        .for_teacher` — это назначенные, и только они.
 
-        Nothing is hidden afterwards either: `Course.objects.for_teacher`
-        keeps a course visible to whoever already has work in it.
-
-        Строки плана считаются, но принадлежат они **курсу**: план остаётся
-        на нём и достаётся следующему ведущему целиком. Названы они здесь
-        ровно затем, чтобы это было видно до нажатия.
+        Поэтому первый DELETE отвечает счётчиками: вот сколько всего в
+        курсе и вот кто перестанет это видеть. `?force=true` подтверждает.
         """
         slots = LessonSlot.objects.filter(course=instance.course).count()
         rows = PlanNode.objects.filter(course=instance.course).count()
-        master = MasterSlot.objects.filter(
-            course=instance.course, teacher=instance.teacher
-        ).count()
+        works = instance.course.works.count()
 
-        # план в условие не входит: он принадлежит курсу, и у снимаемого в
-        # нём ничего не пропадает. Назван он затем, чтобы администратор
-        # видел, что программа остаётся и достанется следующему ведущему
+        # всё перечисленное принадлежит **курсу** и достаётся следующему
+        # ведущему целиком; названо оно затем, чтобы это было видно до
+        # нажатия, а не затем, чтобы кого-то остановить
         forced = self.request.query_params.get("force", "").lower() == "true"
-        if (slots or master) and not forced:
+        if (slots or rows or works) and not forced:
             api_error(
                 Codes.ASSIGNMENT_IN_USE,
-                f"{full_name(instance.teacher)} has {slots} lessons and "
-                f"{master} timetable rows in «{instance.course.name}», and the "
-                f"course keeps its {rows} plan rows. "
-                "Unassigning keeps all of it; repeat with force=true to confirm.",
+                f"«{instance.course.name}» keeps its {slots} lessons, {rows} "
+                f"plan rows and {works} assignments — nothing is deleted, they "
+                f"belong to the course. But {full_name(instance.teacher)} will "
+                "stop seeing the course at all; repeat with force=true to confirm.",
                 teacher=full_name(instance.teacher),
                 course=instance.course.name,
                 slots=slots,
                 plan_rows=rows,
-                master_slots=master,
+                works=works,
             )
 
         instance.delete()
@@ -519,32 +510,88 @@ class CourseViewSet(SchoolScopedViewSet):
             )
 
 
-class LessonSlotViewSet(CourseScopedViewSet):
+class LessonSlotViewSet(SchoolScopedViewSet):
     """
-    Расписание курса. Принадлежит курсу, как план и работы.
+    Расписание. Одно на всех: и «моё расписание», и расписание школы.
 
-    «Моё расписание» осталось видом, а не собственностью: это уроки моих
-    курсов. Личным слот быть перестал вместе с правилом «ведущий у курса
-    один» — см. `LessonSlot`.
+    Отдельной таблицы у школьного расписания больше нет. `MasterSlot` был
+    ровно этим же — курс, дата, номер, — и после того, как расписание
+    переехало на курс, у него не осталось ни одного своего поля: школа
+    выводится из курса, учитель — из назначения. Две таблицы с одним ключом
+    расходятся молча, и разошлись бы: проверки занятости смотрели каждая в
+    свою и друг друга не видели.
 
-    Список фильтруется по `course`, `start` и `end`; сверх CRUD есть
-    массовые операции: copy, bulk и stats.
+    Отсюда форма доступа, которой больше нет ни у чего: **читает вся школа**
+    (иначе не существует экрана «Расписание школы»), **пишет ведущий курса
+    или администратор** (`IsCourseTeacherOrSchoolAdmin`). Расписание
+    одновременно общий артефакт школы и содержимое курса, и обе половины
+    настоящие.
+
+    Список по умолчанию отдаёт **свои** уроки, `?scope=school` — все, тем же
+    приёмом, что у курсов: «Моё расписание» иначе стало бы расписанием
+    школы. Фильтры — `course`, `teacher`, `start`, `end`; сверх CRUD
+    массовые операции: copy, bulk, stats и summary.
     """
 
     serializer_class = LessonSlotSerializer
     queryset = LessonSlot.objects.all()
-    course_path = "course"
+    school_path = "course__school"
+    permission_classes = [
+        IsAuthenticated,
+        IsSchoolMember,
+        IsTeacher,
+        IsCourseTeacherOrSchoolAdmin,
+    ]
+
+    def my_courses(self):
+        return Course.objects.for_teacher(self.request.user)
 
     def own_slots(self):
         """Уроки моих курсов — то, что человек называет своим расписанием."""
         return LessonSlot.objects.filter(course__in=self.my_courses())
 
+    def require_write(self, course):
+        """
+        Право на запись там, где объекта на входе нет: курс приходит в теле.
+
+        `has_object_permission` закрывает адреса с id, а создание, копирование
+        и массовое удаление называют курс сами — и мимо неё проходят.
+        """
+        require_schedule_write(self.request.user, course)
+
+    def perform_create(self, serializer):
+        self.require_write(serializer.validated_data["course"])
+        serializer.save()
+
     def get_queryset(self):
         queryset = super().get_queryset().select_related("course", "year")
-        # year.periods() нужен каждому слоту для предупреждения о неучебном дне
-        queryset = queryset.prefetch_related("year__exceptions")
+        # year.periods() нужен каждому слоту для предупреждения о неучебном
+        # дне, назначение — чтобы сказать, кто ведёт: и то и другое одним
+        # запросом на всю выборку, а не на строку
+        queryset = queryset.prefetch_related(
+            "year__exceptions", "course__assignments__teacher"
+        )
 
         params = self.request.query_params
+        # по умолчанию свои: список — это «Моё расписание», и школьный вид
+        # спрашивает всё явно
+        if self.action == "list" and params.get("scope") != "school":
+            queryset = queryset.filter(course__in=self.my_courses())
+
+        teacher = params.get("teacher")
+        if teacher:
+            queryset = (
+                queryset.filter(course__assignments__teacher_id=teacher)
+                if teacher.isdigit()
+                else queryset.none()
+            )
+
+        year = params.get("year")
+        if year:
+            queryset = (
+                queryset.filter(year_id=year) if year.isdigit() else queryset.none()
+            )
+
         class_id = params.get("course")
         if class_id:
             queryset = (
@@ -565,14 +612,18 @@ class LessonSlotViewSet(CourseScopedViewSet):
 
     def copy_one_course(self, course, data, study_dates):
         """
-        Copying one course. Called inside a transaction, because the lessons
-        created for the previous course occupy numbers for the next one.
+        Копирование одного курса. Внутри транзакции вызывающего: уроки,
+        созданные предыдущему курсу, занимают номера для следующего.
+
+        Выборки идут по **курсу**, а не «по своим»: тот же код обслуживает и
+        учителя, копирующего свою неделю, и администратора, раскатывающего
+        сетку на год. Право спрошено выше, у `copy`.
         """
         target = (data["target_start"], data["target_end"])
         year = course.year
 
         source_numbers = defaultdict(list)
-        source_slots = self.own_slots().filter(
+        source_slots = LessonSlot.objects.filter(
             course=course,
             date__range=(data["source_start"], data["source_end"]),
             is_extra=False,
@@ -592,9 +643,11 @@ class LessonSlotViewSet(CourseScopedViewSet):
 
         deleted = 0
         if data["mode"] == "replace":
-            # only regular lessons are replaced: a cancellation or an extra
-            # lesson is hand-made markup and a bulk operation must not touch it
-            deleted, _ = self.own_slots().filter(
+            # заменяются только обычные уроки: отмена с причиной и
+            # дополнительный — ручная пометка, и массовая операция её не
+            # трогает. Администратора это правило касается тем более: он
+            # раскатывает сетку на весь год и стёр бы чужие отмены разом
+            deleted, _ = LessonSlot.objects.filter(
                 course=course,
                 date__range=target,
                 is_extra=False,
@@ -602,20 +655,31 @@ class LessonSlotViewSet(CourseScopedViewSet):
             ).delete()
 
         occupied = set(
-            self.own_slots()
-            .filter(course=course, date__range=target)
+            LessonSlot.objects.filter(course=course, date__range=target)
             .values_list("date", "lesson_number")
         )
 
-        # номера, уже занятые другими курсами этого учителя: двух уроков
-        # разом не бывает, поэтому такие слоты пропускаются с отчётом
-        busy = {
-            (slot.date, slot.lesson_number): slot.course.name
-            for slot in self.own_slots()
-            .filter(year=year, date__range=target, is_cancelled=False)
-            .exclude(course=course)
-            .select_related("course")
-        }
+        # номера, уже занятые другими курсами **того же учителя**: двух
+        # уроков разом не бывает, поэтому такие слоты пропускаются с отчётом.
+        # Учитель тут — ведущий копируемого курса, а не тот, кто нажал:
+        # администратор раскатывает чужую сетку, и мешать ей может только
+        # чужое же расписание. У курса без ведущего мешать нечему
+        lead = CourseAssignment.objects.filter(course=course).values_list(
+            "teacher_id", flat=True
+        ).first()
+        busy = {}
+        if lead is not None:
+            busy = {
+                (slot.date, slot.lesson_number): slot.course.name
+                for slot in LessonSlot.objects.filter(
+                    course__assignments__teacher_id=lead,
+                    year=year,
+                    date__range=target,
+                    is_cancelled=False,
+                )
+                .exclude(course=course)
+                .select_related("course")
+            }
 
         result = services.place_copies(
             plan=plan,
@@ -641,11 +705,12 @@ class LessonSlotViewSet(CourseScopedViewSet):
     @action(detail=False, methods=["post"])
     def copy(self, request):
         """
-        Repeat the layout of a source period onto a target period.
+        Повторить раскладку одного периода на другом.
 
-        Without `course_id` the whole schedule travels: every course this
-        teacher actually has lessons in, whose year touches the target.
-        Cancelled and extra lessons are copied in neither mode.
+        Без `course_id` едет расписание целиком — все курсы, которые
+        спрашивающий вправе править и чей год задевает цель: у учителя это
+        его курсы, у администратора вся школа. Отменённые и дополнительные
+        уроки не копируются ни в одном режиме.
         """
         form = CopySerializer(data=request.data, context=self.get_serializer_context())
         form.is_valid(raise_exception=True)
@@ -655,15 +720,16 @@ class LessonSlotViewSet(CourseScopedViewSet):
         if one is not None:
             courses = [one]
         else:
-            # only the courses this teacher works in: the school may hold
-            # dozens, and the others have nothing of theirs to copy
+            mine = (
+                Course.objects.filter(school_id=request.user.school_id)
+                if request.user.is_school_admin
+                else Course.objects.for_teacher(request.user)
+            )
             courses = list(
-                Course.objects.for_teacher(request.user)
-                .filter(
+                mine.filter(
                     year__start_date__lte=data["target_end"],
                     year__end_date__gte=data["target_start"],
-                )
-                .select_related("year")
+                ).select_related("year")
             )
 
         totals = {"created": 0, "skipped": 0, "deleted": 0, "conflicts": []}
@@ -671,6 +737,7 @@ class LessonSlotViewSet(CourseScopedViewSet):
 
         with transaction.atomic():
             for course in courses:
+                self.require_write(course)
                 year = course.year
                 if year.pk not in study_by_year:
                     # study days are calendars' business — we only ask
@@ -687,7 +754,7 @@ class LessonSlotViewSet(CourseScopedViewSet):
 
     @action(detail=False, methods=["delete"])
     def bulk(self, request):
-        """Убрать уроки курса за период."""
+        """Убрать уроки курса за период. Правит тот, кому курс дозволен."""
         params = request.query_params
         form = BulkDeleteSerializer(
             data={
@@ -700,8 +767,9 @@ class LessonSlotViewSet(CourseScopedViewSet):
         )
         form.is_valid(raise_exception=True)
         data = form.validated_data
+        self.require_write(data["course"])
 
-        queryset = self.own_slots().filter(
+        queryset = LessonSlot.objects.filter(
             course=data["course"],
             date__range=(data["start"], data["end"]),
         )
@@ -801,291 +869,32 @@ class LessonSlotViewSet(CourseScopedViewSet):
             }
         )
 
-
-class MasterSlotViewSet(SchoolScopedViewSet):
-    """
-    The school-wide timetable: who teaches what, and when.
-
-    Everybody in the school reads it — a teacher needs to see what they are
-    down for before importing — and only an administrator writes.
-
-    Copying a period and clearing one work exactly as they do for a personal
-    schedule, through the same `place_copies`: an administrator who has
-    learnt one of the two screens has learnt both.
-    """
-
-    serializer_class = MasterSlotSerializer
-    queryset = MasterSlot.objects.select_related("course", "teacher", "year")
-
-    def get_queryset(self):
-        queryset = super().get_queryset()
-        params = self.request.query_params
-
-        for param, lookup in (
-            ("year", "year_id"),
-            ("teacher", "teacher_id"),
-            ("course", "course_id"),
-        ):
-            raw = params.get(param)
-            if not raw:
-                continue
-            queryset = (
-                queryset.filter(**{lookup: raw}) if raw.isdigit() else queryset.none()
-            )
-
-        for param, lookup in (("start", "date__gte"), ("end", "date__lte")):
-            raw = params.get(param)
-            if not raw:
-                continue
-            parsed = read_date(raw)
-            queryset = queryset.filter(**{lookup: parsed}) if parsed else queryset.none()
-
-        return queryset
-
-    def school_slots(self):
-        return MasterSlot.objects.filter(school_id=self.request.user.school_id)
-
-    def copy_one_course(self, course, data, study_dates):
-        """One course of the timetable. Inside the caller's transaction."""
-        target = (data["target_start"], data["target_end"])
-        year = course.year
-
-        source_numbers = defaultdict(list)
-        for slot in self.school_slots().filter(
-            course=course, date__range=(data["source_start"], data["source_end"])
-        ):
-            source_numbers[slot.date].append(slot.lesson_number)
-
-        plan, skipped = services.plan_copy(
-            source_start=data["source_start"],
-            source_end=data["source_end"],
-            target_start=data["target_start"],
-            target_end=data["target_end"],
-            source_numbers=source_numbers,
-            study_dates=study_dates,
-        )
-
-        deleted = 0
-        if data["mode"] == "replace":
-            deleted, _ = self.school_slots().filter(
-                course=course, date__range=target
-            ).delete()
-
-        occupied = set(
-            self.school_slots()
-            .filter(course=course, date__range=target)
-            .values_list("date", "lesson_number")
-        )
-
-        # the teacher of this course cannot be in two rooms at once, so their
-        # other courses block the hour and say so
-        teacher_id = (
-            self.school_slots()
-            .filter(course=course)
-            .exclude(teacher__isnull=True)
-            .values_list("teacher_id", flat=True)
-            .first()
-        )
-        busy = {}
-        if teacher_id is not None:
-            busy = {
-                (slot.date, slot.lesson_number): slot.course.name
-                for slot in self.school_slots()
-                .filter(teacher_id=teacher_id, date__range=target)
-                .exclude(course=course)
-                .select_related("course")
-            }
-
-        # bulk_create writes past clean(), so the assignment is checked here
-        # instead: copying a week must not be a way to hand somebody a course
-        # they were taken off
-        if teacher_id is not None and not CourseAssignment.objects.filter(
-            course=course, teacher_id=teacher_id
-        ).exists():
-            api_error(
-                Codes.NOT_ASSIGNED,
-                f"The teacher of «{course.name}» is no longer assigned to it. "
-                "Assign them again, or clear those rows first.",
-                course=course.name,
-            )
-
-        result = services.place_copies(
-            plan=plan,
-            skipped=skipped,
-            occupied=occupied,
-            busy=busy,
-            make=lambda day, number: MasterSlot(
-                school_id=self.request.user.school_id,
-                year=year,
-                course=course,
-                teacher_id=teacher_id,
-                date=day,
-                lesson_number=number,
-            ),
-        )
-        MasterSlot.objects.bulk_create(result["created"])
-
-        return {
-            "created": len(result["created"]),
-            "skipped": result["skipped"],
-            "deleted": deleted,
-            "conflicts": result["conflicts"],
-        }
-
-    @action(detail=False, methods=["post"])
-    def copy(self, request):
-        """Repeat a period of the timetable onto another period."""
-        form = CopySerializer(data=request.data, context=self.get_serializer_context())
-        form.is_valid(raise_exception=True)
-        data = form.validated_data
-
-        one = data.get("course")
-        if one is not None:
-            courses = [one]
-        else:
-            courses = list(
-                Course.objects.filter(
-                    pk__in=self.school_slots().values("course_id"),
-                    year__start_date__lte=data["target_end"],
-                    year__end_date__gte=data["target_start"],
-                ).select_related("year")
-            )
-
-        totals = {"created": 0, "skipped": 0, "deleted": 0, "conflicts": []}
-        study_by_year = {}
-
-        with transaction.atomic():
-            for course in courses:
-                year = course.year
-                if year.pk not in study_by_year:
-                    study_by_year[year.pk] = {
-                        day.date for day in year.build_days() if day.is_study
-                    }
-
-                result = self.copy_one_course(course, data, study_by_year[year.pk])
-                for key in ("created", "skipped", "deleted"):
-                    totals[key] += result[key]
-                totals["conflicts"].extend(result["conflicts"])
-
-        return Response(totals)
-
-    @action(detail=False, methods=["delete"])
-    def bulk(self, request):
-        """Clear a period of the timetable, optionally for one course."""
-        params = request.query_params
-        start, end = (read_date(params.get(name)) for name in ("start", "end"))
-        if start is None or end is None:
-            api_error(
-                Codes.PERIOD_REQUIRED,
-                "Both «start» and «end» query parameters are required.",
-                field="start",
-            )
-        if end < start:
-            api_error(
-                Codes.PERIOD_REVERSED,
-                "The end date is earlier than the start date.",
-                field="end",
-            )
-
-        queryset = self.school_slots().filter(date__range=(start, end))
-
-        course = params.get("course")
-        if course:
-            queryset = (
-                queryset.filter(course_id=course) if course.isdigit() else queryset.none()
-            )
-
-        deleted, _ = queryset.delete()
-        return Response({"deleted": deleted})
-
     @action(detail=False, methods=["get"])
     def summary(self, request):
-        """How much is laid out, and how much of it has nobody yet."""
-        queryset = self.get_queryset()
-        total = queryset.count()
+        """
+        Сводка по расписанию школы: сколько разложено и у чего нет ведущего.
 
-        return Response(
-            {
-                "total": total,
-                "unassigned": queryset.filter(teacher__isnull=True).count(),
-                "teachers": queryset.exclude(teacher__isnull=True)
-                .values("teacher_id")
-                .distinct()
-                .count(),
-            }
+        «Нагрузка не распределена» раньше выражалась строкой без учителя;
+        теперь это уроки курса, на который никого не назначили, — то же самое
+        состояние, только без своего поля.
+        """
+        queryset = LessonSlot.objects.filter(
+            course__school_id=request.user.school_id
         )
 
-
-class ImportFromSchoolView(APIView):
-    """
-    Copy my rows of the school timetable into my own schedule.
-
-    Any teacher of the school may do it for themselves; nobody can do it for
-    anybody else, because the rows are selected by `teacher == request.user`
-    and the lessons are created with the same user.
-
-    It happens once. Afterwards the copies are ordinary lessons and the
-    timetable has no hold on them.
-    """
-
-    permission_classes = [IsAuthenticated, IsSchoolMember, IsTeacher]
-
-    def post(self, request):
-        form = ImportFromSchoolSerializer(
-            data=request.data, context={"request": request}
-        )
-        form.is_valid(raise_exception=True)
-        data = form.validated_data
-
-        result = importing.run_import(
-            teacher=request.user,
-            year=data["year"],
-            courses=data.get("courses") or None,
-            start=data["start"],
-            end=data["end"],
-            mode=data["mode"],
-        )
-        return Response(result)
-
-
-class ImportPreviewView(APIView):
-    """
-    What an import would bring, before anybody presses anything.
-
-    Same planning code as the import, so the numbers shown are the numbers
-    that will happen — computed in merge mode, the cautious one: replace can
-    only turn conflicts into replacements, never add new ones.
-    """
-
-    permission_classes = [IsAuthenticated, IsSchoolMember, IsTeacher]
-
-    def get(self, request):
-        params = request.query_params
-        year = SchoolYear.objects.filter(
-            school_id=request.user.school_id, pk=params.get("year", 0) or 0
-        ).first()
-        if year is None:
-            api_error(
-                Codes.YEAR_REQUIRED,
-                "The «year» query parameter with a school year id is required.",
-                field="year",
+        year = request.query_params.get("year")
+        if year:
+            queryset = (
+                queryset.filter(year_id=year) if year.isdigit() else queryset.none()
             )
 
-        start = read_date(params.get("start")) or year.start_date
-        end = read_date(params.get("end")) or year.end_date
-
-        plan = importing.plan_import(
-            teacher=request.user, year=year, start=start, end=end
-        )
-
         return Response(
             {
-                "start": start,
-                "end": end,
-                "available": sum(item["available"] for item in plan["courses"]),
-                "created": len(plan["slots"]),
-                "skipped": plan["skipped"],
-                "courses": plan["courses"],
-                "conflicts": plan["conflicts"],
+                "total": queryset.count(),
+                "unassigned": queryset.filter(course__assignments=None).count(),
+                "teachers": queryset.exclude(course__assignments=None)
+                .values("course__assignments__teacher_id")
+                .distinct()
+                .count(),
             }
         )

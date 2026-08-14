@@ -235,10 +235,11 @@ class SlotCrudTests(SlotTestCase):
 
 class SlotIsolationTests(SlotTestCase):
     """
-    Расписание принадлежит курсу, поэтому «чужое» — это чужой курс.
+    Расписание принадлежит курсу и **читается всей школой**.
 
-    Уроков одного курса у двух людей больше не бывает: ведущий один, и
-    видит он ровно курсы, которые ему поручили.
+    Поэтому граница здесь не «видно / не видно», а «правлю / не правлю»:
+    урок чужого курса коллега читает (по расписанию школы живут все), но
+    не трогает. Прячется расписание только от чужой школы.
     """
 
     def setUp(self):
@@ -255,15 +256,25 @@ class SlotIsolationTests(SlotTestCase):
 
         self.assertEqual([item["id"] for item in response.json()], [self.mine.pk])
 
-    def test_alien_slot_is_not_found(self):
+    def test_a_slot_of_another_course_is_readable_but_not_writable(self):
         url = reverse("lessonslot-detail", args=[self.alien_slot.pk])
 
-        self.assertEqual(self.client.get(url).status_code, 404)
+        self.assertEqual(self.client.get(url).status_code, 200)
         self.assertEqual(
-            self.client.patch(url, {"is_cancelled": True}, format="json").status_code, 404
+            self.client.patch(url, {"is_cancelled": True}, format="json").status_code, 403
         )
-        self.assertEqual(self.client.delete(url).status_code, 404)
+        self.assertEqual(self.client.delete(url).status_code, 403)
         self.assertTrue(LessonSlot.objects.filter(pk=self.alien_slot.pk).exists())
+
+    def test_a_slot_of_another_school_is_not_found(self):
+        alien_course = make_course(self.alien_school, self.alien_year, "9В")
+        alien = LessonSlot.objects.create(
+            year=self.alien_year, course=alien_course, date=MONDAY, lesson_number=1
+        )
+        url = reverse("lessonslot-detail", args=[alien.pk])
+
+        self.assertEqual(self.client.get(url).status_code, 404)
+        self.assertEqual(self.client.delete(url).status_code, 404)
 
     def test_filter_by_class(self):
         second = Course.objects.create(

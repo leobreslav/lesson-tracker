@@ -32,7 +32,6 @@ from .testing import (
     make_attachment,
     make_course,
     make_exception,
-    make_master_slot,
     make_node,
     make_slot,
     make_template,
@@ -56,7 +55,6 @@ class AccessTestCase(AccessRulesMixin, SchoolTestMixin, APITestCase):
         self.exception = make_exception(self.year)
         self.slot = make_slot(self.user, self.course)
         self.node = make_node(self.user, self.course)
-        self.master_slot = make_master_slot(self.course, self.user, number=2)
 
         self.alien_year = make_year(self.alien_school)
         self.alien_course = make_course(self.alien_school, self.alien_year, "9А")
@@ -160,27 +158,6 @@ class MatrixTests(AccessTestCase):
             patch={"title": "Другое название"},
         )
 
-    def test_master_slot(self):
-        self.assertSchoolObjectRules(
-            list_url="masterslot-list",
-            detail_url="masterslot-detail",
-            obj=self.master_slot,
-            create={
-                "year": self.year.pk,
-                "course": self.course.pk,
-                "teacher": self.user.pk,
-                "date": "2026-09-08",
-                "lesson_number": 4,
-            },
-            patch={"lesson_number": 6},
-            actions=(
-                ("masterslot-list", "course"),
-                ("masterslot-summary", "year"),
-                {"name": "masterslot-bulk", "param": "course", "method": "delete"},
-                {"name": "import-preview", "param": "year", "method": "get"},
-            ),
-        )
-
     def test_course_student(self):
         student_row = enrol_student(self.student, self.course, by=self.admin)
 
@@ -208,14 +185,6 @@ class MatrixTests(AccessTestCase):
                     "body": {"text": "someone@example.com"},
                 },
             ),
-        )
-
-    def test_lesson_slot(self):
-        self.assertCourseObjectRules(
-            list_url="lessonslot-list",
-            detail_url="lessonslot-detail",
-            obj=self.slot,
-            patch={"is_cancelled": True},
         )
 
     def test_plan_node(self):
@@ -403,14 +372,21 @@ class PersonalObjectTests(AccessTestCase):
 
         self.assertEqual(self.client.get(reverse("lessonslot-list")).json(), [])
 
-    def test_an_administrator_has_no_power_over_my_lessons(self):
-        """The role governs the school's shared objects, not people's work."""
+    def test_an_administrator_governs_the_schedule_and_nothing_else(self):
+        """
+        Расписание — общий артефакт школы, и составляет его администратор:
+        он его читает и правит. А содержимое курса — план, работы — его
+        роль не касается, там он посторонний.
+        """
         self.sign_in(self.admin)
-        url = reverse("lessonslot-detail", args=[self.slot.pk])
 
-        self.assertEqual(self.client.get(url).status_code, 404)
-        self.assertEqual(self.client.delete(url).status_code, 404)
-        self.assertTrue(LessonSlot.objects.filter(pk=self.slot.pk).exists())
+        slot = reverse("lessonslot-detail", args=[self.slot.pk])
+        self.assertEqual(self.client.get(slot).status_code, 200)
+        self.assertEqual(self.client.delete(slot).status_code, 204)
+
+        plan = reverse("plannode-detail", args=[self.node.pk])
+        self.assertEqual(self.client.get(plan).status_code, 404)
+        self.assertEqual(self.client.delete(plan).status_code, 404)
 
     def test_lessons_cannot_be_put_into_another_schools_course(self):
         response = self.client.post(
@@ -858,13 +834,20 @@ class SuperuserSchoolTests(AccessTestCase):
         self.assertCode(response, 400, "already_member")
 
     def test_a_superuser_has_no_extra_power_over_lessons(self):
-        """Creating schools is not the same as owning what happens in them."""
+        """
+        Заводить школы — не то же самое, что распоряжаться внутри них.
+
+        Расписание он читает как всякий участник школы, а править чужой курс
+        не может: роль суперпользователя значит что-то ровно в разделе
+        «Школы», и больше нигде.
+        """
         self.sign_in(self.root)
 
         url = reverse("lessonslot-detail", args=[self.slot.pk])
 
-        self.assertEqual(self.client.get(url).status_code, 404)
-        self.assertEqual(self.client.delete(url).status_code, 404)
+        self.assertEqual(self.client.get(url).status_code, 200)
+        self.assertEqual(self.client.delete(url).status_code, 403)
+        self.assertTrue(LessonSlot.objects.filter(pk=self.slot.pk).exists())
 
     def test_a_superuser_without_the_school_role_still_cannot_write_courses(self):
         self.sign_in(self.root)
@@ -948,22 +931,21 @@ class StudentTests(AccessTestCase):
         overview = self.client.get(reverse("school-overview")).json()
         self.assertEqual(overview["teachers"], len(members))
 
-    def test_a_student_cannot_be_named_as_the_teacher_of_a_lesson(self):
+    def test_a_student_cannot_be_put_in_charge_of_a_course(self):
+        """
+        Назвать ученика ведущим — единственный оставшийся способ поручить
+        ему уроки: у слота учителя нет, за него отвечает назначение.
+        """
         self.sign_in(self.admin)
 
         response = self.client.post(
-            reverse("masterslot-list"),
-            {
-                "year": self.year.pk,
-                "course": self.course.pk,
-                "teacher": self.student.pk,
-                "date": str(MONDAY),
-                "lesson_number": 5,
-            },
+            reverse("courseassignment-list"),
+            {"course": self.course.pk, "teacher": self.student.pk},
             format="json",
         )
 
         self.assertEqual(response.status_code, 400, response.content)
+        self.assertIn("teacher", response.json())
 
 
 class ActionDoorTests(AccessTestCase):
@@ -1062,7 +1044,7 @@ class ActionDoorTests(AccessTestCase):
             "target_end": "2026-09-20",
         }
 
-        for name, field in (("lessonslot-copy", "course_id"), ("masterslot-copy", "course")):
+        for name, field in (("lessonslot-copy", "course_id"),):
             for person in (self.stranger, self.alien_admin):
                 with self.subTest(f"{name} для {person.email}"):
                     self.sign_in(person)

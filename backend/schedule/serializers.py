@@ -14,7 +14,6 @@ from .models import (
     CourseStudent,
     GradeLevel,
     LessonSlot,
-    MasterSlot,
     Subject,
 )
 
@@ -288,12 +287,16 @@ class CourseSerializer(serializers.ModelSerializer):
 
 
 class LessonSlotSerializer(serializers.ModelSerializer):
-    # учителя у слота нет вовсе: расписание принадлежит курсу, и «чей это
-    # урок» отвечает назначение
     # the year follows from the course and need not be sent
     year = serializers.PrimaryKeyRelatedField(
         queryset=SchoolYear.objects.none(), required=False
     )
+    course_name = serializers.CharField(source="course.name", read_only=True)
+    # учителя у слота нет: он выводится из назначения. Наружу отдаётся
+    # только на чтение — расписание школы показывает, кто ведёт, и брать
+    # это из второго места было бы вторым ответом на один вопрос
+    teacher = serializers.SerializerMethodField()
+    teacher_name = serializers.SerializerMethodField()
     warning = serializers.SerializerMethodField()
 
     class Meta:
@@ -302,6 +305,9 @@ class LessonSlotSerializer(serializers.ModelSerializer):
             "id",
             "year",
             "course",
+            "course_name",
+            "teacher",
+            "teacher_name",
             "date",
             "lesson_number",
             "is_cancelled",
@@ -323,12 +329,29 @@ class LessonSlotSerializer(serializers.ModelSerializer):
 
     def get_fields(self):
         fields = super().get_fields()
-        courses = teacher_courses(self)
+        # курсы всей школы: расписание правит и ведущий, и администратор, а
+        # кому какой курс дозволен, спрашивает вьюха (`require_write`).
+        # Сузить поле до своих значило бы отвечать администратору «нет
+        # такого курса» вместо «это не ваш курс»
+        courses = school_courses(self)
         fields["course"].queryset = courses
         fields["year"].queryset = SchoolYear.objects.filter(
             pk__in=courses.values("year_id")
         )
         return fields
+
+    def lead(self, obj):
+        """Назначение курса; выборка предвыбрана вьюхой, запросов нет."""
+        rows = list(obj.course.assignments.all())
+        return rows[0].teacher if rows else None
+
+    def get_teacher(self, obj):
+        lead = self.lead(obj)
+        return lead.pk if lead else None
+
+    def get_teacher_name(self, obj):
+        lead = self.lead(obj)
+        return full_name(lead) if lead else None
 
     def get_warning(self, obj):
         """
@@ -377,9 +400,15 @@ class LessonSlotSerializer(serializers.ModelSerializer):
             )
 
         if not value("is_cancelled"):
-            # one teacher cannot run two courses on the same number
+            # двух уроков разом не бывает — но у **ведущего курса**, а не у
+            # того, кто нажал: администратор рисует чужую сетку, и мешать ей
+            # может только чужое же расписание. Курс без ведущего не мешает
+            # никому: некому
+            lead = CourseAssignment.objects.filter(course=course).values_list(
+                "teacher_id", flat=True
+            ).first()
             busy = LessonSlot.find_conflict(
-                teacher_id=self.context["request"].user.pk,
+                teacher_id=lead,
                 year=year,
                 date=slot_date,
                 lesson_number=value("lesson_number"),
@@ -398,146 +427,6 @@ class LessonSlotSerializer(serializers.ModelSerializer):
                 )
 
         attrs["year"] = year
-        return attrs
-
-
-class MasterSlotSerializer(serializers.ModelSerializer):
-    """A row of the school timetable. The school comes from the requester."""
-
-    school = serializers.HiddenField(default=CurrentSchoolDefault())
-    course_name = serializers.CharField(source="course.name", read_only=True)
-    teacher_name = serializers.SerializerMethodField()
-
-    class Meta:
-        model = MasterSlot
-        fields = (
-            "id",
-            "school",
-            "year",
-            "course",
-            "course_name",
-            "teacher",
-            "teacher_name",
-            "date",
-            "lesson_number",
-        )
-        validators = [
-            UniqueTogetherValidator(
-                queryset=MasterSlot.objects.all(),
-                fields=("course", "date", "lesson_number"),
-                message="This course already has a lesson with this number that day.",
-            ),
-        ]
-
-    def get_fields(self):
-        fields = super().get_fields()
-        fields["course"].queryset = school_courses(self)
-        fields["year"].queryset = school_years(self)
-        fields["teacher"].queryset = school_teachers(self)
-        return fields
-
-    def get_teacher_name(self, obj):
-        if obj.teacher is None:
-            return None
-        full = f"{obj.teacher.first_name} {obj.teacher.last_name}".strip()
-        return full or obj.teacher.email
-
-    def validate(self, attrs):
-        def value(name):
-            return attrs.get(name, getattr(self.instance, name, None))
-
-        course = value("course")
-        year = value("year") or course.year
-        teacher = value("teacher")
-        day = value("date")
-        number = value("lesson_number")
-
-        if year != course.year:
-            api_error(
-                Codes.SLOT_YEAR_MISMATCH,
-                "The lesson year must match the year of its course.",
-                field="year",
-            )
-
-        if not year.start_date <= day <= year.end_date:
-            api_error(
-                Codes.SLOT_OUTSIDE_YEAR,
-                f"The date is outside the school year "
-                f"({year.start_date} — {year.end_date}).",
-                field="date",
-                start=str(year.start_date),
-                end=str(year.end_date),
-            )
-
-        if teacher is not None and not CourseAssignment.objects.filter(
-            course=course, teacher=teacher
-        ).exists():
-            # the timetable names a teacher, it does not appoint one: handing
-            # over a course is a separate, deliberate step
-            api_error(
-                Codes.NOT_ASSIGNED,
-                f"{full_name(teacher)} is not assigned to «{course.name}». "
-                "Assign them to the course first.",
-                field="teacher",
-                teacher=full_name(teacher),
-                course=course.name,
-            )
-
-        # a row with no teacher yet cannot clash with anybody
-        busy = MasterSlot.find_conflict(
-            teacher_id=teacher.pk if teacher else None,
-            date=day,
-            lesson_number=number,
-            exclude_pk=self.instance.pk if self.instance else None,
-        )
-        if busy is not None:
-            api_error(
-                Codes.SLOT_NUMBER_TAKEN,
-                services.occupied_message(day, number, busy.course.name),
-                field="lesson_number",
-                date=str(day),
-                number=number,
-                class_name=busy.course.name,
-            )
-
-        attrs["year"] = year
-        return attrs
-
-
-class ImportFromSchoolSerializer(serializers.Serializer):
-    """
-    What a teacher asks to be copied out of the school timetable.
-
-    `courses` left out means every course they are down for — the usual
-    request, and the one the interface sends by default.
-    """
-
-    year = serializers.PrimaryKeyRelatedField(queryset=SchoolYear.objects.none())
-    # a ListField rather than many=True: DRF does not pass allow_null down to
-    # the wrapper it builds, and the interface sends an explicit null for
-    # «every course of mine»
-    courses = serializers.ListField(
-        child=serializers.PrimaryKeyRelatedField(queryset=Course.objects.none()),
-        required=False,
-        allow_null=True,
-    )
-    start = serializers.DateField()
-    end = serializers.DateField()
-    mode = serializers.ChoiceField(choices=("replace", "merge"), default="merge")
-
-    def get_fields(self):
-        fields = super().get_fields()
-        fields["year"].queryset = school_years(self)
-        fields["courses"].child.queryset = teacher_courses(self)
-        return fields
-
-    def validate(self, attrs):
-        if attrs["end"] < attrs["start"]:
-            api_error(
-                Codes.PERIOD_REVERSED,
-                "The end date is earlier than the start date.",
-                field="end",
-            )
         return attrs
 
 

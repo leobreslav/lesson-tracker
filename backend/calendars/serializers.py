@@ -240,12 +240,11 @@ class SchoolYearSerializer(serializers.ModelSerializer):
         поэтому есть `?force=true` — тот же разговор, что при отвязке
         участника.
         """
-        from schedule.models import LessonSlot, MasterSlot
+        from schedule.models import LessonSlot
 
         outside = Q(date__lt=start_date) | Q(date__gt=end_date)
         slots = LessonSlot.objects.filter(outside, year=self.instance).count()
-        master = MasterSlot.objects.filter(outside, year=self.instance).count()
-        if not slots and not master:
+        if not slots:
             return
 
         request = self.context.get("request")
@@ -255,11 +254,9 @@ class SchoolYearSerializer(serializers.ModelSerializer):
 
         api_error(
             Codes.YEAR_SHRINK_CUTS_SLOTS,
-            f"The new boundaries leave {slots} personal lessons and {master} "
-            "rows of the school timetable outside the year. They are not "
-            "deleted, but they stop being part of it; repeat with force=true "
-            "to confirm.",
+            f"The new boundaries leave {slots} lessons outside the year. They "
+            "are not deleted, but they stop being part of it; repeat with "
+            "force=true to confirm.",
             field="start_date",
             slots=slots,
-            master_slots=master,
         )
