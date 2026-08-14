@@ -1293,14 +1293,27 @@ button.link.hint.level {
   margin: 0.5rem 0;
 }
 
+/*
+ * Плашка: короткое значение в скруглённой заливке.
+ *
+ * Отступы симметричные — иначе текст стоит не по центру, и на «5» в
+ * кружке это видно сразу. Урезан правый отступ только там, где справа
+ * действительно есть крестик: он сам добавляет воздух, и с полным
+ * отступом плашка становится вдвое шире содержимого.
+ */
 .tag {
   display: inline-flex;
   align-items: center;
   gap: 0.2rem;
-  padding: 0.1rem 0.2rem 0.1rem 0.5rem;
+  padding: 0.15rem 0.5rem;
+  line-height: 1.35;
   background: #f1f3f4;
   border-radius: 999px;
   font-size: 0.85rem;
+}
+
+.tag:has(button) {
+  padding-right: 0.2rem;
 }
 
 /* курс, из которого ученика сняли: он остаётся в списке, потому что
@@ -2469,7 +2482,6 @@ button.compact,
 /* эталон — это строка, с которой сверяются посимвольно: моноширинный шрифт
    и рамка, потому что «x + 3» и «x+3» должны отличаться на глаз */
 .task-list .answers .tag {
-  padding: 0.1rem 0.4rem;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 0.8rem;
   background: #fff;
