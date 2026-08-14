@@ -984,6 +984,7 @@
     "expected_one": "Правильный ответ:",
     "expected_few": "Правильные ответы:",
     "expected_many": "Правильные ответы:",
-    "progressLabel": "начали · прошли целиком {{finished}}"
+    "startedLabel": "начали",
+    "finishedLabel": "прошли целиком"
   }
 }

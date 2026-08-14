@@ -946,6 +946,7 @@
     "uncheckedLabel": "answers to check",
     "expected_one": "Correct answer:",
     "expected_other": "Correct answers:",
-    "progressLabel": "have started · {{finished}} answered everything"
+    "startedLabel": "have started",
+    "finishedLabel": "answered everything"
   }
 }

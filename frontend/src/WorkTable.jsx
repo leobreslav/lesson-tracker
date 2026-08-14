@@ -224,13 +224,17 @@ function Summary({ summary, tasks, onOpen }) {
 
   return (
     <div className="cards work-summary">
-      <section className="panel card-stat" data-card="started">
-        <h2>
+      {/* две равноценные строки: «начали» и «прошли целиком» — разные
+          вопросы к одному классу, и одна не подпись к другой */}
+      <section className="panel card-stat stat-rows" data-card="started">
+        <b>
           {summary.started}/{summary.students}
-        </h2>
-        <p className="hint">
-          {t('table.progressLabel', { finished: summary.finished })}
-        </p>
+        </b>
+        <span className="hint">{t('table.startedLabel')}</span>
+        <b>
+          {summary.finished}/{summary.students}
+        </b>
+        <span className="hint">{t('table.finishedLabel')}</span>
       </section>
 
       <section className="panel card-stat" data-card="unchecked">

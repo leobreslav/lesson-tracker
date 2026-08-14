@@ -131,7 +131,8 @@ test('сводка над таблицей считает то, чего в не
   // тринадцать действующих начали, один прошёл целиком: снятая с курса в
   // знаменатель не входит — она не «не закончила», она ушла
   await expect(card('started')).toContainText('13/13')
-  await expect(card('started')).toContainText('прошли целиком 1')
+  await expect(card('started')).toContainText('1/13')
+  await expect(card('started')).toContainText('прошли целиком')
   await expect(card('unchecked')).not.toContainText('0')
 
   // «на проверку» кликабельна и ведёт в столбец, где эти ответы лежат
