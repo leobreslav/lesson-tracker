@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 import CourseStatus from './CourseStatus'
+import Reviews from './Reviews'
 import { createDemoData } from './api'
 import { dateRange } from './dates'
 
@@ -198,6 +199,11 @@ export default function Dashboard({ user, status, onStatusChange, onLoggedOut })
       )}
 
       <CourseStatus onLoggedOut={onLoggedOut} />
+
+      {/* надзор методиста — здесь же, а не своим разделом: за «как идут
+          дела» приходят на главную, и то, что ждёт ответа, должно быть
+          там же, а не по адресу, о котором надо вспомнить */}
+      <Reviews onLoggedOut={onLoggedOut} />
 
       {/* демо заводит год и курсы, а они школьные — отсюда роль. Кнопка
           показывается только пустому аккаунту: дальше на главной есть что

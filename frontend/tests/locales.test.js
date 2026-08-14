@@ -187,7 +187,7 @@ test('keys built at runtime exist for every value they take', () => {
     ...['study', 'holiday', 'vacation', 'weekend'].map((s) => `dayStatus.${s}`),
     ...['holiday', 'vacation', 'workday'].map((k) => `calendar.kind.${k}`),
     // «курсы» и «учебный год» из бара убраны: оба живут в разделе «Школа»
-    ...['schedule', 'plan', 'works', 'reviews', 'school'].map((s) => `nav.${s}`),
+    ...['schedule', 'plan', 'works', 'school'].map((s) => `nav.${s}`),
     ...['year', 'calendar', 'classes', 'schedule', 'plan'].flatMap((step) =>
       ['title', 'action', 'missing'].map((part) => `dashboard.steps.${step}.${part}`),
     ),

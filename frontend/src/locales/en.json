@@ -43,7 +43,6 @@
     "needClass": "add a class first",
     "school": "School",
     "schools": "Schools",
-    "reviews": "For approval",
     "works": "Assignments"
   },
   "auth": {
@@ -376,7 +375,7 @@
     "freeSummary_other": "{{count}} free lessons, {{start}} — {{end}}",
     "baseline": {
       "submit": "Send for approval",
-      "hint": "A snapshot goes to the methodist of the course; «Course Status» then counts the drift from what was approved.",
+      "hint": "A snapshot goes to the methodist of the course; «My courses» on the main page then counts the drift from what was approved.",
       "sent": "Sent to {{name}}.",
       "pending": "On approval with {{name}}.",
       "returned": "Returned by {{name}}:",
@@ -389,7 +388,7 @@
     "publishFromCourse": "The subject and the year of study come from the course: {{subject}}, year {{grade}}."
   },
   "status": {
-    "title": "Course Status",
+    "title": "My courses",
     "hint": "Where each course stands: does the plan still fit the year, what got cancelled and how far it drifted from the baseline. Editing lives on the «Lesson plan» page.",
     "reserveLabel": "reserve",
     "doneOf": "{{done}} of {{total}}",
@@ -797,14 +796,11 @@
     "return": "Return with a comment",
     "sendBack": "Return",
     "comment": "What to fix",
-    "empty": {
-      "title": "Nothing waiting",
-      "hint": "When a teacher sends a plan on your subject, it appears here."
-    },
     "mark": "waiting for you",
     "returned": "returned",
     "waiting_one": "{{count}} plan is waiting for your answer.",
-    "waiting_other": "{{count}} plans are waiting for your answer."
+    "waiting_other": "{{count}} plans are waiting for your answer.",
+    "rest": "Under your supervision"
   },
   "student": {
     "title": "My courses",

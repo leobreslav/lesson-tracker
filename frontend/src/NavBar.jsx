@@ -7,9 +7,6 @@ const SECTIONS = [
   { to: '/schedule', key: 'schedule', needs: 'classes' },
   { to: '/plan', key: 'plan', needs: 'classes' },
   { to: '/works', key: 'works', needs: 'classes' },
-  // раздел методиста: роль не иерархическая, у большинства назначений нет,
-  // и пустой раздел в баре был бы обещанием работы, которой нет
-  { to: '/reviews', key: 'reviews', needs: null, methodistOnly: true },
   // «Курсы» и «Учебный год» из бара убраны: оба живут в разделе «Школа»,
   // где их и правят, а учителю список курсов и так виден чипами на своих
   // страницах — расписании, плане и работах
@@ -33,13 +30,7 @@ function reasonKeyFor(needs, status) {
   return null
 }
 
-export default function NavBar({
-  user,
-  status,
-  reviews = 0,
-  onLoggedOut,
-  onLanguageChange,
-}) {
+export default function NavBar({ user, status, onLoggedOut, onLanguageChange }) {
   const { t } = useTranslation()
   const [menuOpen, setMenuOpen] = useState(false)
   const location = useLocation()
@@ -74,8 +65,7 @@ export default function NavBar({
           {SECTIONS.filter(
             (section) =>
               (!section.adminOnly || user?.is_school_admin) &&
-              (!section.superuserOnly || user?.is_superuser) &&
-              (!section.methodistOnly || user?.methodist_courses?.length),
+              (!section.superuserOnly || user?.is_superuser),
           ).map((section) => {
             const reasonKey = reasonKeyFor(section.needs, status)
             const reason = reasonKey ? t(reasonKey) : null
@@ -92,9 +82,6 @@ export default function NavBar({
                 }
               >
                 {t(`nav.${section.key}`)}
-                {section.key === 'reviews' && reviews > 0 && (
-                  <span className="nav-count">{reviews}</span>
-                )}
               </NavLink>
             )
           })}

@@ -46,9 +46,11 @@ test('учитель отправляет план, методист утвер�
 
   // методист видит запрос и присланный план
   await signIn(PEOPLE.petrov)
-  await page.goto('/reviews')
+  // раздела «На утверждение» больше нет: надзор живёт на главной, под
+  // своими курсами
+  await page.goto('/')
   await ready(page)
-  await expect(page.locator('.nav-count')).toHaveText('1')
+  await expect(page.getByRole('heading', { name: 'На утверждение' })).toBeVisible()
   await page.getByRole('button', { name: 'Открыть' }).click()
 
   const dialog = page.locator('dialog.modal')
@@ -71,7 +73,7 @@ test('методист возвращает план с замечанием', a
   await teacher.post(`/api/plan/baseline/submit/?course=${algebra.id}`, {})
 
   await signIn(PEOPLE.petrov)
-  await page.goto('/reviews')
+  await page.goto('/')
   await ready(page)
   await page.getByRole('button', { name: 'Открыть' }).click()
 
@@ -112,7 +114,7 @@ test('правка после отправки запрос не отзывае�
   await expect(page.locator('.hint.approval')).toContainText('На утверждении')
 
   await signIn(PEOPLE.petrov)
-  await page.goto('/reviews')
+  await page.goto('/')
   await ready(page)
   await page.getByRole('button', { name: 'Открыть' }).click()
   const dialog = page.locator('dialog.modal')
@@ -165,7 +167,7 @@ test('методист видит план, который никто не пр�
 
   // ничего не отправляли — и всё равно план виден методисту
   await signIn(PEOPLE.petrov)
-  await page.goto('/reviews')
+  await page.goto('/')
   await ready(page)
   await expect(page.locator('.nav-count')).toHaveCount(0)
 
@@ -193,7 +195,7 @@ test('ожидающий план помечен, остальные — нет'
   await teacher.post(`/api/plan/baseline/submit/?course=${algebra.id}`, {})
 
   await signIn(PEOPLE.petrov)
-  await page.goto('/reviews')
+  await page.goto('/')
   await ready(page)
 
   const rows = page.locator('.progress-list > li')
@@ -204,5 +206,8 @@ test('ожидающий план помечен, остальные — нет'
       '.badge.waiting',
     ),
   ).toHaveText('ждёт ответа')
-  await expect(page.locator('.nav-count')).toHaveText('1')
+
+  // ожидающий стоит в своём списке, остальные — ниже, под надзором
+  await expect(page.getByRole('heading', { name: 'На утверждение' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Под надзором' })).toBeVisible()
 })

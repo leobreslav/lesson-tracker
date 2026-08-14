@@ -1,23 +1,27 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import CourseRow from './CourseRow'
-import EmptyState from './EmptyState'
 import Modal from './Modal'
 import { approveReview, fetchReview, fetchReviews, returnReview } from './api'
 import { longDate } from './dates'
 
 /**
- * «На утверждение» — все планы, которые ведёт методист.
+ * Надзор методиста — блок на главной, под своими курсами.
  *
- * Очередью запросов это было, и очередь оказалась слишком узкой: методист
- * видел тех, кто прислал план, и ровно ничего — про остальных. А спрашивают
- * с него как раз про остальных: кто отстаёт, у кого план не помещается в
- * год, кто переписал половину после утверждения. Поэтому список полный, а
- * ожидающий запрос — пометка в строке.
+ * Своим разделом это было, и раздел оказался лишним: методист заходит на
+ * главную посмотреть, как идут **его** курсы, и там же должен видеть, что
+ * ждёт его ответа. Отдельный адрес заставлял вспоминать, что он вообще
+ * существует, а счётчик в баре — единственное, что об этом напоминало.
  *
- * Строки те же, что учитель видит у себя на главной (`CourseRow`), и числа
- * в них считает тот же серверный расчёт: методист и учитель должны смотреть
- * на одно и то же, иначе разговор про «отстаёшь» начинается со спора о
+ * Внутри блока два списка. Сверху то, что ждёт ответа: за этим сюда и
+ * приходят. Ниже — остальные планы под надзором, и они нужны не меньше:
+ * очередь отвечала на вопрос «что подписать», а спрашивают с методиста про
+ * тех, кто ничего не присылал — кто отстаёт, у кого план не помещается в
+ * год, кто переписал половину после утверждения.
+ *
+ * Строки те же, что у своих курсов выше (`CourseRow`), и числа в них
+ * считает тот же серверный расчёт: методист и учитель должны смотреть на
+ * одно и то же, иначе разговор про «отстаёшь» начинается со спора о
  * цифрах. Отличий два — в шапке стоит имя учителя, а под подробностями
  * появляется кнопка разбора, если план ждёт ответа.
  *
@@ -96,82 +100,79 @@ export default function Reviews({ onLoggedOut }) {
     }
   }
 
-  if (plans === null) {
-    return (
-      <main className="page wide">
-        <p>{error ? <span className="error">{error}</span> : t('common.loading')}</p>
-      </main>
-    )
-  }
+  // ничего не надзираем — блока нет вовсе: пустой раздел на главной был бы
+  // обещанием работы, которой нет
+  if (plans === null || !plans.length) return null
 
-  const waiting = plans.filter((plan) => plan.review?.status === 'pending').length
+  const waiting = plans.filter((plan) => plan.review?.status === 'pending')
+  const rest = plans.filter((plan) => plan.review?.status !== 'pending')
+
+  const list = (rows) => (
+    <ul className="progress-list">
+      {rows.map((plan) => (
+        <CourseRow
+          key={key(plan)}
+          row={plan}
+          open={expanded === key(plan)}
+          onToggle={() => setExpanded(expanded === key(plan) ? null : key(plan))}
+          mark={
+            /* одной ячейкой: в шапке сетка на четыре колонки, и две
+               отдельные пометки разъехались бы по разным местам */
+            <span className="whose">
+              {plan.teacher.name}
+              {plan.review?.status === 'pending' && (
+                <span className="badge waiting">{t('reviews.mark')}</span>
+              )}
+              {plan.review?.status === 'returned' && (
+                <span className="badge">{t('reviews.returned')}</span>
+              )}
+            </span>
+          }
+          actions={
+            plan.review?.status === 'pending' ? (
+              <div className="actions wrap">
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => open(plan.review.id)}
+                >
+                  {t('reviews.open')}
+                </button>
+                <span className="hint">
+                  {t('reviews.sentOn', {
+                    date: longDate(plan.review.submitted_at.slice(0, 10)),
+                  })}
+                </span>
+              </div>
+            ) : null
+          }
+        />
+      ))}
+    </ul>
+  )
 
   return (
-    <main className="page wide">
-      <header className="page-header">
-        <h1>{t('reviews.title')}</h1>
-      </header>
-
-      <p className="hint">
-        {waiting
-          ? t('reviews.waiting', { count: waiting })
-          : t('reviews.hint')}
-      </p>
-
+    <>
       {error && (
         <p className="error" role="alert">
           {error}
         </p>
       )}
 
-      {!plans.length ? (
-        <EmptyState title={t('reviews.empty.title')}>
-          {t('reviews.empty.hint')}
-        </EmptyState>
-      ) : (
-        <ul className="progress-list">
-          {plans.map((plan) => (
-            <CourseRow
-              key={key(plan)}
-              row={plan}
-              open={expanded === key(plan)}
-              onToggle={() =>
-                setExpanded(expanded === key(plan) ? null : key(plan))
-              }
-              mark={
-                /* одной ячейкой: в шапке сетка на четыре колонки, и две
-                   отдельные пометки разъехались бы по разным местам */
-                <span className="whose">
-                  {plan.teacher.name}
-                  {plan.review?.status === 'pending' && (
-                    <span className="badge waiting">{t('reviews.mark')}</span>
-                  )}
-                  {plan.review?.status === 'returned' && (
-                    <span className="badge">{t('reviews.returned')}</span>
-                  )}
-                </span>
-              }
-              actions={
-                plan.review?.status === 'pending' ? (
-                  <div className="actions wrap">
-                    <button
-                      type="button"
-                      disabled={busy}
-                      onClick={() => open(plan.review.id)}
-                    >
-                      {t('reviews.open')}
-                    </button>
-                    <span className="hint">
-                      {t('reviews.sentOn', {
-                        date: longDate(plan.review.submitted_at.slice(0, 10)),
-                      })}
-                    </span>
-                  </div>
-                ) : null
-              }
-            />
-          ))}
-        </ul>
+      {waiting.length > 0 && (
+        <>
+          <h2 className="section-title">{t('reviews.title')}</h2>
+          <p className="hint">{t('reviews.waiting', { count: waiting.length })}</p>
+          {list(waiting)}
+        </>
+      )}
+
+      {rest.length > 0 && (
+        <>
+          <h2 className="section-title">{t('reviews.rest')}</h2>
+          <p className="hint">{t('reviews.hint')}</p>
+          {list(rest)}
+        </>
       )}
 
       {opened && (
@@ -269,6 +270,6 @@ export default function Reviews({ onLoggedOut }) {
           )}
         </Modal>
       )}
-    </main>
+    </>
   )
 }
