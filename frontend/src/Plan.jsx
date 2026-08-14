@@ -1,5 +1,4 @@
 import {
-  Fragment,
   Suspense,
   lazy,
   useCallback,
@@ -10,36 +9,16 @@ import {
 } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
-import {
-  DndContext,
-  DragOverlay,
-  KeyboardSensor,
-  PointerSensor,
-  TouchSensor,
-  closestCenter,
-  pointerWithin,
-  useSensor,
-  useSensors,
-} from '@dnd-kit/core'
-import {
-  SortableContext,
-  sortableKeyboardCoordinates,
-  verticalListSortingStrategy,
-} from '@dnd-kit/sortable'
 import EmptyState from './EmptyState'
 import ImportDialog from './ImportDialog'
 import PlanCsvHelp from './PlanCsvHelp'
+import PlanTable from './PlanTable'
 import Modal from './Modal'
-import { EmptyDropZone, SortableRow, dragId, emptyZoneId } from './PlanDnd'
 import { freeSlots, layoutTotals, stitchLayout } from './planLayout'
-import { dayMonth, longDate, shortDate, shortWeekday } from './dates'
+import { longDate, shortDate } from './dates'
 import { today } from './calendarLogic'
-import {
-  applyMove,
-  countBlocks,
-  planRows,
-  resolveDropTarget,
-} from './planLogic'
+import { remember, remembered } from './remember'
+import { applyMove, countBlocks, planRows } from './planLogic'
 import {
   createPlanNode,
   fetchSubjects,
@@ -76,28 +55,6 @@ const LessonPanel = lazy(() => import('./LessonPanel'))
 const DATES_KEY = 'planShowDates'
 const WEEKS_KEY = 'planShowWeeks'
 const FREE_KEY = 'planShowFree'
-const FREE_OPEN_KEY = 'planFreeOpen'
-
-// столько свободных слотов показываем сразу: свернуть три строки — значит
-// заставить нажать кнопку ради трёх строк
-const FREE_INLINE = 5
-
-function remembered(key, fallback) {
-  try {
-    const saved = localStorage.getItem(key)
-    return saved === null ? fallback : saved === '1'
-  } catch {
-    return fallback
-  }
-}
-
-function remember(key, value) {
-  try {
-    localStorage.setItem(key, value ? '1' : '0')
-  } catch {
-    // приватный режим — просто не запоминаем
-  }
-}
 
 const rememberedDates = () => remembered(DATES_KEY, true)
 
@@ -107,8 +64,6 @@ const FORMATS = ['xlsx', 'csv']
 export default function Plan({ onLoggedOut }) {
   const { t } = useTranslation()
   const navigate = useNavigate()
-  // the screen-reader script for dragging: dnd-kit reads it out on pick-up
-  const dndInstructions = { draggable: t('plan.dndInstructions') }
   const [classes, setClasses] = useState(null)
   const [years, setYears] = useState([])
   const [classId, setClassId] = useState(null)
@@ -127,7 +82,6 @@ export default function Plan({ onLoggedOut }) {
   const [showDates, setShowDates] = useState(rememberedDates)
   const [showWeeks, setShowWeeks] = useState(() => remembered(WEEKS_KEY, true))
   const [showFree, setShowFree] = useState(() => remembered(FREE_KEY, true))
-  const [freeOpen, setFreeOpen] = useState(() => remembered(FREE_OPEN_KEY, false))
   const [adding, setAdding] = useState(null) // {parent, after, is_section, title}
   const [deleting, setDeleting] = useState(null) // the section being removed
   const [importing, setImporting] = useState(false)
@@ -137,10 +91,9 @@ export default function Plan({ onLoggedOut }) {
   const [templates, setTemplates] = useState([])
   const [subjects, setSubjects] = useState([])
   const [notice, setNotice] = useState(null)
+  // свёрнутые темы живут здесь, а не в таблице: при смене курса таблица
+  // размонтируется, и свёрнутое иначе разворачивалось бы само
   const [collapsed, setCollapsed] = useState(() => new Set())
-
-  const [dragged, setDragged] = useState(null) // {node} — what is being dragged
-  const [drop, setDrop] = useState(null) // {overId, side, parent, index}
   // nodes whose move the server has not confirmed: a repeat drop is ignored
   const pending = useRef(new Set())
 
@@ -235,25 +188,6 @@ export default function Plan({ onLoggedOut }) {
     }
   }
 
-  // --- dragging ---
-
-  const sensors = useSensors(
-    // a small mouse shift, otherwise clicking a title would count as a drag
-    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
-    // a delay on touch: without it scrolling the list turns into a drag
-    useSensor(TouchSensor, {
-      activationConstraint: { delay: 200, tolerance: 6 },
-    }),
-    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
-  )
-
-  /** Nested droppables: ask what sits under the cursor first. */
-  const collisionDetection = useCallback((args) => {
-    const withinPointer = pointerWithin(args)
-    // keyboard dragging has no cursor — closestCenter answers there
-    return withinPointer.length ? withinPointer : closestCenter(args)
-  }, [])
-
   /** Block counters come from the tree already loaded, with no requests. */
   const blocks = useMemo(
     () => countBlocks(planRows(data?.nodes ?? [])),
@@ -277,62 +211,6 @@ export default function Plan({ onLoggedOut }) {
       free: freeSlots(rows, ribbon),
     }
   }, [data, ribbon])
-
-  const items = useMemo(() => {
-    const map = new Map()
-
-    ;(data?.nodes ?? []).forEach((node, index) => {
-      map.set(dragId(node.id), { node, parent: null, index })
-      ;(node.children ?? []).forEach((child, childIndex) => {
-        map.set(dragId(child.id), { node: child, parent: node.id, index: childIndex })
-      })
-    })
-
-    return map
-  }, [data])
-
-  /** Whether the dragged node sits below the middle of the hovered one. */
-  const isBelow = (event) => {
-    const active = event.active.rect.current.translated
-    const over = event.over?.rect
-    if (!active || !over) return false
-    return active.top + active.height / 2 > over.top + over.height / 2
-  }
-
-  const readTarget = (event) => {
-    const overId = event.over?.id
-    if (!overId) return null
-
-    const target = resolveDropTarget({
-      items,
-      activeId: event.active.id,
-      overId,
-      below: isBelow(event),
-    })
-
-    return target && { ...target, overId, side: isBelow(event) ? 'after' : 'before' }
-  }
-
-  const handleDragStart = (event) => {
-    setEditing(null)
-    setDragged(items.get(event.active.id) ?? null)
-  }
-
-  const handleDragOver = (event) => setDrop(readTarget(event))
-
-  const handleDragCancel = () => {
-    setDragged(null)
-    setDrop(null)
-  }
-
-  const handleDragEnd = (event) => {
-    const target = readTarget(event)
-    const node = items.get(event.active.id)?.node
-    setDragged(null)
-    setDrop(null)
-
-    if (target && node) dropNode(node.id, target.parent, target.index)
-  }
 
   /**
    * One request per finished drag.
@@ -403,11 +281,6 @@ export default function Plan({ onLoggedOut }) {
     )
   }, [templates, course])
 
-  const classLabel = (item) => {
-    const year = yearById.get(item.year)
-    return years.length > 1 && year ? `${item.name} · ${year.name}` : item.name
-  }
-
   const toggleSection = (id) =>
     setCollapsed((current) => {
       const next = new Set(current)
@@ -416,28 +289,9 @@ export default function Plan({ onLoggedOut }) {
       return next
     })
 
-  // --- editing ---
-
-  /**
-   * Renaming, for folders.
-   *
-   * A lesson is not renamed here: clicking it opens the panel, where the
-   * title sits above its content. A folder has no content, so a folder is
-   * just a name and an inline field is the shortest way to change it.
-   */
-  const startEdit = (node) => setEditing({ id: node.id, title: node.title })
-
-  const submitEdit = (event) => {
-    event.preventDefault()
-    const { id, title } = editing
-    setEditing(null)
-
-    if (!title.trim()) return
-    run(() => updatePlanNode(id, { title: title.trim() }))
-  }
-
-  const editKeyDown = (event) => {
-    if (event.key === 'Escape') setEditing(null)
+  const classLabel = (item) => {
+    const year = yearById.get(item.year)
+    return years.length > 1 && year ? `${item.name} · ${year.name}` : item.name
   }
 
   // --- adding ---
@@ -552,6 +406,13 @@ export default function Plan({ onLoggedOut }) {
     run(() => deletePlanNode(node.id, true))
   }
 
+  /**
+   * Шаг вверх или вниз. Какой эндпоинт звать, решает страница: у главы он
+   * свой, и таблице про api знать незачем — она только говорит, что нажали.
+   */
+  const handleMove = (nodeId, direction, isSection) =>
+    run(() => (isSection ? movePlanSection : movePlanNode)(nodeId, direction))
+
   const removeSection = (keepChildren) => {
     const section = deleting
     setDeleting(null)
@@ -560,427 +421,18 @@ export default function Plan({ onLoggedOut }) {
 
   // --- rendering ---
 
-  const editForm = () => (
-    <form className="plan-edit" onSubmit={submitEdit}>
-      <input
-        autoFocus
-        value={editing.title}
-        maxLength={200}
-        aria-label={t('plan.titleLabel')}
-        onChange={(event) => setEditing({ ...editing, title: event.target.value })}
-        onKeyDown={editKeyDown}
-      />
-      <button type="submit" disabled={busy}>
-        {t('common.save')}
-      </button>
-      <button type="button" className="secondary" onClick={() => setEditing(null)}>
-        {t('common.cancel')}
-      </button>
-    </form>
-  )
+  const submitEdit = (event) => {
+    event.preventDefault()
+    const { id, title } = editing
+    setEditing(null)
 
-  const addForm = () => (
-    <form className="plan-add-form" onSubmit={submitAdd}>
-      <input
-        autoFocus
-        value={adding.title}
-        maxLength={200}
-        placeholder={t(
-          adding.is_section ? 'plan.sectionPlaceholder' : 'plan.lessonPlaceholder',
-        )}
-        aria-label={t('plan.titleLabel')}
-        onChange={(event) => setAdding({ ...adding, title: event.target.value })}
-        onKeyDown={(event) => {
-          if (event.key === 'Escape') setAdding(null)
-        }}
-      />
-      <button type="submit" disabled={busy || !adding.title.trim()}>
-        {t('common.add')}
-      </button>
-      <button type="button" className="secondary" onClick={() => setAdding(null)}>
-        {t('plan.done')}
-      </button>
-    </form>
-  )
-
-  const addFormFor = (parent, after) =>
-    adding && adding.parent === parent && adding.after === after ? addForm() : null
-
-  const moveButtons = (node, mover) => (
-    <>
-      <button
-        type="button"
-        className="link"
-        title={t('plan.up')}
-        disabled={busy}
-        onClick={() => run(() => mover(node.id, 'up'))}
-      >
-        ↑
-      </button>
-      <button
-        type="button"
-        className="link"
-        title={t('plan.down')}
-        disabled={busy}
-        onClick={() => run(() => mover(node.id, 'down'))}
-      >
-        ↓
-      </button>
-    </>
-  )
-
-  const indicatorFor = (id) => (drop?.overId === dragId(id) ? drop.side : null)
-
-  /** Строка-разделитель: заголовок терма, каникулы или черта «сегодня». */
-  const divider = (mark, key) => {
-    if (mark.kind === 'term') {
-      return (
-        <li className="plan-term" key={key}>
-          <strong>{mark.name}</strong>
-          <span className="hint">
-            {shortDate(mark.start)} — {shortDate(mark.end)}
-          </span>
-        </li>
-      )
-    }
-
-    if (mark.kind === 'today') {
-      return (
-        <li className="plan-today" key={key}>
-          {t('plan.today')}
-        </li>
-      )
-    }
-
-    return (
-      <li className="plan-divider break" key={key}>
-        <span>
-          {t('plan.breakBetween', {
-            title: mark.title,
-            start: shortDate(mark.start),
-            end: shortDate(mark.end),
-          })}
-        </span>
-      </li>
-    )
+    if (!title.trim()) return
+    run(() => updatePlanNode(id, { title: title.trim() }))
   }
 
   // без расписания раскладывать нечего: «не помещается» на каждой строке —
   // это шум, а не сообщение
   const dated = showDates && ribbon.length > 0
-
-  /** Черты вокруг строки урока: каникулы сверху, конец терма снизу. */
-  const marks = (node, side) =>
-    dated && node
-      ? (layout.byId.get(node.id)?.[side] ?? []).map((mark, index) =>
-          divider(mark, `${side}-${node.id}-${index}`),
-        )
-      : null
-
-  /**
-   * Левая колонка недели: подпись в первой строке **с датой** и больше
-   * ничего — у главы дат нет, и номер недели там смотрелся бы случайным.
-   *
-   * Саму группу показывает заливка каждой второй недели — линий и рамок
-   * тут нет: строк в таблице сорок, и любой декор на них множится.
-   */
-  const weekCell = (node) => {
-    if (!dated) return null
-    const week = layout.byId.get(node.id)?.week
-
-    return (
-      <span className="plan-weekmark">
-        {showWeeks && week?.labelled && t('plan.week', { number: week.number })}
-      </span>
-    )
-  }
-
-  /**
-   * Свободные слоты — даты, на которые уроков плана не хватило.
-   *
-   * Их бывает и восемьдесят: при позиционном сопоставлении они идут хвостом
-   * после последнего урока, поэтому по умолчанию свёрнуты в одну строку. До
-   * пяти показываем сразу — сворачивать три строки значит требовать нажатия
-   * ради трёх строк.
-   */
-  const renderFree = () => {
-    const free = layout.free
-    if (!dated || !showFree || !free.length) return null
-
-    const many = free.length > FREE_INLINE
-    const open = !many || freeOpen
-
-    return (
-      <>
-        {many && (
-          <button
-            type="button"
-            className="link free-summary"
-            aria-expanded={open}
-            onClick={() => {
-              setFreeOpen(!freeOpen)
-              remember(FREE_OPEN_KEY, !freeOpen)
-            }}
-          >
-            {open ? '▾' : '▸'}{' '}
-            {t('plan.freeSummary', {
-              count: free.length,
-              start: dayMonth(free[0].slot.date),
-              end: dayMonth(free.at(-1).slot.date),
-            })}
-          </button>
-        )}
-
-        {open && (
-          <ul className="plan free">
-            {free.map(({ slot, labelled }) => (
-              <li
-                key={slot.id}
-                className={`plan-row free${slot.week % 2 === 0 ? ' week-even' : ''}`}
-              >
-                <span className="plan-weekmark">
-                  {showWeeks && labelled && t('plan.week', { number: slot.week })}
-                </span>
-                <span className="plan-date">
-                  {dayMonth(slot.date)} <em>{shortWeekday(slot.date)}</em>
-                </span>
-                {/* ни ручки, ни номера: это не строка плана, а пустое место
-                    в расписании */}
-                <span />
-                <span />
-                <span className="plan-title-cell">
-                  <button
-                    type="button"
-                    className="link title free-slot"
-                    disabled={busy}
-                    onClick={() => openAdd({ parent: null })}
-                  >
-                    {t('plan.freeSlot')}
-                  </button>
-                </span>
-              </li>
-            ))}
-          </ul>
-        )}
-      </>
-    )
-  }
-
-  /** Чётные недели закрашены — этим и группируются. */
-  const weekStripe = (node) => {
-    const week = dated && showWeeks && layout.byId.get(node.id)?.week
-    return week && week.number % 2 === 0 ? ' week-even' : ''
-  }
-
-  /**
-   * Дата и день недели урока — узкая колонка слева.
-   *
-   * У темы даты нет (её диапазон стоит в полосе), но ячейка нужна пустой:
-   * иначе полоса съехала бы влево относительно строк уроков.
-   */
-  const dateCells = (node, empty = false) => {
-    if (!dated) return null
-    if (empty) return <span className="plan-date" />
-    const slot = layout.byId.get(node.id)?.slot
-
-    return slot ? (
-      <span className="plan-date">
-        {dayMonth(slot.date)} <em>{shortWeekday(slot.date)}</em>
-      </span>
-    ) : (
-      <span className="plan-date missing">{t('plan.noSlot')}</span>
-    )
-  }
-
-  const renderLesson = (node, parent) => (
-    <SortableRow
-      key={node.id}
-      id={dragId(node.id)}
-      className={
-        'plan-row lesson' +
-        weekStripe(node) +
-        (dated && !layout.byId.get(node.id)?.slot ? ' no-slot' : '') +
-        (dated && layout.byId.get(node.id)?.past ? ' past' : '')
-      }
-      indicator={indicatorFor(node.id)}
-    >
-      {(handle) => (
-        <>
-          {/* левая колонка: неделя и дата. Взгляд идёт по левому краю и
-              должен встречать данные, а не служебную ручку */}
-          {weekCell(node)}
-          {dateCells(node)}
-          {handle}
-          <span className="plan-number">{node.number}</span>
-          <span className={parent ? 'plan-title-cell nested' : 'plan-title-cell'}>
-            <button
-              type="button"
-              className="link title"
-              title={node.title}
-              disabled={busy}
-              onClick={() => setOpened(node.id)}
-            >
-              {node.title}
-            </button>
-
-            {/* two separate marks: one says there is a lesson written, the
-                other that something comes with it */}
-            {node.has_content && (
-              <span
-                className="mark"
-                title={t('plan.hasContent')}
-                aria-label={t('plan.hasContent')}
-              >
-                📝
-              </span>
-            )}
-            {node.attachments > 0 && (
-              <span
-                className="mark"
-                title={t('plan.hasAttachments', { count: node.attachments })}
-                aria-label={t('plan.hasAttachments', { count: node.attachments })}
-              >
-                📎
-              </span>
-            )}
-
-            {node.note && (
-              <span className="hint note" title={node.note}>
-                {node.note}
-              </span>
-            )}
-          </span>
-
-          <span className="row-actions">
-            {moveButtons(node, movePlanNode)}
-            <button
-              type="button"
-              className="link"
-              title={t('plan.insertAfter')}
-              disabled={busy}
-              onClick={() => openAdd({ parent, after: node.id })}
-            >
-              +
-            </button>
-            <button
-              type="button"
-              className="link"
-              title={t('common.delete')}
-              disabled={busy}
-              onClick={() => removeLesson(node)}
-            >
-              ✕
-            </button>
-          </span>
-        </>
-      )}
-    </SortableRow>
-  )
-
-  const renderSection = (node) => {
-    const hidden = collapsed.has(node.id)
-    const childIds = node.children.map((child) => dragId(child.id))
-    // the section lights up when a lesson hovers over it as a container
-    const isTarget = drop?.parent === node.id
-
-    return (
-      <SortableRow
-        key={node.id}
-        id={dragId(node.id)}
-        className={`plan-section${isTarget ? ' drop-inside' : ''}`}
-        indicator={indicatorFor(node.id)}
-      >
-        {(handle) => (
-          <>
-        <div className={`plan-row section-head${weekStripe(node)}`}>
-          {weekCell(node)}
-          {dateCells(node, true)}
-          {handle}
-          {/* треугольник стоит в колонке номера: у главы номера нет, а
-              место есть — и свёртка оказывается ровно под номерами */}
-          <button
-            type="button"
-            className="link toggle"
-            title={t(hidden ? 'plan.expand' : 'plan.collapse')}
-            onClick={() => toggleSection(node.id)}
-          >
-            {hidden ? '▸' : '▾'}
-          </button>
-
-          {editing?.id === node.id ? (
-            <span className="plan-title-cell">{editForm()}</span>
-          ) : (
-            <>
-              <span className="plan-title-cell">
-                <button
-                  type="button"
-                  className="link title"
-                  title={t('plan.rename')}
-                  disabled={busy}
-                  onClick={() => startEdit(node)}
-                >
-                  {node.title}
-                </button>
-                {/* только число уроков: даты этой главы и так стоят в её
-                    строках, а левая колонка — не место для правой зоны */}
-                <span className="hint block-count">
-                  {t('common.lessonCount', {
-                    count: blocks.byId.get(node.id)?.lessons ?? 0,
-                  })}
-                </span>
-              </span>
-
-              <span className="row-actions">
-                {moveButtons(node, movePlanSection)}
-                <button
-                  type="button"
-                  className="link"
-                  title={t('plan.addToSection')}
-                  disabled={busy}
-                  onClick={() => openAdd({ parent: node.id })}
-                >
-                  +
-                </button>
-                <button
-                  type="button"
-                  className="link"
-                  title={t('plan.deleteSection')}
-                  disabled={busy}
-                  onClick={() => setDeleting(node)}
-                >
-                  ✕
-                </button>
-              </span>
-            </>
-          )}
-        </div>
-
-        {!hidden && (
-          <SortableContext items={childIds} strategy={verticalListSortingStrategy}>
-            <ul className="plan-children">
-              {node.children.map((child, index) => (
-                <Fragment key={child.id}>
-                  {/* у первого урока черта уже нарисована над полосой темы */}
-                  {index > 0 && marks(child, 'before')}
-                  {renderLesson(child, node.id)}
-                  {addFormFor(node.id, child.id)}
-                </Fragment>
-              ))}
-              {addFormFor(node.id, null)}
-              {!node.children.length && (
-                <EmptyDropZone
-                  sectionId={node.id}
-                  active={drop?.overId === emptyZoneId(node.id)}
-                />
-              )}
-            </ul>
-          </SortableContext>
-        )}
-          </>
-        )}
-      </SortableRow>
-    )
-  }
 
   if (classes === null) {
     return (
@@ -1192,50 +644,29 @@ export default function Plan({ onLoggedOut }) {
             <p>{t('common.loading')}</p>
           ) : (
             <>
-              <DndContext
-                sensors={sensors}
-                collisionDetection={collisionDetection}
-                accessibility={{ screenReaderInstructions: dndInstructions }}
-                onDragStart={handleDragStart}
-                onDragOver={handleDragOver}
-                onDragEnd={handleDragEnd}
-                onDragCancel={handleDragCancel}
-              >
-                <SortableContext
-                  items={data.nodes.map((node) => dragId(node.id))}
-                  strategy={verticalListSortingStrategy}
-                >
-                  <ul className={dated ? 'plan' : 'plan no-dates'}>
-                    {data.nodes.map((node) => (
-                      <Fragment key={node.id}>
-                        {/* черта, выпавшая на первый урок темы, встаёт над
-                            её полосой: внутри блока она читалась бы как
-                            часть темы, а это граница между ними */}
-                        {marks(node.is_section ? node.children?.[0] : node, 'before')}
-                        {node.is_section
-                          ? renderSection(node)
-                          : renderLesson(node, null)}
-                        {addFormFor(null, node.id)}
-                      </Fragment>
-                    ))}
-                    {addFormFor(null, null)}
-                  </ul>
-                </SortableContext>
-
-                <DragOverlay>
-                  {dragged && (
-                    <div className="plan-row drag-overlay">
-                      <span className="handle">⠿</span>
-                      {dragged.node.number && (
-                        <span className="plan-number">{dragged.node.number}</span>
-                      )}
-                      <strong>{dragged.node.title}</strong>
-                    </div>
-                  )}
-                </DragOverlay>
-              </DndContext>
-
-              {renderFree()}
+              <PlanTable
+                nodes={data.nodes}
+                layout={layout}
+                blocks={blocks}
+                dated={dated}
+                showWeeks={showWeeks}
+                showFree={showFree}
+                busy={busy}
+                collapsed={collapsed}
+                onToggleSection={toggleSection}
+                editing={editing}
+                onEditingChange={setEditing}
+                onSubmitEdit={submitEdit}
+                adding={adding}
+                onAddingChange={setAdding}
+                onAdd={openAdd}
+                onSubmitAdd={submitAdd}
+                onOpenLesson={setOpened}
+                onRemoveLesson={removeLesson}
+                onRemoveSection={setDeleting}
+                onMove={handleMove}
+                onMoveTo={dropNode}
+              />
 
               {!data.nodes.length && (
                 <EmptyState title={t('plan.empty.title')}>
