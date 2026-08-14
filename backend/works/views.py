@@ -1,12 +1,17 @@
 """
 Две половины одного экрана: учитель составляет работу, ученик её решает.
 
-Учительская половина — обычный личный объект (`TeacherScopedViewSet`), у
-ученической свои вьюхи: спрашивают они другое и отвечают другим, а общий
-вьюсет с ветками «если ученик» был бы длиннее двух.
+Учительская половина — объект курса (`CourseScopedViewSet`), как и учебный
+план; у ученической свои вьюхи: спрашивают они другое и отвечают другим, а
+общий вьюсет с ветками «если ученик» был бы длиннее двух.
 """
 
-from config.access import IsSchoolMember, IsStudent, IsTeacher, TeacherScopedViewSet
+from config.access import (
+    CourseScopedViewSet,
+    IsSchoolMember,
+    IsStudent,
+    IsTeacher,
+)
 from config.errors import Codes, api_error
 from django.db.models import Count
 from django.shortcuts import get_object_or_404
@@ -27,9 +32,10 @@ from .serializers import (
 )
 
 
-class WorkViewSet(TeacherScopedViewSet):
+class WorkViewSet(CourseScopedViewSet):
     """
-    Работы учителя. Личные, как расписание и план.
+    Работы курса. Принадлежат курсу, как и план: читает тот, кто в курсе
+    работает, правит назначенный ведущий.
 
     Правку открытой работы никто не запрещает — она отвечает `impact`, и
     интерфейс называет цену числом: «сейчас решают семнадцать человек».
@@ -38,7 +44,7 @@ class WorkViewSet(TeacherScopedViewSet):
 
     serializer_class = WorkSerializer
     queryset = Work.objects.select_related("course")
-    teacher_path = "teacher"
+    course_path = "course"
 
     def get_queryset(self):
         queryset = super().get_queryset().annotate(task_count=Count("tasks"))
@@ -90,9 +96,9 @@ class WorkViewSet(TeacherScopedViewSet):
         return Response(services.build_table(work))
 
 
-class TaskViewSet(TeacherScopedViewSet):
+class TaskViewSet(CourseScopedViewSet):
     """
-    Задачи внутри работы. Владелец тот же, путь до него — через работу.
+    Задачи внутри работы. Курс тот же, путь до него — через работу.
 
     Позиции плотные, как в плане: новая встаёт в конец, `move` двигает на
     шаг, удаление перенумеровывает уровень.
@@ -100,7 +106,7 @@ class TaskViewSet(TeacherScopedViewSet):
 
     serializer_class = TaskSerializer
     queryset = Task.objects.select_related("work")
-    teacher_path = "work__teacher"
+    course_path = "work__course"
 
     def get_queryset(self):
         queryset = super().get_queryset()
@@ -115,6 +121,7 @@ class TaskViewSet(TeacherScopedViewSet):
 
     def perform_create(self, serializer):
         work = serializer.validated_data["work"]
+        self.require_lead(work.course)
         serializer.save(position=services.next_position(work))
 
     def perform_destroy(self, instance):
@@ -153,7 +160,7 @@ class TaskViewSet(TeacherScopedViewSet):
         return Response({"reset": services.reset_verdicts(self.get_object())})
 
 
-class SubmissionViewSet(TeacherScopedViewSet):
+class SubmissionViewSet(CourseScopedViewSet):
     """
     Отправки учеников: читать и отмечать. Больше ничего.
 
@@ -169,7 +176,7 @@ class SubmissionViewSet(TeacherScopedViewSet):
 
     serializer_class = SubmissionSerializer
     queryset = Submission.objects.select_related("student", "task")
-    teacher_path = "task__work__teacher"
+    course_path = "task__work__course"
     http_method_names = ["get", "patch", "head", "options"]
 
     def get_queryset(self):

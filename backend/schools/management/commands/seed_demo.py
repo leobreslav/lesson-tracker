@@ -422,7 +422,7 @@ class Command(BaseCommand):
 
         open_work, created = Work.objects.get_or_create(
             course=course,
-            teacher=teacher,
+            created_by=teacher,
             title="Проверочная: формулы сложения",
             defaults={
                 "opens_at": now - timedelta(hours=2),
@@ -441,7 +441,7 @@ class Command(BaseCommand):
 
         past, created = Work.objects.get_or_create(
             course=course,
-            teacher=teacher,
+            created_by=teacher,
             title="Контрольная: тригонометрия",
             defaults={
                 "opens_at": now - timedelta(days=9),
@@ -465,7 +465,7 @@ class Command(BaseCommand):
 
         Work.objects.get_or_create(
             course=course,
-            teacher=teacher,
+            created_by=teacher,
             title="Домашняя работа на каникулы",
             defaults={
                 # окно в будущем и есть «черновик»: ученику её пока нет

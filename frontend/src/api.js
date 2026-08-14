@@ -195,7 +195,8 @@ export const deleteInvitation = (id) =>
   request(`/api/school/invitations/${id}/`, { method: 'DELETE' })
 
 /**
- * Detach a teacher from the school. Their lessons and plans are kept.
+ * Detach a teacher from the school. Their lessons are kept; the plan
+ * belongs to the course and stays there.
  *
  * Refused the first time with the counts, exactly like unassigning: `force`
  * is the confirmation, and the interface only sends it after the person has

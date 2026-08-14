@@ -131,11 +131,15 @@ def assign(teacher, course):
 
 def make_work(teacher, course, *, title="Контрольная", opens=None, closes=None, **fields):
     """
-    Работа учителя в курсе. Окно по умолчанию — открытое прямо сейчас.
+    Работа курса. Окно по умолчанию — открытое прямо сейчас.
 
     Открытое, потому что закрытая работа не даёт отправить ответ, а именно
     отправка — то, вокруг чего крутятся правила; тест про закрытое окно
     двигает даты сам.
+
+    Учитель здесь остался, хотя работа ему больше не принадлежит: как и у
+    `make_node`, он назначается на курс — правит работы назначенный, и
+    тесты прав спрашивают именно про это.
     """
     from django.utils import timezone
     from works.models import Work
@@ -144,7 +148,7 @@ def make_work(teacher, course, *, title="Контрольная", opens=None, cl
     now = timezone.now()
 
     return Work.objects.create(
-        teacher=teacher,
+        created_by=teacher,
         course=course,
         title=title,
         opens_at=opens or now - timedelta(hours=1),

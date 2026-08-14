@@ -10,7 +10,7 @@ class TaskInline(admin.TabularInline):
 
 @admin.register(Work)
 class WorkAdmin(admin.ModelAdmin):
-    list_display = ("title", "course", "teacher", "opens_at", "closes_at")
+    list_display = ("title", "course", "created_by", "opens_at", "closes_at")
     list_filter = ("course",)
     search_fields = ("title",)
     inlines = [TaskInline]

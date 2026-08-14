@@ -181,9 +181,9 @@ class ApiWiringTests(SimpleTestCase):
 
     def test_course_scoped_viewsets_point_at_a_course(self):
         """
-        `course_path` — прямая связь на курс, и однополевой она остаётся
-        намеренно: писать в объект, до курса которого два шага, пока некому,
-        а `getattr(obj, course_path)` такого пути и не пройдёт.
+        `course_path` — такой же путь, как `school_path`: у работы это
+        «course», у задачи внутри работы «work__course», у отправки
+        «task__work__course». Ошибка в нём молча расширила бы выборку.
         """
         for name, (_, view) in sorted(api_views().items()):
             if not issubclass(view, CourseScopedViewSet):
@@ -193,16 +193,16 @@ class ApiWiringTests(SimpleTestCase):
                 model = view.queryset.model
                 complaint = f"{name}.course_path = {view.course_path!r}"
 
-                self.assertNotIn("__", view.course_path, f"{complaint}: не путь")
-                try:
-                    field = model._meta.get_field(view.course_path)
-                except FieldDoesNotExist:
-                    self.fail(f"{complaint}: у {model.__name__} такого поля нет")
+                for step in view.course_path.split("__"):
+                    try:
+                        field = model._meta.get_field(step)
+                    except FieldDoesNotExist:
+                        self.fail(f"{complaint}: у {model.__name__} нет поля {step!r}")
+                    model = field.related_model
+                    self.assertIsNotNone(model, f"{complaint}: {step!r} — не связь")
 
                 self.assertEqual(
-                    getattr(field.related_model, "__name__", None),
-                    "Course",
-                    f"{complaint} ведёт не в Course",
+                    model.__name__, "Course", f"{complaint} ведёт не в Course"
                 )
 
 

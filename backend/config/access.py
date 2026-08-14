@@ -15,8 +15,8 @@ rather than in twenty querysets:
 3. a personal object — it belongs to this teacher, inside a course of their
    own school;
 4. объект курса — читает тот, кто в курсе работает, пишет назначенный
-   ведущий учитель. Так устроен учебный план: он принадлежит курсу, и
-   ведущий у курса один.
+   ведущий учитель. Так устроены учебный план и работы: они принадлежат
+   курсу, а ведущий у курса один.
 
 Every viewset picks a base class below and says which ORM path leads from its
 model to the school (``school_path``), to the teacher (``teacher_path``) or
@@ -190,10 +190,10 @@ class CourseScopedViewSet(viewsets.ModelViewSet):
     Объект курса: читает тот, кто в курсе работает, пишет ведущий учитель.
 
     Четвёртая форма доступа, и появилась она вместе с правилом «ведущий
-    учитель у курса один». Учебный план принадлежит **курсу**, а не
-    человеку: пока он был личным, у одного курса могло оказаться два плана
-    — свой у каждого ведущего, — а смена ведущего оставляла программу
-    висеть на том, кто ушёл.
+    учитель у курса один». Так устроены учебный план и работы: пока план
+    был личным, у одного курса могло оказаться два плана — свой у каждого
+    ведущего, — а смена ведущего оставляла программу висеть на том, кто
+    ушёл; у работ смена ведущего оставляла непроверенное без хозяина.
 
     Читают все, кто в курсе работает (`Course.objects.for_teacher`):
     назначенный плюс тот, у кого в курсе остались уроки — назначение
@@ -203,8 +203,9 @@ class CourseScopedViewSet(viewsets.ModelViewSet):
     Пишет только назначенный: иначе один и тот же план правили бы двое, и
     мы вернулись бы туда, откуда ушли.
 
-    `course_path` — прямая связь на курс, а не путь через `__`: писать в
-    объект, до курса которого два шага, пока некому.
+    `course_path` — путь до курса, как `school_path` у школьных объектов:
+    у работы это `"course"`, у задачи внутри работы `"work__course"`, у
+    отправки `"task__work__course"`.
     """
 
     course_path = "course"
@@ -225,14 +226,28 @@ class CourseScopedViewSet(viewsets.ModelViewSet):
     def require_lead(self, course):
         require_course_teacher(self.request.user, course)
 
+    def course_of(self, obj):
+        for step in self.course_path.split("__"):
+            obj = getattr(obj, step)
+        return obj
+
     def get_object(self):
         obj = super().get_object()
         if self.request.method not in SAFE_METHODS:
-            self.require_lead(getattr(obj, self.course_path))
+            self.require_lead(self.course_of(obj))
         return obj
 
     def perform_create(self, serializer):
-        self.require_lead(serializer.validated_data[self.course_path])
+        # право спрашивается **до** записи: у вложенного объекта курса в теле
+        # нет, но есть родитель — по нему и доходим. Проверить после save()
+        # было бы дешевле и неверно: запросы не атомарны, и отклонённая
+        # строка осталась бы в базе
+        steps = self.course_path.split("__")
+        target = serializer.validated_data[steps[0]]
+        for step in steps[1:]:
+            target = getattr(target, step)
+
+        self.require_lead(target)
         serializer.save()
 
 

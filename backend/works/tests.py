@@ -15,6 +15,7 @@ from rest_framework.test import APITestCase
 from schools.services import enrol, remove_from_course
 from schools.testing import (
     SchoolTestMixin,
+    assign,
     make_course,
     make_task,
     make_user,
@@ -357,6 +358,85 @@ class TeacherSideTests(WorkTestCase):
 
         self.assertEqual(rows[0]["tasks_count"], 2)
         self.assertEqual(rows[0]["state"], "open")
+
+
+class OwnershipTests(WorkTestCase):
+    """
+    Работа принадлежит курсу, а не тому, кто её составил.
+
+    Личной она была, пока курс могли вести двое. Ведущий теперь один, а
+    цена личной работы осталась бы дважды: уход человека уносил её вместе с
+    ответами учеников (`CASCADE`), а после смены ведущего непроверенное
+    некому было бы проверить.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.sign_in(self.student)
+        self.answer("4")
+
+    def test_the_answers_outlive_the_teacher_who_set_the_work(self):
+        """Раньше `CASCADE` стирал вместе с учёткой и ответы, и отметки."""
+        self.user.delete()
+
+        self.work.refresh_from_db()
+        self.assertIsNone(self.work.created_by_id)
+        self.assertEqual(self.work.course_id, self.course.pk)
+        self.assertEqual(Submission.objects.filter(task=self.task).count(), 1)
+
+    def test_the_next_lead_teacher_marks_what_the_previous_one_left(self):
+        """
+        Смена ведущего не оставляет непроверенного без хозяина.
+
+        Пока работа была личной, ответы предшественника висели у учеников
+        на виду, а доправить условие или отметить их не мог никто.
+        """
+        assign(self.colleague, self.course)
+        submission = Submission.objects.get()
+        self.sign_in(self.colleague)
+
+        marked = self.client.patch(
+            reverse("submission-detail", args=[submission.pk]),
+            {"is_correct": True},
+            format="json",
+        )
+        renamed = self.client.patch(
+            reverse("work-detail", args=[self.work.pk]),
+            {"title": "Та же работа, новый ведущий"},
+            format="json",
+        )
+
+        self.assertEqual(marked.status_code, 200, marked.content)
+        self.assertEqual(renamed.status_code, 200, renamed.content)
+        submission.refresh_from_db()
+        self.assertTrue(submission.is_correct)
+        self.assertEqual(submission.checked_by, self.colleague)
+
+    def test_somebody_who_only_has_lessons_in_the_course_reads_but_writes_not(self):
+        """Та же граница, что у плана: работать в курсе и вести его — разное."""
+        from schedule.models import LessonSlot
+
+        # слот заводится напрямую: `make_slot` заодно назначает, а ведущий
+        # у курса один — фикстура отобрала бы курс у настоящего
+        LessonSlot.objects.create(
+            year=self.year,
+            teacher=self.colleague,
+            course=self.course,
+            date=self.year.start_date,
+            lesson_number=1,
+        )
+        self.sign_in(self.colleague)
+
+        listed = self.client.get(reverse("work-list"), {"course": self.course.pk})
+        refused = self.client.patch(
+            reverse("work-detail", args=[self.work.pk]),
+            {"title": "По-моему, так лучше"},
+            format="json",
+        )
+
+        self.assertEqual([row["id"] for row in listed.json()], [self.work.pk])
+        self.assertEqual(refused.status_code, 403)
+        self.assertEqual(refused.json()["code"], "not_course_teacher")
 
 
 class QueryCountTests(WorkTestCase):

@@ -51,7 +51,7 @@ class TaskSerializer(serializers.ModelSerializer):
     def get_fields(self):
         fields = super().get_fields()
         fields["work"].queryset = Work.objects.filter(
-            teacher=getattr(self.context.get("request"), "user", None)
+            course__in=teacher_courses(self)
         )
         return fields
 
@@ -65,7 +65,7 @@ class WorkSerializer(serializers.ModelSerializer):
     бы работу, которая на экране открыта, а на сервере ещё нет.
     """
 
-    teacher = serializers.HiddenField(default=serializers.CurrentUserDefault())
+    created_by = serializers.HiddenField(default=serializers.CurrentUserDefault())
     course_name = serializers.CharField(source="course.name", read_only=True)
     state = serializers.SerializerMethodField()
     tasks_count = serializers.SerializerMethodField()
@@ -76,7 +76,7 @@ class WorkSerializer(serializers.ModelSerializer):
             "id",
             "course",
             "course_name",
-            "teacher",
+            "created_by",
             "title",
             "opens_at",
             "closes_at",
