@@ -36,7 +36,7 @@
   "nav": {
     "menu": "Sections menu",
     "schedule": "My schedule",
-    "plan": "Lesson plan",
+    "plan": "Curriculum map",
     "profile": "Profile",
     "logout": "Sign out",
     "needYear": "create a school year first",
@@ -92,7 +92,7 @@
         "missing": "no lessons yet"
       },
       "plan": {
-        "title": "Lesson plan",
+        "title": "Curriculum map",
         "action": "Fill in the plan",
         "summary": "{{withPlan}} of {{total}} classes have a plan",
         "missing": "empty"
@@ -288,7 +288,7 @@
     "transferTitle": "Import and export",
     "drag": "Drag",
     "dropHere": "Drop a lesson here",
-    "title": "Lesson plan",
+    "title": "Curriculum map",
     "loose": " Outside the blocks: {{count}}.",
     "titleLabel": "Title",
     "noteLabel": "Note",
@@ -310,9 +310,9 @@
     "imported": "Created {{rows}} rows ({{sections}} sections, {{lessons}} lessons).",
     "dndInstructions": "Press space to pick the item up. Choose a new place with the up and down arrows, press space to drop it, Escape cancels the move. The arrow buttons in the row do the same.",
     "needClass": {
-      "title": "A class first",
-      "hint": "A plan is written for a particular class — each one has its own list of sections and lessons.",
-      "action": "Add a class"
+      "title": "A course first",
+      "hint": "A plan is written for a particular course — each one has its own list of themes and lessons.",
+      "action": "The school's courses"
     },
     "empty": {
       "title": "The plan is empty",
@@ -389,7 +389,7 @@
   },
   "status": {
     "title": "My courses",
-    "hint": "Where each course stands: does the plan still fit the year, what got cancelled and how far it drifted from the baseline. Editing lives on the «Lesson plan» page.",
+    "hint": "Where each course stands: does the plan still fit the year, what got cancelled and how far it drifted from the baseline. Editing lives on the «Curriculum map» page.",
     "reserveLabel": "reserve",
     "doneOf": "{{done}} of {{total}}",
     "left_one": "{{count}} to go",
