@@ -596,3 +596,119 @@ class VerdictTests(WorkTestCase):
 
         self.assertEqual(answer.status_code, 405)
         self.assertTrue(Submission.objects.exists())
+
+
+class SummaryTests(WorkTestCase):
+    """
+    Статистика работы: числа, которых таблица не говорит одним взглядом.
+
+    Итоги по строкам и столбцам в ней уже есть, а «сколько человек дошло
+    до конца» и «какая задача провалилась» — нет: их пришлось бы считать
+    глазами по тридцати строкам.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.second = make_task(self.work, "Вторая", position=1)
+        self.work.attempts = None
+        self.work.save()
+        self.other = make_user(self.school, "pupil@example.com", student=True)
+        enrol(self.other, self.course, by=self.admin)
+        self.sign_in(self.user)
+
+    def summary(self):
+        return self.client.get(reverse("work-table", args=[self.work.pk])).json()[
+            "summary"
+        ]
+
+    def answer_as(self, student, task, text):
+        self.sign_in(student)
+        self.client.post(
+            reverse("student-answer", args=[task.pk]), {"answer": text}, format="json"
+        )
+        self.sign_in(self.user)
+
+    def mark(self, submission, value):
+        self.client.patch(
+            reverse("submission-detail", args=[submission.pk]),
+            {"is_correct": value},
+            format="json",
+        )
+
+    def test_started_and_finished_count_the_whole_work(self):
+        self.answer_as(self.student, self.task, "раз")
+        self.answer_as(self.student, self.second, "два")
+        self.answer_as(self.other, self.task, "только первая")
+
+        numbers = self.summary()
+
+        self.assertEqual(numbers["students"], 2)
+        self.assertEqual(numbers["started"], 2)
+        self.assertEqual(numbers["finished"], 1)
+
+    def test_a_removed_student_leaves_the_denominator_but_not_the_work(self):
+        """
+        Снятый ничего «не не закончил» — он ушёл. А его ответы всё ещё
+        надо проверить: работа учителя от его ухода меньше не стала.
+        """
+        self.answer_as(self.student, self.task, "успел")
+        remove_from_course(self.enrolment)
+
+        numbers = self.summary()
+
+        self.assertEqual(numbers["students"], 1)
+        self.assertEqual(numbers["started"], 0)
+        self.assertEqual(numbers["answers"], 1)
+        self.assertEqual(numbers["unchecked"], 1)
+
+    def test_the_hardest_task_is_the_one_they_failed(self):
+        self.answer_as(self.student, self.task, "верно")
+        self.answer_as(self.other, self.task, "верно")
+        self.answer_as(self.student, self.second, "мимо")
+        self.answer_as(self.other, self.second, "мимо")
+        for submission in Submission.objects.filter(task=self.task):
+            self.mark(submission, True)
+        for submission in Submission.objects.filter(task=self.second):
+            self.mark(submission, False)
+
+        hardest = self.summary()["hardest"]
+
+        self.assertEqual(hardest["id"], self.second.pk)
+        self.assertEqual((hardest["correct"], hardest["checked"]), (0, 2))
+
+    def test_an_unchecked_task_is_not_the_hardest_one(self):
+        """
+        Иначе самой трудной всегда была бы та, до которой не дошли руки.
+        """
+        self.answer_as(self.student, self.task, "проверенный")
+        self.answer_as(self.student, self.second, "непроверенный")
+        self.mark(Submission.objects.get(task=self.task), True)
+
+        hardest = self.summary()["hardest"]
+
+        self.assertEqual(hardest["id"], self.task.pk)
+
+    def test_without_a_single_verdict_there_is_no_hardest(self):
+        self.answer_as(self.student, self.task, "ответ")
+
+        self.assertIsNone(self.summary()["hardest"])
+
+    def test_the_summary_agrees_with_the_grid_it_was_counted_from(self):
+        """
+        Сводка и таблица обязаны говорить одно и то же: два расчёта над
+        одними данными расходятся молча.
+        """
+        self.answer_as(self.student, self.task, "раз")
+        self.answer_as(self.other, self.second, "два")
+        self.mark(Submission.objects.first(), True)
+
+        table = self.client.get(reverse("work-table", args=[self.work.pk])).json()
+
+        self.assertEqual(
+            table["summary"]["answers"],
+            sum(column["answered"] for column in table["tasks"]),
+        )
+        self.assertEqual(
+            table["summary"]["correct"],
+            sum(row["correct"] for row in table["students"]),
+        )

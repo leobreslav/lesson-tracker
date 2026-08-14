@@ -116,3 +116,25 @@ test('таблица обновляется сама, а переделанны�
   // и говорит, что смотрели не то
   await expect(cell.locator('td').first()).toHaveClass(/redone/, { timeout: 15000 })
 })
+
+test('сводка над таблицей считает то, чего в ней не видно взглядом', async ({
+  page,
+  signIn,
+}) => {
+  await signIn(PEOPLE.ivanova)
+  await openTable(page, 'Контрольная')
+
+  const card = (name) => page.locator(`[data-card="${name}"]`)
+  // пятеро действующих начали, никто не прошёл целиком: снятая с курса в
+  // знаменатель не входит — она не «не закончила», она ушла
+  await expect(card('started')).toContainText('5/5')
+  await expect(card('finished')).toContainText('0')
+  await expect(card('unchecked')).toContainText('2')
+
+  // самая трудная кликабельна и ведёт в проверку своего столбца
+  await card('hardest').getByRole('button').click()
+
+  const dialog = page.locator('dialog.modal')
+  await expect(dialog).toContainText('Проверка задачи')
+  await expect(dialog).toContainText('Решите уравнение')
+})

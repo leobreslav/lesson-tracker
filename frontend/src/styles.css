@@ -2074,6 +2074,32 @@ button.progress-head:hover:not(:disabled) {
  * стоит значок состояния, а не ответ, иначе тридцать на десять не влезет
  * ни на один экран.
  */
+/* сводка над таблицей: плашки как у плана, только уже — их четыре, и
+   каждая отвечает на свой вопрос одним числом */
+.work-summary {
+  margin-bottom: var(--card-gap);
+}
+
+.work-summary .card-stat button.link {
+  padding: 0;
+  font: inherit;
+  text-align: left;
+}
+
+/* число в плашке остаётся числом: синим оно читалось бы как ссылка, а
+   соседние плашки — как выключенные. Кликабельность показывает наведение */
+.work-summary .card-stat button.link h2 {
+  color: var(--text, #202124);
+}
+
+.work-summary .card-stat button.link:hover h2 {
+  text-decoration: underline;
+}
+
+.work-summary .card-stat h2 {
+  margin: 0;
+}
+
 .table-scroll {
   overflow-x: auto;
 }

@@ -359,6 +359,17 @@ def build_table(work) -> dict:
             }
         )
 
+    columns = [
+        {
+            "id": task.pk,
+            "position": task.position,
+            "question": task.question,
+            "answers": task.answers,
+            **per_task[task.pk],
+        }
+        for task in tasks
+    ]
+
     return {
         "version": table_version(work),
         "changed": True,
@@ -368,17 +379,66 @@ def build_table(work) -> dict:
             "state": work.state(),
             "course_name": work.course.name,
         },
-        "tasks": [
-            {
-                "id": task.pk,
-                "position": task.position,
-                "question": task.question,
-                "answers": task.answers,
-                **per_task[task.pk],
-            }
-            for task in tasks
-        ],
+        "tasks": columns,
         "students": students,
+        "summary": summarise(students, columns),
+    }
+
+
+def summarise(students, columns) -> dict:
+    """
+    Статистика работы — из тех же строк, которыми нарисована таблица.
+
+    Не второй проход по журналу: сводка и таблица обязаны говорить одно и
+    то же, а два расчёта над одними данными расходятся молча — так уже
+    было у раскладки плана, где сводка обещала одно, а строки показывали
+    другое. Здесь считается по готовым ячейкам, и разойтись им негде.
+
+    Кого считать. **Начали и закончили** — только про действующих: снятый
+    с курса ничего не «не закончил», он ушёл. А вот **ответы и проверку**
+    считаем все: работа учителя не становится меньше оттого, что автор
+    ответа больше не в курсе.
+
+    «Самая трудная» — та, где меньше всего доля верных среди
+    **проверенных**. Непроверенная задача в кандидаты не попадает вовсе:
+    иначе самой трудной всегда оказывалась бы та, до которой не дошли
+    руки.
+    """
+    active = [row for row in students if row["active"]]
+    tasks = len(columns)
+
+    started = sum(1 for row in active if row["answered"])
+    finished = sum(1 for row in active if tasks and row["answered"] == tasks)
+
+    answers = sum(column["answered"] for column in columns)
+    unchecked = sum(column["unchecked"] for column in columns)
+    correct = sum(column["correct"] for column in columns)
+    checked = sum(column["correct"] + column["wrong"] for column in columns)
+
+    judged = [
+        column for column in columns if column["correct"] + column["wrong"] > 0
+    ]
+    hardest = min(
+        judged,
+        key=lambda column: column["correct"] / (column["correct"] + column["wrong"]),
+        default=None,
+    )
+
+    return {
+        "students": len(active),
+        "started": started,
+        "finished": finished,
+        "answers": answers,
+        "unchecked": unchecked,
+        "correct": correct,
+        "checked": checked,
+        "hardest": hardest
+        and {
+            "id": hardest["id"],
+            "position": hardest["position"],
+            "correct": hardest["correct"],
+            "checked": hardest["correct"] + hardest["wrong"],
+        },
     }
 
 

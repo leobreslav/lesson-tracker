@@ -70,11 +70,7 @@ export default function WorkTable() {
       <header className="page-header">
         <h1>{table.work.title}</h1>
         <p className="hint">
-          {table.work.course_name} · {t(`works.state.${table.work.state}`)} ·{' '}
-          {t('table.answered', {
-            students: table.students.filter((row) => row.answered).length,
-            total: table.students.length,
-          })}
+          {table.work.course_name} · {t(`works.state.${table.work.state}`)}
         </p>
       </header>
 
@@ -83,6 +79,12 @@ export default function WorkTable() {
           {error}
         </p>
       )}
+
+      <Summary
+        summary={table.summary}
+        tasks={table.tasks}
+        onOpen={(task) => setColumn({ task })}
+      />
 
       {table.tasks.length === 0 ? (
         <p className="hint">{t('works.task.none')}</p>
@@ -198,4 +200,74 @@ function cellMark(item) {
   if (item.verdict === true) return '✓'
   if (item.verdict === false) return '✗'
   return item.redone ? '↻' : '•'
+}
+
+
+/**
+ * Сводка над таблицей: то, чего таблица не говорит одним взглядом.
+ *
+ * Итоги по строкам и столбцам в ней уже есть, поэтому здесь только то, что
+ * иначе считают глазами по тридцати строкам: сколько дошло до конца,
+ * сколько ответов ждёт проверки и какая задача провалилась.
+ *
+ * Две плашки кликабельны и ведут туда, где с этим что-то делают: «на
+ * проверку» открывает первый столбец с непроверенными, «самая трудная» —
+ * свой. Число, на которое нельзя нажать, заставляет искать его источник
+ * руками.
+ */
+function Summary({ summary, tasks, onOpen }) {
+  const { t } = useTranslation()
+
+  if (!summary) return null
+
+  const waiting = tasks.find((task) => task.unchecked > 0)
+  const hardest = summary.hardest && tasks.find((task) => task.id === summary.hardest.id)
+
+  return (
+    <div className="cards work-summary">
+      <section className="panel card-stat" data-card="started">
+        <h2>
+          {summary.started}/{summary.students}
+        </h2>
+        <p className="hint">{t('table.startedLabel')}</p>
+      </section>
+
+      <section className="panel card-stat" data-card="finished">
+        <h2>{summary.finished}</h2>
+        <p className="hint">{t('table.finishedLabel')}</p>
+      </section>
+
+      <section className="panel card-stat" data-card="unchecked">
+        {waiting ? (
+          <button type="button" className="link" onClick={() => onOpen(waiting)}>
+            <h2>{summary.unchecked}</h2>
+          </button>
+        ) : (
+          <h2>{summary.unchecked}</h2>
+        )}
+        <p className="hint">{t('table.uncheckedLabel')}</p>
+      </section>
+
+      <section className="panel card-stat" data-card="hardest">
+        {hardest ? (
+          <>
+            <button type="button" className="link" onClick={() => onOpen(hardest)}>
+              <h2>{t('table.taskNumber', { number: hardest.position + 1 })}</h2>
+            </button>
+            <p className="hint">
+              {t('table.hardestLabel', {
+                correct: summary.hardest.correct,
+                checked: summary.hardest.checked,
+              })}
+            </p>
+          </>
+        ) : (
+          <>
+            <h2>—</h2>
+            <p className="hint">{t('table.noHardest')}</p>
+          </>
+        )}
+      </section>
+    </div>
+  )
 }

@@ -941,7 +941,6 @@
     "total": "correct",
     "removed": "(no longer in the course)",
     "empty": "no answer",
-    "answered": "{{students}} of {{total}} have answered",
     "unchecked_one": "{{count}} to check",
     "unchecked_other": "{{count}} to check",
     "correctOf": "{{correct}} of {{answered}} right",
@@ -953,6 +952,12 @@
     "markCorrect": "Mark as correct (press again to clear)",
     "markWrong": "Mark as wrong (press again to clear)",
     "newAnswer": "The student has sent a new answer while you were reading.",
-    "show": "Show it"
+    "show": "Show it",
+    "startedLabel": "have started",
+    "finishedLabel": "finished every task",
+    "uncheckedLabel": "answers to check",
+    "taskNumber": "task {{number}}",
+    "hardestLabel": "the hardest: {{correct}} right of {{checked}}",
+    "noHardest": "nothing checked yet"
   }
 }
