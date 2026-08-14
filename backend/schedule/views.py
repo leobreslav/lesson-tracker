@@ -484,15 +484,16 @@ class CourseViewSet(SchoolScopedViewSet):
         """
         Deleting a course that somebody teaches is refused, not cascaded.
 
-        The slots and the plan rows hold it under PROTECT — an administrator
-        must not wipe a colleague's year with one button. The answer says how
-        many lessons and plan rows are in the way and whose they are.
+        The slots, the plan rows and the works hold it under PROTECT — an
+        administrator must not wipe a colleague's year with one button. The
+        answer says how much is in the way and whose it is.
         """
         try:
             instance.delete()
         except ProtectedError:
             slots = instance.slots.count()
             rows = instance.plan_nodes.count()
+            works = instance.works.count()
             teachers = sorted(
                 {
                     str(name or email)
@@ -507,11 +508,13 @@ class CourseViewSet(SchoolScopedViewSet):
             )
             api_error(
                 Codes.COURSE_IN_USE,
-                f"«{instance.name}» is in use: {slots} lessons and {rows} plan "
-                f"rows belong to {', '.join(teachers)}. Ask them to clear it first.",
+                f"«{instance.name}» is in use: {slots} lessons, {rows} plan "
+                f"rows and {works} works belong to {', '.join(teachers)}. "
+                "Ask them to clear it first.",
                 name=instance.name,
                 slots=slots,
                 plan_rows=rows,
+                works=works,
                 teachers=teachers,
             )
 

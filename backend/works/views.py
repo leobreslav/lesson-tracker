@@ -1,0 +1,253 @@
+"""
+Две половины одного экрана: учитель составляет работу, ученик её решает.
+
+Учительская половина — обычный личный объект (`TeacherScopedViewSet`), у
+ученической свои вьюхи: спрашивают они другое и отвечают другим, а общий
+вьюсет с ветками «если ученик» был бы длиннее двух.
+"""
+
+from config.access import IsSchoolMember, IsStudent, IsTeacher, TeacherScopedViewSet
+from config.errors import Codes, api_error
+from django.db.models import Count
+from django.shortcuts import get_object_or_404
+from rest_framework import status
+from rest_framework.decorators import action
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
+from rest_framework.views import APIView
+
+from . import services
+from .models import Submission, Task, Work
+from .serializers import StudentSubmissionSerializer, TaskSerializer, WorkSerializer
+
+
+class WorkViewSet(TeacherScopedViewSet):
+    """
+    Работы учителя. Личные, как расписание и план.
+
+    Правку открытой работы никто не запрещает — она отвечает `impact`, и
+    интерфейс называет цену числом: «сейчас решают семнадцать человек».
+    Запрет здесь дороже ошибки: опечатку в условии находят посреди урока.
+    """
+
+    serializer_class = WorkSerializer
+    queryset = Work.objects.select_related("course")
+    teacher_path = "teacher"
+
+    def get_queryset(self):
+        queryset = super().get_queryset().annotate(task_count=Count("tasks"))
+
+        course = self.request.query_params.get("course")
+        if course:
+            queryset = (
+                queryset.filter(course_id=course)
+                if course.isdigit()
+                else queryset.none()
+            )
+
+        return queryset
+
+    def perform_destroy(self, instance):
+        """
+        Удаление уносит задачи и ответы: это каскад, и он намеренный.
+
+        Ответы живут внутри работы и вне её не значат ничего — «ответ на
+        задачу, которой нет» нельзя ни прочитать, ни оценить. Поэтому цена
+        названа заранее: `impact` показывает, сколько ответов исчезнет, и
+        интерфейс спрашивает подтверждение.
+        """
+        instance.delete()
+
+    @action(detail=True, methods=["get"])
+    def impact(self, request, pk=None):
+        """Что стоит за этой работой прямо сейчас — до того, как её правят."""
+        work = self.get_object()
+
+        return Response(services.impact_of(work))
+
+
+class TaskViewSet(TeacherScopedViewSet):
+    """
+    Задачи внутри работы. Владелец тот же, путь до него — через работу.
+
+    Позиции плотные, как в плане: новая встаёт в конец, `move` двигает на
+    шаг, удаление перенумеровывает уровень.
+    """
+
+    serializer_class = TaskSerializer
+    queryset = Task.objects.select_related("work")
+    teacher_path = "work__teacher"
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+
+        work = self.request.query_params.get("work")
+        if work:
+            queryset = (
+                queryset.filter(work_id=work) if work.isdigit() else queryset.none()
+            )
+
+        return queryset
+
+    def perform_create(self, serializer):
+        work = serializer.validated_data["work"]
+        serializer.save(position=services.next_position(work))
+
+    def perform_destroy(self, instance):
+        work = instance.work
+        instance.delete()
+        services.reindex(work)
+
+    @action(detail=True, methods=["post"])
+    def move(self, request, pk=None):
+        """`{"direction": "up"|"down"}`; `{"moved": false}` — край, не ошибка."""
+        task = self.get_object()
+        direction = request.data.get("direction")
+        if direction not in ("up", "down"):
+            api_error(
+                Codes.MODE_INVALID,
+                "Direction must be «up» or «down».",
+                field="direction",
+            )
+
+        return Response({"moved": services.move(task, direction)})
+
+    @action(detail=True, methods=["get"])
+    def impact(self, request, pk=None):
+        """Сколько ответов и вердиктов затронет правка этой задачи."""
+        return Response(services.task_impact(self.get_object()))
+
+    @action(detail=True, methods=["post"])
+    def recheck(self, request, pk=None):
+        """
+        Снять отметки со всех отправок задачи.
+
+        Главный случай — неверный эталон: половина класса проверена
+        неправильно, и вердикты надо вернуть в «не проверено», не трогая
+        сами ответы.
+        """
+        return Response({"reset": services.reset_verdicts(self.get_object())})
+
+
+# --- половина ученика --------------------------------------------------------------
+
+
+class StudentWorksView(APIView):
+    """
+    Работы ученика: открытые, закрытые и его продвижение по ним.
+
+    Ненаступивших здесь нет вовсе — «черновика» у работы нет, и до открытия
+    окна её не существует. Закрытые остаются: ответы и отметки читать можно
+    всегда.
+    """
+
+    permission_classes = [IsAuthenticated, IsSchoolMember, IsStudent]
+
+    def get(self, request):
+        works = list(services.visible_works(request.user))
+        totals = services.totals_for(works, student=request.user)
+        active = set(
+            request.user.enrolments.filter(removed_at__isnull=True).values_list(
+                "course_id", flat=True
+            )
+        )
+
+        return Response(
+            {
+                "works": [
+                    {
+                        "id": work.pk,
+                        "title": work.title,
+                        "course_id": work.course_id,
+                        "course_name": work.course.name,
+                        "state": work.state(),
+                        "opens_at": work.opens_at,
+                        "closes_at": work.closes_at,
+                        # снятый с курса видит работу и свои ответы, но
+                        # решать в ней больше не может
+                        "can_answer": work.state() == "open"
+                        and work.course_id in active,
+                        "tasks": totals[work.pk]["tasks"],
+                        "answered": totals[work.pk]["answered_tasks"],
+                    }
+                    for work in works
+                ]
+            }
+        )
+
+
+class StudentWorkView(APIView):
+    """Одна работа целиком: задачи, свои ответы и что ещё можно отправить."""
+
+    permission_classes = [IsAuthenticated, IsSchoolMember, IsStudent]
+
+    def get(self, request, pk):
+        work = get_object_or_404(services.visible_works(request.user), pk=pk)
+        tasks = list(work.tasks.all())
+        journal = services.my_answers(request.user, tasks)
+        active = request.user.enrolments.filter(
+            course_id=work.course_id, removed_at__isnull=True
+        ).exists()
+
+        return Response(
+            {
+                "id": work.pk,
+                "title": work.title,
+                "course_name": work.course.name,
+                "state": work.state(),
+                "opens_at": work.opens_at,
+                "closes_at": work.closes_at,
+                "attempts": work.attempts,
+                "can_answer": work.state() == "open" and active,
+                "tasks": [
+                    {
+                        "id": task.pk,
+                        "position": task.position,
+                        "question": task.question,
+                        "attempts_left": services.attempts_left(
+                            work, len(journal[task.pk])
+                        ),
+                        "submissions": StudentSubmissionSerializer(
+                            journal[task.pk], many=True, context={"work": work}
+                        ).data,
+                    }
+                    for task in tasks
+                ],
+            }
+        )
+
+
+class StudentAnswerView(APIView):
+    """
+    Отправка ответа: одна задача, одна попытка, новая строка журнала.
+
+    Ответы уходят по одной задаче, а не всё разом в конце: браузер закроют,
+    интернет отвалится, урок кончится — и работа, отправляемая целиком, в
+    этот момент теряется вся.
+    """
+
+    permission_classes = [IsAuthenticated, IsSchoolMember, IsStudent]
+
+    def post(self, request, pk):
+        task = get_object_or_404(
+            Task.objects.filter(
+                work__in=services.visible_works(request.user)
+            ).select_related("work"),
+            pk=pk,
+        )
+        text = request.data.get("answer")
+        if not isinstance(text, str):
+            api_error(Codes.TASK_QUESTION_REQUIRED, "An answer is required.", field="answer")
+
+        submission = services.answer(task, request.user, text)
+        used = Submission.objects.filter(task=task, student=request.user).count()
+
+        return Response(
+            {
+                "submission": StudentSubmissionSerializer(
+                    submission, context={"work": task.work}
+                ).data,
+                "attempts_left": services.attempts_left(task.work, used),
+            },
+            status=status.HTTP_201_CREATED,
+        )

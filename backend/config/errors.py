@@ -145,6 +145,14 @@ class Codes:
     SCHOOL_QUOTA_EXCEEDED = "school_quota_exceeded"
     STORAGE_UNAVAILABLE = "storage_unavailable"
 
+    # работы онлайн
+    WORK_NOT_OPEN = "work_not_open"
+    WORK_CLOSED = "work_closed"
+    NOT_IN_COURSE = "not_in_course"
+    ATTEMPTS_EXHAUSTED = "attempts_exhausted"
+    WORK_DATES_REVERSED = "work_dates_reversed"
+    TASK_QUESTION_REQUIRED = "task_question_required"
+
     # sign-in
     TOKEN_REQUIRED = "token_required"
     TOKEN_INVALID = "token_invalid"

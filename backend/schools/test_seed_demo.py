@@ -15,6 +15,7 @@ from django.core.management.base import CommandError
 from django.test import TestCase, override_settings
 from plans.models import PlanNode
 from schedule.models import Course, CourseStudent, LessonSlot
+from works.models import Submission, Work
 
 from .models import Invitation, School
 
@@ -183,6 +184,38 @@ class RepeatTests(TestCase):
         seed()
 
         self.assertEqual(self.counts(), after_one)
+
+
+@override_settings(DEBUG=True)
+class WorksTests(TestCase):
+    def test_the_works_come_in_their_three_states(self):
+        """
+        Открытая, закрытая и запланированная — те же три состояния, что у
+        остального seed'а, и расходятся экраны как раз на них: закрытая не
+        принимает ответы, запланированной ученик не видит вовсе.
+        """
+        seed()
+
+        states = sorted(work.state() for work in Work.objects.all())
+
+        self.assertEqual(states, ["closed", "open", "planned"])
+
+    def test_the_closed_one_has_answers_to_look_at(self):
+        """Пустая сетка сводной таблицы не проверяет ничего."""
+        seed()
+
+        checked = Submission.objects.filter(is_correct__isnull=False)
+        self.assertGreater(Submission.objects.count(), 5)
+        self.assertGreater(checked.count(), 0)
+        self.assertGreater(Submission.objects.filter(is_correct__isnull=True).count(), 0)
+
+    def test_running_it_twice_does_not_double_the_answers(self):
+        seed()
+        before = Submission.objects.count()
+
+        seed()
+
+        self.assertEqual(Submission.objects.count(), before)
 
 
 @override_settings(DEBUG=True)

@@ -23,6 +23,7 @@ from django.contrib.auth import get_user_model
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
+from django.utils import timezone
 from files import services as file_services
 from files import storage as file_storage
 from files.models import KIND_FILE, KIND_LINK, Attachment, StoredFile
@@ -42,6 +43,7 @@ from schedule.models import (
 )
 from schools import services as school_services
 from schools.models import Invitation, School
+from works.models import Submission, Task, Work
 
 User = get_user_model()
 
@@ -279,6 +281,20 @@ CANCELLED = (("Grade 6 Algebra", 12, "Болезнь"), ("Grade 6 Algebra", 30, 
              ("Grade 9 Algebra", 18, "Актированный день"))
 EXTRA = (("Grade 6 Geometry", "Консультация"), ("Grade 9 Algebra", "Замена коллеги"))
 
+# задачи демонстрационных работ: у одной эталонов два — «x+3» и «3+x» верны
+# одинаково, и именно это список допустимых ответов и выражает
+OPEN_TASKS = (
+    ("Раскройте скобки: $(a+b)^2$", ("a^2+2ab+b^2", "a^2 + 2ab + b^2")),
+    ("Упростите: $x + 3 + 0$", ("x+3", "3+x")),
+    ("Чему равен $\\sin(90°)$?", ("1",)),
+)
+
+PAST_TASKS = (
+    ("Вычислите $\\sin(30°) + \\cos(60°)$", ("1",)),
+    ("Решите уравнение $2x = 10$", ("5", "x=5")),
+    ("Назовите формулу синуса суммы", ("sin(a+b)=sin a cos b + cos a sin b",)),
+)
+
 
 class Command(BaseCommand):
     help = "Заполнить базу правдоподобными данными для разработки"
@@ -319,11 +335,12 @@ class Command(BaseCommand):
             subjects = self.subjects(school)
             grades = self.grades(school)
             courses = self.courses(school, year, subjects, grades, people)
-            self.students(school, courses)
+            students = self.students(school, courses)
 
             self.timetable(year, courses, people)
 
             if not options["minimal"]:
+                self.works(courses, people, students)
                 self.schedule(year, courses, people)
                 self.plans(courses, people)
                 self.library(school, subjects, people, courses)
@@ -377,6 +394,96 @@ class Command(BaseCommand):
 
         return enrolled
 
+    def works(self, courses, people, students):
+        """
+        Работы — те же три состояния, что у всего остального в этом seed'е.
+
+        Открытая, закрытая и запланированная: на ровном наборе экраны
+        выглядят одинаково правильно, а расходятся они как раз здесь —
+        запланированной ученик не видит вовсе, в закрытой не может отвечать,
+        а в открытой у него кончаются попытки.
+
+        В закрытой лежат ответы: без них сводная таблица учителя — пустая
+        сетка, на которой ничего не проверишь глазами.
+        """
+        course = courses[STUDENT_COURSE]
+        teacher = people[COURSES[0][3]]
+        now = timezone.now()
+
+        open_work, created = Work.objects.get_or_create(
+            course=course,
+            teacher=teacher,
+            title="Проверочная: формулы сложения",
+            defaults={
+                "opens_at": now - timedelta(hours=2),
+                "closes_at": now + timedelta(days=3),
+                "attempts": 2,
+            },
+        )
+        if created:
+            for position, (question, answers) in enumerate(OPEN_TASKS):
+                Task.objects.create(
+                    work=open_work,
+                    position=position,
+                    question=question,
+                    answers=list(answers),
+                )
+
+        past, created = Work.objects.get_or_create(
+            course=course,
+            teacher=teacher,
+            title="Контрольная: тригонометрия",
+            defaults={
+                "opens_at": now - timedelta(days=9),
+                "closes_at": now - timedelta(days=8),
+                "attempts": 1,
+            },
+        )
+        if created:
+            tasks = [
+                Task.objects.create(
+                    work=past, position=position, question=question, answers=list(answers)
+                )
+                for position, (question, answers) in enumerate(PAST_TASKS)
+            ]
+            self.past_answers(tasks, students, teacher, now)
+
+        Work.objects.get_or_create(
+            course=course,
+            teacher=teacher,
+            title="Домашняя работа на каникулы",
+            defaults={
+                # окно в будущем и есть «черновик»: ученику её пока нет
+                "opens_at": now + timedelta(days=5),
+                "closes_at": now + timedelta(days=12),
+                "show_result": False,
+            },
+        )
+
+    def past_answers(self, tasks, students, teacher, now):
+        """
+        Ответы в закрытой работе: проверенные, неверные и непроверенные.
+
+        Разнобой намеренный — сводная таблица тем и живёт, что в ней видно
+        столбец, с которым не справилась половина класса.
+        """
+        for index, student in enumerate(students):
+            for position, task in enumerate(tasks):
+                # каждый третий пропускает задачу: пустая ячейка — такое же
+                # состояние, как остальные, и рисуется она отдельно
+                if (index + position) % 3 == 0:
+                    continue
+
+                correct = (index + position) % 2 == 0
+                Submission.objects.create(
+                    task=task,
+                    student=student,
+                    answer=task.answers[0] if correct else "не знаю",
+                    is_correct=None if index == 1 else correct,
+                    checked_at=None if index == 1 else now - timedelta(days=7),
+                    checked_by=None if index == 1 else teacher,
+                )
+
     # --- building blocks ------------------------------------------------------
 
     def flush(self):
@@ -388,6 +495,9 @@ class Command(BaseCommand):
         the schools themselves. Superusers survive: wiping the account you
         administer the box with is never what you meant.
         """
+        # работы держат курс через PROTECT, как уроки и план, поэтому идут
+        # первыми — вместе с задачами и ответами, которые висят на них
+        Work.objects.all().delete()
         PlanTemplate.objects.all().delete()
         PlanNode.objects.all().delete()
         # the two deletes above took every attachment with them, so nothing
@@ -901,6 +1011,12 @@ class Command(BaseCommand):
                     )
                 )
 
+        if not options["minimal"]:
+            self.stdout.write(
+                f"  работы:    {Work.objects.count()} "
+                f"({Task.objects.count()} задач, {Submission.objects.count()} ответов, "
+                f"{Submission.objects.filter(is_correct__isnull=True).count()} не проверено)"
+            )
         self.stdout.write(
             f"  библиотека: {PlanTemplate.objects.count()} шаблонов "
             f"({PlanTemplate.objects.filter(is_published=False).count()} черновик)"

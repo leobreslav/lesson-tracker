@@ -13,7 +13,7 @@ a fixture that can express it would be testing a state the product cannot
 reach.
 """
 
-from datetime import date
+from datetime import date, timedelta
 
 from django.contrib.auth import get_user_model
 from django.core.files.uploadedfile import SimpleUploadedFile
@@ -120,6 +120,38 @@ def assign(teacher, course):
     from schedule.models import CourseAssignment
 
     return CourseAssignment.objects.get_or_create(course=course, teacher=teacher)[0]
+
+
+def make_work(teacher, course, *, title="Контрольная", opens=None, closes=None, **fields):
+    """
+    Работа учителя в курсе. Окно по умолчанию — открытое прямо сейчас.
+
+    Открытое, потому что закрытая работа не даёт отправить ответ, а именно
+    отправка — то, вокруг чего крутятся правила; тест про закрытое окно
+    двигает даты сам.
+    """
+    from django.utils import timezone
+    from works.models import Work
+
+    assign(teacher, course)
+    now = timezone.now()
+
+    return Work.objects.create(
+        teacher=teacher,
+        course=course,
+        title=title,
+        opens_at=opens or now - timedelta(hours=1),
+        closes_at=closes or now + timedelta(days=7),
+        **fields,
+    )
+
+
+def make_task(work, question="Сколько будет 2+2?", answers=("4",), position=0):
+    from works.models import Task
+
+    return Task.objects.create(
+        work=work, question=question, answers=list(answers), position=position
+    )
 
 
 def make_term(year, name="1 четверть", start=None, end=None):

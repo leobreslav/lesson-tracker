@@ -60,6 +60,7 @@ INSTALLED_APPS = [
     'plans',
     'library',
     'files',
+    'works',
     'onboarding',
 ]
 

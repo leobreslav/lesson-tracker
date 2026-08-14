@@ -35,7 +35,9 @@ from .testing import (
     make_node,
     make_slot,
     make_template,
+    make_task,
     make_term,
+    make_work,
     make_year,
 )
 
@@ -236,6 +238,35 @@ class MatrixTests(AccessTestCase):
                     "method": "post",
                     "body": {"direction": "up"},
                 },
+            ),
+        )
+
+
+    def test_work(self):
+        work = make_work(self.user, self.course)
+
+        self.assertPersonalObjectRules(
+            list_url="work-list",
+            detail_url="work-detail",
+            obj=work,
+            patch={"title": "Другое название"},
+            # цена правки считается по чужим ответам, и спрашивать её про
+            # чужую работу нельзя даже коллеге по курсу
+            actions=("work-impact",),
+        )
+
+    def test_task(self):
+        task = make_task(make_work(self.user, self.course))
+
+        self.assertPersonalObjectRules(
+            list_url="task-list",
+            detail_url="task-detail",
+            obj=task,
+            patch={"question": "Другое условие"},
+            actions=(
+                {"name": "task-move", "method": "post", "body": {"direction": "up"}},
+                "task-impact",
+                {"name": "task-recheck", "method": "post"},
             ),
         )
 

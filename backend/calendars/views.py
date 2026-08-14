@@ -29,6 +29,7 @@ def usage_of(year) -> dict:
     """
     from plans.models import PlanNode
     from schedule.models import Course, CourseAssignment, LessonSlot, MasterSlot
+    from works.models import Work
 
     return {
         "courses": Course.objects.filter(year=year).count(),
@@ -39,6 +40,7 @@ def usage_of(year) -> dict:
         # то, что удержит: чужая работа внутри курсов этого года
         "slots": LessonSlot.objects.filter(year=year).count(),
         "plan_rows": PlanNode.objects.filter(course__year=year).count(),
+        "works": Work.objects.filter(course__year=year).count(),
     }
 
 
@@ -73,14 +75,14 @@ class SchoolYearViewSet(SchoolScopedViewSet):
         def refuse():
             api_error(
                 Codes.YEAR_IN_USE,
-                f"«{instance.name}» is in use: {used['slots']} lessons and "
-                f"{used['plan_rows']} plan rows belong to its courses. "
-                "Ask their teachers to clear them first.",
+                f"«{instance.name}» is in use: {used['slots']} lessons, "
+                f"{used['plan_rows']} plan rows and {used['works']} works "
+                "belong to its courses. Ask their teachers to clear them first.",
                 name=instance.name,
                 **used,
             )
 
-        if used["slots"] or used["plan_rows"]:
+        if used["slots"] or used["plan_rows"] or used["works"]:
             refuse()
 
         try:
