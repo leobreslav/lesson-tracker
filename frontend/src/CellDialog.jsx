@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import Modal from './Modal'
+import TaskBrief from './TaskBrief'
 import Verdict from './Verdict'
 import { fetchSubmissions } from './api'
 import { dateTime } from './dates'
@@ -8,12 +9,15 @@ import { dateTime } from './dates'
 /**
  * История одной ячейки: все попытки ученика по одной задаче.
  *
+ * Сверху — условие и эталоны: без них проверка одной ячейки превращается в
+ * «а что тут вообще спрашивали».
+ *
  * Открытую ячейку опрос **не перерисовывает**: пока учитель читает ответ,
  * содержимое под курсором меняться не должно. Если ученик отправил новое,
  * окно говорит об этом строкой и кнопкой «показать» — решение остаётся за
  * учителем, а не за таймером.
  */
-export default function CellDialog({ student, taskId, onChanged, onClose }) {
+export default function CellDialog({ student, task, onChanged, onClose }) {
   const { t } = useTranslation()
   const [rows, setRows] = useState(null)
   const [fresh, setFresh] = useState(false)
@@ -21,11 +25,11 @@ export default function CellDialog({ student, taskId, onChanged, onClose }) {
 
   const load = useCallback(
     () =>
-      fetchSubmissions({ task: taskId, student: student.id }).then((result) => {
+      fetchSubmissions({ task: task.id, student: student.id }).then((result) => {
         setRows(result)
         setFresh(false)
       }),
-    [taskId, student.id],
+    [task.id, student.id],
   )
 
   useEffect(() => {
@@ -41,6 +45,10 @@ export default function CellDialog({ student, taskId, onChanged, onClose }) {
   return (
     <Modal onClose={onClose}>
       <h3>{student.name}</h3>
+
+      {/* что спрашивали и что считается верным: проверяя ячейку, учитель
+          сверяется с эталоном, а не вспоминает его */}
+      <TaskBrief task={task} />
 
       {error && (
         <p className="error" role="alert">

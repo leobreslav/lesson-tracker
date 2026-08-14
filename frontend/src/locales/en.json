@@ -955,6 +955,7 @@
     "uncheckedLabel": "answers to check",
     "taskNumber": "task {{number}}",
     "hardestLabel": "the hardest: {{correct}} right of {{checked}}",
-    "noHardest": "nothing checked yet"
+    "noHardest": "nothing checked yet",
+    "expected": "Accepted:"
   }
 }

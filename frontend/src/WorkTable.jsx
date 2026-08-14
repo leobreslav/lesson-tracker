@@ -126,7 +126,12 @@ export default function WorkTable() {
                         className="cell"
                         title={item.answer ?? t('table.empty')}
                         disabled={!item.submission}
-                        onClick={() => setCell({ student, task: item.task })}
+                        onClick={() =>
+                          setCell({
+                            student,
+                            task: table.tasks.find((row) => row.id === item.task),
+                          })
+                        }
                       >
                         {cellMark(item)}
                       </button>
@@ -162,7 +167,7 @@ export default function WorkTable() {
       {cell && (
         <CellDialog
           student={cell.student}
-          taskId={cell.task}
+          task={cell.task}
           onChanged={refresh}
           onClose={() => setCell(null)}
         />

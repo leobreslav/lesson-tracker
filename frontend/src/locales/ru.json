@@ -994,6 +994,7 @@
     "uncheckedLabel": "ответов на проверку",
     "taskNumber": "задача {{number}}",
     "hardestLabel": "самая трудная: верно {{correct}} из {{checked}}",
-    "noHardest": "проверенных ответов пока нет"
+    "noHardest": "проверенных ответов пока нет",
+    "expected": "Верно:"
   }
 }

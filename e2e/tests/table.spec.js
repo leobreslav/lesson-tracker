@@ -77,6 +77,9 @@ test('история ячейки открывается кликом и отм�
   await page.locator('.work-table td.wrong .cell').first().click()
 
   const dialog = page.locator('dialog.modal')
+  // сверху видно, что проверяем: условие и эталоны
+  await expect(dialog.locator('.task-brief .katex').first()).toBeVisible()
+  await expect(dialog.locator('.task-brief .tag').first()).toBeVisible()
   await expect(dialog.locator('.attempt-list li')).toHaveCount(1)
   // повторное нажатие на ту же отметку снимает её: третьей кнопки нет
   await dialog.getByTitle(/Отметить «неверно»/).click()

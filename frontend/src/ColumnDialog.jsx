@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import Markdown from './Markdown'
 import Modal from './Modal'
+import TaskBrief from './TaskBrief'
 import Verdict from './Verdict'
 import { fetchSubmissions } from './api'
 
@@ -45,20 +45,7 @@ export default function ColumnDialog({ task, onChanged, onClose }) {
     <Modal className="shelf" onClose={onClose}>
       <h3>{t('table.checking')}</h3>
 
-      <div className="task-question">
-        <Markdown text={task.question} />
-      </div>
-      <div className="row answers">
-        {task.answers.length === 0 ? (
-          <span className="hint">{t('works.task.noAnswers')}</span>
-        ) : (
-          task.answers.map((answer, index) => (
-            <span className="tag" key={index}>
-              {answer}
-            </span>
-          ))
-        )}
-      </div>
+      <TaskBrief task={task} />
 
       {error && (
         <p className="error" role="alert">

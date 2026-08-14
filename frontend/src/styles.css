@@ -2244,6 +2244,18 @@ button.compact,
   border-color: #1a73e8;
 }
 
+/* шапка окна проверки: условие и эталоны отделены от ответов чертой —
+   выше «что спрашивали», ниже «что ответили», и путать их нельзя */
+.task-brief {
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid #eceff1;
+}
+
+.task-brief .answers {
+  align-items: center;
+  gap: 0.3rem;
+}
+
 /* проверка столбцом: ответы подряд, отметка справа от каждого */
 .attempt-list.checking li {
   grid-template-columns: minmax(6rem, auto) 1fr auto;
