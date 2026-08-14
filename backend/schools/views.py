@@ -8,6 +8,7 @@ from collections import Counter
 
 from config.errors import Codes, api_error
 from django.contrib.auth import get_user_model
+from django.db import transaction
 from django.db.models import ProtectedError
 from rest_framework import mixins, viewsets
 from rest_framework.decorators import action
@@ -333,10 +334,14 @@ class MemberViewSet(
                 "This is the last administrator of the school.",
             )
 
-        instance.course_assignments.all().delete()
-        instance.school = None
-        instance.is_school_admin = False
-        instance.save(update_fields=["school", "is_school_admin"])
+        # одной транзакцией: снятые назначения при оставшейся школе — это
+        # состояние, неотличимое от «администратор убрал курсы руками», и
+        # восстанавливать его пришлось бы по памяти
+        with transaction.atomic():
+            instance.course_assignments.all().delete()
+            instance.school = None
+            instance.is_school_admin = False
+            instance.save(update_fields=["school", "is_school_admin"])
 
 
 class InvitationViewSet(

@@ -23,6 +23,9 @@ services:
     command: python manage.py runserver 0.0.0.0:8000
     volumes:
       - ./backend:/app
+      # общие случаи для зеркал: тот же путь, что из backend/<app> на хосте
+      # (../../mirrors), поэтому тест читает их одинаково внутри и снаружи
+      - ./mirrors:/mirrors:ro
     ports:
       - "8000:8000"
     env_file: .env
@@ -40,6 +43,8 @@ services:
       # список кодов ошибок — его сверяет tests/locales.test.js; путь такой
       # же, как из frontend/tests на хосте (../../backend/config/errors.py)
       - ./backend/config/errors.py:/backend/config/errors.py:ro
+      # и те же случаи для второй половины зеркал — путь тот же самый
+      - ./mirrors:/mirrors:ro
     ports:
       - "5173:5173"
     depends_on:

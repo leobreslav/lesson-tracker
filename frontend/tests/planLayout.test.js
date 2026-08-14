@@ -7,7 +7,9 @@
  */
 
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 import { describe, it } from 'node:test'
+import { fileURLToPath } from 'node:url'
 
 import { freeSlots, layoutTotals, stitchLayout } from '../src/planLayout.js'
 import { planRows } from '../src/planLogic.js'
@@ -425,4 +427,76 @@ describe('свободные слоты', () => {
     assert.equal(freeSlots([], ribbon(4)).length, 4)
     assert.equal(freeSlots([], ribbon(4))[0].labelled, true)
   })
+})
+
+/**
+ * Общие случаи из `mirrors/layout.json` — вторая половина сторожа.
+ *
+ * Те же данные и те же ожидания гоняет `plans/test_mirror.py` против двух
+ * серверных реализаций сразу. Числа раскладки считаются в трёх местах, и
+ * это единственное, что не даёт им разойтись молча: страница плана взяла бы
+ * свой резерв, «Состояние курсов» — свой, и оба выглядели бы правдоподобно.
+ */
+describe('общие случаи с сервером', () => {
+  const CASES = JSON.parse(
+    readFileSync(
+      fileURLToPath(new URL('../../mirrors/layout.json', import.meta.url)),
+      'utf8',
+    ),
+  )
+
+  /** Строки плана в порядке показа — то, что даёт `planRows`. */
+  const rowsOf = (plan) => {
+    const rows = []
+    let id = 0
+
+    for (const block of plan) {
+      const parent = block.section ? { is_section: true, id: (id += 1) } : null
+      if (parent) rows.push(parent)
+      for (const title of block.lessons) {
+        rows.push({ is_section: false, id: (id += 1), section_id: parent?.id ?? null, title })
+      }
+    }
+
+    return rows
+  }
+
+  /** Лента, какой её отдаёт сервер: отменённых слотов в ней нет. */
+  const ribbonOf = (slots) =>
+    slots
+      .filter((slot) => !slot.cancelled)
+      .map((slot, index) => ({
+        id: index + 1,
+        date: slot.date,
+        lesson_number: index + 1,
+        is_extra: Boolean(slot.extra),
+        week: index + 1,
+        week_start: slot.date,
+        term: null,
+        break_before: null,
+      }))
+
+  for (const spec of CASES.cases) {
+    it(spec.name, () => {
+      const rows = rowsOf(spec.plan)
+      const ribbon = ribbonOf(spec.slots)
+      const totals = layoutTotals(rows, ribbon)
+      const stitched = stitchLayout(rows, ribbon, CASES.today)
+      const past = stitched.filter((row) => !row.is_section && row.past).length
+
+      assert.deepEqual(
+        {
+          slots_total: totals.slots,
+          lessons_total: totals.lessons,
+          balance: totals.balance,
+          missing: totals.missing,
+          last_lesson_date: totals.lastDate,
+          past_lessons: past,
+          remaining_lessons: totals.lessons - past,
+        },
+        spec.expected,
+        `${spec.name}: ${spec.why}`,
+      )
+    })
+  }
 })

@@ -11,7 +11,10 @@
  * spare — it is a second version of the truth waiting to be believed.
  */
 
-import { addDays, daysBetween, eachDate } from './calendarLogic'
+// расширение обязательно: этот модуль читает не только Vite, но и node —
+// его тесты гоняют общие случаи из mirrors/, а node ESM путь без .js не
+// достраивает
+import { addDays, daysBetween, eachDate } from './calendarLogic.js'
 
 export const MAX_LESSON_NUMBER = 10
 
@@ -42,8 +45,26 @@ export const isRegular = (slot) => !slot.is_extra && !slot.is_cancelled
 /**
  * A copy preview: how many lessons appear and how many are skipped.
  *
- * A skip is a non-study target day or a taken number (in merge mode, and on
- * the surviving extra/cancelled lessons in replace mode).
+ * A skip is a non-study target day or a taken number. What counts as taken
+ * follows `place_copies` on the server exactly, and the three rules below
+ * are the ones this preview used to get wrong — each of them now has a case
+ * in `mirrors/copy.json`, checked from both sides:
+ *
+ * * **the source is the chosen period and nothing else.** The cycle rounds
+ *   up to whole weeks, so a three-day source has a seven-day cycle, and the
+ *   four days past its end take part in the layout as empty ones. A lesson
+ *   standing on one of them belongs to the week, not to the selection;
+ * * **a cancelled lesson frees the slot.** Somebody else's cancelled lesson
+ *   is not an obstacle: the window is free, which is the whole meaning of a
+ *   cancellation;
+ * * **replace clears only the chosen courses.** A neighbouring course keeps
+ *   its lessons through a replace, so its number stays taken.
+ *
+ * One limit is left in on purpose: copying several courses at once, the
+ * server walks them one by one, and a course can be blocked by another
+ * course's lesson that a later step will delete. The preview does not model
+ * that order — for a single course it is exact, for a selection it can
+ * differ on the places where two copied courses meet.
  */
 export function planCopy({
   slots,
@@ -55,17 +76,34 @@ export function planCopy({
   mode,
   classIds = null,
 }) {
-  // only the chosen classes are copied, but occupancy is read across all of
-  // them: another class's lesson on that number still blocks ours
+  const chosen = (slot) => !classIds || classIds.has(slot.course_id)
+  const at = (date, number) => `${date}#${number}`
+
   const byDate = groupByDate(
-    slots.filter(isRegular).filter((slot) => !classIds || classIds.has(slot.course_id)),
-  )
-  const occupied = new Set(
     slots
-      .filter((slot) => (mode === 'replace' ? !isRegular(slot) : true))
-      .filter((slot) => slot.date >= targetStart && slot.date <= targetEnd)
-      .map((slot) => `${slot.date}#${slot.lesson_number}`),
+      .filter(isRegular)
+      .filter(chosen)
+      .filter((slot) => slot.date >= sourceStart && slot.date <= sourceEnd),
   )
+
+  const inTarget = slots.filter(
+    (slot) => slot.date >= targetStart && slot.date <= targetEnd,
+  )
+
+  // taken by a course we are copying: replace removes its regular lessons,
+  // the hand-made ones (cancelled, extra) survive and keep the place
+  const taken = new Set(
+    inTarget
+      .filter(chosen)
+      .filter((slot) => mode !== 'replace' || !isRegular(slot))
+      .map((slot) => at(slot.date, slot.lesson_number)),
+  )
+
+  // taken by a course we are not copying: it lives through a replace, and
+  // only a cancellation lets go of the number
+  inTarget
+    .filter((slot) => !chosen(slot) && !slot.is_cancelled)
+    .forEach((slot) => taken.add(at(slot.date, slot.lesson_number)))
 
   const cycle = cycleDays(sourceStart, sourceEnd)
   let created = 0
@@ -74,12 +112,10 @@ export function planCopy({
   eachDate(targetStart, targetEnd).forEach((target) => {
     const source = byDate.get(sourceDateFor(target, sourceStart, cycle)) || []
     source.forEach((slot) => {
-      if (!studyDates.has(target)) {
-        skipped += 1
-      } else if (occupied.has(`${target}#${slot.lesson_number}`)) {
+      if (!studyDates.has(target) || taken.has(at(target, slot.lesson_number))) {
         skipped += 1
       } else {
-        occupied.add(`${target}#${slot.lesson_number}`)
+        taken.add(at(target, slot.lesson_number))
         created += 1
       }
     })

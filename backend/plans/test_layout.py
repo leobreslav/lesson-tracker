@@ -669,6 +669,66 @@ class SlotRibbonTests(LayoutApiTestCase):
             [(entry["slot"]["date"], entry["term_id"]) for entry in entries],
         )
 
+    def test_the_entries_and_the_summary_count_the_same_thing(self):
+        """
+        Сводка — это те же записи раскладки, посчитанные ещё раз.
+
+        Раньше сверялись только даты и термы, а числа — резерв, «не
+        помещается», последний урок — не сверялись вовсе: расхождение между
+        лентой на странице плана и сводкой прошло бы молча. Конфигураций
+        несколько, потому что расходятся такие вещи на краях: пустой план,
+        пустое расписание, отмены.
+        """
+        cases = {
+            "план короче": {"slots": 12, "cancelled": 0, "extra": 0},
+            "план длиннее": {"slots": 3, "cancelled": 0, "extra": 0},
+            "ровно по плану": {"slots": 7, "cancelled": 0, "extra": 0},
+            "с отменёнными": {"slots": 9, "cancelled": 2, "extra": 0},
+            "с дополнительными": {"slots": 9, "cancelled": 0, "extra": 2},
+            "без расписания": {"slots": 0, "cancelled": 0, "extra": 0},
+        }
+
+        for name, spec in cases.items():
+            with self.subTest(name):
+                LessonSlot.objects.filter(course=self.course).delete()
+                day = MONDAY
+                for index in range(spec["slots"]):
+                    self.add_slot(
+                        day + timedelta(days=index),
+                        is_cancelled=index < spec["cancelled"],
+                        is_extra=index >= spec["slots"] - spec["extra"],
+                    )
+
+                entries = self.layout().json()["entries"]
+                summary = self.summary().json()
+
+                with_slot = [row for row in entries if row["slot"]]
+                with_lesson = [row for row in entries if row["plan_row"]]
+                matched = [row for row in entries if row["status"] == "matched"]
+                fits = len(matched) == len(with_lesson)
+
+                self.assertEqual(summary["slots_total"], len(with_slot), name)
+                self.assertEqual(summary["lessons_total"], len(with_lesson), name)
+                self.assertEqual(
+                    summary["balance"], len(with_slot) - len(with_lesson), name
+                )
+                self.assertEqual(
+                    summary["last_lesson_date"],
+                    matched[-1]["slot"]["date"] if fits and matched else None,
+                    name,
+                )
+                # «не помещается» — это записи без слота, и никак иначе
+                self.assertEqual(
+                    len([row for row in entries if row["status"] == "no_slot"]),
+                    len(with_lesson) - len(matched),
+                    name,
+                )
+                self.assertEqual(
+                    summary["past_lessons"] + summary["remaining_lessons"],
+                    summary["lessons_total"],
+                    name,
+                )
+
     def test_slots_carry_the_school_week_and_its_monday(self):
         """
         Нумерация сквозная от начала года, а не календарная: учителю важно,
