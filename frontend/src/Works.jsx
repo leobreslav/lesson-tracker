@@ -247,6 +247,16 @@ export default function Works({ onLoggedOut }) {
                         >
                           {t('works.settings')}
                         </button>
+                        {/* проверка — своя страница: таблица на тридцать
+                            человек в раскрытой строке не помещается */}
+                        <button
+                          type="button"
+                          className="secondary"
+                          disabled={busy}
+                          onClick={() => navigate(`/works/${work.id}`)}
+                        >
+                          {t('table.open')}
+                        </button>
                       </div>
 
                       {tasks.length === 0 ? (

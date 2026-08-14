@@ -934,5 +934,25 @@
       "recheck_one": "Clear {{count}} verdict",
       "recheck_other": "Clear {{count}} verdicts"
     }
+  },
+  "table": {
+    "open": "Check",
+    "student": "Student",
+    "total": "correct",
+    "removed": "(no longer in the course)",
+    "empty": "no answer",
+    "answered": "{{students}} of {{total}} have answered",
+    "unchecked_one": "{{count}} to check",
+    "unchecked_other": "{{count}} to check",
+    "correctOf": "{{correct}} of {{answered}} right",
+    "questions": "The questions",
+    "checking": "Checking the task",
+    "noAnswers": "Nobody has answered this task yet.",
+    "waiting_one": "{{count}} answer waiting",
+    "waiting_other": "{{count}} answers waiting",
+    "markCorrect": "Mark as correct (press again to clear)",
+    "markWrong": "Mark as wrong (press again to clear)",
+    "newAnswer": "The student has sent a new answer while you were reading.",
+    "show": "Show it"
   }
 }

@@ -2066,6 +2066,120 @@ button.progress-head:hover:not(:disabled) {
 }
 
 /*
+ * Сводная таблица: ученики по строкам, задачи по столбцам.
+ *
+ * Здесь это настоящая `<table>`, в отличие от плана: у плана дерево с
+ * перетаскиванием, а тут именно таблица — заголовки столбцов, заголовки
+ * строк и клетка на пересечении. Ширину столбца держим узкой: в клетке
+ * стоит значок состояния, а не ответ, иначе тридцать на десять не влезет
+ * ни на один экран.
+ */
+.table-scroll {
+  overflow-x: auto;
+}
+
+.work-table {
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+.work-table th,
+.work-table td {
+  padding: 0.2rem 0.3rem;
+  text-align: center;
+  border-bottom: 1px solid #eceff1;
+}
+
+.work-table thead th {
+  vertical-align: bottom;
+}
+
+.work-table thead .hint {
+  display: block;
+  font-size: 0.7rem;
+  white-space: nowrap;
+}
+
+.work-table th.who {
+  min-width: 10rem;
+  font-weight: 400;
+  text-align: left;
+}
+
+.work-table .total {
+  padding-left: 0.6rem;
+  color: #666;
+}
+
+/* строка снятого приглушена целиком: его ответы читают, но в «кто не
+   справился» он не входит */
+.work-table tr.past th.who,
+.work-table tr.past td {
+  color: #888;
+}
+
+.work-table .cell {
+  width: 1.8rem;
+  height: 1.6rem;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.work-table .cell:disabled {
+  cursor: default;
+}
+
+/* цвет — это и есть содержимое таблицы: по нему её и читают через комнату */
+.work-table td.correct .cell {
+  color: #1a6b23;
+  background: #d7f0d9;
+}
+
+.work-table td.wrong .cell {
+  color: #b3261e;
+  background: #fadad7;
+}
+
+.work-table td.sent .cell {
+  color: #45526b;
+  background: #e3e8f0;
+}
+
+.work-table td.redone .cell {
+  color: #8a4b00;
+  background: #fde7c8;
+}
+
+.work-table .cell:hover:not(:disabled) {
+  border-color: #1a73e8;
+}
+
+/* проверка столбцом: ответы подряд, отметка справа от каждого */
+.attempt-list.checking li {
+  grid-template-columns: minmax(6rem, auto) 1fr auto;
+}
+
+.verdict-buttons {
+  display: flex;
+  gap: 0.25rem;
+}
+
+.verdict-buttons .chip.active {
+  background: #1a6b23;
+  border-color: #1a6b23;
+}
+
+.verdict-buttons .chip.active.wrong {
+  background: #b3261e;
+  border-color: #b3261e;
+}
+
+/*
  * Работы у ученика: список под названием курса и экран решения.
  *
  * Попытки показаны все и подряд: ученик их сам и писал, а спрятать историю

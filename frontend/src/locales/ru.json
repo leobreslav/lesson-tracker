@@ -972,5 +972,27 @@
       "recheck_few": "Снять {{count}} отметки",
       "recheck_many": "Снять {{count}} отметок"
     }
+  },
+  "table": {
+    "open": "Проверка",
+    "student": "Ученик",
+    "total": "верно",
+    "removed": "(снят с курса)",
+    "empty": "нет ответа",
+    "answered": "ответили {{students}} из {{total}}",
+    "unchecked_one": "{{count}} на проверку",
+    "unchecked_few": "{{count}} на проверку",
+    "unchecked_many": "{{count}} на проверку",
+    "correctOf": "верно {{correct}} из {{answered}}",
+    "questions": "Условия задач",
+    "checking": "Проверка задачи",
+    "noAnswers": "На эту задачу ещё никто не ответил.",
+    "waiting_one": "{{count}} ответ ждёт проверки",
+    "waiting_few": "{{count}} ответа ждут проверки",
+    "waiting_many": "{{count}} ответов ждут проверки",
+    "markCorrect": "Отметить «верно» (повторное нажатие снимает)",
+    "markWrong": "Отметить «неверно» (повторное нажатие снимает)",
+    "newAnswer": "Ученик отправил новый ответ, пока вы читали.",
+    "show": "Показать"
   }
 }

@@ -460,6 +460,24 @@ export const deleteWork = (id) => request(`/api/works/${id}/`, { method: 'DELETE
 /** Что стоит за работой прямо сейчас: сколько ответов и проверок. */
 export const fetchWorkImpact = (id) => request(`/api/works/${id}/impact/`)
 
+/**
+ * Сводная таблица работы. `version` делает опрос дешёвым: совпала — сервер
+ * отвечает «не изменилось» и не собирает триста ячеек.
+ */
+export const fetchWorkTable = (id, version) =>
+  request(`/api/works/${id}/table/${version ? `?version=${encodeURIComponent(version)}` : ''}`)
+
+/** Журнал ячейки или всего столбца: те же отправки, разный фильтр. */
+export const fetchSubmissions = (params) =>
+  request(`/api/works/submissions/?${new URLSearchParams(params)}`)
+
+/** Отметка. `null` — снять: попытку это не расходует, журнал не трогает. */
+export const setVerdict = (id, isCorrect) =>
+  request(`/api/works/submissions/${id}/`, {
+    method: 'PATCH',
+    body: { is_correct: isCorrect },
+  })
+
 export const fetchTasks = (work) => request(`/api/works/tasks/?work=${work}`)
 
 export const createTask = (fields) =>
