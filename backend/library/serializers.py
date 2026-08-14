@@ -146,14 +146,17 @@ class FromPlanSerializer(serializers.Serializer):
 
     def validate(self, attrs):
         course = attrs["course"]
-        # the course usually knows both already; the form only asks when it
-        # does not, which is the case for courses made before subjects existed
-        subject = attrs.get("subject") or course.subject
+        # Курс отвечает первым, а присланное — только запасной вариант для
+        # курсов, заведённых до справочников. Наоборот было нельзя: шаблон
+        # снимается **с этого курса**, и «Алгебра 9», уехавшая на полку как
+        # «Геометрия 7», расходится с ним молча — форма подставляла значения
+        # курса, но ничто не мешало их поправить перед отправкой.
+        subject = course.subject or attrs.get("subject")
         # the shelf stores the **year of study**, not the school's name for
         # it: a plan for the ninth year is a plan for the ninth year whether
         # the door says «9Б» or «MYP 4», and one number is what the filter
         # can compare
-        grade = attrs.get("grade") or (course.grade.level if course.grade else None)
+        grade = course.grade.level if course.grade else attrs.get("grade")
 
         if subject is None:
             api_error(

@@ -999,8 +999,15 @@ function PublishDialog({ course, subjects, existing, busy, onSubmit, onClose }) 
     course ? `${course.subject_name ?? ''} ${course.grade_name ?? ''}`.trim() : '',
   )
   const [description, setDescription] = useState('')
-  const [subject, setSubject] = useState(course?.subject ?? subjects[0]?.id ?? null)
-  const [grade, setGrade] = useState(course?.grade_level ?? '')
+  const [subject, setSubject] = useState(subjects[0]?.id ?? null)
+  const [grade, setGrade] = useState('')
+
+  // курс обычно знает и то и другое — тогда не спрашиваем и не отправляем:
+  // шаблон снимается с этого курса, и разойтись с ним ему нечем. Спрашиваем
+  // только то, чего у курса нет: так бывает у курсов, заведённых до
+  // справочников
+  const asksSubject = !course?.subject
+  const asksGrade = !course?.grade_level
 
   if (existing) {
     return (
@@ -1025,7 +1032,12 @@ function PublishDialog({ course, subjects, existing, busy, onSubmit, onClose }) 
         onSubmit={(event) => {
           event.preventDefault()
           if (title.trim()) {
-            onSubmit({ title: title.trim(), description, subject, grade })
+            onSubmit({
+              title: title.trim(),
+              description,
+              ...(asksSubject ? { subject } : {}),
+              ...(asksGrade ? { grade } : {}),
+            })
           }
         }}
       >
@@ -1043,33 +1055,46 @@ function PublishDialog({ course, subjects, existing, busy, onSubmit, onClose }) 
           />
         </div>
 
-        <div className="row">
-          <label>
-            {t('library.subject')}
-            <select
-              value={subject ?? ''}
-              onChange={(event) => setSubject(Number(event.target.value))}
-            >
-              {subjects.map((item) => (
-                <option key={item.id} value={item.id}>
-                  {item.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            {t('library.grade')}
-            {/* верхней границы нет: одиннадцать лет — местная система, а в
-                британской и IB-школе их тринадцать. То же правило, что у
-                параллелей в справочнике */}
-            <input
-              type="number"
-              min={1}
-              value={grade}
-              onChange={(event) => setGrade(Number(event.target.value))}
-            />
-          </label>
-        </div>
+        {!asksSubject && !asksGrade ? (
+          <p className="hint">
+            {t('plan.publishFromCourse', {
+              subject: course.subject_name,
+              grade: course.grade_level,
+            })}
+          </p>
+        ) : (
+          <div className="row">
+            {asksSubject && (
+              <label>
+                {t('library.subject')}
+                <select
+                  value={subject ?? ''}
+                  onChange={(event) => setSubject(Number(event.target.value))}
+                >
+                  {subjects.map((item) => (
+                    <option key={item.id} value={item.id}>
+                      {item.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
+            {asksGrade && (
+              <label>
+                {t('library.grade')}
+                {/* верхней границы нет: одиннадцать лет — местная система, а
+                    в британской и IB-школе их тринадцать. То же правило, что
+                    у параллелей в справочнике */}
+                <input
+                  type="number"
+                  min={1}
+                  value={grade}
+                  onChange={(event) => setGrade(Number(event.target.value))}
+                />
+              </label>
+            )}
+          </div>
+        )}
 
         <div className="field">
           <label htmlFor="template-note">{t('plan.noteLabel')}</label>

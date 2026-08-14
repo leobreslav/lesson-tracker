@@ -382,7 +382,8 @@
       "chooseTitle": "Who should approve it?",
       "chooseHint": "This course has several methodists.",
       "sendTo": "Send"
-    }
+    },
+    "publishFromCourse": "The subject and the year of study come from the course: {{subject}}, year {{grade}}."
   },
   "status": {
     "title": "Course Status",
