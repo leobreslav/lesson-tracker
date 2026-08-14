@@ -41,10 +41,12 @@ test('администратор заводит курс и назначает �
   // раскрывая заново, было бы издевательством
   await expect(card.locator('.course-body')).toBeVisible()
 
-  // и курс появился в её собственном списке — ради этого связь и заведена
+  // и курс появился в её собственных списках — ради этого связь и
+  // заведена. Своего экрана «Классы» больше нет, курсы видно чипами там,
+  // где с ними работают
   await signIn(PEOPLE.ivanova)
-  await openSection(page, '/classes')
-  await expect(page.getByText('9А Алгебра')).toBeVisible()
+  await openSection(page, '/plan')
+  await expect(page.getByRole('button', { name: '9А Алгебра' })).toBeVisible()
 })
 
 test('длинное название курса сохраняется целиком и не рвёт карточку', async ({
@@ -134,15 +136,17 @@ test('семь курсов помещаются в экран, каждый о�
   expect(fits.wrapped).toBe(0)
 })
 
-test('учитель курсы не заводит: формы нет, а сервер отказывает', async ({
+test('учитель курсы не заводит: раздела нет, а сервер отказывает', async ({
   page,
   signIn,
   api,
 }) => {
   await signIn(PEOPLE.ivanova)
-  await openSection(page, '/classes')
+  await page.goto('/')
+  await ready(page)
 
-  await expect(page.getByPlaceholder('Название курса')).toHaveCount(0)
+  // раздела «Школа» у него нет в баре вовсе — курсы заводит администратор
+  await expect(page.getByRole('link', { name: 'Школа' })).toHaveCount(0)
 
   const teacher = await api(PEOPLE.ivanova)
   const courses = await teacher.get('/api/courses/')

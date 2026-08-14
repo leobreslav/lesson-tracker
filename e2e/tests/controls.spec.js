@@ -20,7 +20,7 @@ const PAGES = [
   ['/', PEOPLE.ivanova],
   ['/schedule', PEOPLE.ivanova],
   ['/plan', PEOPLE.ivanova],
-  ['/classes', PEOPLE.ivanova],
+  ['/works', PEOPLE.ivanova],
   ['/year', PEOPLE.admin],
   ['/school', PEOPLE.admin],
   ['/school/teachers', PEOPLE.admin],

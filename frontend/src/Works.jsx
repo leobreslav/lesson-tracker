@@ -131,26 +131,27 @@ export default function Works({ onLoggedOut }) {
     return <p>{error ? <span className="error">{error}</span> : t('common.loading')}</p>
   }
 
-  if (!courses.length) {
-    return (
-      <EmptyState
-        title={t('works.needCourse.title')}
-        actions={
-          <button type="button" onClick={() => navigate('/classes')}>
-            {t('plan.needClass.action')}
-          </button>
-        }
-      >
-        {t('works.needCourse.hint')}
-      </EmptyState>
-    )
-  }
-
+  // пустое состояние — внутри страницы, а не вместо неё: у раздела есть
+  // имя, и терять его оттого, что курсов пока нет, незачем
   return (
     <main className="page wide">
       <header className="page-header">
         <h1>{t('nav.works')}</h1>
       </header>
+
+      {!courses.length ? (
+        <EmptyState
+          title={t('works.needCourse.title')}
+          actions={
+            <button type="button" onClick={() => navigate('/school/courses')}>
+              {t('plan.needClass.action')}
+            </button>
+          }
+        >
+          {t('works.needCourse.hint')}
+        </EmptyState>
+      ) : (
+        <>
 
       {error && (
         <p className="error" role="alert">
@@ -357,6 +358,8 @@ export default function Works({ onLoggedOut }) {
           </ul>
         )}
       </section>
+        </>
+      )}
 
       {editing && (
         <WorkDialog

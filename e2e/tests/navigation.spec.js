@@ -13,7 +13,9 @@ const SECTIONS = [
   ['/', 'main'],
   ['/schedule', 'schedule'],
   ['/plan', 'plan'],
-  ['/classes', 'courses'],
+  ['/works', 'works'],
+  // экрана «Классы» больше нет, а «Учебный год» ушёл из бара — он
+  // открывается из раздела «Школа», но обойти его всё равно надо
   ['/year', 'calendar'],
   ['/school', 'school'],
   ['/school/schedule', 'timetable'],

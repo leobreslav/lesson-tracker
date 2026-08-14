@@ -485,7 +485,7 @@ export default function Plan({ onLoggedOut }) {
         <EmptyState
           title={t('plan.needClass.title')}
           actions={
-            <button type="button" onClick={() => navigate('/classes')}>
+            <button type="button" onClick={() => navigate('/school/courses')}>
               {t('plan.needClass.action')}
             </button>
           }

@@ -56,7 +56,9 @@ function buildSteps(status, t) {
     },
     {
       key: 'classes',
-      to: admin ? '/school' : '/classes',
+      // курсы заводит администратор, поэтому и смотреть их идут туда же:
+      // своего экрана со списком курсов у учителя больше нет
+      to: '/school/courses',
       done: classes.count > 0,
       summary: classes.count && classes.names.join(', '),
       blocked: noYear ?? forAdmin,

@@ -10,8 +10,9 @@ const SECTIONS = [
   // раздел методиста: роль не иерархическая, у большинства назначений нет,
   // и пустой раздел в баре был бы обещанием работы, которой нет
   { to: '/reviews', key: 'reviews', needs: null, methodistOnly: true },
-  { to: '/classes', key: 'classes', needs: 'year' },
-  { to: '/year', key: 'year', needs: null },
+  // «Курсы» и «Учебный год» из бара убраны: оба живут в разделе «Школа»,
+  // где их и правят, а учителю список курсов и так виден чипами на своих
+  // страницах — расписании, плане и работах
   // the school section exists only for its administrators; a teacher has
   // nothing to do there and the server would refuse anyway
   { to: '/school', key: 'school', needs: null, adminOnly: true },

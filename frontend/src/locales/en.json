@@ -37,8 +37,6 @@
     "menu": "Sections menu",
     "schedule": "My schedule",
     "plan": "Lesson plan",
-    "classes": "Classes",
-    "year": "School year",
     "profile": "Profile",
     "logout": "Sign out",
     "needYear": "create a school year first",
@@ -494,25 +492,9 @@
     }
   },
   "classes": {
-    "title": "Classes",
     "newNameLabel": "New class name",
     "rename": "Rename",
-    "delete": "Delete the class {{name}}",
-    "stats": "lessons {{total}} · past {{past}} · left {{remaining}} · cancelled {{cancelled}}",
-    "needYear": {
-      "title": "A school year first",
-      "hint": "A class lives inside a school year: next year 9B becomes 10B, and that is a different class with its own schedule.",
-      "action": "Create a school year",
-      "askAdmin": "A course lives inside a school year, and the school administrator has not created one yet."
-    },
-    "empty": {
-      "title": "No classes yet",
-      "hint": "A class is what you teach: the group and the subject together, for example «9B Algebra». Each one has its own schedule and its own plan. Type a name above and press Enter.",
-      "hintAdmin": "A course is a group and a subject together, for example «9B Algebra». Create the first one in the school section.",
-      "action": "Go to the school section"
-    },
-    "manageHint": "Courses are managed in the school section:",
-    "readOnlyHint": "Courses are created by the school administrator."
+    "delete": "Delete the class {{name}}"
   },
   "agenda": {
     "title": "My schedule",

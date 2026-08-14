@@ -3,7 +3,6 @@ import { BrowserRouter, Route, Routes, useLocation } from 'react-router-dom'
 import ErrorBoundary from './ErrorBoundary'
 import Agenda from './Agenda'
 import Calendar from './Calendar'
-import Classes from './Classes'
 import Dashboard from './Dashboard'
 import Reviews from './Reviews'
 import Login from './Login'
@@ -163,7 +162,6 @@ export default function App() {
           <Route path="/plan" element={guarded(Plan)} />
           <Route path="/works" element={guarded(Works)} />
           <Route path="/works/:id" element={guarded(WorkTable)} />
-          <Route path="/classes" element={guarded(Classes, { user })} />
           {/* «Школа» — не одна страница, а четыре: рамка с подменю и
               вложенные маршруты под ней */}
           <Route
