@@ -123,6 +123,13 @@ class PlanNodeCreateSerializer(serializers.ModelSerializer):
     after = serializers.PrimaryKeyRelatedField(
         queryset=PlanNode.objects.none(), required=False, allow_null=True, write_only=True
     )
+    # ...или сразу перед ним. Симметричная пара нужна экрану «Сегодня»:
+    # «мы всё ещё на синусе» значит, что строку надо дописать **перед** тем
+    # уроком, который раскладка предлагала, — а его сосед сверху на том
+    # экране неизвестен, там нет дерева плана
+    before = serializers.PrimaryKeyRelatedField(
+        queryset=PlanNode.objects.none(), required=False, allow_null=True, write_only=True
+    )
 
     class Meta:
         model = PlanNode
@@ -134,6 +141,7 @@ class PlanNodeCreateSerializer(serializers.ModelSerializer):
             "title",
             "note",
             "after",
+            "before",
             *CONTENT_FIELDS,
         )
         extra_kwargs = CONTENT_EXTRA_KWARGS
@@ -143,6 +151,7 @@ class PlanNodeCreateSerializer(serializers.ModelSerializer):
         fields["course"].queryset = teacher_courses(self)
         fields["parent"].queryset = own_nodes(self)
         fields["after"].queryset = own_nodes(self)
+        fields["before"].queryset = own_nodes(self)
         return fields
 
     def validate(self, attrs):
@@ -157,35 +166,41 @@ class PlanNodeCreateSerializer(serializers.ModelSerializer):
         )
         raise_structure_error(problems)
 
-        after = attrs.get("after")
-        if after is not None:
-            if after.course_id != attrs["course"].pk:
+        for side in ("after", "before"):
+            anchor = attrs.get(side)
+            if anchor is None:
+                continue
+            if anchor.course_id != attrs["course"].pk:
                 api_error(
                     Codes.ANCHOR_OTHER_CLASS,
                     "That node belongs to another course.",
-                    field="after",
+                    field=side,
                 )
-            if after.parent_id != (attrs.get("parent").pk if attrs.get("parent") else None):
+            if anchor.parent_id != (
+                attrs.get("parent").pk if attrs.get("parent") else None
+            ):
                 api_error(
                     Codes.ANCHOR_OTHER_LEVEL,
-                    "The node to insert after sits on another level.",
-                    field="after",
+                    f"The node to insert {side} sits on another level.",
+                    field=side,
                 )
 
         return attrs
 
     def create(self, validated_data):
         after = validated_data.pop("after", None)
+        before = validated_data.pop("before", None)
         parent = validated_data.get("parent")
 
         # the position is settled by place(); any value does until then
         node = PlanNode.objects.create(position=0, **validated_data)
 
-        index = (
-            after.position + 1
-            if after is not None
-            else len(services.level(node.course_id, parent))
-        )
+        if after is not None:
+            index = after.position + 1
+        elif before is not None:
+            index = before.position
+        else:
+            index = len(services.level(node.course_id, parent))
         services.place(node, parent, index)
 
         return node

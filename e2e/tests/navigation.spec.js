@@ -10,7 +10,9 @@ import { PEOPLE, expect, ready, test } from './harness.js'
  */
 
 const SECTIONS = [
+  // корень — «Сегодня»: систему открывают ради дня, а обзор переехал
   ['/', 'main'],
+  ['/overview', 'main'],
   ['/schedule', 'schedule'],
   ['/plan', 'plan'],
   ['/works', 'works'],

@@ -134,6 +134,9 @@ def rows_for(courses, today, ahead: int = 2) -> list[dict]:
                     else None
                 ),
                 "review": request_payload(requests.get(key)),
+                # долги по записи: сколько занятий закрыто и сколько ждёт.
+                # Считаются по тем же слотам, из которых собрана раскладка
+                "records": services.record_state(slots_by_course[key], today),
                 **services.course_progress(
                     entries, today, cancelled_by_course[key], ahead=ahead
                 ),

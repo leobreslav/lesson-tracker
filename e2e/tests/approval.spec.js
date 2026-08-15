@@ -48,7 +48,7 @@ test('учитель отправляет план, методист утвер�
   await signIn(PEOPLE.petrov)
   // раздела «На утверждение» больше нет: надзор живёт на главной, под
   // своими курсами
-  await page.goto('/')
+  await page.goto('/overview')
   await ready(page)
   await expect(page.getByRole('heading', { name: 'На утверждение' })).toBeVisible()
   await page.getByRole('button', { name: 'Открыть' }).click()
@@ -73,7 +73,7 @@ test('методист возвращает план с замечанием', a
   await teacher.post(`/api/plan/baseline/submit/?course=${algebra.id}`, {})
 
   await signIn(PEOPLE.petrov)
-  await page.goto('/')
+  await page.goto('/overview')
   await ready(page)
   await page.getByRole('button', { name: 'Открыть' }).click()
 
@@ -114,7 +114,7 @@ test('правка после отправки запрос не отзывае�
   await expect(page.locator('.hint.approval')).toContainText('На утверждении')
 
   await signIn(PEOPLE.petrov)
-  await page.goto('/')
+  await page.goto('/overview')
   await ready(page)
   await page.getByRole('button', { name: 'Открыть' }).click()
   const dialog = page.locator('dialog.modal')
@@ -158,7 +158,7 @@ test('методист видит план, который никто не пр�
 
   // числа, которые видит у себя учитель
   await signIn(PEOPLE.ivanova)
-  await page.goto('/')
+  await page.goto('/overview')
   await ready(page)
   const hers = page.locator('.progress-list > li', { hasText: 'Grade 6 Algebra' })
   await hers.locator('.progress-head').click()
@@ -167,7 +167,7 @@ test('методист видит план, который никто не пр�
 
   // ничего не отправляли — и всё равно план виден методисту
   await signIn(PEOPLE.petrov)
-  await page.goto('/')
+  await page.goto('/overview')
   await ready(page)
   await expect(page.locator('.nav-count')).toHaveCount(0)
 
@@ -195,7 +195,7 @@ test('ожидающий план помечен, остальные — нет'
   await teacher.post(`/api/plan/baseline/submit/?course=${algebra.id}`, {})
 
   await signIn(PEOPLE.petrov)
-  await page.goto('/')
+  await page.goto('/overview')
   await ready(page)
 
   const rows = page.locator('.progress-list > li')

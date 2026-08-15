@@ -1,5 +1,11 @@
 import { useCallback, useEffect, useState } from 'react'
-import { BrowserRouter, Route, Routes, useLocation } from 'react-router-dom'
+import {
+  BrowserRouter,
+  Navigate,
+  Route,
+  Routes,
+  useLocation,
+} from 'react-router-dom'
 import ErrorBoundary from './ErrorBoundary'
 import Agenda from './Agenda'
 import Today from './Today'
@@ -138,8 +144,13 @@ export default function App() {
 
       <PageBoundary>
         <Routes>
+          {/* Корень — день, а не сводка: систему открывают ради того, что
+              сегодня, а «как идут курсы» смотрят раз в неделю. Обзор
+              переехал на свой адрес и стоит в баре рядом. */}
+          <Route path="/" element={<Navigate to="/today" replace />} />
+          <Route path="/today" element={guarded(Today)} />
           <Route
-            path="/"
+            path="/overview"
             element={
               <Dashboard
                 user={user}
@@ -149,7 +160,6 @@ export default function App() {
               />
             }
           />
-          <Route path="/today" element={guarded(Today)} />
           <Route path="/schedule" element={guarded(Agenda)} />
           <Route path="/plan" element={guarded(Plan)} />
           <Route path="/works" element={guarded(Works)} />

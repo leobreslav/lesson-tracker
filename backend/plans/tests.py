@@ -702,3 +702,61 @@ class ReindexTests(PlanTestCase):
 
         self.assertEqual(self.positions(section), [0])
         self.assertEqual(self.node("Снаружи").position, 4)
+
+
+class InsertBeforeTests(PlanTestCase):
+    """
+    `before` — зеркало `after`, и заведено оно ради экрана «Сегодня».
+
+    «Мы всё ещё на синусе» значит, что строку надо дописать **перед** тем
+    уроком, который раскладка предлагала. Кто стоит над ним, на этом экране
+    неизвестно — дерева плана там нет, есть один урок, — поэтому якорь
+    называется с той стороны, с которой он и виден.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.trig, self.vectors, self.stereo = self.build_sample()
+        self.lessons = list(self.trig.children.order_by("position"))
+
+    def insert(self, **body):
+        return self.client.post(
+            reverse("plannode-list"),
+            {"course": self.course.pk, "title": "Доработка", **body},
+            format="json",
+        )
+
+    def titles(self, parent):
+        return list(
+            parent.children.order_by("position").values_list("title", flat=True)
+        )
+
+    def test_a_row_lands_right_before_the_anchor(self):
+        response = self.insert(parent=self.trig.pk, before=self.lessons[1].pk)
+
+        self.assertEqual(response.status_code, 201, response.content)
+        self.assertEqual(
+            self.titles(self.trig),
+            [self.lessons[0].title, "Доработка", self.lessons[1].title],
+        )
+
+    def test_before_the_first_one_makes_it_first(self):
+        self.insert(parent=self.trig.pk, before=self.lessons[0].pk)
+
+        self.assertEqual(self.titles(self.trig)[0], "Доработка")
+
+    def test_an_anchor_from_another_level_is_refused(self):
+        response = self.insert(parent=None, before=self.lessons[0].pk)
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json()["code"], "anchor_other_level")
+
+    def test_after_still_wins_when_both_are_given(self):
+        """Двусмысленности не бывает: `after` называют явнее, он и главный."""
+        self.insert(
+            parent=self.trig.pk,
+            after=self.lessons[0].pk,
+            before=self.lessons[0].pk,
+        )
+
+        self.assertEqual(self.titles(self.trig)[1], "Доработка")

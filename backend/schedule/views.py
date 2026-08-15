@@ -941,41 +941,56 @@ class SlotViewSet(SchoolScopedViewSet):
     @action(detail=False, methods=["get"])
     def day(self, request):
         """
-        Урок целиком: что проходим, что задавали, что дальше.
+        День целиком: все занятия, что на них проходим и что задавали.
 
         Экран «Сегодня» собирается из готового — плана, раскладки и работ, —
         и своего расчёта здесь нет ни одного. Единственное, что этот ответ
-        добавляет: **что говорит раскладка** про сегодняшний урок
+        добавляет: **что говорит раскладка** про каждое занятие
         (`suggested`), чтобы отметить «прошли» одним нажатием, а не искать
         строку плана в списке.
 
-        Записанное (`lesson`) сильнее подсказанного: раскладка позиционная и
-        съезжает от любой правки плана, а запись держится за дату.
+        Записанное (`lesson`) сильнее подсказанного: раскладка съезжает от
+        любой правки плана, а запись держится за дату.
+
+        **Без `course` отвечает про весь день** — все занятия своих курсов
+        подряд, по номеру урока. Так и спрашивают: утро начинается с вопроса
+        «что у меня сегодня», а это четыре занятия трёх разных курсов, и
+        переключать их по одному значит четыре раза вспоминать, где ты.
+        Курсом ответ сужается, когда спрашивают именно про него.
         """
-        course = get_object_or_404(
-            Course.objects.filter(school_id=request.user.school_id),
-            pk=request.query_params.get("course", 0) or 0,
-        )
+        mine = self.my_courses()
+        requested = request.query_params.get("course")
+        if requested:
+            courses = [
+                get_object_or_404(
+                    Course.objects.filter(school_id=request.user.school_id),
+                    pk=requested if requested.isdigit() else 0,
+                )
+            ]
+        else:
+            courses = list(mine)
+
         day = read_date(request.query_params.get("date")) or timezone.localdate()
 
         slots = list(
-            Slot.objects.filter(course=course, date=day)
-            .select_related("lesson", "taught_by")
+            Slot.objects.filter(course__in=courses, date=day)
+            .select_related("lesson", "taught_by", "course")
             .prefetch_related("works")
-            .order_by("lesson_number")
+            .order_by("lesson_number", "course__name")
         )
 
-        # раскладка считается по всему году: i-й урок плана в i-й слот, и
-        # обрезать её датами значило бы сдвинуть номера
-        suggested = services.suggested_topics(course)
+        # раскладка считается по всему году: обрезать её датами значило бы
+        # сдвинуть номера. Спрашиваем только те курсы, что есть в этом дне
+        suggested = {}
+        for course in {slot.course for slot in slots}:
+            suggested.update(services.suggested_topics(course))
 
         return Response(
             {
-                "course": {"id": course.pk, "name": course.name},
                 "date": day,
                 "lessons": [slot_day_payload(item, suggested) for item in slots],
-                "previous": neighbour(course, day, forward=False),
-                "next": neighbour(course, day, forward=True),
+                "previous": neighbour(courses, day, forward=False),
+                "next": neighbour(courses, day, forward=True),
             }
         )
 
@@ -1010,9 +1025,9 @@ class SlotViewSet(SchoolScopedViewSet):
         )
 
 
-def neighbour(course, day, *, forward: bool):
-    """Ближайший день с уроком этого курса — чтобы листать, а не искать."""
-    rows = Slot.objects.filter(course=course)
+def neighbour(courses, day, *, forward: bool):
+    """Ближайший день с занятием — чтобы листать, а не искать пустые."""
+    rows = Slot.objects.filter(course__in=courses)
     rows = rows.filter(date__gt=day) if forward else rows.filter(date__lt=day)
 
     return (
@@ -1035,6 +1050,7 @@ def slot_day_payload(slot, suggested) -> dict:
 
     return {
         "id": slot.pk,
+        "course": {"id": slot.course_id, "name": slot.course.name},
         "lesson_number": slot.lesson_number,
         "is_cancelled": slot.is_cancelled,
         "is_extra": slot.is_extra,
@@ -1045,6 +1061,9 @@ def slot_day_payload(slot, suggested) -> dict:
             if topic is None
             else {
                 "id": topic.pk,
+                # тема, в которой лежит урок: «дописать строку сюда» кладёт
+                # новую на тот же уровень, а дерева плана на этом экране нет
+                "section_id": topic.parent_id,
                 "title": topic.title,
                 "objectives": topic.objectives,
                 "body": topic.body,

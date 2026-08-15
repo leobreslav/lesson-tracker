@@ -75,7 +75,7 @@ test('главной — строка на курс и подробности п
   signIn,
 }) => {
   await signIn(PEOPLE.ivanova)
-  await page.goto('/')
+  await page.goto('/overview')
   await ready(page)
 
   // строка на курс: где я, резерв, плашка состояния
@@ -188,7 +188,7 @@ test('рост к утверждённому эталону виден на «С
   await teacher.post(`/api/plan/reviews/${waiting.review.id}/approve/`)
 
   await signIn(PEOPLE.ivanova)
-  await page.goto('/')
+  await page.goto('/overview')
   await ready(page)
   const row = page.locator('.progress-list > li').first()
   await row.locator('.progress-head').click()
@@ -207,7 +207,7 @@ test('рост к утверждённому эталону виден на «С
   await form.getByRole('button', { name: 'Добавить' }).click()
   await expect(page.locator('.plan-row', { hasText: 'Лишний урок' })).toBeVisible()
 
-  await page.goto('/')
+  await page.goto('/overview')
   await ready(page)
   await page.locator('.progress-list > li').first().locator('.progress-head').click()
   const growth = page.locator('.progress-list > li').first().locator('[data-card="growth"]')
@@ -218,7 +218,7 @@ test('рост к утверждённому эталону виден на «С
 
 test('плашек четыре, и все одного роста', async ({ page, signIn }) => {
   await signIn(PEOPLE.ivanova)
-  await page.goto('/')
+  await page.goto('/overview')
   await ready(page)
 
   // курс с планом и курс без плана: пустые случаи ростом отличаться не должны
@@ -238,7 +238,7 @@ test('плашек четыре, и все одного роста', async ({ pa
 
 test('прогресс по плану: три числа одной плашкой', async ({ page, signIn }) => {
   await signIn(PEOPLE.ivanova)
-  await page.goto('/')
+  await page.goto('/overview')
   await ready(page)
 
   const row = page.locator('.progress-list > li').first()
@@ -276,7 +276,7 @@ test('дефицит виден словами в шапке, а числа пл
   )
 
   await signIn(PEOPLE.ivanova)
-  await page.goto('/')
+  await page.goto('/overview')
   await ready(page)
 
   const row = page.locator('.progress-list > li', { hasText: 'Grade 6 Algebra' })
@@ -293,7 +293,7 @@ test('дефицит виден словами в шапке, а числа пл
 
 test('пустой план не показывает «0 из 0»', async ({ page, signIn }) => {
   await signIn(PEOPLE.ivanova)
-  await page.goto('/')
+  await page.goto('/overview')
   await ready(page)
 
   const row = page.locator('.progress-list > li', { hasText: 'Grade 6 Geometry' })

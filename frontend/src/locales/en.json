@@ -42,7 +42,8 @@
     "school": "School",
     "schools": "Schools",
     "works": "Assignments",
-    "today": "Today"
+    "today": "Today",
+    "overview": "My courses"
   },
   "auth": {
     "prompt": "Sign in to continue.",
@@ -982,7 +983,13 @@
     "setHomework": "Set as homework",
     "homeworkTitle": "Homework",
     "noCourses": "No courses yet",
-    "noCoursesHint": "Ask the school administrator to put you on a course."
+    "noCoursesHint": "Ask the school administrator to put you on a course.",
+    "allCourses": "All",
+    "editContent": "Content…",
+    "rename": "Rename…",
+    "insert": "Add a lesson here…",
+    "renameTitle": "New title",
+    "insertTitle": "What we actually did"
   },
   "table": {
     "open": "Check",

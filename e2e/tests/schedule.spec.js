@@ -184,3 +184,89 @@ test('перенос оставляет отмену на прежнем мес�
   await expect(page.locator(`[data-lesson="${MONDAY}:7"]`)).toHaveClass(/cancelled/)
   await expect(page.locator(`[data-lesson="${FRIDAY}:7"]`)).toBeVisible()
 })
+
+/** Долистать «Сегодня» до дня, в котором есть занятия. */
+async function firstDayWithLessons(page) {
+  await page.goto('/today')
+  await ready(page)
+
+  const cards = page.locator('.lesson-card')
+  for (let step = 0; step < 40 && !(await cards.count()); step += 1) {
+    await page.getByRole('button', { name: '→' }).click()
+    await page.waitForTimeout(120)
+  }
+  await expect(cards.first()).toBeVisible()
+  return cards
+}
+
+test('«Сегодня» показывает день целиком, а курс — это фильтр', async ({
+  page,
+  signIn,
+}) => {
+  // Утренний вопрос — «что у меня сегодня», а это занятия разных курсов.
+  // Экран, устроенный курсом вперёд, заставлял переключать их по одному.
+  await signIn(PEOPLE.ivanova)
+  const cards = await firstDayWithLessons(page)
+
+  // у каждой карточки в шапке назван курс: иначе они неразличимы
+  await expect(cards.first().locator('.section-title')).toContainText('Grade')
+
+  // чип курса сужает день, «Все» возвращает его целиком
+  const shown = await cards.count()
+  await page.getByRole('button', { name: 'Grade 6 Algebra' }).click()
+  await expect
+    .poll(async () => {
+      const names = await cards.locator('.section-title').allTextContents()
+      return names.every((name) => name.includes('Grade 6 Algebra'))
+    })
+    .toBe(true)
+
+  await page.getByRole('button', { name: 'Все', exact: true }).click()
+  await expect.poll(() => cards.count()).toBe(shown)
+})
+
+test('план правится прямо с карточки дня', async ({ page, signIn }) => {
+  // Расхождение замечают накануне, когда готовятся, а не после урока.
+  // Уходить за правкой в «Учебный план» и искать строку среди сорока —
+  // ровно та заминка, из-за которой готовиться будут не здесь.
+  await signIn(PEOPLE.ivanova)
+  await page.goto('/today')
+  await ready(page)
+  await page.getByRole('button', { name: 'Grade 6 Algebra' }).click()
+
+  const card = page.locator('.lesson-card')
+  for (let step = 0; step < 40 && !(await card.count()); step += 1) {
+    await page.getByRole('button', { name: '→' }).click()
+    await page.waitForTimeout(120)
+  }
+  await expect(card.first()).toBeVisible()
+
+  await card.first().getByRole('button', { name: 'Переименовать…' }).click()
+  await card.first().getByLabel('Новое название').fill('Синус суммы, разбор')
+  await card.first().getByRole('button', { name: 'Сохранить' }).click()
+
+  await expect(card.first().locator('.section-title')).toContainText(
+    'Синус суммы, разбор',
+  )
+
+  // «дописать урок сюда» кладёт строку **перед** предложенной: «мы всё ещё
+  // на синусе» значит, что сегодняшнее занятие идёт до неё, — и карточка
+  // тут же начинает предлагать новую
+  await card.first().getByRole('button', { name: 'Дописать урок сюда…' }).click()
+  await card.first().getByLabel('Что было на самом деле').fill('Повторение формул')
+  await card.first().getByRole('button', { name: 'Сохранить' }).click()
+
+  await expect(card.first().locator('.section-title')).toContainText(
+    'Повторение формул',
+  )
+
+  // и правки настоящие: в плане обе строки стоят рядом и в этом порядке
+  await page.goto('/plan')
+  await ready(page)
+  await page.getByRole('button', { name: 'Grade 6 Algebra', exact: true }).click()
+  const titles = await page.locator('.plan-row.lesson .title').allTextContents()
+  expect(titles.indexOf('Повторение формул')).toBeGreaterThanOrEqual(0)
+  expect(titles.indexOf('Повторение формул')).toBeLessThan(
+    titles.indexOf('Синус суммы, разбор'),
+  )
+})

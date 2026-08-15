@@ -1,37 +1,55 @@
-import { useCallback, useEffect, useState } from 'react'
+import { Suspense, lazy, useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 import EmptyState from './EmptyState'
 import Markdown from './Markdown'
 import WorkDialog from './WorkDialog'
-import { createWork, fetchCourses, fetchLessonDay, updateSlot } from './api'
+import {
+  createPlanNode,
+  createWork,
+  fetchCourses,
+  fetchSlotDay,
+  updatePlanNode,
+  updateSlot,
+} from './api'
 import { today } from './calendarLogic'
 import { longDate } from './dates'
 import { remember, remembered } from './remember'
 
+const LessonPanel = lazy(() => import('./LessonPanel'))
+
 /**
  * День учителя одним экраном.
  *
- * Так он и выглядит: выбрал класс, попал в текущий урок, ведёт его глядя в
- * план, объявляет практику, задаёт домашнее. Раньше это было четыре экрана,
- * и между ними приходилось помнить, где ты.
+ * Так он и выглядит: пришёл утром, посмотрел, что сегодня, провёл занятие
+ * глядя в план, объявил практику, задал домашнее. Раньше это было четыре
+ * экрана, и между ними приходилось помнить, где ты.
+ *
+ * **День вперёд, а не курс.** Экран был устроен наоборот — сначала выбрать
+ * класс, потом день, — и на нём было неудобно ровно то, ради чего его
+ * открывают: утренний вопрос «что у меня сегодня» это четыре занятия трёх
+ * разных курсов, и вечерний «что закрыть» тоже. Курс остался фильтром: он
+ * нужен, когда думают об одном классе.
  *
  * Своего расчёта здесь нет ни одного — содержание из плана, тема из
- * раскладки, работы из своих связей, — и это намеренно: экран собирается из
- * готового, а второй расчёт над теми же данными однажды разойдётся с первым.
+ * раскладки, работы из своих же связей, — и это намеренно: экран собирается
+ * из готового, а второй расчёт над теми же данными однажды разойдётся с
+ * первым.
  *
- * Тему урока страница **подсказывает**, а записывает её человек одним
- * нажатием. Разница не косметическая: подсказка позиционная и съезжает от
- * любой правки плана, а запись держится за дату.
+ * Тему занятие **подсказывает**, а записывает её человек одним нажатием, и
+ * только у прошедшего дня: нажатая накануне кнопка стала бы ложью после
+ * утренней пожарной тревоги. Готовиться накануне это не мешает — план
+ * правится вперёд и о датах ничего не знает.
  */
 export default function Today({ onLoggedOut }) {
   const { t } = useTranslation()
   const [courses, setCourses] = useState(null)
-  const [courseId, setCourseId] = useState(() => remembered('today.course', null))
+  const [only, setOnly] = useState(() => remembered('today.course', null))
   const [date, setDate] = useState(today())
   const [day, setDay] = useState(null)
   const [busy, setBusy] = useState(false)
   const [adding, setAdding] = useState(null) // {slot, homework}
+  const [opened, setOpened] = useState(null) // строка плана в панели
   const [error, setError] = useState(null)
 
   const handleError = useCallback(
@@ -43,21 +61,13 @@ export default function Today({ onLoggedOut }) {
   )
 
   useEffect(() => {
-    fetchCourses()
-      .then((mine) => {
-        setCourses(mine)
-        setCourseId((current) =>
-          mine.some((course) => course.id === current) ? current : mine[0]?.id ?? null,
-        )
-      })
-      .catch(handleError)
+    fetchCourses().then(setCourses).catch(handleError)
   }, [handleError])
 
-  const load = useCallback(() => {
-    if (!courseId) return Promise.resolve()
-
-    return fetchLessonDay(courseId, date).then(setDay).catch(handleError)
-  }, [courseId, date, handleError])
+  const load = useCallback(
+    () => fetchSlotDay(date).then(setDay).catch(handleError),
+    [date, handleError],
+  )
 
   useEffect(() => {
     load()
@@ -77,8 +87,8 @@ export default function Today({ onLoggedOut }) {
     }
   }
 
-  const choose = (id) => {
-    setCourseId(id)
+  const filter = (id) => {
+    setOnly(id)
     remember('today.course', id)
   }
 
@@ -101,20 +111,34 @@ export default function Today({ onLoggedOut }) {
     )
   }
 
+  const shown = (day?.lessons ?? []).filter(
+    (slot) => only === null || slot.course.id === only,
+  )
+  // подтверждать можно только то, что уже случилось
+  const done = day ? day.date <= today() : false
+
   return (
     <main className="page">
       <header className="page-header">
         <h1>{t('today.title')}</h1>
       </header>
 
+      {/* чипы — фильтр, а не выбор экрана: по умолчанию виден весь день */}
       <div className="agenda-bar">
         <span className="year-picker">
+          <button
+            type="button"
+            className={only === null ? 'chip active' : 'chip'}
+            onClick={() => filter(null)}
+          >
+            {t('today.allCourses')}
+          </button>
           {courses.map((course) => (
             <button
               type="button"
               key={course.id}
-              className={course.id === courseId ? 'chip active' : 'chip'}
-              onClick={() => choose(course.id)}
+              className={course.id === only ? 'chip active' : 'chip'}
+              onClick={() => filter(course.id)}
             >
               {course.name}
             </button>
@@ -153,22 +177,33 @@ export default function Today({ onLoggedOut }) {
             <strong>{longDate(day.date)}</strong>
           </div>
 
-          {day.lessons.length === 0 ? (
+          {shown.length === 0 ? (
             <p className="hint">{t('today.noLesson')}</p>
           ) : (
-            day.lessons.map((slot) => (
+            shown.map((slot) => (
               <SlotCard
                 key={slot.id}
                 slot={slot}
                 busy={busy}
-                // подтверждать можно только то, что уже случилось: нажатая
-                // накануне кнопка стала бы ложью после пожарной тревоги, и
-                // заметить это было бы некому
-                done={day.date <= today()}
+                done={done}
                 onConfirm={() =>
                   run(() => updateSlot(slot.id, { lesson: slot.topic.id }))
                 }
                 onHomework={() => setAdding({ slot, homework: slot.topic?.homework })}
+                onOpen={() => setOpened(slot.topic.id)}
+                onRename={(title) => run(() => updatePlanNode(slot.topic.id, { title }))}
+                onInsert={(title) =>
+                  run(() =>
+                    createPlanNode({
+                      course: slot.course.id,
+                      parent: slot.topic.section_id,
+                      title,
+                      // перед предложенным уроком: «мы всё ещё на синусе»
+                      // значит, что сегодняшнее занятие идёт до него
+                      before: slot.topic.id,
+                    }),
+                  )
+                }
               />
             ))
           )}
@@ -177,7 +212,7 @@ export default function Today({ onLoggedOut }) {
 
       {adding && (
         <WorkDialog
-          courseId={courseId}
+          courseId={adding.slot.course.id}
           preset={{
             title: t('today.homeworkTitle'),
             description: adding.homework ?? '',
@@ -188,25 +223,67 @@ export default function Today({ onLoggedOut }) {
           onClose={() => setAdding(null)}
         />
       )}
+
+      {opened && (
+        <Suspense fallback={null}>
+          <LessonPanel
+            nodeId={opened}
+            onClose={() => setOpened(null)}
+            onSaved={() => load()}
+          />
+        </Suspense>
+      )}
     </main>
   )
 }
 
 /**
- * Один урок дня: чем занимаемся, что задавали, что дальше.
+ * Одно занятие дня: чем занимаемся, что задавали, что дальше.
  *
  * Четыре поля плана показываются как есть и только непустые: пустые
  * заголовки на экране, куда смотрят посреди урока, — чистый шум.
+ *
+ * Правки плана живут здесь же, и это не удобство, а место. Расхождение
+ * замечают **накануне**, когда готовятся: «до конца четверти шесть занятий,
+ * а в теме осталось восемь». Уходить за этим в «Учебный план», искать
+ * строку среди сорока и возвращаться — ровно та заминка, из-за которой
+ * готовиться будут не здесь.
  */
-function SlotCard({ slot, busy, done, onConfirm, onHomework }) {
+function SlotCard({
+  slot,
+  busy,
+  done,
+  onConfirm,
+  onHomework,
+  onOpen,
+  onRename,
+  onInsert,
+}) {
   const { t } = useTranslation()
+  const [form, setForm] = useState(null) // 'rename' | 'insert'
+  const [title, setTitle] = useState('')
   const topic = slot.topic
+
+  const open = (kind) => {
+    setForm(kind)
+    setTitle(kind === 'rename' ? topic.title : '')
+  }
+
+  const submit = (event) => {
+    event.preventDefault()
+    const value = title.trim()
+    if (!value) return
+
+    ;(form === 'rename' ? onRename : onInsert)(value)
+    setForm(null)
+  }
 
   return (
     <section className="panel lesson-card">
       <div className="panel-head spread">
         <h2 className="section-title">
-          {t('today.lessonNumber', { number: slot.lesson_number })}
+          {t('today.lessonNumber', { number: slot.lesson_number })} ·{' '}
+          {slot.course.name}
           {topic && <> · {topic.title}</>}
         </h2>
         {slot.is_cancelled && (
@@ -262,19 +339,68 @@ function SlotCard({ slot, busy, done, onConfirm, onHomework }) {
         ))}
       </ul>
 
-      <div className="row">
-        {/* «задать как домашнее» подставляет рекомендованный текст плана:
-            фактическая домашка — событие урока, и от рекомендованной она
-            законно отличается */}
-        <button
-          type="button"
-          className="secondary compact"
-          disabled={busy}
-          onClick={onHomework}
-        >
-          {t('today.setHomework')}
-        </button>
-      </div>
+      {form ? (
+        <form className="row" onSubmit={submit}>
+          <input
+            autoFocus
+            value={title}
+            maxLength={200}
+            aria-label={t(form === 'rename' ? 'today.renameTitle' : 'today.insertTitle')}
+            placeholder={t(
+              form === 'rename' ? 'today.renameTitle' : 'today.insertTitle',
+            )}
+            onChange={(event) => setTitle(event.target.value)}
+          />
+          <button type="submit" disabled={busy}>
+            {t('common.save')}
+          </button>
+          <button type="button" className="secondary" onClick={() => setForm(null)}>
+            {t('common.cancel')}
+          </button>
+        </form>
+      ) : (
+        <div className="row">
+          {/* «задать как домашнее» подставляет рекомендованный текст плана:
+              фактическая домашка — событие урока, и от рекомендованной она
+              законно отличается */}
+          <button
+            type="button"
+            className="secondary compact"
+            disabled={busy}
+            onClick={onHomework}
+          >
+            {t('today.setHomework')}
+          </button>
+          {topic && (
+            <>
+              <button
+                type="button"
+                className="secondary compact"
+                disabled={busy}
+                onClick={onOpen}
+              >
+                {t('today.editContent')}
+              </button>
+              <button
+                type="button"
+                className="secondary compact"
+                disabled={busy}
+                onClick={() => open('rename')}
+              >
+                {t('today.rename')}
+              </button>
+              <button
+                type="button"
+                className="secondary compact"
+                disabled={busy}
+                onClick={() => open('insert')}
+              >
+                {t('today.insert')}
+              </button>
+            </>
+          )}
+        </div>
+      )}
     </section>
   )
 }

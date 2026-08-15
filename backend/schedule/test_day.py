@@ -154,3 +154,80 @@ class AccessTests(DayTestCase):
         response = self.client.get(reverse("slot-day"), {"course": self.course.pk})
 
         self.assertEqual(response.json()["date"], str(timezone.localdate()))
+
+
+class WholeDayTests(DayTestCase):
+    """
+    Без курса — весь день целиком, все занятия подряд.
+
+    Утро начинается с вопроса «что у меня сегодня», а это четыре занятия
+    трёх разных курсов. Экран, устроенный курсом вперёд, заставлял бы
+    переключать их по одному и каждый раз вспоминать, где ты; вечером, когда
+    закрывают день, то же самое ещё и умножается на число курсов.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.other = make_course(self.school, self.year, "8А Геометрия")
+        assign(self.user, self.other)
+        self.their_slot = make_slot(self.user, self.other, MONDAY, 2)
+
+    def whole(self, when=None):
+        return self.client.get(
+            reverse("slot-day"), {"date": (when or MONDAY).isoformat()}
+        ).json()
+
+    def test_the_day_holds_every_course(self):
+        numbers = [
+            (item["lesson_number"], item["course"]["name"])
+            for item in self.whole()["lessons"]
+        ]
+
+        self.assertEqual(numbers, [(1, "9Б Алгебра"), (2, "8А Геометрия")])
+
+    def test_each_lesson_says_whose_course_it_is(self):
+        """Иначе четыре карточки подряд неразличимы."""
+        first = self.whole()["lessons"][0]
+
+        self.assertEqual(first["course"]["id"], self.course.pk)
+
+    def test_the_topic_is_suggested_for_every_course_at_once(self):
+        make_node(self.user, self.other, "Признаки равенства", position=0)
+
+        topics = {
+            item["course"]["name"]: item["topic"]["title"]
+            for item in self.whole()["lessons"]
+        }
+
+        self.assertEqual(topics["9Б Алгебра"], "Синус суммы")
+        self.assertEqual(topics["8А Геометрия"], "Признаки равенства")
+
+    def test_leafing_goes_by_days_that_have_anything_at_all(self):
+        """Пустой день пропускается, чей бы курс ни стоял следующим."""
+        far = make_course(self.school, self.year, "7В Алгебра")
+        assign(self.user, far)
+        make_slot(self.user, far, MONDAY + timedelta(days=3), 1)
+
+        self.assertEqual(
+            self.whole(MONDAY + timedelta(days=1))["next"],
+            str(MONDAY + timedelta(days=3)),
+        )
+
+    def test_a_course_of_somebody_else_is_not_in_my_day(self):
+        alien = make_course(self.school, self.year, "11А Алгебра")
+        assign(self.colleague, alien)
+        make_slot(self.colleague, alien, MONDAY, 5)
+
+        names = {item["course"]["name"] for item in self.whole()["lessons"]}
+
+        self.assertNotIn("11А Алгебра", names)
+
+    def test_asking_about_one_course_still_narrows_it(self):
+        body = self.client.get(
+            reverse("slot-day"),
+            {"course": self.course.pk, "date": MONDAY.isoformat()},
+        ).json()
+
+        self.assertEqual(
+            [item["course"]["name"] for item in body["lessons"]], ["9Б Алгебра"]
+        )
