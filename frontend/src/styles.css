@@ -717,6 +717,27 @@ form .success {
   font-size: 1.3rem;
 }
 
+/* Шапка урока — колонка: «когда и у кого» мелким, под ним сама тема.
+   В `.page-header` они вставали по краям страницы, потому что тот ряд, а
+   ряд там ради кнопки справа от заголовка. */
+.lesson-title-head {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.lesson-title-head h1 {
+  margin: 0;
+}
+
+/* Заголовок карточки: меньше <h1> страницы, но крупнее текста в ней.
+   Селектор с элементом не для красоты — рядом живёт `.panel h2` с двумя
+   ремами (это крупные числа плашек), и он специфичнее одного класса. */
+.panel h2.panel-title {
+  margin: 0;
+  font-size: 1.05rem;
+}
+
 .page-header h1 {
   margin: 0;
 }
@@ -2448,19 +2469,7 @@ button.compact,
  * Столбец узкий и фиксированной ширины: он читается сверху вниз как
  * расписание, и номера в нём обязаны стоять на одной вертикали.
  */
-.day {
-  display: flex;
-  align-items: flex-start;
-  gap: var(--card-gap);
-}
-
-.day > .panel {
-  flex: 1 1 auto;
-  min-width: 0;
-}
-
 .day-grid {
-  flex: 0 0 15rem;
   list-style: none;
   margin: 0;
   padding: 0;
@@ -2510,9 +2519,10 @@ button.compact,
   flex: 1 1 auto;
   min-width: 0;
   display: grid;
-  grid-template-columns: 1fr auto;
-  gap: 0 0.4rem;
-  padding: 0.3rem 0.5rem;
+  grid-template-columns: minmax(8rem, 14rem) 1fr auto;
+  align-items: baseline;
+  gap: 0 0.6rem;
+  padding: 0.45rem 0.6rem;
   text-align: left;
   background: var(--surface-1);
   border: 1px solid transparent;
@@ -2537,9 +2547,8 @@ button.compact,
 }
 
 .day-grid .slot .topic {
-  grid-column: 1 / -1;
   color: #777;
-  font-size: 0.78rem;
+  font-size: 0.85rem;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -2559,27 +2568,6 @@ button.compact,
 
 .day-grid .slot.extra {
   background: #fff6e5;
-}
-
-/* на телефоне столбец и карточка встают друг под друга: рядом им тесно */
-@media (max-width: 48rem) {
-  .day {
-    flex-direction: column;
-  }
-
-  .day-grid {
-    flex: 1 1 auto;
-    align-self: stretch;
-  }
-}
-
-/* номер и курс мелким над темой: они уже прочитаны в клетке слева */
-.lesson-head {
-  flex: 1 1 auto;
-  display: flex;
-  flex-direction: column;
-  gap: 0.1rem;
-  min-width: 0;
 }
 
 .work-links {

@@ -8,6 +8,7 @@ import {
 } from 'react-router-dom'
 import ErrorBoundary from './ErrorBoundary'
 import Agenda from './Agenda'
+import LessonScreen from './LessonScreen'
 import Today from './Today'
 import Calendar from './Calendar'
 import Dashboard from './Dashboard'
@@ -149,6 +150,10 @@ export default function App() {
               переехал на свой адрес и стоит в баре рядом. */}
           <Route path="/" element={<Navigate to="/today" replace />} />
           <Route path="/today" element={guarded(Today)} />
+          {/* работа с одним уроком: прошлым, сегодняшним или будущим —
+              заходят сюда одинаково, разница лишь в том, какие действия
+              имеют смысл */}
+          <Route path="/lesson/:id" element={guarded(LessonScreen)} />
           <Route
             path="/overview"
             element={

@@ -995,7 +995,7 @@
     "renameTitle": "New title",
     "insertTitle": "What we actually did",
     "window": "free",
-    "pickLesson": "Pick a lesson to see what it is about."
+    "openLesson": "Open the lesson"
   },
   "table": {
     "open": "Check",
@@ -1036,5 +1036,11 @@
     "skipped": "did not happen",
     "submit_one": "Close {{count}} lesson",
     "submit_other": "Close {{count}} lessons"
+  },
+  "lessonScreen": {
+    "toDay": "back to the day",
+    "recorded": "recorded",
+    "works": "Assignments",
+    "noWorks": "Nothing was set at this lesson."
   }
 }

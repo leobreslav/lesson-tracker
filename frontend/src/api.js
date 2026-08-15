@@ -666,6 +666,10 @@ export const deleteSlot = (id) =>
 export const moveSlot = (id, fields) =>
   request(`/api/slots/${id}/move/`, { method: 'POST', body: fields })
 
+// одно занятие целиком — то, с чем работают на его странице: тема из
+// плана, работы и соседи по курсу
+export const fetchSlotCard = (id) => request(`/api/slots/${id}/card/`)
+
 // долги по записи: прошедшие занятия, за которыми ничего не сказано
 export const fetchUnclosed = () => request('/api/slots/unclosed/')
 

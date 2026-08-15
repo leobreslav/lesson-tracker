@@ -417,6 +417,7 @@ class PersonalObjectTests(AccessTestCase):
                     "method": "post",
                     "body": {"date": str(MONDAY), "lesson_number": 7},
                 },
+                "slot-card",
             ),
             obj=self.slot,
             people=(self.stranger, self.alien_admin, self.outsider, self.student),

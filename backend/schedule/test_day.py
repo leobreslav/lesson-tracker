@@ -231,3 +231,75 @@ class WholeDayTests(DayTestCase):
         self.assertEqual(
             [item["course"]["name"] for item in body["lessons"]], ["9Б Алгебра"]
         )
+
+
+class CardTests(DayTestCase):
+    """
+    Экран работы с уроком: одно занятие целиком.
+
+    Отличается от дня двумя вещами, и обе — про то, о чём человек думает,
+    когда сюда пришёл. Соседи здесь **по курсу**, а не по дню: «что было на
+    прошлом» это вопрос про этот же класс, а не про то, что стояло
+    следующим часом у другого. И право на правку приезжает ответом, потому
+    что правило сложнее роли: ведущий курса или администратор школы.
+    """
+
+    def card(self, slot=None):
+        return self.client.get(reverse("slot-card", args=[(slot or self.monday).pk]))
+
+    def test_the_card_carries_the_topic_and_the_day(self):
+        body = self.card().json()
+
+        self.assertEqual(body["topic"]["title"], "Синус суммы")
+        self.assertEqual(body["date"], str(MONDAY))
+        self.assertEqual(body["lesson_number"], 1)
+        self.assertEqual(body["course"]["name"], "9Б Алгебра")
+
+    def test_neighbours_are_of_the_same_course(self):
+        """Листаем по своему классу: чужой час рядом ничего не объясняет."""
+        other = make_course(self.school, self.year, "8А Геометрия")
+        assign(self.user, other)
+        make_slot(self.user, other, MONDAY, 2)
+
+        body = self.card().json()
+
+        self.assertIsNone(body["previous"])
+        self.assertEqual(body["next"], self.tuesday.pk)
+
+    def test_the_neighbour_on_the_same_day_is_found_by_number(self):
+        later = make_slot(self.user, self.course, MONDAY, 4)
+
+        self.assertEqual(self.card().json()["next"], later.pk)
+        self.assertEqual(self.card(later).json()["previous"], self.monday.pk)
+
+    def test_a_recorded_topic_wins_here_too(self):
+        self.monday.lesson = self.second
+        self.monday.save(update_fields=["lesson"])
+
+        body = self.card().json()
+
+        self.assertEqual(body["topic"]["title"], "Косинус суммы")
+        self.assertTrue(body["confirmed"])
+
+    def test_a_colleague_may_look_but_not_write(self):
+        """Расписание общее, содержимое курса — нет."""
+        self.sign_in(self.colleague)
+
+        body = self.card().json()
+
+        self.assertEqual(body["topic"]["title"], "Синус суммы")
+        self.assertFalse(body["may_write"])
+
+    def test_the_lead_may_write(self):
+        self.assertTrue(self.card().json()["may_write"])
+
+    def test_an_administrator_may_write_too(self):
+        """Расписание школы правит и он: курс не его, а час школьный."""
+        self.sign_in(self.admin)
+
+        self.assertTrue(self.card().json()["may_write"])
+
+    def test_a_student_gets_nothing(self):
+        self.sign_in(self.student)
+
+        self.assertEqual(self.card().status_code, 403)

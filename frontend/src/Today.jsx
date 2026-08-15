@@ -1,23 +1,20 @@
-import { Suspense, lazy, useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import DebtsDialog from './DebtsDialog'
+import Modal from './Modal'
 import EmptyState from './EmptyState'
 import Markdown from './Markdown'
 import WorkDialog from './WorkDialog'
 import {
-  createPlanNode,
   createWork,
   fetchCourses,
   fetchSlotDay,
   fetchUnclosed,
-  updatePlanNode,
   updateSlot,
 } from './api'
 import { today } from './calendarLogic'
 import { longDate } from './dates'
-
-const LessonPanel = lazy(() => import('./LessonPanel'))
 
 /**
  * День учителя одним экраном.
@@ -54,7 +51,6 @@ export default function Today({ onLoggedOut }) {
   const [day, setDay] = useState(null)
   const [busy, setBusy] = useState(false)
   const [adding, setAdding] = useState(null) // {slot, homework}
-  const [opened, setOpened] = useState(null) // строка плана в панели
   const [debts, setDebts] = useState([])
   const [closing, setClosing] = useState(false)
   const [error, setError] = useState(null)
@@ -86,16 +82,12 @@ export default function Today({ onLoggedOut }) {
     load()
   }, [load])
 
+  // Выбранного по умолчанию нет: предпросмотр — это окно, и открываться оно
+  // должно от клика, а не от того, что человек долистал до дня с занятиями.
+  // Выбор от прошлого дня тем более чужой.
   useEffect(() => {
-    // день сменился — выбираем первое несорванное занятие: именно с него
-    // человек и начнёт. Держать прошлый выбор нельзя, он из другого дня
-    if (!day) return
-    const first =
-      day.lessons.find((slot) => !slot.is_cancelled) ?? day.lessons[0] ?? null
-    setPicked((current) =>
-      day.lessons.some((slot) => slot.id === current) ? current : first?.id ?? null,
-    )
-  }, [day])
+    setPicked(null)
+  }, [date])
 
   const run = async (request) => {
     setBusy(true)
@@ -198,41 +190,7 @@ export default function Today({ onLoggedOut }) {
           {lessons.length === 0 ? (
             <p className="hint">{t('today.noLesson')}</p>
           ) : (
-            <div className="day">
-              <DayGrid hours={hours} picked={picked} onPick={setPicked} />
-
-              {chosen ? (
-                <SlotCard
-                  slot={chosen}
-                  busy={busy}
-                  done={done}
-                  onConfirm={() =>
-                    run(() => updateSlot(chosen.id, { lesson: chosen.topic.id }))
-                  }
-                  onHomework={() =>
-                    setAdding({ slot: chosen, homework: chosen.topic?.homework })
-                  }
-                  onOpen={() => setOpened(chosen.topic.id)}
-                  onRename={(title) =>
-                    run(() => updatePlanNode(chosen.topic.id, { title }))
-                  }
-                  onInsert={(title) =>
-                    run(() =>
-                      createPlanNode({
-                        course: chosen.course.id,
-                        parent: chosen.topic.section_id,
-                        title,
-                        // перед предложенным уроком: «мы всё ещё на синусе»
-                        // значит, что сегодняшнее занятие идёт до него
-                        before: chosen.topic.id,
-                      }),
-                    )
-                  }
-                />
-              ) : (
-                <p className="hint">{t('today.pickLesson')}</p>
-              )}
-            </div>
+            <DayGrid hours={hours} picked={picked} onPick={setPicked} />
           )}
         </>
       )}
@@ -262,14 +220,15 @@ export default function Today({ onLoggedOut }) {
         />
       )}
 
-      {opened && (
-        <Suspense fallback={null}>
-          <LessonPanel
-            nodeId={opened}
-            onClose={() => setOpened(null)}
-            onSaved={() => load()}
-          />
-        </Suspense>
+      {chosen && (
+        <SlotPreview
+          slot={chosen}
+          busy={busy}
+          done={done}
+          onConfirm={() => run(() => updateSlot(chosen.id, { lesson: chosen.topic.id }))}
+          onHomework={() => setAdding({ slot: chosen, homework: chosen.topic?.homework })}
+          onClose={() => setPicked(null)}
+        />
       )}
     </main>
   )
@@ -338,178 +297,84 @@ function DayGrid({ hours, picked, onPick }) {
 }
 
 
+
+
 /**
- * Одно занятие дня: чем занимаемся, что задавали, что дальше.
+ * Окно предпросмотра: что за занятие и что с ним можно сделать сейчас.
  *
- * Четыре поля плана показываются как есть и только непустые: пустые
- * заголовки на экране, куда смотрят посреди урока, — чистый шум.
+ * Предпросмотр, а не карточка целиком: содержание урока со всеми четырьмя
+ * полями — это уже работа, и для неё есть своя страница. Здесь ровно
+ * столько, чтобы понять, туда ли попал, плюс два действия, ради которых не
+ * стоит уходить со дня: отметить, что занятие прошло, и задать домашнее.
  *
- * Правки плана живут здесь же, и это не удобство, а место. Расхождение
- * замечают **накануне**, когда готовятся: «до конца четверти шесть занятий,
- * а в теме осталось восемь». Уходить за этим в «Учебный план», искать
- * строку среди сорока и возвращаться — ровно та заминка, из-за которой
- * готовиться будут не здесь.
+ * Главная кнопка — «Открыть урок». День отвечает на вопрос «что сегодня», а
+ * работают с уроком на его собственной странице, и попасть туда надо
+ * одинаково просто для прошлого, сегодняшнего и будущего.
  */
-function SlotCard({
-  slot,
-  busy,
-  done,
-  onConfirm,
-  onHomework,
-  onOpen,
-  onRename,
-  onInsert,
-}) {
+function SlotPreview({ slot, busy, done, onConfirm, onHomework, onClose }) {
   const { t } = useTranslation()
-  const [form, setForm] = useState(null) // 'rename' | 'insert'
-  const [title, setTitle] = useState('')
+  const navigate = useNavigate()
   const topic = slot.topic
 
-  const open = (kind) => {
-    setForm(kind)
-    setTitle(kind === 'rename' ? topic.title : '')
-  }
-
-  const submit = (event) => {
-    event.preventDefault()
-    const value = title.trim()
-    if (!value) return
-
-    ;(form === 'rename' ? onRename : onInsert)(value)
-    setForm(null)
-  }
-
   return (
-    <section className="panel lesson-card">
-      <div className="panel-head spread">
-        {/* Заголовок — тема, а не «2-й урок · курс · тема»: номер и курс
-            стоят в клетке слева, из которой сюда и пришли, и повторять их
-            крупным шрифтом значит переносить заголовок на вторую строку
-            ради того, что уже прочитано. */}
-        <span className="lesson-head">
-          <span className="hint">
-            {t('today.lessonNumber', { number: slot.lesson_number })} ·{' '}
-            {slot.course.name}
-          </span>
-          <h2 className="section-title">
-            {topic ? topic.title : t('agenda.noTopic')}
-          </h2>
-        </span>
-        {slot.is_cancelled && (
-          <span className="badge">
-            {t('today.cancelled')}
-            {slot.reason && `: ${slot.reason}`}
-          </span>
-        )}
-      </div>
+    <Modal onClose={onClose}>
+      <p className="hint">
+        {t('today.lessonNumber', { number: slot.lesson_number })} · {slot.course.name}
+      </p>
+      <h3>{topic ? topic.title : t('agenda.noTopic')}</h3>
 
-      {!topic ? (
-        <p className="hint">{t('today.noTopic')}</p>
+      {slot.is_cancelled ? (
+        <p className="hint warning">
+          {t('today.cancelled')}
+          {slot.reason && `: ${slot.reason}`}
+        </p>
       ) : (
-        <>
-          {!slot.confirmed && (
-            <p className="hint">
-              {t('today.suggested')}
-              {done && (
-                <>
-                  {' '}
-                  <button
-                    type="button"
-                    className="link"
-                    disabled={busy}
-                    onClick={onConfirm}
-                  >
-                    {t('today.confirm')}
-                  </button>
-                </>
-              )}
-            </p>
-          )}
-
-          {['objectives', 'body', 'formative', 'homework']
-            .filter((field) => topic[field])
-            .map((field) => (
-              <div className="lesson-field" key={field}>
-                <span className="hint">{t(`lesson.fields.${field}`)}</span>
-                <Markdown text={topic[field]} />
-              </div>
-            ))}
-        </>
+        topic && (
+          <p className="hint">
+            {slot.confirmed ? t('lessonScreen.recorded') : t('today.suggested')}
+          </p>
+        )
       )}
 
-      <ul className="work-links">
-        {slot.works.map((work) => (
-          <li key={work.id}>
-            <Link to={`/works/${work.id}`}>{work.title}</Link>
-            <span className={`badge state-${work.state}`}>
-              {t(`works.state.${work.state}`)}
-            </span>
-          </li>
-        ))}
-      </ul>
+      {slot.works.length > 0 && (
+        <ul className="work-links">
+          {slot.works.map((work) => (
+            <li key={work.id}>
+              <Link to={`/works/${work.id}`}>{work.title}</Link>
+              <span className={`badge state-${work.state}`}>
+                {t(`works.state.${work.state}`)}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
 
-      {form ? (
-        <form className="row" onSubmit={submit}>
-          <input
-            autoFocus
-            value={title}
-            maxLength={200}
-            aria-label={t(form === 'rename' ? 'today.renameTitle' : 'today.insertTitle')}
-            placeholder={t(
-              form === 'rename' ? 'today.renameTitle' : 'today.insertTitle',
-            )}
-            onChange={(event) => setTitle(event.target.value)}
-          />
-          <button type="submit" disabled={busy}>
-            {t('common.save')}
-          </button>
-          <button type="button" className="secondary" onClick={() => setForm(null)}>
-            {t('common.cancel')}
-          </button>
-        </form>
-      ) : (
-        <div className="row">
-          {/* «задать как домашнее» подставляет рекомендованный текст плана:
-              фактическая домашка — событие урока, и от рекомендованной она
-              законно отличается */}
+      <div className="actions">
+        <button type="button" onClick={() => navigate(`/lesson/${slot.id}`)}>
+          {t('today.openLesson')}
+        </button>
+        {topic && done && !slot.confirmed && !slot.is_cancelled && (
           <button
             type="button"
-            className="secondary compact"
+            className="secondary"
             disabled={busy}
-            onClick={onHomework}
+            onClick={onConfirm}
           >
-            {t('today.setHomework')}
+            {t('today.confirm')}
           </button>
-          {topic && (
-            <>
-              <button
-                type="button"
-                className="secondary compact"
-                disabled={busy}
-                onClick={onOpen}
-              >
-                {t('today.editContent')}
-              </button>
-              <button
-                type="button"
-                className="secondary compact"
-                disabled={busy}
-                onClick={() => open('rename')}
-              >
-                {t('today.rename')}
-              </button>
-              <button
-                type="button"
-                className="secondary compact"
-                disabled={busy}
-                onClick={() => open('insert')}
-              >
-                {t('today.insert')}
-              </button>
-            </>
-          )}
-        </div>
-      )}
-    </section>
+        )}
+        <button
+          type="button"
+          className="secondary"
+          disabled={busy}
+          onClick={onHomework}
+        >
+          {t('today.setHomework')}
+        </button>
+        <button type="button" className="secondary" onClick={onClose}>
+          {t('common.close')}
+        </button>
+      </div>
+    </Modal>
   )
 }

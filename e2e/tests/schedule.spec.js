@@ -138,8 +138,9 @@ test('на «Сегодня» видно урок, а подтвердить б�
   const slots = await firstDayWithLessons(page, { course: 'Grade 6 Algebra' })
   await slots.first().click()
 
-  await expect(page.getByText('Раскладка предполагает эту тему.')).toBeVisible()
-  await expect(page.getByRole('button', { name: 'занятие проведено' })).toHaveCount(0)
+  const preview = page.locator('dialog.modal')
+  await expect(preview.getByText('Раскладка предполагает эту тему.')).toBeVisible()
+  await expect(preview.getByRole('button', { name: 'занятие проведено' })).toHaveCount(0)
 })
 
 test('перенос оставляет отмену на прежнем месте и занятие на новом', async ({
@@ -217,46 +218,47 @@ test('«Сегодня» показывает день сеткой: занят�
   // окно между занятиями — то, ради чего сетка и заведена
   await expect(page.locator('.day-grid .window').first()).toBeVisible()
 
-  // клик по клетке открывает её занятие справа
+  // клик по клетке открывает окно предпросмотра, а из него — сам урок
   const second = slots.nth(1)
   const course = await second.locator('.course').textContent()
   await second.click()
 
-  // курс назван мелким над темой: крупно стоит сама тема, а номер и курс
-  // уже прочитаны в клетке, из которой сюда и пришли
-  await expect(page.locator('.lesson-head .hint')).toContainText(course)
-  await expect(second).toHaveAttribute('aria-pressed', 'true')
+  const preview = page.locator('dialog.modal')
+  await expect(preview.locator('.hint').first()).toContainText(course)
+  await expect(preview.getByRole('button', { name: 'Открыть урок' })).toBeVisible()
 })
 
-test('план правится прямо с карточки дня', async ({ page, signIn }) => {
-  // Расхождение замечают накануне, когда готовятся, а не после урока.
-  // Уходить за правкой в «Учебный план» и искать строку среди сорока —
-  // ровно та заминка, из-за которой готовиться будут не здесь.
+test('с дня можно открыть урок, и правки плана делаются там', async ({
+  page,
+  signIn,
+}) => {
+  // День отвечает на «что сегодня». Работают с уроком на его собственной
+  // странице — одинаково для прошлого, сегодняшнего и будущего, — и
+  // расхождение с планом правят там же: уходить за этим в «Учебный план» и
+  // искать строку среди сорока значит не править вовсе.
   await signIn(PEOPLE.ivanova)
   const slots = await firstDayWithLessons(page, { course: 'Grade 6 Algebra' })
   await slots.first().click()
+  await page.locator('dialog.modal').getByRole('button', { name: 'Открыть урок' }).click()
+  await ready(page)
 
-  const card = page.locator('.lesson-card')
-  await expect(card.first()).toBeVisible()
+  await expect(page).toHaveURL(/\/lesson\/\d+$/)
+  await expect(page.locator('.lesson-title-head .hint')).toContainText('Grade 6 Algebra')
 
-  await card.first().getByRole('button', { name: 'Переименовать…' }).click()
-  await card.first().getByLabel('Новое название').fill('Синус суммы, разбор')
-  await card.first().getByRole('button', { name: 'Сохранить' }).click()
+  await page.getByRole('button', { name: 'Переименовать…' }).click()
+  await page.getByLabel('Новое название').fill('Синус суммы, разбор')
+  await page.getByRole('button', { name: 'Сохранить' }).click()
 
-  await expect(card.first().locator('.section-title')).toContainText(
-    'Синус суммы, разбор',
-  )
+  await expect(page.locator('h1')).toHaveText('Синус суммы, разбор')
 
   // «дописать урок сюда» кладёт строку **перед** предложенной: «мы всё ещё
-  // на синусе» значит, что сегодняшнее занятие идёт до неё, — и карточка
+  // на синусе» значит, что сегодняшнее занятие идёт до неё, — и страница
   // тут же начинает предлагать новую
-  await card.first().getByRole('button', { name: 'Дописать урок сюда…' }).click()
-  await card.first().getByLabel('Что было на самом деле').fill('Повторение формул')
-  await card.first().getByRole('button', { name: 'Сохранить' }).click()
+  await page.getByRole('button', { name: 'Дописать урок сюда…' }).click()
+  await page.getByLabel('Что было на самом деле').fill('Повторение формул')
+  await page.getByRole('button', { name: 'Сохранить' }).click()
 
-  await expect(card.first().locator('.section-title')).toContainText(
-    'Повторение формул',
-  )
+  await expect(page.locator('h1')).toHaveText('Повторение формул')
 
   // и правки настоящие: в плане обе строки стоят рядом и в этом порядке
   await page.goto('/plan')
@@ -267,4 +269,44 @@ test('план правится прямо с карточки дня', async ({
   expect(titles.indexOf('Повторение формул')).toBeLessThan(
     titles.indexOf('Синус суммы, разбор'),
   )
+})
+
+test('урок листается по своему курсу и показывает содержание', async ({
+  page,
+  signIn,
+}) => {
+  // Соседи по курсу, а не по дню: «что было на прошлом» — вопрос про этот
+  // же класс, а не про то, что стояло следующим часом у другого.
+  await signIn(PEOPLE.ivanova)
+  const slots = await firstDayWithLessons(page, { course: 'Grade 6 Algebra' })
+  await slots.first().click()
+  await page.locator('dialog.modal').getByRole('button', { name: 'Открыть урок' }).click()
+  await ready(page)
+
+  // страница про урок целиком: тема заголовком, состояние, работы
+  await expect(page.getByText('Раскладка предполагает эту тему.')).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Работы' })).toBeVisible()
+
+  const first = await page.locator('h1').textContent()
+  await page.getByRole('button', { name: '→' }).click()
+  await ready(page)
+
+  await expect(page.locator('h1')).not.toHaveText(first)
+  await expect(page.locator('.lesson-title-head .hint')).toContainText('Grade 6 Algebra')
+
+  // и обратно — тот же урок, с которого пришли
+  await page.getByRole('button', { name: '←' }).click()
+  await ready(page)
+  await expect(page.locator('h1')).toHaveText(first)
+
+  // содержание из плана видно прямо на странице, а не окном поверх неё:
+  // расписано в демо-данных не каждое занятие, поэтому доходим до того,
+  // которое расписано
+  const fields = page.locator('.lesson-field')
+  for (let step = 0; step < 12 && !(await fields.count()); step += 1) {
+    await page.getByRole('button', { name: '→' }).click()
+    await page.waitForTimeout(150)
+  }
+  await expect(fields.first()).toBeVisible()
+  await expect(page.getByText('Цели')).toBeVisible()
 })

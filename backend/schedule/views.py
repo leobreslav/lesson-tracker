@@ -5,6 +5,7 @@ from calendars import services as calendar_services
 from calendars.models import SchoolYear
 from config.access import (
     IsCourseTeacherOrSchoolAdmin,
+    allowed_to_write_schedule,
     IsSchoolMember,
     IsStudent,
     IsTeacher,
@@ -994,6 +995,52 @@ class SlotViewSet(SchoolScopedViewSet):
                 "lessons": [slot_day_payload(item, suggested) for item in slots],
                 "previous": neighbour(courses, day, forward=False),
                 "next": neighbour(courses, day, forward=True),
+            }
+        )
+
+    @action(detail=True, methods=["get"])
+    def card(self, request, pk=None):
+        """
+        Одно занятие целиком — всё, с чем с ним работают.
+
+        Тот же payload, что в дне, плюс соседи по курсу: экран работы с
+        уроком листается по своему курсу, а не по дню, — «что было на
+        прошлом» это вопрос про этот же класс, а не про то, что стояло
+        следующим часом у другого.
+
+        Своего расчёта здесь нет: содержание из плана, подсказка из той же
+        `suggested_topics`, что и на дне. Второй расчёт над теми же данными
+        однажды разошёлся бы с первым.
+        """
+        slot = self.get_object()
+        suggested = services.suggested_topics(slot.course)
+
+        neighbours = Slot.objects.filter(course=slot.course).exclude(pk=slot.pk)
+        after = (
+            neighbours.filter(date__gte=slot.date)
+            .exclude(date=slot.date, lesson_number__lt=slot.lesson_number)
+            .order_by("date", "lesson_number")
+            .values_list("pk", flat=True)
+            .first()
+        )
+        before = (
+            neighbours.filter(date__lte=slot.date)
+            .exclude(date=slot.date, lesson_number__gt=slot.lesson_number)
+            .order_by("-date", "-lesson_number")
+            .values_list("pk", flat=True)
+            .first()
+        )
+
+        return Response(
+            {
+                **slot_day_payload(slot, suggested),
+                "date": slot.date,
+                "previous": before,
+                "next": after,
+                # право на правку спрашивается один раз и отдаётся ответом:
+                # иначе страница гадала бы о нём по роли, а правило сложнее
+                # роли — ведущий курса **или** администратор школы
+                "may_write": allowed_to_write_schedule(request.user, slot.course),
             }
         )
 
