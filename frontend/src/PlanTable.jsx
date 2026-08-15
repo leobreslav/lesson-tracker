@@ -82,6 +82,7 @@ export default function PlanTable({
   collapsed,
   editing,
   adding,
+  spotlight = null,
   actions,
 }) {
   const {
@@ -280,6 +281,15 @@ export default function PlanTable({
 
   const indicatorFor = (id) => (drop?.overId === dragId(id) ? drop.side : null)
 
+  /**
+   * Строка, на которую привели по ссылке со страницы урока.
+   *
+   * Подсветка одноразовая и гаснет сама (анимация в стилях): страница
+   * перечитывает дерево после каждой правки, и подсветка, живущая до
+   * ухода со страницы, к третьей правке читалась бы как выделение.
+   */
+  const spotlightFor = (id) => (id === spotlight ? ' spotlight' : '')
+
   /** Строка-разделитель: заголовок терма, каникулы или черта «сегодня». */
   const divider = (mark, key) => {
     if (mark.kind === 'term') {
@@ -444,6 +454,7 @@ export default function PlanTable({
       className={
         'plan-row lesson' +
         weekStripe(node) +
+        spotlightFor(node.id) +
         (dated && !layout.byId.get(node.id)?.slot ? ' no-slot' : '') +
         (dated && layout.byId.get(node.id)?.past ? ' past' : '')
       }
@@ -533,7 +544,9 @@ export default function PlanTable({
       <SortableRow
         key={node.id}
         id={dragId(node.id)}
-        className={`plan-section${isTarget ? ' drop-inside' : ''}`}
+        className={
+          `plan-section${isTarget ? ' drop-inside' : ''}` + spotlightFor(node.id)
+        }
         indicator={indicatorFor(node.id)}
         locked={locked(node)}
       >

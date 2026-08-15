@@ -989,9 +989,7 @@
     "noCourses": "No courses yet",
     "noCoursesHint": "Ask the school administrator to put you on a course.",
     "rename": "Rename…",
-    "insert": "Add a lesson here…",
     "renameTitle": "New title",
-    "insertTitle": "What we actually did",
     "window": "free",
     "openLesson": "Open the lesson"
   },
@@ -1065,6 +1063,9 @@
     "noStudents": "Nobody is enrolled in this course yet.",
     "newWork": "New assignment",
     "newHomework": "Set homework",
-    "edit": "Edit…"
+    "edit": "Edit…",
+    "fromPlan": "from the curriculum map",
+    "openInPlan": "Open in the curriculum map",
+    "planOwns": "The topic is only a guess so far. Its content, materials and homework belong to the curriculum map and are edited there — record the lesson, and they become editable from here."
   }
 }

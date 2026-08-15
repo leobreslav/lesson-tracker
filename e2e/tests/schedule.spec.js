@@ -228,14 +228,19 @@ test('«Сегодня» показывает день сеткой: занят�
   await expect(preview.getByRole('button', { name: 'Открыть урок' })).toBeVisible()
 })
 
-test('с дня можно открыть урок, и правки плана делаются там', async ({
+test('пока связь не записана, план со страницы урока не правится', async ({
   page,
   signIn,
 }) => {
-  // День отвечает на «что сегодня». Работают с уроком на его собственной
-  // странице — одинаково для прошлого, сегодняшнего и будущего, — и
-  // расхождение с планом правят там же: уходить за этим в «Учебный план» и
-  // искать строку среди сорока значит не править вовсе.
+  // Своего содержания у занятия нет ни одного поля: содержание, материалы и
+  // домашнее задание — это строка учебного плана, показанная отсюда. Пока
+  // тема лишь подсказана раскладкой, она вполне может быть не той, и правка
+  // вслепую меняла бы чужую строку молча. Поэтому кнопок нет вовсе, а выход
+  // назван словами: пустое место читалось бы как поломка.
+  //
+  // Записанной связи браузерный набор не видит: учебный год демо-данных
+  // целиком в будущем, прошедших занятий на стенде не бывает — а связать
+  // можно только прошедшее. Открытый туннель проверяют питоновские тесты.
   await signIn(PEOPLE.ivanova)
   const slots = await firstDayWithLessons(page, { course: 'Grade 6 Algebra' })
   await slots.first().click()
@@ -244,31 +249,26 @@ test('с дня можно открыть урок, и правки плана �
 
   await expect(page).toHaveURL(/\/lesson\/\d+$/)
   await expect(page.locator('.lesson-title-head .hint')).toContainText('Grade 6 Algebra')
+  await expect(page.getByText('Раскладка предполагает эту тему.')).toBeVisible()
 
-  await page.getByRole('button', { name: 'Переименовать…' }).click()
-  await page.getByLabel('Новое название').fill('Синус суммы, разбор')
-  await page.getByRole('button', { name: 'Сохранить' }).click()
+  for (const name of ['Переименовать…', 'Правка…', 'Добавить ссылку', 'Другая тема…'])
+    await expect(page.getByRole('button', { name })).toHaveCount(0)
 
-  await expect(page.locator('h1')).toHaveText('Синус суммы, разбор')
+  await expect(
+    page.getByText(/Содержание, материалы и домашнее задание принадлежат/),
+  ).toBeVisible()
 
-  // «дописать урок сюда» кладёт строку **перед** предложенной: «мы всё ещё
-  // на синусе» значит, что сегодняшнее занятие идёт до неё, — и страница
-  // тут же начинает предлагать новую
-  await page.getByRole('button', { name: 'Дописать урок сюда…' }).click()
-  await page.getByLabel('Что было на самом деле').fill('Повторение формул')
-  await page.getByRole('button', { name: 'Сохранить' }).click()
-
-  await expect(page.locator('h1')).toHaveText('Повторение формул')
-
-  // и правки настоящие: в плане обе строки стоят рядом и в этом порядке
-  await page.goto('/plan')
+  // и ссылка приводит не «в план», а на саму строку: на сотне уроков
+  // «откройте план и поищите» это минута поиска глазами
+  const title = await page.locator('h1').textContent()
+  await page.getByRole('link', { name: 'Открыть в учебном плане' }).click()
   await ready(page)
-  await page.getByRole('button', { name: 'Grade 6 Algebra', exact: true }).click()
-  const titles = await page.locator('.plan-row.lesson .title').allTextContents()
-  expect(titles.indexOf('Повторение формул')).toBeGreaterThanOrEqual(0)
-  expect(titles.indexOf('Повторение формул')).toBeLessThan(
-    titles.indexOf('Синус суммы, разбор'),
-  )
+
+  // адрес вычищен: оставленный, он возил бы сюда при каждом «назад»
+  await expect(page).toHaveURL(/\/plan$/)
+  const row = page.locator('.plan-row.spotlight')
+  await expect(row).toHaveCount(1)
+  await expect(row).toContainText(title)
 })
 
 test('урок листается по своему курсу и показывает содержание', async ({
@@ -443,21 +443,29 @@ test('домашнее задание — та же работа, только �
   ).toContainText('Параграф 12')
 })
 
-test('содержание правится из своего же раздела', async ({ page, signIn }) => {
-  // Кнопка правки жила в верхней карточке, а правила содержание в нижней —
-  // и первым же вопросом было «а как это править».
+test('блоки плана подписаны, а собственные блоки занятия работают всегда', async ({
+  page,
+  signIn,
+}) => {
+  // Ответ на вопрос «что правится где» должен читаться с экрана, а не
+  // выясняться нажатием: подпись стоит у тех блоков, которые показывают
+  // строку плана, и не стоит у тех, что принадлежат занятию.
   await signIn(PEOPLE.ivanova)
   await openLesson(page)
 
-  const content = page.locator('[data-block="content"]')
-  await content.getByRole('button', { name: 'Правка…' }).click()
+  for (const block of ['content', 'materials'])
+    await expect(
+      page.locator(`[data-block="${block}"] .panel-head`),
+    ).toContainText('из учебного плана')
 
-  const panel = page.locator('dialog.modal')
-  await expect(panel.locator('.lesson-title')).toBeVisible()
-  await panel.locator('[data-field="objectives"] .lesson-field-head').click()
-  await panel.locator('[data-field="objectives"] textarea').fill('Понять признак')
-  await panel.getByRole('button', { name: 'Сохранить' }).click()
-  await panel.getByRole('button', { name: 'Закрыть' }).first().click()
-
-  await expect(content).toContainText('Понять признак')
+  // журнал и работы — своё занятия, они правятся независимо от связи
+  await expect(
+    page.locator('[data-block="attendance"] .panel-head'),
+  ).not.toContainText('из учебного плана')
+  await expect(
+    page.locator('[data-block="works"]').getByRole('button', { name: 'Новая работа' }),
+  ).toBeVisible()
+  await expect(
+    page.locator('[data-block="homework"]').getByRole('button', { name: 'Создать' }),
+  ).toBeVisible()
 })

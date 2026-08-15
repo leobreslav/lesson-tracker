@@ -8,12 +8,13 @@ import {
   useState,
 } from 'react'
 import { useTranslation } from 'react-i18next'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import EmptyState from './EmptyState'
 import ImportDialog from './ImportDialog'
 import LibraryDialog, { TemplateView } from './LibraryDialog'
 import PlanCsvHelp from './PlanCsvHelp'
 import PlanTable from './PlanTable'
+import { dragId } from './PlanDnd'
 import Modal from './Modal'
 import { freeSlots, layoutTotals, stitchLayout } from './planLayout'
 import { longDate, shortDate } from './dates'
@@ -68,9 +69,28 @@ const FORMATS = ['xlsx', 'csv']
 export default function Plan({ onLoggedOut }) {
   const { t } = useTranslation()
   const navigate = useNavigate()
+  /**
+   * `?course=&row=` — приход со страницы урока на конкретную строку.
+   *
+   * Страница урока сама план не правит: подсказанная тема может быть не
+   * той, и править её вслепую нельзя. Поэтому оттуда сюда ведёт ссылка, а
+   * строку надо не «где-то показать», а найти — на ста уроках это минута
+   * поиска глазами.
+   *
+   * Читается адрес **один раз** и тут же вычищается: после прокрутки
+   * параметрам делать нечего, а оставленные, они возили бы к той же
+   * строке при каждом «назад» и перезагрузке.
+   */
+  const [search, setSearch] = useSearchParams()
+  const [target] = useState(() => ({
+    course: Number(search.get('course')) || null,
+    row: Number(search.get('row')) || null,
+  }))
+
   const [classes, setClasses] = useState(null)
   const [years, setYears] = useState([])
-  const [classId, setClassId] = useState(null)
+  const [classId, setClassId] = useState(target.course)
+  const scrolled = useRef(false)
   const [data, setData] = useState(null) // {nodes, counts}
 
   const [busy, setBusy] = useState(false)
@@ -110,6 +130,24 @@ export default function Plan({ onLoggedOut }) {
     },
     [onLoggedOut],
   )
+
+  useEffect(() => {
+    if (search.toString()) setSearch({}, { replace: true })
+  }, [search, setSearch])
+
+  /**
+   * Прокрутка к строке — один раз за приход.
+   *
+   * Дерево перечитывается после каждой правки, и эффект без сторожа
+   * возвращал бы человека к той же строке, что бы он ни делал дальше.
+   */
+  useEffect(() => {
+    if (!target.row || !data || scrolled.current) return
+    const row = document.querySelector(`[data-node="${dragId(target.row)}"]`)
+    if (!row) return
+    scrolled.current = true
+    row.scrollIntoView({ block: 'center' })
+  }, [target.row, data])
 
   useEffect(() => {
     let cancelled = false
@@ -688,6 +726,7 @@ export default function Plan({ onLoggedOut }) {
                 collapsed={collapsed}
                 editing={editing}
                 adding={adding}
+                spotlight={target.row}
                 // всё, что таблица умеет попросить у страницы, — одним
                 // списком: сама она в базу не ходит
                 actions={{

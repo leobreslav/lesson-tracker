@@ -3,7 +3,14 @@ import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { useTranslation } from 'react-i18next'
 
-/** The id of a node in dnd-kit terms. */
+/**
+ * The id of a node in dnd-kit terms.
+ *
+ * Оно же — якорь строки в разметке (`data-node`). Со страницы урока в план
+ * ведёт ссылка на **конкретную** строку, и её надо найти в DOM, чтобы
+ * прокрутить к ней; заводить для этого второе имя значило бы завести и
+ * второй способ разойтись.
+ */
 export const dragId = (id) => `node-${id}`
 export const emptyZoneId = (sectionId) => `empty-${sectionId}`
 
@@ -60,6 +67,7 @@ export function SortableRow({ id, className = '', indicator, locked = false, chi
     <li
       ref={setNodeRef}
       style={style}
+      data-node={id}
       className={
         `${className}` +
         (isDragging ? ' dragging' : '') +

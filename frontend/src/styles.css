@@ -3407,6 +3407,39 @@ button.link.free-summary {
   opacity: 0.55;
 }
 
+/*
+ * Строка, на которую привели со страницы урока.
+ *
+ * Гаснет сама, и это важнее, чем кажется: подсветка, живущая до ухода со
+ * страницы, через три правки читается как выделение, а выделение
+ * обещает действие над собой. Одноразовая вспышка отвечает ровно на
+ * вопрос «где эта строка» и больше ни на что не претендует.
+ *
+ * Анимация не перезапускается от перечитывания дерева: ключ строки —
+ * id узла, элемент не пересоздаётся.
+ */
+@keyframes plan-spotlight {
+  from {
+    background: #fde9a9;
+  }
+  to {
+    background: transparent;
+  }
+}
+
+.plan-row.spotlight,
+.plan-section.spotlight > .plan-row {
+  animation: plan-spotlight 2.5s ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .plan-row.spotlight,
+  .plan-section.spotlight > .plan-row {
+    animation: none;
+    background: #fde9a9;
+  }
+}
+
 .plan-row .title:hover:not(:disabled) {
   color: inherit;
   background: #e8effb;

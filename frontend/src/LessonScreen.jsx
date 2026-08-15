@@ -8,7 +8,6 @@ import WorkDialog from './WorkDialog'
 import { iconFor } from './fileKind'
 import {
   addLinkAttachment,
-  createPlanNode,
   createWork,
   deleteAttachment,
   fetchSlotCard,
@@ -45,9 +44,31 @@ const CONTENT = ['objectives', 'body', 'formative']
  * необычным день бывает чаще, чем кажется — перенесли контрольную,
  * вернулись к теме, поменяли порядок.
  *
+ * **Своего содержания у занятия нет ни одного поля.** Содержание, материалы
+ * и домашнее задание — это строка учебного плана, показанная отсюда; правка
+ * их меняет план, то есть программу курса. Так и должно быть: план остаётся
+ * правдой о курсе именно потому, что его правят по факту.
+ *
+ * **Туннель открывается только подтверждённой связью.** Пока тема лишь
+ * подсказана, править её отсюда нельзя вовсе — раскладка показала строку
+ * позиционно, и она вполне может быть не той, а правка вслепую меняла бы
+ * чужой урок молча. Идут за этим в «Учебный план», где строка видна в
+ * окружении: над ней тема, под ней соседи, рядом даты и черта «сегодня».
+ * Ссылка ведёт прямо на неё.
+ *
+ * Отсюда следствие, которое стоит знать заранее: **будущее занятие со своей
+ * страницы не правится никогда**. Не «пока не подтвердил» — связать можно
+ * только прошедшее, прибивание будущего урока к дате мы убрали сознательно.
+ * Готовятся в плане, и это правило, а не временное состояние.
+ *
  * Заходят сюда одинаково для прошлого, сегодняшнего и будущего — разница в
  * том, какие действия имеют смысл: записать можно то, что уже случилось, а
  * подготовиться можно к чему угодно.
+ *
+ * Кнопки в шапках карточек **все вторичные**, и это правило, а не вкус:
+ * карточек пять, у каждой своё действие, и синяя в каждой шапке дала бы
+ * пять спорящих главных кнопок на один экран. Синий остаётся за
+ * подтверждением внутри формы — «Записать», «Сохранить».
  *
  * Своего расчёта здесь нет ни одного: всё приходит одним ответом
  * (`GET /api/slots/<id>/card/`), кроме журнала — он спрашивает себя сам,
@@ -62,7 +83,7 @@ export default function LessonScreen({ onLoggedOut }) {
   const [busy, setBusy] = useState(false)
   const [editing, setEditing] = useState(false) // панель содержания
   const [adding, setAdding] = useState(null) // 'work' | 'homework'
-  const [form, setForm] = useState(null) // 'rename' | 'insert' | 'cancel' | 'link'
+  const [form, setForm] = useState(null) // 'rename' | 'cancel' | 'link'
   const [text, setText] = useState('')
   const [link, setLink] = useState({ url: '', title: '' })
   const [choice, setChoice] = useState('') // выбранная строка плана
@@ -130,6 +151,10 @@ export default function LessonScreen({ onLoggedOut }) {
   const homework = card.works.filter((work) => work.is_homework)
   const classwork = card.works.filter((work) => !work.is_homework)
   const choosing = may && (picking || (done && !card.confirmed && card.options.length))
+  // туннель в план открыт только записанной связью: подсказанную строку
+  // правят там, где её видно в окружении
+  const editable = may && card.confirmed && topic
+  const inPlan = topic ? `/plan?course=${card.course.id}&row=${topic.id}` : null
 
   const open = (kind) => {
     setForm(kind)
@@ -159,18 +184,9 @@ export default function LessonScreen({ onLoggedOut }) {
     }
     if (!value) return
 
-    if (form === 'rename') run(() => updatePlanNode(topic.id, { title: value }))
-    else
-      run(() =>
-        createPlanNode({
-          course: card.course.id,
-          parent: topic.section_id,
-          title: value,
-          // перед предложенным уроком: «мы всё ещё на синусе» значит, что
-          // сегодняшнее занятие идёт до него
-          before: topic.id,
-        }),
-      )
+    // переименование — жёсткая правка: та же строка, сказанная точнее
+    // («Синус суммы. Начало»). Меняется программа курса, и это осознанно
+    run(() => updatePlanNode(topic.id, { title: value }))
   }
 
   return (
@@ -285,18 +301,19 @@ export default function LessonScreen({ onLoggedOut }) {
               )}
             </p>
 
-            {form === 'rename' || form === 'insert' ? (
+            {/* Пустое место на месте пропавших кнопок читалось бы как
+                поломка, поэтому запрет объясняется словами и сразу даёт
+                выход: строку правят в плане, и ссылка ведёт на неё */}
+            {!card.confirmed && <p className="hint">{t('lessonScreen.planOwns')}</p>}
+
+            {form === 'rename' ? (
               <form className="row" onSubmit={submit}>
                 <input
                   autoFocus
                   value={text}
                   maxLength={200}
-                  aria-label={t(
-                    form === 'rename' ? 'today.renameTitle' : 'today.insertTitle',
-                  )}
-                  placeholder={t(
-                    form === 'rename' ? 'today.renameTitle' : 'today.insertTitle',
-                  )}
+                  aria-label={t('today.renameTitle')}
+                  placeholder={t('today.renameTitle')}
                   onChange={(event) => setText(event.target.value)}
                 />
                 <button type="submit" disabled={busy}>
@@ -311,22 +328,22 @@ export default function LessonScreen({ onLoggedOut }) {
                 </button>
               </form>
             ) : (
-              may && (
-                <div className="row">
-                  {/* выбрать тему можно там, где есть что записывать: у
-                      будущего занятия это было бы прибиванием урока к дате,
-                      а от него мы отказались — раскладка сама поглощает
-                      срывы, а прибитый урок после отмены повисает */}
-                  {done && (
-                    <button
-                      type="button"
-                      className="secondary compact"
-                      disabled={busy}
-                      onClick={() => setPicking(true)}
-                    >
-                      {t('lessonScreen.changeTopic')}
-                    </button>
-                  )}
+              <div className="row">
+                {/* выбрать тему можно там, где есть что записывать: у
+                    будущего занятия это было бы прибиванием урока к дате,
+                    а от него мы отказались — раскладка сама поглощает
+                    срывы, а прибитый урок после отмены повисает */}
+                {editable && done && (
+                  <button
+                    type="button"
+                    className="secondary compact"
+                    disabled={busy}
+                    onClick={() => setPicking(true)}
+                  >
+                    {t('lessonScreen.changeTopic')}
+                  </button>
+                )}
+                {editable && (
                   <button
                     type="button"
                     className="secondary compact"
@@ -335,16 +352,11 @@ export default function LessonScreen({ onLoggedOut }) {
                   >
                     {t('today.rename')}
                   </button>
-                  <button
-                    type="button"
-                    className="secondary compact"
-                    disabled={busy}
-                    onClick={() => open('insert')}
-                  >
-                    {t('today.insert')}
-                  </button>
-                </div>
-              )
+                )}
+                <Link className="link" to={inPlan}>
+                  {t('lessonScreen.openInPlan')}
+                </Link>
+              </div>
             )}
           </>
         )}
@@ -359,16 +371,17 @@ export default function LessonScreen({ onLoggedOut }) {
           карточке, не находится, и первым же вопросом было «а как это
           править». Панель одна на все четыре поля, поэтому входов в неё
           два — из содержания и из домашнего задания, каждый там, где
-          лежит то, что правят */}
+          лежит то, что правят. Оба открываются только записанной связью:
+          подсказанную строку правят в плане */}
       <Collapsible
         name="content"
         title={t('lessonScreen.content')}
+        note={t('lessonScreen.fromPlan')}
         actions={
-          may &&
-          topic && (
+          editable && (
             <button
               type="button"
-              className="compact"
+              className="secondary compact"
               disabled={busy}
               onClick={() => setEditing(true)}
             >
@@ -398,7 +411,7 @@ export default function LessonScreen({ onLoggedOut }) {
           may && (
             <button
               type="button"
-              className="compact"
+              className="secondary compact"
               disabled={busy}
               onClick={() => setAdding('work')}
             >
@@ -427,14 +440,17 @@ export default function LessonScreen({ onLoggedOut }) {
       <Collapsible
         name="materials"
         title={t('lessonScreen.materials')}
-        note={topic?.attachments?.length || null}
+        note={
+          topic?.attachments?.length
+            ? `${topic.attachments.length} · ${t('lessonScreen.fromPlan')}`
+            : t('lessonScreen.fromPlan')
+        }
         actions={
-          may &&
-          topic && (
+          editable && (
             <>
               <button
                 type="button"
-                className="compact"
+                className="secondary compact"
                 disabled={busy}
                 onClick={() => open('link')}
               >
@@ -486,7 +502,7 @@ export default function LessonScreen({ onLoggedOut }) {
                     {item.title}
                   </button>
                 )}
-                {may && (
+                {editable && (
                   <button
                     type="button"
                     className="link remove"
@@ -502,7 +518,7 @@ export default function LessonScreen({ onLoggedOut }) {
           </ul>
         )}
 
-        {may && topic && form === 'link' && (
+        {editable && form === 'link' && (
             <form className="row" onSubmit={submit}>
               <input
                 autoFocus
@@ -537,7 +553,7 @@ export default function LessonScreen({ onLoggedOut }) {
         actions={
           may && (
             <>
-              {topic && (
+              {editable && (
                 <button
                   type="button"
                   className="secondary compact"
@@ -549,7 +565,7 @@ export default function LessonScreen({ onLoggedOut }) {
               )}
               <button
                 type="button"
-                className="compact"
+                className="secondary compact"
                 disabled={busy}
                 onClick={() => setAdding('homework')}
               >
@@ -565,8 +581,13 @@ export default function LessonScreen({ onLoggedOut }) {
             день**: та же работа, что в разделе выше, просто вынесенная
             сюда. Копировать одно в другое мы не стали: подставленный текст
             здесь уже был и оказался не нужен. */}
+        {/* подпись только у верхней половины: нижняя — работы этого
+            занятия, и «из учебного плана» над ними было бы неправдой */}
         {topic?.homework ? (
-          <Markdown text={topic.homework} />
+          <div className="lesson-field">
+            <span className="hint">{t('lessonScreen.fromPlan')}</span>
+            <Markdown text={topic.homework} />
+          </div>
         ) : (
           <p className="hint">{t('lessonScreen.noHomework')}</p>
         )}
