@@ -276,7 +276,23 @@ export default function LessonScreen({ onLoggedOut }) {
         </Link>
       </div>
 
-      {/* шапка колонкой: сначала «когда и у кого», потом сама тема */}
+      {/*
+        Шапка отвечает на вопрос «какой это урок» целиком: когда и у кого,
+        как называется, записан ли и где его править.
+
+        Карточкой под заголовком состояние стояло, и это было лишним
+        разрывом: плашка «урок проведён» относится к теме, написанной
+        строкой выше, а не к чему-то, что идёт следом. Своей карточки под
+        неё больше нет.
+
+        Что было на уроке, решает **план**, поэтому здесь не выбор, а
+        подтверждение: «раскладка предлагает вот это — так и было». Не
+        угадала — правят план по ссылке рядом, и подсказка меняется сама.
+
+        Записать можно только прошедшее: кнопка, нажатая накануне, стала бы
+        ложью после утренней пожарной тревоги, и заметить это было бы
+        некому.
+      */}
       <header className="lesson-title-head">
         <p className="hint">
           {longDate(card.date)} ·{' '}
@@ -307,21 +323,75 @@ export default function LessonScreen({ onLoggedOut }) {
             </button>
           </form>
         ) : (
-          <h1>
-            {editable ? (
-              <button
-                type="button"
-                className="link name"
-                title={t('today.rename')}
-                disabled={busy}
-                onClick={() => open('rename')}
-              >
-                {topic.title}
-              </button>
-            ) : (
-              topic?.title ?? t('agenda.noTopic')
+          <div className="lesson-title-row">
+            <h1>
+              {editable ? (
+                <button
+                  type="button"
+                  className="link name"
+                  title={t('today.rename')}
+                  disabled={busy}
+                  onClick={() => open('rename')}
+                >
+                  {topic.title}
+                </button>
+              ) : (
+                topic?.title ?? t('agenda.noTopic')
+              )}
+            </h1>
+
+            {topic && (
+              <div className="lesson-state">
+                {card.confirmed ? (
+                  // повторное нажатие снимает — тем же приёмом, что отметка
+                  // в журнале и вердикт в проверке работ. Без него исправить
+                  // запись было бы нечем: «связать с другой строкой» больше
+                  // не предлагается
+                  may ? (
+                    <button
+                      type="button"
+                      className="badge state good"
+                      title={t('lessonScreen.withdrawHint')}
+                      disabled={busy}
+                      onClick={() => run(() => updateSlot(card.id, { lesson: null }))}
+                    >
+                      {t('lessonScreen.recorded')}
+                    </button>
+                  ) : (
+                    <span className="badge state good">
+                      {t('lessonScreen.recorded')}
+                    </span>
+                  )
+                ) : (
+                  may &&
+                  done && (
+                    <button
+                      type="button"
+                      className="secondary compact"
+                      disabled={busy}
+                      onClick={() =>
+                        run(() => updateSlot(card.id, { lesson: topic.id }))
+                      }
+                    >
+                      {t('lessonScreen.bind')}
+                    </button>
+                  )
+                )}
+
+                <Link className="link-button" to={inPlan}>
+                  {t('lessonScreen.openInPlan')}
+                </Link>
+              </div>
             )}
-          </h1>
+          </div>
+        )}
+
+        {/* Пустое место на месте пропавших кнопок читалось бы как поломка,
+            поэтому запрет объясняется словами и сразу даёт выход */}
+        {!topic ? (
+          <p className="hint">{t('today.noTopic')}</p>
+        ) : (
+          !card.confirmed && <p className="hint">{t('lessonScreen.planOwns')}</p>
         )}
       </header>
 
@@ -349,71 +419,6 @@ export default function LessonScreen({ onLoggedOut }) {
           )}
         </p>
       )}
-
-      {/*
-        Что было на уроке, решает план.
-
-        Поэтому здесь не выбор, а подтверждение: «раскладка предлагает вот
-        это — так и было». Не угадала — правят план по ссылке рядом, и
-        подсказка меняется сама. Список плана из сорока строк отвечал бы на
-        тот же вопрос **мимо** плана, не оставляя следа, что он разошёлся с
-        реальностью.
-
-        Записать можно только прошедшее: кнопка, нажатая накануне, стала бы
-        ложью после утренней пожарной тревоги, и заметить это было бы
-        некому.
-      */}
-      <section className="panel">
-        {!topic ? (
-          <p className="hint">{t('today.noTopic')}</p>
-        ) : (
-          <div className="lesson-state">
-            {card.confirmed ? (
-              // повторное нажатие снимает — тем же приёмом, что отметка в
-              // журнале и вердикт в проверке работ. Без него исправить
-              // запись было бы нечем: «связать с другой строкой» больше не
-              // предлагается
-              may ? (
-                <button
-                  type="button"
-                  className="badge state good"
-                  title={t('lessonScreen.withdrawHint')}
-                  disabled={busy}
-                  onClick={() => run(() => updateSlot(card.id, { lesson: null }))}
-                >
-                  {t('lessonScreen.recorded')}
-                </button>
-              ) : (
-                <span className="badge state good">{t('lessonScreen.recorded')}</span>
-              )
-            ) : (
-              <>
-                <span className="hint">{t('today.suggested')}</span>
-                {may && done && (
-                  <button
-                    type="button"
-                    className="secondary compact"
-                    disabled={busy}
-                    onClick={() => run(() => updateSlot(card.id, { lesson: topic.id }))}
-                  >
-                    {t('lessonScreen.bind')}
-                  </button>
-                )}
-              </>
-            )}
-
-            <Link className="link-button" to={inPlan}>
-              {t('lessonScreen.openInPlan')}
-            </Link>
-          </div>
-        )}
-
-        {/* Пустое место на месте пропавших кнопок читалось бы как поломка,
-            поэтому запрет объясняется словами и сразу даёт выход */}
-        {topic && !card.confirmed && (
-          <p className="hint">{t('lessonScreen.planOwns')}</p>
-        )}
-      </section>
 
       {/* 1. Кто пришёл — это делают до того, как начали. Карточку рисует
           сам блок: заголовок у него кликабельный, и жить он должен вместе
@@ -656,7 +661,9 @@ export default function LessonScreen({ onLoggedOut }) {
               disabled={busy}
               onClick={() => open('cancel')}
             >
-              {t('agenda.menu.cancel')}
+              {/* «Отменить» рядом с кнопками «Отмена» в формах читалось как
+                  отмена правки, а отменяет она само занятие */}
+              {t('lessonScreen.cancelLesson')}
             </button>
           )}
         </div>

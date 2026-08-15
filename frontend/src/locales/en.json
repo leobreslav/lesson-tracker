@@ -1062,6 +1062,7 @@
     "edit": "Edit…",
     "openInPlan": "Open in the curriculum map",
     "planOwns": "The topic is only a guess so far. Its content, materials and homework belong to the curriculum map and are edited there — record the lesson, and they become editable from here.",
-    "withdrawHint": "Lesson taught — click to withdraw"
+    "withdrawHint": "Lesson taught — click to withdraw",
+    "cancelLesson": "Cancel the lesson…"
   }
 }

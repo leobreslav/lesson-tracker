@@ -248,18 +248,21 @@ test('пока связь не записана, план со страницы 
   await ready(page)
 
   await expect(page).toHaveURL(/\/lesson\/\d+$/)
-  await expect(page.locator('.lesson-title-head .hint')).toContainText('Grade 6 Algebra')
-  await expect(page.getByText('Раскладка предполагает эту тему.')).toBeVisible()
+  await expect(
+    page.locator('.lesson-title-head .hint').first(),
+  ).toContainText('Grade 6 Algebra')
+
+  // запрет объяснён словами: пустое место на месте кнопок читалось бы как
+  // поломка
+  await expect(
+    page.getByText(/Тема пока только предполагается/),
+  ).toBeVisible()
 
   for (const name of ['Правка…', 'Добавить ссылку'])
     await expect(page.getByRole('button', { name })).toHaveCount(0)
 
   // и название не правится кликом: до записи это делают в плане
   await expect(page.locator('h1 button')).toHaveCount(0)
-
-  await expect(
-    page.getByText(/Содержание, материалы и домашнее задание принадлежат/),
-  ).toBeVisible()
 
   // и ссылка приводит не «в план», а на саму строку: на сотне уроков
   // «откройте план и поищите» это минута поиска глазами
@@ -287,7 +290,7 @@ test('урок листается по своему курсу и показыв
   await ready(page)
 
   // страница про урок целиком: тема заголовком, состояние, работы
-  await expect(page.getByText('Раскладка предполагает эту тему.')).toBeVisible()
+  await expect(page.getByText(/Тема пока только предполагается/)).toBeVisible()
   await expect(page.locator('.panel-title', { hasText: 'Работы' })).toBeVisible()
 
   const first = await page.locator('h1').textContent()
@@ -295,7 +298,9 @@ test('урок листается по своему курсу и показыв
   await ready(page)
 
   await expect(page.locator('h1')).not.toHaveText(first)
-  await expect(page.locator('.lesson-title-head .hint')).toContainText('Grade 6 Algebra')
+  await expect(
+    page.locator('.lesson-title-head .hint').first(),
+  ).toContainText('Grade 6 Algebra')
 
   // и обратно — тот же урок, с которого пришли
   await page.getByRole('button', { name: '←' }).click()
@@ -499,7 +504,7 @@ test('записанная связь открывает туннель, и он
 
   // повторное нажатие на плашку снимает запись — как отметка в журнале
   await page.getByRole('button', { name: 'урок проведён' }).click()
-  await expect(page.getByText('Раскладка предполагает эту тему.')).toBeVisible()
+  await expect(page.getByText(/Тема пока только предполагается/)).toBeVisible()
   await expect(
     page.locator('[data-block="content"]').getByRole('button', { name: 'Правка…' }),
   ).toHaveCount(0)
