@@ -4,9 +4,11 @@ from config.errors import Codes, api_error
 from rest_framework import serializers
 from schedule.models import Course
 
+import json
+
 from django.contrib.auth import get_user_model
 
-from .models import MAX_CRITERIA, MAX_MARK, Submission, Task, Work
+from .models import MAX_CRITERIA, MAX_MARK, MAX_SCAN_BYTES, Submission, Task, Work
 
 User = get_user_model()
 
@@ -264,3 +266,96 @@ class GradeSerializer(serializers.Serializer):
 
         attrs["marks"] = marks
         return attrs
+
+
+class PieceSerializer(serializers.Serializer):
+    """Один кусок разметки: чья работа и с какой по какую страницу."""
+
+    student = serializers.IntegerField()
+    first = serializers.IntegerField(min_value=1)
+    last = serializers.IntegerField(min_value=1)
+
+
+class SplitSerializer(serializers.Serializer):
+    """
+    Скан и разметка к нему.
+
+    Разметка приезжает строкой JSON, потому что файл идёт multipart'ом, и
+    вложенные структуры в такой форме не выражаются. Это единственная
+    причина; списком объектов она и остаётся.
+    """
+
+    file = serializers.FileField()
+    plan = serializers.CharField()
+
+    def validate(self, attrs):
+        from . import splitting
+
+        upload = attrs["file"]
+        if upload.size > MAX_SCAN_BYTES:
+            api_error(
+                Codes.FILE_TOO_LARGE,
+                f"The scan is larger than {MAX_SCAN_BYTES // 1024 // 1024} MB.",
+                field="file",
+                limit_mb=MAX_SCAN_BYTES // 1024 // 1024,
+            )
+
+        data = upload.read()
+        try:
+            pages = splitting.read_pages(data)
+        except splitting.SplitError as error:
+            api_error(Codes.FILE_NOT_PDF, str(error), field="file")
+
+        try:
+            rows = json.loads(attrs["plan"])
+        except ValueError:
+            api_error(Codes.SPLIT_EMPTY, "The markup is not readable.", field="plan")
+
+        form = PieceSerializer(data=rows, many=True)
+        form.is_valid(raise_exception=True)
+        pieces = [
+            splitting.Piece(
+                student_id=item["student"], first=item["first"], last=item["last"]
+            )
+            for item in form.validated_data
+        ]
+
+        work = self.context["work"]
+        students = set(
+            work.course.students.values_list("student_id", flat=True)
+        )
+        splitting.check_plan(pieces, pages=pages, students=students)
+
+        attrs["data"] = data
+        attrs["plan"] = pieces
+        return attrs
+
+
+class ReassignSerializer(serializers.Serializer):
+    """Переложить приложенную работу другому ученику того же курса."""
+
+    attachment = serializers.IntegerField()
+    student = serializers.PrimaryKeyRelatedField(queryset=User.objects.none())
+
+    def get_fields(self):
+        fields = super().get_fields()
+        work = self.context["work"]
+        fields["student"].queryset = User.objects.filter(
+            enrolments__course_id=work.course_id
+        )
+        return fields
+
+    def validate_attachment(self, value):
+        from files.models import Attachment
+
+        work = self.context["work"]
+        found = Attachment.objects.filter(
+            pk=value, student_work__work=work
+        ).first()
+        if found is None:
+            api_error(
+                Codes.SPLIT_NOT_IN_COURSE,
+                "That attachment does not belong to this work.",
+                field="attachment",
+            )
+        return found

@@ -28,6 +28,8 @@ from .models import Mark
 from .serializers import (
     CriteriaSerializer,
     GradeSerializer,
+    ReassignSerializer,
+    SplitSerializer,
     StudentSubmissionSerializer,
     SubmissionSerializer,
     TaskSerializer,
@@ -148,6 +150,61 @@ class WorkViewSet(CourseScopedViewSet):
                 "comment": row.comment,
                 "marks": services.marks_of(row),
             }
+        )
+
+    @action(detail=True, methods=["post"])
+    def split(self, request, pk=None):
+        """
+        Разложить один скан по ученикам.
+
+        Разметку делает человек, здесь только режут: где чья работа —
+        вопрос, на который смотрят глазами, и угадывать его нельзя. Всё
+        одной транзакцией: половина разобранной пачки хуже неразобранной,
+        потому что непонятно, какая половина.
+
+        Исходник не сохраняется. Он лежит у учителя на диске, а в системе
+        был бы одним файлом со всеми работами класса.
+        """
+        work = self.get_object()
+        if not work.on_paper:
+            api_error(
+                Codes.NOT_ON_PAPER,
+                "This work is not written on paper: there is nothing to split.",
+                field="work",
+            )
+
+        form = SplitSerializer(data=request.data, context={"work": work})
+        form.is_valid(raise_exception=True)
+
+        return Response(
+            services.split_scan(
+                work,
+                data=form.validated_data["data"],
+                pieces=form.validated_data["plan"],
+                by=request.user,
+            )
+        )
+
+    @action(detail=True, methods=["post"])
+    def reassign(self, request, pk=None):
+        """
+        Переложить чужую работу тому, чья она.
+
+        Ошибка в разборе — это чужая контрольная у одноклассника, и
+        исправляться она должна одним движением: иначе её будут исправлять
+        «потом». Исходника у нас нет, поэтому переносится сама страница —
+        вложение меняет владельца, а файл в бакете остаётся тот же.
+        """
+        work = self.get_object()
+        form = ReassignSerializer(data=request.data, context={"work": work})
+        form.is_valid(raise_exception=True)
+
+        return Response(
+            services.reassign_paper(
+                work,
+                attachment=form.validated_data["attachment"],
+                student=form.validated_data["student"],
+            )
         )
 
     @action(detail=True, methods=["get"])

@@ -9,6 +9,7 @@
 from collections import defaultdict
 
 from config.errors import Codes, api_error
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.db.models import Count, Max
 from django.utils import timezone
 
@@ -708,3 +709,70 @@ def papers_of(student_work) -> list:
         }
         for item in student_work.attachments.select_related("stored_file")
     ]
+
+
+def split_scan(work, *, data: bytes, pieces, by=None) -> dict:
+    """
+    Разрезать скан и разложить по ученикам. Одной транзакцией.
+
+    Половина разобранной пачки хуже неразобранной: непонятно, какая
+    половина, и второй заход создаст дубли поверх первого. Поэтому либо всё,
+    либо ничего.
+
+    Файл каждого ученика проходит обычный путь загрузки: дедупликация,
+    квота, проверка типа. Дедупликация тут почти не срабатывает — куски
+    разные, — но пусть путь будет один: своя дорога в бакет однажды
+    разойдётся с общей.
+    """
+    from django.db import transaction
+    from files import services as file_services
+    from files.models import Attachment
+
+    from . import splitting
+
+    names = dict(
+        work.course.students.values_list("student_id", "student__last_name")
+    )
+
+    created = []
+    with transaction.atomic():
+        for piece in pieces:
+            row, _ = StudentWork.objects.get_or_create(
+                work=work, student_id=piece.student_id
+            )
+            surname = names.get(piece.student_id) or str(piece.student_id)
+            stored, _ = file_services.store_upload(
+                upload=SimpleUploadedFile(
+                    f"{surname}.pdf",
+                    splitting.cut(data, piece),
+                    content_type="application/pdf",
+                ),
+                school=work.course.school,
+                user=by,
+            )
+            created.append(
+                Attachment.objects.create(
+                    student_work=row,
+                    kind="file",
+                    stored_file=stored,
+                    title=f"{surname}.pdf",
+                    position=file_services.next_position(student_work=row),
+                )
+            )
+
+    return {"created": len(created), "students": len({p.student_id for p in pieces})}
+
+
+def reassign_paper(work, *, attachment, student) -> dict:
+    """
+    Переложить приложенную работу тому, чья она.
+
+    Файл в бакете не трогается: меняется владелец ссылки. Строка нового
+    ученика заводится, если её ещё нет, — то же «по требованию», что и у
+    оценки.
+    """
+    row, _ = StudentWork.objects.get_or_create(work=work, student=student)
+    attachment.student_work = row
+    attachment.save(update_fields=["student_work"])
+
+    return {"attachment": attachment.pk, "student": student.pk}

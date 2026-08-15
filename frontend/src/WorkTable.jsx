@@ -6,7 +6,8 @@ import ColumnDialog from './ColumnDialog'
 import GradeDialog from './GradeDialog'
 import Markdown from './Markdown'
 import ScaleDialog from './ScaleDialog'
-import { fetchWorkTable, gradeStudent, saveScale } from './api'
+import SplitDialog from './SplitDialog'
+import { fetchWorkTable, gradeStudent, saveScale, splitScan } from './api'
 import { POLL_MS } from './polling'
 
 /**
@@ -31,6 +32,8 @@ export default function WorkTable() {
   const [column, setColumn] = useState(null) // {task}
   const [grading, setGrading] = useState(null) // {student}
   const [scaling, setScaling] = useState(false)
+  const [splitting, setSplitting] = useState(false)
+  const [notice, setNotice] = useState(null)
   const [busy, setBusy] = useState(false)
   const version = useRef(null)
 
@@ -67,14 +70,17 @@ export default function WorkTable() {
 
   const refresh = () => load().catch((err) => setError(err.message))
 
-  const run = async (request) => {
+  const run = async (request, describe) => {
     setBusy(true)
     setError(null)
+    setNotice(null)
     try {
-      await request()
+      const result = await request()
       await load()
+      if (describe) setNotice(describe(result))
       setGrading(null)
       setScaling(false)
+      setSplitting(false)
     } catch (err) {
       setError(err.message)
     } finally {
@@ -107,6 +113,11 @@ export default function WorkTable() {
           {error}
         </p>
       )}
+      {notice && (
+        <p className="hint" role="status">
+          {notice}
+        </p>
+      )}
 
       <Summary
         summary={table.summary}
@@ -126,6 +137,19 @@ export default function WorkTable() {
         >
           {t('grading.configure')}
         </button>
+        {onPaper && (
+          <>
+            {' · '}
+            <button
+              type="button"
+              className="link"
+              disabled={busy}
+              onClick={() => setSplitting(true)}
+            >
+              {t('split.action')}
+            </button>
+          </>
+        )}
       </p>
 
       {/* таблица нужна и без задач: у бумажной работы в ней сканы и
@@ -259,6 +283,20 @@ export default function WorkTable() {
           busy={busy}
           onSubmit={(rows) => run(() => saveScale(table.work.id, rows))}
           onClose={() => setScaling(false)}
+        />
+      )}
+
+      {splitting && (
+        <SplitDialog
+          students={table.students}
+          busy={busy}
+          onSubmit={(payload) =>
+            run(
+              () => splitScan(table.work.id, payload),
+              (result) => t('split.done', { created: result.created }),
+            )
+          }
+          onClose={() => setSplitting(false)}
         />
       )}
 

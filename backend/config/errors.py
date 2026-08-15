@@ -114,6 +114,7 @@ class Codes:
     FILE_UNREADABLE = "file_unreadable"
     FILE_TOO_MANY_ROWS = "file_too_many_rows"
     FILE_NOT_XLSX = "file_not_xlsx"
+    FILE_NOT_PDF = "file_not_pdf"
     MODE_REQUIRED = "mode_required"
 
     # CSV: the file is read strictly, and refused whole. There is one format
@@ -155,6 +156,12 @@ class Codes:
     WORK_DATES_REVERSED = "work_dates_reversed"
     TASK_QUESTION_REQUIRED = "task_question_required"
     TOO_MANY_CRITERIA = "too_many_criteria"
+    SPLIT_EMPTY = "split_empty"
+    SPLIT_OUT_OF_RANGE = "split_out_of_range"
+    SPLIT_OVERLAP = "split_overlap"
+    SPLIT_STUDENT_TWICE = "split_student_twice"
+    SPLIT_NOT_IN_COURSE = "split_not_in_course"
+    NOT_ON_PAPER = "not_on_paper"
     CRITERION_UNKNOWN = "criterion_unknown"
     MARK_OUT_OF_RANGE = "mark_out_of_range"
 

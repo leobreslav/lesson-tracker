@@ -238,6 +238,12 @@ class MatrixTests(AccessTestCase):
                     "method": "post",
                     "body": {"student": 0, "marks": {}},
                 },
+                {"name": "work-split", "method": "post", "body": {"plan": "[]"}},
+                {
+                    "name": "work-reassign",
+                    "method": "post",
+                    "body": {"attachment": 0, "student": 0},
+                },
             ),
         )
 

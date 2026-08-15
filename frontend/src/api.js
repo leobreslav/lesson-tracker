@@ -476,6 +476,27 @@ export const saveScale = (work, criteria) =>
 export const fetchScaleImpact = (work) =>
   request(`/api/works/${work}/scale_impact/`)
 
+/**
+ * Разобрать один скан на работы учеников.
+ *
+ * Разметка едет строкой JSON рядом с файлом: форма multipart вложенных
+ * структур не выражает, и это единственная причина.
+ */
+export const splitScan = (work, { file, plan }) => {
+  const form = new FormData()
+  form.append('file', file)
+  form.append('plan', JSON.stringify(plan))
+
+  return request(`/api/works/${work}/split/`, { method: 'POST', body: form })
+}
+
+/** Переложить работу тому, чья она: ошибку разбора надо чинить одним движением. */
+export const reassignPaper = (work, attachment, student) =>
+  request(`/api/works/${work}/reassign/`, {
+    method: 'POST',
+    body: { attachment, student },
+  })
+
 /** Оценка одного ученика: весь набор критериев и слова учителя за раз. */
 export const gradeStudent = (work, body) =>
   request(`/api/works/${work}/grade/`, { method: 'POST', body })

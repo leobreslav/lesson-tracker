@@ -215,7 +215,18 @@
     "not_in_course": "You are no longer in this course. What you have done stays visible.",
     "attempts_exhausted": "No attempts left for this task.",
     "work_dates_reversed": "The work closes before it opens.",
-    "task_question_required": "A task needs a question."
+    "task_question_required": "A task needs a question.",
+    "not_course_teacher": "Only the teacher of this course or a school administrator can change this.",
+    "file_not_pdf": "That file is not a PDF, or it cannot be read.",
+    "too_many_criteria": "A work is graded by at most {{limit}} criteria.",
+    "criterion_unknown": "That criterion does not belong to this work.",
+    "mark_out_of_range": "The mark is above the maximum of {{maximum}}.",
+    "split_empty": "Nothing is marked up: say which pages belong to whom.",
+    "split_out_of_range": "Those pages are outside the file, which has {{pages}}.",
+    "split_overlap": "Page {{page}} is given to two students at once.",
+    "split_student_twice": "One student is named twice: a work is one piece, however many sheets it takes.",
+    "split_not_in_course": "That student does not study in this course.",
+    "not_on_paper": "This work is not written on paper: there is nothing to split."
   },
   "classPicker": {
     "label": "Classes:",
@@ -928,6 +939,25 @@
     "onPaper": "This work was written on paper. Your marked copy appears here once the teacher uploads it.",
     "onPaperSetting": "Written on paper",
     "onPaperHint": "No online questions: each student gets the scan of their own work."
+  },
+  "split": {
+    "action": "split a scan",
+    "title": "Split the scan into students' works",
+    "file": "Scanned PDF",
+    "pick": "Choose the file with all the works scanned together. It stays on your computer: only the pieces are uploaded.",
+    "reading": "Reading the pages…",
+    "unreadable": "That file could not be read as a PDF.",
+    "howTo": "Click the first page of every work. Pages between two marks belong to one student.",
+    "markFirst": "First page of a work",
+    "notFirst": "Not a first page",
+    "chooseStudent": "whose work?",
+    "whose": "Whose work starts on page {{page}}",
+    "same": "same work",
+    "progress": "Named {{named}} of {{total}}",
+    "without_one": "{{count}} student has nothing",
+    "without_other": "{{count}} students have nothing",
+    "submit": "Split and hand out",
+    "done": "Handed out {{created}} works."
   },
   "table": {
     "open": "Check",

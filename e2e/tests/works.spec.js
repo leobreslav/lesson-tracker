@@ -299,3 +299,90 @@ test('скан бумажной работы достаётся только с�
 
   await expect(page.getByRole('link', { name: 'stepanov.pdf' })).toHaveCount(0)
 })
+
+/**
+ * Экран разбора скана.
+ *
+ * Гонять его в браузере надо ради двух вещей, которых иначе не увидеть:
+ * страницы рисует `pdfjs-dist`, подгружаемая лениво (в сборке такая ошибка
+ * не видна, потому что код не выполняется), и разметка целиком живёт в
+ * браузере — границы, куски, «кому какие страницы».
+ *
+ * До самой резки тест не доходит: у стенда нет ключей R2, и загрузка кусков
+ * честно ответила бы «хранилище недоступно». Резку держат питоновские тесты.
+ */
+test('скан читается в браузере, и границы работ ставятся руками', async ({
+  page,
+  signIn,
+  api,
+}) => {
+  const teacher = await api(PEOPLE.ivanova)
+  const courses = await teacher.get('/api/courses/')
+  const course = courses.body.find((item) => item.name === 'Grade 6 Algebra')
+  const work = await teacher.post('/api/works/', {
+    course: course.id,
+    title: 'Разбор пачки',
+    opens_at: new Date(Date.now() - 3600e3).toISOString(),
+    closes_at: new Date(Date.now() + 3600e3).toISOString(),
+    on_paper: true,
+  })
+
+  await signIn(PEOPLE.ivanova)
+  await page.goto(`/works/${work.body.id}`)
+  await ready(page)
+  await page.getByRole('button', { name: 'разобрать скан' }).click()
+
+  const dialog = page.locator('dialog.modal')
+  await dialog.getByLabel('Отсканированный PDF').setInputFiles({
+    name: 'class.pdf',
+    mimeType: 'application/pdf',
+    buffer: twoPagePdf(),
+  })
+
+  // страницы нарисовались — значит pdf.js доехала до бандла и заработала
+  await expect(dialog.locator('.scan-pages > li')).toHaveCount(2)
+
+  // первая страница всегда начало работы, вторую отмечаем сами
+  await expect(dialog.locator('.scan-pages > li.starts')).toHaveCount(1)
+  await dialog.locator('.scan-pages > li').nth(1).locator('.page').click()
+  await expect(dialog.locator('.scan-pages > li.starts')).toHaveCount(2)
+
+  // пока у кусков нет имён, разобрать нельзя: ошибка тут — чужая работа
+  const submit = dialog.getByRole('button', { name: 'Разобрать и раздать' })
+  await expect(submit).toBeDisabled()
+
+  await dialog.getByLabel('Чья работа начинается на странице 1').selectOption({ index: 1 })
+  await expect(dialog.getByText('Названо 1 из 2')).toBeVisible()
+  await expect(submit).toBeDisabled()
+
+  await dialog.getByLabel('Чья работа начинается на странице 2').selectOption({ index: 1 })
+  await expect(dialog.getByText('Названо 2 из 2')).toBeVisible()
+  await expect(submit).toBeEnabled()
+})
+
+/** Настоящий двухстраничный PDF: pdf.js берёт его без придирок. */
+function twoPagePdf() {
+  const objects = [
+    '<< /Type /Catalog /Pages 2 0 R >>',
+    '<< /Type /Pages /Kids [3 0 R 4 0 R] /Count 2 >>',
+    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 300] >>',
+    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 300] >>',
+  ]
+
+  let body = '%PDF-1.4\n'
+  const offsets = []
+  objects.forEach((object, index) => {
+    offsets.push(body.length)
+    body += `${index + 1} 0 obj\n${object}\nendobj\n`
+  })
+
+  const startxref = body.length
+  body += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`
+  offsets.forEach((offset) => {
+    body += `${String(offset).padStart(10, '0')} 00000 n \n`
+  })
+  body += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\n`
+  body += `startxref\n${startxref}\n%%EOF\n`
+
+  return Buffer.from(body, 'latin1')
+}

@@ -2542,6 +2542,70 @@ button.compact,
   margin-top: 0.35rem;
 }
 
+/*
+ * Страницы скана: сетка миниатюр, где отмечают начало каждой работы.
+ *
+ * Мелко намеренно — лист бумаги в спичечный коробок: смотрят на них, чтобы
+ * отличить титульную от прочих, а не читать. Отмеченная выделена рамкой и
+ * несёт под собой выбор ученика, поэтому её ячейка выше остальных, и сетка
+ * выравнивается по верху, а не растягивает соседей.
+ */
+.scan-pages {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(8rem, 1fr));
+  align-items: start;
+  gap: 0.75rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
+.scan-pages > li {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.scan-pages .page {
+  position: relative;
+  display: block;
+  width: 100%;
+  padding: 0;
+  background: #fff;
+  border: 2px solid transparent;
+  border-radius: var(--row-radius);
+  box-shadow: var(--row-shadow);
+  cursor: pointer;
+}
+
+.scan-pages .page img {
+  display: block;
+  width: 100%;
+  border-radius: var(--row-radius);
+}
+
+/* номер страницы поверх угла: рядом он занял бы строку на каждой из сорока */
+.scan-pages .number {
+  position: absolute;
+  left: 0.25rem;
+  top: 0.25rem;
+  padding: 0 0.3rem;
+  font-size: 0.75rem;
+  color: #fff;
+  background: rgba(0, 0, 0, 0.55);
+  border-radius: 3px;
+}
+
+.scan-pages > li.starts .page {
+  border-color: #1a73e8;
+}
+
+.scan-pages .continues {
+  text-align: center;
+}
+
 /* оценка у ученика: числа крупно, слова учителя обычным текстом под ними */
 .student-grade .marks {
   display: flex;
