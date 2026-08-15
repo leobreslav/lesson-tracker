@@ -82,15 +82,44 @@ export function AddLessonDialog({ date, number, classes, busy, onSubmit, onClose
   )
 }
 
-/** What can be done with a lesson that is already there. */
-export function LessonMenu({ lesson, date, busy, onCancel, onRestore, onDelete, onClose }) {
+/**
+ * What can be done with a lesson that is already there.
+ *
+ * Перенос стоит здесь же, рядом с отменой, и это не случайно: для человека
+ * это одно действие, а в данных — отмена с причиной плюс дополнительное
+ * занятие на новой дате. Двойную запись делает сервер; здесь только форма.
+ */
+export function LessonMenu({
+  lesson,
+  date,
+  busy,
+  onCancel,
+  onRestore,
+  onDelete,
+  onMove,
+  onClose,
+}) {
   const { t } = useTranslation()
   const [reason, setReason] = useState('')
-  const [cancelling, setCancelling] = useState(false)
+  const [mode, setMode] = useState(null) // null | 'cancel' | 'move'
+  const [target, setTarget] = useState({ date: '', number: lesson.lesson_number })
 
   const handleCancel = (event) => {
     event.preventDefault()
     onCancel(reason.trim())
+  }
+
+  const handleMove = (event) => {
+    event.preventDefault()
+    if (!target.date) return
+
+    onMove({
+      date: target.date,
+      lesson_number: Number(target.number),
+      // причина пишется на языке того, кто нажал: это контент в базе, и
+      // сервер его не сочиняет
+      reason: reason.trim() || t('agenda.menu.movedReason', { date: target.date }),
+    })
   }
 
   return (
@@ -115,7 +144,7 @@ export function LessonMenu({ lesson, date, busy, onCancel, onRestore, onDelete, 
         <p className="hint">{lesson.reason}</p>
       )}
 
-      {cancelling ? (
+      {mode === 'cancel' && (
         <form onSubmit={handleCancel}>
           <input
             autoFocus
@@ -129,25 +158,75 @@ export function LessonMenu({ lesson, date, busy, onCancel, onRestore, onDelete, 
             <button type="submit" disabled={busy}>
               {t('agenda.menu.cancelSubmit')}
             </button>
-            <button
-              type="button"
-              className="secondary"
-              onClick={() => setCancelling(false)}
-            >
+            <button type="button" className="secondary" onClick={() => setMode(null)}>
               {t('agenda.menu.cancelAbort')}
             </button>
           </div>
         </form>
-      ) : (
+      )}
+
+      {mode === 'move' && (
+        <form onSubmit={handleMove}>
+          <p className="hint">{t('agenda.menu.moveHint')}</p>
+          <div className="row">
+            <input
+              autoFocus
+              type="date"
+              value={target.date}
+              aria-label={t('agenda.menu.moveDate')}
+              onChange={(event) =>
+                setTarget((current) => ({ ...current, date: event.target.value }))
+              }
+            />
+            <input
+              type="number"
+              min={1}
+              max={10}
+              value={target.number}
+              aria-label={t('agenda.menu.moveNumber')}
+              onChange={(event) =>
+                setTarget((current) => ({ ...current, number: event.target.value }))
+              }
+            />
+          </div>
+          <input
+            value={reason}
+            maxLength={200}
+            placeholder={t('agenda.menu.moveReason')}
+            aria-label={t('agenda.menu.moveReason')}
+            onChange={(event) => setReason(event.target.value)}
+          />
+          <div className="actions">
+            <button type="submit" disabled={busy || !target.date}>
+              {t('agenda.menu.moveSubmit')}
+            </button>
+            <button type="button" className="secondary" onClick={() => setMode(null)}>
+              {t('agenda.menu.cancelAbort')}
+            </button>
+          </div>
+        </form>
+      )}
+
+      {mode === null && (
         <div className="actions">
           {lesson.is_cancelled ? (
             <button type="button" disabled={busy} onClick={onRestore}>
               {t('agenda.menu.restore')}
             </button>
           ) : (
-            <button type="button" disabled={busy} onClick={() => setCancelling(true)}>
-              {t('agenda.menu.cancel')}
-            </button>
+            <>
+              <button type="button" disabled={busy} onClick={() => setMode('cancel')}>
+                {t('agenda.menu.cancel')}
+              </button>
+              <button
+                type="button"
+                className="secondary"
+                disabled={busy}
+                onClick={() => setMode('move')}
+              >
+                {t('agenda.menu.move')}
+              </button>
+            </>
           )}
           <button type="button" className="secondary" disabled={busy} onClick={onDelete}>
             {t('common.delete')}

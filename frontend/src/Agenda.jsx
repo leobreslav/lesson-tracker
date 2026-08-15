@@ -16,6 +16,7 @@ import {
   fetchAgenda,
   fetchCourses,
   fetchSchoolYears,
+  moveSlot,
   updateSlot,
 } from './api'
 import {
@@ -335,6 +336,24 @@ export default function Agenda({ onLoggedOut }) {
         ),
       },
       () => updateSlot(lesson.id, fields),
+    )
+  }
+
+  const moveLesson = (date, lesson, fields) => {
+    setDialog(null)
+    // на старом месте остаётся отмена — её и рисуем сразу; новое занятие
+    // может оказаться вне показанного периода, и обещать его заранее
+    // значило бы обещать то, чего человек не увидит
+    return mutate(
+      {
+        ...data.lessons,
+        [date]: data.lessons[date].map((item) =>
+          item.id === lesson.id
+            ? { ...item, is_cancelled: true, reason: fields.reason }
+            : item,
+        ),
+      },
+      () => moveSlot(lesson.id, fields),
     )
   }
 
@@ -845,6 +864,7 @@ export default function Agenda({ onLoggedOut }) {
             patchLesson(dialog.date, dialog.lesson, { is_cancelled: false, reason: '' })
           }
           onDelete={() => removeLesson(dialog.date, dialog.lesson)}
+          onMove={(fields) => moveLesson(dialog.date, dialog.lesson, fields)}
           onClose={() => setDialog(null)}
         />
       )}

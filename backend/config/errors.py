@@ -81,6 +81,7 @@ class Codes:
     SLOT_YEAR_MISMATCH = "slot_year_mismatch"
     SLOT_NUMBER_TAKEN = "slot_number_taken"
     SLOT_DUPLICATE = "slot_duplicate"
+    SLOT_MOVE_SAME_PLACE = "slot_move_same_place"
 
     # bulk operations over the schedule
     PERIOD_REVERSED = "period_reversed"

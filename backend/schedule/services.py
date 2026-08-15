@@ -87,13 +87,17 @@ def sweepable(lessons):
     восстановить было бы неоткуда.
 
     Фильтр, а не проверка в цикле: и `bulk`, и `replace` работают наборами.
+
+    Что считается записью, перечислено **не здесь**, а в самой модели
+    (`Lesson.empty_conditions`), и оттуда же это спрашивает `has_record`.
+    Пока список стоял в двух местах, он держался на том, что их правят
+    вместе, — а следующая таблица на занятии просто не попала бы ни в один
+    из них и была бы снесена первой же массовой чисткой.
     """
     return lessons.filter(
         is_extra=False,
         is_cancelled=False,
-        covered__isnull=True,
-        taught_by__isnull=True,
-        works__isnull=True,
+        **lessons.model.empty_conditions(),
     )
 
 

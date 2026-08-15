@@ -147,3 +147,38 @@ test('на «Сегодня» видно урок, и тема подтверж�
 
   await expect(page.getByText('Раскладка предполагает эту тему.')).toHaveCount(0)
 })
+
+test('перенос оставляет отмену на прежнем месте и занятие на новом', async ({
+  page,
+  signIn,
+}) => {
+  // Перенос — не правка даты: календарной оси нужен след срыва и его
+  // компенсации, иначе год к маю выглядит идеально ровным.
+  await signIn(PEOPLE.ivanova)
+  await openWeek(page, MONDAY)
+
+  const cell = page.locator(`[data-add="${MONDAY}:7"]`)
+  await cell.click()
+  const add = page.locator('dialog.modal')
+  await add.getByRole('combobox').first().selectOption({ label: 'Grade 6 Algebra' })
+  await add.getByRole('button', { name: 'Добавить' }).click()
+
+  const source = page.locator(`[data-lesson="${MONDAY}:7"]`)
+  await expect(source).toBeVisible()
+
+  await source.click()
+  const menu = page.locator('dialog.modal')
+  await menu.getByRole('button', { name: 'Перенести…' }).click()
+  await menu.getByLabel('Новая дата').fill(FRIDAY)
+  await menu.getByLabel('Номер урока').fill('7')
+  await menu.getByRole('button', { name: 'Перенести', exact: true }).click()
+
+  await expect(menu).toBeHidden()
+  await expect(source).toHaveClass(/cancelled/)
+  await expect(page.locator(`[data-lesson="${FRIDAY}:7"]`)).toBeVisible()
+
+  // обе половины уехали на сервер, а не только нарисовались
+  await openWeek(page, MONDAY)
+  await expect(page.locator(`[data-lesson="${MONDAY}:7"]`)).toHaveClass(/cancelled/)
+  await expect(page.locator(`[data-lesson="${FRIDAY}:7"]`)).toBeVisible()
+})

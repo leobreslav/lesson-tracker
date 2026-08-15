@@ -8,6 +8,7 @@ from rest_framework.validators import UniqueTogetherValidator
 
 from . import services
 from .models import (
+    MAX_LESSON_NUMBER,
     Course,
     CourseAssignment,
     CourseMethodist,
@@ -449,6 +450,23 @@ class LessonSerializer(serializers.ModelSerializer):
 
         attrs["year"] = year
         return attrs
+
+
+class LessonMoveSerializer(serializers.Serializer):
+    """
+    Куда переносится занятие — и почему.
+
+    Причина необязательна на уровне API, но интерфейс её подставляет: на
+    календарной оси перенос обязан оставить след, а след без объяснения
+    через полгода не прочитать. Само занятие в теле не называется — оно в
+    адресе.
+    """
+
+    date = serializers.DateField()
+    lesson_number = serializers.IntegerField(
+        min_value=1, max_value=MAX_LESSON_NUMBER
+    )
+    reason = serializers.CharField(max_length=200, required=False, allow_blank=True)
 
 
 class CopySerializer(serializers.Serializer):

@@ -404,6 +404,24 @@ class PersonalObjectTests(AccessTestCase):
         self.assertEqual(self.client.get(plan).status_code, 404)
         self.assertEqual(self.client.delete(plan).status_code, 404)
 
+    def test_moving_somebody_elses_lesson_tells_nothing(self):
+        """
+        Перенос ходит в модель по id из пути, а не через queryset списка,
+        поэтому спрашивается он отдельно: ответ на наш урок обязан совпасть
+        с ответом на id, которого не было.
+        """
+        self.assertActionRules(
+            actions=(
+                {
+                    "name": "lesson-move",
+                    "method": "post",
+                    "body": {"date": str(MONDAY), "lesson_number": 7},
+                },
+            ),
+            obj=self.slot,
+            people=(self.stranger, self.alien_admin, self.outsider, self.student),
+        )
+
     def test_lessons_cannot_be_put_into_another_schools_course(self):
         response = self.client.post(
             reverse("lesson-list"),

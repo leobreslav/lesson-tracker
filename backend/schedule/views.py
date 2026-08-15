@@ -48,6 +48,7 @@ from .serializers import (
     CourseAssignmentSerializer,
     CourseSerializer,
     GradeLevelSerializer,
+    LessonMoveSerializer,
     LessonSerializer,
     PeriodSerializer,
     full_name,
@@ -750,6 +751,71 @@ class LessonViewSet(SchoolScopedViewSet):
                 totals["conflicts"].extend(result["conflicts"])
 
         return Response(totals)
+
+    @action(detail=True, methods=["post"])
+    def move(self, request, pk=None):
+        """
+        Перенести занятие на другую дату — одно движение, две записи.
+
+        Соблазнительно просто переписать дату: занятие то же, урок тот же,
+        связь едет следом. Но перенос — событие **календарной** оси, и
+        именно её читает администрация: «сколько часов сорвано и всё ли
+        закрыто». С переписанной датой к концу года выходит идеально ровная
+        картина, в которой не было ни одного срыва, — а их было двенадцать,
+        и каждый чем-то компенсировали.
+
+        Поэтому старое место остаётся отменённым с причиной, новое
+        появляется дополнительным, и плашка «отменено 1 · добавлено 1»
+        читается ровно как то, чем это было. Всё, что занятие успело
+        накопить, переезжает: что прошли, кто вёл, заданные работы.
+
+        Проверяет цель обычный `LessonSerializer` — границы года, занятость
+        номера у ведущего, уникальность: правила переноса не должны быть
+        мягче правил создания, а второй список правил разошёлся бы с первым.
+        """
+        lesson = self.get_object()
+        form = LessonMoveSerializer(data=request.data)
+        form.is_valid(raise_exception=True)
+        target = form.validated_data
+
+        if (target["date"], target["lesson_number"]) == (
+            lesson.date,
+            lesson.lesson_number,
+        ):
+            api_error(
+                Codes.SLOT_MOVE_SAME_PLACE,
+                "The lesson is already at that date and number.",
+                field="date",
+            )
+
+        arrival = LessonSerializer(
+            data={
+                "course": lesson.course_id,
+                "date": target["date"].isoformat(),
+                "lesson_number": target["lesson_number"],
+                "is_extra": True,
+                "covered": lesson.covered_id,
+                "taught_by": lesson.taught_by_id,
+            },
+            context=self.get_serializer_context(),
+        )
+        arrival.is_valid(raise_exception=True)
+
+        with transaction.atomic():
+            moved = arrival.save()
+            # работы задавали на этом занятии, и занятие уехало вместе с ними
+            lesson.works.update(lesson=moved)
+            lesson.is_cancelled = True
+            lesson.reason = target.get("reason", "")
+            # что прошли и кто вёл — свойства состоявшегося занятия, а это
+            # не состоялось: они уехали на новую дату вместе с ним
+            lesson.covered = None
+            lesson.taught_by = None
+            lesson.save(
+                update_fields=["is_cancelled", "reason", "covered", "taught_by"]
+            )
+
+        return Response(arrival.data, status=status.HTTP_201_CREATED)
 
     @action(detail=False, methods=["delete"])
     def bulk(self, request):

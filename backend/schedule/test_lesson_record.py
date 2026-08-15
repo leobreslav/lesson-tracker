@@ -28,6 +28,7 @@ from schools.testing import (
 )
 
 from .models import Lesson
+from .services import sweepable
 
 
 class LessonRecordTestCase(SchoolTestMixin, APITestCase):
@@ -171,3 +172,162 @@ class SweepTests(LessonRecordTestCase):
 
         self.assertTrue(Lesson.objects.filter(pk=kept.pk).exists())
         self.assertTrue(Lesson.objects.filter(pk=source.pk).exists())
+
+
+class LessonFieldsTests(SchoolTestMixin, APITestCase):
+    """
+    Сторож над списком того, что считается записью.
+
+    Правило «массовая операция сносит только пустые клетки» стоит ровно
+    столько, сколько полон список. Пока он был написан руками — да ещё в
+    двух местах сразу, — следующая вещь, повешенная на занятие, не попадала
+    бы ни в один из них и уезжала бы под «очистить период» молча.
+
+    Обратные связи теперь считаются записью сами, а собственные поля
+    обязаны назваться: либо время (`GRID_FIELDS`), либо запись
+    (`RECORD_FIELDS`). Незаписанное поле валит этот тест, а не чужой год.
+    """
+
+    def test_every_field_of_the_lesson_says_what_it_is(self):
+        named = Lesson.GRID_FIELDS | Lesson.RECORD_FIELDS
+        actual = {field.name for field in Lesson._meta.get_fields() if field.concrete}
+
+        self.assertEqual(
+            actual - named,
+            set(),
+            "новое поле занятия не названо ни временем, ни записью: "
+            "решите, переживает ли оно массовую чистку, и допишите его в "
+            "Lesson.GRID_FIELDS или Lesson.RECORD_FIELDS",
+        )
+        self.assertEqual(named - actual, set(), "в списке поле, которого нет")
+
+    def test_every_table_hanging_off_the_lesson_protects_it(self):
+        """Не список, а обход модели: новая таблица защищена с рождения."""
+        conditions = Lesson.empty_conditions()
+
+        for relation in Lesson._meta.related_objects:
+            self.assertIn(
+                f"{relation.field.related_query_name()}__isnull",
+                conditions,
+                f"{relation.name} не мешает массовой чистке",
+            )
+
+    def test_the_sweep_and_the_lesson_agree_on_what_a_record_is(self):
+        """Один вопрос — один ответ, и спрашивают его одним условием."""
+        year = make_year(self.school)
+        course = make_course(self.school, year, "9Б Алгебра")
+        assign(self.user, course)
+        empty = make_slot(self.user, course, MONDAY, 1)
+        recorded = make_slot(self.user, course, MONDAY, 2)
+        recorded.taught_by = self.colleague
+        recorded.save(update_fields=["taught_by"])
+
+        swept = set(sweepable(Lesson.objects.filter(course=course)))
+
+        self.assertEqual({slot.pk for slot in swept}, {empty.pk})
+        self.assertFalse(empty.has_record())
+        self.assertTrue(recorded.has_record())
+
+
+class MoveTests(LessonRecordTestCase):
+    """
+    Перенос занятия: одно движение, две записи.
+
+    Соблазн переписать дату велик, а цена его невидима до конца года:
+    администрация читает календарную ось — сколько сорвано и чем закрыто, —
+    и переписанная дата делает год идеально ровным. Поэтому старое место
+    остаётся отменённым, новое появляется дополнительным, а всё, что
+    занятие накопило, переезжает вместе с ним.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.slot = make_slot(self.user, self.course, MONDAY, 1)
+        self.saturday = MONDAY + timedelta(days=5)
+
+    def move(self, slot=None, **body):
+        return self.client.post(
+            reverse("lesson-move", args=[(slot or self.slot).pk]),
+            {"date": self.saturday.isoformat(), "lesson_number": 3, **body},
+            format="json",
+        )
+
+    def test_the_old_place_keeps_the_scar(self):
+        response = self.move(reason="учитель на конференции")
+
+        self.assertEqual(response.status_code, 201, response.content)
+        self.slot.refresh_from_db()
+        self.assertTrue(self.slot.is_cancelled)
+        self.assertEqual(self.slot.reason, "учитель на конференции")
+
+    def test_the_new_place_is_an_extra_lesson(self):
+        """Чтобы «отменено 1 · добавлено 1» сложилось в компенсацию."""
+        moved = Lesson.objects.get(pk=self.move().json()["id"])
+
+        self.assertEqual((moved.date, moved.lesson_number), (self.saturday, 3))
+        self.assertTrue(moved.is_extra)
+        self.assertFalse(moved.is_cancelled)
+        self.assertEqual(moved.course, self.course)
+
+    def test_what_the_lesson_remembered_travels_with_it(self):
+        self.slot.covered = self.topic
+        self.slot.taught_by = self.colleague
+        self.slot.save(update_fields=["covered", "taught_by"])
+
+        moved = Lesson.objects.get(pk=self.move().json()["id"])
+
+        self.assertEqual(moved.covered, self.topic)
+        self.assertEqual(moved.taught_by, self.colleague)
+
+    def test_the_place_left_behind_remembers_nothing(self):
+        """Занятие не состоялось в среду — записи о среде быть не может."""
+        self.slot.covered = self.topic
+        self.slot.save(update_fields=["covered"])
+
+        self.move()
+
+        self.slot.refresh_from_db()
+        self.assertIsNone(self.slot.covered)
+
+    def test_the_work_set_at_that_lesson_travels_too(self):
+        work = make_work(self.user, self.course, title="Домашняя", lesson=self.slot)
+
+        moved_id = self.move().json()["id"]
+
+        work.refresh_from_db()
+        self.assertEqual(work.lesson_id, moved_id)
+
+    def test_moving_nowhere_is_refused(self):
+        response = self.move(
+            date=MONDAY.isoformat(), lesson_number=self.slot.lesson_number
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json()["code"], "slot_move_same_place")
+
+    def test_an_occupied_hour_refuses_the_move(self):
+        """Правила переноса не мягче правил создания: их считает один код."""
+        other = make_course(self.school, self.year, "8А Алгебра")
+        assign(self.user, other)
+        make_slot(self.user, other, self.saturday, 3)
+
+        response = self.move()
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json()["code"], "slot_number_taken")
+
+    def test_nothing_moves_when_the_target_is_refused(self):
+        other = make_course(self.school, self.year, "8А Алгебра")
+        assign(self.user, other)
+        make_slot(self.user, other, self.saturday, 3)
+
+        self.move()
+
+        self.slot.refresh_from_db()
+        self.assertFalse(self.slot.is_cancelled)
+
+    def test_a_date_outside_the_year_is_refused(self):
+        response = self.move(date=(self.year.end_date + timedelta(days=1)).isoformat())
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json()["code"], "slot_outside_year")

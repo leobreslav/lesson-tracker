@@ -658,6 +658,12 @@ export const updateSlot = (id, fields) =>
 export const deleteSlot = (id) =>
   request(`/api/lessons/${id}/`, { method: 'DELETE' })
 
+// перенос — не правка даты, а отмена плюс дополнительное занятие: след
+// срыва и его компенсации нужен календарной оси, и делает это сервер одной
+// транзакцией
+export const moveSlot = (id, fields) =>
+  request(`/api/lessons/${id}/move/`, { method: 'POST', body: fields })
+
 export const copySlots = (payload) =>
   request('/api/lessons/copy/', { method: 'POST', body: payload })
 

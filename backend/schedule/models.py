@@ -422,6 +422,16 @@ class Lesson(models.Model):
     разом» идёт через назначение, см. `find_conflict`.
     """
 
+    #: Поля, которые говорят только «когда» и «состоялось ли»: они описывают
+    #: клетку сетки, а не то, что в ней произошло.
+    GRID_FIELDS = frozenset(
+        {"id", "year", "course", "date", "lesson_number", "is_cancelled",
+         "is_extra", "created_at"}
+    )
+    #: Собственные поля, заполненность которых делает занятие историей.
+    #: Обратные связи в перечислении не нуждаются, см. `empty_conditions`.
+    RECORD_FIELDS = frozenset({"reason", "covered", "taught_by"})
+
     year = models.ForeignKey(
         "calendars.SchoolYear",
         related_name="lessons",
@@ -498,20 +508,53 @@ class Lesson(models.Model):
         """Обычный урок расписания — только такие копируются и чистятся оптом."""
         return not self.is_extra and not self.is_cancelled
 
+    @classmethod
+    def empty_conditions(cls) -> dict:
+        """
+        Чем занятие доказывает, что на нём **ничего не записано**.
+
+        Возвращается словарь фильтра — «пустая клетка сетки», — и он один на
+        всех: по нему работает и `services.sweepable`, и `has_record` ниже.
+        Пока условий было два списка, они держались на том, что их правят
+        вместе; список — плохое место для инварианта.
+
+        Руками здесь перечислены только **собственные** поля занятия
+        (`RECORD_FIELDS`), а любая **обратная** связь считается записью сама
+        по себе. Поэтому следующая таблица, повешенная на занятие —
+        посещаемость, — защитится от массовой чистки в тот день, когда её
+        заведут, а не в тот, когда кто-то вспомнит поправить здешний список.
+        А новое собственное поле не даст о себе забыть: `LessonFieldsTests`
+        требует, чтобы каждое было названо либо записью, либо временем.
+        """
+        conditions = {}
+        for name in sorted(cls.RECORD_FIELDS):
+            field = cls._meta.get_field(name)
+            if field.null:
+                conditions[f"{name}__isnull"] = True
+            else:
+                conditions[name] = field.get_default()
+
+        for relation in cls._meta.related_objects:
+            conditions[f"{relation.field.related_query_name()}__isnull"] = True
+
+        return conditions
+
     def has_record(self) -> bool:
         """
-        Осталось ли на уроке что-нибудь, кроме времени.
+        Осталось ли на занятии что-нибудь, кроме времени.
 
-        Пока урок — пустая клетка сетки, массовая операция вправе его снести.
-        Как только на нём появилась запись — отметили, что прошли, назвали
-        замену, задали работу, — он перестаёт быть клеткой и становится
-        историей, а историю оптом не чистят.
+        Пока занятие — пустая клетка сетки, массовая операция вправе его
+        снести. Как только на нём появилась запись — отметили, что прошли,
+        назвали замену, задали работу, — оно перестаёт быть клеткой и
+        становится историей, а историю оптом не чистят.
+
+        Спрашивается это тем же условием, каким чистка отбирает клетки:
+        разойтись двум ответам на один вопрос тут негде.
         """
-        return bool(
-            self.covered_id
-            or self.taught_by_id
-            or self.reason
-            or self.works.exists()
+        return not (
+            type(self)
+            .objects.filter(pk=self.pk, **self.empty_conditions())
+            .exists()
         )
 
     @classmethod
