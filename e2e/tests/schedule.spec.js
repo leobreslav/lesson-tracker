@@ -400,8 +400,14 @@ test('работа заводится прямо на уроке и остаёт
   await signIn(PEOPLE.ivanova)
   await openLesson(page)
 
-  await expect(page.getByText('На этом занятии ничего не задавали.')).toBeVisible()
-  await page.getByRole('button', { name: 'Новая работа' }).click()
+  // пустой раздел — одна строка со словом «нет», а не карточка с фразой
+  const worksBlock = page.locator('[data-block="works"]')
+  await expect(worksBlock).toHaveClass(/empty/)
+  await expect(worksBlock).toContainText('нет')
+
+  // действия появляются под курсором — как кнопки строки в таблице плана
+  await worksBlock.hover()
+  await worksBlock.getByRole('button', { name: 'Новая работа' }).click()
 
   const dialog = page.locator('dialog.modal')
   await dialog.getByLabel('Название').fill('Практика по признакам делимости')
@@ -433,6 +439,7 @@ test('домашнее задание — та же работа, только �
   const homework = page.locator('[data-block="homework"]')
   const works = page.locator('[data-block="works"]')
 
+  await homework.hover()
   await homework.getByRole('button', { name: 'Создать' }).click()
   const dialog = page.locator('dialog.modal')
   await dialog.getByLabel('Название').fill('Параграф 12, № 84–89')
@@ -475,14 +482,16 @@ test('записанная связь открывает туннель, и он
   await page.goto(`/lesson/${slot.id}`)
   await ready(page)
 
-  // туннель открыт: правка содержания и материалов доступна отсюда
+  // туннель открыт: правка содержания и материалов доступна отсюда.
+  // Действия видны под курсором — как кнопки строки в таблице плана
+  const content = page.locator('[data-block="content"]')
+  const materials = page.locator('[data-block="materials"]')
+
+  await content.hover()
+  await expect(content.getByRole('button', { name: 'Правка…' })).toBeVisible()
+  await materials.hover()
   await expect(
-    page.locator('[data-block="content"]').getByRole('button', { name: 'Правка…' }),
-  ).toBeVisible()
-  await expect(
-    page.locator('[data-block="materials"]').getByRole('button', {
-      name: 'Добавить ссылку',
-    }),
+    materials.getByRole('button', { name: 'Добавить ссылку' }),
   ).toBeVisible()
   // и объяснение запрета убрано — запрещать больше нечего
   await expect(
@@ -520,10 +529,12 @@ test('собственные блоки занятия работают неза
   await openLesson(page)
 
   await expect(page.locator('[data-block="attendance"]')).toBeVisible()
-  await expect(
-    page.locator('[data-block="works"]').getByRole('button', { name: 'Новая работа' }),
-  ).toBeVisible()
-  await expect(
-    page.locator('[data-block="homework"]').getByRole('button', { name: 'Создать' }),
-  ).toBeVisible()
+
+  const works = page.locator('[data-block="works"]')
+  await works.hover()
+  await expect(works.getByRole('button', { name: 'Новая работа' })).toBeVisible()
+
+  const homework = page.locator('[data-block="homework"]')
+  await homework.hover()
+  await expect(homework.getByRole('button', { name: 'Создать' })).toBeVisible()
 })

@@ -5,6 +5,7 @@ import Collapsible from './Collapsible'
 import LessonAttendance from './LessonAttendance'
 import Markdown from './Markdown'
 import WorkDialog from './WorkDialog'
+import { useDismissable } from './UserMenu'
 import { iconFor } from './fileKind'
 import {
   addLinkAttachment,
@@ -92,7 +93,11 @@ export default function LessonScreen({ onLoggedOut }) {
   const [form, setForm] = useState(null) // 'rename' | 'cancel' | 'link'
   const [text, setText] = useState('')
   const [link, setLink] = useState({ url: '', title: '' })
+  const [menuOpen, setMenuOpen] = useState(false)
   const [error, setError] = useState(null)
+
+  const closeMenu = useCallback(() => setMenuOpen(false), [])
+  const menuRef = useDismissable(menuOpen, closeMenu)
 
   const fileInput = useRef(null)
 
@@ -150,6 +155,10 @@ export default function LessonScreen({ onLoggedOut }) {
   // правят там, где её видно в окружении
   const editable = may && card.confirmed && topic
   const inPlan = topic ? `/plan?course=${card.course.id}&row=${topic.id}` : null
+  // раздел, в котором нечего показывать, рисуется одной строкой: пустота не
+  // должна занимать столько же места, сколько содержимое
+  const hasContent = topic && CONTENT.some((field) => topic[field])
+  const hasHomework = Boolean(topic?.homework) || homework.length > 0
 
   const open = (kind) => {
     setForm(kind)
@@ -340,49 +349,95 @@ export default function LessonScreen({ onLoggedOut }) {
               )}
             </h1>
 
-            {topic && (
-              <div className="lesson-state">
-                {card.confirmed ? (
+            <div className="lesson-state">
+              {topic && (
+                <>
+                  {card.confirmed ? (
                   // повторное нажатие снимает — тем же приёмом, что отметка
                   // в журнале и вердикт в проверке работ. Без него исправить
                   // запись было бы нечем: «связать с другой строкой» больше
                   // не предлагается
-                  may ? (
-                    <button
-                      type="button"
-                      className="badge state good"
-                      title={t('lessonScreen.withdrawHint')}
-                      disabled={busy}
-                      onClick={() => run(() => updateSlot(card.id, { lesson: null }))}
-                    >
-                      {t('lessonScreen.recorded')}
-                    </button>
+                    may ? (
+                      <button
+                        type="button"
+                        className="badge state good"
+                        title={t('lessonScreen.withdrawHint')}
+                        disabled={busy}
+                        onClick={() =>
+                          run(() => updateSlot(card.id, { lesson: null }))
+                        }
+                      >
+                        {t('lessonScreen.recorded')}
+                      </button>
+                    ) : (
+                      <span className="badge state good">
+                        {t('lessonScreen.recorded')}
+                      </span>
+                    )
                   ) : (
-                    <span className="badge state good">
-                      {t('lessonScreen.recorded')}
-                    </span>
-                  )
-                ) : (
-                  may &&
-                  done && (
-                    <button
-                      type="button"
-                      className="secondary compact"
-                      disabled={busy}
-                      onClick={() =>
-                        run(() => updateSlot(card.id, { lesson: topic.id }))
-                      }
-                    >
-                      {t('lessonScreen.bind')}
-                    </button>
-                  )
-                )}
+                    may &&
+                    done && (
+                      <button
+                        type="button"
+                        className="secondary compact"
+                        disabled={busy}
+                        onClick={() =>
+                          run(() => updateSlot(card.id, { lesson: topic.id }))
+                        }
+                      >
+                        {t('lessonScreen.bind')}
+                      </button>
+                    )
+                  )}
 
-                <Link className="link-button" to={inPlan}>
-                  {t('lessonScreen.openInPlan')}
-                </Link>
-              </div>
-            )}
+                  <Link className="link-button" to={inPlan}>
+                    {t('lessonScreen.openInPlan')}
+                  </Link>
+                </>
+              )}
+
+              {/* Действия над самим занятием — редкие и разрушительные.
+                  Кнопкой в потоке страницы отмена стояла последним пунктом
+                  и читалась как шаг урока. Меню стоит вне ветки темы:
+                  занятие без строки плана отменяют так же */}
+              {may && (
+                <div className="lesson-menu" ref={menuRef}>
+                  <button
+                    type="button"
+                    className="link more"
+                    aria-haspopup="true"
+                    aria-expanded={menuOpen}
+                    aria-label={t('lessonScreen.more')}
+                    title={t('lessonScreen.more')}
+                    onClick={() => setMenuOpen(!menuOpen)}
+                  >
+                    ⋯
+                  </button>
+                  {menuOpen && (
+                    <div className="dropdown">
+                      <button
+                        type="button"
+                        disabled={busy}
+                        onClick={() => {
+                          closeMenu()
+                          if (card.is_cancelled)
+                            run(() =>
+                              updateSlot(card.id, { is_cancelled: false, reason: '' }),
+                            )
+                          else open('cancel')
+                        }}
+                      >
+                        {t(
+                          card.is_cancelled
+                            ? 'lessonScreen.restoreLesson'
+                            : 'lessonScreen.cancelLesson',
+                        )}
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
         )}
 
@@ -404,22 +459,19 @@ export default function LessonScreen({ onLoggedOut }) {
       {card.is_cancelled && (
         <p className="hint warning">
           {t('today.cancelled')}
-          {card.reason && `: ${card.reason}`}{' '}
-          {may && (
-            <button
-              type="button"
-              className="link"
-              disabled={busy}
-              onClick={() =>
-                run(() => updateSlot(card.id, { is_cancelled: false, reason: '' }))
-              }
-            >
-              {t('agenda.menu.restore')}
-            </button>
-          )}
+          {card.reason && `: ${card.reason}`}
         </p>
       )}
 
+      {/*
+        Пять блоков одной колонкой.
+
+        Обёртка нужна не для вида, а чтобы адресовать наведение: действия
+        разделов появляются под курсором, как кнопки строки в таблице плана.
+        Шаг она задаёт сама — иначе пять карточек стали бы одним ребёнком
+        `.page` и слиплись бы.
+      */}
+      <div className="lesson-blocks">
       {/* 1. Кто пришёл — это делают до того, как начали. Карточку рисует
           сам блок: заголовок у него кликабельный, и жить он должен вместе
           со своей свёрнутостью */}
@@ -431,12 +483,12 @@ export default function LessonScreen({ onLoggedOut }) {
       <Collapsible
         name="content"
         title={t('lessonScreen.content')}
+        empty={!hasContent && editing?.fields !== CONTENT}
+        note={hasContent ? null : t('lessonScreen.blank')}
         actions={editAction(CONTENT)}
       >
         {editing?.fields === CONTENT ? (
           fieldsForm
-        ) : !topic || !CONTENT.some((field) => topic[field]) ? (
-          <p className="hint">{t('lessonScreen.noContent')}</p>
         ) : (
           CONTENT.filter((field) => topic[field]).map((field) => (
             <div className="lesson-field" key={field}>
@@ -451,7 +503,8 @@ export default function LessonScreen({ onLoggedOut }) {
       <Collapsible
         name="works"
         title={t('lessonScreen.works')}
-        note={classwork.length || null}
+        empty={!classwork.length}
+        note={classwork.length || t('lessonScreen.none')}
         actions={
           may && (
             <button
@@ -465,9 +518,7 @@ export default function LessonScreen({ onLoggedOut }) {
           )
         }
       >
-        {classwork.length === 0 ? (
-          <p className="hint">{t('lessonScreen.noWorks')}</p>
-        ) : (
+        {classwork.length > 0 && (
           <ul className="work-links">
             {classwork.map((work) => (
               <li key={work.id}>
@@ -485,7 +536,8 @@ export default function LessonScreen({ onLoggedOut }) {
       <Collapsible
         name="materials"
         title={t('lessonScreen.materials')}
-        note={topic?.attachments?.length || null}
+        empty={!topic?.attachments?.length && form !== 'link'}
+        note={topic?.attachments?.length || t('lessonScreen.none')}
         actions={
           editable && (
             <>
@@ -521,9 +573,7 @@ export default function LessonScreen({ onLoggedOut }) {
           )
         }
       >
-        {!topic?.attachments?.length ? (
-          <p className="hint">{t('lessonScreen.noMaterials')}</p>
-        ) : (
+        {topic?.attachments?.length > 0 && (
           <ul className="attachments">
             {topic.attachments.map((item) => (
               <li key={item.id} className="attachment">
@@ -590,7 +640,8 @@ export default function LessonScreen({ onLoggedOut }) {
       <Collapsible
         name="homework"
         title={t('lessonScreen.homework')}
-        note={homework.length || null}
+        empty={!hasHomework && editing?.fields !== HOMEWORK}
+        note={homework.length || t('lessonScreen.none')}
         actions={
           may && (
             <>
@@ -615,10 +666,8 @@ export default function LessonScreen({ onLoggedOut }) {
             здесь уже был и оказался не нужен. */}
         {editing?.fields === HOMEWORK ? (
           fieldsForm
-        ) : topic?.homework ? (
-          <Markdown text={topic.homework} />
         ) : (
-          <p className="hint">{t('lessonScreen.noHomework')}</p>
+          topic?.homework && <Markdown text={topic.homework} />
         )}
 
         {homework.length > 0 && (
@@ -635,38 +684,28 @@ export default function LessonScreen({ onLoggedOut }) {
         )}
       </Collapsible>
 
-      {may && !card.is_cancelled && (
-        <div className="row">
-          {form === 'cancel' ? (
-            <form className="row" onSubmit={submit}>
-              <input
-                autoFocus
-                value={text}
-                maxLength={200}
-                placeholder={t('agenda.menu.cancelReason')}
-                aria-label={t('agenda.menu.cancelReason')}
-                onChange={(event) => setText(event.target.value)}
-              />
-              <button type="submit" disabled={busy}>
-                {t('agenda.menu.cancelSubmit')}
-              </button>
-              <button type="button" className="secondary" onClick={() => setForm(null)}>
-                {t('agenda.menu.cancelAbort')}
-              </button>
-            </form>
-          ) : (
-            <button
-              type="button"
-              className="secondary compact"
-              disabled={busy}
-              onClick={() => open('cancel')}
-            >
-              {/* «Отменить» рядом с кнопками «Отмена» в формах читалось как
-                  отмена правки, а отменяет она само занятие */}
-              {t('lessonScreen.cancelLesson')}
-            </button>
-          )}
-        </div>
+      </div>
+
+      {/* Причина отмены — формой на месте кнопки, а не в меню: меню
+          закрывается по клику мимо, и поле ввода в нём жило бы до первого
+          промаха */}
+      {may && form === 'cancel' && (
+        <form className="row" onSubmit={submit}>
+          <input
+            autoFocus
+            value={text}
+            maxLength={200}
+            placeholder={t('agenda.menu.cancelReason')}
+            aria-label={t('agenda.menu.cancelReason')}
+            onChange={(event) => setText(event.target.value)}
+          />
+          <button type="submit" disabled={busy}>
+            {t('agenda.menu.cancelSubmit')}
+          </button>
+          <button type="button" className="secondary" onClick={() => setForm(null)}>
+            {t('agenda.menu.cancelAbort')}
+          </button>
+        </form>
       )}
 
       {adding && (

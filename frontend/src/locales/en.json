@@ -1037,7 +1037,6 @@
     "toDay": "back to the day",
     "recorded": "lesson taught",
     "works": "Assignments",
-    "noWorks": "Nothing was set at this lesson.",
     "attendance": "Attendance",
     "content": "What we do",
     "materials": "Materials",
@@ -1049,9 +1048,6 @@
     "markedCount": "{{marked}} of {{total}} marked",
     "allPresent": "everybody was there",
     "removedStudent": "no longer in the course",
-    "noMaterials": "Nothing is attached to this lesson.",
-    "noHomework": "No homework is written in the curriculum map.",
-    "noContent": "Nothing is written for this lesson yet.",
     "bind": "It was this one",
     "addLink": "Add a link",
     "linkAddress": "Address",
@@ -1063,6 +1059,10 @@
     "openInPlan": "Open in the curriculum map",
     "planOwns": "The topic is only a guess so far. Its content, materials and homework belong to the curriculum map and are edited there — record the lesson, and they become editable from here.",
     "withdrawHint": "Lesson taught — click to withdraw",
-    "cancelLesson": "Cancel the lesson…"
+    "cancelLesson": "Cancel the lesson…",
+    "blank": "blank",
+    "none": "none",
+    "more": "Lesson actions",
+    "restoreLesson": "Restore the lesson"
   }
 }

@@ -74,16 +74,18 @@ export default function LessonAttendance({ slotId, may, onError }) {
       title={t('lessonScreen.attendance')}
       // число в шапке — единственный вопрос, который к журналу задают,
       // не открывая его
+      // на курс никого не зачислили — раздел строкой: разворачивать нечего
+      empty={students !== null && !students.length}
       note={
-        students !== null && students.length > 0
-          ? t('lessonScreen.markedCount', { marked, total: students.length })
-          : null
+        students === null
+          ? null
+          : students.length
+            ? t('lessonScreen.markedCount', { marked, total: students.length })
+            : t('lessonScreen.noStudents')
       }
     >
       {students === null ? (
         <p className="hint">{t('common.loading')}</p>
-      ) : !students.length ? (
-        <p className="hint">{t('lessonScreen.noStudents')}</p>
       ) : (
         <ul className="attendance">
           {students.map((row) => (

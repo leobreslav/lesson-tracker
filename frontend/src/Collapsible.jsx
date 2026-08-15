@@ -27,15 +27,24 @@ import { remember, remembered } from './remember'
  * все карточки — правый край шапки: под заголовком они читались бы как
  * первая строка содержимого, а не как то, что делают с карточкой.
  *
- * У свёрнутой карточки действий не видно: свёрнутая показывает только
- * сводку, а чтобы действовать, её открывают. Это ещё и защита от простого
- * промаха — форма, открытая в свёрнутом теле, не видна вовсе.
+ * **`empty` — раздел, в котором нечего показывать.** Он рисуется одной
+ * строкой: ни каретки, ни тела, ни фразы «тут ничего нет». Пустота
+ * занимала столько же места, сколько содержимое, — четыре пустых блока
+ * тратили четыре карточки на рассказ об отсутствии, — а сказать про неё
+ * достаточно словом в шапке.
+ *
+ * Действия у пустого раздела при этом **видны**: разворачивать в нём
+ * нечего, а добавить файл надо. Прежнее правило «у свёрнутой карточки
+ * действий не видно» осталось для непустых: там раскрытие и есть способ
+ * добраться до содержимого, и форма, открытая в свёрнутом теле, не видна
+ * вовсе.
  */
 export default function Collapsible({
   name,
   title,
   note = null,
   actions = null,
+  empty = false,
   openByDefault = true,
   children,
 }) {
@@ -47,25 +56,37 @@ export default function Collapsible({
     remember(key, !open)
   }
 
+  const head = (
+    <>
+      {!empty && <span className="caret">{open ? '▾' : '▸'}</span>}
+      <span className="panel-title">{title}</span>
+      {note !== null && <span className="hint">{note}</span>}
+    </>
+  )
+
   return (
-    <section className="panel" data-block={name}>
+    <section className={empty ? 'panel empty' : 'panel'} data-block={name}>
       <div className="panel-head spread">
-        <button
-          type="button"
-          className="panel-toggle"
-          aria-expanded={open}
-          onClick={toggle}
-        >
-          <span className="caret">{open ? '▾' : '▸'}</span>
-          <span className="panel-title">{title}</span>
-          {note !== null && <span className="hint">{note}</span>}
-        </button>
+        {empty ? (
+          <span className="panel-label">{head}</span>
+        ) : (
+          <button
+            type="button"
+            className="panel-toggle"
+            aria-expanded={open}
+            onClick={toggle}
+          >
+            {head}
+          </button>
+        )}
         {/* обёртка обязательна: у шапки `space-between`, и два действия
             без неё разъехались бы по её краям */}
-        {open && actions && <span className="panel-actions">{actions}</span>}
+        {actions && (open || empty) && (
+          <span className="panel-actions">{actions}</span>
+        )}
       </div>
 
-      {open && children}
+      {open && !empty && children}
     </section>
   )
 }
