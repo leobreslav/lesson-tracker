@@ -80,6 +80,8 @@ export default function StudentWork() {
         </p>
       )}
 
+      <Grade work={work} />
+
       {work.tasks.length === 0 ? (
         <p className="hint">{t('student.work.noTasks')}</p>
       ) : (
@@ -101,6 +103,44 @@ export default function StudentWork() {
         <Link to="/">{t('student.title')}</Link>
       </p>
     </main>
+  )
+}
+
+/**
+ * Оценка и слова учителя — над задачами, потому что за этим и приходят.
+ *
+ * Пока работа не оценена, плашки нет вовсе: «ещё не оценено» на пустом
+ * месте читается как обещание, которого никто не давал. А вот шкалу, если
+ * она есть, показываем всегда — «из пяти» это про работу, а не про него.
+ *
+ * Комментарий живёт без оценки: работа может не оцениваться, а сказать о
+ * ней есть что.
+ */
+function Grade({ work }) {
+  const { t } = useTranslation()
+  const criteria = work.criteria ?? []
+  const marks = work.marks ?? {}
+  const given = criteria.some((item) => marks[item.id] !== undefined)
+
+  if (!given && !work.comment) return null
+
+  return (
+    <section className="panel student-grade">
+      {given && (
+        <ul className="marks">
+          {criteria.map((item) => (
+            <li key={item.id}>
+              {item.name && <span className="hint">{item.name}</span>}
+              <b>
+                {marks[item.id] ?? '–'}
+                <span className="hint"> / {item.maximum}</span>
+              </b>
+            </li>
+          ))}
+        </ul>
+      )}
+      {work.comment && <p className="comment">{work.comment}</p>}
+    </section>
   )
 }
 

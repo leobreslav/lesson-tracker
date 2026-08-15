@@ -24,7 +24,10 @@ from rest_framework.views import APIView
 
 from . import services
 from .models import Submission, Task, Work
+from .models import Mark
 from .serializers import (
+    CriteriaSerializer,
+    GradeSerializer,
     StudentSubmissionSerializer,
     SubmissionSerializer,
     TaskSerializer,
@@ -76,6 +79,75 @@ class WorkViewSet(CourseScopedViewSet):
         work = self.get_object()
 
         return Response(services.impact_of(work))
+
+    @action(detail=True, methods=["get", "put"])
+    def criteria(self, request, pk=None):
+        """
+        Шкала работы: список критериев целиком, как строки шаблона.
+
+        Целиком, а не по одному, потому что порядок хранится позицией, и при
+        записи набором он равен индексу — ни дыры, ни дубля возникнуть не
+        может. Пустой список значит «не оценивается»: отдельного флага нет,
+        оценивание **и есть** наличие критериев.
+
+        Правка шкалы у работы, где уже стоят оценки, не запрещается — как и
+        правка условия, — но называет цену: сколько оценок исчезнет вместе с
+        убранными критериями.
+        """
+        work = self.get_object()
+
+        if request.method == "GET":
+            return Response(services.scale_payload(work))
+
+        form = CriteriaSerializer(data=request.data)
+        form.is_valid(raise_exception=True)
+
+        services.set_scale(work, form.validated_data["criteria"])
+        return Response(services.scale_payload(work))
+
+    @action(detail=True, methods=["get"])
+    def scale_impact(self, request, pk=None):
+        """Сколько оценок потеряет правка шкалы: цена называется заранее."""
+        work = self.get_object()
+
+        return Response(
+            {
+                "marks": Mark.objects.filter(student_work__work=work).count(),
+                "students": work.students.filter(marks__isnull=False)
+                .distinct()
+                .count(),
+            }
+        )
+
+    @action(detail=True, methods=["post"])
+    def grade(self, request, pk=None):
+        """
+        Поставить оценку одному ученику: весь набор критериев за раз.
+
+        По одному критерию не пишем: у MYP их четыре, и ставятся они за один
+        взгляд на работу. Комментарий — там же, и он бывает без оценки:
+        работа может не оцениваться вовсе, а сказать о ней есть что.
+        """
+        work = self.get_object()
+        form = GradeSerializer(data=request.data, context={"work": work})
+        form.is_valid(raise_exception=True)
+        data = form.validated_data
+
+        row = services.grade(
+            work,
+            data["student"],
+            marks=data.get("marks"),
+            comment=data.get("comment"),
+            by=request.user,
+        )
+
+        return Response(
+            {
+                "student": row.student_id,
+                "comment": row.comment,
+                "marks": services.marks_of(row),
+            }
+        )
 
     @action(detail=True, methods=["get"])
     def table(self, request, pk=None):
@@ -304,6 +376,9 @@ class StudentWorkView(APIView):
                     }
                     for task in tasks
                 ],
+                # оценка и слова учителя — по тому же правилу, что вердикт:
+                # `show_result` решает, видно ли сразу или после закрытия
+                **services.my_grade(work, request.user),
             }
         )
 

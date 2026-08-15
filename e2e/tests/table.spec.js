@@ -143,3 +143,49 @@ test('сводка над таблицей считает то, чего в не
   await expect(dialog).toContainText('Проверка задачи')
   await expect(dialog.locator('.task-question')).not.toBeEmpty()
 })
+
+/**
+ * Оценки: шкала настраивается там же, где проверяют.
+ *
+ * Проверять в браузере стоит потому, что три состояния оценивания —
+ * «не оценивается», «отметка», «по критериям» — это одни и те же данные с
+ * разным видом, и вид выбирается по правилу «один безымянный критерий».
+ * Ошибка в правиле не роняет ничего, просто экран показывает не то.
+ */
+test('шкала настраивается, и оценка попадает в таблицу и к ученику', async ({
+  page,
+  signIn,
+}) => {
+  await signIn(PEOPLE.ivanova)
+  await openTable(page, 'Проверочная')
+
+  await expect(page.getByText('Работа не оценивается.')).toBeVisible()
+
+  await page.getByRole('button', { name: 'настроить' }).click()
+  const scale = page.locator('dialog.modal')
+  await scale.getByRole('button', { name: 'отметка', exact: true }).click()
+  await scale.getByLabel('Максимум').fill('5')
+  await scale.getByRole('button', { name: 'Сохранить' }).click()
+
+  await expect(page.getByText('Оценивается из 5.')).toBeVisible()
+
+  // колонка появилась вместе со шкалой, и в ней пока прочерки
+  const row = page.locator('.work-table tbody tr', { hasText: 'Артём Степанов' })
+  await row.locator('td.mark button').click()
+
+  const grade = page.locator('dialog.modal')
+  await grade.getByLabel('Оценка из 5').fill('4')
+  await grade.getByLabel('Комментарий учителя').fill('Разобрался с формулой')
+  await grade.getByRole('button', { name: 'Сохранить' }).click()
+
+  await expect(row.locator('td.mark')).toContainText('4')
+
+  // ученик видит свою оценку и слова учителя
+  await signIn(PEOPLE.student)
+  await page.goto('/')
+  await ready(page)
+  await page.getByRole('link', { name: 'Проверочная: формулы сложения' }).click()
+  await ready(page)
+
+  await expect(page.getByText('Разобрался с формулой')).toBeVisible()
+})

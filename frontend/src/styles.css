@@ -181,6 +181,14 @@ body {
     flex: 1 1 8rem;
     min-width: 6rem;
   }
+
+  /* кроме числа: в нём две цифры — максимум шкалы, число попыток, — и
+     растянутое на восемь ремов оно читается как незаполненное поле.
+     Место в ряду забирает сосед, которому есть что показать */
+  & > input[type='number'] {
+    flex: 0 0 5rem;
+    min-width: 0;
+  }
 }
 
 /* поле с подписью сверху: колонка, и поле в ней своей высоты */
@@ -2508,6 +2516,55 @@ button.compact,
   color: #666;
   font-size: 0.85rem;
   white-space: nowrap;
+}
+
+/* столбец оценки в сводной таблице: числа столбиком, как итог рядом */
+.work-table th.mark,
+.work-table td.mark {
+  text-align: center;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+/* строка шкалы над таблицей: фраза и ссылка «настроить» в одну строку */
+.scale-line {
+  margin: 0;
+}
+
+/* критерии в окне шкалы: имя тянется, максимум узкий, крестик по краю */
+.criteria {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.criteria > li + li {
+  margin-top: 0.35rem;
+}
+
+/* оценка у ученика: числа крупно, слова учителя обычным текстом под ними */
+.student-grade .marks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 1.25rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.student-grade .marks li {
+  display: flex;
+  flex-direction: column;
+}
+
+.student-grade .marks b {
+  font-size: 1.35rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.student-grade .comment {
+  margin: 0;
+  white-space: pre-wrap;
 }
 
 .student-tasks {

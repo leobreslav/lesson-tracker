@@ -4,7 +4,11 @@ from config.errors import Codes, api_error
 from rest_framework import serializers
 from schedule.models import Course
 
-from .models import Submission, Task, Work
+from django.contrib.auth import get_user_model
+
+from .models import MAX_CRITERIA, MAX_MARK, Submission, Task, Work
+
+User = get_user_model()
 
 
 def teacher_courses(serializer):
@@ -175,3 +179,87 @@ class StudentSubmissionSerializer(serializers.ModelSerializer):
         from . import services
 
         return services.verdict_for(self.context["work"], submission)
+
+
+class CriterionSerializer(serializers.Serializer):
+    """Одна строка шкалы. Имя пустое — обычная отметка, а не критерий."""
+
+    name = serializers.CharField(max_length=100, allow_blank=True, default="")
+    maximum = serializers.IntegerField(min_value=1, max_value=MAX_MARK)
+
+
+class CriteriaSerializer(serializers.Serializer):
+    """
+    Шкала целиком. Пустой список законен: работа не оценивается.
+
+    Порядок берётся из списка — позиция это индекс, и другого источника у
+    неё нет. Тот же приём, что у строк шаблона в библиотеке, и по той же
+    причине: построчный CRUD потребовал бы своей перенумерации ради формы,
+    у которой вложенности нет.
+    """
+
+    criteria = CriterionSerializer(many=True)
+
+    def validate_criteria(self, value):
+        if len(value) > MAX_CRITERIA:
+            api_error(
+                Codes.TOO_MANY_CRITERIA,
+                f"A work is graded by at most {MAX_CRITERIA} criteria.",
+                field="criteria",
+                limit=MAX_CRITERIA,
+            )
+        return value
+
+
+class GradeSerializer(serializers.Serializer):
+    """
+    Оценка одного ученика: набор «критерий → значение» плюс комментарий.
+
+    Значение `null` снимает отметку — тем же движением, что и вердикт у
+    отправки. Критерий чужой работы не примем: перепутать их легко, а
+    последствие — оценка, поставленная не туда.
+    """
+
+    student = serializers.PrimaryKeyRelatedField(queryset=User.objects.none())
+    marks = serializers.DictField(
+        child=serializers.IntegerField(min_value=0, max_value=MAX_MARK, allow_null=True),
+        required=False,
+    )
+    comment = serializers.CharField(required=False, allow_blank=True)
+
+    def get_fields(self):
+        fields = super().get_fields()
+        work = self.context["work"]
+        # только ученики этого курса, включая снятых: работа у них была, и
+        # оценка за неё тоже
+        fields["student"].queryset = User.objects.filter(
+            enrolments__course_id=work.course_id
+        )
+        return fields
+
+    def validate(self, attrs):
+        work = self.context["work"]
+        scale = {item.pk: item for item in work.criteria.all()}
+
+        raw = attrs.get("marks") or {}
+        marks = {}
+        for key, value in raw.items():
+            criterion = scale.get(int(key)) if str(key).isdigit() else None
+            if criterion is None:
+                api_error(
+                    Codes.CRITERION_UNKNOWN,
+                    "That criterion does not belong to this work.",
+                    field="marks",
+                )
+            if value is not None and value > criterion.maximum:
+                api_error(
+                    Codes.MARK_OUT_OF_RANGE,
+                    f"«{criterion.name or criterion.maximum}»: the mark is above "
+                    f"the maximum of {criterion.maximum}.",
+                    field="marks",
+                    maximum=criterion.maximum,
+                )
+            marks[criterion.pk] = value
+
+        attrs["marks"] = marks
+        return attrs

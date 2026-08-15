@@ -3,8 +3,10 @@ import { useTranslation } from 'react-i18next'
 import { Link, useParams } from 'react-router-dom'
 import CellDialog from './CellDialog'
 import ColumnDialog from './ColumnDialog'
+import GradeDialog from './GradeDialog'
 import Markdown from './Markdown'
-import { fetchWorkTable } from './api'
+import ScaleDialog from './ScaleDialog'
+import { fetchWorkTable, gradeStudent, saveScale } from './api'
 import { POLL_MS } from './polling'
 
 /**
@@ -27,6 +29,9 @@ export default function WorkTable() {
   const [error, setError] = useState(null)
   const [cell, setCell] = useState(null) // {student, task}
   const [column, setColumn] = useState(null) // {task}
+  const [grading, setGrading] = useState(null) // {student}
+  const [scaling, setScaling] = useState(false)
+  const [busy, setBusy] = useState(false)
   const version = useRef(null)
 
   const load = useCallback(
@@ -62,6 +67,28 @@ export default function WorkTable() {
 
   const refresh = () => load().catch((err) => setError(err.message))
 
+  const run = async (request) => {
+    setBusy(true)
+    setError(null)
+    try {
+      await request()
+      await load()
+      setGrading(null)
+      setScaling(false)
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const criteria = table.criteria ?? []
+  const scale = {
+    criteria,
+    graded: criteria.length > 0,
+    simple: criteria.length === 1 && !criteria[0].name,
+  }
+
   return (
     <main className="page wide">
       <header className="page-header">
@@ -82,6 +109,20 @@ export default function WorkTable() {
         tasks={table.tasks}
         onOpen={(task) => setColumn({ task })}
       />
+
+      {/* шкала стоит здесь, а не в настройках работы: настраивают её тогда
+          же, когда садятся проверять, и это то же самое место */}
+      <p className="hint scale-line">
+        {describeScale(scale, t)}{' '}
+        <button
+          type="button"
+          className="link"
+          disabled={busy}
+          onClick={() => setScaling(true)}
+        >
+          {t('grading.configure')}
+        </button>
+      </p>
 
       {table.tasks.length === 0 ? (
         <p className="hint">{t('works.task.none')}</p>
@@ -107,6 +148,7 @@ export default function WorkTable() {
                     </button>
                   </th>
                 ))}
+                {scale.graded && <th className="mark">{t('grading.mark')}</th>}
                 <th className="total">{t('table.total')}</th>
               </tr>
             </thead>
@@ -137,6 +179,18 @@ export default function WorkTable() {
                       </button>
                     </td>
                   ))}
+                  {scale.graded && (
+                    <td className="mark">
+                      <button
+                        type="button"
+                        className="link"
+                        disabled={busy}
+                        onClick={() => setGrading({ student })}
+                      >
+                        {showMarks(student.marks, criteria) || '—'}
+                      </button>
+                    </td>
+                  )}
                   <td className="total">
                     {student.correct}/{table.tasks.length}
                   </td>
@@ -182,8 +236,46 @@ export default function WorkTable() {
           onClose={() => setColumn(null)}
         />
       )}
+
+      {scaling && (
+        <ScaleDialog
+          work={table.work.id}
+          scale={scale}
+          busy={busy}
+          onSubmit={(rows) => run(() => saveScale(table.work.id, rows))}
+          onClose={() => setScaling(false)}
+        />
+      )}
+
+      {grading && (
+        <GradeDialog
+          student={grading.student}
+          criteria={criteria}
+          busy={busy}
+          onSubmit={(body) => run(() => gradeStudent(table.work.id, body))}
+          onClose={() => setGrading(null)}
+        />
+      )}
     </main>
   )
+}
+
+/** Оценки в клетке: одна отметка или набор по критериям через точку. */
+function showMarks(marks, criteria) {
+  const values = criteria.map((item) => marks?.[item.id])
+  if (values.every((value) => value === undefined)) return ''
+
+  return values.map((value) => (value === undefined ? '–' : value)).join(' · ')
+}
+
+/** Чем оценивается работа, одной фразой над таблицей. */
+function describeScale(scale, t) {
+  if (!scale.graded) return t('grading.notGraded')
+  if (scale.simple) return t('grading.outOf', { maximum: scale.criteria[0].maximum })
+
+  return t('grading.byCriteria', {
+    names: scale.criteria.map((item) => item.name).join(', '),
+  })
 }
 
 /** Состояние ячейки одним словом — из него и складывается вид таблицы. */

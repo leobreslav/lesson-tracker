@@ -896,6 +896,31 @@
     },
     "answers": "Answers"
   },
+  "grading": {
+    "title": "Grading",
+    "configure": "set up",
+    "mark": "Mark",
+    "notGraded": "This work is not graded.",
+    "outOf": "Graded out of {{maximum}}.",
+    "byCriteria": "Graded by criteria: {{names}}.",
+    "markOf": "Mark out of {{maximum}}",
+    "comment": "Teacher's comment",
+    "emptyClears": "An empty field removes the mark — zero is a mark of its own.",
+    "maximum": "Maximum",
+    "criterionName": "criterion",
+    "addCriterion": "Add criterion",
+    "impact": "{{marks}} marks are already given to {{students}} students. A criterion you remove takes its marks with it.",
+    "mode": {
+      "none": "not graded",
+      "simple": "a mark",
+      "rubric": "by criteria"
+    },
+    "hint": {
+      "none": "Only a comment. Works too: there is something to say about a work even when it carries no mark.",
+      "simple": "One number out of the maximum — the usual mark.",
+      "rubric": "Several criteria, each with its own maximum — the way MYP and other rubrics grade."
+    }
+  },
   "table": {
     "open": "Check",
     "student": "Student",

@@ -12,7 +12,18 @@ from config.errors import Codes, api_error
 from django.db.models import Count, Max
 from django.utils import timezone
 
-from .models import CLOSED, OPEN, PLANNED, Submission, Task, Work
+from .models import (
+    CLOSED,
+    OPEN,
+    PLANNED,
+    Criterion,
+    Mark,
+    MarkChange,
+    StudentWork,
+    Submission,
+    Task,
+    Work,
+)
 
 
 # --- что ученик может видеть и делать -------------------------------------------
@@ -284,6 +295,9 @@ def table_version(work) -> str:
         total=Count("id"), last=Max("created_at"), checked=Max("checked_at")
     )
     tasks = work.tasks.count()
+    # оценки двигают ту же таблицу: поставили отметку — соседний экран
+    # должен её увидеть, не дожидаясь перезагрузки
+    graded = work.students.aggregate(rows=Count("id"), last=Max("updated_at"))
 
     return "|".join(
         str(part)
@@ -292,6 +306,8 @@ def table_version(work) -> str:
             numbers["total"],
             numbers["last"] and numbers["last"].timestamp(),
             numbers["checked"] and numbers["checked"].timestamp(),
+            graded["rows"],
+            graded["last"] and graded["last"].timestamp(),
         )
     )
 
@@ -311,6 +327,8 @@ def student_version(work, student) -> str:
     numbers = Submission.objects.filter(task__work=work, student=student).aggregate(
         total=Count("id"), last=Max("created_at"), checked=Max("checked_at")
     )
+    # своя оценка — такое же неожиданное для него событие, как отметка
+    graded = work.students.filter(student=student).aggregate(last=Max("updated_at"))
 
     return "|".join(
         str(part)
@@ -320,6 +338,7 @@ def student_version(work, student) -> str:
             numbers["total"],
             numbers["last"] and numbers["last"].timestamp(),
             numbers["checked"] and numbers["checked"].timestamp(),
+            graded["last"] and graded["last"].timestamp(),
         )
     )
 
@@ -344,6 +363,11 @@ def build_table(work) -> dict:
         .order_by("student__first_name", "student__last_name", "student__email")
     )
     tasks = list(work.tasks.all())
+    criteria = list(work.criteria.all())
+    graded = {
+        row.student_id: row
+        for row in work.students.prefetch_related("marks")
+    }
 
     # одна выборка на всю таблицу: тридцать учеников на десять задач — это
     # триста ячеек, и запрос на ячейку убил бы экран первым же классом
@@ -375,6 +399,7 @@ def build_table(work) -> dict:
             else:
                 per_task[task.pk]["unchecked"] += 1
 
+        mine = graded.get(enrolment.student_id)
         students.append(
             {
                 "id": enrolment.student_id,
@@ -384,6 +409,10 @@ def build_table(work) -> dict:
                 "answered": answered,
                 "correct": correct,
                 "cells": cells,
+                # оценка и слова учителя: строки может не быть вовсе, и это
+                # то же самое, что «ещё не проверен»
+                "marks": marks_of(mine),
+                "comment": mine.comment if mine else "",
             }
         )
 
@@ -408,9 +437,86 @@ def build_table(work) -> dict:
             "course_name": work.course.name,
         },
         "tasks": columns,
+        "criteria": [
+            {
+                "id": item.pk,
+                "position": item.position,
+                "name": item.name,
+                "maximum": item.maximum,
+            }
+            for item in criteria
+        ],
         "students": students,
         "summary": summarise(students, columns),
     }
+
+
+def marks_of(student_work) -> dict:
+    """`{id критерия: значение}` — то, что показывает и правит интерфейс."""
+    if student_work is None:
+        return {}
+
+    return {mark.criterion_id: mark.value for mark in student_work.marks.all()}
+
+
+def grade(work, student, *, marks=None, comment=None, by=None):
+    """
+    Поставить оценку и написать слова. Одним вызовом на ученика.
+
+    По одному критерию за раз не пишем намеренно: у MYP их четыре, и
+    выставляются они вместе, за один взгляд на работу. Полный набор к тому
+    же снимает вопрос «а что с теми, которые не прислали» — они остаются
+    как были.
+
+    `marks` — `{критерий: значение}`; `None` в значении снимает отметку.
+    Каждое изменение дописывается в журнал (`MarkChange`) — исправленная
+    оценка это событие, а не новое значение поля.
+    """
+    from django.db import transaction
+
+    with transaction.atomic():
+        row, _ = StudentWork.objects.get_or_create(work=work, student=student)
+        if comment is not None:
+            row.comment = comment
+            row.save(update_fields=["comment", "updated_at"])
+
+        if not marks:
+            return row
+
+        current = {mark.criterion_id: mark for mark in row.marks.all()}
+        moved = False
+        for criterion in work.criteria.all():
+            if criterion.pk not in marks:
+                continue
+
+            value = marks[criterion.pk]
+            was = current.get(criterion.pk)
+            if (was.value if was else None) == value:
+                continue
+
+            if value is None:
+                if was:
+                    was.delete()
+            elif was:
+                was.value = value
+                was.save(update_fields=["value"])
+            else:
+                Mark.objects.create(
+                    student_work=row, criterion=criterion, value=value
+                )
+
+            MarkChange.objects.create(
+                student_work=row, criterion=criterion, value=value, changed_by=by
+            )
+            moved = True
+
+        if moved:
+            # оценки лежат отдельными строками, и `auto_now` их правку не
+            # видит — а опрос смотрит именно на `updated_at`: без этого
+            # выставленная отметка не доехала бы до открытого экрана
+            row.save(update_fields=["updated_at"])
+
+    return row
 
 
 def summarise(students, columns) -> dict:
@@ -482,3 +588,91 @@ def cell_of(task, history) -> dict:
 
 def full_name(person) -> str:
     return " ".join(filter(None, (person.first_name, person.last_name))) or person.email
+
+
+def scale_payload(work) -> dict:
+    """
+    Шкала работы наружу: список критериев и подсказка, как её показывать.
+
+    `simple` — «один безымянный критерий», то есть обычная отметка. Правило
+    выводится, а не хранится, и интерфейс по нему решает, рисовать одно поле
+    или список. Хранить его отдельно значило бы завести второй источник
+    правды о том же самом.
+    """
+    criteria = list(work.criteria.all())
+
+    return {
+        "criteria": [
+            {
+                "id": item.pk,
+                "position": item.position,
+                "name": item.name,
+                "maximum": item.maximum,
+            }
+            for item in criteria
+        ],
+        "graded": bool(criteria),
+        "simple": len(criteria) == 1 and not criteria[0].name,
+    }
+
+
+def set_scale(work, criteria):
+    """
+    Заменить шкалу целиком. Позиция — индекс в присланном списке.
+
+    Критерий, которого в списке не стало, уносит свои оценки каскадом: они
+    были оценками **по нему**, и без него не значат ничего. Цену этого
+    называет `scale_impact` — до нажатия, как и у импорта плана.
+
+    Существующие критерии узнаются по порядку, а не по id: список приходит
+    целиком, id в нём нет, и «третья строка осталась третьей» — то же
+    правило, что у строк шаблона.
+    """
+    from django.db import transaction
+
+    with transaction.atomic():
+        existing = list(work.criteria.all())
+
+        for position, item in enumerate(criteria):
+            if position < len(existing):
+                row = existing[position]
+                row.position = position
+                row.name = item["name"]
+                row.maximum = item["maximum"]
+                row.save(update_fields=["position", "name", "maximum"])
+            else:
+                Criterion.objects.create(
+                    work=work,
+                    position=position,
+                    name=item["name"],
+                    maximum=item["maximum"],
+                )
+
+        for row in existing[len(criteria):]:
+            row.delete()
+
+    return work.criteria.all()
+
+
+def my_grade(work, student) -> dict:
+    """
+    Оценка глазами ученика: своя, и только когда её можно показывать.
+
+    Правило то же, что у вердикта, и намеренно то же: `show_result`
+    выключен — до закрытия окна ничего не видно. Зелёная галочка у соседа и
+    есть ответ, разошедшийся по классу; с оценкой это верно тем более.
+
+    Комментарий учителя показывается по тому же правилу: он часто и есть
+    объяснение оценки, и врозь они бессмысленны.
+    """
+    scale = scale_payload(work)
+    row = work.students.filter(student=student).first()
+    visible = work.show_result or work.state() == CLOSED
+
+    return {
+        "criteria": scale["criteria"],
+        "graded": scale["graded"],
+        "simple": scale["simple"],
+        "marks": marks_of(row) if (row and visible) else {},
+        "comment": (row.comment if row and visible else ""),
+    }

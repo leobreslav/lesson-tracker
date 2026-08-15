@@ -154,6 +154,9 @@ class Codes:
     ATTEMPTS_EXHAUSTED = "attempts_exhausted"
     WORK_DATES_REVERSED = "work_dates_reversed"
     TASK_QUESTION_REQUIRED = "task_question_required"
+    TOO_MANY_CRITERIA = "too_many_criteria"
+    CRITERION_UNKNOWN = "criterion_unknown"
+    MARK_OUT_OF_RANGE = "mark_out_of_range"
 
     # sign-in
     TOKEN_REQUIRED = "token_required"

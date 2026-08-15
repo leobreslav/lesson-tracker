@@ -35,6 +35,15 @@ from django.utils import timezone
 # «отправляй сколько хочешь», и для этого есть пустое поле
 MAX_ATTEMPTS = 20
 
+# потолок шкалы: сотня покрывает и пятибалльную, и стобалльную, и MYP.
+# Ограничение здесь только затем, чтобы опечатка в поле не превратилась в
+# шкалу до миллиона
+MAX_MARK = 100
+
+# сколько критериев можно назначить одной работе: у MYP их четыре, у самой
+# подробной рубрики — единицы. Число здесь только против опечатки
+MAX_CRITERIA = 12
+
 # состояния работы; четвёртого нет и не должно быть
 PLANNED, OPEN, CLOSED = "planned", "open", "closed"
 
@@ -244,3 +253,178 @@ class Submission(models.Model):
     @property
     def is_checked(self) -> bool:
         return self.is_correct is not None
+
+
+class Criterion(models.Model):
+    """
+    Строка шкалы работы: по чему её оценивают и до скольки.
+
+    Отдельного поля «как оценивается» у работы нет, и это не экономия:
+    **оценивание есть тогда, когда есть критерии**. Не оценивается — их
+    ноль; обычная отметка — один критерий без имени; MYP — четыре с
+    именами. Три состояния выражаются одними данными, и рассогласоваться с
+    флагом не могут.
+
+    Одно следствие для интерфейса: «один безымянный критерий» он показывает
+    как обычное поле оценки, а не как список из одной строки. Правило
+    однозначное — имя пустое и критерий один.
+
+    Расширять шкалу дальше (буквы, «зачёт/незачёт») можно добавлением вида
+    критерия: значения уже лежат по строкам, и переливать их не придётся —
+    ровно ради этого форма выбрана такой.
+    """
+
+    work = models.ForeignKey(
+        Work,
+        related_name="criteria",
+        on_delete=models.CASCADE,
+        verbose_name="work",
+    )
+    position = models.PositiveIntegerField("position", default=0)
+    name = models.CharField(
+        "name",
+        max_length=100,
+        blank=True,
+        help_text="Пустое у обычной отметки; «Критерий A» и подобное — у MYP.",
+    )
+    maximum = models.PositiveSmallIntegerField(
+        "maximum",
+        validators=[MinValueValidator(1), MaxValueValidator(MAX_MARK)],
+        help_text="Верх шкалы: 5, 8, 100 — как решила школа.",
+    )
+
+    class Meta:
+        verbose_name = "grading criterion"
+        verbose_name_plural = "grading criteria"
+        ordering = ("position", "id")
+
+    def __str__(self):
+        return self.name or f"0–{self.maximum}"
+
+
+class StudentWork(models.Model):
+    """
+    Работа одного ученика: то, что он сдал, и что за это получил.
+
+    Строки не хватало с самого начала, и обнаружилось это на бумажной
+    контрольной: всё ученическое лежало на `Submission` — отправке
+    **задачи**, — а у работы на бумаге отправок нет вовсе, зато есть скан и
+    оценка. Оценка и не могла лежать на отправке: она про работу целиком.
+
+    Заводится по требованию: пока учитель ничего не поставил и ученик ничего
+    не сдал, строки нет. Список в интерфейсе строится по составу курса, а не
+    по этим строкам, поэтому «ещё не проверен» и «строки нет» — одно и то же
+    состояние, и держать его в базе незачем.
+    """
+
+    work = models.ForeignKey(
+        Work,
+        related_name="students",
+        on_delete=models.CASCADE,
+        verbose_name="work",
+    )
+    student = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        related_name="student_works",
+        on_delete=models.CASCADE,
+        verbose_name="student",
+    )
+    comment = models.TextField(
+        "comment",
+        blank=True,
+        help_text="Слова учителя об этой работе. Бывают и без оценки.",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "student's work"
+        verbose_name_plural = "students' works"
+        ordering = ("student__last_name", "student__email")
+        constraints = [
+            models.UniqueConstraint(
+                fields=("work", "student"), name="one_row_per_student_per_work"
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.student} — {self.work}"
+
+
+class Mark(models.Model):
+    """
+    Оценка по одному критерию. Текущее значение, и только оно.
+
+    История лежит рядом (`MarkChange`) и пишется с первого дня: исправленная
+    отметка в журнале — это событие, а не новое значение поля, и
+    восстановить её задним числом было бы неоткуда. Дублирование намеренное:
+    читают все текущее, а историю спрашивают редко и по одной работе.
+    """
+
+    student_work = models.ForeignKey(
+        StudentWork,
+        related_name="marks",
+        on_delete=models.CASCADE,
+        verbose_name="student's work",
+    )
+    criterion = models.ForeignKey(
+        Criterion,
+        related_name="marks",
+        on_delete=models.CASCADE,
+        verbose_name="criterion",
+    )
+    value = models.PositiveSmallIntegerField(
+        "value", validators=[MaxValueValidator(MAX_MARK)]
+    )
+
+    class Meta:
+        verbose_name = "mark"
+        verbose_name_plural = "marks"
+        ordering = ("criterion__position", "id")
+        constraints = [
+            models.UniqueConstraint(
+                fields=("student_work", "criterion"), name="one_mark_per_criterion"
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.value}/{self.criterion.maximum}"
+
+
+class MarkChange(models.Model):
+    """
+    Кто и когда поменял оценку. Дописывается, не правится.
+
+    `value` пустое значит «снял отметку». Кто поменял — `SET_NULL`: человек
+    может уйти из школы, а запись в журнале остаётся его записью.
+    """
+
+    student_work = models.ForeignKey(
+        StudentWork,
+        related_name="changes",
+        on_delete=models.CASCADE,
+        verbose_name="student's work",
+    )
+    criterion = models.ForeignKey(
+        Criterion,
+        related_name="changes",
+        on_delete=models.CASCADE,
+        verbose_name="criterion",
+    )
+    value = models.PositiveSmallIntegerField("value", null=True, blank=True)
+    changed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        related_name="mark_changes",
+        null=True,
+        on_delete=models.SET_NULL,
+        verbose_name="changed by",
+    )
+    changed_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = "mark change"
+        verbose_name_plural = "mark changes"
+        ordering = ("changed_at", "id")
+
+    def __str__(self):
+        return f"{self.criterion}: {self.value}"

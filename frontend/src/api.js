@@ -465,6 +465,20 @@ export const fetchWorkImpact = (id) => request(`/api/works/${id}/impact/`)
  * Сводная таблица работы. `version` делает опрос дешёвым: совпала — сервер
  * отвечает «не изменилось» и не собирает триста ячеек.
  */
+/** Шкала работы: список критериев. Пустой — работа не оценивается. */
+export const fetchScale = (work) => request(`/api/works/${work}/criteria/`)
+
+export const saveScale = (work, criteria) =>
+  request(`/api/works/${work}/criteria/`, { method: 'PUT', body: { criteria } })
+
+/** Сколько оценок потеряет правка шкалы — спрашивается до нажатия. */
+export const fetchScaleImpact = (work) =>
+  request(`/api/works/${work}/scale_impact/`)
+
+/** Оценка одного ученика: весь набор критериев и слова учителя за раз. */
+export const gradeStudent = (work, body) =>
+  request(`/api/works/${work}/grade/`, { method: 'POST', body })
+
 export const fetchWorkTable = (id, version) =>
   request(`/api/works/${id}/table/${version ? `?version=${encodeURIComponent(version)}` : ''}`)
 

@@ -228,7 +228,17 @@ class MatrixTests(AccessTestCase):
             patch={"title": "Другое название"},
             # цена правки и сводная таблица считаются по чужим ответам, и
             # спрашивать их про чужую работу нельзя даже коллеге по курсу
-            actions=("work-impact", "work-table"),
+            actions=(
+                "work-impact",
+                "work-table",
+                "work-criteria",
+                "work-scale-impact",
+                {
+                    "name": "work-grade",
+                    "method": "post",
+                    "body": {"student": 0, "marks": {}},
+                },
+            ),
         )
 
     def test_task(self):
