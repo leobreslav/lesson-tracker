@@ -5,9 +5,7 @@ import DebtsDialog from './DebtsDialog'
 import Modal from './Modal'
 import EmptyState from './EmptyState'
 import Markdown from './Markdown'
-import WorkDialog from './WorkDialog'
 import {
-  createWork,
   fetchCourses,
   fetchSlotDay,
   fetchUnclosed,
@@ -50,7 +48,6 @@ export default function Today({ onLoggedOut }) {
   const [date, setDate] = useState(today())
   const [day, setDay] = useState(null)
   const [busy, setBusy] = useState(false)
-  const [adding, setAdding] = useState(null) // {slot, homework}
   const [debts, setDebts] = useState([])
   const [closing, setClosing] = useState(false)
   const [error, setError] = useState(null)
@@ -95,7 +92,6 @@ export default function Today({ onLoggedOut }) {
     try {
       await request()
       await load()
-      setAdding(null)
     } catch (err) {
       handleError(err)
     } finally {
@@ -195,20 +191,6 @@ export default function Today({ onLoggedOut }) {
         </>
       )}
 
-      {adding && (
-        <WorkDialog
-          courseId={adding.slot.course.id}
-          preset={{
-            title: t('today.homeworkTitle'),
-            description: adding.homework ?? '',
-            slot: adding.slot.id,
-          }}
-          busy={busy}
-          onSubmit={(fields) => run(() => createWork(fields))}
-          onClose={() => setAdding(null)}
-        />
-      )}
-
       {closing && (
         <DebtsDialog
           busy={busy}
@@ -226,7 +208,6 @@ export default function Today({ onLoggedOut }) {
           busy={busy}
           done={done}
           onConfirm={() => run(() => updateSlot(chosen.id, { lesson: chosen.topic.id }))}
-          onHomework={() => setAdding({ slot: chosen, homework: chosen.topic?.homework })}
           onClose={() => setPicked(null)}
         />
       )}
@@ -304,14 +285,14 @@ function DayGrid({ hours, picked, onPick }) {
  *
  * Предпросмотр, а не карточка целиком: содержание урока со всеми четырьмя
  * полями — это уже работа, и для неё есть своя страница. Здесь ровно
- * столько, чтобы понять, туда ли попал, плюс два действия, ради которых не
- * стоит уходить со дня: отметить, что занятие прошло, и задать домашнее.
+ * столько, чтобы понять, туда ли попал, плюс действие, ради которого не
+ * стоит уходить со дня: отметить, что занятие прошло.
  *
  * Главная кнопка — «Открыть урок». День отвечает на вопрос «что сегодня», а
  * работают с уроком на его собственной странице, и попасть туда надо
  * одинаково просто для прошлого, сегодняшнего и будущего.
  */
-function SlotPreview({ slot, busy, done, onConfirm, onHomework, onClose }) {
+function SlotPreview({ slot, busy, done, onConfirm, onClose }) {
   const { t } = useTranslation()
   const navigate = useNavigate()
   const topic = slot.topic
@@ -363,14 +344,6 @@ function SlotPreview({ slot, busy, done, onConfirm, onHomework, onClose }) {
             {t('today.confirm')}
           </button>
         )}
-        <button
-          type="button"
-          className="secondary"
-          disabled={busy}
-          onClick={onHomework}
-        >
-          {t('today.setHomework')}
-        </button>
         <button type="button" className="secondary" onClick={onClose}>
           {t('common.close')}
         </button>

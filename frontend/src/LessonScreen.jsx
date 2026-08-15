@@ -2,10 +2,8 @@ import { Suspense, lazy, useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import Markdown from './Markdown'
-import WorkDialog from './WorkDialog'
 import {
   createPlanNode,
-  createWork,
   fetchSlotCard,
   updatePlanNode,
   updateSlot,
@@ -48,7 +46,6 @@ export default function LessonScreen({ onLoggedOut }) {
   const [card, setCard] = useState(null)
   const [busy, setBusy] = useState(false)
   const [editing, setEditing] = useState(false) // панель содержания
-  const [adding, setAdding] = useState(null) // окно новой работы
   const [form, setForm] = useState(null) // 'rename' | 'insert' | 'cancel'
   const [text, setText] = useState('')
   const [error, setError] = useState(null)
@@ -78,7 +75,6 @@ export default function LessonScreen({ onLoggedOut }) {
     try {
       await request()
       await load()
-      setAdding(null)
       setForm(null)
     } catch (err) {
       handleError(err)
@@ -283,19 +279,7 @@ export default function LessonScreen({ onLoggedOut }) {
       )}
 
       <section className="panel">
-        <div className="panel-head spread">
-          <h2 className="panel-title">{t('lessonScreen.works')}</h2>
-          {may && (
-            <button
-              type="button"
-              className="compact"
-              disabled={busy}
-              onClick={() => setAdding({ homework: topic?.homework })}
-            >
-              {t('today.setHomework')}
-            </button>
-          )}
-        </div>
+        <h2 className="panel-title">{t('lessonScreen.works')}</h2>
 
         {card.works.length === 0 ? (
           <p className="hint">{t('lessonScreen.noWorks')}</p>
@@ -343,20 +327,6 @@ export default function LessonScreen({ onLoggedOut }) {
             </button>
           )}
         </div>
-      )}
-
-      {adding && (
-        <WorkDialog
-          courseId={card.course.id}
-          preset={{
-            title: t('today.homeworkTitle'),
-            description: adding.homework ?? '',
-            slot: card.id,
-          }}
-          busy={busy}
-          onSubmit={(fields) => run(() => createWork(fields))}
-          onClose={() => setAdding(null)}
-        />
       )}
 
       {editing && topic && (

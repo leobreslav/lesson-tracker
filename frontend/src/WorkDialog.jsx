@@ -16,16 +16,9 @@ import { fromLocalInput, toLocalInput } from './dates'
  * условии находят посреди урока, — но и молчать нельзя: правка, сделанная
  * вслепую, ломает то, что люди пишут прямо сейчас.
  */
-export default function WorkDialog({
-  work,
-  courseId,
-  preset,
-  busy,
-  onSubmit,
-  onClose,
-}) {
+export default function WorkDialog({ work, courseId, busy, onSubmit, onClose }) {
   const { t } = useTranslation()
-  const [form, setForm] = useState(() => ({ ...initial(work), ...preset }))
+  const [form, setForm] = useState(() => initial(work))
   const [impact, setImpact] = useState(null)
 
   useEffect(() => {
