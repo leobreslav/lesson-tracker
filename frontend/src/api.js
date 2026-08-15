@@ -380,10 +380,11 @@ export const downloadPlan = async (classId, format = 'xlsx') => {
 /** The whole of one lesson, content included — the tree only carries flags. */
 export const fetchPlanNode = (id) => request(`/api/plan/${id}/`)
 
-export const uploadAttachment = ({ planRow, templateRow, file, title }) => {
+export const uploadAttachment = ({ planRow, templateRow, studentWork, file, title }) => {
   const form = new FormData()
   if (planRow) form.append('plan_row', planRow)
   if (templateRow) form.append('template_row', templateRow)
+  if (studentWork) form.append('student_work', studentWork)
   form.append('file', file)
   if (title) form.append('title', title)
 

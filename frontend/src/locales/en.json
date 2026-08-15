@@ -921,6 +921,14 @@
       "rubric": "Several criteria, each with its own maximum — the way MYP and other rubrics grade."
     }
   },
+  "paper": {
+    "scans": "Scanned work",
+    "addScan": "Add a scan",
+    "column": "Work",
+    "onPaper": "This work was written on paper. Your marked copy appears here once the teacher uploads it.",
+    "onPaperSetting": "Written on paper",
+    "onPaperHint": "No online questions: each student gets the scan of their own work."
+  },
   "table": {
     "open": "Check",
     "student": "Student",

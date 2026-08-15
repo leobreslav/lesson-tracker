@@ -29,7 +29,11 @@ class AttachmentViewSet(viewsets.ModelViewSet):
     read rule is finer than "everyone in the school" — see `access`.
     """
 
-    permission_classes = [IsAuthenticated, IsSchoolMember, IsTeacher]
+    # `IsTeacher` тут нет: сканы своих работ читает и ученик, а кто на что
+    # имеет право, решает `access` — вопрос «чьё это вложение», а не «кто вы
+    # по виду». Ученику при этом закрыто всё остальное: `readable_attachments`
+    # отдаёт ему только его собственные работы
+    permission_classes = [IsAuthenticated, IsSchoolMember]
     serializer_class = AttachmentSerializer
 
     def get_queryset(self):
@@ -37,7 +41,7 @@ class AttachmentViewSet(viewsets.ModelViewSet):
         queryset = with_sharing(access.readable_attachments(self.request.user))
         params = self.request.query_params
 
-        for name in ("plan_row", "template_row"):
+        for name in ("plan_row", "template_row", "student_work"):
             raw = params.get(name)
             if not raw:
                 continue
@@ -83,11 +87,11 @@ class AttachmentViewSet(viewsets.ModelViewSet):
         form.is_valid(raise_exception=True)
         data = form.validated_data
 
-        owner = (
-            {"plan_row": data["plan_row"]}
-            if data.get("plan_row") is not None
-            else {"template_row": data["template_row"]}
-        )
+        owner = {
+            name: data[name]
+            for name in ("plan_row", "template_row", "student_work")
+            if data.get(name) is not None
+        }
 
         stored = None
         if data["kind"] == KIND_FILE:

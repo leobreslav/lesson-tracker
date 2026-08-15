@@ -143,6 +143,7 @@ class WorkViewSet(CourseScopedViewSet):
 
         return Response(
             {
+                "id": row.pk,
                 "student": row.student_id,
                 "comment": row.comment,
                 "marks": services.marks_of(row),
@@ -361,7 +362,8 @@ class StudentWorkView(APIView):
                 "opens_at": work.opens_at,
                 "closes_at": work.closes_at,
                 "attempts": work.attempts,
-                "can_answer": work.state() == "open" and active,
+                "on_paper": work.on_paper,
+                "can_answer": work.state() == "open" and active and not work.on_paper,
                 "tasks": [
                     {
                         "id": task.pk,

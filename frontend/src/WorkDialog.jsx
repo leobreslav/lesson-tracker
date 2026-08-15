@@ -51,6 +51,7 @@ export default function WorkDialog({ work, courseId, busy, onSubmit, onClose }) 
       closes_at: fromLocalInput(form.closes_at),
       attempts: form.limited ? Number(form.attempts) : null,
       show_result: form.show_result,
+      on_paper: form.on_paper,
     })
   }
 
@@ -98,6 +99,19 @@ export default function WorkDialog({ work, courseId, busy, onSubmit, onClose }) 
         </div>
         <p className="hint">{t('works.windowHint')}</p>
 
+        {/* бумажная работа не решается онлайн, и попытки для неё значат
+            ровно ничего — поэтому строка с ними прячется целиком */}
+        <label className="checkbox">
+          <input
+            type="checkbox"
+            checked={form.on_paper}
+            onChange={change('on_paper')}
+          />
+          {t('paper.onPaperSetting')}
+        </label>
+        <p className="hint">{t('paper.onPaperHint')}</p>
+
+        {!form.on_paper && (
         <div className="row">
           <label className="checkbox">
             <input
@@ -118,7 +132,8 @@ export default function WorkDialog({ work, courseId, busy, onSubmit, onClose }) 
             />
           )}
         </div>
-        <p className="hint">{t('works.attemptsHint')}</p>
+        )}
+        {!form.on_paper && <p className="hint">{t('works.attemptsHint')}</p>}
 
         <label className="checkbox">
           <input
@@ -152,6 +167,7 @@ function initial(work) {
       limited: work.attempts !== null,
       attempts: work.attempts ?? 1,
       show_result: work.show_result,
+      on_paper: work.on_paper,
     }
   }
 
@@ -165,6 +181,7 @@ function initial(work) {
     limited: true,
     attempts: 1,
     show_result: true,
+    on_paper: false,
   }
 }
 

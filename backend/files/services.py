@@ -195,11 +195,10 @@ def attachments_of(row) -> list[Attachment]:
     return list(row.attachments.select_related("stored_file"))
 
 
-def next_position(*, plan_row=None, template_row=None) -> int:
-    owner = {"plan_row": plan_row} if plan_row is not None else {
-        "template_row": template_row
-    }
-    return Attachment.objects.filter(**owner).count()
+def next_position(**owner) -> int:
+    """Сколько вложений у этого владельца уже есть — оно и будет позицией."""
+    named = {name: value for name, value in owner.items() if value is not None}
+    return Attachment.objects.filter(**named).count()
 
 
 def has_file_attachments(row) -> bool:

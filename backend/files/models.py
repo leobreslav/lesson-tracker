@@ -76,12 +76,17 @@ class StoredFile(models.Model):
 
 class Attachment(models.Model):
     """
-    One lesson's reference to a file, or to an address on the web.
+    Ссылка на файл или на адрес в сети — из одного места, где она нужна.
 
-    It hangs off exactly one of the two kinds of lesson row the project has —
-    a teacher's own plan node, or a line of a library template. Both are
-    `CASCADE`: deleting the lesson takes its references with it, and the
-    signal then decides whether the file behind them is still wanted.
+    Мест три, и ровно одно у каждой ссылки: строка учебного плана, строка
+    шаблона на полке и **работа конкретного ученика** (скан того, что он
+    написал на бумаге). Все три `CASCADE`: уходит владелец — уходят его
+    ссылки, а сигнал потом решает, нужен ли ещё файл за ними.
+
+    Третий владелец отличается от первых двух правом на чтение: план и
+    шаблон читают учителя, а скан — учитель **и сам ученик**, и никто
+    больше. Ошибка здесь это не «показали лишнее», а чужая контрольная с
+    отметками у одноклассника.
 
     `stored_file` is `PROTECT` so that a file can never be deleted out from
     under a reference. Removal happens the other way round, from the last
@@ -104,6 +109,14 @@ class Attachment(models.Model):
         on_delete=models.CASCADE,
         verbose_name="template row",
     )
+    student_work = models.ForeignKey(
+        "works.StudentWork",
+        related_name="attachments",
+        null=True,
+        blank=True,
+        on_delete=models.CASCADE,
+        verbose_name="student's work",
+    )
     kind = models.CharField("kind", max_length=8, choices=KINDS, default=KIND_FILE)
     stored_file = models.ForeignKey(
         StoredFile,
@@ -125,8 +138,21 @@ class Attachment(models.Model):
         constraints = [
             models.CheckConstraint(
                 condition=(
-                    Q(plan_row__isnull=False, template_row__isnull=True)
-                    | Q(plan_row__isnull=True, template_row__isnull=False)
+                    Q(
+                        plan_row__isnull=False,
+                        template_row__isnull=True,
+                        student_work__isnull=True,
+                    )
+                    | Q(
+                        plan_row__isnull=True,
+                        template_row__isnull=False,
+                        student_work__isnull=True,
+                    )
+                    | Q(
+                        plan_row__isnull=True,
+                        template_row__isnull=True,
+                        student_work__isnull=False,
+                    )
                 ),
                 name="attachment_has_exactly_one_owner",
             ),
@@ -142,6 +168,9 @@ class Attachment(models.Model):
             models.Index(fields=("plan_row", "position"), name="attachment_plan_idx"),
             models.Index(
                 fields=("template_row", "position"), name="attachment_template_idx"
+            ),
+            models.Index(
+                fields=("student_work", "position"), name="attachment_student_idx"
             ),
         ]
 
@@ -159,10 +188,11 @@ class Attachment(models.Model):
         super().clean()
         problems = {}
 
-        if (self.plan_row_id is None) == (self.template_row_id is None):
+        owners = [self.plan_row_id, self.template_row_id, self.student_work_id]
+        if sum(1 for owner in owners if owner is not None) != 1:
             problems["plan_row"] = (
-                "An attachment belongs to a plan lesson or to a template row, "
-                "and to exactly one of them."
+                "An attachment belongs to a plan lesson, a template row or a "
+                "student's work — to exactly one of them."
             )
 
         if self.kind == KIND_FILE and self.stored_file_id is None:

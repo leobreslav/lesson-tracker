@@ -50,9 +50,30 @@ def backend():
     return storages["files"]
 
 
+def configured() -> bool:
+    """
+    Настроено ли хранилище вообще.
+
+    Не настроено — это обычное состояние стенда: у браузерных прогонов
+    ключей R2 нет намеренно, чтобы тесты не писали в чужой бакет. Отвечать
+    на это пятисоткой нельзя: «хранилище не отвечает» и «хранилища нет» для
+    пользователя одно и то же событие, и текст у него один.
+    """
+    from django.conf import settings
+
+    if not hasattr(backend(), "bucket"):
+        # обычный бэкенд (тесты, машина без ключей) — он всегда готов
+        return True
+
+    return bool(settings.R2_BUCKET_NAME and settings.R2_ENDPOINT_URL)
+
+
 @contextmanager
 def as_unavailable():
     """Turn any storage failure into one exception the views know about."""
+    if not configured():
+        raise StorageUnavailable("the object store is not configured")
+
     try:
         yield
     except (BotoCoreError, ClientError) as error:

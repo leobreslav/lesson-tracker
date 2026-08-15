@@ -230,3 +230,72 @@ async function firstTask(teacher) {
 
   return tasks.body[0]
 }
+
+/**
+ * Бумажная работа: скан достаётся своему ученику и никому больше.
+ *
+ * Ключей R2 у стенда нет намеренно — тесты не пишут в чужой бакет, — поэтому
+ * настоящий файл здесь не загрузить; вложение заводится ссылкой. Проверяется
+ * не загрузка (её держат питоновские тесты), а граница: чужую работу не
+ * видно, и ошибка в ней выглядит не отказом, а контрольной одноклассника на
+ * экране.
+ */
+test('скан бумажной работы достаётся только своему ученику', async ({
+  page,
+  signIn,
+  api,
+}) => {
+  const teacher = await api(PEOPLE.ivanova)
+  const courses = await teacher.get('/api/courses/')
+  const course = courses.body.find((item) => item.name === 'Grade 6 Algebra')
+  const work = await teacher.post('/api/works/', {
+    course: course.id,
+    title: 'Контрольная на бумаге',
+    opens_at: new Date(Date.now() - 3600e3).toISOString(),
+    closes_at: new Date(Date.now() + 3600e3).toISOString(),
+    on_paper: true,
+  })
+
+  // ученика берём из самой таблицы работы: там он уже есть по составу курса
+  const table = await teacher.get(`/api/works/${work.body.id}/table/`)
+  const mine = table.body.students.find((item) => item.email === PEOPLE.student)
+  const row = await teacher.post(`/api/works/${work.body.id}/grade/`, {
+    student: mine.id,
+  })
+  await teacher.post('/api/attachments/', {
+    student_work: row.body.id,
+    url: 'https://example.com/stepanov.pdf',
+    title: 'stepanov.pdf',
+  })
+
+  // у учителя столбец работы есть и без задач: у бумажной в нём лежит скан
+  await signIn(PEOPLE.ivanova)
+  await page.goto(`/works/${work.body.id}`)
+  await ready(page)
+
+  const line = page.locator('.work-table tbody tr', { hasText: 'Артём Степанов' })
+  await line.locator('td.mark button').click()
+  const dialog = page.locator('dialog.modal')
+  await expect(dialog.getByText('Скан работы')).toBeVisible()
+  await expect(dialog.getByRole('link', { name: 'stepanov.pdf' })).toBeVisible()
+  await dialog.getByRole('button', { name: 'Закрыть' }).click()
+
+  // свой ученик видит свою работу
+  await signIn(PEOPLE.student)
+  await page.goto('/')
+  await ready(page)
+  await page.getByRole('link', { name: 'Grade 6 Algebra' }).click()
+  await ready(page)
+  await page.getByRole('link', { name: 'Контрольная на бумаге' }).click()
+  await ready(page)
+
+  await expect(page.getByRole('link', { name: 'stepanov.pdf' })).toBeVisible()
+  await expect(page.getByText('Работа написана на бумаге')).toBeVisible()
+
+  // одноклассник — не видит ничего, и не узнаёт, что там что-то было
+  await signIn(PEOPLE.otherStudent)
+  await page.goto(`/works/${work.body.id}`)
+  await ready(page)
+
+  await expect(page.getByRole('link', { name: 'stepanov.pdf' })).toHaveCount(0)
+})

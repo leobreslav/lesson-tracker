@@ -65,31 +65,44 @@ class AttachmentCreateSerializer(serializers.Serializer):
     template_row = serializers.PrimaryKeyRelatedField(
         queryset=Attachment.objects.none(), required=False, allow_null=True
     )
+    student_work = serializers.PrimaryKeyRelatedField(
+        queryset=Attachment.objects.none(), required=False, allow_null=True
+    )
     title = serializers.CharField(max_length=200, required=False, allow_blank=True)
     url = serializers.URLField(max_length=500, required=False, allow_blank=True)
     file = serializers.FileField(required=False)
 
     def get_fields(self):
-        from .access import writable_plan_rows, writable_template_rows
+        from .access import (
+            writable_plan_rows,
+            writable_student_works,
+            writable_template_rows,
+        )
 
         fields = super().get_fields()
         user = self.context["request"].user
         fields["plan_row"].queryset = writable_plan_rows(user)
         fields["template_row"].queryset = writable_template_rows(user)
+        fields["student_work"].queryset = writable_student_works(user)
         return fields
 
     def validate(self, attrs):
-        plan_row = attrs.get("plan_row")
-        template_row = attrs.get("template_row")
+        owners = {
+            name: attrs.get(name)
+            for name in ("plan_row", "template_row", "student_work")
+        }
+        named = [name for name, value in owners.items() if value is not None]
 
-        if (plan_row is None) == (template_row is None):
+        if len(named) != 1:
             api_error(
                 Codes.ATTACHMENT_OWNER_REQUIRED,
-                "Name exactly one of «plan_row» and «template_row».",
+                "Name exactly one of «plan_row», «template_row» and "
+                "«student_work».",
                 field="plan_row",
             )
 
-        row = plan_row or template_row
+        plan_row, template_row = owners["plan_row"], owners["template_row"]
+        row = owners[named[0]]
         if getattr(row, "is_section", False) or getattr(row, "is_header", False):
             api_error(
                 Codes.CONTENT_ON_SECTION,

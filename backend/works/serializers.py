@@ -86,6 +86,7 @@ class WorkSerializer(serializers.ModelSerializer):
             "closes_at",
             "attempts",
             "show_result",
+            "on_paper",
             "lesson",
             "state",
             "tasks_count",

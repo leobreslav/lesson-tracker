@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link, useParams } from 'react-router-dom'
 import Markdown from './Markdown'
-import { fetchStudentWork, sendAnswer } from './api'
+import { fetchStudentWork, openAttachment, sendAnswer } from './api'
 import { dateTime } from './dates'
 import { POLL_MS } from './polling'
 
@@ -83,7 +83,9 @@ export default function StudentWork() {
       <Grade work={work} />
 
       {work.tasks.length === 0 ? (
-        <p className="hint">{t('student.work.noTasks')}</p>
+        <p className="hint">
+          {t(work.on_paper ? 'paper.onPaper' : 'student.work.noTasks')}
+        </p>
       ) : (
         <ol className="student-tasks">
           {work.tasks.map((task, index) => (
@@ -120,12 +122,37 @@ function Grade({ work }) {
   const { t } = useTranslation()
   const criteria = work.criteria ?? []
   const marks = work.marks ?? {}
+  const papers = work.papers ?? []
   const given = criteria.some((item) => marks[item.id] !== undefined)
 
-  if (!given && !work.comment) return null
+  if (!given && !work.comment && !papers.length) return null
 
   return (
     <section className="panel student-grade">
+      {papers.length > 0 && (
+        <ul className="attachments">
+          {papers.map((paper) => (
+            <li key={paper.id} className="attachment">
+              <span className="attachment-icon" aria-hidden="true">
+                📄
+              </span>
+              {paper.kind === 'link' ? (
+                <a href={paper.url} target="_blank" rel="noreferrer" className="title">
+                  {paper.title}
+                </a>
+              ) : (
+                <button
+                  type="button"
+                  className="link title"
+                  onClick={() => openAttachment(paper.id)}
+                >
+                  {paper.title}
+                </button>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
       {given && (
         <ul className="marks">
           {criteria.map((item) => (

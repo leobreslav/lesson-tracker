@@ -126,6 +126,8 @@ export const PEOPLE = {
   petrov: 'petrov@example.com',
   // второй вид пользователя: у него другой интерфейс целиком
   student: 'stepanov@example.com',
+  // второй ученик того же курса: им проверяется, что чужого не видно
+  otherStudent: 'volkova@example.com',
   removedStudent: 'morozova@example.com',
 }
 

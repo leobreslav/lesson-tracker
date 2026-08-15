@@ -1,18 +1,34 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import Modal from './Modal'
+import { deleteAttachment, gradeStudent, openAttachment, uploadAttachment } from './api'
+import { formatSize, iconFor } from './fileKind'
 
 /**
- * Оценка одного ученика: весь набор критериев и слова учителя разом.
+ * Работа одного ученика: скан, оценка и слова учителя — в одном окне.
  *
- * По одному критерию не ставят: у MYP их четыре, и выставляются они за один
- * взгляд на работу. Комментарий здесь же и живёт без оценки — работа может
- * не оцениваться вовсе, а сказать о ней есть что.
+ * Это и есть строка «работа и ученик», показанная целиком. Раньше её не
+ * было, и ученическое лежало по разным местам: ответы на отправках, а скану
+ * и оценке жить было негде.
  *
- * Пустое поле значит «снять отметку», а не ноль: ноль — это оценка, и
- * различать их обязательно.
+ * Оценки ставятся всем набором сразу: у MYP критериев четыре, и
+ * выставляются они за один взгляд на работу. Пустое поле снимает отметку, а
+ * не ставит ноль — ноль это оценка, и различать их обязательно.
+ *
+ * Скан применяется **сразу**, а оценка и комментарий ждут «Сохранить». Так
+ * же, как в панели урока: файл, ждущий кнопки, — это загрузка, которая тихо
+ * не случилась.
  */
-export default function GradeDialog({ student, criteria, busy, onSubmit, onClose }) {
+export default function GradeDialog({
+  work,
+  student,
+  criteria,
+  onPaper,
+  busy,
+  onSubmit,
+  onChanged,
+  onClose,
+}) {
   const { t } = useTranslation()
   const [marks, setMarks] = useState(() =>
     Object.fromEntries(
@@ -20,6 +36,8 @@ export default function GradeDialog({ student, criteria, busy, onSubmit, onClose
     ),
   )
   const [comment, setComment] = useState(student.comment ?? '')
+  const [uploading, setUploading] = useState(false)
+  const [error, setError] = useState(null)
 
   const simple = criteria.length === 1 && !criteria[0].name
 
@@ -39,10 +57,113 @@ export default function GradeDialog({ student, criteria, busy, onSubmit, onClose
     })
   }
 
+  /**
+   * Строка «работа и ученик» заводится по требованию, и скану нужен её id.
+   * Пустой вызов оценки её создаёт и ничего не меняет — то самое «по
+   * требованию» и есть.
+   */
+  const upload = async (file) => {
+    if (!file) return
+
+    setUploading(true)
+    setError(null)
+    try {
+      const row = student.row ?? (await gradeStudent(work, { student: student.id })).id
+      await uploadAttachment({ studentWork: row, file })
+      await onChanged()
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setUploading(false)
+    }
+  }
+
+  const remove = async (paper) => {
+    setUploading(true)
+    try {
+      await deleteAttachment(paper.id)
+      await onChanged()
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setUploading(false)
+    }
+  }
+
+  const papers = student.papers ?? []
+
   return (
     <Modal onClose={onClose}>
       <form onSubmit={submit}>
         <h3>{student.name}</h3>
+
+        {error && (
+          <p className="error" role="alert">
+            {error}
+          </p>
+        )}
+
+        {(onPaper || papers.length > 0) && (
+          <section className="papers">
+            <span className="hint">{t('paper.scans')}</span>
+            <ul className="attachments">
+              {papers.map((paper) => {
+                const size = formatSize(paper.size)
+
+                return (
+                  <li key={paper.id} className="attachment">
+                    <span className="attachment-icon" aria-hidden="true">
+                      {iconFor(paper)}
+                    </span>
+                    {paper.kind === 'link' ? (
+                      <a
+                        href={paper.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="title"
+                      >
+                        {paper.title}
+                      </a>
+                    ) : (
+                      <button
+                        type="button"
+                        className="link title"
+                        onClick={() => openAttachment(paper.id)}
+                      >
+                        {paper.title}
+                      </button>
+                    )}
+                    {size && (
+                      <span className="hint">
+                        {t(`lesson.size.${size.unit}`, { value: size.value })}
+                      </span>
+                    )}
+                    <button
+                      type="button"
+                      className="link remove"
+                      title={t('common.delete')}
+                      disabled={busy || uploading}
+                      onClick={() => remove(paper)}
+                    >
+                      ✕
+                    </button>
+                  </li>
+                )
+              })}
+            </ul>
+            <div className="row">
+              <input
+                type="file"
+                aria-label={t('paper.addScan')}
+                disabled={busy || uploading}
+                onChange={(event) => {
+                  upload(event.target.files?.[0])
+                  event.target.value = ''
+                }}
+              />
+            </div>
+          </section>
+        )}
 
         {criteria.map((item) => (
           <label className="field-with-hint" key={item.id}>
@@ -79,7 +200,7 @@ export default function GradeDialog({ student, criteria, busy, onSubmit, onClose
             {t('common.save')}
           </button>
           <button type="button" className="secondary" onClick={onClose}>
-            {t('common.cancel')}
+            {t('common.close')}
           </button>
         </div>
       </form>

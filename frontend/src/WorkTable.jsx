@@ -88,6 +88,10 @@ export default function WorkTable() {
     graded: criteria.length > 0,
     simple: criteria.length === 1 && !criteria[0].name,
   }
+  // столбец «работа ученика» нужен и без оценок: у бумажной работы в нём
+  // лежит скан, и это единственное место, где он есть
+  const onPaper = Boolean(table.work.on_paper)
+  const showRow = scale.graded || onPaper
 
   return (
     <main className="page wide">
@@ -124,7 +128,9 @@ export default function WorkTable() {
         </button>
       </p>
 
-      {table.tasks.length === 0 ? (
+      {/* таблица нужна и без задач: у бумажной работы в ней сканы и
+          оценки, а задач нет по определению */}
+      {table.tasks.length === 0 && !showRow ? (
         <p className="hint">{t('works.task.none')}</p>
       ) : (
         <section className="panel table-scroll">
@@ -148,8 +154,14 @@ export default function WorkTable() {
                     </button>
                   </th>
                 ))}
-                {scale.graded && <th className="mark">{t('grading.mark')}</th>}
-                <th className="total">{t('table.total')}</th>
+                {showRow && (
+                  <th className="mark">
+                    {t(scale.graded ? 'grading.mark' : 'paper.column')}
+                  </th>
+                )}
+                {table.tasks.length > 0 && (
+                  <th className="total">{t('table.total')}</th>
+                )}
               </tr>
             </thead>
             <tbody>
@@ -179,7 +191,7 @@ export default function WorkTable() {
                       </button>
                     </td>
                   ))}
-                  {scale.graded && (
+                  {showRow && (
                     <td className="mark">
                       <button
                         type="button"
@@ -187,13 +199,16 @@ export default function WorkTable() {
                         disabled={busy}
                         onClick={() => setGrading({ student })}
                       >
-                        {showMarks(student.marks, criteria) || '—'}
+                        {showMarks(student.marks, criteria) ||
+                          (student.papers?.length ? '📄' : '—')}
                       </button>
                     </td>
                   )}
-                  <td className="total">
-                    {student.correct}/{table.tasks.length}
-                  </td>
+                  {table.tasks.length > 0 && (
+                    <td className="total">
+                      {student.correct}/{table.tasks.length}
+                    </td>
+                  )}
                 </tr>
               ))}
             </tbody>
@@ -249,10 +264,18 @@ export default function WorkTable() {
 
       {grading && (
         <GradeDialog
-          student={grading.student}
+          work={table.work.id}
+          student={
+            // строка берётся из свежей таблицы: после загрузки скана окно
+            // должно показать его, не закрываясь
+            table.students.find((row) => row.id === grading.student.id) ??
+            grading.student
+          }
           criteria={criteria}
+          onPaper={onPaper}
           busy={busy}
           onSubmit={(body) => run(() => gradeStudent(table.work.id, body))}
+          onChanged={refresh}
           onClose={() => setGrading(null)}
         />
       )}

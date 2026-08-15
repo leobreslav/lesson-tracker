@@ -31,9 +31,16 @@ def school_attachments(user):
     if user is None or not user.is_authenticated or user.school_id is None:
         return Attachment.objects.none()
 
+    if getattr(user, "is_student", False):
+        # у ученика «школьные вложения» это его собственные: остальные для
+        # него не существуют, и разница «нет такого» / «не ваше» тут ни к
+        # чему — он и не должен знать, что у одноклассника что-то есть
+        return Attachment.objects.filter(student_work__student=user)
+
     return Attachment.objects.filter(
         Q(plan_row__course__school_id=user.school_id)
         | Q(template_row__template__school_id=user.school_id)
+        | Q(student_work__work__course__school_id=user.school_id)
     )
 
 
@@ -49,16 +56,30 @@ def readable_attachments(user):
     if user is None or not user.is_authenticated or user.school_id is None:
         return Attachment.objects.none()
 
+    if getattr(user, "is_student", False):
+        # ученику виден ровно один вид вложений — сканы его собственных
+        # работ. Ни плана, ни полки он не читает вовсе
+        return Attachment.objects.filter(student_work__student=user)
+
     return Attachment.objects.filter(
         Q(plan_row__course__in=Course.objects.for_teacher(user))
         | Q(template_row__template__in=visible_templates(user))
+        | Q(student_work__work__course__in=Course.objects.for_teacher(user))
     )
 
 
 def can_read(user, attachment) -> bool:
-    if attachment.plan_row_id is not None:
-        from schedule.models import Course
+    from schedule.models import Course
 
+    if attachment.student_work_id is not None:
+        # скан работы: свой ученик и ведущий курса, и больше никто. Ошибка
+        # здесь — не «показали лишнее», а чужая контрольная с отметками
+        row = attachment.student_work
+        if row.student_id == user.pk:
+            return True
+        return Course.objects.for_teacher(user).filter(pk=row.work.course_id).exists()
+
+    if attachment.plan_row_id is not None:
         return (
             Course.objects.for_teacher(user)
             .filter(pk=attachment.plan_row.course_id)
@@ -79,14 +100,34 @@ def can_write(user, attachment) -> bool:
     edit somebody's lesson line by line — so authorship, not the role, is
     what counts here.
     """
-    if attachment.plan_row_id is not None:
-        from schedule.models import CourseAssignment
+    from schedule.models import CourseAssignment
 
+    if attachment.student_work_id is not None:
+        # ученик свою работу не правит: скан — запись учителя о ней, а не
+        # его слова. Читает всегда, меняет никогда
+        return CourseAssignment.objects.filter(
+            course_id=attachment.student_work.work.course_id, teacher=user
+        ).exists()
+
+    if attachment.plan_row_id is not None:
         return CourseAssignment.objects.filter(
             course_id=attachment.plan_row.course_id, teacher=user
         ).exists()
 
     return attachment.template_row.template.author_id == user.pk
+
+
+def writable_student_works(user):
+    """Работы учеников, к которым этот человек может приложить скан."""
+    from schedule.models import Course
+    from works.models import StudentWork
+
+    if user is None or not user.is_authenticated:
+        return StudentWork.objects.none()
+
+    return StudentWork.objects.filter(
+        work__course__in=Course.objects.for_teacher(user)
+    )
 
 
 def writable_plan_rows(user):

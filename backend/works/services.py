@@ -366,7 +366,7 @@ def build_table(work) -> dict:
     criteria = list(work.criteria.all())
     graded = {
         row.student_id: row
-        for row in work.students.prefetch_related("marks")
+        for row in work.students.prefetch_related("marks", "attachments")
     }
 
     # одна выборка на всю таблицу: тридцать учеников на десять задач — это
@@ -411,8 +411,10 @@ def build_table(work) -> dict:
                 "cells": cells,
                 # оценка и слова учителя: строки может не быть вовсе, и это
                 # то же самое, что «ещё не проверен»
+                "row": mine.pk if mine else None,
                 "marks": marks_of(mine),
                 "comment": mine.comment if mine else "",
+                "papers": papers_of(mine),
             }
         )
 
@@ -435,6 +437,7 @@ def build_table(work) -> dict:
             "title": work.title,
             "state": work.state(),
             "course_name": work.course.name,
+            "on_paper": work.on_paper,
         },
         "tasks": columns,
         "criteria": [
@@ -664,6 +667,11 @@ def my_grade(work, student) -> dict:
 
     Комментарий учителя показывается по тому же правилу: он часто и есть
     объяснение оценки, и врозь они бессмысленны.
+
+    А вот **скан своей работы виден всегда**, независимо от `show_result`.
+    Тот флаг про отметку соседа, разошедшуюся по классу; собственная
+    исписанная бумага ни к кому больше не относится, и прятать её не от
+    кого.
     """
     scale = scale_payload(work)
     row = work.students.filter(student=student).first()
@@ -675,4 +683,28 @@ def my_grade(work, student) -> dict:
         "simple": scale["simple"],
         "marks": marks_of(row) if (row and visible) else {},
         "comment": (row.comment if row and visible else ""),
+        "papers": papers_of(row),
     }
+
+
+def papers_of(student_work) -> list:
+    """
+    Что приложено к работе ученика: сканы и ссылки.
+
+    Ссылки тоже: обычно это скан, но приложить адрес — законное действие
+    (отзыв в общем документе, разбор на видео), и отдавать только файлы
+    значило бы, что приложенная ссылка молча не показывается никому.
+    """
+    if student_work is None:
+        return []
+
+    return [
+        {
+            "id": item.pk,
+            "kind": item.kind,
+            "title": item.title,
+            "url": item.url,
+            "size": item.stored_file.size if item.stored_file_id else None,
+        }
+        for item in student_work.attachments.select_related("stored_file")
+    ]
