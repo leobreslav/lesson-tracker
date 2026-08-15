@@ -43,7 +43,7 @@ class DayTestCase(SchoolTestMixin, APITestCase):
 
     def day(self, when=None, course=None):
         return self.client.get(
-            reverse("lesson-day"),
+            reverse("slot-day"),
             {"course": (course or self.course).pk, "date": (when or MONDAY).isoformat()},
         )
 
@@ -57,8 +57,8 @@ class TopicTests(DayTestCase):
         self.assertFalse(lesson["confirmed"], "подсказка — ещё не запись")
 
     def test_a_recorded_topic_wins_over_the_suggestion(self):
-        self.monday.covered = self.second
-        self.monday.save(update_fields=["covered"])
+        self.monday.lesson = self.second
+        self.monday.save(update_fields=["lesson"])
 
         lesson = self.day().json()["lessons"][0]
 
@@ -78,8 +78,8 @@ class TopicTests(DayTestCase):
         Ради этого «что прошли» и записывается: раскладка позиционная, и
         вставленный в начало урок сдвинул бы всю ленту вместе с историей.
         """
-        self.monday.covered = self.first
-        self.monday.save(update_fields=["covered"])
+        self.monday.lesson = self.first
+        self.monday.save(update_fields=["lesson"])
         self.insert_first()
 
         self.assertEqual(self.day().json()["lessons"][0]["topic"]["title"], "Синус суммы")
@@ -116,8 +116,8 @@ class TopicTests(DayTestCase):
 
 class WorkTests(DayTestCase):
     def test_the_works_of_this_lesson_are_listed(self):
-        mine = make_work(self.user, self.course, title="Практика", lesson=self.monday)
-        make_work(self.user, self.course, title="Чужая", lesson=self.tuesday)
+        mine = make_work(self.user, self.course, title="Практика", slot=self.monday)
+        make_work(self.user, self.course, title="Чужая", slot=self.tuesday)
 
         works = self.day().json()["lessons"][0]["works"]
 
@@ -151,6 +151,6 @@ class AccessTests(DayTestCase):
         self.assertEqual(response.json()["code"], "teachers_only")
 
     def test_without_a_date_it_answers_about_today(self):
-        response = self.client.get(reverse("lesson-day"), {"course": self.course.pk})
+        response = self.client.get(reverse("slot-day"), {"course": self.course.pk})
 
         self.assertEqual(response.json()["date"], str(timezone.localdate()))

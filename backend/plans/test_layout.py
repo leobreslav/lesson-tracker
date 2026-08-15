@@ -9,7 +9,7 @@ from django.test import SimpleTestCase
 from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 from django.utils import timezone
-from schedule.models import Course, Lesson
+from schedule.models import Course, Slot
 from schools.testing import assign, make_course
 
 from . import services
@@ -170,7 +170,7 @@ class LayoutApiTestCase(PlanTestCase):
         self.slot_date = MONDAY
 
     def add_slot(self, day=None, number=1, course=None, **flags):
-        return Lesson.objects.create(
+        return Slot.objects.create(
             year=(course or self.course).year,
             course=course or self.course,
             date=day or self.slot_date,
@@ -264,7 +264,7 @@ class LayoutApiTests(LayoutApiTestCase):
         before = self.pairs()
 
         self.client.patch(
-            reverse("lesson-detail", args=[created[1].pk]),
+            reverse("slot-detail", args=[created[1].pk]),
             {"is_cancelled": True, "reason": "Болезнь"},
             format="json",
         )
@@ -278,7 +278,7 @@ class LayoutApiTests(LayoutApiTestCase):
     def test_restoring_a_slot_puts_the_layout_back(self):
         created = self.fill_slots(4)
         before = self.pairs()
-        url = reverse("lesson-detail", args=[created[1].pk])
+        url = reverse("slot-detail", args=[created[1].pk])
 
         self.client.patch(url, {"is_cancelled": True, "reason": "Болезнь"}, format="json")
         self.client.patch(url, {"is_cancelled": False, "reason": ""}, format="json")
@@ -691,7 +691,7 @@ class SlotRibbonTests(LayoutApiTestCase):
 
         for name, spec in cases.items():
             with self.subTest(name):
-                Lesson.objects.filter(course=self.course).delete()
+                Slot.objects.filter(course=self.course).delete()
                 day = MONDAY
                 for index in range(spec["slots"]):
                     self.add_slot(

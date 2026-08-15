@@ -22,7 +22,7 @@ from pathlib import Path
 from unittest import mock
 
 from django.urls import reverse
-from schedule.models import Lesson
+from schedule.models import Slot
 
 from .models import PlanNode
 from .test_layout import PlanTestCase
@@ -42,8 +42,9 @@ class LayoutNumbersMirrorTests(PlanTestCase):
     def build(self, case):
         """План и слоты случая. У курса уже есть год из фикстуры."""
         PlanNode.objects.filter(course=self.course).delete()
-        Lesson.objects.filter(course=self.course).delete()
+        Slot.objects.filter(course=self.course).delete()
 
+        by_title = {}
         position = 0
         for block in case["plan"]:
             parent = None
@@ -57,7 +58,7 @@ class LayoutNumbersMirrorTests(PlanTestCase):
                 position += 1
 
             for index, title in enumerate(block["lessons"]):
-                PlanNode.objects.create(
+                by_title[title] = PlanNode.objects.create(
                     course=self.course,
                     parent=parent,
                     title=title,
@@ -70,7 +71,7 @@ class LayoutNumbersMirrorTests(PlanTestCase):
             # «previous» — уроки прежнего ведущего: слот личный, а раскладка
             # считает по курсу, и это ровно то, что случай проверяет
             owner = self.colleague if slot.get("teacher") == "previous" else self.user
-            Lesson.objects.create(
+            Slot.objects.create(
                 year=self.course.year,
                 course=self.course,
                 date=date.fromisoformat(slot["date"]),
@@ -79,6 +80,9 @@ class LayoutNumbersMirrorTests(PlanTestCase):
                 lesson_number=(number - 1) % 10 + 1,
                 is_cancelled=slot.get("cancelled", False),
                 is_extra=slot.get("extra", False),
+                # «lesson» в случае — связь «занятие проведено»: у часа
+                # записан конкретный урок плана, и позиция ему не указ
+                lesson=by_title.get(slot.get("lesson")),
             )
 
     def test_every_case_agrees_across_all_three(self):

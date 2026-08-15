@@ -394,23 +394,28 @@ class CourseAssignment(models.Model):
                 )
 
 
-class Lesson(models.Model):
+class Slot(models.Model):
     """
-    Урок курса в конкретный день — и время в сетке, и то, что на нём было.
+    Час курса в конкретный день: занятие как событие календаря.
 
-    Клеткой расписания (`LessonSlot`) он назывался, пока ничего, кроме
-    времени, не хранил. Теперь на нём висит день учителя целиком: что
-    прошли, кто вёл, какие работы задавали, а дальше — посещаемость и
-    оценки. Отдельной сущности «занятие» рядом с ним заводить не нужно:
-    тройка `(курс, дата, номер)` и есть её опознание, а `is_cancelled` уже
-    говорит «не было».
+    Именем это стоило двух переименований, и второе объясняется первым.
+    `Lesson` он назывался ровно один этап — пока казалось, что записью о
+    произошедшем должна быть сама клетка сетки. Оказалось иначе: **урок —
+    это строка плана, получившая дату**, а здесь живёт час, в который она
+    попала. Слово «слот» и до того стояло во всей документации и в API
+    (лента слотов, свободные слоты), так что имя тут догоняет прозу.
 
-    Отдельной сущности «расписание» тоже нет: расписание курса на год — это
-    все его уроки внутри границ года. Вида урока нет, только два флага:
-    обычный — оба False, отменённый — `is_cancelled`, внезапный (замена,
-    кружок) — `is_extra`; комбинация допустима.
+    Осей у курса две, и они разные. Календарь — эта модель: когда занятия,
+    что сорвалось и чем закрыли; по ней живёт администрация. Программа —
+    `plans.PlanNode`: из чего курс состоит; по ней живёт методист. Сливаются
+    они в поле `lesson` ниже, и больше нигде.
 
-    **Урок принадлежит курсу, а не учителю.** Личным он был по аналогии с
+    Отдельной сущности «расписание» нет: расписание курса на год — это все
+    его часы внутри границ года. Вида занятия тоже нет, только два флага:
+    обычное — оба False, отменённое — `is_cancelled`, внезапное (замена,
+    кружок, перенос) — `is_extra`; комбинация допустима.
+
+    **Час принадлежит курсу, а не учителю.** Личным он был по аналогии с
     тем, что «двое ведут одну параллель, и неделя у каждого своя», — но
     ведущий у курса теперь один, и аналогия отпала вместе с ним. А вот цена
     личного расписания осталась бы: при смене ведущего сентябрь оставался у
@@ -430,17 +435,17 @@ class Lesson(models.Model):
     )
     #: Собственные поля, заполненность которых делает занятие историей.
     #: Обратные связи в перечислении не нуждаются, см. `empty_conditions`.
-    RECORD_FIELDS = frozenset({"reason", "covered", "taught_by"})
+    RECORD_FIELDS = frozenset({"reason", "lesson", "taught_by"})
 
     year = models.ForeignKey(
         "calendars.SchoolYear",
-        related_name="lessons",
+        related_name="slots",
         on_delete=models.CASCADE,
         verbose_name="school year",
     )
     course = models.ForeignKey(
         Course,
-        related_name="lessons",
+        related_name="slots",
         # PROTECT: an administrator must not wipe somebody's schedule by
         # deleting a course — the answer explains what is in the way
         on_delete=models.PROTECT,
@@ -455,23 +460,30 @@ class Lesson(models.Model):
     is_extra = models.BooleanField("extra lesson", default=False)
     reason = models.CharField("reason", max_length=200, blank=True)
 
-    # что прошли: раскладка отвечает на это сама, но **позиционно**, и
-    # ответ съезжает от любой правки плана. Записанный держится за дату
-    covered = models.ForeignKey(
+    # Урок, который прошёл в этом часе, — точка слияния двух осей.
+    #
+    # Раскладка отвечает на «что сейчас проходим» и сама, но **позиционно**,
+    # и ответ съезжает от любой правки плана. Связь держится за дату.
+    #
+    # `OneToOne`, потому что одна строка плана — это ровно одно физическое
+    # занятие: не успели за урок — в план дописывается строка, успели две
+    # темы разом — план правится слиянием. Инвариант держит вся раскладка,
+    # и здесь он стоит ограничением базы, а не договорённостью.
+    lesson = models.OneToOneField(
         "plans.PlanNode",
         related_name="taught_at",
         null=True,
         blank=True,
-        # строку плана могут удалить, а урок был: связь уходит, факт остаётся
+        # строку плана могут удалить, а занятие было: связь уходит, час остаётся
         on_delete=models.SET_NULL,
-        verbose_name="what was covered",
-        help_text="Строка плана, которую разобрали на этом уроке.",
+        verbose_name="lesson taught",
+        help_text="Строка плана, которую разобрали в этом часе.",
     )
     # кто вёл: обычно ведущий курса, и тогда пусто. Заполняется, когда вёл
     # не он — замена. Это свойство занятия, а не владение расписанием
     taught_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
-        related_name="lessons_taught",
+        related_name="slots_taught",
         null=True,
         blank=True,
         on_delete=models.SET_NULL,
@@ -481,17 +493,17 @@ class Lesson(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
-        verbose_name = "lesson"
-        verbose_name_plural = "lessons"
+        verbose_name = "slot"
+        verbose_name_plural = "slots"
         ordering = ("date", "lesson_number")
         indexes = [
-            models.Index(fields=("year", "date"), name="lesson_year_date_idx"),
-            models.Index(fields=("course", "date"), name="lesson_course_date_idx"),
+            models.Index(fields=("year", "date"), name="slot_year_date_idx"),
+            models.Index(fields=("course", "date"), name="slot_course_date_idx"),
         ]
         constraints = [
             models.UniqueConstraint(
                 fields=("course", "date", "lesson_number"),
-                name="unique_lesson_per_course_day",
+                name="unique_slot_per_course_day",
             ),
             models.CheckConstraint(
                 condition=models.Q(lesson_number__gte=1)

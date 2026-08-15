@@ -228,7 +228,8 @@
     "split_overlap": "Page {{page}} is given to two students at once.",
     "split_student_twice": "One student is named twice: a work is one piece, however many sheets it takes.",
     "split_not_in_course": "That student does not study in this course.",
-    "not_on_paper": "This work is not written on paper: there is nothing to split."
+    "not_on_paper": "This work is not written on paper: there is nothing to split.",
+    "plan_lesson_taught": "«{{title}}» was taught on {{date}}: a lesson already given keeps its place."
   },
   "classPicker": {
     "label": "Classes:",
@@ -397,7 +398,8 @@
       "chooseHint": "This course has several methodists.",
       "sendTo": "Send"
     },
-    "publishFromCourse": "The subject and the year of study come from the course: {{subject}}, year {{grade}}."
+    "publishFromCourse": "The subject and the year of study come from the course: {{subject}}, year {{grade}}.",
+    "taught": "Lesson already taught: it keeps its place."
   },
   "status": {
     "title": "My courses",
@@ -975,7 +977,7 @@
     "noLesson": "No lesson of this course on that day.",
     "noTopic": "The curriculum map has nothing left for this lesson.",
     "suggested": "The layout suggests this topic.",
-    "confirm": "yes, that is what we covered",
+    "confirm": "lesson taught",
     "cancelled": "cancelled",
     "setHomework": "Set as homework",
     "homeworkTitle": "Homework",

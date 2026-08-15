@@ -36,7 +36,7 @@ from .models import (
     CourseMethodist,
     CourseStudent,
     GradeLevel,
-    Lesson,
+    Slot,
     Subject,
 )
 from .serializers import (
@@ -48,8 +48,8 @@ from .serializers import (
     CourseAssignmentSerializer,
     CourseSerializer,
     GradeLevelSerializer,
-    LessonMoveSerializer,
-    LessonSerializer,
+    SlotMoveSerializer,
+    SlotSerializer,
     PeriodSerializer,
     full_name,
 )
@@ -405,7 +405,7 @@ class CourseAssignmentViewSet(SchoolScopedViewSet):
         Поэтому первый DELETE отвечает счётчиками: вот сколько всего в
         курсе и вот кто перестанет это видеть. `?force=true` подтверждает.
         """
-        slots = Lesson.objects.filter(course=instance.course).count()
+        slots = Slot.objects.filter(course=instance.course).count()
         rows = PlanNode.objects.filter(course=instance.course).count()
         works = instance.course.works.count()
 
@@ -488,7 +488,7 @@ class CourseViewSet(SchoolScopedViewSet):
         try:
             instance.delete()
         except ProtectedError:
-            slots = instance.lessons.count()
+            slots = instance.slots.count()
             rows = instance.plan_nodes.count()
             works = instance.works.count()
             # кто ведёт — один человек, и всё перечисленное теперь его: план,
@@ -512,7 +512,7 @@ class CourseViewSet(SchoolScopedViewSet):
             )
 
 
-class LessonViewSet(SchoolScopedViewSet):
+class SlotViewSet(SchoolScopedViewSet):
     """
     Расписание. Одно на всех: и «моё расписание», и расписание школы.
 
@@ -535,8 +535,8 @@ class LessonViewSet(SchoolScopedViewSet):
     массовые операции: copy, bulk, stats и summary.
     """
 
-    serializer_class = LessonSerializer
-    queryset = Lesson.objects.all()
+    serializer_class = SlotSerializer
+    queryset = Slot.objects.all()
     school_path = "course__school"
     permission_classes = [
         IsAuthenticated,
@@ -550,7 +550,7 @@ class LessonViewSet(SchoolScopedViewSet):
 
     def own_slots(self):
         """Уроки моих курсов — то, что человек называет своим расписанием."""
-        return Lesson.objects.filter(course__in=self.my_courses())
+        return Slot.objects.filter(course__in=self.my_courses())
 
     def require_write(self, course):
         """
@@ -625,7 +625,7 @@ class LessonViewSet(SchoolScopedViewSet):
         year = course.year
 
         source_numbers = defaultdict(list)
-        source_slots = Lesson.objects.filter(
+        source_slots = Slot.objects.filter(
             course=course,
             date__range=(data["source_start"], data["source_end"]),
             is_extra=False,
@@ -651,11 +651,11 @@ class LessonViewSet(SchoolScopedViewSet):
             # их не трогает. Администратора правило касается тем более: он
             # раскатывает сетку на весь год и стёр бы чужую историю разом
             deleted, _ = sweepable(
-                Lesson.objects.filter(course=course, date__range=target)
+                Slot.objects.filter(course=course, date__range=target)
             ).delete()
 
         occupied = set(
-            Lesson.objects.filter(course=course, date__range=target)
+            Slot.objects.filter(course=course, date__range=target)
             .values_list("date", "lesson_number")
         )
 
@@ -671,7 +671,7 @@ class LessonViewSet(SchoolScopedViewSet):
         if lead is not None:
             busy = {
                 (slot.date, slot.lesson_number): slot.course.name
-                for slot in Lesson.objects.filter(
+                for slot in Slot.objects.filter(
                     course__assignments__teacher_id=lead,
                     year=year,
                     date__range=target,
@@ -686,14 +686,14 @@ class LessonViewSet(SchoolScopedViewSet):
             skipped=skipped,
             occupied=occupied,
             busy=busy,
-            make=lambda day, number: Lesson(
+            make=lambda day, number: Slot(
                 year=year,
                 course=course,
                 date=day,
                 lesson_number=number,
             ),
         )
-        Lesson.objects.bulk_create(result["created"])
+        Slot.objects.bulk_create(result["created"])
 
         return {
             "created": len(result["created"]),
@@ -769,18 +769,18 @@ class LessonViewSet(SchoolScopedViewSet):
         читается ровно как то, чем это было. Всё, что занятие успело
         накопить, переезжает: что прошли, кто вёл, заданные работы.
 
-        Проверяет цель обычный `LessonSerializer` — границы года, занятость
+        Проверяет цель обычный `SlotSerializer` — границы года, занятость
         номера у ведущего, уникальность: правила переноса не должны быть
         мягче правил создания, а второй список правил разошёлся бы с первым.
         """
-        lesson = self.get_object()
-        form = LessonMoveSerializer(data=request.data)
+        slot = self.get_object()
+        form = SlotMoveSerializer(data=request.data)
         form.is_valid(raise_exception=True)
         target = form.validated_data
 
         if (target["date"], target["lesson_number"]) == (
-            lesson.date,
-            lesson.lesson_number,
+            slot.date,
+            slot.lesson_number,
         ):
             api_error(
                 Codes.SLOT_MOVE_SAME_PLACE,
@@ -788,32 +788,36 @@ class LessonViewSet(SchoolScopedViewSet):
                 field="date",
             )
 
-        arrival = LessonSerializer(
+        arrival = SlotSerializer(
             data={
-                "course": lesson.course_id,
+                "course": slot.course_id,
                 "date": target["date"].isoformat(),
                 "lesson_number": target["lesson_number"],
                 "is_extra": True,
-                "covered": lesson.covered_id,
-                "taught_by": lesson.taught_by_id,
+                "lesson": slot.lesson_id,
+                "taught_by": slot.taught_by_id,
             },
             context=self.get_serializer_context(),
         )
-        arrival.is_valid(raise_exception=True)
-
+        # Проверка цели идёт **внутри** транзакции, и это не перестраховка:
+        # связь с уроком `OneToOne`, поэтому её надо снять с прежнего часа
+        # до того, как её примет новый, — а если цель окажется занята,
+        # откат вернёт занятие целиком, вместе со связью.
         with transaction.atomic():
+            slot.lesson = None
+            slot.save(update_fields=["lesson"])
+
+            arrival.is_valid(raise_exception=True)
             moved = arrival.save()
+
             # работы задавали на этом занятии, и занятие уехало вместе с ними
-            lesson.works.update(lesson=moved)
-            lesson.is_cancelled = True
-            lesson.reason = target.get("reason", "")
-            # что прошли и кто вёл — свойства состоявшегося занятия, а это
-            # не состоялось: они уехали на новую дату вместе с ним
-            lesson.covered = None
-            lesson.taught_by = None
-            lesson.save(
-                update_fields=["is_cancelled", "reason", "covered", "taught_by"]
-            )
+            slot.works.update(slot=moved)
+            slot.is_cancelled = True
+            slot.reason = target.get("reason", "")
+            # кто вёл — свойство состоявшегося занятия, а это не состоялось:
+            # оно уехало на новую дату вместе со связью
+            slot.taught_by = None
+            slot.save(update_fields=["is_cancelled", "reason", "taught_by"])
 
         return Response(arrival.data, status=status.HTTP_201_CREATED)
 
@@ -834,7 +838,7 @@ class LessonViewSet(SchoolScopedViewSet):
         data = form.validated_data
         self.require_write(data["course"])
 
-        queryset = Lesson.objects.filter(
+        queryset = Slot.objects.filter(
             course=data["course"],
             date__range=(data["start"], data["end"]),
         )
@@ -945,7 +949,7 @@ class LessonViewSet(SchoolScopedViewSet):
         (`suggested`), чтобы отметить «прошли» одним нажатием, а не искать
         строку плана в списке.
 
-        Записанное (`covered`) сильнее подсказанного: раскладка позиционная и
+        Записанное (`lesson`) сильнее подсказанного: раскладка позиционная и
         съезжает от любой правки плана, а запись держится за дату.
         """
         course = get_object_or_404(
@@ -954,9 +958,9 @@ class LessonViewSet(SchoolScopedViewSet):
         )
         day = read_date(request.query_params.get("date")) or timezone.localdate()
 
-        lessons = list(
-            Lesson.objects.filter(course=course, date=day)
-            .select_related("covered", "taught_by")
+        slots = list(
+            Slot.objects.filter(course=course, date=day)
+            .select_related("lesson", "taught_by")
             .prefetch_related("works")
             .order_by("lesson_number")
         )
@@ -969,7 +973,7 @@ class LessonViewSet(SchoolScopedViewSet):
             {
                 "course": {"id": course.pk, "name": course.name},
                 "date": day,
-                "lessons": [lesson_day_payload(item, suggested) for item in lessons],
+                "lessons": [slot_day_payload(item, suggested) for item in slots],
                 "previous": neighbour(course, day, forward=False),
                 "next": neighbour(course, day, forward=True),
             }
@@ -984,7 +988,7 @@ class LessonViewSet(SchoolScopedViewSet):
         теперь это уроки курса, на который никого не назначили, — то же самое
         состояние, только без своего поля.
         """
-        queryset = Lesson.objects.filter(
+        queryset = Slot.objects.filter(
             course__school_id=request.user.school_id
         )
 
@@ -1008,7 +1012,7 @@ class LessonViewSet(SchoolScopedViewSet):
 
 def neighbour(course, day, *, forward: bool):
     """Ближайший день с уроком этого курса — чтобы листать, а не искать."""
-    rows = Lesson.objects.filter(course=course)
+    rows = Slot.objects.filter(course=course)
     rows = rows.filter(date__gt=day) if forward else rows.filter(date__lt=day)
 
     return (
@@ -1018,24 +1022,24 @@ def neighbour(course, day, *, forward: bool):
     )
 
 
-def lesson_day_payload(lesson, suggested) -> dict:
+def slot_day_payload(slot, suggested) -> dict:
     """
-    Один урок на экране «Сегодня»: содержание, работы и что прошли.
+    Одно занятие на экране «Сегодня»: содержание, работы и что прошли.
 
     Содержание берётся у той строки плана, которую **записали**; не
     записали — у подсказанной раскладкой. `confirmed` говорит, что это:
     подтверждённое человеком или пока догадка позиционного сопоставления.
     """
-    covered = lesson.covered
-    topic = covered or suggested.get(lesson.pk)
+    recorded = slot.lesson
+    topic = recorded or suggested.get(slot.pk)
 
     return {
-        "id": lesson.pk,
-        "lesson_number": lesson.lesson_number,
-        "is_cancelled": lesson.is_cancelled,
-        "is_extra": lesson.is_extra,
-        "reason": lesson.reason,
-        "confirmed": covered is not None,
+        "id": slot.pk,
+        "lesson_number": slot.lesson_number,
+        "is_cancelled": slot.is_cancelled,
+        "is_extra": slot.is_extra,
+        "reason": slot.reason,
+        "confirmed": recorded is not None,
         "topic": (
             None
             if topic is None
@@ -1055,6 +1059,6 @@ def lesson_day_payload(lesson, suggested) -> dict:
                 "state": work.state(),
                 "on_paper": work.on_paper,
             }
-            for work in lesson.works.all()
+            for work in slot.works.all()
         ],
     }

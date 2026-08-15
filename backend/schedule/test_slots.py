@@ -16,7 +16,7 @@ from schools.testing import (
     make_year,
 )
 
-from .models import Course, Lesson
+from .models import Course, Slot
 
 
 def days(count):
@@ -41,7 +41,7 @@ class SlotTestCase(SchoolTestMixin, APITestCase):
         """
         course = course or self.course
         assign(teacher or self.user, course)
-        return Lesson.objects.create(
+        return Slot.objects.create(
             year=course.year,
             course=course,
             date=slot_date,
@@ -51,7 +51,7 @@ class SlotTestCase(SchoolTestMixin, APITestCase):
 
     def post_slot(self, slot_date, number, course=None, **extra):
         return self.client.post(
-            reverse("lesson-list"),
+            reverse("slot-list"),
             {
                 "course": (course or self.course).pk,
                 "date": slot_date,
@@ -63,7 +63,7 @@ class SlotTestCase(SchoolTestMixin, APITestCase):
 
     def slots_on(self, slot_date, course=None):
         return sorted(
-            Lesson.objects.filter(
+            Slot.objects.filter(
                 course=course or self.course, date=slot_date
             ).values_list("lesson_number", flat=True)
         )
@@ -73,13 +73,13 @@ class SlotCrudTests(SlotTestCase):
     def test_requires_authentication(self):
         self.client.credentials()
 
-        self.assertEqual(self.client.get(reverse("lesson-list")).status_code, 401)
+        self.assertEqual(self.client.get(reverse("slot-list")).status_code, 401)
 
     def test_create_fills_year_from_the_class(self):
         response = self.post_slot("2026-09-07", 1)
 
         self.assertEqual(response.status_code, 201, response.content)
-        slot = Lesson.objects.get()
+        slot = Slot.objects.get()
         self.assertEqual(slot.year, self.year)
         self.assertFalse(slot.is_cancelled)
         self.assertFalse(slot.is_extra)
@@ -135,7 +135,7 @@ class SlotCrudTests(SlotTestCase):
         response = self.post_slot("2026-09-07", 1, course=self.alien_class)
 
         self.assertEqual(response.status_code, 400, response.content)
-        self.assertFalse(Lesson.objects.exists())
+        self.assertFalse(Slot.objects.exists())
 
     def test_duplicate_number_in_the_same_day_is_rejected(self):
         self.post_slot("2026-09-07", 1)
@@ -147,7 +147,7 @@ class SlotCrudTests(SlotTestCase):
             response.json()["non_field_errors"],
             ["This course already has a lesson with that number that day."],
         )
-        self.assertEqual(Lesson.objects.count(), 1)
+        self.assertEqual(Slot.objects.count(), 1)
 
     def test_same_number_on_another_day_is_fine(self):
         self.post_slot("2026-09-07", 1)
@@ -171,7 +171,7 @@ class SlotCrudTests(SlotTestCase):
 
     def test_cancel_and_restore(self):
         slot = self.make_slot(MONDAY, 1)
-        url = reverse("lesson-detail", args=[slot.pk])
+        url = reverse("slot-detail", args=[slot.pk])
 
         cancel = self.client.patch(
             url, {"is_cancelled": True, "reason": "Болезнь"}, format="json"
@@ -194,7 +194,7 @@ class SlotCrudTests(SlotTestCase):
         slot = self.make_slot(MONDAY, 1)
 
         response = self.client.patch(
-            reverse("lesson-detail", args=[slot.pk]),
+            reverse("slot-detail", args=[slot.pk]),
             {"is_extra": True, "reason": "Замена"},
             format="json",
         )
@@ -204,10 +204,10 @@ class SlotCrudTests(SlotTestCase):
     def test_delete(self):
         slot = self.make_slot(MONDAY, 1)
 
-        response = self.client.delete(reverse("lesson-detail", args=[slot.pk]))
+        response = self.client.delete(reverse("slot-detail", args=[slot.pk]))
 
         self.assertEqual(response.status_code, 204)
-        self.assertFalse(Lesson.objects.exists())
+        self.assertFalse(Slot.objects.exists())
 
     def test_a_course_in_use_refuses_to_be_deleted(self):
         """
@@ -223,7 +223,7 @@ class SlotCrudTests(SlotTestCase):
         self.assertEqual(response.status_code, 400, response.content)
         self.assertEqual(response.json()["code"], "course_in_use")
         self.assertEqual(response.json()["params"]["slots"], 1)
-        self.assertTrue(Lesson.objects.exists())
+        self.assertTrue(Slot.objects.exists())
 
     def test_an_unused_course_deletes_cleanly(self):
         self.sign_in(self.admin)
@@ -246,32 +246,32 @@ class SlotIsolationTests(SlotTestCase):
         super().setUp()
         theirs = make_course(self.school, self.year, "10А")
         assign(self.colleague, theirs)
-        self.alien_slot = Lesson.objects.create(
+        self.alien_slot = Slot.objects.create(
             year=self.year, course=theirs, date=MONDAY, lesson_number=1
         )
         self.mine = self.make_slot(MONDAY, 2)
 
     def test_list_shows_only_slots_of_my_courses(self):
-        response = self.client.get(reverse("lesson-list"))
+        response = self.client.get(reverse("slot-list"))
 
         self.assertEqual([item["id"] for item in response.json()], [self.mine.pk])
 
     def test_a_slot_of_another_course_is_readable_but_not_writable(self):
-        url = reverse("lesson-detail", args=[self.alien_slot.pk])
+        url = reverse("slot-detail", args=[self.alien_slot.pk])
 
         self.assertEqual(self.client.get(url).status_code, 200)
         self.assertEqual(
             self.client.patch(url, {"is_cancelled": True}, format="json").status_code, 403
         )
         self.assertEqual(self.client.delete(url).status_code, 403)
-        self.assertTrue(Lesson.objects.filter(pk=self.alien_slot.pk).exists())
+        self.assertTrue(Slot.objects.filter(pk=self.alien_slot.pk).exists())
 
     def test_a_slot_of_another_school_is_not_found(self):
         alien_course = make_course(self.alien_school, self.alien_year, "9В")
-        alien = Lesson.objects.create(
+        alien = Slot.objects.create(
             year=self.alien_year, course=alien_course, date=MONDAY, lesson_number=1
         )
-        url = reverse("lesson-detail", args=[alien.pk])
+        url = reverse("slot-detail", args=[alien.pk])
 
         self.assertEqual(self.client.get(url).status_code, 404)
         self.assertEqual(self.client.delete(url).status_code, 404)
@@ -281,7 +281,7 @@ class SlotIsolationTests(SlotTestCase):
             school=self.school, year=self.year, name="9В")
         expected = self.make_slot(MONDAY, 3, course=second)
 
-        response = self.client.get(reverse("lesson-list"), {"course": second.pk})
+        response = self.client.get(reverse("slot-list"), {"course": second.pk})
 
         self.assertEqual([item["id"] for item in response.json()], [expected.pk])
 
@@ -289,7 +289,7 @@ class SlotIsolationTests(SlotTestCase):
         later = self.make_slot(MONDAY + days(10), 1)
 
         response = self.client.get(
-            reverse("lesson-list"),
+            reverse("slot-list"),
             {"start": (MONDAY + days(5)).isoformat(), "end": (MONDAY + days(20)).isoformat()},
         )
 
@@ -297,10 +297,10 @@ class SlotIsolationTests(SlotTestCase):
 
     def test_garbage_filters_return_nothing(self):
         self.assertEqual(
-            self.client.get(reverse("lesson-list"), {"course": "abc"}).json(), []
+            self.client.get(reverse("slot-list"), {"course": "abc"}).json(), []
         )
         self.assertEqual(
-            self.client.get(reverse("lesson-list"), {"start": "вчера"}).json(), []
+            self.client.get(reverse("slot-list"), {"start": "вчера"}).json(), []
         )
 
 
@@ -323,7 +323,7 @@ class CopyTests(SlotTestCase):
             "mode": "merge",
         }
         payload.update(overrides)
-        return self.client.post(reverse("lesson-copy"), payload, format="json")
+        return self.client.post(reverse("slot-copy"), payload, format="json")
 
     def test_week_is_copied_onto_matching_weekdays(self):
         response = self.copy()
@@ -413,7 +413,7 @@ class CopyTests(SlotTestCase):
 
         self.assertEqual(response.json()["skipped"], 1)
         self.assertEqual(self.slots_on(MONDAY + days(7)), [1, 2])
-        kept = Lesson.objects.get(date=MONDAY + days(7), lesson_number=1)
+        kept = Slot.objects.get(date=MONDAY + days(7), lesson_number=1)
         self.assertTrue(kept.is_extra)
 
     def test_replace_wipes_regular_slots_first(self):
@@ -422,7 +422,7 @@ class CopyTests(SlotTestCase):
         response = self.copy(mode="replace")
 
         self.assertEqual(response.json()["deleted"], 1)
-        self.assertFalse(Lesson.objects.filter(pk=stale.pk).exists())
+        self.assertFalse(Slot.objects.filter(pk=stale.pk).exists())
         self.assertEqual(self.slots_on(MONDAY + days(7)), [1, 2])
 
     def test_replace_keeps_extra_and_cancelled(self):
@@ -431,8 +431,8 @@ class CopyTests(SlotTestCase):
 
         response = self.copy(mode="replace")
 
-        self.assertTrue(Lesson.objects.filter(pk=extra.pk).exists())
-        self.assertTrue(Lesson.objects.filter(pk=cancelled.pk).exists())
+        self.assertTrue(Slot.objects.filter(pk=extra.pk).exists())
+        self.assertTrue(Slot.objects.filter(pk=cancelled.pk).exists())
         # первый урок понедельника занят отменённым — его пропустили
         self.assertEqual(response.json()["skipped"], 1)
         self.assertEqual(self.slots_on(MONDAY + days(7)), [1, 2])
@@ -449,7 +449,7 @@ class CopyTests(SlotTestCase):
         response = self.copy(course_id=self.alien_class.pk)
 
         self.assertEqual(response.status_code, 400, response.content)
-        self.assertEqual(Lesson.objects.filter(course=self.alien_class).count(), 0)
+        self.assertEqual(Slot.objects.filter(course=self.alien_class).count(), 0)
 
     def test_reversed_period_is_rejected(self):
         response = self.copy(target_end=(MONDAY + days(1)).isoformat())
@@ -480,21 +480,21 @@ class BulkDeleteTests(SlotTestCase):
             **params,
         }
         # параметры именно в строке запроса: тело у DELETE отдавать не принято
-        return self.client.delete(f"{reverse('lesson-bulk')}?{urlencode(query)}")
+        return self.client.delete(f"{reverse('slot-bulk')}?{urlencode(query)}")
 
     def test_deletes_everything_in_the_period(self):
         response = self.bulk()
 
         self.assertEqual(response.json(), {"deleted": 3})
-        self.assertEqual(list(Lesson.objects.all()), [self.outside])
+        self.assertEqual(list(Slot.objects.all()), [self.outside])
 
     def test_only_regular_keeps_extra_and_cancelled(self):
         response = self.bulk(only_regular="true")
 
         self.assertEqual(response.json(), {"deleted": 1})
-        self.assertFalse(Lesson.objects.filter(pk=self.regular.pk).exists())
-        self.assertTrue(Lesson.objects.filter(pk=self.extra.pk).exists())
-        self.assertTrue(Lesson.objects.filter(pk=self.cancelled.pk).exists())
+        self.assertFalse(Slot.objects.filter(pk=self.regular.pk).exists())
+        self.assertTrue(Slot.objects.filter(pk=self.extra.pk).exists())
+        self.assertTrue(Slot.objects.filter(pk=self.cancelled.pk).exists())
 
     def test_another_users_class_is_rejected(self):
         alien_slot = self.make_slot(MONDAY, 1, course=self.alien_class)
@@ -502,11 +502,11 @@ class BulkDeleteTests(SlotTestCase):
         response = self.bulk(**{"course": self.alien_class.pk})
 
         self.assertEqual(response.status_code, 400, response.content)
-        self.assertTrue(Lesson.objects.filter(pk=alien_slot.pk).exists())
+        self.assertTrue(Slot.objects.filter(pk=alien_slot.pk).exists())
 
     def test_missing_parameters_are_rejected(self):
         response = self.client.delete(
-            f"{reverse('lesson-bulk')}?course={self.course.pk}"
+            f"{reverse('slot-bulk')}?course={self.course.pk}"
         )
 
         self.assertEqual(response.status_code, 400)
@@ -550,7 +550,7 @@ class StatsTests(SlotTestCase):
 
     def stats(self, course=None):
         return self.client.get(
-            reverse("lesson-stats"),
+            reverse("slot-stats"),
             {"course": (course or self.current_class).pk},
         ).json()
 
@@ -597,6 +597,6 @@ class StatsTests(SlotTestCase):
     def test_stats_without_a_class_cover_all_own_slots(self):
         self.make_slot(MONDAY, 1)
 
-        data = self.client.get(reverse("lesson-stats")).json()
+        data = self.client.get(reverse("slot-stats")).json()
 
         self.assertEqual(data["total"], 6)

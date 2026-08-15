@@ -47,7 +47,7 @@ class OneSourceTests(SchoolTestMixin, APITestCase):
     def from_agenda(self, day):
         """«Моё расписание»: сводный вид по всем классам."""
         answer = self.client.get(
-            reverse("lesson-agenda"),
+            reverse("slot-agenda"),
             {"start": day.isoformat(), "end": day.isoformat()},
         ).json()
         return answer["days"][day.isoformat()]
@@ -124,7 +124,7 @@ class TimetableAcceptsWeekdaysTests(SchoolTestMixin, APITestCase):
         self.sign_in(self.admin)
 
         response = self.client.post(
-            reverse("lesson-list"),
+            reverse("slot-list"),
             {
                 "course": self.course.pk,
                 "date": WEEKDAY.isoformat(),
@@ -137,7 +137,7 @@ class TimetableAcceptsWeekdaysTests(SchoolTestMixin, APITestCase):
 
     def test_a_personal_lesson_on_a_weekday_carries_no_warning(self):
         response = self.client.post(
-            reverse("lesson-list"),
+            reverse("slot-list"),
             {
                 "course": self.course.pk,
                 "date": WEEKDAY.isoformat(),

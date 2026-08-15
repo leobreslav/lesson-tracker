@@ -464,8 +464,13 @@ describe('общие случаи с сервером', () => {
     return rows
   }
 
-  /** Лента, какой её отдаёт сервер: отменённых слотов в ней нет. */
-  const ribbonOf = (slots) =>
+  /**
+   * Лента, какой её отдаёт сервер: отменённых слотов в ней нет.
+   *
+   * `lesson` в случае — связь «занятие проведено»: у часа записан урок по
+   * названию, и в ленту он приезжает его id, как с сервера.
+   */
+  const ribbonOf = (slots, rows) =>
     slots
       .filter((slot) => !slot.cancelled)
       .map((slot, index) => ({
@@ -473,6 +478,9 @@ describe('общие случаи с сервером', () => {
         date: slot.date,
         lesson_number: index + 1,
         is_extra: Boolean(slot.extra),
+        lesson_id: slot.lesson
+          ? rows.find((row) => row.title === slot.lesson).id
+          : null,
         week: index + 1,
         week_start: slot.date,
         term: null,
@@ -482,7 +490,7 @@ describe('общие случаи с сервером', () => {
   for (const spec of CASES.cases) {
     it(spec.name, () => {
       const rows = rowsOf(spec.plan)
-      const ribbon = ribbonOf(spec.slots)
+      const ribbon = ribbonOf(spec.slots, rows)
       const stitched = stitchLayout(rows, ribbon, CASES.today)
       const totals = layoutTotals(stitched, ribbon)
       const past = stitched.filter((row) => !row.is_section && row.past).length

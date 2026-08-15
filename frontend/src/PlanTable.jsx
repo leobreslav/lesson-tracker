@@ -243,28 +243,40 @@ export default function PlanTable({
   const addFormFor = (parent, after) =>
     adding && adding.parent === parent && adding.after === after ? addForm() : null
 
-  const moveButtons = (node, isSection) => (
-    <>
-      <button
-        type="button"
-        className="link"
-        title={t('plan.up')}
-        disabled={busy}
-        onClick={() => move(node.id, 'up', isSection)}
-      >
-        ↑
-      </button>
-      <button
-        type="button"
-        className="link"
-        title={t('plan.down')}
-        disabled={busy}
-        onClick={() => move(node.id, 'down', isSection)}
-      >
-        ↓
-      </button>
-    </>
-  )
+  /**
+   * Проведённая строка стоит на месте — и тема, в которой такая есть.
+   *
+   * Раскладка двухступенчатая: час со связью показывает свой урок, а
+   * соседи разбирают оставшиеся по порядку. Переставленная связанная
+   * строка вытеснила бы их неизвестно куда, и сервер такой перенос
+   * отклоняет; кнопки убраны затем, чтобы это было видно до нажатия.
+   */
+  const locked = (node) =>
+    Boolean(node.taught) || (node.children ?? []).some((child) => child.taught)
+
+  const moveButtons = (node, isSection) =>
+    locked(node) ? null : (
+      <>
+        <button
+          type="button"
+          className="link"
+          title={t('plan.up')}
+          disabled={busy}
+          onClick={() => move(node.id, 'up', isSection)}
+        >
+          ↑
+        </button>
+        <button
+          type="button"
+          className="link"
+          title={t('plan.down')}
+          disabled={busy}
+          onClick={() => move(node.id, 'down', isSection)}
+        >
+          ↓
+        </button>
+      </>
+    )
 
   const indicatorFor = (id) => (drop?.overId === dragId(id) ? drop.side : null)
 
@@ -436,6 +448,7 @@ export default function PlanTable({
         (dated && layout.byId.get(node.id)?.past ? ' past' : '')
       }
       indicator={indicatorFor(node.id)}
+      locked={locked(node)}
     >
       {(handle) => (
         <>
@@ -522,6 +535,7 @@ export default function PlanTable({
         id={dragId(node.id)}
         className={`plan-section${isTarget ? ' drop-inside' : ''}`}
         indicator={indicatorFor(node.id)}
+        locked={locked(node)}
       >
         {(handle) => (
           <>

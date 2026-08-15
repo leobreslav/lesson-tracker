@@ -45,7 +45,7 @@ class Branch:
 
 
 @dataclass(frozen=True)
-class PlannedLesson:
+class Lesson:
     """Урок со сквозным номером и папкой, в которой он лежит."""
 
     number: int
@@ -75,21 +75,21 @@ def build_tree(nodes: Iterable) -> list[Branch]:
     ]
 
 
-def number_lessons(tree: Iterable[Branch]) -> list[PlannedLesson]:
+def number_lessons(tree: Iterable[Branch]) -> list[Lesson]:
     """
     Уроки в порядке обхода в глубину со сквозными номерами.
 
     Уровней ровно два, поэтому «обход» — это цикл по верхнему уровню с
     заходом в детей папки; папки сами номеров не получают.
     """
-    lessons: list[PlannedLesson] = []
+    lessons: list[Lesson] = []
 
     for branch in tree:
         if branch.node.is_section:
             for child in branch.children:
-                lessons.append(PlannedLesson(len(lessons) + 1, child, branch.node))
+                lessons.append(Lesson(len(lessons) + 1, child, branch.node))
         else:
-            lessons.append(PlannedLesson(len(lessons) + 1, branch.node))
+            lessons.append(Lesson(len(lessons) + 1, branch.node))
 
     return lessons
 
@@ -120,21 +120,37 @@ class LayoutEntry:
 
     status: str
     slot: object | None = None
-    lesson: PlannedLesson | None = None
+    lesson: Lesson | None = None
     # терм, в который попала дата слота; у записей без слота его нет
     term: object | None = None
 
 
 def build_layout(
-    lessons: Sequence[PlannedLesson], slots: Sequence, terms: Iterable = ()
+    lessons: Sequence[Lesson], slots: Sequence, terms: Iterable = ()
 ) -> list[LayoutEntry]:
     """
-    Позиционное сопоставление плана и расписания: i-й урок в i-й слот.
+    Сопоставление плана и расписания: **запись, а где её нет — позиция**.
 
-    Ничего не хранит и не создаёт: несовпадение длин — это пометки.
-    Лишние слоты идут как `no_plan` на своих местах, лишние уроки плана —
-    как `no_slot` в конце. Прошлое и будущее в расчёте не различаются:
-    правка задним числом честно двигает всю раскладку.
+    Долго это был чистый `zip` — i-й урок в i-й слот, — то есть не запись, а
+    догадка: допущение, что обе оси идут в ногу. Догадка хорошая (в обычной
+    жизни так и есть) и бесплатная, но она молча переписывала прошлое:
+    вставили урок в сентябрьскую тему в марте, и сентябрь съезжал вместе со
+    всей лентой.
+
+    Теперь у часа бывает **связь** (`slot.lesson`) — учитель нажал «занятие
+    проведено», и это уже не догадка. Правило поэтому двухступенчатое:
+
+    1. час со связью показывает свой урок, всегда и что бы ни случилось с
+       планом; такой урок из общей очереди изымается;
+    2. остальные часы разбирают оставшиеся уроки плана по порядку — та же
+       позиционная догадка, только на том, о чём никто ничего не сказал.
+
+    Отсюда важное следствие: `no_plan` перестал быть непременно хвостом.
+    Если план кончился, а дальше стоит связанный час, свободные часы лежат
+    **между** занятыми, и всё, что ходит по раскладке, обязано это уметь.
+
+    Ничего не хранит и не создаёт: несовпадение длин — это пометки. Лишние
+    уроки плана идут как `no_slot` в конце.
 
     `lessons` — уроки плана по порядку (заголовки отфильтрованы),
     `slots` — неотменённые слоты по (дате, номеру). Запросы делаются
@@ -142,20 +158,33 @@ def build_layout(
     """
     terms = list(terms)
 
-    entries = [
-        LayoutEntry(
-            status=STATUS_MATCHED if index < len(lessons) else STATUS_NO_PLAN,
-            slot=slot,
-            lesson=lessons[index] if index < len(lessons) else None,
-            term=find_term(slot.date, terms),
-        )
-        for index, slot in enumerate(slots)
-    ]
+    # связь сильнее позиции: сначала разбираем записанное
+    recorded = {
+        slot.lesson_id: slot for slot in slots if getattr(slot, "lesson_id", None)
+    }
+    by_node = {lesson.node.pk: lesson for lesson in lessons}
+    bound = {
+        slot.pk: by_node[node_id]
+        for node_id, slot in recorded.items()
+        if node_id in by_node
+    }
 
-    entries.extend(
-        LayoutEntry(status=STATUS_NO_SLOT, lesson=lesson)
-        for lesson in lessons[len(slots) :]
-    )
+    # остальные уроки плана — общая очередь для часов без связи
+    queue = iter(lesson for lesson in lessons if lesson.node.pk not in recorded)
+    entries = []
+
+    for slot in slots:
+        lesson = bound.get(slot.pk) or next(queue, None)
+        entries.append(
+            LayoutEntry(
+                status=STATUS_MATCHED if lesson is not None else STATUS_NO_PLAN,
+                slot=slot,
+                lesson=lesson,
+                term=find_term(slot.date, terms),
+            )
+        )
+
+    entries.extend(LayoutEntry(status=STATUS_NO_SLOT, lesson=lesson) for lesson in queue)
 
     return entries
 
@@ -232,6 +261,11 @@ def slot_ribbon(
                 "date": slot.date,
                 "lesson_number": slot.lesson_number,
                 "is_extra": slot.is_extra,
+                # связь: какой урок плана записан за этим часом. Клиент сшивает
+                # ленту с планом сам, и без этого поля он повторял бы старый
+                # чистый `zip` — то есть переписывал бы прошлое там, где
+                # сервер его уже не переписывает
+                "lesson_id": slot.lesson_id,
                 "week": weeks.get(monday),
                 "week_start": monday,
                 "term_id": term.pk if term else None,
@@ -433,7 +467,7 @@ def course_progress(
     }
 
 
-def baseline_diff(rows: Iterable, lessons: Sequence[PlannedLesson]) -> dict:
+def baseline_diff(rows: Iterable, lessons: Sequence[Lesson]) -> dict:
     """
     Насколько план разошёлся с зафиксированным эталоном.
 
@@ -1361,6 +1395,6 @@ def plan_snapshot(course_id: int) -> list[SnapshotRow]:
     return rows
 
 
-def flatten_lessons(course_id: int) -> list[PlannedLesson]:
+def flatten_lessons(course_id: int) -> list[Lesson]:
     """The flat lesson sequence — the one that later lands on the slots."""
     return number_lessons(get_tree(course_id))

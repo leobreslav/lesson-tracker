@@ -89,7 +89,7 @@ def sweepable(lessons):
     Фильтр, а не проверка в цикле: и `bulk`, и `replace` работают наборами.
 
     Что считается записью, перечислено **не здесь**, а в самой модели
-    (`Lesson.empty_conditions`), и оттуда же это спрашивает `has_record`.
+    (`Slot.empty_conditions`), и оттуда же это спрашивает `has_record`.
     Пока список стоял в двух местах, он держался на том, что их правят
     вместе, — а следующая таблица на занятии просто не попала бы ни в один
     из них и была бы снесена первой же массовой чисткой.
@@ -171,11 +171,11 @@ def suggested_topics(course) -> dict:
     """
     from plans import services as plan_services
 
-    from .models import Lesson
+    from .models import Slot
 
     lessons = plan_services.flatten_lessons(course.pk)
     slots = list(
-        Lesson.objects.filter(course=course, is_cancelled=False).order_by(
+        Slot.objects.filter(course=course, is_cancelled=False).order_by(
             "date", "lesson_number"
         )
     )

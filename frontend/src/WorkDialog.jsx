@@ -53,7 +53,7 @@ export default function WorkDialog({
 
     onSubmit({
       course: courseId,
-      lesson: form.lesson ?? null,
+      slot: form.slot ?? null,
       title: form.title.trim(),
       description: form.description,
       opens_at: fromLocalInput(form.opens_at),
@@ -186,7 +186,7 @@ function initial(work) {
       show_result: work.show_result,
       on_paper: work.on_paper,
       description: work.description ?? '',
-      lesson: work.lesson ?? null,
+      slot: work.slot ?? null,
     }
   }
 
@@ -202,7 +202,7 @@ function initial(work) {
     show_result: true,
     on_paper: false,
     description: '',
-    lesson: null,
+    slot: null,
   }
 }
 

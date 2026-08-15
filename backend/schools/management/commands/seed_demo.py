@@ -36,7 +36,7 @@ from schedule.models import (
     CourseAssignment,
     CourseStudent,
     GradeLevel,
-    Lesson,
+    Slot,
     Subject,
 )
 from schools import services as school_services
@@ -199,7 +199,7 @@ PARTIAL_PLAN = (
     ("Треугольники", ("Первый признак равенства", "Второй признак", "Третий признак")),
 )
 
-# Lesson content on three lessons out of forty — enough to see the panel with
+# Slot content on three lessons out of forty — enough to see the panel with
 # something in it and the paperclip on some rows but not all.
 #
 # Markdown with maths in $…$ and $$…$$, which is the point: the panel has to
@@ -558,7 +558,7 @@ class Command(BaseCommand):
         # on commit and would find the rows already gone by then (schools
         # cascade into them), so the objects are removed here instead
         self.flush_files()
-        Lesson.objects.all().delete()
+        Slot.objects.all().delete()
         Course.objects.all().update(subject=None)
         Subject.objects.all().delete()
         SchoolYear.objects.all().delete()  # carries courses, terms, markup
@@ -719,11 +719,11 @@ class Command(BaseCommand):
                 continue
 
             course = courses[name]
-            if Lesson.objects.filter(course=course).exists():
+            if Slot.objects.filter(course=course).exists():
                 continue
 
-            Lesson.objects.bulk_create(
-                Lesson(
+            Slot.objects.bulk_create(
+                Slot(
                     year=year,
                     course=course,
                     date=day,
@@ -746,13 +746,13 @@ class Command(BaseCommand):
 
         for name, reason in EXTRA:
             course = courses[name]
-            if Lesson.objects.filter(course=course, is_extra=True).exists():
+            if Slot.objects.filter(course=course, is_extra=True).exists():
                 continue
 
             anchor = self.nth_slot(course, 5)
             if anchor is None:
                 continue
-            Lesson.objects.create(
+            Slot.objects.create(
                 year=anchor.year,
                 course=course,
                 # a number the weekly template never uses, on the next day
@@ -770,7 +770,7 @@ class Command(BaseCommand):
         this very command, and letting them shift the ordering would make the
         second run mark a different lesson than the first.
         """
-        slots = Lesson.objects.filter(course=course, is_extra=False).order_by(
+        slots = Slot.objects.filter(course=course, is_extra=False).order_by(
             "date", "lesson_number"
         )
         return slots[index] if slots.count() > index else None
@@ -975,9 +975,9 @@ class Command(BaseCommand):
             self.stdout.write("  расписание и планы: пропущены (--minimal)")
         else:
             self.stdout.write(
-                f"  уроки:     {Lesson.objects.count()} "
-                f"({Lesson.objects.filter(is_cancelled=True).count()} отменено, "
-                f"{Lesson.objects.filter(is_extra=True).count()} дополнительных)"
+                f"  уроки:     {Slot.objects.count()} "
+                f"({Slot.objects.filter(is_cancelled=True).count()} отменено, "
+                f"{Slot.objects.filter(is_extra=True).count()} дополнительных)"
             )
             self.stdout.write(f"  план:      {lessons} уроков в планах")
             self.stdout.write(

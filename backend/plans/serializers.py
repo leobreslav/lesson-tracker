@@ -34,7 +34,7 @@ def own_nodes(serializer):
     return PlanNode.objects.filter(course__in=Course.objects.for_teacher(user))
 
 
-def node_payload(node, number=None) -> dict:
+def node_payload(node, number=None, *, taught=()) -> dict:
     return {
         "id": node.pk,
         "parent": node.parent_id,
@@ -49,19 +49,34 @@ def node_payload(node, number=None) -> dict:
         # запросом на конкретный урок
         "has_content": node.has_content,
         "attachments": getattr(node, "attachment_count", 0),
+        # урок проведён: за ним записан час, и позиция ему больше не указ.
+        # Такую строку нельзя переставлять — раскладка показала бы её по
+        # записи, а соседей по позиции, и они бы столкнулись. Признак едет в
+        # дереве, а не выводится из ленты слотов: лента приезжает не всегда
+        # (даты можно выключить), а ручку перетаскивания прятать надо всегда
+        "taught": node.pk in taught,
     }
 
 
 def tree_payload(course_id: int) -> dict:
+    from schedule.models import Slot
+
     tree = services.get_tree(course_id)
     numbers = services.lesson_numbers(tree)
+    # один запрос на всё дерево: строк плана бывает две сотни
+    taught = set(
+        Slot.objects.filter(course_id=course_id, lesson__isnull=False).values_list(
+            "lesson_id", flat=True
+        )
+    )
 
     nodes = []
     for branch in tree:
-        payload = node_payload(branch.node, numbers.get(branch.node.pk))
+        payload = node_payload(branch.node, numbers.get(branch.node.pk), taught=taught)
         if branch.node.is_section:
             payload["children"] = [
-                node_payload(child, numbers.get(child.pk)) for child in branch.children
+                node_payload(child, numbers.get(child.pk), taught=taught)
+                for child in branch.children
             ]
         nodes.append(payload)
 

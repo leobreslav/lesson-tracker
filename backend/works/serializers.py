@@ -90,7 +90,7 @@ class WorkSerializer(serializers.ModelSerializer):
             "attempts",
             "show_result",
             "on_paper",
-            "lesson",
+            "slot",
             "state",
             "tasks_count",
             "created_at",
@@ -121,10 +121,10 @@ class WorkSerializer(serializers.ModelSerializer):
     def get_fields(self):
         fields = super().get_fields()
         fields["course"].queryset = teacher_courses(self)
-        # урок — из своих курсов; поле необязательное
-        from schedule.models import Lesson
+        # занятие — из своих курсов; поле необязательное
+        from schedule.models import Slot
 
-        fields["lesson"].queryset = Lesson.objects.filter(
+        fields["slot"].queryset = Slot.objects.filter(
             course__in=fields["course"].queryset
         )
         return fields

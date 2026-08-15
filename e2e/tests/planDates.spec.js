@@ -166,7 +166,7 @@ test('уроки без слота помечены', async ({
   // оставляем расписание только на сентябрь: план сорока уроков перестаёт
   // помещаться, и это ровно тот случай, ради которого даты и нужны
   await teacher.delete(
-    `/api/lessons/bulk/?course=${course.id}&start=2026-10-01&end=2027-08-01`,
+    `/api/slots/bulk/?course=${course.id}&start=2026-10-01&end=2027-08-01`,
   )
 
   await signIn(PEOPLE.ivanova)
@@ -610,7 +610,7 @@ test('при дефиците свободных нет вовсе', async ({ pa
   const courses = await teacher.get('/api/courses/')
   const course = courses.body.find((item) => item.name === COURSE)
   await teacher.delete(
-    `/api/lessons/bulk/?course=${course.id}&start=2026-10-01&end=2027-08-01`,
+    `/api/slots/bulk/?course=${course.id}&start=2026-10-01&end=2027-08-01`,
   )
 
   await signIn(PEOPLE.ivanova)
@@ -620,4 +620,63 @@ test('при дефиците свободных нет вовсе', async ({ pa
   await expect(page.locator('[data-card="missing"]')).toBeVisible()
   await expect(page.locator('.free-summary')).toHaveCount(0)
   await expect(page.locator('.plan-row.free')).toHaveCount(0)
+})
+
+/**
+ * Связь «занятие проведено»: запись сильнее позиции.
+ *
+ * Раскладка была чистым zip'ом и молча переписывала прошлое: вставили урок
+ * в начало плана — и сентябрь съезжал вместе со всей лентой. Час со связью
+ * держится за дату, а строку, которая за ним записана, больше не двигают:
+ * позиция и запись иначе начинают говорить разное.
+ *
+ * Записать связь можно только у прошедшего занятия, но **проставить** её
+ * через API дата не мешает — сервер записывает, что ему сказали. Учебный год
+ * демо-данных весь в будущем, поэтому здесь связь ставится запросом.
+ */
+test('проведённый урок держится за дату и не переставляется', async ({
+  page,
+  signIn,
+  api,
+}) => {
+  const teacher = await api(PEOPLE.ivanova)
+  const courses = await teacher.get('/api/courses/')
+  const course = courses.body.find((item) => item.name === COURSE)
+
+  const ribbon = await teacher.get(`/api/plan/layout/slots/?course=${course.id}`)
+  const tree = await teacher.get(`/api/plan/?course=${course.id}`)
+  const rows = tree.body.nodes.flatMap((node) =>
+    node.is_section ? node.children : [node],
+  )
+  // третий урок плана записываем за третьим часом — как оно и лежит сейчас
+  const anchored = rows[2]
+  const third = ribbon.body.slots[2]
+  await teacher.patch(`/api/slots/${third.id}/`, { lesson: anchored.id })
+
+  await signIn(PEOPLE.ivanova)
+  await openPlan(page)
+
+  const before = await dateOfLesson(page, anchored.title)
+  const row = page.locator('.plan-row.lesson', { hasText: anchored.title }).first()
+
+  // ручка на месте, но не тянется, и кнопок перестановки у строки нет
+  await expect(row.locator('.handle.locked')).toBeVisible()
+  await expect(row.locator('button[title="Вверх"]')).toHaveCount(0)
+
+  // вставляем урок выше него — всё, что ниже, обычно уезжает на день
+  const first = page.locator('.plan-row.lesson').first()
+  const drifting = rows[3].title
+  const driftingBefore = await dateOfLesson(page, drifting)
+
+  await first.hover()
+  await first.getByTitle('Вставить урок после').click()
+  const form = page.locator('.plan-add-form')
+  await form.getByLabel('Название').fill('Вставка')
+  await form.getByRole('button', { name: 'Добавить' }).click()
+  await expect(page.locator('.plan-row', { hasText: 'Вставка' })).toBeVisible()
+
+  // несвязанный уехал — значит правка дошла и лента пересчиталась
+  await expect.poll(() => dateOfLesson(page, drifting)).not.toBe(driftingBefore)
+  // а записанный стоит там же: за ним записан час
+  expect(await dateOfLesson(page, anchored.title)).toBe(before)
 })

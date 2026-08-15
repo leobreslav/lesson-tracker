@@ -14,7 +14,7 @@ from .models import (
     CourseMethodist,
     CourseStudent,
     GradeLevel,
-    Lesson,
+    Slot,
     Subject,
 )
 
@@ -287,7 +287,7 @@ class CourseSerializer(serializers.ModelSerializer):
         return fields
 
 
-class LessonSerializer(serializers.ModelSerializer):
+class SlotSerializer(serializers.ModelSerializer):
     # the year follows from the course and need not be sent
     year = serializers.PrimaryKeyRelatedField(
         queryset=SchoolYear.objects.none(), required=False
@@ -298,11 +298,11 @@ class LessonSerializer(serializers.ModelSerializer):
     # второго места было бы вторым ответом на один вопрос
     teacher = serializers.SerializerMethodField()
     teacher_name = serializers.SerializerMethodField()
-    covered_title = serializers.CharField(source="covered.title", read_only=True)
+    lesson_title = serializers.CharField(source="lesson.title", read_only=True)
     warning = serializers.SerializerMethodField()
 
     class Meta:
-        model = Lesson
+        model = Slot
         fields = (
             "id",
             "year",
@@ -310,8 +310,8 @@ class LessonSerializer(serializers.ModelSerializer):
             "course_name",
             "teacher",
             "teacher_name",
-            "covered",
-            "covered_title",
+            "lesson",
+            "lesson_title",
             "taught_by",
             "date",
             "lesson_number",
@@ -326,7 +326,7 @@ class LessonSerializer(serializers.ModelSerializer):
             # та же уникальность, что у школьного расписания: курс не может
             # стоять в двух местах одновременно
             UniqueTogetherValidator(
-                queryset=Lesson.objects.all(),
+                queryset=Slot.objects.all(),
                 fields=("course", "date", "lesson_number"),
                 message="This course already has a lesson with that number that day.",
             ),
@@ -347,7 +347,7 @@ class LessonSerializer(serializers.ModelSerializer):
         # проходят, её проходят по частям
         from plans.models import PlanNode
 
-        fields["covered"].queryset = PlanNode.objects.filter(
+        fields["lesson"].queryset = PlanNode.objects.filter(
             course__in=courses, is_section=False
         )
         # кто вёл — сотрудник школы: замену ведёт учитель, а не ученик
@@ -396,12 +396,12 @@ class LessonSerializer(serializers.ModelSerializer):
         year = attrs.get("year") or course.year
         slot_date = value("date")
 
-        covered = value("covered")
-        if covered is not None and covered.course_id != course.pk:
+        lesson = value("lesson")
+        if lesson is not None and lesson.course_id != course.pk:
             api_error(
                 Codes.PARENT_OTHER_CLASS,
                 "That plan lesson belongs to another course.",
-                field="covered",
+                field="lesson",
             )
 
         if year != course.year:
@@ -429,7 +429,7 @@ class LessonSerializer(serializers.ModelSerializer):
             lead = CourseAssignment.objects.filter(course=course).values_list(
                 "teacher_id", flat=True
             ).first()
-            busy = Lesson.find_conflict(
+            busy = Slot.find_conflict(
                 teacher_id=lead,
                 year=year,
                 date=slot_date,
@@ -452,7 +452,7 @@ class LessonSerializer(serializers.ModelSerializer):
         return attrs
 
 
-class LessonMoveSerializer(serializers.Serializer):
+class SlotMoveSerializer(serializers.Serializer):
     """
     Куда переносится занятие — и почему.
 

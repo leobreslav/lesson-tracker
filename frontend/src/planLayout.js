@@ -33,6 +33,18 @@
  * рвали поток сильнее, чем помогали.
  */
 export function stitchLayout(rows, ribbon, today = null) {
+  // Связь сильнее позиции — то же правило, что на сервере (`build_layout`).
+  // Час, за которым записан урок, показывает именно его, а сам урок из
+  // общей очереди изымается; остальные часы разбирают оставшиеся по
+  // порядку. Без этого клиент продолжал бы переписывать прошлое при каждой
+  // правке плана там, где сервер его уже не переписывает.
+  const bound = new Map()
+  const free = []
+  for (const slot of ribbon) {
+    if (slot.lesson_id != null) bound.set(slot.lesson_id, slot)
+    else free.push(slot)
+  }
+
   let index = 0
   let term // терм предыдущего урока: по его смене рисуется заголовок
   let todayDone = false
@@ -40,8 +52,8 @@ export function stitchLayout(rows, ribbon, today = null) {
   const stitched = rows.map((row) => {
     if (row.is_section) return { ...row, children: [], range: null }
 
-    const slot = index < ribbon.length ? ribbon[index] : null
-    index += 1
+    const slot = bound.get(row.id) ?? (index < free.length ? free[index] : null)
+    if (!bound.has(row.id)) index += 1
 
     const before = []
 
@@ -158,10 +170,16 @@ export function layoutTotals(stitched, ribbon) {
     slots: ribbon.length,
     lessons: lessons.length,
     balance: ribbon.length - lessons.length,
-    // последний урок плана есть только тогда, когда план поместился целиком
+    // Последний урок плана есть только тогда, когда план поместился целиком.
+    // Это самая поздняя из его дат, а не дата последней строки: связанный
+    // час может стоять не по порядку, и «когда кончится план» отвечает
+    // именно максимум — так же считает сервер.
     lastDate:
       placed.length === lessons.length && lessons.length
-        ? lessons[lessons.length - 1].slot.date
+        ? placed.reduce(
+            (latest, row) => (row.slot.date > latest ? row.slot.date : latest),
+            placed[0].slot.date,
+          )
         : null,
     missing: lessons.length - placed.length,
   }
@@ -171,25 +189,34 @@ export function layoutTotals(stitched, ribbon) {
  * Слоты, на которые не пришлось ни одного урока плана.
  *
  * Сводка говорит «баланс +82», но где эти восемьдесят два дня — по числу не
- * видно. При позиционном сопоставлении они идут все подряд после последнего
- * урока плана, поэтому это просто хвост ленты.
+ * видно.
+ *
+ * Хвостом ленты это было, пока сопоставление было чисто позиционным: тогда
+ * свободные часы шли все подряд после последнего урока плана. Со связями
+ * так уже не выходит — план может кончиться раньше связанного часа, и тогда
+ * свободные лежат **между** занятыми. Поэтому берутся не по срезу, а по
+ * тому, что осталось незанятым в сшивке; сшивка на странице одна, и «баланс
+ * +59» со «свободных 59» разойтись не могут.
  *
  * Подпись недели ставится там же, где и в плане: у первой строки недели, —
  * и первая свободная строка её не получает, если неделя началась ещё
  * уроками плана.
- *
- * На вход, как и у сводки, идут сшитые строки: сшивка на странице одна.
  */
 export function freeSlots(stitched, ribbon) {
-  // сколько слотов заняли уроки — оттуда и начинается хвост; считается по
-  // той же сшивке, что и сводка, чтобы «свободных 59» и «баланс +59» не
-  // расходились на единицу
-  const taken = stitched.filter((row) => row.slot).length
-  let previous = taken > 0 ? (ribbon[taken - 1]?.week ?? null) : null
+  const taken = new Set(
+    stitched.filter((row) => row.slot).map((row) => row.slot.id),
+  )
 
-  return ribbon.slice(taken).map((slot) => {
-    const labelled = slot.week != null && slot.week !== previous
+  let previous = null
+  const free = []
+  for (const slot of ribbon) {
+    if (taken.has(slot.id)) {
+      previous = slot.week
+      continue
+    }
+    free.push({ slot, labelled: slot.week != null && slot.week !== previous })
     previous = slot.week
-    return { slot, labelled }
-  })
+  }
+
+  return free
 }

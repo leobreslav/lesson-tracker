@@ -74,7 +74,7 @@ class SchoolOverviewView(APIView):
     def get(self, request):
         from calendars.models import SchoolYear
         from schedule.models import Course, CourseAssignment, GradeLevel, Subject
-        from schedule.models import Lesson
+        from schedule.models import Slot
 
         school = request.user.school
         year = (
@@ -83,7 +83,7 @@ class SchoolOverviewView(APIView):
         courses = Course.objects.filter(school=school)
         # расписание школы — это все уроки её курсов: отдельной таблицы у
         # него больше нет
-        lessons = Lesson.objects.filter(course__school=school)
+        lessons = Slot.objects.filter(course__school=school)
 
         return Response(
             {
@@ -262,7 +262,7 @@ class MemberViewSet(
 
         The first attempt is refused with the counts; `?force=true` confirms.
         """
-        from schedule.models import CourseAssignment, Lesson
+        from schedule.models import CourseAssignment, Slot
 
         if instance.pk == self.request.user.pk:
             api_error(
@@ -276,7 +276,7 @@ class MemberViewSet(
         # строки плана здесь не считаются: план принадлежит курсу, а не
         # человеку, и отвязка его не касается — курс останется без ведущего,
         # а программа на нём цела
-        slots = Lesson.objects.filter(teacher=instance).count()
+        slots = Slot.objects.filter(teacher=instance).count()
         courses = CourseAssignment.objects.filter(teacher=instance).count()
 
         forced = self.request.query_params.get("force", "").lower() == "true"

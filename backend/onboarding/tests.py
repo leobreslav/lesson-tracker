@@ -7,7 +7,7 @@ from django.urls import reverse
 from django.utils import timezone
 from plans.models import PlanNode
 from rest_framework.test import APITestCase
-from schedule.models import Course, Lesson
+from schedule.models import Course, Slot
 from schools.testing import assign, SchoolTestMixin, make_course, make_year
 
 from . import services
@@ -99,11 +99,11 @@ class StatusTests(OnboardingTestCase):
         second = self.make_class(year, "9Б Геометрия")
 
         today = timezone.localdate()
-        Lesson.objects.create(
+        Slot.objects.create(
             year=year, course=first,
             date=date(2026, 9, 7), lesson_number=1,
         )
-        Lesson.objects.create(
+        Slot.objects.create(
             year=year, course=second,
             date=date(2026, 9, 8), lesson_number=1,
         )
@@ -129,7 +129,7 @@ class StatusTests(OnboardingTestCase):
     def test_cancelled_slots_do_not_count(self):
         year = self.make_year()
         course = self.make_class(year)
-        Lesson.objects.create(
+        Slot.objects.create(
             year=year, course=course, date=date(2026, 9, 7),
             lesson_number=1, is_cancelled=True, reason="Болезнь",
         )
@@ -148,7 +148,7 @@ class StatusTests(OnboardingTestCase):
     def test_another_users_data_is_invisible(self):
         alien_year = self.make_year(school=self.alien_school, name="чужой")
         alien_class = self.make_class(alien_year, "чужой класс")
-        Lesson.objects.create(
+        Slot.objects.create(
             year=alien_year, course=alien_class,
             date=date(2026, 9, 7), lesson_number=1,
         )
@@ -189,14 +189,14 @@ class DemoTests(OnboardingTestCase):
         # уроков в каникулы и выходные быть не должно
         vacation = DayException.objects.filter(year=year).first()
         self.assertFalse(
-            Lesson.objects.filter(
+            Slot.objects.filter(
                 course__in=Course.objects.for_teacher(self.user),
                 date__range=(vacation.start_date, vacation.end_date),
             ).exists()
         )
         weekend_slots = [
             slot
-            for slot in Lesson.objects.filter(course__in=Course.objects.for_teacher(self.user))
+            for slot in Slot.objects.filter(course__in=Course.objects.for_teacher(self.user))
             if slot.date.weekday() >= 5
         ]
         self.assertEqual(weekend_slots, [])
@@ -206,7 +206,7 @@ class DemoTests(OnboardingTestCase):
         self.create()
 
         pairs = list(
-            Lesson.objects.filter(course__in=Course.objects.for_teacher(self.user))
+            Slot.objects.filter(course__in=Course.objects.for_teacher(self.user))
             .values_list("date", "lesson_number")
         )
 

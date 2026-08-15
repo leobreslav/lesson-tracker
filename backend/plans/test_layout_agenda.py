@@ -5,7 +5,7 @@ from datetime import timedelta
 from django.db import connection
 from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
-from schedule.models import Course, Lesson
+from schedule.models import Course, Slot
 from schools.testing import assign, make_course
 
 from .models import PlanNode
@@ -80,7 +80,7 @@ class LayoutAgendaTests(LayoutApiTestCase):
         before = self.titles()
 
         self.client.patch(
-            reverse("lesson-detail", args=[created[1].pk]),
+            reverse("slot-detail", args=[created[1].pk]),
             {"is_cancelled": True, "reason": "Болезнь"},
             format="json",
         )
@@ -113,7 +113,7 @@ class LayoutAgendaTests(LayoutApiTestCase):
             title="Своя тема",
         )
         mine = self.fill_slots(1)[0]
-        other = Lesson.objects.create(
+        other = Slot.objects.create(
             year=second.year, course=second, date=MONDAY,
             lesson_number=2
         )
@@ -128,7 +128,7 @@ class LayoutAgendaTests(LayoutApiTestCase):
             course=self.alien_class, parent=None, position=0,
             is_section=False, title="Чужой урок",
         )
-        alien_slot = Lesson.objects.create(
+        alien_slot = Slot.objects.create(
             year=self.alien_class.year,
             course=self.alien_class,
             date=MONDAY,

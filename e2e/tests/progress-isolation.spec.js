@@ -24,7 +24,7 @@ async function dates(page, count = 4) {
 
 /** The n-th lesson of a course that is still standing, straight from the API. */
 async function nthSlot(api, courseId, index) {
-  const { body } = await api.get(`/api/lessons/?course=${courseId}`)
+  const { body } = await api.get(`/api/slots/?course=${courseId}`)
   const live = body
     .filter((slot) => !slot.is_cancelled)
     .sort((a, b) =>
@@ -108,7 +108,7 @@ test('второй учитель не видит ни уроков, ни пла
 }) => {
   // Ivanova has a plan in Grade 6 Algebra; Petrov shares no course with it
   const ivanova = await api(PEOPLE.ivanova)
-  const hers = await ivanova.get('/api/lessons/')
+  const hers = await ivanova.get('/api/slots/')
   expect(hers.body.length).toBeGreaterThan(0)
 
   await signIn(PEOPLE.petrov)
@@ -131,7 +131,7 @@ test('второй учитель не видит ни уроков, ни пла
 
   // and the API says the same, so it is not the interface hiding things
   const petrov = await api(PEOPLE.petrov)
-  const his = await petrov.get('/api/lessons/')
+  const his = await petrov.get('/api/slots/')
   const hisIds = new Set(his.body.map((slot) => slot.id))
   expect(hers.body.some((slot) => hisIds.has(slot.id))).toBe(false)
 })
@@ -272,7 +272,7 @@ test('дефицит виден словами в шапке, а числа пл
   const courses = await teacher.get('/api/courses/')
   const course = courses.body.find((item) => item.name === 'Grade 6 Algebra')
   await teacher.delete(
-    `/api/lessons/bulk/?course=${course.id}&start=2026-10-01&end=2027-08-01`,
+    `/api/slots/bulk/?course=${course.id}&start=2026-10-01&end=2027-08-01`,
   )
 
   await signIn(PEOPLE.ivanova)

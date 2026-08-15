@@ -31,7 +31,7 @@ export default function Today({ onLoggedOut }) {
   const [date, setDate] = useState(today())
   const [day, setDay] = useState(null)
   const [busy, setBusy] = useState(false)
-  const [adding, setAdding] = useState(null) // {lesson, homework}
+  const [adding, setAdding] = useState(null) // {slot, homework}
   const [error, setError] = useState(null)
 
   const handleError = useCallback(
@@ -156,15 +156,19 @@ export default function Today({ onLoggedOut }) {
           {day.lessons.length === 0 ? (
             <p className="hint">{t('today.noLesson')}</p>
           ) : (
-            day.lessons.map((lesson) => (
-              <LessonCard
-                key={lesson.id}
-                lesson={lesson}
+            day.lessons.map((slot) => (
+              <SlotCard
+                key={slot.id}
+                slot={slot}
                 busy={busy}
+                // подтверждать можно только то, что уже случилось: нажатая
+                // накануне кнопка стала бы ложью после пожарной тревоги, и
+                // заметить это было бы некому
+                done={day.date <= today()}
                 onConfirm={() =>
-                  run(() => updateSlot(lesson.id, { covered: lesson.topic.id }))
+                  run(() => updateSlot(slot.id, { lesson: slot.topic.id }))
                 }
-                onHomework={() => setAdding({ lesson, homework: lesson.topic?.homework })}
+                onHomework={() => setAdding({ slot, homework: slot.topic?.homework })}
               />
             ))
           )}
@@ -177,7 +181,7 @@ export default function Today({ onLoggedOut }) {
           preset={{
             title: t('today.homeworkTitle'),
             description: adding.homework ?? '',
-            lesson: adding.lesson.id,
+            slot: adding.slot.id,
           }}
           busy={busy}
           onSubmit={(fields) => run(() => createWork(fields))}
@@ -194,21 +198,21 @@ export default function Today({ onLoggedOut }) {
  * Четыре поля плана показываются как есть и только непустые: пустые
  * заголовки на экране, куда смотрят посреди урока, — чистый шум.
  */
-function LessonCard({ lesson, busy, onConfirm, onHomework }) {
+function SlotCard({ slot, busy, done, onConfirm, onHomework }) {
   const { t } = useTranslation()
-  const topic = lesson.topic
+  const topic = slot.topic
 
   return (
     <section className="panel lesson-card">
       <div className="panel-head spread">
         <h2 className="section-title">
-          {t('today.lessonNumber', { number: lesson.lesson_number })}
+          {t('today.lessonNumber', { number: slot.lesson_number })}
           {topic && <> · {topic.title}</>}
         </h2>
-        {lesson.is_cancelled && (
+        {slot.is_cancelled && (
           <span className="badge">
             {t('today.cancelled')}
-            {lesson.reason && `: ${lesson.reason}`}
+            {slot.reason && `: ${slot.reason}`}
           </span>
         )}
       </div>
@@ -217,12 +221,22 @@ function LessonCard({ lesson, busy, onConfirm, onHomework }) {
         <p className="hint">{t('today.noTopic')}</p>
       ) : (
         <>
-          {!lesson.confirmed && (
+          {!slot.confirmed && (
             <p className="hint">
-              {t('today.suggested')}{' '}
-              <button type="button" className="link" disabled={busy} onClick={onConfirm}>
-                {t('today.confirm')}
-              </button>
+              {t('today.suggested')}
+              {done && (
+                <>
+                  {' '}
+                  <button
+                    type="button"
+                    className="link"
+                    disabled={busy}
+                    onClick={onConfirm}
+                  >
+                    {t('today.confirm')}
+                  </button>
+                </>
+              )}
             </p>
           )}
 
@@ -238,7 +252,7 @@ function LessonCard({ lesson, busy, onConfirm, onHomework }) {
       )}
 
       <ul className="work-links">
-        {lesson.works.map((work) => (
+        {slot.works.map((work) => (
           <li key={work.id}>
             <Link to={`/works/${work.id}`}>{work.title}</Link>
             <span className={`badge state-${work.state}`}>

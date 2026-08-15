@@ -3517,6 +3517,16 @@ button.link.handle:hover:not(:disabled) {
   background: none;
 }
 
+/* Проведённый урок: ручка на месте, но не тянется.
+   Убрать её совсем нельзя — колонки разъехались бы, и пропажа читалась бы
+   как поломка; поэтому она бледнеет и объясняется подсказкой. */
+.handle.locked {
+  padding: 0 0.2rem;
+  color: #d8d8d8;
+  font-size: 0.9rem;
+  cursor: default;
+}
+
 .plan-row.dragging,
 .plan-section.dragging {
   opacity: 0.4;

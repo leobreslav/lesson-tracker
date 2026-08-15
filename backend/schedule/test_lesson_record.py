@@ -27,7 +27,7 @@ from schools.testing import (
     make_year,
 )
 
-from .models import Lesson
+from .models import Slot
 from .services import sweepable
 
 
@@ -41,7 +41,7 @@ class LessonRecordTestCase(SchoolTestMixin, APITestCase):
 
     def clear(self, only_regular=True):
         return self.client.delete(
-            reverse("lesson-bulk")
+            reverse("slot-bulk")
             + f"?course={self.course.pk}&start={MONDAY}&end={MONDAY + timedelta(days=6)}"
             + f"&only_regular={only_regular}"
         )
@@ -49,28 +49,28 @@ class LessonRecordTestCase(SchoolTestMixin, APITestCase):
 
 class RecordTests(LessonRecordTestCase):
     def test_the_lesson_remembers_what_was_covered_and_who_taught_it(self):
-        lesson = make_slot(self.user, self.course)
+        slot = make_slot(self.user, self.course)
 
         response = self.client.patch(
-            reverse("lesson-detail", args=[lesson.pk]),
-            {"covered": self.topic.pk, "taught_by": self.colleague.pk},
+            reverse("slot-detail", args=[slot.pk]),
+            {"lesson": self.topic.pk, "taught_by": self.colleague.pk},
             format="json",
         )
 
         self.assertEqual(response.status_code, 200, response.content)
-        self.assertEqual(response.json()["covered_title"], "Синус суммы")
-        lesson.refresh_from_db()
-        self.assertEqual(lesson.covered, self.topic)
-        self.assertEqual(lesson.taught_by, self.colleague)
+        self.assertEqual(response.json()["lesson_title"], "Синус суммы")
+        slot.refresh_from_db()
+        self.assertEqual(slot.lesson, self.topic)
+        self.assertEqual(slot.taught_by, self.colleague)
 
     def test_a_plan_lesson_of_another_course_cannot_be_named(self):
         other = make_course(self.school, self.year, "10А")
         theirs = make_node(self.colleague, other, "Чужая тема")
-        lesson = make_slot(self.user, self.course)
+        slot = make_slot(self.user, self.course)
 
         response = self.client.patch(
-            reverse("lesson-detail", args=[lesson.pk]),
-            {"covered": theirs.pk},
+            reverse("slot-detail", args=[slot.pk]),
+            {"lesson": theirs.pk},
             format="json",
         )
 
@@ -78,36 +78,36 @@ class RecordTests(LessonRecordTestCase):
 
     def test_deleting_the_plan_row_leaves_the_lesson_and_forgets_the_link(self):
         """Строку плана удалили, а урок был: связь уходит, факт остаётся."""
-        lesson = make_slot(self.user, self.course)
-        lesson.covered = self.topic
-        lesson.save(update_fields=["covered"])
+        slot = make_slot(self.user, self.course)
+        slot.lesson = self.topic
+        slot.save(update_fields=["lesson"])
 
         self.topic.delete()
 
-        lesson.refresh_from_db()
-        self.assertIsNone(lesson.covered_id)
+        slot.refresh_from_db()
+        self.assertIsNone(slot.lesson_id)
 
     def test_a_work_hangs_on_the_lesson_it_was_set_at(self):
-        lesson = make_slot(self.user, self.course)
+        slot = make_slot(self.user, self.course)
         work = make_work(self.user, self.course)
 
         response = self.client.patch(
             reverse("work-detail", args=[work.pk]),
-            {"lesson": lesson.pk},
+            {"slot": slot.pk},
             format="json",
         )
 
         self.assertEqual(response.status_code, 200, response.content)
-        self.assertEqual(list(lesson.works.all()), [work])
+        self.assertEqual(list(slot.works.all()), [work])
 
     def test_deleting_the_lesson_keeps_the_work(self):
-        lesson = make_slot(self.user, self.course)
-        work = make_work(self.user, self.course, lesson=lesson)
+        slot = make_slot(self.user, self.course)
+        work = make_work(self.user, self.course, slot=slot)
 
-        self.client.delete(reverse("lesson-detail", args=[lesson.pk]))
+        self.client.delete(reverse("slot-detail", args=[slot.pk]))
 
         work.refresh_from_db()
-        self.assertIsNone(work.lesson_id)
+        self.assertIsNone(work.slot_id)
 
 
 class SweepTests(LessonRecordTestCase):
@@ -119,31 +119,31 @@ class SweepTests(LessonRecordTestCase):
         self.assertEqual(self.clear().json()["deleted"], 1)
 
     def test_a_lesson_that_remembers_the_topic_survives(self):
-        lesson = make_slot(self.user, self.course)
-        lesson.covered = self.topic
-        lesson.save(update_fields=["covered"])
+        slot = make_slot(self.user, self.course)
+        slot.lesson = self.topic
+        slot.save(update_fields=["lesson"])
 
         self.assertEqual(self.clear().json()["deleted"], 0)
-        self.assertTrue(Lesson.objects.filter(pk=lesson.pk).exists())
+        self.assertTrue(Slot.objects.filter(pk=slot.pk).exists())
 
     def test_a_lesson_with_a_substitute_survives(self):
-        lesson = make_slot(self.user, self.course)
-        lesson.taught_by = self.colleague
-        lesson.save(update_fields=["taught_by"])
+        slot = make_slot(self.user, self.course)
+        slot.taught_by = self.colleague
+        slot.save(update_fields=["taught_by"])
 
         self.assertEqual(self.clear().json()["deleted"], 0)
 
     def test_a_lesson_with_a_work_survives(self):
-        lesson = make_slot(self.user, self.course)
-        make_work(self.user, self.course, lesson=lesson)
+        slot = make_slot(self.user, self.course)
+        make_work(self.user, self.course, slot=slot)
 
         self.assertEqual(self.clear().json()["deleted"], 0)
 
     def test_without_only_regular_everything_goes(self):
         """Явная просьба «снести всё» — это уже не массовая уборка."""
-        lesson = make_slot(self.user, self.course)
-        lesson.covered = self.topic
-        lesson.save(update_fields=["covered"])
+        slot = make_slot(self.user, self.course)
+        slot.lesson = self.topic
+        slot.save(update_fields=["lesson"])
 
         self.assertEqual(self.clear(only_regular=False).json()["deleted"], 1)
 
@@ -154,11 +154,11 @@ class SweepTests(LessonRecordTestCase):
         """
         source = make_slot(self.user, self.course, MONDAY, 1)
         kept = make_slot(self.user, self.course, MONDAY + timedelta(days=7), 4)
-        kept.covered = self.topic
-        kept.save(update_fields=["covered"])
+        kept.lesson = self.topic
+        kept.save(update_fields=["lesson"])
 
         self.client.post(
-            reverse("lesson-copy"),
+            reverse("slot-copy"),
             {
                 "course_id": self.course.pk,
                 "source_start": MONDAY.isoformat(),
@@ -170,8 +170,8 @@ class SweepTests(LessonRecordTestCase):
             format="json",
         )
 
-        self.assertTrue(Lesson.objects.filter(pk=kept.pk).exists())
-        self.assertTrue(Lesson.objects.filter(pk=source.pk).exists())
+        self.assertTrue(Slot.objects.filter(pk=kept.pk).exists())
+        self.assertTrue(Slot.objects.filter(pk=source.pk).exists())
 
 
 class LessonFieldsTests(SchoolTestMixin, APITestCase):
@@ -189,23 +189,23 @@ class LessonFieldsTests(SchoolTestMixin, APITestCase):
     """
 
     def test_every_field_of_the_lesson_says_what_it_is(self):
-        named = Lesson.GRID_FIELDS | Lesson.RECORD_FIELDS
-        actual = {field.name for field in Lesson._meta.get_fields() if field.concrete}
+        named = Slot.GRID_FIELDS | Slot.RECORD_FIELDS
+        actual = {field.name for field in Slot._meta.get_fields() if field.concrete}
 
         self.assertEqual(
             actual - named,
             set(),
             "новое поле занятия не названо ни временем, ни записью: "
             "решите, переживает ли оно массовую чистку, и допишите его в "
-            "Lesson.GRID_FIELDS или Lesson.RECORD_FIELDS",
+            "Slot.GRID_FIELDS или Slot.RECORD_FIELDS",
         )
         self.assertEqual(named - actual, set(), "в списке поле, которого нет")
 
     def test_every_table_hanging_off_the_lesson_protects_it(self):
         """Не список, а обход модели: новая таблица защищена с рождения."""
-        conditions = Lesson.empty_conditions()
+        conditions = Slot.empty_conditions()
 
-        for relation in Lesson._meta.related_objects:
+        for relation in Slot._meta.related_objects:
             self.assertIn(
                 f"{relation.field.related_query_name()}__isnull",
                 conditions,
@@ -222,7 +222,7 @@ class LessonFieldsTests(SchoolTestMixin, APITestCase):
         recorded.taught_by = self.colleague
         recorded.save(update_fields=["taught_by"])
 
-        swept = set(sweepable(Lesson.objects.filter(course=course)))
+        swept = set(sweepable(Slot.objects.filter(course=course)))
 
         self.assertEqual({slot.pk for slot in swept}, {empty.pk})
         self.assertFalse(empty.has_record())
@@ -247,7 +247,7 @@ class MoveTests(LessonRecordTestCase):
 
     def move(self, slot=None, **body):
         return self.client.post(
-            reverse("lesson-move", args=[(slot or self.slot).pk]),
+            reverse("slot-move", args=[(slot or self.slot).pk]),
             {"date": self.saturday.isoformat(), "lesson_number": 3, **body},
             format="json",
         )
@@ -262,7 +262,7 @@ class MoveTests(LessonRecordTestCase):
 
     def test_the_new_place_is_an_extra_lesson(self):
         """Чтобы «отменено 1 · добавлено 1» сложилось в компенсацию."""
-        moved = Lesson.objects.get(pk=self.move().json()["id"])
+        moved = Slot.objects.get(pk=self.move().json()["id"])
 
         self.assertEqual((moved.date, moved.lesson_number), (self.saturday, 3))
         self.assertTrue(moved.is_extra)
@@ -270,32 +270,32 @@ class MoveTests(LessonRecordTestCase):
         self.assertEqual(moved.course, self.course)
 
     def test_what_the_lesson_remembered_travels_with_it(self):
-        self.slot.covered = self.topic
+        self.slot.lesson = self.topic
         self.slot.taught_by = self.colleague
-        self.slot.save(update_fields=["covered", "taught_by"])
+        self.slot.save(update_fields=["lesson", "taught_by"])
 
-        moved = Lesson.objects.get(pk=self.move().json()["id"])
+        moved = Slot.objects.get(pk=self.move().json()["id"])
 
-        self.assertEqual(moved.covered, self.topic)
+        self.assertEqual(moved.lesson, self.topic)
         self.assertEqual(moved.taught_by, self.colleague)
 
     def test_the_place_left_behind_remembers_nothing(self):
         """Занятие не состоялось в среду — записи о среде быть не может."""
-        self.slot.covered = self.topic
-        self.slot.save(update_fields=["covered"])
+        self.slot.lesson = self.topic
+        self.slot.save(update_fields=["lesson"])
 
         self.move()
 
         self.slot.refresh_from_db()
-        self.assertIsNone(self.slot.covered)
+        self.assertIsNone(self.slot.lesson)
 
     def test_the_work_set_at_that_lesson_travels_too(self):
-        work = make_work(self.user, self.course, title="Домашняя", lesson=self.slot)
+        work = make_work(self.user, self.course, title="Домашняя", slot=self.slot)
 
         moved_id = self.move().json()["id"]
 
         work.refresh_from_db()
-        self.assertEqual(work.lesson_id, moved_id)
+        self.assertEqual(work.slot_id, moved_id)
 
     def test_moving_nowhere_is_refused(self):
         response = self.move(

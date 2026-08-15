@@ -6,7 +6,7 @@
  * once it answers. Change the rules there, change them here.
  *
  * The counters used to be mirrored here too (`buildStats`, a copy of
- * /api/lessons/stats/). Nothing called it: every page that shows counters
+ * /api/slots/stats/). Nothing called it: every page that shows counters
  * reads them from the server. A hand-kept mirror nobody uses is not a
  * spare — it is a second version of the truth waiting to be believed.
  */

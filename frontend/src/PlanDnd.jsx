@@ -14,8 +14,14 @@ export const emptyZoneId = (sectionId) => `empty-${sectionId}`
  * it in its header, a lesson at the start of the row. Only the handle drags —
  * otherwise clicks on the title and the buttons would fight the drag, and on
  * a phone the list would stop scrolling.
+ *
+ * `locked` — проведённый урок: за ним записан час, и позиция ему больше не
+ * указ. Ручка у такой строки остаётся на месте, но не тянется и объясняет
+ * почему: исчезнувшая ручка читалась бы как поломка, а сервер всё равно
+ * откажет (`plan_lesson_taught`). Двигается всё, что ниже последней
+ * связи, — то есть будущее, ради которого перетаскивание и заведено.
  */
-export function SortableRow({ id, className = '', indicator, children }) {
+export function SortableRow({ id, className = '', indicator, locked = false, children }) {
   const { t } = useTranslation()
   const {
     attributes,
@@ -25,14 +31,18 @@ export function SortableRow({ id, className = '', indicator, children }) {
     transform,
     transition,
     isDragging,
-  } = useSortable({ id })
+  } = useSortable({ id, disabled: locked })
 
   const style = {
     transform: CSS.Translate.toString(transform),
     transition,
   }
 
-  const handle = (
+  const handle = locked ? (
+    <span className="handle locked" title={t('plan.taught')} aria-hidden="true">
+      ⠿
+    </span>
+  ) : (
     <button
       type="button"
       className="link handle"

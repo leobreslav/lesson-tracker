@@ -89,12 +89,12 @@ test('копирование недели на месяц не ставит ур
   // copy asks, and this is the assertion that proves it did
   const teacher = await api(PEOPLE.ivanova)
   const during = await teacher.get(
-    `/api/lessons/?start=${IN_BREAK}&end=${IN_BREAK}`,
+    `/api/slots/?start=${IN_BREAK}&end=${IN_BREAK}`,
   )
   expect(during.body).toEqual([])
 
   // while the working weeks on either side did receive lessons
-  const after = await teacher.get('/api/lessons/?start=2026-11-04&end=2026-11-06')
+  const after = await teacher.get('/api/slots/?start=2026-11-04&end=2026-11-06')
   expect(after.body.length).toBeGreaterThan(0)
 })
 
@@ -121,10 +121,15 @@ test('неучебные дни в сетке приглушены и подпи
  *
  * Главное здесь — разница между подсказкой и записью. Раскладка позиционная
  * и съезжает от любой правки плана, поэтому «что прошли» она предлагает, а
- * записывает человек. В браузере это видно как «предполагает» → нажали →
- * подпись ушла.
+ * записывает человек.
+ *
+ * Записать можно только то, что уже случилось: кнопка, нажатая накануне,
+ * стала бы ложью после утренней пожарной тревоги, и заметить это было бы
+ * некому. Учебный год демо-данных весь в будущем, поэтому здесь проверяется
+ * именно эта половина правила — подсказка есть, кнопки нет; саму запись
+ * проверяют питоновские тесты, которым дата не мешает.
  */
-test('на «Сегодня» видно урок, и тема подтверждается одним нажатием', async ({
+test('на «Сегодня» видно урок, а подтвердить будущее нельзя', async ({
   page,
   signIn,
 }) => {
@@ -142,10 +147,7 @@ test('на «Сегодня» видно урок, и тема подтверж�
 
   await expect(card.first()).toBeVisible()
   await expect(page.getByText('Раскладка предполагает эту тему.')).toBeVisible()
-
-  await page.getByRole('button', { name: 'да, это и прошли' }).click()
-
-  await expect(page.getByText('Раскладка предполагает эту тему.')).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'занятие проведено' })).toHaveCount(0)
 })
 
 test('перенос оставляет отмену на прежнем месте и занятие на новом', async ({

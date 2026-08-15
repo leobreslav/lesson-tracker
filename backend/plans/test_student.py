@@ -16,7 +16,7 @@ from datetime import timedelta
 from django.urls import reverse
 from django.utils import timezone
 from rest_framework.test import APITestCase
-from schedule.models import Lesson
+from schedule.models import Slot
 from schools.services import enrol, remove_from_course
 from schools.testing import (
     MONDAY,
@@ -49,7 +49,7 @@ class StudentCourseTestCase(SchoolTestMixin, APITestCase):
 
     def lessons(self, count, start=MONDAY):
         for index in range(count):
-            Lesson.objects.create(
+            Slot.objects.create(
                 year=self.year,
                 course=self.course,
                 date=start + timedelta(days=index),

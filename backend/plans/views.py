@@ -9,6 +9,7 @@ from config.access import (
 )
 from config.errors import Codes, api_error, error_payload
 from django.db import transaction
+from django.db.models import Q
 from files import services as file_services
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
@@ -22,7 +23,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.viewsets import ReadOnlyModelViewSet
 from calendars.models import DayException
-from schedule.models import Course, Lesson
+from schedule.models import Course, Slot
 
 from . import approval, progress, services, xlsx
 from .models import PlanBaseline, PlanNode
@@ -95,9 +96,41 @@ def read_date(value):
         return None
 
 
+def refuse_if_taught(node) -> None:
+    """
+    Проведённый урок с места не двигают.
+
+    Раскладка теперь двухступенчатая: час со связью показывает свой урок, а
+    остальные разбирают оставшиеся по порядку. Пока строка не связана,
+    порядок — это всё, что о ней известно, и переставлять её можно свободно.
+    Как только за ней записан час, позиция и запись начинают говорить
+    разное, и переставленная строка вытесняет соседей неизвестно куда.
+
+    Отказ мягкий по смыслу: двигается всё, что ниже последней связи, — а это
+    и есть будущее, ради которого перетаскивание и заведено. У темы
+    спрашивается то же самое про её уроки: перенос темы двигает их все.
+    """
+    from schedule.models import Slot
+
+    taught = Slot.objects.filter(
+        Q(lesson=node) | Q(lesson__parent=node)
+    ).select_related("lesson").first()
+
+    if taught is not None:
+        api_error(
+            Codes.PLAN_LESSON_TAUGHT,
+            f"«{taught.lesson.title}» was taught on {taught.date}: a lesson "
+            "already given keeps its place.",
+            field="position",
+            title=taught.lesson.title,
+            date=str(taught.date),
+        )
+
+
 def perform_move(node, data) -> Response:
     form = MoveSerializer(data=data)
     form.is_valid(raise_exception=True)
+    refuse_if_taught(node)
 
     with transaction.atomic():
         moved = services.move(node, form.validated_data["direction"])
@@ -165,7 +198,7 @@ class PlanNodeViewSet(CourseScopedViewSet):
         №1», то есть заново весь сентябрь. Расписание пока личное, а вот
         раскладка отвечает на вопрос курса — сколько его плана уже прошло.
         """
-        slots = Lesson.objects.filter(
+        slots = Slot.objects.filter(
             course=course, is_cancelled=False
         ).order_by("date", "lesson_number")
 
@@ -278,7 +311,7 @@ class PlanNodeViewSet(CourseScopedViewSet):
         когда урок добавили или перетащили.
         """
         course = self.requested_course()
-        slots = Lesson.objects.filter(
+        slots = Slot.objects.filter(
             course=course, is_cancelled=False
         ).order_by("date", "lesson_number")
         breaks = course.year.exceptions.filter(
@@ -352,8 +385,8 @@ class PlanNodeViewSet(CourseScopedViewSet):
         courses = list(
             Course.objects.for_teacher(request.user)
             .filter(
-                lessons__date__range=(start, end),
-                lessons__is_cancelled=False,
+                slots__date__range=(start, end),
+                slots__is_cancelled=False,
             )
             .distinct()
             .select_related("year")
@@ -369,7 +402,7 @@ class PlanNodeViewSet(CourseScopedViewSet):
         )
 
         slots_by_course = defaultdict(list)
-        for slot in Lesson.objects.filter(
+        for slot in Slot.objects.filter(
             course__in=courses, is_cancelled=False
         ).order_by("date", "lesson_number"):
             slots_by_course[slot.course_id].append(slot)
@@ -665,7 +698,7 @@ class PlanNodeViewSet(CourseScopedViewSet):
     @action(detail=False, methods=["get"], url_path="layout/summary", url_name="layout-summary")
     def layout_summary(self, request):
         course = self.requested_course()
-        cancelled = Lesson.objects.filter(
+        cancelled = Slot.objects.filter(
             course=course, is_cancelled=True
         ).count()
 
@@ -718,6 +751,7 @@ class PlanNodeViewSet(CourseScopedViewSet):
                 field="parent",
             )
         check_structure(node, parent)
+        refuse_if_taught(node)
 
         with transaction.atomic():
             services.place(node, parent, form.validated_data["position"])
@@ -782,7 +816,7 @@ class PlanReviewViewSet(ReadOnlyModelViewSet):
     def retrieve(self, request, pk=None):
         baseline = self.get_object()
         course = baseline.course
-        slots = Lesson.objects.filter(course=course, is_cancelled=False).count()
+        slots = Slot.objects.filter(course=course, is_cancelled=False).count()
         rows = services.plan_snapshot(course.pk)
         lessons = sum(1 for row in rows if not row.is_section)
 
@@ -859,7 +893,7 @@ class StudentCourseView(APIView):
         )
         course = enrolment.course
 
-        slots = Lesson.objects.filter(
+        slots = Slot.objects.filter(
             course=course, is_cancelled=False
         ).order_by("date", "lesson_number")
         lessons = services.flatten_lessons(course.pk)

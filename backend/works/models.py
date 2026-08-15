@@ -143,17 +143,17 @@ class Work(models.Model):
             "каждого ученика скан."
         ),
     )
-    lesson = models.ForeignKey(
-        "schedule.Lesson",
+    slot = models.ForeignKey(
+        "schedule.Slot",
         related_name="works",
         null=True,
         blank=True,
-        # урок могут удалить (переставили расписание), и работа это
+        # час могут удалить (переставили расписание), и работа это
         # переживает: она про то, что уже решали
         on_delete=models.SET_NULL,
-        verbose_name="lesson",
+        verbose_name="set at",
         help_text=(
-            "Урок, на котором работу задали. Не «когда сдавать» — на это "
+            "Занятие, на котором работу задали. Не «когда сдавать» — на это "
             "отвечает окно времени."
         ),
     )
