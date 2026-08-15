@@ -12,6 +12,16 @@ const STATES = ['present', 'absent', 'late']
  * пока никого не отметили, строк в базе нет вовсе, и «не отмечен»
  * отличается от «не был» именно этим.
  *
+ * **Свёрнут по умолчанию**, и это не экономия места, а порядок чтения: на
+ * двадцати учениках развёрнутый журнал — экран с лишним, и всё остальное
+ * про урок оказывается ниже него. Свёрнутая шапка при этом отвечает на
+ * единственный вопрос, который к журналу задают, не открывая его:
+ * «отмечено 3 из 14».
+ *
+ * Свёрнутость не запоминается, в отличие от переключателей вида в плане:
+ * это состояние одного занятия, а не привычка человека — на следующем
+ * уроке журнал снова закрыт, потому что он снова пустой.
+ *
  * Три кнопки в строке, а не выпадающий список: на двадцати учениках список
  * это двадцать открываний, а отметка ставится взглядом. Повторное нажатие
  * снимает — тот же приём, что у вердикта в проверке работ, и по той же
@@ -24,6 +34,7 @@ const STATES = ['present', 'absent', 'late']
 export default function LessonAttendance({ slotId, may, onError }) {
   const { t } = useTranslation()
   const [students, setStudents] = useState(null)
+  const [open, setOpen] = useState(false)
   const [busy, setBusy] = useState(false)
 
   const load = useCallback(
@@ -55,44 +66,65 @@ export default function LessonAttendance({ slotId, may, onError }) {
     }
   }
 
-  if (students === null) return <p className="hint">{t('common.loading')}</p>
-  if (!students.length) return <p className="hint">{t('lessonScreen.noStudents')}</p>
-
-  const marked = students.filter((row) => row.status).length
+  const marked = (students ?? []).filter((row) => row.status).length
 
   return (
-    <>
-      <p className="hint">
-        {t('lessonScreen.markedCount', { marked, total: students.length })}
-      </p>
+    <section className="panel">
+      <button
+        type="button"
+        className="panel-toggle"
+        aria-expanded={open}
+        onClick={() => setOpen(!open)}
+      >
+        <span className="caret">{open ? '▾' : '▸'}</span>
+        <span className="panel-title">{t('lessonScreen.attendance')}</span>
+        {/* число в шапке — единственный вопрос, который к журналу задают,
+            не открывая его */}
+        {students !== null && students.length > 0 && (
+          <span className="hint">
+            {t('lessonScreen.markedCount', { marked, total: students.length })}
+          </span>
+        )}
+      </button>
 
-      <ul className="attendance">
-        {students.map((row) => (
-          <li key={row.id} data-student={row.id} className={row.status ?? 'unmarked'}>
-            <span className="name">
-              {row.name}
-              {!row.active && (
-                <span className="hint"> · {t('lessonScreen.removedStudent')}</span>
-              )}
-            </span>
+      {open &&
+        (students === null ? (
+          <p className="hint">{t('common.loading')}</p>
+        ) : !students.length ? (
+          <p className="hint">{t('lessonScreen.noStudents')}</p>
+        ) : (
+          <ul className="attendance">
+            {students.map((row) => (
+              <li
+                key={row.id}
+                data-student={row.id}
+                className={row.status ?? 'unmarked'}
+              >
+                <span className="name">
+                  {row.name}
+                  {!row.active && (
+                    <span className="hint"> · {t('lessonScreen.removedStudent')}</span>
+                  )}
+                </span>
 
-            <span className="marks">
-              {STATES.map((state) => (
-                <button
-                  type="button"
-                  key={state}
-                  disabled={!may || busy}
-                  aria-pressed={row.status === state}
-                  className={row.status === state ? `chip active ${state}` : 'chip'}
-                  onClick={() => set(row.id, row.status === state ? null : state)}
-                >
-                  {t(`lessonScreen.${state}`)}
-                </button>
-              ))}
-            </span>
-          </li>
+                <span className="marks">
+                  {STATES.map((state) => (
+                    <button
+                      type="button"
+                      key={state}
+                      disabled={!may || busy}
+                      aria-pressed={row.status === state}
+                      className={row.status === state ? `chip active ${state}` : 'chip'}
+                      onClick={() => set(row.id, row.status === state ? null : state)}
+                    >
+                      {t(`lessonScreen.${state}`)}
+                    </button>
+                  ))}
+                </span>
+              </li>
+            ))}
+          </ul>
         ))}
-      </ul>
-    </>
+    </section>
   )
 }

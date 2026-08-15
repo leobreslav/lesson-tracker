@@ -350,11 +350,10 @@ export default function LessonScreen({ onLoggedOut }) {
         )}
       </section>
 
-      {/* 1. Кто пришёл — это делают до того, как начали */}
-      <section className="panel">
-        <h2 className="panel-title">{t('lessonScreen.attendance')}</h2>
-        <LessonAttendance slotId={card.id} may={may} onError={handleError} />
-      </section>
+      {/* 1. Кто пришёл — это делают до того, как начали. Карточку рисует
+          сам блок: заголовок у него кликабельный, и жить он должен вместе
+          со своей свёрнутостью */}
+      <LessonAttendance slotId={card.id} may={may} onError={handleError} />
 
       {/* 2. Чем занимаемся */}
       <section className="panel">

@@ -352,7 +352,12 @@ test('журнал ведётся кнопками, и отметка снима
   await signIn(PEOPLE.ivanova)
   await openLesson(page)
 
+  // блок свёрнут: на двадцати учениках развёрнутый журнал — экран с лишним,
+  // и всё остальное про урок оказывается ниже него
   const rows = page.locator('.attendance > li')
+  await expect(rows).toHaveCount(0)
+
+  await page.getByRole('button', { name: /Посещаемость/ }).click()
   await expect(rows.first()).toBeVisible()
   const total = await rows.count()
   await expect(page.getByText(`отмечено 0 из ${total}`)).toBeVisible()
@@ -363,9 +368,13 @@ test('журнал ведётся кнопками, и отметка снима
   await expect(first).toHaveClass(/absent/)
   await expect(page.getByText(`отмечено 1 из ${total}`)).toBeVisible()
 
-  // отметка настоящая: пережила перезагрузку страницы
+  // отметка настоящая: пережила перезагрузку страницы. Журнал при этом
+  // снова свёрнут — свёрнутость не запоминается, это состояние занятия
   await page.reload()
   await ready(page)
+  await expect(page.locator('.attendance > li')).toHaveCount(0)
+  await expect(page.getByText(`отмечено 1 из ${total}`)).toBeVisible()
+  await page.getByRole('button', { name: /Посещаемость/ }).click()
   await expect(page.locator('.attendance > li').first()).toHaveClass(/absent/)
 
   // повторное нажатие снимает: «не отмечен» — это отсутствие строки
