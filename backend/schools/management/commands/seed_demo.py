@@ -39,7 +39,8 @@ from schedule.models import (
     Slot,
     Subject,
 )
-from schools import services as school_services
+from schedule import services as schedule_services
+from schools import rich_demo, services as school_services
 from schools.models import Invitation, School
 from works.models import Submission, Task, Work
 
@@ -320,6 +321,14 @@ class Command(BaseCommand):
             action="store_true",
             help="только школа, год и курсы — без расписания и планов",
         )
+        parser.add_argument(
+            "--rich",
+            action="store_true",
+            help=(
+                "школа в рабочем размере: живой год, пять учителей, планы по "
+                "сотне уроков, шесть десятков учеников, работы с ответами"
+            ),
+        )
 
     def handle(self, *args, **options):
         if not settings.DEBUG:
@@ -333,10 +342,11 @@ class Command(BaseCommand):
             if options["flush"]:
                 self.flush()
 
+            rich = options["rich"]
             school = self.school()
             people = self.people(school)
-            year = self.year(school)
-            self.markup(year)
+            year = self.year(school, rich=rich)
+            self.markup(year, rich=rich)
             subjects = self.subjects(school)
             grades = self.grades(school)
             courses = self.courses(school, year, subjects, grades, people)
@@ -347,6 +357,11 @@ class Command(BaseCommand):
                 self.schedule(year, courses, people)
                 self.plans(courses, people)
                 self.library(school, subjects, people, courses)
+
+            if rich and not options["minimal"]:
+                rich_demo.build(
+                    school, year, people, subjects, grades, log=self.stdout.write
+                )
 
             attached = self.attach(school, options["email"])
 
@@ -616,17 +631,37 @@ class Command(BaseCommand):
 
         return people
 
-    def year(self, school):
-        year, _ = SchoolYear.objects.get_or_create(
+    def year(self, school, *, rich=False):
+        """
+        Учебный год. Обычно фиксированный, у крупного набора — живой.
+
+        Даты базового набора зашиты нарочно: на них стоят браузерные тесты,
+        и «первый понедельник» в них написан числом. Крупному набору,
+        наоборот, нужен год, внутри которого лежит сегодня, — иначе в нём
+        нет ни одного проведённого занятия, а без прошлого не видно ни
+        связи «занятие проведено», ни долгов, ни разложения резерва.
+        """
+        if rich:
+            start_year, start, end = rich_demo.living_year()
+            name = f"{start_year}/{start_year + 1}"
+        else:
+            start, end, name = YEAR_START, YEAR_END, YEAR_NAME
+
+        year, created = SchoolYear.objects.get_or_create(
             school=school,
-            name=YEAR_NAME,
-            defaults={"start_date": YEAR_START, "end_date": YEAR_END},
+            name=name,
+            defaults={"start_date": start, "end_date": end},
         )
+        if not created and (year.start_date, year.end_date) != (start, end):
+            year.start_date, year.end_date = start, end
+            year.save(update_fields=["start_date", "end_date"])
+
         return year
 
-    def markup(self, year):
+    def markup(self, year, *, rich=False):
         """Breaks, public holidays and the four quarters between them."""
-        for vacation in typical_vacations(START_YEAR, LANGUAGE):
+        start_year = year.start_date.year
+        for vacation in typical_vacations(start_year, LANGUAGE):
             DayException.objects.get_or_create(
                 year=year,
                 start_date=vacation["start_date"],
@@ -636,6 +671,8 @@ class Command(BaseCommand):
             )
 
         for day, title in HOLIDAYS:
+            if not year.start_date <= day <= year.end_date:
+                continue
             DayException.objects.get_or_create(
                 year=year,
                 start_date=day,
@@ -644,7 +681,15 @@ class Command(BaseCommand):
                 defaults={"title": title},
             )
 
-        for position, term in enumerate(typical_terms(START_YEAR, LANGUAGE)):
+        # у живого года четверти свои: `typical_terms` начинает первым
+        # сентября, и июль с августом не попали бы ни в один терм — занятия
+        # в них есть, а терма нет, и это было бы случайностью, а не решением
+        terms = (
+            rich_demo.terms_for(start_year)
+            if rich
+            else typical_terms(start_year, LANGUAGE)
+        )
+        for position, term in enumerate(terms):
             Term.objects.get_or_create(
                 year=year,
                 name=term["name"],
@@ -752,12 +797,26 @@ class Command(BaseCommand):
             anchor = self.nth_slot(course, 5)
             if anchor is None:
                 continue
+
+            day = anchor.date + timedelta(days=1)
+            lead = CourseAssignment.objects.filter(course=course).first()
+            # номер спрашиваем, а не назначаем: «тот, который сетка не
+            # занимает» было правдой, пока курсов было четыре, — с крупным
+            # набором учитель оказывался в двух местах разом
+            number = schedule_services.free_number(
+                teacher_id=lead.teacher_id if lead else None,
+                year=anchor.year,
+                day=day,
+                start=7,
+            )
+            if number is None:
+                continue
+
             Slot.objects.create(
                 year=anchor.year,
                 course=course,
-                # a number the weekly template never uses, on the next day
-                date=anchor.date + timedelta(days=1),
-                lesson_number=7,
+                date=day,
+                lesson_number=number,
                 is_extra=True,
                 reason=reason,
             )
@@ -955,20 +1014,43 @@ class Command(BaseCommand):
 
     def summary(self, school, people, courses, options, attached):
         lessons = PlanNode.objects.filter(is_section=False).count()
+        # числа читаются из базы, а не из констант: с `--rich` половина
+        # данных приходит из другого модуля, и сводка, собранная по здешним
+        # спискам, врала бы ровно про то, ради чего этот флаг и нажали
+        year = SchoolYear.objects.filter(school=school).order_by("-start_date").first()
+        teachers = User.objects.filter(school=school, kind=User.Kind.TEACHER)
+        learners = User.objects.filter(school=school, kind=User.Kind.STUDENT)
+        all_courses = Course.objects.filter(school=school).order_by("name")
+
         self.stdout.write(self.style.SUCCESS("\nseed_demo:"))
         self.stdout.write(f"  школа:     {school.name}")
-        self.stdout.write(f"  год:       {YEAR_NAME} ({YEAR_START} — {YEAR_END})")
+        if year:
+            self.stdout.write(
+                f"  год:       {year.name} ({year.start_date} — {year.end_date})"
+            )
         self.stdout.write(
             f"  разметка:  {Term.objects.filter(year__school=school).count()} термов, "
             f"{DayException.objects.filter(year__school=school).count()} исключений"
         )
-        self.stdout.write(f"  курсы:     {', '.join(courses)}")
-        self.stdout.write(f"  учителя:   {', '.join(people)}")
         self.stdout.write(
-            f"  ученики:   {CourseStudent.objects.filter(removed_at__isnull=True).count()}"
-            f" в «{STUDENT_COURSE}», 1 снят с курса, "
+            f"  курсы:     {all_courses.count()} — "
+            f"{', '.join(all_courses.values_list('name', flat=True)[:4])}…"
+        )
+        self.stdout.write(
+            f"  учителя:   {teachers.count()} — "
+            f"{', '.join(teachers.order_by('email').values_list('email', flat=True))}"
+        )
+        self.stdout.write(
+            f"  ученики:   {learners.count()} человек, "
+            f"{CourseStudent.objects.filter(removed_at__isnull=True).count()} зачислений, "
+            f"{CourseStudent.objects.filter(removed_at__isnull=False).count()} снято, "
             f"{Invitation.objects.filter(kind='student', accepted_at__isnull=True).count()}"
             " ждёт первого входа"
+        )
+        self.stdout.write(
+            f"  записано:  {Slot.objects.filter(lesson__isnull=False).count()} занятий "
+            f"из {Slot.objects.filter(date__lt=timezone.localdate(), is_cancelled=False).count()}"
+            " прошедших"
         )
 
         if options["minimal"]:

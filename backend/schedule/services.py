@@ -101,6 +101,31 @@ def sweepable(lessons):
     )
 
 
+def free_number(*, teacher_id, year, day, start: int = 1):
+    """
+    Первый номер, на котором учитель в этот день ещё свободен.
+
+    Нужен там, где занятие ставят **не по недельной сетке** — отработка,
+    консультация, замена: у сетки номер задан заранее и проверен, а
+    внеплановому его надо выбрать. Выбранный наугад однажды совпадёт с
+    чужим уроком того же учителя, и получится расписание, в котором он
+    ведёт два урока разом, — то, что приложение через интерфейс не
+    допускает.
+
+    `None`, если свободного номера в дне нет вовсе.
+    """
+    from .models import MAX_LESSON_NUMBER, Slot
+
+    for number in range(start, MAX_LESSON_NUMBER + 1):
+        busy = Slot.find_conflict(
+            teacher_id=teacher_id, year=year, date=day, lesson_number=number
+        )
+        if busy is None:
+            return number
+
+    return None
+
+
 def occupied_message(day: date, lesson_number: int, class_name: str) -> str:
     """A teacher cannot run two classes at once — say which one is in the way."""
     return f"{day.isoformat()}, lesson {lesson_number} is taken by {class_name}"

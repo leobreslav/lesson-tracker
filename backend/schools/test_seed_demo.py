@@ -17,6 +17,11 @@ from plans.models import PlanNode
 from schedule.models import Course, CourseStudent, Slot
 from collections import defaultdict
 
+from django.db.models import Count
+from django.utils import timezone
+
+from schools import rich_demo
+
 from works.models import Submission, Work
 
 
@@ -324,3 +329,159 @@ class AttachTests(TestCase):
 
         me.refresh_from_db()
         self.assertIsNone(me.school)
+
+
+@override_settings(DEBUG=True)
+class RichSeedTests(TestCase):
+    """
+    Крупный набор: школа в рабочем размере.
+
+    Проверяется не содержимое (оно выдуманное и меняется), а три свойства,
+    без которых набором нельзя пользоваться: год содержит сегодня, данные
+    возможны, второй прогон ничего не удваивает.
+    """
+
+    def test_the_year_always_holds_today(self):
+        """
+        Иначе в наборе нет ни одного проведённого занятия.
+
+        А без прошлого не видно ни связи «занятие проведено», ни долгов, ни
+        разложения резерва — то есть половины того, ради чего он и нужен.
+        """
+        seed("--rich")
+
+        today = timezone.localdate()
+        year = SchoolYear.objects.order_by("-start_date").first()
+
+        self.assertLessEqual(year.start_date, today)
+        self.assertLess(today, year.end_date)
+        self.assertTrue(
+            Slot.objects.filter(date__lt=today).exists(), "прошедших занятий нет"
+        )
+
+    def test_every_teacher_has_three_big_plans(self):
+        seed("--rich")
+
+        for email in ("sidorova@example.com", "kovalev@example.com",
+                      "nikitina@example.com"):
+            teacher = User.objects.get(email=email)
+            courses = Course.objects.for_teacher(teacher)
+            with self.subTest(email):
+                self.assertEqual(courses.count(), 3)
+                for course in courses:
+                    self.assertGreaterEqual(
+                        PlanNode.objects.filter(
+                            course=course, is_section=False
+                        ).count(),
+                        40,
+                    )
+
+    def test_nobody_teaches_two_lessons_at_once(self):
+        """
+        Набор, выражающий невозможное, хуже отсутствия набора.
+
+        Через интерфейс такого расписания не построить, а `bulk_create`
+        проходит мимо валидации — поэтому сборка сама себя и проверяет
+        (`rich_demo.check_conflicts`), а этот тест следит, что проверка на
+        месте и что данные её проходят.
+        """
+        seed("--rich")
+
+        clashes = (
+            Slot.objects.filter(
+                is_cancelled=False, course__assignments__teacher__isnull=False
+            )
+            .values("course__assignments__teacher", "date", "lesson_number")
+            .annotate(times=Count("id"))
+            .filter(times__gt=1)
+        )
+
+        self.assertEqual(list(clashes), [])
+
+    def test_the_guard_catches_an_impossible_timetable(self):
+        """Проверено поломкой: иначе сторож — просто вызов без последствий."""
+        seed("--rich")
+        first = Slot.objects.filter(is_cancelled=False).first()
+        twin = (
+            Course.objects.filter(
+                assignments__teacher__in=first.course.assignments.values("teacher")
+            )
+            .exclude(pk=first.course_id)
+            .first()
+        )
+        Slot.objects.create(
+            year=first.year,
+            course=twin,
+            date=first.date,
+            lesson_number=first.lesson_number,
+        )
+
+        with self.assertRaises(ValueError):
+            rich_demo.check_conflicts()
+
+    def test_running_twice_does_not_double_anything(self):
+        seed("--rich")
+        before = (
+            Course.objects.count(),
+            PlanNode.objects.count(),
+            Slot.objects.count(),
+            Work.objects.count(),
+            Submission.objects.count(),
+            User.objects.count(),
+        )
+
+        seed("--rich")
+
+        self.assertEqual(
+            (
+                Course.objects.count(),
+                PlanNode.objects.count(),
+                Slot.objects.count(),
+                Work.objects.count(),
+                Submission.objects.count(),
+                User.objects.count(),
+            ),
+            before,
+        )
+
+    def test_recording_shows_all_three_states(self):
+        """
+        Закрыто всё, закрыто не всё, не начинали.
+
+        Ровный набор — один из этих трёх — показывал бы долги неправильно и
+        выглядел бы правильно: «ноль» одинаково честен и когда закрывать
+        нечего, и когда никто не начинал.
+        """
+        seed("--rich")
+        today = timezone.localdate()
+
+        states = set()
+        for course in Course.objects.all():
+            past = Slot.objects.filter(
+                course=course, date__lt=today, is_cancelled=False
+            )
+            if not past.exists():
+                continue
+            bound = past.filter(lesson__isnull=False).count()
+            if bound == 0:
+                states.add("не начинали")
+            elif bound == past.count():
+                states.add("закрыто всё")
+            else:
+                states.add("есть долги")
+
+        self.assertEqual(states, {"не начинали", "закрыто всё", "есть долги"})
+
+    def test_the_plain_seed_keeps_its_fixed_year(self):
+        """
+        Браузерные тесты знают эти даты наизусть.
+
+        Живой год нужен крупному набору и только ему: на маленьком стоят
+        сто с лишним проверок, в которых «первый понедельник» написан
+        числом.
+        """
+        seed()
+
+        year = SchoolYear.objects.get()
+        self.assertEqual(str(year.start_date), "2026-09-01")
+        self.assertEqual(str(year.end_date), "2027-05-31")
