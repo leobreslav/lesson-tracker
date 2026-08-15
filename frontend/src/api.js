@@ -596,30 +596,30 @@ export const movePlanSection = (id, direction) =>
  * администратор — это решает сервер, здесь просто адрес.
  */
 export const fetchSchoolSlots = (params) =>
-  request(`/api/slots/?${new URLSearchParams({ ...params, scope: 'school' })}`)
+  request(`/api/lessons/?${new URLSearchParams({ ...params, scope: 'school' })}`)
 
 export const fetchScheduleSummary = (params) =>
-  request(`/api/slots/summary/?${new URLSearchParams(params)}`)
+  request(`/api/lessons/summary/?${new URLSearchParams(params)}`)
 
 // --- schedule lessons ---
 
 export const fetchSlotStats = (classId) =>
-  request(`/api/slots/stats/?course=${encodeURIComponent(classId)}`)
+  request(`/api/lessons/stats/?course=${encodeURIComponent(classId)}`)
 
 export const fetchAgenda = (start, end) =>
-  request(`/api/slots/agenda/?${new URLSearchParams({ start, end })}`)
+  request(`/api/lessons/agenda/?${new URLSearchParams({ start, end })}`)
 
 export const createSlot = (fields) =>
-  request('/api/slots/', { method: 'POST', body: fields })
+  request('/api/lessons/', { method: 'POST', body: fields })
 
 export const updateSlot = (id, fields) =>
-  request(`/api/slots/${id}/`, { method: 'PATCH', body: fields })
+  request(`/api/lessons/${id}/`, { method: 'PATCH', body: fields })
 
 export const deleteSlot = (id) =>
-  request(`/api/slots/${id}/`, { method: 'DELETE' })
+  request(`/api/lessons/${id}/`, { method: 'DELETE' })
 
 export const copySlots = (payload) =>
-  request('/api/slots/copy/', { method: 'POST', body: payload })
+  request('/api/lessons/copy/', { method: 'POST', body: payload })
 
 export const clearSlots = ({ classId, start, end, onlyRegular }) => {
   // bulk delete takes its parameters in the query string; DELETE has no body
@@ -629,7 +629,7 @@ export const clearSlots = ({ classId, start, end, onlyRegular }) => {
     end,
     only_regular: onlyRegular,
   })
-  return request(`/api/slots/bulk/?${query}`, { method: 'DELETE' })
+  return request(`/api/lessons/bulk/?${query}`, { method: 'DELETE' })
 }
 
 

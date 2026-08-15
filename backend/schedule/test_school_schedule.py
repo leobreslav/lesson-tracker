@@ -1,7 +1,7 @@
 """
 Расписание школы — то же расписание курсов, только целиком.
 
-Отдельной таблицы (`MasterSlot`) больше нет: после того как `LessonSlot`
+Отдельной таблицы (`MasterSlot`) больше нет: после того как `Lesson`
 переехал на курс, у неё не осталось ни одного своего поля, а ключ совпадал
 буква в букву. Здесь проверяется то, что от неё осталось как поведение:
 администратор правит любой курс школы, учитель — только свои, а видят
@@ -24,7 +24,7 @@ from schools.testing import (
     make_year,
 )
 
-from .models import LessonSlot
+from .models import Lesson
 
 TUESDAY = MONDAY + timedelta(days=1)
 
@@ -49,10 +49,10 @@ class SchoolScheduleTestCase(SchoolTestMixin, APITestCase):
             "lesson_number": 1,
             **fields,
         }
-        return self.client.post(reverse("lessonslot-list"), payload, format="json")
+        return self.client.post(reverse("lesson-list"), payload, format="json")
 
     def listing(self, **params):
-        return self.client.get(reverse("lessonslot-list"), params)
+        return self.client.get(reverse("lesson-list"), params)
 
 
 class AdminWritesTests(SchoolScheduleTestCase):
@@ -63,7 +63,7 @@ class AdminWritesTests(SchoolScheduleTestCase):
         response = self.post(course=self.theirs.pk)
 
         self.assertEqual(response.status_code, 201, response.content)
-        self.assertEqual(LessonSlot.objects.get().course, self.theirs)
+        self.assertEqual(Lesson.objects.get().course, self.theirs)
 
     def test_a_course_nobody_leads_can_still_be_scheduled(self):
         """«Нагрузку ещё не раздали» — обычное состояние, а не ошибка."""
@@ -84,7 +84,7 @@ class AdminWritesTests(SchoolScheduleTestCase):
         slot = make_slot(self.user, self.algebra)
 
         response = self.client.patch(
-            reverse("lessonslot-detail", args=[slot.pk]),
+            reverse("lesson-detail", args=[slot.pk]),
             {"is_cancelled": True, "reason": "Болезнь"},
             format="json",
         )
@@ -96,7 +96,7 @@ class AdminWritesTests(SchoolScheduleTestCase):
         slot = make_slot(self.colleague, self.theirs)
         self.sign_in(self.admin)
 
-        response = self.client.delete(reverse("lessonslot-detail", args=[slot.pk]))
+        response = self.client.delete(reverse("lesson-detail", args=[slot.pk]))
 
         self.assertEqual(response.status_code, 204, response.content)
 
@@ -198,11 +198,11 @@ class SummaryTests(SchoolScheduleTestCase):
         spare = make_course(self.school, self.year, "11Д")
         make_slot(self.user, self.algebra, MONDAY, 1)
         make_slot(self.colleague, self.theirs, MONDAY, 2)
-        LessonSlot.objects.create(
+        Lesson.objects.create(
             year=self.year, course=spare, date=MONDAY, lesson_number=3
         )
 
-        body = self.client.get(reverse("lessonslot-summary")).json()
+        body = self.client.get(reverse("lesson-summary")).json()
 
         self.assertEqual(body["total"], 3)
         self.assertEqual(body["unassigned"], 1)
@@ -217,7 +217,7 @@ class BulkTests(SchoolScheduleTestCase):
 
     def clear(self, course, **params):
         return self.client.delete(
-            reverse("lessonslot-bulk")
+            reverse("lesson-bulk")
             + f"?course={course.pk}&start={MONDAY}&end={MONDAY}"
             + "".join(f"&{key}={value}" for key, value in params.items())
         )
@@ -233,7 +233,7 @@ class BulkTests(SchoolScheduleTestCase):
         response = self.clear(self.theirs)
 
         self.assertEqual(response.status_code, 403)
-        self.assertEqual(LessonSlot.objects.count(), 2)
+        self.assertEqual(Lesson.objects.count(), 2)
 
 
 class AdminCopyTests(SchoolScheduleTestCase):
@@ -249,7 +249,7 @@ class AdminCopyTests(SchoolScheduleTestCase):
         }
         if course is not None:
             payload["course_id"] = course.pk
-        return self.client.post(reverse("lessonslot-copy"), payload, format="json")
+        return self.client.post(reverse("lesson-copy"), payload, format="json")
 
     def test_an_admin_repeats_a_week_of_a_course_they_do_not_teach(self):
         make_slot(self.colleague, self.theirs, MONDAY, 2)
@@ -259,7 +259,7 @@ class AdminCopyTests(SchoolScheduleTestCase):
 
         self.assertEqual(response.json()["created"], 1)
         self.assertEqual(
-            LessonSlot.objects.filter(course=self.theirs).count(), 2
+            Lesson.objects.filter(course=self.theirs).count(), 2
         )
 
     def test_a_teacher_cannot_copy_somebody_elses_course(self):
@@ -290,4 +290,4 @@ class AdminCopyTests(SchoolScheduleTestCase):
 
         self.copy(self.theirs, mode="replace")
 
-        self.assertTrue(LessonSlot.objects.filter(pk=kept.pk).exists())
+        self.assertTrue(Lesson.objects.filter(pk=kept.pk).exists())

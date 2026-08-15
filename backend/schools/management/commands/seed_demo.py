@@ -36,7 +36,7 @@ from schedule.models import (
     CourseAssignment,
     CourseStudent,
     GradeLevel,
-    LessonSlot,
+    Lesson,
     Subject,
 )
 from schools import services as school_services
@@ -558,7 +558,7 @@ class Command(BaseCommand):
         # on commit and would find the rows already gone by then (schools
         # cascade into them), so the objects are removed here instead
         self.flush_files()
-        LessonSlot.objects.all().delete()
+        Lesson.objects.all().delete()
         Course.objects.all().update(subject=None)
         Subject.objects.all().delete()
         SchoolYear.objects.all().delete()  # carries courses, terms, markup
@@ -719,11 +719,11 @@ class Command(BaseCommand):
                 continue
 
             course = courses[name]
-            if LessonSlot.objects.filter(course=course).exists():
+            if Lesson.objects.filter(course=course).exists():
                 continue
 
-            LessonSlot.objects.bulk_create(
-                LessonSlot(
+            Lesson.objects.bulk_create(
+                Lesson(
                     year=year,
                     course=course,
                     date=day,
@@ -746,13 +746,13 @@ class Command(BaseCommand):
 
         for name, reason in EXTRA:
             course = courses[name]
-            if LessonSlot.objects.filter(course=course, is_extra=True).exists():
+            if Lesson.objects.filter(course=course, is_extra=True).exists():
                 continue
 
             anchor = self.nth_slot(course, 5)
             if anchor is None:
                 continue
-            LessonSlot.objects.create(
+            Lesson.objects.create(
                 year=anchor.year,
                 course=course,
                 # a number the weekly template never uses, on the next day
@@ -770,7 +770,7 @@ class Command(BaseCommand):
         this very command, and letting them shift the ordering would make the
         second run mark a different lesson than the first.
         """
-        slots = LessonSlot.objects.filter(course=course, is_extra=False).order_by(
+        slots = Lesson.objects.filter(course=course, is_extra=False).order_by(
             "date", "lesson_number"
         )
         return slots[index] if slots.count() > index else None
@@ -975,9 +975,9 @@ class Command(BaseCommand):
             self.stdout.write("  расписание и планы: пропущены (--minimal)")
         else:
             self.stdout.write(
-                f"  уроки:     {LessonSlot.objects.count()} "
-                f"({LessonSlot.objects.filter(is_cancelled=True).count()} отменено, "
-                f"{LessonSlot.objects.filter(is_extra=True).count()} дополнительных)"
+                f"  уроки:     {Lesson.objects.count()} "
+                f"({Lesson.objects.filter(is_cancelled=True).count()} отменено, "
+                f"{Lesson.objects.filter(is_extra=True).count()} дополнительных)"
             )
             self.stdout.write(f"  план:      {lessons} уроков в планах")
             self.stdout.write(

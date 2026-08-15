@@ -394,44 +394,43 @@ class CourseAssignment(models.Model):
                 )
 
 
-class LessonSlot(models.Model):
+class Lesson(models.Model):
     """
-    Один урок курса в конкретный день.
+    Урок курса в конкретный день — и время в сетке, и то, что на нём было.
 
-    Отдельной сущности «расписание» нет: расписание курса на год — это все
-    его слоты внутри границ года. Вида урока тоже нет, только два флага:
+    Клеткой расписания (`LessonSlot`) он назывался, пока ничего, кроме
+    времени, не хранил. Теперь на нём висит день учителя целиком: что
+    прошли, кто вёл, какие работы задавали, а дальше — посещаемость и
+    оценки. Отдельной сущности «занятие» рядом с ним заводить не нужно:
+    тройка `(курс, дата, номер)` и есть её опознание, а `is_cancelled` уже
+    говорит «не было».
+
+    Отдельной сущности «расписание» тоже нет: расписание курса на год — это
+    все его уроки внутри границ года. Вида урока нет, только два флага:
     обычный — оба False, отменённый — `is_cancelled`, внезапный (замена,
     кружок) — `is_extra`; комбинация допустима.
 
-    **Слот принадлежит курсу, а не учителю.** Личным он был по аналогии с
+    **Урок принадлежит курсу, а не учителю.** Личным он был по аналогии с
     тем, что «двое ведут одну параллель, и неделя у каждого своя», — но
     ведущий у курса теперь один, и аналогия отпала вместе с ним. А вот цена
     личного расписания осталась бы: при смене ведущего сентябрь оставался у
     предшественника, январь появлялся у нового, и ни один экран не мог
-    сложить их в один год без костыля — отметки о передаче, даты передачи
-    или переноса слотов на нового человека. Теперь складывать нечего: у
-    курса одно расписание, и передача курса не событие, а смена строки в
-    `CourseAssignment`.
+    сложить их в один год без костыля. Теперь складывать нечего.
 
-    Уникальность стала такой же, как у `MasterSlot`: `(course, date,
-    lesson_number)` — «курс не может стоять в двух местах одновременно».
-    Проверка «учитель не может вести два урока разом» никуда не делась, но
-    идёт теперь через назначение, см. `find_conflict`.
-
-    Чего это стоило, названо честно: у прежнего ведущего свой прошлый год по
-    этому курсу с экрана уходит. Слот отвечает на вопрос «когда у курса
-    урок», а не «когда я работал».
+    Уникальность `(course, date, lesson_number)` — «курс не может стоять в
+    двух местах одновременно». Проверка «учитель не может вести два урока
+    разом» идёт через назначение, см. `find_conflict`.
     """
 
     year = models.ForeignKey(
         "calendars.SchoolYear",
-        related_name="slots",
+        related_name="lessons",
         on_delete=models.CASCADE,
         verbose_name="school year",
     )
     course = models.ForeignKey(
         Course,
-        related_name="slots",
+        related_name="lessons",
         # PROTECT: an administrator must not wipe somebody's schedule by
         # deleting a course — the answer explains what is in the way
         on_delete=models.PROTECT,
@@ -445,20 +444,44 @@ class LessonSlot(models.Model):
     is_cancelled = models.BooleanField("cancelled", default=False)
     is_extra = models.BooleanField("extra lesson", default=False)
     reason = models.CharField("reason", max_length=200, blank=True)
+
+    # что прошли: раскладка отвечает на это сама, но **позиционно**, и
+    # ответ съезжает от любой правки плана. Записанный держится за дату
+    covered = models.ForeignKey(
+        "plans.PlanNode",
+        related_name="taught_at",
+        null=True,
+        blank=True,
+        # строку плана могут удалить, а урок был: связь уходит, факт остаётся
+        on_delete=models.SET_NULL,
+        verbose_name="what was covered",
+        help_text="Строка плана, которую разобрали на этом уроке.",
+    )
+    # кто вёл: обычно ведущий курса, и тогда пусто. Заполняется, когда вёл
+    # не он — замена. Это свойство занятия, а не владение расписанием
+    taught_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        related_name="lessons_taught",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        verbose_name="taught by",
+        help_text="Заполняется только для замены: обычно урок ведёт ведущий курса.",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
-        verbose_name = "lesson slot"
-        verbose_name_plural = "lesson slots"
+        verbose_name = "lesson"
+        verbose_name_plural = "lessons"
         ordering = ("date", "lesson_number")
         indexes = [
-            models.Index(fields=("year", "date"), name="slot_year_date_idx"),
-            models.Index(fields=("course", "date"), name="slot_course_date_idx"),
+            models.Index(fields=("year", "date"), name="lesson_year_date_idx"),
+            models.Index(fields=("course", "date"), name="lesson_course_date_idx"),
         ]
         constraints = [
             models.UniqueConstraint(
                 fields=("course", "date", "lesson_number"),
-                name="unique_slot_per_course_day",
+                name="unique_lesson_per_course_day",
             ),
             models.CheckConstraint(
                 condition=models.Q(lesson_number__gte=1)
@@ -474,6 +497,22 @@ class LessonSlot(models.Model):
     def is_regular(self) -> bool:
         """Обычный урок расписания — только такие копируются и чистятся оптом."""
         return not self.is_extra and not self.is_cancelled
+
+    def has_record(self) -> bool:
+        """
+        Осталось ли на уроке что-нибудь, кроме времени.
+
+        Пока урок — пустая клетка сетки, массовая операция вправе его снести.
+        Как только на нём появилась запись — отметили, что прошли, назвали
+        замену, задали работу, — он перестаёт быть клеткой и становится
+        историей, а историю оптом не чистят.
+        """
+        return bool(
+            self.covered_id
+            or self.taught_by_id
+            or self.reason
+            or self.works.exists()
+        )
 
     @classmethod
     def find_conflict(cls, *, teacher_id, year, date, lesson_number, exclude_pk=None):

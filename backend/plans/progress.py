@@ -28,7 +28,7 @@ from __future__ import annotations
 from collections import Counter, defaultdict
 
 from django.contrib.auth import get_user_model
-from schedule.models import Course, CourseAssignment, CourseMethodist, LessonSlot
+from schedule.models import Course, CourseAssignment, CourseMethodist, Lesson
 
 from . import approval, services
 from .serializers import person, request_payload
@@ -96,7 +96,7 @@ def rows_for(courses, today, ahead: int = 2) -> list[dict]:
 
     slots_by_course = defaultdict(list)
     cancelled_by_course = Counter()
-    for slot in LessonSlot.objects.filter(course_id__in=course_ids).order_by(
+    for slot in Lesson.objects.filter(course_id__in=course_ids).order_by(
         "date", "lesson_number"
     ):
         if slot.is_cancelled:

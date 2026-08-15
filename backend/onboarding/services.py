@@ -19,7 +19,7 @@ from calendars.services import KIND_VACATION
 from django.db.models import Count, Q
 from django.utils import timezone
 from plans.models import PlanNode
-from schedule.models import Course, CourseAssignment, LessonSlot
+from schedule.models import Course, CourseAssignment, Lesson
 
 # учебный год начинается в сентябре: до июня «текущим» считаем прошлый сентябрь
 SCHOOL_YEAR_STARTS_IN = 6
@@ -119,7 +119,7 @@ def course_summary(course, user, today: date) -> dict:
     курса, а не человека. Считать по себе значило бы показать два разных
     баланса на двух экранах.
     """
-    slots = LessonSlot.objects.filter(course=course, is_cancelled=False)
+    slots = Lesson.objects.filter(course=course, is_cancelled=False)
     total = slots.count()
     past = slots.filter(date__lt=today).count()
     lessons = PlanNode.objects.filter(course=course, is_section=False).count()
@@ -439,7 +439,7 @@ def create_demo(user) -> dict:
         CourseAssignment.objects.create(course=course, teacher=user)
 
         slots = [
-            LessonSlot(
+            Lesson(
                 year=year,
                 course=course,
                 date=day,
@@ -449,7 +449,7 @@ def create_demo(user) -> dict:
             for weekday, number in template["week"]
             if day.weekday() == weekday
         ]
-        LessonSlot.objects.bulk_create(slots)
+        Lesson.objects.bulk_create(slots)
         created_slots += len(slots)
 
         for position, (section_title, lessons) in enumerate(template["plan"]):

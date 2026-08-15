@@ -45,7 +45,7 @@ class Branch:
 
 
 @dataclass(frozen=True)
-class Lesson:
+class PlannedLesson:
     """Урок со сквозным номером и папкой, в которой он лежит."""
 
     number: int
@@ -75,21 +75,21 @@ def build_tree(nodes: Iterable) -> list[Branch]:
     ]
 
 
-def number_lessons(tree: Iterable[Branch]) -> list[Lesson]:
+def number_lessons(tree: Iterable[Branch]) -> list[PlannedLesson]:
     """
     Уроки в порядке обхода в глубину со сквозными номерами.
 
     Уровней ровно два, поэтому «обход» — это цикл по верхнему уровню с
     заходом в детей папки; папки сами номеров не получают.
     """
-    lessons: list[Lesson] = []
+    lessons: list[PlannedLesson] = []
 
     for branch in tree:
         if branch.node.is_section:
             for child in branch.children:
-                lessons.append(Lesson(len(lessons) + 1, child, branch.node))
+                lessons.append(PlannedLesson(len(lessons) + 1, child, branch.node))
         else:
-            lessons.append(Lesson(len(lessons) + 1, branch.node))
+            lessons.append(PlannedLesson(len(lessons) + 1, branch.node))
 
     return lessons
 
@@ -120,13 +120,13 @@ class LayoutEntry:
 
     status: str
     slot: object | None = None
-    lesson: Lesson | None = None
+    lesson: PlannedLesson | None = None
     # терм, в который попала дата слота; у записей без слота его нет
     term: object | None = None
 
 
 def build_layout(
-    lessons: Sequence[Lesson], slots: Sequence, terms: Iterable = ()
+    lessons: Sequence[PlannedLesson], slots: Sequence, terms: Iterable = ()
 ) -> list[LayoutEntry]:
     """
     Позиционное сопоставление плана и расписания: i-й урок в i-й слот.
@@ -433,7 +433,7 @@ def course_progress(
     }
 
 
-def baseline_diff(rows: Iterable, lessons: Sequence[Lesson]) -> dict:
+def baseline_diff(rows: Iterable, lessons: Sequence[PlannedLesson]) -> dict:
     """
     Насколько план разошёлся с зафиксированным эталоном.
 
@@ -1361,6 +1361,6 @@ def plan_snapshot(course_id: int) -> list[SnapshotRow]:
     return rows
 
 
-def flatten_lessons(course_id: int) -> list[Lesson]:
+def flatten_lessons(course_id: int) -> list[PlannedLesson]:
     """The flat lesson sequence — the one that later lands on the slots."""
     return number_lessons(get_tree(course_id))

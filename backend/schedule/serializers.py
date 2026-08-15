@@ -13,7 +13,7 @@ from .models import (
     CourseMethodist,
     CourseStudent,
     GradeLevel,
-    LessonSlot,
+    Lesson,
     Subject,
 )
 
@@ -286,21 +286,22 @@ class CourseSerializer(serializers.ModelSerializer):
         return fields
 
 
-class LessonSlotSerializer(serializers.ModelSerializer):
+class LessonSerializer(serializers.ModelSerializer):
     # the year follows from the course and need not be sent
     year = serializers.PrimaryKeyRelatedField(
         queryset=SchoolYear.objects.none(), required=False
     )
     course_name = serializers.CharField(source="course.name", read_only=True)
-    # учителя у слота нет: он выводится из назначения. Наружу отдаётся
-    # только на чтение — расписание школы показывает, кто ведёт, и брать
-    # это из второго места было бы вторым ответом на один вопрос
+    # ведущий курса: не поле урока, а вывод из назначения. Наружу только на
+    # чтение — расписание школы показывает, кто ведёт, и брать это из
+    # второго места было бы вторым ответом на один вопрос
     teacher = serializers.SerializerMethodField()
     teacher_name = serializers.SerializerMethodField()
+    covered_title = serializers.CharField(source="covered.title", read_only=True)
     warning = serializers.SerializerMethodField()
 
     class Meta:
-        model = LessonSlot
+        model = Lesson
         fields = (
             "id",
             "year",
@@ -308,6 +309,9 @@ class LessonSlotSerializer(serializers.ModelSerializer):
             "course_name",
             "teacher",
             "teacher_name",
+            "covered",
+            "covered_title",
+            "taught_by",
             "date",
             "lesson_number",
             "is_cancelled",
@@ -321,7 +325,7 @@ class LessonSlotSerializer(serializers.ModelSerializer):
             # та же уникальность, что у школьного расписания: курс не может
             # стоять в двух местах одновременно
             UniqueTogetherValidator(
-                queryset=LessonSlot.objects.all(),
+                queryset=Lesson.objects.all(),
                 fields=("course", "date", "lesson_number"),
                 message="This course already has a lesson with that number that day.",
             ),
@@ -338,6 +342,15 @@ class LessonSlotSerializer(serializers.ModelSerializer):
         fields["year"].queryset = SchoolYear.objects.filter(
             pk__in=courses.values("year_id")
         )
+        # что прошли — строка плана этих же курсов, и только урок: тему не
+        # проходят, её проходят по частям
+        from plans.models import PlanNode
+
+        fields["covered"].queryset = PlanNode.objects.filter(
+            course__in=courses, is_section=False
+        )
+        # кто вёл — сотрудник школы: замену ведёт учитель, а не ученик
+        fields["taught_by"].queryset = school_teachers(self)
         return fields
 
     def lead(self, obj):
@@ -382,6 +395,14 @@ class LessonSlotSerializer(serializers.ModelSerializer):
         year = attrs.get("year") or course.year
         slot_date = value("date")
 
+        covered = value("covered")
+        if covered is not None and covered.course_id != course.pk:
+            api_error(
+                Codes.PARENT_OTHER_CLASS,
+                "That plan lesson belongs to another course.",
+                field="covered",
+            )
+
         if year != course.year:
             api_error(
                 Codes.SLOT_YEAR_MISMATCH,
@@ -407,7 +428,7 @@ class LessonSlotSerializer(serializers.ModelSerializer):
             lead = CourseAssignment.objects.filter(course=course).values_list(
                 "teacher_id", flat=True
             ).first()
-            busy = LessonSlot.find_conflict(
+            busy = Lesson.find_conflict(
                 teacher_id=lead,
                 year=year,
                 date=slot_date,
@@ -432,7 +453,7 @@ class LessonSlotSerializer(serializers.ModelSerializer):
 
 class CopySerializer(serializers.Serializer):
     """
-    Input for /api/slots/copy/.
+    Input for /api/lessons/copy/.
 
     Without `course_id` the whole schedule is copied — every course this
     teacher works in whose year touches the target period.
@@ -467,7 +488,7 @@ class CopySerializer(serializers.Serializer):
 
 
 class PeriodSerializer(serializers.Serializer):
-    """Period boundaries for /api/slots/agenda/."""
+    """Period boundaries for /api/lessons/agenda/."""
 
     start = serializers.DateField()
     end = serializers.DateField()
@@ -483,7 +504,7 @@ class PeriodSerializer(serializers.Serializer):
 
 
 class BulkDeleteSerializer(serializers.Serializer):
-    """Input for DELETE /api/slots/bulk/ — it arrives as query parameters."""
+    """Input for DELETE /api/lessons/bulk/ — it arrives as query parameters."""
 
     course = serializers.PrimaryKeyRelatedField(queryset=Course.objects.none())
     start = serializers.DateField()

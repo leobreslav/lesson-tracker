@@ -77,7 +77,7 @@ class ApiWiringTests(SimpleTestCase):
         found = api_views()
 
         self.assertGreater(len(found), 10, found)
-        for expected in ("CourseViewSet", "LessonSlotViewSet", "PlanNodeViewSet"):
+        for expected in ("CourseViewSet", "LessonViewSet", "PlanNodeViewSet"):
             self.assertIn(expected, found)
 
     def test_every_view_answers_whether_a_student_may(self):
@@ -182,8 +182,8 @@ class ApiWiringTests(SimpleTestCase):
 # ответ на чужой id» тут не о чем. Причина у каждого своя, и она нужна:
 # ошибиться легко именно здесь, приписав сюда действие с id в теле.
 ACTIONS_WITHOUT_ID = {
-    "lessonslot-agenda": "период и только он: своё расписание за даты",
-    "lessonslot-summary": "сводка по расписанию школы, id на входе нет",
+    "lesson-agenda": "период и только он: своё расписание за даты",
+    "lesson-summary": "сводка по расписанию школы, id на входе нет",
     "plannode-layout-agenda": "то же самое, темы уроков за период",
     "plannode-progress": "все свои курсы разом, id на входе нет",
     "gradelevel-preset": "«завести 1..N», на вход одно число",

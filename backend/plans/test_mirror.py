@@ -22,7 +22,7 @@ from pathlib import Path
 from unittest import mock
 
 from django.urls import reverse
-from schedule.models import LessonSlot
+from schedule.models import Lesson
 
 from .models import PlanNode
 from .test_layout import PlanTestCase
@@ -42,7 +42,7 @@ class LayoutNumbersMirrorTests(PlanTestCase):
     def build(self, case):
         """План и слоты случая. У курса уже есть год из фикстуры."""
         PlanNode.objects.filter(course=self.course).delete()
-        LessonSlot.objects.filter(course=self.course).delete()
+        Lesson.objects.filter(course=self.course).delete()
 
         position = 0
         for block in case["plan"]:
@@ -70,7 +70,7 @@ class LayoutNumbersMirrorTests(PlanTestCase):
             # «previous» — уроки прежнего ведущего: слот личный, а раскладка
             # считает по курсу, и это ровно то, что случай проверяет
             owner = self.colleague if slot.get("teacher") == "previous" else self.user
-            LessonSlot.objects.create(
+            Lesson.objects.create(
                 year=self.course.year,
                 course=self.course,
                 date=date.fromisoformat(slot["date"]),

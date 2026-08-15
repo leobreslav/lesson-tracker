@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import Course, LessonSlot
+from .models import Course, Lesson
 
 
 @admin.register(Course)
@@ -10,8 +10,8 @@ class CourseAdmin(admin.ModelAdmin):
     search_fields = ("name",)
 
 
-@admin.register(LessonSlot)
-class LessonSlotAdmin(admin.ModelAdmin):
+@admin.register(Lesson)
+class LessonAdmin(admin.ModelAdmin):
     list_display = ("date", "lesson_number", "course", "is_cancelled")
     list_filter = ("course", "is_cancelled", "is_extra")
     date_hierarchy = "date"

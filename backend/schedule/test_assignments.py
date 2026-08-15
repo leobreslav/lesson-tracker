@@ -30,7 +30,7 @@ from schools.testing import (
     make_year,
 )
 
-from .models import Course, CourseAssignment, GradeLevel, LessonSlot
+from .models import Course, CourseAssignment, GradeLevel, Lesson
 
 
 class AssignmentTestCase(SchoolTestMixin, APITestCase):
@@ -84,7 +84,7 @@ class VisibleCoursesTests(AssignmentTestCase):
         «это не ваш курс», а не «нет такого курса».
         """
         response = self.client.post(
-            reverse("lessonslot-list"),
+            reverse("lesson-list"),
             {"course": self.algebra.pk, "date": MONDAY, "lesson_number": 1},
             format="json",
         )
@@ -110,7 +110,7 @@ class VisibleCoursesTests(AssignmentTestCase):
         ids = [item["id"] for item in self.my_courses()]
 
         self.assertNotIn(self.algebra.pk, ids)
-        self.assertTrue(LessonSlot.objects.filter(pk=slot.pk).exists())
+        self.assertTrue(Lesson.objects.filter(pk=slot.pk).exists())
 
 
 # --- writing the link from either side -------------------------------------------

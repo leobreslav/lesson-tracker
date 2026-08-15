@@ -240,10 +240,10 @@ class SchoolYearSerializer(serializers.ModelSerializer):
         поэтому есть `?force=true` — тот же разговор, что при отвязке
         участника.
         """
-        from schedule.models import LessonSlot
+        from schedule.models import Lesson
 
         outside = Q(date__lt=start_date) | Q(date__gt=end_date)
-        slots = LessonSlot.objects.filter(outside, year=self.instance).count()
+        slots = Lesson.objects.filter(outside, year=self.instance).count()
         if not slots:
             return
 

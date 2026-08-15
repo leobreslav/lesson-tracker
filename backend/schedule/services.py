@@ -76,6 +76,27 @@ def place_copies(*, plan, skipped, occupied, busy, make) -> dict:
     return {"created": created, "skipped": skipped, "conflicts": conflicts}
 
 
+def sweepable(lessons):
+    """
+    Уроки, которые массовая операция вправе снести: пустые клетки сетки.
+
+    Урок перестаёт быть клеткой, как только на нём появилась запись —
+    отменили с причиной, поставили внеплановый, отметили что прошли, назвали
+    замену или задали работу. Это уже история, а историю оптом не чистят:
+    «перекопировать неделю на год» иначе стёрло бы её всю разом, и
+    восстановить было бы неоткуда.
+
+    Фильтр, а не проверка в цикле: и `bulk`, и `replace` работают наборами.
+    """
+    return lessons.filter(
+        is_extra=False,
+        is_cancelled=False,
+        covered__isnull=True,
+        taught_by__isnull=True,
+        works__isnull=True,
+    )
+
+
 def occupied_message(day: date, lesson_number: int, class_name: str) -> str:
     """A teacher cannot run two classes at once — say which one is in the way."""
     return f"{day.isoformat()}, lesson {lesson_number} is taken by {class_name}"

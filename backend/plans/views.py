@@ -22,7 +22,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.viewsets import ReadOnlyModelViewSet
 from calendars.models import DayException
-from schedule.models import Course, LessonSlot
+from schedule.models import Course, Lesson
 
 from . import approval, progress, services, xlsx
 from .models import PlanBaseline, PlanNode
@@ -165,7 +165,7 @@ class PlanNodeViewSet(CourseScopedViewSet):
         №1», то есть заново весь сентябрь. Расписание пока личное, а вот
         раскладка отвечает на вопрос курса — сколько его плана уже прошло.
         """
-        slots = LessonSlot.objects.filter(
+        slots = Lesson.objects.filter(
             course=course, is_cancelled=False
         ).order_by("date", "lesson_number")
 
@@ -278,7 +278,7 @@ class PlanNodeViewSet(CourseScopedViewSet):
         когда урок добавили или перетащили.
         """
         course = self.requested_course()
-        slots = LessonSlot.objects.filter(
+        slots = Lesson.objects.filter(
             course=course, is_cancelled=False
         ).order_by("date", "lesson_number")
         breaks = course.year.exceptions.filter(
@@ -352,8 +352,8 @@ class PlanNodeViewSet(CourseScopedViewSet):
         courses = list(
             Course.objects.for_teacher(request.user)
             .filter(
-                slots__date__range=(start, end),
-                slots__is_cancelled=False,
+                lessons__date__range=(start, end),
+                lessons__is_cancelled=False,
             )
             .distinct()
             .select_related("year")
@@ -369,7 +369,7 @@ class PlanNodeViewSet(CourseScopedViewSet):
         )
 
         slots_by_course = defaultdict(list)
-        for slot in LessonSlot.objects.filter(
+        for slot in Lesson.objects.filter(
             course__in=courses, is_cancelled=False
         ).order_by("date", "lesson_number"):
             slots_by_course[slot.course_id].append(slot)
@@ -665,7 +665,7 @@ class PlanNodeViewSet(CourseScopedViewSet):
     @action(detail=False, methods=["get"], url_path="layout/summary", url_name="layout-summary")
     def layout_summary(self, request):
         course = self.requested_course()
-        cancelled = LessonSlot.objects.filter(
+        cancelled = Lesson.objects.filter(
             course=course, is_cancelled=True
         ).count()
 
@@ -782,7 +782,7 @@ class PlanReviewViewSet(ReadOnlyModelViewSet):
     def retrieve(self, request, pk=None):
         baseline = self.get_object()
         course = baseline.course
-        slots = LessonSlot.objects.filter(course=course, is_cancelled=False).count()
+        slots = Lesson.objects.filter(course=course, is_cancelled=False).count()
         rows = services.plan_snapshot(course.pk)
         lessons = sum(1 for row in rows if not row.is_section)
 
@@ -859,7 +859,7 @@ class StudentCourseView(APIView):
         )
         course = enrolment.course
 
-        slots = LessonSlot.objects.filter(
+        slots = Lesson.objects.filter(
             course=course, is_cancelled=False
         ).order_by("date", "lesson_number")
         lessons = services.flatten_lessons(course.pk)

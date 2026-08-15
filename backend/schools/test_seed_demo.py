@@ -14,7 +14,7 @@ from django.core.management import call_command
 from django.core.management.base import CommandError
 from django.test import TestCase, override_settings
 from plans.models import PlanNode
-from schedule.models import Course, CourseStudent, LessonSlot
+from schedule.models import Course, CourseStudent, Lesson
 from collections import defaultdict
 
 from works.models import Submission, Work
@@ -112,7 +112,7 @@ class SeedTests(TestCase):
         study = {day.date for day in year.build_days() if day.is_study}
         # extra lessons are put next to a regular one on purpose and may
         # legitimately land on a day off — the regular ones may not
-        regular = LessonSlot.objects.filter(is_extra=False)
+        regular = Lesson.objects.filter(is_extra=False)
 
         self.assertTrue(regular.exists())
         self.assertEqual(
@@ -143,10 +143,10 @@ class SeedTests(TestCase):
             PlanNode.objects.filter(course=courses["Grade 6 Geometry"]).exists()
         )
         self.assertFalse(
-            LessonSlot.objects.filter(course=courses["Grade 9 Geometry"]).exists()
+            Lesson.objects.filter(course=courses["Grade 9 Geometry"]).exists()
         )
-        self.assertTrue(LessonSlot.objects.filter(is_cancelled=True).exists())
-        self.assertTrue(LessonSlot.objects.filter(is_extra=True).exists())
+        self.assertTrue(Lesson.objects.filter(is_cancelled=True).exists())
+        self.assertTrue(Lesson.objects.filter(is_extra=True).exists())
 
     def test_the_plans_are_split_into_blocks(self):
         seed()
@@ -175,9 +175,9 @@ class RepeatTests(TestCase):
             "markup": DayException.objects.count(),
             "courses": Course.objects.count(),
             "users": User.objects.count(),
-            "slots": LessonSlot.objects.count(),
-            "cancelled": LessonSlot.objects.filter(is_cancelled=True).count(),
-            "extra": LessonSlot.objects.filter(is_extra=True).count(),
+            "slots": Lesson.objects.count(),
+            "cancelled": Lesson.objects.filter(is_cancelled=True).count(),
+            "extra": Lesson.objects.filter(is_extra=True).count(),
             "plan": PlanNode.objects.count(),
         }
 
@@ -284,7 +284,7 @@ class MinimalTests(TestCase):
 
         self.assertEqual(Course.objects.count(), 4)
         self.assertEqual(Term.objects.count(), 4)
-        self.assertFalse(LessonSlot.objects.exists())
+        self.assertFalse(Lesson.objects.exists())
         self.assertFalse(PlanNode.objects.exists())
 
 

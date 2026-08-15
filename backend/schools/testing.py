@@ -195,11 +195,11 @@ def make_slot(teacher, course, day=MONDAY, number=1, **flags):
     принадлежит курсу, а по дороге фикстура назначает человека ведущим —
     урок в курсе, который никому не поручен, API так же не даёт завести.
     """
-    from schedule.models import LessonSlot
+    from schedule.models import Lesson
 
     assign(teacher, course)
 
-    return LessonSlot.objects.create(
+    return Lesson.objects.create(
         year=course.year,
         course=course,
         date=day,

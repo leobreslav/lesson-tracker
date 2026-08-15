@@ -166,7 +166,7 @@ test('уроки без слота помечены', async ({
   // оставляем расписание только на сентябрь: план сорока уроков перестаёт
   // помещаться, и это ровно тот случай, ради которого даты и нужны
   await teacher.delete(
-    `/api/slots/bulk/?course=${course.id}&start=2026-10-01&end=2027-08-01`,
+    `/api/lessons/bulk/?course=${course.id}&start=2026-10-01&end=2027-08-01`,
   )
 
   await signIn(PEOPLE.ivanova)
@@ -610,7 +610,7 @@ test('при дефиците свободных нет вовсе', async ({ pa
   const courses = await teacher.get('/api/courses/')
   const course = courses.body.find((item) => item.name === COURSE)
   await teacher.delete(
-    `/api/slots/bulk/?course=${course.id}&start=2026-10-01&end=2027-08-01`,
+    `/api/lessons/bulk/?course=${course.id}&start=2026-10-01&end=2027-08-01`,
   )
 
   await signIn(PEOPLE.ivanova)

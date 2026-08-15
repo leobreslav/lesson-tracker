@@ -18,7 +18,7 @@ from django.urls import reverse
 from django.utils import timezone
 from plans.models import PlanBaseline, PlanNode
 from rest_framework.test import APITestCase
-from schedule.models import Course, LessonSlot
+from schedule.models import Course, Lesson
 from works.models import Submission
 
 from .matrix import AccessRulesMixin
@@ -108,8 +108,8 @@ class MatrixTests(AccessTestCase):
                 ("plannode-baseline", "course"),
                 ("plannode-export", "course"),
                 ("plannode-export-xlsx", "course"),
-                ("lessonslot-list", "course"),
-                ("lessonslot-stats", "course"),
+                ("lesson-list", "course"),
+                ("lesson-stats", "course"),
                 {"name": "plannode-baseline-submit", "param": "course", "method": "post"},
                 {"name": "plannode-import", "param": "course", "method": "post"},
                 {"name": "plannode-import-xlsx", "param": "course", "method": "post"},
@@ -119,7 +119,7 @@ class MatrixTests(AccessTestCase):
                     "param": "course",
                     "method": "post",
                 },
-                {"name": "lessonslot-bulk", "param": "course", "method": "delete"},
+                {"name": "lesson-bulk", "param": "course", "method": "delete"},
                 {"name": "plantemplate-from-plan", "param": "course", "method": "post"},
                 {
                     "name": "plan-import-from-template",
@@ -195,7 +195,7 @@ class MatrixTests(AccessTestCase):
         работает, проверяет `CourseObjectTests` ниже.
         """
         self.assertCourseObjectRules(
-            list_url="lessonslot-list",
+            list_url="lesson-list",
             detail_url="plannode-detail",
             obj=self.node,
             patch={"title": "Правка"},
@@ -354,7 +354,7 @@ class PersonalObjectTests(AccessTestCase):
 
     def test_own_lessons_and_plan_are_visible(self):
         self.assertEqual(
-            [item["id"] for item in self.client.get(reverse("lessonslot-list")).json()],
+            [item["id"] for item in self.client.get(reverse("lesson-list")).json()],
             [self.slot.pk],
         )
         tree = self.client.get(reverse("plannode-list"), {"course": self.course.pk})
@@ -370,7 +370,7 @@ class PersonalObjectTests(AccessTestCase):
         """
         self.sign_in(self.colleague)
 
-        self.assertEqual(self.client.get(reverse("lessonslot-list")).json(), [])
+        self.assertEqual(self.client.get(reverse("lesson-list")).json(), [])
 
     def test_an_administrator_governs_the_schedule_and_nothing_else(self):
         """
@@ -380,7 +380,7 @@ class PersonalObjectTests(AccessTestCase):
         """
         self.sign_in(self.admin)
 
-        slot = reverse("lessonslot-detail", args=[self.slot.pk])
+        slot = reverse("lesson-detail", args=[self.slot.pk])
         self.assertEqual(self.client.get(slot).status_code, 200)
         self.assertEqual(self.client.delete(slot).status_code, 204)
 
@@ -390,7 +390,7 @@ class PersonalObjectTests(AccessTestCase):
 
     def test_lessons_cannot_be_put_into_another_schools_course(self):
         response = self.client.post(
-            reverse("lessonslot-list"),
+            reverse("lesson-list"),
             {"course": self.alien_course.pk, "date": MONDAY, "lesson_number": 3},
             format="json",
         )
@@ -428,14 +428,14 @@ class PersonalObjectTests(AccessTestCase):
         self.sign_in(self.colleague)
 
         response = self.client.post(
-            reverse("lessonslot-list"),
+            reverse("lesson-list"),
             {"course": self.course.pk, "date": MONDAY, "lesson_number": 1},
             format="json",
         )
 
         self.assertEqual(response.status_code, 400, response.content)
         self.assertEqual(
-            LessonSlot.objects.filter(course=self.course, date=MONDAY).count(), 1
+            Lesson.objects.filter(course=self.course, date=MONDAY).count(), 1
         )
 
 
@@ -843,11 +843,11 @@ class SuperuserSchoolTests(AccessTestCase):
         """
         self.sign_in(self.root)
 
-        url = reverse("lessonslot-detail", args=[self.slot.pk])
+        url = reverse("lesson-detail", args=[self.slot.pk])
 
         self.assertEqual(self.client.get(url).status_code, 200)
         self.assertEqual(self.client.delete(url).status_code, 403)
-        self.assertTrue(LessonSlot.objects.filter(pk=self.slot.pk).exists())
+        self.assertTrue(Lesson.objects.filter(pk=self.slot.pk).exists())
 
     def test_a_superuser_without_the_school_role_still_cannot_write_courses(self):
         self.sign_in(self.root)
@@ -1044,7 +1044,7 @@ class ActionDoorTests(AccessTestCase):
             "target_end": "2026-09-20",
         }
 
-        for name, field in (("lessonslot-copy", "course_id"),):
+        for name, field in (("lesson-copy", "course_id"),):
             for person in (self.stranger, self.alien_admin):
                 with self.subTest(f"{name} для {person.email}"):
                     self.sign_in(person)

@@ -27,6 +27,7 @@ from rest_framework.views import APIView
 from plans.models import PlanNode
 
 from . import services
+from .services import sweepable
 from schools import roster, services as school_services
 
 from .models import (
@@ -35,7 +36,7 @@ from .models import (
     CourseMethodist,
     CourseStudent,
     GradeLevel,
-    LessonSlot,
+    Lesson,
     Subject,
 )
 from .serializers import (
@@ -47,7 +48,7 @@ from .serializers import (
     CourseAssignmentSerializer,
     CourseSerializer,
     GradeLevelSerializer,
-    LessonSlotSerializer,
+    LessonSerializer,
     PeriodSerializer,
     full_name,
 )
@@ -403,7 +404,7 @@ class CourseAssignmentViewSet(SchoolScopedViewSet):
         Поэтому первый DELETE отвечает счётчиками: вот сколько всего в
         курсе и вот кто перестанет это видеть. `?force=true` подтверждает.
         """
-        slots = LessonSlot.objects.filter(course=instance.course).count()
+        slots = Lesson.objects.filter(course=instance.course).count()
         rows = PlanNode.objects.filter(course=instance.course).count()
         works = instance.course.works.count()
 
@@ -486,7 +487,7 @@ class CourseViewSet(SchoolScopedViewSet):
         try:
             instance.delete()
         except ProtectedError:
-            slots = instance.slots.count()
+            slots = instance.lessons.count()
             rows = instance.plan_nodes.count()
             works = instance.works.count()
             # кто ведёт — один человек, и всё перечисленное теперь его: план,
@@ -510,7 +511,7 @@ class CourseViewSet(SchoolScopedViewSet):
             )
 
 
-class LessonSlotViewSet(SchoolScopedViewSet):
+class LessonViewSet(SchoolScopedViewSet):
     """
     Расписание. Одно на всех: и «моё расписание», и расписание школы.
 
@@ -533,8 +534,8 @@ class LessonSlotViewSet(SchoolScopedViewSet):
     массовые операции: copy, bulk, stats и summary.
     """
 
-    serializer_class = LessonSlotSerializer
-    queryset = LessonSlot.objects.all()
+    serializer_class = LessonSerializer
+    queryset = Lesson.objects.all()
     school_path = "course__school"
     permission_classes = [
         IsAuthenticated,
@@ -548,7 +549,7 @@ class LessonSlotViewSet(SchoolScopedViewSet):
 
     def own_slots(self):
         """Уроки моих курсов — то, что человек называет своим расписанием."""
-        return LessonSlot.objects.filter(course__in=self.my_courses())
+        return Lesson.objects.filter(course__in=self.my_courses())
 
     def require_write(self, course):
         """
@@ -623,7 +624,7 @@ class LessonSlotViewSet(SchoolScopedViewSet):
         year = course.year
 
         source_numbers = defaultdict(list)
-        source_slots = LessonSlot.objects.filter(
+        source_slots = Lesson.objects.filter(
             course=course,
             date__range=(data["source_start"], data["source_end"]),
             is_extra=False,
@@ -643,19 +644,17 @@ class LessonSlotViewSet(SchoolScopedViewSet):
 
         deleted = 0
         if data["mode"] == "replace":
-            # заменяются только обычные уроки: отмена с причиной и
-            # дополнительный — ручная пометка, и массовая операция её не
-            # трогает. Администратора это правило касается тем более: он
-            # раскатывает сетку на весь год и стёр бы чужие отмены разом
-            deleted, _ = LessonSlot.objects.filter(
-                course=course,
-                date__range=target,
-                is_extra=False,
-                is_cancelled=False,
+            # заменяются только пустые клетки сетки. Отмена с причиной,
+            # дополнительный урок, отметка «что прошли», замена и заданная
+            # работа — всё это записи о том, что было, и массовая операция
+            # их не трогает. Администратора правило касается тем более: он
+            # раскатывает сетку на весь год и стёр бы чужую историю разом
+            deleted, _ = sweepable(
+                Lesson.objects.filter(course=course, date__range=target)
             ).delete()
 
         occupied = set(
-            LessonSlot.objects.filter(course=course, date__range=target)
+            Lesson.objects.filter(course=course, date__range=target)
             .values_list("date", "lesson_number")
         )
 
@@ -671,7 +670,7 @@ class LessonSlotViewSet(SchoolScopedViewSet):
         if lead is not None:
             busy = {
                 (slot.date, slot.lesson_number): slot.course.name
-                for slot in LessonSlot.objects.filter(
+                for slot in Lesson.objects.filter(
                     course__assignments__teacher_id=lead,
                     year=year,
                     date__range=target,
@@ -686,14 +685,14 @@ class LessonSlotViewSet(SchoolScopedViewSet):
             skipped=skipped,
             occupied=occupied,
             busy=busy,
-            make=lambda day, number: LessonSlot(
+            make=lambda day, number: Lesson(
                 year=year,
                 course=course,
                 date=day,
                 lesson_number=number,
             ),
         )
-        LessonSlot.objects.bulk_create(result["created"])
+        Lesson.objects.bulk_create(result["created"])
 
         return {
             "created": len(result["created"]),
@@ -769,13 +768,13 @@ class LessonSlotViewSet(SchoolScopedViewSet):
         data = form.validated_data
         self.require_write(data["course"])
 
-        queryset = LessonSlot.objects.filter(
+        queryset = Lesson.objects.filter(
             course=data["course"],
             date__range=(data["start"], data["end"]),
         )
         if data["only_regular"]:
-            # hand-made markup survives a bulk clean
-            queryset = queryset.filter(is_extra=False, is_cancelled=False)
+            # всё, что человек отметил руками, переживает массовую чистку
+            queryset = sweepable(queryset)
 
         deleted, _ = queryset.delete()
         return Response({"deleted": deleted})
@@ -878,7 +877,7 @@ class LessonSlotViewSet(SchoolScopedViewSet):
         теперь это уроки курса, на который никого не назначили, — то же самое
         состояние, только без своего поля.
         """
-        queryset = LessonSlot.objects.filter(
+        queryset = Lesson.objects.filter(
             course__school_id=request.user.school_id
         )
 

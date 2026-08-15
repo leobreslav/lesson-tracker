@@ -20,7 +20,7 @@ from django.urls import reverse
 from rest_framework.test import APITestCase
 from schools.testing import SchoolTestMixin, assign, make_course
 
-from .models import Course, LessonSlot
+from .models import Course, Lesson
 
 # путь такой же, как из frontend/tests: ../../mirrors от каталога приложения
 CASES = json.loads(
@@ -68,7 +68,7 @@ class CopyMirrorTests(SchoolTestMixin, APITestCase):
                 courses[name] = make_course(self.school, year=year, name=name)
                 assign(self.user, courses[name])
 
-            LessonSlot.objects.create(
+            Lesson.objects.create(
                 year=year,
                 course=courses[name],
                 date=day(slot["date"]),
@@ -94,7 +94,7 @@ class CopyMirrorTests(SchoolTestMixin, APITestCase):
                 self.run_case(case)
                 # каждый случай начинается с чистого листа: год, курсы и
                 # уроки свои, иначе занятость перетекала бы между случаями
-                LessonSlot.objects.all().delete()
+                Lesson.objects.all().delete()
                 Course.objects.all().delete()
                 SchoolYear.objects.all().delete()
 
@@ -103,7 +103,7 @@ class CopyMirrorTests(SchoolTestMixin, APITestCase):
         expected = case["expected"]
 
         response = self.client.post(
-            reverse("lessonslot-copy"),
+            reverse("lesson-copy"),
             {
                 "course_id": courses[case["copy"]].pk,
                 "source_start": case["source"]["start"],
@@ -130,7 +130,7 @@ class CopyMirrorTests(SchoolTestMixin, APITestCase):
         # где именно встали уроки: числа сходятся и у неверной раскладки
         if "dates" in expected:
             created = (
-                LessonSlot.objects.filter(
+                Lesson.objects.filter(
                     course=courses[case["copy"]],
                     date__gte=day(case["target"]["start"]),
                     date__lte=day(case["target"]["end"]),

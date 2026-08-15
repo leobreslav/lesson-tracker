@@ -16,7 +16,7 @@ from datetime import timedelta
 from django.urls import reverse
 from django.utils import timezone
 from rest_framework.test import APITestCase
-from schedule.models import LessonSlot
+from schedule.models import Lesson
 from schools.services import enrol, remove_from_course
 from schools.testing import (
     MONDAY,
@@ -47,9 +47,9 @@ class StudentCourseTestCase(SchoolTestMixin, APITestCase):
         self.enrolment = enrol(self.student, self.course, by=self.admin)
         self.sign_in(self.student)
 
-    def slots(self, count, start=MONDAY):
+    def lessons(self, count, start=MONDAY):
         for index in range(count):
-            LessonSlot.objects.create(
+            Lesson.objects.create(
                 year=self.year,
                 course=self.course,
                 date=start + timedelta(days=index),
@@ -81,7 +81,7 @@ class ContentTests(StudentCourseTestCase):
         Раскладка одна на всех: план принадлежит курсу, слоты берутся по
         курсу, и второго ответа про «когда это будет» просто нет.
         """
-        self.slots(3)
+        self.lessons(3)
 
         rows = [row for row in self.open().json()["lessons"] if not row["is_section"]]
 
@@ -92,7 +92,7 @@ class ContentTests(StudentCourseTestCase):
 
     def test_a_lesson_without_a_slot_simply_has_no_date(self):
         """«Не помещается в год» — разговор учителя с методистом, не с ним."""
-        self.slots(2)
+        self.lessons(2)
 
         rows = [row for row in self.open().json()["lessons"] if not row["is_section"]]
 
@@ -100,7 +100,7 @@ class ContentTests(StudentCourseTestCase):
         self.assertIsNone(rows[2]["date"])
 
     def test_past_lessons_are_marked(self):
-        self.slots(2, start=timezone.localdate() - timedelta(days=1))
+        self.lessons(2, start=timezone.localdate() - timedelta(days=1))
 
         rows = [row for row in self.open().json()["lessons"] if not row["is_section"]]
 
