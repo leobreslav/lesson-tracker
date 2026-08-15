@@ -869,6 +869,47 @@ class LessonViewSet(SchoolScopedViewSet):
         )
 
     @action(detail=False, methods=["get"])
+    def day(self, request):
+        """
+        Урок целиком: что проходим, что задавали, что дальше.
+
+        Экран «Сегодня» собирается из готового — плана, раскладки и работ, —
+        и своего расчёта здесь нет ни одного. Единственное, что этот ответ
+        добавляет: **что говорит раскладка** про сегодняшний урок
+        (`suggested`), чтобы отметить «прошли» одним нажатием, а не искать
+        строку плана в списке.
+
+        Записанное (`covered`) сильнее подсказанного: раскладка позиционная и
+        съезжает от любой правки плана, а запись держится за дату.
+        """
+        course = get_object_or_404(
+            Course.objects.filter(school_id=request.user.school_id),
+            pk=request.query_params.get("course", 0) or 0,
+        )
+        day = read_date(request.query_params.get("date")) or timezone.localdate()
+
+        lessons = list(
+            Lesson.objects.filter(course=course, date=day)
+            .select_related("covered", "taught_by")
+            .prefetch_related("works")
+            .order_by("lesson_number")
+        )
+
+        # раскладка считается по всему году: i-й урок плана в i-й слот, и
+        # обрезать её датами значило бы сдвинуть номера
+        suggested = services.suggested_topics(course)
+
+        return Response(
+            {
+                "course": {"id": course.pk, "name": course.name},
+                "date": day,
+                "lessons": [lesson_day_payload(item, suggested) for item in lessons],
+                "previous": neighbour(course, day, forward=False),
+                "next": neighbour(course, day, forward=True),
+            }
+        )
+
+    @action(detail=False, methods=["get"])
     def summary(self, request):
         """
         Сводка по расписанию школы: сколько разложено и у чего нет ведущего.
@@ -897,3 +938,57 @@ class LessonViewSet(SchoolScopedViewSet):
                 .count(),
             }
         )
+
+
+def neighbour(course, day, *, forward: bool):
+    """Ближайший день с уроком этого курса — чтобы листать, а не искать."""
+    rows = Lesson.objects.filter(course=course)
+    rows = rows.filter(date__gt=day) if forward else rows.filter(date__lt=day)
+
+    return (
+        rows.order_by("date" if forward else "-date")
+        .values_list("date", flat=True)
+        .first()
+    )
+
+
+def lesson_day_payload(lesson, suggested) -> dict:
+    """
+    Один урок на экране «Сегодня»: содержание, работы и что прошли.
+
+    Содержание берётся у той строки плана, которую **записали**; не
+    записали — у подсказанной раскладкой. `confirmed` говорит, что это:
+    подтверждённое человеком или пока догадка позиционного сопоставления.
+    """
+    covered = lesson.covered
+    topic = covered or suggested.get(lesson.pk)
+
+    return {
+        "id": lesson.pk,
+        "lesson_number": lesson.lesson_number,
+        "is_cancelled": lesson.is_cancelled,
+        "is_extra": lesson.is_extra,
+        "reason": lesson.reason,
+        "confirmed": covered is not None,
+        "topic": (
+            None
+            if topic is None
+            else {
+                "id": topic.pk,
+                "title": topic.title,
+                "objectives": topic.objectives,
+                "body": topic.body,
+                "formative": topic.formative,
+                "homework": topic.homework,
+            }
+        ),
+        "works": [
+            {
+                "id": work.pk,
+                "title": work.title,
+                "state": work.state(),
+                "on_paper": work.on_paper,
+            }
+            for work in lesson.works.all()
+        ],
+    }

@@ -4,6 +4,8 @@ import { Link, NavLink, useLocation } from 'react-router-dom'
 import UserMenu, { useDismissable } from './UserMenu'
 
 const SECTIONS = [
+  // «Сегодня» первым: с него начинается день, и заходят сюда чаще всего
+  { to: '/today', key: 'today', needs: 'classes' },
   { to: '/schedule', key: 'schedule', needs: 'classes' },
   { to: '/plan', key: 'plan', needs: 'classes' },
   { to: '/works', key: 'works', needs: 'classes' },

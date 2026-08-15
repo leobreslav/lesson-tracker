@@ -155,3 +155,29 @@ def plan_copy(
         plan.extend((target, number) for number in numbers)
 
     return plan, skipped
+
+
+def suggested_topics(course) -> dict:
+    """
+    Что раскладка говорит про каждый урок курса: `{урок: строка плана}`.
+
+    Считается по **всему** году: сопоставление позиционное, и обрезать его
+    датами значило бы сдвинуть номера. Своего расчёта тут нет — та же
+    `build_layout`, что и везде.
+    """
+    from plans import services as plan_services
+
+    from .models import Lesson
+
+    lessons = plan_services.flatten_lessons(course.pk)
+    slots = list(
+        Lesson.objects.filter(course=course, is_cancelled=False).order_by(
+            "date", "lesson_number"
+        )
+    )
+
+    return {
+        entry.slot.pk: entry.lesson.node
+        for entry in plan_services.build_layout(lessons, slots)
+        if entry.slot is not None and entry.lesson is not None
+    }

@@ -191,6 +191,7 @@ class ApiWiringTests(SimpleTestCase):
 ACTIONS_WITHOUT_ID = {
     "lesson-agenda": "период и только он: своё расписание за даты",
     "lesson-summary": "сводка по расписанию школы, id на входе нет",
+    "lesson-day": "день курса: на входе курс и дата, урока по id нет",
     "plannode-layout-agenda": "то же самое, темы уроков за период",
     "plannode-progress": "все свои курсы разом, id на входе нет",
     "gradelevel-preset": "«завести 1..N», на вход одно число",

@@ -41,7 +41,8 @@
     "needClass": "add a class first",
     "school": "School",
     "schools": "Schools",
-    "works": "Assignments"
+    "works": "Assignments",
+    "today": "Today"
   },
   "auth": {
     "prompt": "Sign in to continue.",
@@ -905,7 +906,8 @@
       "recheck_one": "Clear {{count}} verdict",
       "recheck_other": "Clear {{count}} verdicts"
     },
-    "answers": "Answers"
+    "answers": "Answers",
+    "description": "What to do"
   },
   "grading": {
     "title": "Grading",
@@ -958,6 +960,19 @@
     "without_other": "{{count}} students have nothing",
     "submit": "Split and hand out",
     "done": "Handed out {{created}} works."
+  },
+  "today": {
+    "title": "Today",
+    "lessonNumber": "Lesson {{number}}",
+    "noLesson": "No lesson of this course on that day.",
+    "noTopic": "The curriculum map has nothing left for this lesson.",
+    "suggested": "The layout suggests this topic.",
+    "confirm": "yes, that is what we covered",
+    "cancelled": "cancelled",
+    "setHomework": "Set as homework",
+    "homeworkTitle": "Homework",
+    "noCourses": "No courses yet",
+    "noCoursesHint": "Ask the school administrator to put you on a course."
   },
   "table": {
     "open": "Check",

@@ -414,6 +414,7 @@ class StudentWorkView(APIView):
                 "version": version,
                 "id": work.pk,
                 "title": work.title,
+                "description": work.description,
                 "course_name": work.course.name,
                 "state": work.state(),
                 "opens_at": work.opens_at,

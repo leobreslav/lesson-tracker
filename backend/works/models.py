@@ -127,6 +127,14 @@ class Work(models.Model):
             "поставлена. Выключено — увидит после закрытия окна."
         ),
     )
+    description = models.TextField(
+        "description",
+        blank=True,
+        help_text=(
+            "Что делать: текст работы целиком. У домашнего задания это оно и "
+            "есть, у контрольной — обычно пусто."
+        ),
+    )
     on_paper = models.BooleanField(
         "written on paper",
         default=False,

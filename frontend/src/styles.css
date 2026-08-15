@@ -2542,6 +2542,15 @@ button.compact,
   margin-top: 0.35rem;
 }
 
+/* карточка урока на «Сегодня»: поля плана одно под другим, с подписями */
+.lesson-field + .lesson-field {
+  margin-top: 0.5rem;
+}
+
+.lesson-field > .hint {
+  display: block;
+}
+
 /*
  * Страницы скана: сетка миниатюр, где отмечают начало каждой работы.
  *

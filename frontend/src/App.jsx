@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { BrowserRouter, Route, Routes, useLocation } from 'react-router-dom'
 import ErrorBoundary from './ErrorBoundary'
 import Agenda from './Agenda'
+import Today from './Today'
 import Calendar from './Calendar'
 import Dashboard from './Dashboard'
 import Login from './Login'
@@ -148,6 +149,7 @@ export default function App() {
               />
             }
           />
+          <Route path="/today" element={guarded(Today)} />
           <Route path="/schedule" element={guarded(Agenda)} />
           <Route path="/plan" element={guarded(Plan)} />
           <Route path="/works" element={guarded(Works)} />

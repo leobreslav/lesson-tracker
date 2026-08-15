@@ -115,3 +115,35 @@ test('неучебные дни в сетке приглушены и подпи
   await expect(head).toHaveClass(/locked/)
   await expect(head).toContainText('Осенние каникулы')
 })
+
+/**
+ * Экран «Сегодня»: день учителя одним местом.
+ *
+ * Главное здесь — разница между подсказкой и записью. Раскладка позиционная
+ * и съезжает от любой правки плана, поэтому «что прошли» она предлагает, а
+ * записывает человек. В браузере это видно как «предполагает» → нажали →
+ * подпись ушла.
+ */
+test('на «Сегодня» видно урок, и тема подтверждается одним нажатием', async ({
+  page,
+  signIn,
+}) => {
+  await signIn(PEOPLE.ivanova)
+  await page.goto('/today')
+  await ready(page)
+  await page.getByRole('button', { name: 'Grade 6 Algebra' }).click()
+
+  // листаем к дню с уроком: «сегодня» в демо-данных до начала учебного года
+  const card = page.locator('.lesson-card')
+  for (let step = 0; step < 40 && !(await card.count()); step += 1) {
+    await page.getByRole('button', { name: '→' }).click()
+    await page.waitForTimeout(120)
+  }
+
+  await expect(card.first()).toBeVisible()
+  await expect(page.getByText('Раскладка предполагает эту тему.')).toBeVisible()
+
+  await page.getByRole('button', { name: 'да, это и прошли' }).click()
+
+  await expect(page.getByText('Раскладка предполагает эту тему.')).toHaveCount(0)
+})

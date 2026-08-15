@@ -80,6 +80,12 @@ export default function StudentWork() {
         </p>
       )}
 
+      {work.description && (
+        <section className="panel">
+          <Markdown text={work.description} />
+        </section>
+      )}
+
       <Grade work={work} />
 
       {work.tasks.length === 0 ? (

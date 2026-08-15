@@ -84,6 +84,7 @@ class WorkSerializer(serializers.ModelSerializer):
             "course_name",
             "created_by",
             "title",
+            "description",
             "opens_at",
             "closes_at",
             "attempts",

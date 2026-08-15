@@ -16,9 +16,16 @@ import { fromLocalInput, toLocalInput } from './dates'
  * условии находят посреди урока, — но и молчать нельзя: правка, сделанная
  * вслепую, ломает то, что люди пишут прямо сейчас.
  */
-export default function WorkDialog({ work, courseId, busy, onSubmit, onClose }) {
+export default function WorkDialog({
+  work,
+  courseId,
+  preset,
+  busy,
+  onSubmit,
+  onClose,
+}) {
   const { t } = useTranslation()
-  const [form, setForm] = useState(() => initial(work))
+  const [form, setForm] = useState(() => ({ ...initial(work), ...preset }))
   const [impact, setImpact] = useState(null)
 
   useEffect(() => {
@@ -46,7 +53,9 @@ export default function WorkDialog({ work, courseId, busy, onSubmit, onClose }) 
 
     onSubmit({
       course: courseId,
+      lesson: form.lesson ?? null,
       title: form.title.trim(),
+      description: form.description,
       opens_at: fromLocalInput(form.opens_at),
       closes_at: fromLocalInput(form.closes_at),
       attempts: form.limited ? Number(form.attempts) : null,
@@ -77,6 +86,14 @@ export default function WorkDialog({ work, courseId, busy, onSubmit, onClose }) 
             maxLength={200}
             onChange={change('title')}
           />
+        </label>
+
+        {/* текст работы: у домашнего задания это оно и есть, у контрольной
+            обычно пусто. Подставляется из плана кнопкой «задать как
+            домашнее» — рекомендованное оттуда, фактическое здесь */}
+        <label className="field-with-hint">
+          {t('works.description')}
+          <textarea rows={3} value={form.description} onChange={change('description')} />
         </label>
 
         <div className="row">
@@ -168,6 +185,8 @@ function initial(work) {
       attempts: work.attempts ?? 1,
       show_result: work.show_result,
       on_paper: work.on_paper,
+      description: work.description ?? '',
+      lesson: work.lesson ?? null,
     }
   }
 
@@ -182,6 +201,8 @@ function initial(work) {
     attempts: 1,
     show_result: true,
     on_paper: false,
+    description: '',
+    lesson: null,
   }
 }
 
