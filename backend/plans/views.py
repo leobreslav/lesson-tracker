@@ -805,13 +805,22 @@ class PlanReviewViewSet(ReadOnlyModelViewSet):
         return get_object_or_404(self.get_queryset(), pk=self.kwargs["pk"])
 
     def list(self, request):
-        return Response(
-            {
-                "plans": progress.rows_for(
-                    progress.supervised_courses(request.user), timezone.localdate()
-                )
-            }
+        """
+        Те же строки, что учитель видит у себя, **минус долги по записи**.
+
+        «Не отметил двенадцать занятий» — про дисциплину заполнения, а не
+        про курс, и как только это число попадёт в чужой обзор, кнопку
+        начнут жать не читая. Получится худшее из возможного: поле, которое
+        выглядит фактом и заполнено формально. Всё остальное — расхождение с
+        эталоном, резерв, дефицит — методисту показывается как есть.
+        """
+        rows = progress.rows_for(
+            progress.supervised_courses(request.user), timezone.localdate()
         )
+        for row in rows:
+            row.pop("records", None)
+
+        return Response({"plans": rows})
 
     def retrieve(self, request, pk=None):
         baseline = self.get_object()

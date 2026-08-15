@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
 import CourseRow from './CourseRow'
+import DebtsDialog from './DebtsDialog'
 import { fetchProgress } from './api'
 
 /**
@@ -31,6 +32,7 @@ export default function CourseStatus({ onLoggedOut }) {
   const navigate = useNavigate()
   const [courses, setCourses] = useState(null)
   const [opened, setOpened] = useState(null)
+  const [debts, setDebts] = useState(null) // курс, чьи долги закрывают
   const [error, setError] = useState(null)
 
   const handleError = useCallback(
@@ -41,27 +43,28 @@ export default function CourseStatus({ onLoggedOut }) {
     [onLoggedOut],
   )
 
+  const load = useCallback(
+    () =>
+      fetchProgress()
+        .then((result) => {
+          setCourses(result.courses)
+          // разворачиваем тот, где проблема: экран затем и нужен, чтобы её
+          // увидеть. Проблем нет — все свёрнуты, смотреть не на что.
+          // Незакрытые занятия — тоже проблема: иначе о них узнают, только
+          // раскрыв курс наугад
+          const trouble = result.courses.find(
+            (course) => course.reserve < 0 || course.records?.unclosed > 0,
+          )
+          if (trouble) setOpened(trouble.id)
+          else if (result.courses.length === 1) setOpened(result.courses[0].id)
+        })
+        .catch(handleError),
+    [handleError],
+  )
+
   useEffect(() => {
-    let cancelled = false
-
-    fetchProgress()
-      .then((result) => {
-        if (cancelled) return
-        setCourses(result.courses)
-        // разворачиваем тот, где проблема: экран затем и нужен, чтобы её
-        // увидеть. Проблем нет — все свёрнуты, смотреть не на что
-        const trouble = result.courses.find((course) => course.reserve < 0)
-        if (trouble) setOpened(trouble.id)
-        else if (result.courses.length === 1) setOpened(result.courses[0].id)
-      })
-      .catch((err) => {
-        if (!cancelled) handleError(err)
-      })
-
-    return () => {
-      cancelled = true
-    }
-  }, [handleError])
+    load()
+  }, [load])
 
   if (courses === null) {
     return <p>{error ? <span className="error">{error}</span> : t('common.loading')}</p>
@@ -90,6 +93,7 @@ export default function CourseStatus({ onLoggedOut }) {
             own
             open={opened === course.id}
             onToggle={() => setOpened(opened === course.id ? null : course.id)}
+            onCloseDebts={() => setDebts(course.id)}
             actions={
               <div className="actions wrap">
                 <button type="button" onClick={() => navigate('/plan')}>
@@ -107,6 +111,17 @@ export default function CourseStatus({ onLoggedOut }) {
           />
         ))}
       </ul>
+
+      {debts !== null && (
+        <DebtsDialog
+          courseId={debts}
+          onDone={() => {
+            setDebts(null)
+            load()
+          }}
+          onClose={() => setDebts(null)}
+        />
+      )}
     </>
   )
 }

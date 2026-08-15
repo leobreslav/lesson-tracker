@@ -22,6 +22,7 @@ export default function CourseRow({
   own = false,
   mark,
   actions,
+  onCloseDebts,
 }) {
   const { t } = useTranslation()
   const navigate = useNavigate()
@@ -101,6 +102,19 @@ export default function CourseRow({
           <p className="hint">
             {t(short(course) ? 'status.reserveShort' : 'status.reserveSpare')}
           </p>
+          {/* Резерв — единственное число, живущее сразу на обеих осях, и
+              потому его падение само по себе ничего не объясняет: то ли дни
+              потерялись, то ли план вырос. С точкой отсчёта (эталон помнит,
+              сколько было часов) это уже тождество, а не догадка. */}
+          {course.baseline?.reserve && (
+            <p className="hint">
+              {t('status.reserveWhy', {
+                then: signed(course.baseline.reserve.then),
+                schedule: signed(course.baseline.reserve.schedule),
+                plan: signed(-course.baseline.reserve.plan),
+              })}
+            </p>
+          )}
         </section>
 
         {/* насколько расписание разошлось с исходным: добавили минус
@@ -149,6 +163,31 @@ export default function CourseRow({
           )}
         </section>
       </div>
+
+      {/* Долги по записи — хозяйство учителя, и только его: у методиста
+          поля `records` в ответе нет вовсе. Число здесь кликабельно, потому
+          что число, на которое нельзя нажать, заставляет искать его
+          источник руками. */}
+      {/* на какой доле посчитано всё остальное: дыру называем вслух, а не
+          выдаём догадку за факт */}
+      {course.records?.confirmed > 0 &&
+        course.records.confirmed < course.records.held && (
+          <p className="hint">
+            {t('status.recordedShare', {
+              confirmed: course.records.confirmed,
+              held: course.records.held,
+            })}
+          </p>
+        )}
+
+      {course.records?.unclosed > 0 && (
+        <p className="hint warning">
+          {t('status.unclosed', { count: course.records.unclosed })}{' '}
+          <button type="button" className="link" onClick={onCloseDebts}>
+            {t('status.closeDebts')}
+          </button>
+        </p>
+      )}
 
       {/* про год говорим отдельно: на плашку состояния это не влияет */}
       {course.last_lesson_date && course.last_lesson_date > course.year_end && (

@@ -21,7 +21,7 @@ import logging
 
 from django.db import transaction
 from django.utils import timezone
-from schedule.models import CourseMethodist
+from schedule.models import CourseMethodist, Slot
 
 from . import services
 from .models import PlanBaseline, PlanBaselineRow
@@ -198,7 +198,19 @@ def approve(baseline: PlanBaseline, reviewer) -> PlanBaseline:
     baseline.approved_at = timezone.now()
     baseline.reviewer = reviewer
     baseline.comment = ""
-    baseline.save(update_fields=["status", "approved_at", "reviewer", "comment"])
+    # точка отсчёта для резерва: сколько часов было у курса в этот момент
+    baseline.slots_total = Slot.objects.filter(
+        course_id=baseline.course_id, is_cancelled=False
+    ).count()
+    baseline.save(
+        update_fields=[
+            "status",
+            "approved_at",
+            "reviewer",
+            "comment",
+            "slots_total",
+        ]
+    )
 
     notify(APPROVED, baseline)
     return baseline

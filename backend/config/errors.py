@@ -83,6 +83,7 @@ class Codes:
     SLOT_DUPLICATE = "slot_duplicate"
     SLOT_MOVE_SAME_PLACE = "slot_move_same_place"
     PLAN_LESSON_TAUGHT = "plan_lesson_taught"
+    SLOT_NOT_MINE = "slot_not_mine"
 
     # bulk operations over the schedule
     PERIOD_REVERSED = "period_reversed"

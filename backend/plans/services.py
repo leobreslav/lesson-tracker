@@ -509,6 +509,40 @@ def record_state(slots: Sequence, today, window: int = RECORD_WINDOW_DAYS) -> di
     }
 
 
+def reserve_since(
+    slots_then: int | None,
+    lessons_then: int,
+    slots_now: int,
+    lessons_now: int,
+) -> dict | None:
+    """
+    Почему резерв стал таким: что сделало расписание, что сделала программа.
+
+    Резерв (`слоты − уроки`) — единственное число приложения, живущее сразу
+    на обеих осях: календарной и программной. Именно поэтому его падение
+    само по себе ничего не объясняет — то ли дни потерялись, то ли план
+    вырос, — и рядом с ним всегда стоял вопрос «а почему».
+
+    Ответ становится точным, как только известна точка отсчёта, и потому у
+    эталона есть `slots_total`: сколько часов было у курса в момент
+    утверждения. Дальше это тождество, а не оценка:
+
+        резерв сейчас = резерв тогда + (часы) − (уроки плана)
+
+    `None`, если точки отсчёта нет: эталон не утверждён или утверждён до
+    того, как это число стали снимать. Догадываться тут не о чем.
+    """
+    if slots_then is None:
+        return None
+
+    return {
+        "then": slots_then - lessons_then,
+        "now": slots_now - lessons_now,
+        "schedule": slots_now - slots_then,
+        "plan": lessons_now - lessons_then,
+    }
+
+
 def baseline_diff(rows: Iterable, lessons: Sequence[Lesson]) -> dict:
     """
     Насколько план разошёлся с зафиксированным эталоном.

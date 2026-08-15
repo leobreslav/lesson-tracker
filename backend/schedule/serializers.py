@@ -469,6 +469,41 @@ class SlotMoveSerializer(serializers.Serializer):
     reason = serializers.CharField(max_length=200, required=False, allow_blank=True)
 
 
+from plans.models import PlanNode
+
+
+class ClosedSlotSerializer(serializers.Serializer):
+    """Одна строка закрытия: что прошло — или что занятия не было."""
+
+    slot = serializers.IntegerField()
+    lesson = serializers.PrimaryKeyRelatedField(
+        queryset=PlanNode.objects.none(), required=False, allow_null=True
+    )
+    cancelled = serializers.BooleanField(required=False, default=False)
+    reason = serializers.CharField(max_length=200, required=False, allow_blank=True)
+
+    def get_fields(self):
+        fields = super().get_fields()
+        # только уроки своих курсов и только уроки: тему не проходят
+        fields["lesson"].queryset = PlanNode.objects.filter(
+            course__in=teacher_courses(self), is_section=False
+        )
+        return fields
+
+
+class CloseDaySerializer(serializers.Serializer):
+    """
+    Закрытие долгов пачкой.
+
+    Пачкой — потому что вернувшийся из отпуска иначе не станет отмечать
+    вовсе; с просмотром — потому что «отметить всё не глядя» превращает
+    запись в формальность, а формально заполненное поле хуже вычисленного:
+    оно выглядит фактом.
+    """
+
+    closed = ClosedSlotSerializer(many=True, allow_empty=False)
+
+
 class CopySerializer(serializers.Serializer):
     """
     Input for /api/lessons/copy/.

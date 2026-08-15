@@ -1,4 +1,5 @@
 from collections import defaultdict
+from datetime import timedelta
 
 from calendars import services as calendar_services
 from calendars.models import SchoolYear
@@ -25,6 +26,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.views import APIView
 
 from plans.models import PlanNode
+from plans import services as plan_services
 
 from . import services
 from .services import sweepable
@@ -41,6 +43,7 @@ from .models import (
 )
 from .serializers import (
     BulkDeleteSerializer,
+    CloseDaySerializer,
     CourseMethodistSerializer,
     CourseStudentSerializer,
     SubjectSerializer,
@@ -993,6 +996,124 @@ class SlotViewSet(SchoolScopedViewSet):
                 "next": neighbour(courses, day, forward=True),
             }
         )
+
+    @action(detail=False, methods=["get"])
+    def unclosed(self, request):
+        """
+        Прошедшие занятия своих курсов, за которыми ничего не записано.
+
+        Настойчивость должна стоять **на дороге**, по которой человек и так
+        идёт: напоминание сбоку игнорируется на третий день. Поэтому список
+        короткий, у каждой строки подставлена тема из раскладки, и закрыть
+        его можно одним движением — см. `close` ниже.
+
+        Правила отбора — те же, что у счётчика на обзоре
+        (`plans.services.record_state`), и это важно: число на главной и
+        список за ним обязаны говорить одно и то же.
+        """
+        today = timezone.localdate()
+        edge = today - timedelta(days=plan_services.RECORD_WINDOW_DAYS)
+
+        slots = (
+            Slot.objects.filter(
+                course__in=self.my_courses(),
+                is_cancelled=False,
+                date__lte=today,
+                date__gte=edge,
+                lesson__isnull=True,
+            )
+            .select_related("course")
+            .order_by("date", "lesson_number")
+        )
+
+        # долг появляется только там, где связь хоть раз ставили: тому, кто
+        # кнопкой не пользуется, каждый прошедший час был бы «долгом»
+        started = set(
+            Slot.objects.filter(
+                course__in=self.my_courses(), lesson__isnull=False
+            ).values_list("course_id", flat=True)
+        )
+        slots = [slot for slot in slots if slot.course_id in started]
+
+        suggested = {}
+        for course in {slot.course for slot in slots}:
+            suggested.update(services.suggested_topics(course))
+
+        return Response(
+            {
+                "slots": [
+                    {
+                        "id": slot.pk,
+                        "course": {"id": slot.course_id, "name": slot.course.name},
+                        "date": slot.date,
+                        "lesson_number": slot.lesson_number,
+                        "topic": (
+                            {"id": topic.pk, "title": topic.title}
+                            if (topic := suggested.get(slot.pk))
+                            else None
+                        ),
+                    }
+                    for slot in slots
+                ]
+            }
+        )
+
+    @action(detail=False, methods=["post"])
+    def close(self, request):
+        """
+        Закрыть долги пачкой — но с просмотром, а не «отметить всё».
+
+        Вернувшийся из отпуска обязан иметь возможность закрыть пять дней
+        разом: заставлять открывать каждый день по одному значит не получить
+        отметок вовсе. Но подставленные темы при этом на экране, и разница
+        именно в этом: «подтвердить пять предложений» — не то же, что
+        «отметить всё не глядя».
+
+        Каждая строка — либо «прошли вот это» (`lesson`), либо «занятия не
+        было» (`cancelled` с причиной). Одной транзакцией: половина
+        закрытого списка хуже незакрытого, потому что непонятно, какая
+        половина.
+        """
+        form = CloseDaySerializer(
+            data=request.data, context=self.get_serializer_context()
+        )
+        form.is_valid(raise_exception=True)
+        rows = form.validated_data["closed"]
+
+        mine = {
+            slot.pk: slot
+            for slot in Slot.objects.filter(
+                pk__in=[row["slot"] for row in rows], course__in=self.my_courses()
+            )
+        }
+
+        with transaction.atomic():
+            for row in rows:
+                slot = mine.get(row["slot"])
+                if slot is None:
+                    api_error(
+                        Codes.SLOT_NOT_MINE,
+                        "That lesson belongs to a course you do not teach.",
+                        field="closed",
+                    )
+
+                if row.get("cancelled"):
+                    slot.is_cancelled = True
+                    slot.reason = row.get("reason", "")
+                    slot.save(update_fields=["is_cancelled", "reason"])
+                    continue
+
+                node = row.get("lesson")
+                if node is None or node.course_id != slot.course_id:
+                    api_error(
+                        Codes.PARENT_OTHER_CLASS,
+                        "That plan lesson belongs to another course.",
+                        field="closed",
+                    )
+                slot.lesson = node
+                slot.save(update_fields=["lesson"])
+
+        return Response({"closed": len(rows)})
 
     @action(detail=False, methods=["get"])
     def summary(self, request):

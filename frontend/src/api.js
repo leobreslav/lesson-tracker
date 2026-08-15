@@ -666,6 +666,12 @@ export const deleteSlot = (id) =>
 export const moveSlot = (id, fields) =>
   request(`/api/slots/${id}/move/`, { method: 'POST', body: fields })
 
+// долги по записи: прошедшие занятия, за которыми ничего не сказано
+export const fetchUnclosed = () => request('/api/slots/unclosed/')
+
+export const closeSlots = (closed) =>
+  request('/api/slots/close/', { method: 'POST', body: { closed } })
+
 export const copySlots = (payload) =>
   request('/api/slots/copy/', { method: 'POST', body: payload })
 

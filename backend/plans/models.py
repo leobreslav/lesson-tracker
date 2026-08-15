@@ -159,6 +159,13 @@ class PlanBaseline(models.Model):
         verbose_name="reviewer",
     )
     comment = models.TextField("comment", blank=True)
+    # сколько часов было у курса в момент утверждения. Без этого числа
+    # «почему резерв упал на четыре» не ответить: резерв это `слоты минус
+    # уроки`, и подвинуть его могут обе стороны, а какая именно — видно
+    # только в сравнении с точкой отсчёта
+    slots_total = models.PositiveIntegerField(
+        "hours at approval", null=True, blank=True
+    )
 
     class Meta:
         verbose_name = "plan baseline"

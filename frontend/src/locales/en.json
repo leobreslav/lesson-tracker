@@ -414,7 +414,7 @@
     "fillPlan": "Fill the plan",
     "reserveSpare": "spare lessons in the year",
     "reserveShort": "lessons over the year",
-    "grown": "against the baseline of {{date}}",
+    "grown": "against the baseline of {{date}} — a stretched topic shows up here too",
     "noBaseline": "no approved baseline",
     "grownThemes": "Which themes grew",
     "looseTheme": "outside the themes",
@@ -436,7 +436,12 @@
     "changesDetail": "{{cancelled}} cancelled · {{extra}} added",
     "addedToPlan": "added to the plan",
     "droppedFromPlan": "dropped from the plan",
-    "sendForApproval": "send for approval"
+    "sendForApproval": "send for approval",
+    "unclosed_one": "{{count}} lesson has nothing recorded.",
+    "unclosed_other": "{{count}} lessons have nothing recorded.",
+    "closeDebts": "close them",
+    "reserveWhy": "was {{then}} at approval · hours {{schedule}} · plan {{plan}}",
+    "recordedShare": "Recorded for {{confirmed}} of {{held}} lessons held; the rest is worked out from the order."
   },
   "calendar": {
     "title": "School year",
@@ -1020,5 +1025,15 @@
     "admin": "administrator",
     "student": "student",
     "root": "superuser"
+  },
+  "debts": {
+    "title": "Close the days nobody said anything about",
+    "hint": "The layout suggests a topic for each; confirm what is right and say which lessons did not happen.",
+    "none": "Nothing left to close.",
+    "noTopic": "the curriculum map has nothing left here",
+    "held": "held",
+    "skipped": "did not happen",
+    "submit_one": "Close {{count}} lesson",
+    "submit_other": "Close {{count}} lessons"
   }
 }

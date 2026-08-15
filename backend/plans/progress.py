@@ -128,6 +128,17 @@ def rows_for(courses, today, ahead: int = 2) -> list[dict]:
                         "created_at": baseline.created_at,
                         "approved_at": baseline.approved_at,
                         "self_approved": baseline.self_approved,
+                        # почему резерв стал таким: часы против программы
+                        "reserve": services.reserve_since(
+                            baseline.slots_total,
+                            sum(
+                                1
+                                for row in baseline.rows.all()
+                                if not row.is_section
+                            ),
+                            len(slots_by_course[key]),
+                            len(lessons),
+                        ),
                         **services.baseline_diff(baseline.rows.all(), lessons),
                     }
                     if baseline

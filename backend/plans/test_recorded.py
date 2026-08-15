@@ -259,3 +259,87 @@ class OneHourPerLessonTests(LayoutApiTestCase):
 
         with self.assertRaises(IntegrityError), transaction.atomic():
             second.save(update_fields=["lesson"])
+
+
+class ReserveSinceTests(LayoutApiTestCase):
+    """
+    Почему резерв стал таким: что сделало расписание, что сделала программа.
+
+    Резерв — единственное число приложения, живущее сразу на обеих осях, и
+    ровно поэтому его падение само по себе ничего не объясняет. Ответ
+    становится точным, как только известна точка отсчёта, — её и снимает
+    `PlanBaseline.slots_total` в момент утверждения.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.fill_slots(10)  # семь уроков плана, десять часов
+        self.baseline = self.approve_plan()
+
+    def approve_plan(self):
+        from plans import approval
+
+        from .models import PlanBaseline
+
+        baseline = PlanBaseline.objects.create(
+            course=self.course, submitted_by=self.user
+        )
+        return approval.approve(baseline, self.user)
+
+    def reserve(self):
+        rows = self.client.get(reverse("plannode-progress")).json()["courses"]
+        row = next(item for item in rows if item["id"] == self.course.pk)
+        return row["baseline"]["reserve"]
+
+    def test_the_starting_point_is_taken_at_approval(self):
+        self.assertEqual(self.baseline.slots_total, 10)
+        self.assertEqual(self.reserve(), {
+            "then": 3, "now": 3, "schedule": 0, "plan": 0,
+        })
+
+    def test_a_lost_day_is_charged_to_the_schedule(self):
+        slot = Slot.objects.filter(course=self.course).order_by("date").first()
+        slot.is_cancelled = True
+        slot.save(update_fields=["is_cancelled"])
+
+        self.assertEqual(
+            self.reserve(), {"then": 3, "now": 2, "schedule": -1, "plan": 0}
+        )
+
+    def test_a_grown_plan_is_charged_to_the_programme(self):
+        """«Не успели» — это дописанная строка, и резерв съедает она."""
+        self.client.post(
+            reverse("plannode-list"),
+            {"course": self.course.pk, "title": "Продолжение"},
+            format="json",
+        )
+
+        self.assertEqual(
+            self.reserve(), {"then": 3, "now": 2, "schedule": 0, "plan": 1}
+        )
+
+    def test_the_two_halves_add_up_exactly(self):
+        """Это тождество, а не оценка: `сейчас = тогда + часы − уроки`."""
+        self.add_slot(MONDAY + timedelta(days=20), number=3, is_extra=True)
+        self.client.post(
+            reverse("plannode-list"),
+            {"course": self.course.pk, "title": "Продолжение"},
+            format="json",
+        )
+
+        numbers = self.reserve()
+
+        self.assertEqual(
+            numbers["now"],
+            numbers["then"] + numbers["schedule"] - numbers["plan"],
+        )
+
+    def test_without_an_approved_baseline_there_is_nothing_to_decompose(self):
+        from .models import PlanBaseline
+
+        PlanBaseline.objects.all().delete()
+
+        rows = self.client.get(reverse("plannode-progress")).json()["courses"]
+        row = next(item for item in rows if item["id"] == self.course.pk)
+
+        self.assertIsNone(row["baseline"])

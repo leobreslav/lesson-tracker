@@ -3501,6 +3501,53 @@ button.link.toggle {
   margin-left: 0.3rem;
 }
 
+/* --- долги по записи --- */
+
+/* Список короткий (две недели прошедших занятий), поэтому строка, а не
+   таблица: колонок хватает грид-шаблона, и он же держит их ровными. */
+.debt-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.debt-list > li {
+  display: grid;
+  grid-template-columns: 10rem 8rem 1fr auto;
+  gap: 0.5rem;
+  align-items: center;
+  padding: 0.35rem 0.5rem;
+  background: var(--surface-1);
+  border-radius: var(--row-radius);
+}
+
+.debt-list .debt-day,
+.debt-list .debt-course {
+  color: #666;
+  font-size: 0.85rem;
+  white-space: nowrap;
+}
+
+.debt-list .debt-topic {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.debt-list .debt-choice {
+  display: flex;
+  gap: 0.25rem;
+}
+
+/* причина занимает всю ширину строки под выбором: она появляется редко и
+   рвать ради неё сетку не стоит */
+.debt-list > li > input {
+  grid-column: 1 / -1;
+}
+
 /* --- перетаскивание --- */
 
 button.link.handle {

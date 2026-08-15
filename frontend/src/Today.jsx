@@ -1,6 +1,7 @@
 import { Suspense, lazy, useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
+import DebtsDialog from './DebtsDialog'
 import EmptyState from './EmptyState'
 import Markdown from './Markdown'
 import WorkDialog from './WorkDialog'
@@ -9,6 +10,7 @@ import {
   createWork,
   fetchCourses,
   fetchSlotDay,
+  fetchUnclosed,
   updatePlanNode,
   updateSlot,
 } from './api'
@@ -50,6 +52,8 @@ export default function Today({ onLoggedOut }) {
   const [busy, setBusy] = useState(false)
   const [adding, setAdding] = useState(null) // {slot, homework}
   const [opened, setOpened] = useState(null) // строка плана в панели
+  const [debts, setDebts] = useState([])
+  const [closing, setClosing] = useState(false)
   const [error, setError] = useState(null)
 
   const handleError = useCallback(
@@ -65,7 +69,13 @@ export default function Today({ onLoggedOut }) {
   }, [handleError])
 
   const load = useCallback(
-    () => fetchSlotDay(date).then(setDay).catch(handleError),
+    () =>
+      Promise.all([fetchSlotDay(date), fetchUnclosed()])
+        .then(([answer, owed]) => {
+          setDay(answer)
+          setDebts(owed.slots)
+        })
+        .catch(handleError),
     [date, handleError],
   )
 
@@ -152,6 +162,18 @@ export default function Today({ onLoggedOut }) {
         </p>
       )}
 
+      {/* Настойчивость стоит **на дороге**, по которой человек и так идёт:
+          напоминание сбоку игнорируется на третий день, а «Сегодня» он
+          открывает, чтобы вести урок. Одно движение до того, как начнёт. */}
+      {debts.length > 0 && (
+        <p className="hint warning" data-debts={debts.length}>
+          {t('status.unclosed', { count: debts.length })}{' '}
+          <button type="button" className="link" onClick={() => setClosing(true)}>
+            {t('status.closeDebts')}
+          </button>
+        </p>
+      )}
+
       {day && (
         <>
           <div className="agenda-bar">
@@ -221,6 +243,17 @@ export default function Today({ onLoggedOut }) {
           busy={busy}
           onSubmit={(fields) => run(() => createWork(fields))}
           onClose={() => setAdding(null)}
+        />
+      )}
+
+      {closing && (
+        <DebtsDialog
+          busy={busy}
+          onDone={() => {
+            setClosing(false)
+            load()
+          }}
+          onClose={() => setClosing(false)}
         />
       )}
 
