@@ -383,3 +383,32 @@ test('журнал ведётся кнопками, и отметка снима
   await expect(page.locator('.attendance > li').first()).toHaveClass(/unmarked/)
   await expect(page.getByText(`отмечено 0 из ${total}`)).toBeVisible()
 })
+
+test('работа заводится прямо на уроке и остаётся привязанной к нему', async ({
+  page,
+  signIn,
+}) => {
+  // Блок «Работы» до сих пор только читал: привязать работу к занятию через
+  // интерфейс было нечем, и на живых данных он всегда пустовал.
+  await signIn(PEOPLE.ivanova)
+  await openLesson(page)
+
+  await expect(page.getByText('На этом занятии ничего не задавали.')).toBeVisible()
+  await page.getByRole('button', { name: 'Новая работа' }).click()
+
+  const dialog = page.locator('dialog.modal')
+  await dialog.getByLabel('Название').fill('Практика по признакам делимости')
+  await dialog.getByRole('button', { name: 'Сохранить' }).click()
+
+  await expect(dialog).toBeHidden()
+  const works = page.locator('.work-links > li')
+  await expect(works).toHaveCount(1)
+  await expect(works.first()).toContainText('Практика по признакам делимости')
+
+  // привязка настоящая: пережила перезагрузку страницы урока
+  await page.reload()
+  await ready(page)
+  await expect(page.locator('.work-links > li').first()).toContainText(
+    'Практика по признакам делимости',
+  )
+})

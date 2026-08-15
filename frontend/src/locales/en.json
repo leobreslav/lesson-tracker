@@ -1063,6 +1063,7 @@
     "addLink": "Add a link",
     "linkAddress": "Address",
     "linkTitle": "Title",
-    "noStudents": "Nobody is enrolled in this course yet."
+    "noStudents": "Nobody is enrolled in this course yet.",
+    "newWork": "New assignment"
   }
 }

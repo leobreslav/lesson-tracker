@@ -3,10 +3,12 @@ import { useTranslation } from 'react-i18next'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import LessonAttendance from './LessonAttendance'
 import Markdown from './Markdown'
+import WorkDialog from './WorkDialog'
 import { iconFor } from './fileKind'
 import {
   addLinkAttachment,
   createPlanNode,
+  createWork,
   deleteAttachment,
   fetchSlotCard,
   openAttachment,
@@ -58,6 +60,7 @@ export default function LessonScreen({ onLoggedOut }) {
   const [card, setCard] = useState(null)
   const [busy, setBusy] = useState(false)
   const [editing, setEditing] = useState(false) // панель содержания
+  const [adding, setAdding] = useState(false) // окно новой работы
   const [form, setForm] = useState(null) // 'rename' | 'insert' | 'cancel' | 'link'
   const [text, setText] = useState('')
   const [link, setLink] = useState({ url: '', title: '' })
@@ -372,7 +375,19 @@ export default function LessonScreen({ onLoggedOut }) {
 
       {/* 3. Что решаем */}
       <section className="panel">
-        <h2 className="panel-title">{t('lessonScreen.works')}</h2>
+        <div className="panel-head spread">
+          <h2 className="panel-title">{t('lessonScreen.works')}</h2>
+          {may && (
+            <button
+              type="button"
+              className="compact"
+              disabled={busy}
+              onClick={() => setAdding(true)}
+            >
+              {t('lessonScreen.newWork')}
+            </button>
+          )}
+        </div>
         {card.works.length === 0 ? (
           <p className="hint">{t('lessonScreen.noWorks')}</p>
         ) : (
@@ -532,6 +547,21 @@ export default function LessonScreen({ onLoggedOut }) {
             </button>
           )}
         </div>
+      )}
+
+      {adding && (
+        <WorkDialog
+          courseId={card.course.id}
+          slot={card.id}
+          busy={busy}
+          onSubmit={(fields) =>
+            run(async () => {
+              await createWork(fields)
+              setAdding(false)
+            })
+          }
+          onClose={() => setAdding(false)}
+        />
       )}
 
       {editing && topic && (

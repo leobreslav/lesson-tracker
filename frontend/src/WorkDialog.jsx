@@ -16,9 +16,15 @@ import { fromLocalInput, toLocalInput } from './dates'
  * условии находят посреди урока, — но и молчать нельзя: правка, сделанная
  * вслепую, ломает то, что люди пишут прямо сейчас.
  */
-export default function WorkDialog({ work, courseId, busy, onSubmit, onClose }) {
+export default function WorkDialog({ work, courseId, slot, busy, onSubmit, onClose }) {
   const { t } = useTranslation()
-  const [form, setForm] = useState(() => initial(work))
+  // `slot` — занятие, с которого работу заводят. Ничего, кроме привязки, он
+  // не подставляет: подставленный текст из плана здесь уже был и оказался не
+  // нужен — домашнее задание и так написано в плане и видно на уроке
+  const [form, setForm] = useState(() => ({
+    ...initial(work),
+    ...(slot ? { slot } : {}),
+  }))
   const [impact, setImpact] = useState(null)
 
   useEffect(() => {
