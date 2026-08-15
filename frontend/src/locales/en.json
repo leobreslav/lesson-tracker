@@ -230,7 +230,8 @@
     "split_student_twice": "One student is named twice: a work is one piece, however many sheets it takes.",
     "split_not_in_course": "That student does not study in this course.",
     "not_on_paper": "This work is not written on paper: there is nothing to split.",
-    "plan_lesson_taught": "«{{title}}» was taught on {{date}}: a lesson already given keeps its place."
+    "plan_lesson_taught": "«{{title}}» was taught on {{date}}: a lesson already given keeps its place.",
+    "slot_lesson_taken": "«{{title}}» is already recorded on {{date}}."
   },
   "classPicker": {
     "label": "Classes:",
@@ -1039,6 +1040,29 @@
     "toDay": "back to the day",
     "recorded": "recorded",
     "works": "Assignments",
-    "noWorks": "Nothing was set at this lesson."
+    "noWorks": "Nothing was set at this lesson.",
+    "attendance": "Attendance",
+    "content": "What we do",
+    "materials": "Materials",
+    "homework": "Homework",
+    "present": "was there",
+    "absent": "was not",
+    "late": "late",
+    "unmarked": "not marked",
+    "markedCount": "{{marked}} of {{total}} marked",
+    "allPresent": "everybody was there",
+    "removedStudent": "no longer in the course",
+    "noMaterials": "Nothing is attached to this lesson.",
+    "noHomework": "No homework is written in the curriculum map.",
+    "noContent": "Nothing is written for this lesson yet.",
+    "pickTopic": "What was covered",
+    "pickTopicHint": "The layout suggests one; pick another if the day went differently.",
+    "takenOn": "recorded on {{date}}",
+    "bind": "Record",
+    "changeTopic": "Another topic…",
+    "addLink": "Add a link",
+    "linkAddress": "Address",
+    "linkTitle": "Title",
+    "noStudents": "Nobody is enrolled in this course yet."
   }
 }

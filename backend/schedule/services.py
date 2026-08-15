@@ -126,6 +126,39 @@ def free_number(*, teacher_id, year, day, start: int = 1):
     return None
 
 
+def mark_attendance(slot, marks, *, by) -> None:
+    """
+    Записать журнал занятия. Одной транзакцией и без лишних строк.
+
+    `status: null` не хранится значением, а **удаляет строку**: «не
+    отмечено» — это отсутствие записи, и хранить его иначе значило бы
+    заводить строку на каждого ученика каждого занятия года. Разница между
+    «не отмечено» и «отсутствовал» при этом остаётся видимой, а она нужна:
+    пустой журнал и журнал, где не было всего класса, — разные вещи.
+    """
+    from django.db import transaction
+
+    from .models import Attendance
+
+    with transaction.atomic():
+        for row in marks:
+            if row["status"] is None:
+                Attendance.objects.filter(
+                    slot=slot, student_id=row["student"]
+                ).delete()
+                continue
+
+            Attendance.objects.update_or_create(
+                slot=slot,
+                student_id=row["student"],
+                defaults={
+                    "status": row["status"],
+                    "note": row.get("note", ""),
+                    "marked_by": by,
+                },
+            )
+
+
 def occupied_message(day: date, lesson_number: int, class_name: str) -> str:
     """A teacher cannot run two classes at once — say which one is in the way."""
     return f"{day.isoformat()}, lesson {lesson_number} is taken by {class_name}"

@@ -634,3 +634,82 @@ class Slot(models.Model):
                     )
                 }
             )
+
+
+class Attendance(models.Model):
+    """
+    Кто был на занятии. Строка на человека, и только у отмеченных.
+
+    Первая таблица, которая висит на занятии по-настоящему: у остальных на
+    нём одно поле. Форма та же, что у оценок и отправок, — **строка заводится
+    по требованию**. Пока никого не отметили, строк нет, и «не отмечено»
+    отличается от «отсутствовал» тем, что первого просто нет в базе.
+    Различать их обязательно: пустой журнал и журнал, где весь класс
+    отсутствовал, — разные вещи, а хранить «не отмечено» значением значило бы
+    заводить строку на каждого ученика каждого занятия года.
+
+    Состояний три, и больше не нужно. «Опоздал» отдельно от «был», потому
+    что это единственная пометка, которую учитель ставит на ходу и которая
+    потом что-то значит; «болел», «по заявлению» и прочие причины — это
+    `note`, а не новый вид: список причин у каждой школы свой, и угадывать
+    его нельзя.
+
+    **Состав курса на дату восстанавливается приблизительно**, и это
+    известный предел. Строка зачисления одна навсегда, `removed_at`
+    переключается, поэтому «сняли в октябре, вернули в феврале» делает
+    октябрь неотличимым от обычного. Журнал от этого не страдает — он про
+    тех, кого отметили, — а вот «сколько человек было в списке 12 октября»
+    ответить нечем. Первым это спросит отчёт по пропускам.
+
+    Занятие уносит свои строки каскадом: журнал существует ради занятия, и
+    без него не значит ничего. А `Slot.empty_conditions` защищает занятие с
+    журналом от массовой чистки — само, потому что считает записью любую
+    обратную связь.
+    """
+
+    class Status(models.TextChoices):
+        PRESENT = "present", "was there"
+        ABSENT = "absent", "was not"
+        LATE = "late", "came late"
+
+    slot = models.ForeignKey(
+        "schedule.Slot",
+        related_name="attendance",
+        on_delete=models.CASCADE,
+        verbose_name="lesson",
+    )
+    student = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        related_name="attendance",
+        on_delete=models.CASCADE,
+        verbose_name="student",
+    )
+    status = models.CharField("status", max_length=8, choices=Status)
+    note = models.CharField(
+        "note",
+        max_length=200,
+        blank=True,
+        help_text="Причина словами: список причин у каждой школы свой.",
+    )
+    marked_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        related_name="attendance_marked",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        verbose_name="marked by",
+    )
+    marked_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "attendance mark"
+        verbose_name_plural = "attendance"
+        ordering = ("student__last_name", "student__email")
+        constraints = [
+            models.UniqueConstraint(
+                fields=("slot", "student"), name="one_attendance_row_per_lesson"
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.student} — {self.get_status_display()}"

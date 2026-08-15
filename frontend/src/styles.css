@@ -3634,6 +3634,60 @@ button.link.toggle {
   margin-left: 0.3rem;
 }
 
+/* --- журнал занятия --- */
+
+/* Строка на человека: имя слева, три отметки справа. Кнопки, а не список:
+   на двадцати учениках выпадающий список это двадцать открываний, а
+   отметка ставится взглядом. */
+.attendance {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.attendance > li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.1rem 0.4rem;
+  border-radius: var(--row-radius);
+}
+
+/* отмеченная строка заливается: по столбцу видно, докуда дошли */
+.attendance > li.present {
+  background: #eaf7ec;
+}
+
+.attendance > li.absent {
+  background: #fdeceb;
+}
+
+.attendance > li.late {
+  background: #fff6e5;
+}
+
+.attendance .name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.attendance .marks {
+  display: flex;
+  flex-shrink: 0;
+  gap: 0.2rem;
+}
+
+/* нативный выбор файла: подпись ему рисует браузер, своим языком и своей
+   кнопкой, поэтому в ряду его прячут за обычной кнопкой */
+.hidden-file {
+  display: none;
+}
+
 /* --- долги по записи --- */
 
 /* Список короткий (две недели прошедших занятий), поэтому строка, а не

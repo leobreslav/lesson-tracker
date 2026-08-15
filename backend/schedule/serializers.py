@@ -9,6 +9,7 @@ from rest_framework.validators import UniqueTogetherValidator
 from . import services
 from .models import (
     MAX_LESSON_NUMBER,
+    Attendance,
     Course,
     CourseAssignment,
     CourseMethodist,
@@ -350,6 +351,10 @@ class SlotSerializer(serializers.ModelSerializer):
         fields["lesson"].queryset = PlanNode.objects.filter(
             course__in=courses, is_section=False
         )
+        # уникальность связи проверяем сами, см. `validate` ниже: DRF вешает
+        # на `OneToOne` свой валидатор, а тот отказывает английской строкой
+        # без кода и, главное, без даты, за которой урок уже записан
+        fields["lesson"].validators = []
         # кто вёл — сотрудник школы: замену ведёт учитель, а не ученик
         fields["taught_by"].queryset = school_teachers(self)
         return fields
@@ -397,12 +402,29 @@ class SlotSerializer(serializers.ModelSerializer):
         slot_date = value("date")
 
         lesson = value("lesson")
-        if lesson is not None and lesson.course_id != course.pk:
-            api_error(
-                Codes.PARENT_OTHER_CLASS,
-                "That plan lesson belongs to another course.",
-                field="lesson",
+        if lesson is not None:
+            if lesson.course_id != course.pk:
+                api_error(
+                    Codes.PARENT_OTHER_CLASS,
+                    "That plan lesson belongs to another course.",
+                    field="lesson",
+                )
+
+            # одна строка плана — ровно одно занятие. Сказать надо не
+            # «занято», а **где** занято: иначе это искать руками
+            taken = (
+                Slot.objects.filter(lesson=lesson)
+                .exclude(pk=self.instance.pk if self.instance else None)
+                .first()
             )
+            if taken is not None:
+                api_error(
+                    Codes.SLOT_LESSON_TAKEN,
+                    f"«{lesson.title}» is already recorded on {taken.date}.",
+                    field="lesson",
+                    title=lesson.title,
+                    date=str(taken.date),
+                )
 
         if year != course.year:
             api_error(
@@ -470,6 +492,48 @@ class SlotMoveSerializer(serializers.Serializer):
 
 
 from plans.models import PlanNode
+
+
+class AttendanceMarkSerializer(serializers.Serializer):
+    """Одна отметка: кто и как. `status: null` снимает её."""
+
+    student = serializers.IntegerField()
+    status = serializers.ChoiceField(
+        choices=Attendance.Status.choices, allow_null=True
+    )
+    note = serializers.CharField(max_length=200, required=False, allow_blank=True)
+
+
+class AttendanceSerializer(serializers.Serializer):
+    """
+    Журнал занятия набором, а не по одному.
+
+    Класс отмечают за один взгляд: запрос на человека превратил бы это в
+    двадцать запросов и в двадцать возможностей отметить половину.
+    """
+
+    marks = AttendanceMarkSerializer(many=True, allow_empty=False)
+
+    def validate_marks(self, marks):
+        """
+        Отмечают только тех, кто в курсе. Снятого — тоже: он мог быть на
+        занятии до того, как его сняли, и отметка за тот день настоящая.
+        """
+        course = self.context["course"]
+        enrolled = set(
+            CourseStudent.objects.filter(course=course).values_list(
+                "student_id", flat=True
+            )
+        )
+        outsiders = [row["student"] for row in marks if row["student"] not in enrolled]
+        if outsiders:
+            api_error(
+                Codes.SPLIT_NOT_IN_COURSE,
+                "That student does not study in this course.",
+                field="marks",
+            )
+
+        return marks
 
 
 class ClosedSlotSerializer(serializers.Serializer):

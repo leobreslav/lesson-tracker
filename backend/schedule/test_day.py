@@ -303,3 +303,71 @@ class CardTests(DayTestCase):
         self.sign_in(self.student)
 
         self.assertEqual(self.card().status_code, 403)
+
+
+class OptionsTests(DayTestCase):
+    """
+    С каким уроком плана связать час — выбор, а не только подтверждение.
+
+    Раскладка подсказывает один, позиционно, и в обычный день она права. Но
+    необычным день бывает чаще, чем кажется: заболели и перенесли
+    контрольную, вернулись к теме, поменяли порядок. Тогда нужен весь план.
+    """
+
+    def options(self, slot=None):
+        return self.client.get(
+            reverse("slot-card", args=[(slot or self.monday).pk])
+        ).json()["options"]
+
+    def test_the_whole_plan_is_offered_with_numbers(self):
+        rows = self.options()
+
+        self.assertEqual(
+            [(row["number"], row["title"]) for row in rows],
+            [(1, "Синус суммы"), (2, "Косинус суммы")],
+        )
+
+    def test_a_row_taken_by_another_hour_is_flagged_not_hidden(self):
+        """Исчезнувшая из списка строка выглядит потерянной."""
+        self.tuesday.lesson = self.second
+        self.tuesday.save(update_fields=["lesson"])
+
+        rows = {row["title"]: row["taken"] for row in self.options()}
+
+        self.assertIsNone(rows["Синус суммы"])
+        self.assertEqual(rows["Косинус суммы"], str(self.tuesday.date))
+
+    def test_the_row_of_this_very_hour_is_not_taken(self):
+        """Свою же связь менять можно — она не мешает сама себе."""
+        self.monday.lesson = self.first
+        self.monday.save(update_fields=["lesson"])
+
+        rows = {row["title"]: row["taken"] for row in self.options()}
+
+        self.assertIsNone(rows["Синус суммы"])
+
+    def test_choosing_a_taken_row_is_refused_by_name_and_date(self):
+        self.tuesday.lesson = self.second
+        self.tuesday.save(update_fields=["lesson"])
+
+        response = self.client.patch(
+            reverse("slot-detail", args=[self.monday.pk]),
+            {"lesson": self.second.pk},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        body = response.json()
+        self.assertEqual(body["code"], "slot_lesson_taken")
+        self.assertEqual(body["params"]["date"], str(self.tuesday.date))
+
+    def test_any_row_of_the_plan_can_be_chosen_not_just_the_suggested_one(self):
+        response = self.client.patch(
+            reverse("slot-detail", args=[self.monday.pk]),
+            {"lesson": self.second.pk},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200, response.content)
+        self.monday.refresh_from_db()
+        self.assertEqual(self.monday.lesson, self.second)

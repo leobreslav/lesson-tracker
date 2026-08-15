@@ -82,6 +82,7 @@ class Codes:
     SLOT_NUMBER_TAKEN = "slot_number_taken"
     SLOT_DUPLICATE = "slot_duplicate"
     SLOT_MOVE_SAME_PLACE = "slot_move_same_place"
+    SLOT_LESSON_TAKEN = "slot_lesson_taken"
     PLAN_LESSON_TAUGHT = "plan_lesson_taught"
     SLOT_NOT_MINE = "slot_not_mine"
 

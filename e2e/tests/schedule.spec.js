@@ -310,3 +310,67 @@ test('урок листается по своему курсу и показыв
   await expect(fields.first()).toBeVisible()
   await expect(page.getByText('Цели')).toBeVisible()
 })
+
+/** Открыть страницу урока курса с полным планом. */
+async function openLesson(page, course = 'Grade 6 Algebra') {
+  const slots = await firstDayWithLessons(page, { course })
+  await slots.first().click()
+  await page.locator('dialog.modal').getByRole('button', { name: 'Открыть урок' }).click()
+  await ready(page)
+}
+
+test('страница урока идёт в порядке урока, а не наших таблиц', async ({
+  page,
+  signIn,
+}) => {
+  // Отметить пришедших, вести по содержанию, объявить работы, показать
+  // материалы, задать домашнее. Экран, собранный по сущностям, заставлял бы
+  // каждый раз искать глазами то, что делают следующим.
+  await signIn(PEOPLE.ivanova)
+  await openLesson(page)
+
+  // ждём саму страницу: `ready` возвращается до того, как приедет карточка
+  await expect(page.locator('.panel-title').first()).toBeVisible()
+  const blocks = await page.locator('.panel-title').allTextContents()
+
+  expect(blocks).toEqual([
+    'Посещаемость',
+    'Чем занимаемся',
+    'Работы',
+    'Материалы',
+    'Домашнее задание',
+  ])
+})
+
+test('журнал ведётся кнопками, и отметка снимается повторным нажатием', async ({
+  page,
+  signIn,
+}) => {
+  // Три кнопки в строке, а не список: на двадцати учениках список это
+  // двадцать открываний, а отметка ставится взглядом. Повторное нажатие
+  // снимает — тот же приём, что у вердикта в проверке работ.
+  await signIn(PEOPLE.ivanova)
+  await openLesson(page)
+
+  const rows = page.locator('.attendance > li')
+  await expect(rows.first()).toBeVisible()
+  const total = await rows.count()
+  await expect(page.getByText(`отмечено 0 из ${total}`)).toBeVisible()
+
+  const first = rows.first()
+  await first.getByRole('button', { name: 'не был' }).click()
+
+  await expect(first).toHaveClass(/absent/)
+  await expect(page.getByText(`отмечено 1 из ${total}`)).toBeVisible()
+
+  // отметка настоящая: пережила перезагрузку страницы
+  await page.reload()
+  await ready(page)
+  await expect(page.locator('.attendance > li').first()).toHaveClass(/absent/)
+
+  // повторное нажатие снимает: «не отмечен» — это отсутствие строки
+  await page.locator('.attendance > li').first().getByRole('button', { name: 'не был' }).click()
+
+  await expect(page.locator('.attendance > li').first()).toHaveClass(/unmarked/)
+  await expect(page.getByText(`отмечено 0 из ${total}`)).toBeVisible()
+})

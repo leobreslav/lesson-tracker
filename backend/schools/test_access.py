@@ -418,6 +418,11 @@ class PersonalObjectTests(AccessTestCase):
                     "body": {"date": str(MONDAY), "lesson_number": 7},
                 },
                 "slot-card",
+                {
+                    "name": "slot-attendance",
+                    "method": "post",
+                    "body": {"marks": [{"student": 10**9, "status": "present"}]},
+                },
             ),
             obj=self.slot,
             people=(self.stranger, self.alien_admin, self.outsider, self.student),

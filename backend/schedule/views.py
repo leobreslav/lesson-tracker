@@ -26,6 +26,7 @@ from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.views import APIView
 
+from files.models import Attachment
 from plans.models import PlanNode
 from plans import services as plan_services
 
@@ -43,6 +44,7 @@ from .models import (
     Subject,
 )
 from .serializers import (
+    AttendanceSerializer,
     BulkDeleteSerializer,
     CloseDaySerializer,
     CourseMethodistSerializer,
@@ -1031,16 +1033,87 @@ class SlotViewSet(SchoolScopedViewSet):
             .first()
         )
 
+        card = slot_day_payload(slot, suggested)
+        if card["topic"]:
+            # вложения строки плана — «материалы урока» на этой странице.
+            # В `slot_day_payload` их нет намеренно: он же собирает день, и
+            # там это был бы запрос на каждое занятие ради значка
+            from files.serializers import AttachmentSerializer, with_sharing
+
+            card["topic"]["attachments"] = AttachmentSerializer(
+                with_sharing(Attachment.objects.filter(plan_row_id=card["topic"]["id"])),
+                many=True,
+            ).data
+
         return Response(
             {
-                **slot_day_payload(slot, suggested),
+                **card,
                 "date": slot.date,
+                "options": plan_options(slot),
                 "previous": before,
                 "next": after,
                 # право на правку спрашивается один раз и отдаётся ответом:
                 # иначе страница гадала бы о нём по роли, а правило сложнее
                 # роли — ведущий курса **или** администратор школы
                 "may_write": allowed_to_write_schedule(request.user, slot.course),
+            }
+        )
+
+    @action(detail=True, methods=["get", "post"])
+    def attendance(self, request, pk=None):
+        """
+        Журнал занятия: кто был, кого не было, кто опоздал.
+
+        Список строится **по составу курса**, а не по отметкам: пока никого
+        не отметили, строк в базе нет вовсе, и «не отмечено» отличается от
+        «отсутствовал» именно этим. Хранить «не отмечено» значением значило
+        бы заводить строку на каждого ученика каждого занятия года.
+
+        Снятые с курса в списке остаются и помечены: их отметки за прошлые
+        занятия никуда не делись, а смешивать «не был» и «уже не учится»
+        нельзя — это разные ответы.
+
+        POST принимает набор отметок разом (`{"marks": [...]}`), а не по
+        одной: отмечают класс за один взгляд, и запрос на человека
+        превратил бы это в двадцать запросов. `status: null` снимает
+        отметку — строка удаляется, состояние возвращается в «не отмечено».
+        """
+        slot = self.get_object()
+
+        if request.method == "POST":
+            form = AttendanceSerializer(
+                data=request.data, context={"course": slot.course}
+            )
+            form.is_valid(raise_exception=True)
+            services.mark_attendance(
+                slot, form.validated_data["marks"], by=request.user
+            )
+
+        rows = {row.student_id: row for row in slot.attendance.all()}
+        enrolled = (
+            CourseStudent.objects.filter(course=slot.course)
+            .select_related("student")
+            .order_by("student__last_name", "student__email")
+        )
+
+        return Response(
+            {
+                "students": [
+                    {
+                        "id": row.student_id,
+                        "name": full_name(row.student),
+                        "active": row.removed_at is None,
+                        "status": (
+                            rows[row.student_id].status
+                            if row.student_id in rows
+                            else None
+                        ),
+                        "note": (
+                            rows[row.student_id].note if row.student_id in rows else ""
+                        ),
+                    }
+                    for row in enrolled
+                ]
             }
         )
 
@@ -1203,6 +1276,40 @@ def neighbour(courses, day, *, forward: bool):
         .values_list("date", flat=True)
         .first()
     )
+
+
+def plan_options(slot) -> list[dict]:
+    """
+    С каким уроком плана можно связать этот час.
+
+    Раскладка подсказывает **один** — позиционно, — и в обычный день она
+    права. Но день необычным бывает чаще, чем кажется: заболели и перенесли
+    контрольную, вернулись к теме, поменяли порядок. Тогда нужен не
+    «подтвердить подсказку», а выбор, и выбор должен видеть весь план.
+
+    Занятые строки из списка не выкидываются, а помечаются датой: «уже
+    записан за 12 сентября» — это ответ, а исчезнувшая из списка строка
+    выглядит потерянной. Отказывает на них сервер (`slot_lesson_taken`).
+    """
+    from plans import services as plan_services
+
+    taken = {
+        row.lesson_id: row.date
+        for row in Slot.objects.filter(
+            course=slot.course, lesson__isnull=False
+        ).exclude(pk=slot.pk)
+    }
+
+    return [
+        {
+            "id": lesson.node.pk,
+            "number": lesson.number,
+            "title": lesson.node.title,
+            "section_title": lesson.section.title if lesson.section else None,
+            "taken": taken.get(lesson.node.pk),
+        }
+        for lesson in plan_services.flatten_lessons(slot.course_id)
+    ]
 
 
 def slot_day_payload(slot, suggested) -> dict:

@@ -670,6 +670,13 @@ export const moveSlot = (id, fields) =>
 // плана, работы и соседи по курсу
 export const fetchSlotCard = (id) => request(`/api/slots/${id}/card/`)
 
+// журнал занятия: список строится по составу курса, а отметки — только у
+// тех, кого отметили
+export const fetchAttendance = (slot) => request(`/api/slots/${slot}/attendance/`)
+
+export const markAttendance = (slot, marks) =>
+  request(`/api/slots/${slot}/attendance/`, { method: 'POST', body: { marks } })
+
 // долги по записи: прошедшие занятия, за которыми ничего не сказано
 export const fetchUnclosed = () => request('/api/slots/unclosed/')
 
