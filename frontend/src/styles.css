@@ -763,6 +763,12 @@ form .success {
   cursor: pointer;
 }
 
+.panel-actions {
+  display: flex;
+  flex-shrink: 0;
+  gap: 0.3rem;
+}
+
 .panel-toggle .caret {
   color: #999;
   font-size: 0.8rem;

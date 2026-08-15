@@ -412,6 +412,41 @@ export default function LessonScreen({ onLoggedOut }) {
         name="materials"
         title={t('lessonScreen.materials')}
         note={topic?.attachments?.length || null}
+        actions={
+          may &&
+          topic && (
+            <>
+              <button
+                type="button"
+                className="compact"
+                disabled={busy}
+                onClick={() => open('link')}
+              >
+                {t('lessonScreen.addLink')}
+              </button>
+              <button
+                type="button"
+                className="secondary compact"
+                disabled={busy}
+                onClick={() => fileInput.current?.click()}
+              >
+                {t('lesson.addFile')}
+              </button>
+              {/* нативный input прячется: его подпись браузер рисует сам,
+                  на своём языке и своей кнопкой */}
+              <input
+                ref={fileInput}
+                type="file"
+                className="hidden-file"
+                aria-label={t('lesson.addFile')}
+                onChange={(event) => {
+                  const file = event.target.files?.[0]
+                  if (file) run(() => uploadAttachment({ planRow: topic.id, file }))
+                }}
+              />
+            </>
+          )
+        }
       >
         {!topic?.attachments?.length ? (
           <p className="hint">{t('lessonScreen.noMaterials')}</p>
@@ -451,9 +486,7 @@ export default function LessonScreen({ onLoggedOut }) {
           </ul>
         )}
 
-        {may &&
-          topic &&
-          (form === 'link' ? (
+        {may && topic && form === 'link' && (
             <form className="row" onSubmit={submit}>
               <input
                 autoFocus
@@ -477,39 +510,7 @@ export default function LessonScreen({ onLoggedOut }) {
                 {t('common.cancel')}
               </button>
             </form>
-          ) : (
-            <div className="row">
-              <button
-                type="button"
-                className="secondary compact"
-                disabled={busy}
-                onClick={() => open('link')}
-              >
-                {t('lessonScreen.addLink')}
-              </button>
-              {/* нативный input прячется: его подпись браузер рисует сам,
-                  на своём языке и своей кнопкой — в ряду с остальными она
-                  чужая и не переводится */}
-              <button
-                type="button"
-                className="secondary compact"
-                disabled={busy}
-                onClick={() => fileInput.current?.click()}
-              >
-                {t('lesson.addFile')}
-              </button>
-              <input
-                ref={fileInput}
-                type="file"
-                className="hidden-file"
-                aria-label={t('lesson.addFile')}
-                onChange={(event) => {
-                  const file = event.target.files?.[0]
-                  if (file) run(() => uploadAttachment({ planRow: topic.id, file }))
-                }}
-              />
-            </div>
-          ))}
+        )}
       </Collapsible>
 
       {/* 5. Что задаём на дом — последним, потому что объявляют его в конце */}
