@@ -285,7 +285,7 @@ test('урок листается по своему курсу и показыв
 
   // страница про урок целиком: тема заголовком, состояние, работы
   await expect(page.getByText('Раскладка предполагает эту тему.')).toBeVisible()
-  await expect(page.getByRole('heading', { name: 'Работы' })).toBeVisible()
+  await expect(page.locator('.panel-title', { hasText: 'Работы' })).toBeVisible()
 
   const first = await page.locator('h1').textContent()
   await page.getByRole('button', { name: '→' }).click()
@@ -368,14 +368,13 @@ test('журнал ведётся кнопками, и отметка снима
   await expect(first).toHaveClass(/absent/)
   await expect(page.getByText(`отмечено 1 из ${total}`)).toBeVisible()
 
-  // отметка настоящая: пережила перезагрузку страницы. Журнал при этом
-  // снова свёрнут — свёрнутость не запоминается, это состояние занятия
+  // отметка настоящая: пережила перезагрузку. Открытым журнал тоже остался
+  // — свёрнутость запоминается: закрыть или открыть раздел это привычка
+  // человека, а не состояние занятия
   await page.reload()
   await ready(page)
-  await expect(page.locator('.attendance > li')).toHaveCount(0)
-  await expect(page.getByText(`отмечено 1 из ${total}`)).toBeVisible()
-  await page.getByRole('button', { name: /Посещаемость/ }).click()
   await expect(page.locator('.attendance > li').first()).toHaveClass(/absent/)
+  await expect(page.getByText(`отмечено 1 из ${total}`)).toBeVisible()
 
   // повторное нажатие снимает: «не отмечен» — это отсутствие строки
   await page.locator('.attendance > li').first().getByRole('button', { name: 'не был' }).click()

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import Collapsible from './Collapsible'
 import { fetchAttendance, markAttendance } from './api'
 
 const STATES = ['present', 'absent', 'late']
@@ -18,9 +19,8 @@ const STATES = ['present', 'absent', 'late']
  * единственный вопрос, который к журналу задают, не открывая его:
  * «отмечено 3 из 14».
  *
- * Свёрнутость не запоминается, в отличие от переключателей вида в плане:
- * это состояние одного занятия, а не привычка человека — на следующем
- * уроке журнал снова закрыт, потому что он снова пустой.
+ * Дальше решает человек: свёрнутость запоминается (`Collapsible`), и
+ * учителю, который отмечает каждый день, открывать её каждый раз не надо.
  *
  * Три кнопки в строке, а не выпадающий список: на двадцати учениках список
  * это двадцать открываний, а отметка ставится взглядом. Повторное нажатие
@@ -34,7 +34,6 @@ const STATES = ['present', 'absent', 'late']
 export default function LessonAttendance({ slotId, may, onError }) {
   const { t } = useTranslation()
   const [students, setStudents] = useState(null)
-  const [open, setOpen] = useState(false)
   const [busy, setBusy] = useState(false)
 
   const load = useCallback(
@@ -69,62 +68,51 @@ export default function LessonAttendance({ slotId, may, onError }) {
   const marked = (students ?? []).filter((row) => row.status).length
 
   return (
-    <section className="panel">
-      <button
-        type="button"
-        className="panel-toggle"
-        aria-expanded={open}
-        onClick={() => setOpen(!open)}
-      >
-        <span className="caret">{open ? '▾' : '▸'}</span>
-        <span className="panel-title">{t('lessonScreen.attendance')}</span>
-        {/* число в шапке — единственный вопрос, который к журналу задают,
-            не открывая его */}
-        {students !== null && students.length > 0 && (
-          <span className="hint">
-            {t('lessonScreen.markedCount', { marked, total: students.length })}
-          </span>
-        )}
-      </button>
+    <Collapsible
+      name="attendance"
+      openByDefault={false}
+      title={t('lessonScreen.attendance')}
+      // число в шапке — единственный вопрос, который к журналу задают,
+      // не открывая его
+      note={
+        students !== null && students.length > 0
+          ? t('lessonScreen.markedCount', { marked, total: students.length })
+          : null
+      }
+    >
+      {students === null ? (
+        <p className="hint">{t('common.loading')}</p>
+      ) : !students.length ? (
+        <p className="hint">{t('lessonScreen.noStudents')}</p>
+      ) : (
+        <ul className="attendance">
+          {students.map((row) => (
+            <li key={row.id} data-student={row.id} className={row.status ?? 'unmarked'}>
+              <span className="name">
+                {row.name}
+                {!row.active && (
+                  <span className="hint"> · {t('lessonScreen.removedStudent')}</span>
+                )}
+              </span>
 
-      {open &&
-        (students === null ? (
-          <p className="hint">{t('common.loading')}</p>
-        ) : !students.length ? (
-          <p className="hint">{t('lessonScreen.noStudents')}</p>
-        ) : (
-          <ul className="attendance">
-            {students.map((row) => (
-              <li
-                key={row.id}
-                data-student={row.id}
-                className={row.status ?? 'unmarked'}
-              >
-                <span className="name">
-                  {row.name}
-                  {!row.active && (
-                    <span className="hint"> · {t('lessonScreen.removedStudent')}</span>
-                  )}
-                </span>
-
-                <span className="marks">
-                  {STATES.map((state) => (
-                    <button
-                      type="button"
-                      key={state}
-                      disabled={!may || busy}
-                      aria-pressed={row.status === state}
-                      className={row.status === state ? `chip active ${state}` : 'chip'}
-                      onClick={() => set(row.id, row.status === state ? null : state)}
-                    >
-                      {t(`lessonScreen.${state}`)}
-                    </button>
-                  ))}
-                </span>
-              </li>
-            ))}
-          </ul>
-        ))}
-    </section>
+              <span className="marks">
+                {STATES.map((state) => (
+                  <button
+                    type="button"
+                    key={state}
+                    disabled={!may || busy}
+                    aria-pressed={row.status === state}
+                    className={row.status === state ? `chip active ${state}` : 'chip'}
+                    onClick={() => set(row.id, row.status === state ? null : state)}
+                  >
+                    {t(`lessonScreen.${state}`)}
+                  </button>
+                ))}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </Collapsible>
   )
 }

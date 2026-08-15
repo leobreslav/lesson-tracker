@@ -1,6 +1,7 @@
 import { Suspense, lazy, useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link, useNavigate, useParams } from 'react-router-dom'
+import Collapsible from './Collapsible'
 import LessonAttendance from './LessonAttendance'
 import Markdown from './Markdown'
 import WorkDialog from './WorkDialog'
@@ -359,8 +360,7 @@ export default function LessonScreen({ onLoggedOut }) {
       <LessonAttendance slotId={card.id} may={may} onError={handleError} />
 
       {/* 2. Чем занимаемся */}
-      <section className="panel">
-        <h2 className="panel-title">{t('lessonScreen.content')}</h2>
+      <Collapsible name="content" title={t('lessonScreen.content')}>
         {!topic || !CONTENT.some((field) => topic[field]) ? (
           <p className="hint">{t('lessonScreen.noContent')}</p>
         ) : (
@@ -371,13 +371,15 @@ export default function LessonScreen({ onLoggedOut }) {
             </div>
           ))
         )}
-      </section>
+      </Collapsible>
 
       {/* 3. Что решаем */}
-      <section className="panel">
-        <div className="panel-head spread">
-          <h2 className="panel-title">{t('lessonScreen.works')}</h2>
-          {may && (
+      <Collapsible
+        name="works"
+        title={t('lessonScreen.works')}
+        note={card.works.length || null}
+        actions={
+          may && (
             <button
               type="button"
               className="compact"
@@ -386,8 +388,9 @@ export default function LessonScreen({ onLoggedOut }) {
             >
               {t('lessonScreen.newWork')}
             </button>
-          )}
-        </div>
+          )
+        }
+      >
         {card.works.length === 0 ? (
           <p className="hint">{t('lessonScreen.noWorks')}</p>
         ) : (
@@ -402,12 +405,14 @@ export default function LessonScreen({ onLoggedOut }) {
             ))}
           </ul>
         )}
-      </section>
+      </Collapsible>
 
       {/* 4. Чем пользуемся: файлы и ссылки строки плана */}
-      <section className="panel">
-        <h2 className="panel-title">{t('lessonScreen.materials')}</h2>
-
+      <Collapsible
+        name="materials"
+        title={t('lessonScreen.materials')}
+        note={topic?.attachments?.length || null}
+      >
         {!topic?.attachments?.length ? (
           <p className="hint">{t('lessonScreen.noMaterials')}</p>
         ) : (
@@ -505,17 +510,16 @@ export default function LessonScreen({ onLoggedOut }) {
               />
             </div>
           ))}
-      </section>
+      </Collapsible>
 
       {/* 5. Что задаём на дом — последним, потому что объявляют его в конце */}
-      <section className="panel">
-        <h2 className="panel-title">{t('lessonScreen.homework')}</h2>
+      <Collapsible name="homework" title={t('lessonScreen.homework')}>
         {topic?.homework ? (
           <Markdown text={topic.homework} />
         ) : (
           <p className="hint">{t('lessonScreen.noHomework')}</p>
         )}
-      </section>
+      </Collapsible>
 
       {may && !card.is_cancelled && (
         <div className="row">

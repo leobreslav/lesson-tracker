@@ -749,7 +749,9 @@ form .success {
   display: flex;
   align-items: baseline;
   gap: 0.5rem;
-  width: 100%;
+  /* не во всю ширину: рядом в шапке живут действия карточки, и переключатель
+     не должен их выталкивать */
+  flex: 0 1 auto;
   min-height: 0;
   padding: 0;
   background: none;
