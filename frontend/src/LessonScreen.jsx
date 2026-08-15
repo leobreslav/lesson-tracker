@@ -17,7 +17,7 @@ import {
   uploadAttachment,
 } from './api'
 import { today } from './calendarLogic'
-import { longDate, shortDate } from './dates'
+import { longDate } from './dates'
 
 const LessonPanel = lazy(() => import('./LessonPanel'))
 
@@ -38,11 +38,15 @@ const CONTENT = ['objectives', 'body', 'formative']
  * задать домашнее. Экран, собранный по сущностям, заставлял бы каждый раз
  * искать глазами то, что делают следующим.
  *
- * Над блоками стоит тема, потому что от неё зависит всё остальное. Пока она
- * не записана, страница предлагает **выбрать** её, а не только подтвердить
- * подсказку: раскладка подсказывает позиционно и в обычный день права, но
- * необычным день бывает чаще, чем кажется — перенесли контрольную,
- * вернулись к теме, поменяли порядок.
+ * Над блоками стоит тема, потому что от неё зависит всё остальное. Здесь её
+ * **подтверждают, а не выбирают**: что было на уроке, решает план, и не
+ * угадал он — правят план, а подсказка меняется сама. Список плана из сорока
+ * строк отвечал бы на тот же вопрос мимо плана, не оставляя следа, что он
+ * разошёлся с реальностью.
+ *
+ * Снимается запись повторным нажатием на плашку «записано» — тем же приёмом,
+ * что отметка в журнале и вердикт в проверке работ. Без него исправить
+ * запись было бы нечем: «связать с другой строкой» здесь не предлагается.
  *
  * **Своего содержания у занятия нет ни одного поля.** Содержание, материалы
  * и домашнее задание — это строка учебного плана, показанная отсюда; правка
@@ -86,8 +90,6 @@ export default function LessonScreen({ onLoggedOut }) {
   const [form, setForm] = useState(null) // 'rename' | 'cancel' | 'link'
   const [text, setText] = useState('')
   const [link, setLink] = useState({ url: '', title: '' })
-  const [choice, setChoice] = useState('') // выбранная строка плана
-  const [picking, setPicking] = useState(false)
   const [error, setError] = useState(null)
 
   const fileInput = useRef(null)
@@ -101,20 +103,13 @@ export default function LessonScreen({ onLoggedOut }) {
   )
 
   const load = useCallback(
-    () =>
-      fetchSlotCard(id)
-        .then((answer) => {
-          setCard(answer)
-          setChoice(answer.topic ? String(answer.topic.id) : '')
-        })
-        .catch(handleError),
+    () => fetchSlotCard(id).then(setCard).catch(handleError),
     [id, handleError],
   )
 
   useEffect(() => {
     setCard(null)
     setForm(null)
-    setPicking(false)
     load()
   }, [load])
 
@@ -125,7 +120,6 @@ export default function LessonScreen({ onLoggedOut }) {
       await request()
       await load()
       setForm(null)
-      setPicking(false)
     } catch (err) {
       handleError(err)
     } finally {
@@ -150,7 +144,6 @@ export default function LessonScreen({ onLoggedOut }) {
   // задали на дом, а что решают в классе
   const homework = card.works.filter((work) => work.is_homework)
   const classwork = card.works.filter((work) => !work.is_homework)
-  const choosing = may && (picking || (done && !card.confirmed && card.options.length))
   // туннель в план открыт только записанной связью: подсказанную строку
   // правят там, где её видно в окружении
   const editable = may && card.confirmed && topic
@@ -208,7 +201,9 @@ export default function LessonScreen({ onLoggedOut }) {
         >
           →
         </button>
-        <Link to="/today" className="link">
+        {/* ссылка в ряду кнопок — кнопкой: подчёркнутый текст между
+            контролами читается как сбой вёрстки */}
+        <Link to="/today" className="link-button">
           {t('lessonScreen.toDay')}
         </Link>
       </div>
@@ -220,7 +215,46 @@ export default function LessonScreen({ onLoggedOut }) {
           {t('today.lessonNumber', { number: card.lesson_number })} ·{' '}
           {card.course.name}
         </p>
-        <h1>{topic ? topic.title : t('agenda.noTopic')}</h1>
+
+        {/* Переименование — кликом по названию, как в таблице плана: одна
+            операция не должна делаться двумя разными способами на двух
+            экранах. Кнопкой в ряду действий она стояла с тех пор, когда
+            карточка приехала с «Сегодня», где заголовок был просто
+            заголовком */}
+        {form === 'rename' ? (
+          <form className="row" onSubmit={submit}>
+            <input
+              autoFocus
+              value={text}
+              maxLength={200}
+              aria-label={t('today.renameTitle')}
+              placeholder={t('today.renameTitle')}
+              onChange={(event) => setText(event.target.value)}
+            />
+            <button type="submit" disabled={busy}>
+              {t('common.save')}
+            </button>
+            <button type="button" className="secondary" onClick={() => setForm(null)}>
+              {t('common.cancel')}
+            </button>
+          </form>
+        ) : (
+          <h1>
+            {editable ? (
+              <button
+                type="button"
+                className="link name"
+                title={t('today.rename')}
+                disabled={busy}
+                onClick={() => open('rename')}
+              >
+                {topic.title}
+              </button>
+            ) : (
+              topic?.title ?? t('agenda.noTopic')
+            )}
+          </h1>
+        )}
       </header>
 
       {error && (
@@ -248,117 +282,68 @@ export default function LessonScreen({ onLoggedOut }) {
         </p>
       )}
 
+      {/*
+        Что было на уроке, решает план.
+
+        Поэтому здесь не выбор, а подтверждение: «раскладка предлагает вот
+        это — так и было». Не угадала — правят план по ссылке рядом, и
+        подсказка меняется сама. Список плана из сорока строк отвечал бы на
+        тот же вопрос **мимо** плана, не оставляя следа, что он разошёлся с
+        реальностью.
+
+        Записать можно только прошедшее: кнопка, нажатая накануне, стала бы
+        ложью после утренней пожарной тревоги, и заметить это было бы
+        некому.
+      */}
       <section className="panel">
-        {choosing ? (
-          <>
-            <h2 className="panel-title">{t('lessonScreen.pickTopic')}</h2>
-            <p className="hint">{t('lessonScreen.pickTopicHint')}</p>
-            <div className="row">
-              <select
-                value={choice}
-                aria-label={t('lessonScreen.pickTopic')}
-                onChange={(event) => setChoice(event.target.value)}
-              >
-                {card.options.map((option) => (
-                  <option key={option.id} value={option.id} disabled={!!option.taken}>
-                    {option.number}. {option.title}
-                    {option.taken &&
-                      ` — ${t('lessonScreen.takenOn', {
-                        date: shortDate(option.taken),
-                      })}`}
-                  </option>
-                ))}
-              </select>
-              <button
-                type="button"
-                disabled={busy || !choice}
-                onClick={() =>
-                  run(() => updateSlot(card.id, { lesson: Number(choice) }))
-                }
-              >
-                {t('lessonScreen.bind')}
-              </button>
-              {picking && (
-                <button
-                  type="button"
-                  className="secondary"
-                  onClick={() => setPicking(false)}
-                >
-                  {t('common.cancel')}
-                </button>
-              )}
-            </div>
-          </>
-        ) : !topic ? (
+        {!topic ? (
           <p className="hint">{t('today.noTopic')}</p>
         ) : (
-          <>
-            <p className="hint">
-              {card.confirmed ? (
-                <span className="badge state good">{t('lessonScreen.recorded')}</span>
-              ) : (
-                t('today.suggested')
-              )}
-            </p>
-
-            {/* Пустое место на месте пропавших кнопок читалось бы как
-                поломка, поэтому запрет объясняется словами и сразу даёт
-                выход: строку правят в плане, и ссылка ведёт на неё */}
-            {!card.confirmed && <p className="hint">{t('lessonScreen.planOwns')}</p>}
-
-            {form === 'rename' ? (
-              <form className="row" onSubmit={submit}>
-                <input
-                  autoFocus
-                  value={text}
-                  maxLength={200}
-                  aria-label={t('today.renameTitle')}
-                  placeholder={t('today.renameTitle')}
-                  onChange={(event) => setText(event.target.value)}
-                />
-                <button type="submit" disabled={busy}>
-                  {t('common.save')}
-                </button>
+          <div className="lesson-state">
+            {card.confirmed ? (
+              // повторное нажатие снимает — тем же приёмом, что отметка в
+              // журнале и вердикт в проверке работ. Без него исправить
+              // запись было бы нечем: «связать с другой строкой» больше не
+              // предлагается
+              may ? (
                 <button
                   type="button"
-                  className="secondary"
-                  onClick={() => setForm(null)}
+                  className="badge state good"
+                  title={t('lessonScreen.withdrawHint')}
+                  disabled={busy}
+                  onClick={() => run(() => updateSlot(card.id, { lesson: null }))}
                 >
-                  {t('common.cancel')}
+                  {t('lessonScreen.recorded')}
                 </button>
-              </form>
+              ) : (
+                <span className="badge state good">{t('lessonScreen.recorded')}</span>
+              )
             ) : (
-              <div className="row">
-                {/* выбрать тему можно там, где есть что записывать: у
-                    будущего занятия это было бы прибиванием урока к дате,
-                    а от него мы отказались — раскладка сама поглощает
-                    срывы, а прибитый урок после отмены повисает */}
-                {editable && done && (
+              <>
+                <span className="hint">{t('today.suggested')}</span>
+                {may && done && (
                   <button
                     type="button"
                     className="secondary compact"
                     disabled={busy}
-                    onClick={() => setPicking(true)}
+                    onClick={() => run(() => updateSlot(card.id, { lesson: topic.id }))}
                   >
-                    {t('lessonScreen.changeTopic')}
+                    {t('lessonScreen.bind')}
                   </button>
                 )}
-                {editable && (
-                  <button
-                    type="button"
-                    className="secondary compact"
-                    disabled={busy}
-                    onClick={() => open('rename')}
-                  >
-                    {t('today.rename')}
-                  </button>
-                )}
-                <Link className="link" to={inPlan}>
-                  {t('lessonScreen.openInPlan')}
-                </Link>
-              </div>
+              </>
             )}
-          </>
+
+            <Link className="link-button" to={inPlan}>
+              {t('lessonScreen.openInPlan')}
+            </Link>
+          </div>
+        )}
+
+        {/* Пустое место на месте пропавших кнопок читалось бы как поломка,
+            поэтому запрет объясняется словами и сразу даёт выход */}
+        {topic && !card.confirmed && (
+          <p className="hint">{t('lessonScreen.planOwns')}</p>
         )}
       </section>
 

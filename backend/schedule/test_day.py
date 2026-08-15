@@ -305,46 +305,61 @@ class CardTests(DayTestCase):
         self.assertEqual(self.card().status_code, 403)
 
 
-class OptionsTests(DayTestCase):
+class RecordingTests(DayTestCase):
     """
-    С каким уроком плана связать час — выбор, а не только подтверждение.
+    Записать — значит подтвердить подсказку, а не выбрать из списка.
 
-    Раскладка подсказывает один, позиционно, и в обычный день она права. Но
-    необычным день бывает чаще, чем кажется: заболели и перенесли
-    контрольную, вернулись к теме, поменяли порядок. Тогда нужен весь план.
+    Что было на уроке, решает **план**: не угадал — правят план, и подсказка
+    меняется сама. Выбор из сорока строк отвечал бы на тот же вопрос мимо
+    плана, не оставляя следа, что план разошёлся с реальностью, — а это ровно
+    та вторая летопись, от которой мы отказались.
+
+    Снимается запись повторным нажатием, тем же приёмом, что отметка в
+    журнале и вердикт в проверке работ: без него исправить запись было бы
+    нечем — «связать с другой строкой» больше не предлагается.
     """
 
-    def options(self, slot=None):
+    def card(self, slot=None):
         return self.client.get(
             reverse("slot-card", args=[(slot or self.monday).pk])
-        ).json()["options"]
+        ).json()
 
-    def test_the_whole_plan_is_offered_with_numbers(self):
-        rows = self.options()
+    def test_the_card_offers_no_choice_of_rows(self):
+        self.assertNotIn("options", self.card())
 
-        self.assertEqual(
-            [(row["number"], row["title"]) for row in rows],
-            [(1, "Синус суммы"), (2, "Косинус суммы")],
+    def test_the_suggestion_is_what_gets_recorded(self):
+        suggested = self.card()["topic"]["id"]
+
+        response = self.client.patch(
+            reverse("slot-detail", args=[self.monday.pk]),
+            {"lesson": suggested},
+            format="json",
         )
 
-    def test_a_row_taken_by_another_hour_is_flagged_not_hidden(self):
-        """Исчезнувшая из списка строка выглядит потерянной."""
-        self.tuesday.lesson = self.second
-        self.tuesday.save(update_fields=["lesson"])
+        self.assertEqual(response.status_code, 200, response.content)
+        self.monday.refresh_from_db()
+        self.assertEqual(self.monday.lesson_id, suggested)
+        self.assertTrue(self.card()["confirmed"])
 
-        rows = {row["title"]: row["taken"] for row in self.options()}
-
-        self.assertIsNone(rows["Синус суммы"])
-        self.assertEqual(rows["Косинус суммы"], str(self.tuesday.date))
-
-    def test_the_row_of_this_very_hour_is_not_taken(self):
-        """Свою же связь менять можно — она не мешает сама себе."""
-        self.monday.lesson = self.first
+    def test_recording_is_withdrawn_by_clearing_the_link(self):
+        """Записал не то — снял, поправил план, записал заново."""
+        self.monday.lesson = self.second
         self.monday.save(update_fields=["lesson"])
 
-        rows = {row["title"]: row["taken"] for row in self.options()}
+        response = self.client.patch(
+            reverse("slot-detail", args=[self.monday.pk]),
+            {"lesson": None},
+            format="json",
+        )
 
-        self.assertIsNone(rows["Синус суммы"])
+        self.assertEqual(response.status_code, 200, response.content)
+        self.monday.refresh_from_db()
+        self.assertIsNone(self.monday.lesson)
+
+        # строка вернулась в очередь раскладки, и подсказка снова работает
+        body = self.card()
+        self.assertFalse(body["confirmed"])
+        self.assertEqual(body["topic"]["title"], "Синус суммы")
 
     def test_choosing_a_taken_row_is_refused_by_name_and_date(self):
         self.tuesday.lesson = self.second
@@ -361,7 +376,15 @@ class OptionsTests(DayTestCase):
         self.assertEqual(body["code"], "slot_lesson_taken")
         self.assertEqual(body["params"]["date"], str(self.tuesday.date))
 
-    def test_any_row_of_the_plan_can_be_chosen_not_just_the_suggested_one(self):
+    def test_the_api_stays_permissive_about_which_row(self):
+        """
+        Ограничение — решение интерфейса, а не сервера.
+
+        Тот же порядок, что с датой: сервер записывает, что ему сказали, а
+        не предлагать выбор — дело экрана. Правило «подтверждаем подсказку»
+        держится тем, что выбора негде взять, и добавлять к нему серверную
+        проверку значило бы завести второе место, где оно живёт.
+        """
         response = self.client.patch(
             reverse("slot-detail", args=[self.monday.pk]),
             {"lesson": self.second.pk},

@@ -251,8 +251,11 @@ test('пока связь не записана, план со страницы 
   await expect(page.locator('.lesson-title-head .hint')).toContainText('Grade 6 Algebra')
   await expect(page.getByText('Раскладка предполагает эту тему.')).toBeVisible()
 
-  for (const name of ['Переименовать…', 'Правка…', 'Добавить ссылку', 'Другая тема…'])
+  for (const name of ['Правка…', 'Добавить ссылку'])
     await expect(page.getByRole('button', { name })).toHaveCount(0)
+
+  // и название не правится кликом: до записи это делают в плане
+  await expect(page.locator('h1 button')).toHaveCount(0)
 
   await expect(
     page.getByText(/Содержание, материалы и домашнее задание принадлежат/),
@@ -441,6 +444,65 @@ test('домашнее задание — та же работа, только �
   await expect(
     page.locator('[data-block="homework"] .work-links > li'),
   ).toContainText('Параграф 12')
+})
+
+test('записанная связь открывает туннель, и она же снимается плашкой', async ({
+  page,
+  signIn,
+  api,
+}) => {
+  // Записать связь можно только у прошедшего занятия, а год демо-данных весь
+  // в будущем — поэтому связь ставится запросом, как в planDates. Дата серверу
+  // не мешает: он записывает, что ему сказали, а не предлагать кнопку — дело
+  // экрана.
+  const teacher = await api(PEOPLE.ivanova)
+  const courses = await teacher.get('/api/courses/')
+  const course = courses.body.find((item) => item.name === 'Grade 6 Algebra')
+  const ribbon = await teacher.get(`/api/plan/layout/slots/?course=${course.id}`)
+  const tree = await teacher.get(`/api/plan/?course=${course.id}`)
+  const rows = tree.body.nodes.flatMap((node) =>
+    node.is_section ? node.children : [node],
+  )
+  const slot = ribbon.body.slots[0]
+  await teacher.patch(`/api/slots/${slot.id}/`, { lesson: rows[0].id })
+
+  await signIn(PEOPLE.ivanova)
+  await page.goto(`/lesson/${slot.id}`)
+  await ready(page)
+
+  // туннель открыт: правка содержания и материалов доступна отсюда
+  await expect(
+    page.locator('[data-block="content"]').getByRole('button', { name: 'Правка…' }),
+  ).toBeVisible()
+  await expect(
+    page.locator('[data-block="materials"]').getByRole('button', {
+      name: 'Добавить ссылку',
+    }),
+  ).toBeVisible()
+  // и объяснение запрета убрано — запрещать больше нечего
+  await expect(
+    page.getByText(/Содержание, материалы и домашнее задание принадлежат/),
+  ).toHaveCount(0)
+
+  // название правится кликом по нему, как в таблице плана
+  await page.locator('h1 button').click()
+  await page.getByLabel('Новое название').fill('Синус суммы. Начало')
+  await page.getByRole('button', { name: 'Сохранить' }).click()
+  await expect(page.locator('h1')).toHaveText('Синус суммы. Начало')
+
+  // и правка настоящая: это строка плана, а не поле занятия
+  const after = await teacher.get(`/api/plan/?course=${course.id}`)
+  const titles = after.body.nodes.flatMap((node) =>
+    node.is_section ? node.children.map((row) => row.title) : [node.title],
+  )
+  expect(titles).toContain('Синус суммы. Начало')
+
+  // повторное нажатие на плашку снимает запись — как отметка в журнале
+  await page.getByRole('button', { name: 'записано' }).click()
+  await expect(page.getByText('Раскладка предполагает эту тему.')).toBeVisible()
+  await expect(
+    page.locator('[data-block="content"]').getByRole('button', { name: 'Правка…' }),
+  ).toHaveCount(0)
 })
 
 test('блоки плана подписаны, а собственные блоки занятия работают всегда', async ({

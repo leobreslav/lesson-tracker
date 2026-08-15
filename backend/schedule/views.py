@@ -1013,6 +1013,11 @@ class SlotViewSet(SchoolScopedViewSet):
         Своего расчёта здесь нет: содержание из плана, подсказка из той же
         `suggested_topics`, что и на дне. Второй расчёт над теми же данными
         однажды разошёлся бы с первым.
+
+        Списка «с чем ещё можно связать» тут нет и не будет. Что было на
+        уроке, решает план: не угадал — правят план, и подсказка меняется
+        сама. Выбор из сорока строк отвечал бы на тот же вопрос **мимо**
+        плана, не оставляя следа, что он разошёлся с реальностью.
         """
         slot = self.get_object()
         suggested = services.suggested_topics(slot.course)
@@ -1049,7 +1054,6 @@ class SlotViewSet(SchoolScopedViewSet):
             {
                 **card,
                 "date": slot.date,
-                "options": plan_options(slot),
                 "previous": before,
                 "next": after,
                 # право на правку спрашивается один раз и отдаётся ответом:
@@ -1276,40 +1280,6 @@ def neighbour(courses, day, *, forward: bool):
         .values_list("date", flat=True)
         .first()
     )
-
-
-def plan_options(slot) -> list[dict]:
-    """
-    С каким уроком плана можно связать этот час.
-
-    Раскладка подсказывает **один** — позиционно, — и в обычный день она
-    права. Но день необычным бывает чаще, чем кажется: заболели и перенесли
-    контрольную, вернулись к теме, поменяли порядок. Тогда нужен не
-    «подтвердить подсказку», а выбор, и выбор должен видеть весь план.
-
-    Занятые строки из списка не выкидываются, а помечаются датой: «уже
-    записан за 12 сентября» — это ответ, а исчезнувшая из списка строка
-    выглядит потерянной. Отказывает на них сервер (`slot_lesson_taken`).
-    """
-    from plans import services as plan_services
-
-    taken = {
-        row.lesson_id: row.date
-        for row in Slot.objects.filter(
-            course=slot.course, lesson__isnull=False
-        ).exclude(pk=slot.pk)
-    }
-
-    return [
-        {
-            "id": lesson.node.pk,
-            "number": lesson.number,
-            "title": lesson.node.title,
-            "section_title": lesson.section.title if lesson.section else None,
-            "taken": taken.get(lesson.node.pk),
-        }
-        for lesson in plan_services.flatten_lessons(slot.course_id)
-    ]
 
 
 def slot_day_payload(slot, suggested) -> dict:

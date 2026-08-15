@@ -1052,11 +1052,7 @@
     "noMaterials": "Nothing is attached to this lesson.",
     "noHomework": "No homework is written in the curriculum map.",
     "noContent": "Nothing is written for this lesson yet.",
-    "pickTopic": "What was covered",
-    "pickTopicHint": "The layout suggests one; pick another if the day went differently.",
-    "takenOn": "recorded on {{date}}",
-    "bind": "Record",
-    "changeTopic": "Another topic…",
+    "bind": "It was this one",
     "addLink": "Add a link",
     "linkAddress": "Address",
     "linkTitle": "Title",
@@ -1066,6 +1062,7 @@
     "edit": "Edit…",
     "fromPlan": "from the curriculum map",
     "openInPlan": "Open in the curriculum map",
-    "planOwns": "The topic is only a guess so far. Its content, materials and homework belong to the curriculum map and are edited there — record the lesson, and they become editable from here."
+    "planOwns": "The topic is only a guess so far. Its content, materials and homework belong to the curriculum map and are edited there — record the lesson, and they become editable from here.",
+    "withdrawHint": "Recorded — click to withdraw"
   }
 }
