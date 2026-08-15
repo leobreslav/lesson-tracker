@@ -331,14 +331,6 @@ export default function LessonScreen({ onLoggedOut }) {
                     type="button"
                     className="secondary compact"
                     disabled={busy}
-                    onClick={() => setEditing(true)}
-                  >
-                    {t('today.editContent')}
-                  </button>
-                  <button
-                    type="button"
-                    className="secondary compact"
-                    disabled={busy}
                     onClick={() => open('rename')}
                   >
                     {t('today.rename')}
@@ -363,8 +355,28 @@ export default function LessonScreen({ onLoggedOut }) {
           со своей свёрнутостью */}
       <LessonAttendance slotId={card.id} may={may} onError={handleError} />
 
-      {/* 2. Чем занимаемся */}
-      <Collapsible name="content" title={t('lessonScreen.content')}>
+      {/* 2. Чем занимаемся. Правка — здесь же: кнопка, живущая в другой
+          карточке, не находится, и первым же вопросом было «а как это
+          править». Панель одна на все четыре поля, поэтому входов в неё
+          два — из содержания и из домашнего задания, каждый там, где
+          лежит то, что правят */}
+      <Collapsible
+        name="content"
+        title={t('lessonScreen.content')}
+        actions={
+          may &&
+          topic && (
+            <button
+              type="button"
+              className="compact"
+              disabled={busy}
+              onClick={() => setEditing(true)}
+            >
+              {t('lessonScreen.edit')}
+            </button>
+          )
+        }
+      >
         {!topic || !CONTENT.some((field) => topic[field]) ? (
           <p className="hint">{t('lessonScreen.noContent')}</p>
         ) : (
@@ -524,14 +536,26 @@ export default function LessonScreen({ onLoggedOut }) {
         note={homework.length || null}
         actions={
           may && (
-            <button
-              type="button"
-              className="compact"
-              disabled={busy}
-              onClick={() => setAdding('homework')}
-            >
-              {t('lessonScreen.newHomework')}
-            </button>
+            <>
+              {topic && (
+                <button
+                  type="button"
+                  className="secondary compact"
+                  disabled={busy}
+                  onClick={() => setEditing(true)}
+                >
+                  {t('lessonScreen.edit')}
+                </button>
+              )}
+              <button
+                type="button"
+                className="compact"
+                disabled={busy}
+                onClick={() => setAdding('homework')}
+              >
+                {t('lessonScreen.newHomework')}
+              </button>
+            </>
           )
         }
       >

@@ -988,7 +988,6 @@
     "cancelled": "cancelled",
     "noCourses": "No courses yet",
     "noCoursesHint": "Ask the school administrator to put you on a course.",
-    "editContent": "Content…",
     "rename": "Rename…",
     "insert": "Add a lesson here…",
     "renameTitle": "New title",
@@ -1065,6 +1064,7 @@
     "linkTitle": "Title",
     "noStudents": "Nobody is enrolled in this course yet.",
     "newWork": "New assignment",
-    "newHomework": "Set homework"
+    "newHomework": "Set homework",
+    "edit": "Edit…"
   }
 }

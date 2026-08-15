@@ -442,3 +442,22 @@ test('домашнее задание — та же работа, только �
     page.locator('[data-block="homework"] .work-links > li'),
   ).toContainText('Параграф 12')
 })
+
+test('содержание правится из своего же раздела', async ({ page, signIn }) => {
+  // Кнопка правки жила в верхней карточке, а правила содержание в нижней —
+  // и первым же вопросом было «а как это править».
+  await signIn(PEOPLE.ivanova)
+  await openLesson(page)
+
+  const content = page.locator('[data-block="content"]')
+  await content.getByRole('button', { name: 'Правка…' }).click()
+
+  const panel = page.locator('dialog.modal')
+  await expect(panel.locator('.lesson-title')).toBeVisible()
+  await panel.locator('[data-field="objectives"] .lesson-field-head').click()
+  await panel.locator('[data-field="objectives"] textarea').fill('Понять признак')
+  await panel.getByRole('button', { name: 'Сохранить' }).click()
+  await panel.getByRole('button', { name: 'Закрыть' }).first().click()
+
+  await expect(content).toContainText('Понять признак')
+})
