@@ -16,14 +16,27 @@ import { fromLocalInput, toLocalInput } from './dates'
  * условии находят посреди урока, — но и молчать нельзя: правка, сделанная
  * вслепую, ломает то, что люди пишут прямо сейчас.
  */
-export default function WorkDialog({ work, courseId, slot, busy, onSubmit, onClose }) {
+export default function WorkDialog({
+  work,
+  courseId,
+  slot,
+  homework = false,
+  busy,
+  onSubmit,
+  onClose,
+}) {
   const { t } = useTranslation()
   // `slot` — занятие, с которого работу заводят. Ничего, кроме привязки, он
   // не подставляет: подставленный текст из плана здесь уже был и оказался не
   // нужен — домашнее задание и так написано в плане и видно на уроке
+  // `homework` задаётся **разделом**, из которого нажали, а не галочкой в
+  // форме: классификация — наше слово, а человек знает, что он сейчас
+  // задаёт. Тот же довод, по которому «дополнительный урок» в своё время
+  // оказался плохим вопросом
   const [form, setForm] = useState(() => ({
     ...initial(work),
     ...(slot ? { slot } : {}),
+    ...(homework ? { is_homework: true } : {}),
   }))
   const [impact, setImpact] = useState(null)
 
@@ -60,6 +73,7 @@ export default function WorkDialog({ work, courseId, slot, busy, onSubmit, onClo
       attempts: form.limited ? Number(form.attempts) : null,
       show_result: form.show_result,
       on_paper: form.on_paper,
+      is_homework: form.is_homework ?? false,
     })
   }
 
@@ -186,6 +200,7 @@ function initial(work) {
       on_paper: work.on_paper,
       description: work.description ?? '',
       slot: work.slot ?? null,
+      is_homework: work.is_homework ?? false,
     }
   }
 

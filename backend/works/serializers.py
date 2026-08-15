@@ -90,6 +90,7 @@ class WorkSerializer(serializers.ModelSerializer):
             "attempts",
             "show_result",
             "on_paper",
+            "is_homework",
             "slot",
             "state",
             "tasks_count",

@@ -61,7 +61,7 @@ export default function LessonScreen({ onLoggedOut }) {
   const [card, setCard] = useState(null)
   const [busy, setBusy] = useState(false)
   const [editing, setEditing] = useState(false) // панель содержания
-  const [adding, setAdding] = useState(false) // окно новой работы
+  const [adding, setAdding] = useState(null) // 'work' | 'homework'
   const [form, setForm] = useState(null) // 'rename' | 'insert' | 'cancel' | 'link'
   const [text, setText] = useState('')
   const [link, setLink] = useState({ url: '', title: '' })
@@ -125,6 +125,10 @@ export default function LessonScreen({ onLoggedOut }) {
   // записать можно только то, что уже случилось: нажатая накануне кнопка
   // стала бы ложью после утренней пожарной тревоги
   const done = card.date <= today()
+  // одна и та же сущность в двух разделах: разница только в том, что
+  // задали на дом, а что решают в классе
+  const homework = card.works.filter((work) => work.is_homework)
+  const classwork = card.works.filter((work) => !work.is_homework)
   const choosing = may && (picking || (done && !card.confirmed && card.options.length))
 
   const open = (kind) => {
@@ -377,25 +381,25 @@ export default function LessonScreen({ onLoggedOut }) {
       <Collapsible
         name="works"
         title={t('lessonScreen.works')}
-        note={card.works.length || null}
+        note={classwork.length || null}
         actions={
           may && (
             <button
               type="button"
               className="compact"
               disabled={busy}
-              onClick={() => setAdding(true)}
+              onClick={() => setAdding('work')}
             >
               {t('lessonScreen.newWork')}
             </button>
           )
         }
       >
-        {card.works.length === 0 ? (
+        {classwork.length === 0 ? (
           <p className="hint">{t('lessonScreen.noWorks')}</p>
         ) : (
           <ul className="work-links">
-            {card.works.map((work) => (
+            {classwork.map((work) => (
               <li key={work.id}>
                 <Link to={`/works/${work.id}`}>{work.title}</Link>
                 <span className={`badge state-${work.state}`}>
@@ -514,11 +518,46 @@ export default function LessonScreen({ onLoggedOut }) {
       </Collapsible>
 
       {/* 5. Что задаём на дом — последним, потому что объявляют его в конце */}
-      <Collapsible name="homework" title={t('lessonScreen.homework')}>
+      <Collapsible
+        name="homework"
+        title={t('lessonScreen.homework')}
+        note={homework.length || null}
+        actions={
+          may && (
+            <button
+              type="button"
+              className="compact"
+              disabled={busy}
+              onClick={() => setAdding('homework')}
+            >
+              {t('lessonScreen.newHomework')}
+            </button>
+          )
+        }
+      >
+        {/* Два разных ответа, и оба нужны. В плане написано, **что обычно
+            задают** по этой теме, — это программа, она уезжает в библиотеку
+            и на следующий год. Ниже — что задали **этому классу в этот
+            день**: та же работа, что в разделе выше, просто вынесенная
+            сюда. Копировать одно в другое мы не стали: подставленный текст
+            здесь уже был и оказался не нужен. */}
         {topic?.homework ? (
           <Markdown text={topic.homework} />
         ) : (
           <p className="hint">{t('lessonScreen.noHomework')}</p>
+        )}
+
+        {homework.length > 0 && (
+          <ul className="work-links">
+            {homework.map((work) => (
+              <li key={work.id}>
+                <Link to={`/works/${work.id}`}>{work.title}</Link>
+                <span className={`badge state-${work.state}`}>
+                  {t(`works.state.${work.state}`)}
+                </span>
+              </li>
+            ))}
+          </ul>
         )}
       </Collapsible>
 
@@ -558,14 +597,15 @@ export default function LessonScreen({ onLoggedOut }) {
         <WorkDialog
           courseId={card.course.id}
           slot={card.id}
+          homework={adding === 'homework'}
           busy={busy}
           onSubmit={(fields) =>
             run(async () => {
               await createWork(fields)
-              setAdding(false)
+              setAdding(null)
             })
           }
-          onClose={() => setAdding(false)}
+          onClose={() => setAdding(null)}
         />
       )}
 

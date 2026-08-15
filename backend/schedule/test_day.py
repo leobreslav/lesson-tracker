@@ -371,3 +371,54 @@ class OptionsTests(DayTestCase):
         self.assertEqual(response.status_code, 200, response.content)
         self.monday.refresh_from_db()
         self.assertEqual(self.monday.lesson, self.second)
+
+
+class HomeworkTests(DayTestCase):
+    """
+    Домашняя работа — та же `Work`, просто показанная в своём разделе.
+
+    Отличать её обязательно, и вывести отличие неоткуда: пустая домашняя и
+    пустая классная в данных неразличимы, а показывать их надо в разных
+    местах урока. Поэтому признак явный — как `on_paper` рядом.
+    """
+
+    def create(self, **fields):
+        from django.utils import timezone
+
+        now = timezone.now()
+        return self.client.post(
+            reverse("work-list"),
+            {
+                "course": self.course.pk,
+                "slot": self.monday.pk,
+                "title": "Параграф 12",
+                "opens_at": (now + timedelta(days=1)).isoformat(),
+                "closes_at": (now + timedelta(days=8)).isoformat(),
+                **fields,
+            },
+            format="json",
+        )
+
+    def works_of_the_day(self):
+        card = self.client.get(reverse("slot-card", args=[self.monday.pk])).json()
+        return {work["title"]: work["is_homework"] for work in card["works"]}
+
+    def test_a_work_says_whether_it_was_set_for_home(self):
+        response = self.create(is_homework=True)
+
+        self.assertEqual(response.status_code, 201, response.content)
+        self.assertEqual(self.works_of_the_day(), {"Параграф 12": True})
+
+    def test_an_ordinary_work_of_the_lesson_is_not_homework(self):
+        self.create(title="Практика")
+
+        self.assertEqual(self.works_of_the_day(), {"Практика": False})
+
+    def test_both_live_on_the_same_lesson(self):
+        """Разделов на экране два, а сущность одна и та же."""
+        self.create(is_homework=True)
+        self.create(title="Практика")
+
+        self.assertEqual(
+            self.works_of_the_day(), {"Параграф 12": True, "Практика": False}
+        )

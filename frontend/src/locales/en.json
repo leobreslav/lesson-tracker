@@ -1064,6 +1064,7 @@
     "linkAddress": "Address",
     "linkTitle": "Title",
     "noStudents": "Nobody is enrolled in this course yet.",
-    "newWork": "New assignment"
+    "newWork": "New assignment",
+    "newHomework": "Set homework"
   }
 }

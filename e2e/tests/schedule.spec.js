@@ -411,3 +411,34 @@ test('работа заводится прямо на уроке и остаёт
     'Практика по признакам делимости',
   )
 })
+
+test('домашнее задание — та же работа, только в своём разделе', async ({
+  page,
+  signIn,
+}) => {
+  // Сущность одна, разделов два: разница в том, что задали на дом, а что
+  // решают в классе. Вывести это неоткуда — пустая домашняя и пустая
+  // классная в данных неразличимы.
+  await signIn(PEOPLE.ivanova)
+  await openLesson(page)
+
+  const homework = page.locator('[data-block="homework"]')
+  const works = page.locator('[data-block="works"]')
+
+  await homework.getByRole('button', { name: 'Создать' }).click()
+  const dialog = page.locator('dialog.modal')
+  await dialog.getByLabel('Название').fill('Параграф 12, № 84–89')
+  await dialog.getByRole('button', { name: 'Сохранить' }).click()
+
+  // встала в свой раздел, а не в «Работы»
+  await expect(homework.locator('.work-links > li')).toHaveCount(1)
+  await expect(homework.locator('.work-links > li')).toContainText('Параграф 12')
+  await expect(works.locator('.work-links > li')).toHaveCount(0)
+
+  // и осталась там после перезагрузки
+  await page.reload()
+  await ready(page)
+  await expect(
+    page.locator('[data-block="homework"] .work-links > li'),
+  ).toContainText('Параграф 12')
+})

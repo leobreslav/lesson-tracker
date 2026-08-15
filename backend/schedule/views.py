@@ -1352,6 +1352,10 @@ def slot_day_payload(slot, suggested) -> dict:
                 "title": work.title,
                 "state": work.state(),
                 "on_paper": work.on_paper,
+                # чем домашняя отличается от классной: только тем, в каком
+                # разделе урока её показать. Пустая домашняя и пустая
+                # классная в данных иначе неразличимы
+                "is_homework": work.is_homework,
             }
             for work in slot.works.all()
         ],

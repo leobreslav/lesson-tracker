@@ -1104,6 +1104,7 @@
     "linkAddress": "Адрес",
     "linkTitle": "Название",
     "noStudents": "На курс пока никого не зачислили.",
-    "newWork": "Новая работа"
+    "newWork": "Новая работа",
+    "newHomework": "Создать"
   }
 }

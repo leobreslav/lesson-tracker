@@ -135,6 +135,15 @@ class Work(models.Model):
             "есть, у контрольной — обычно пусто."
         ),
     )
+    is_homework = models.BooleanField(
+        "homework",
+        default=False,
+        help_text=(
+            "Задано на дом. Отдельная работа от классной ничем, кроме этого, "
+            "не отличается — признак нужен, чтобы показать её в своём разделе "
+            "урока: пустая домашняя и пустая классная в данных неразличимы."
+        ),
+    )
     on_paper = models.BooleanField(
         "written on paper",
         default=False,
