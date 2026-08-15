@@ -1035,7 +1035,7 @@
   },
   "lessonScreen": {
     "toDay": "back to the day",
-    "recorded": "recorded",
+    "recorded": "lesson taught",
     "works": "Assignments",
     "noWorks": "Nothing was set at this lesson.",
     "attendance": "Attendance",
@@ -1060,9 +1060,8 @@
     "newWork": "New assignment",
     "newHomework": "Set homework",
     "edit": "Edit…",
-    "fromPlan": "from the curriculum map",
     "openInPlan": "Open in the curriculum map",
     "planOwns": "The topic is only a guess so far. Its content, materials and homework belong to the curriculum map and are edited there — record the lesson, and they become editable from here.",
-    "withdrawHint": "Recorded — click to withdraw"
+    "withdrawHint": "Lesson taught — click to withdraw"
   }
 }

@@ -498,32 +498,23 @@ test('записанная связь открывает туннель, и он
   expect(titles).toContain('Синус суммы. Начало')
 
   // повторное нажатие на плашку снимает запись — как отметка в журнале
-  await page.getByRole('button', { name: 'записано' }).click()
+  await page.getByRole('button', { name: 'урок проведён' }).click()
   await expect(page.getByText('Раскладка предполагает эту тему.')).toBeVisible()
   await expect(
     page.locator('[data-block="content"]').getByRole('button', { name: 'Правка…' }),
   ).toHaveCount(0)
 })
 
-test('блоки плана подписаны, а собственные блоки занятия работают всегда', async ({
+test('собственные блоки занятия работают независимо от связи', async ({
   page,
   signIn,
 }) => {
-  // Ответ на вопрос «что правится где» должен читаться с экрана, а не
-  // выясняться нажатием: подпись стоит у тех блоков, которые показывают
-  // строку плана, и не стоит у тех, что принадлежат занятию.
+  // Журнал, работы и домашняя работа принадлежат занятию, а не плану, и
+  // туннель их не касается: их заводят и на будущем уроке.
   await signIn(PEOPLE.ivanova)
   await openLesson(page)
 
-  for (const block of ['content', 'materials'])
-    await expect(
-      page.locator(`[data-block="${block}"] .panel-head`),
-    ).toContainText('из учебного плана')
-
-  // журнал и работы — своё занятия, они правятся независимо от связи
-  await expect(
-    page.locator('[data-block="attendance"] .panel-head'),
-  ).not.toContainText('из учебного плана')
+  await expect(page.locator('[data-block="attendance"]')).toBeVisible()
   await expect(
     page.locator('[data-block="works"]').getByRole('button', { name: 'Новая работа' }),
   ).toBeVisible()

@@ -1,4 +1,4 @@
-import { Suspense, lazy, useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import Collapsible from './Collapsible'
@@ -19,11 +19,10 @@ import {
 import { today } from './calendarLogic'
 import { longDate } from './dates'
 
-const LessonPanel = lazy(() => import('./LessonPanel'))
-
 // содержание урока без домашнего задания: его объявляют в конце, и на
 // странице оно стоит отдельным, последним блоком
 const CONTENT = ['objectives', 'body', 'formative']
+const HOMEWORK = ['homework']
 
 /**
  * Работа с одним уроком: что на нём, кто был, что задавали.
@@ -85,7 +84,10 @@ export default function LessonScreen({ onLoggedOut }) {
 
   const [card, setCard] = useState(null)
   const [busy, setBusy] = useState(false)
-  const [editing, setEditing] = useState(false) // панель содержания
+  // {fields, draft} — какой блок правят и что в нём набрано. Правится
+  // ровно один за раз: два черновика на экране означали бы два ответа на
+  // вопрос «что сейчас сохранится»
+  const [editing, setEditing] = useState(null)
   const [adding, setAdding] = useState(null) // 'work' | 'homework'
   const [form, setForm] = useState(null) // 'rename' | 'cancel' | 'link'
   const [text, setText] = useState('')
@@ -154,6 +156,72 @@ export default function LessonScreen({ onLoggedOut }) {
     setText(kind === 'rename' ? topic.title : '')
     setLink({ url: '', title: '' })
   }
+
+  /**
+   * Правка полей строки плана — прямо в блоке, который их показывает.
+   *
+   * Окном (`LessonPanel`, общим с таблицей плана) это было, и оттуда взялся
+   * вопрос «куда я попал»: из плашки домашнего задания открывался редактор
+   * **всех четырёх** полей. В таблице плана окно нужно — там строка в одну
+   * линию, места нет; здесь блок и так карточка во всю ширину.
+   */
+  const editBlock = (fields) =>
+    setEditing({
+      fields,
+      draft: Object.fromEntries(fields.map((name) => [name, topic[name] ?? ''])),
+    })
+
+  const fieldsForm = (
+    <form
+      className="lesson-edit"
+      onSubmit={(event) => {
+        event.preventDefault()
+        run(async () => {
+          await updatePlanNode(topic.id, editing.draft)
+          setEditing(null)
+        })
+      }}
+    >
+      {editing?.fields.map((name) => (
+        <label className="lesson-field" key={name}>
+          <span className="hint">{t(`lesson.fields.${name}`)}</span>
+          <textarea
+            rows={name === 'body' ? 10 : 4}
+            value={editing.draft[name]}
+            placeholder={t(`lesson.placeholders.${name}`)}
+            onChange={(event) =>
+              setEditing((current) => ({
+                ...current,
+                draft: { ...current.draft, [name]: event.target.value },
+              }))
+            }
+          />
+        </label>
+      ))}
+      <div className="row">
+        <button type="submit" disabled={busy}>
+          {t('common.save')}
+        </button>
+        <button type="button" className="secondary" onClick={() => setEditing(null)}>
+          {t('common.cancel')}
+        </button>
+      </div>
+    </form>
+  )
+
+  /** Кнопка правки блока — пока не правят соседний. */
+  const editAction = (fields) =>
+    editable &&
+    !editing && (
+      <button
+        type="button"
+        className="secondary compact"
+        disabled={busy}
+        onClick={() => editBlock(fields)}
+      >
+        {t('lessonScreen.edit')}
+      </button>
+    )
 
   const submit = (event) => {
     event.preventDefault()
@@ -352,30 +420,17 @@ export default function LessonScreen({ onLoggedOut }) {
           со своей свёрнутостью */}
       <LessonAttendance slotId={card.id} may={may} onError={handleError} />
 
-      {/* 2. Чем занимаемся. Правка — здесь же: кнопка, живущая в другой
-          карточке, не находится, и первым же вопросом было «а как это
-          править». Панель одна на все четыре поля, поэтому входов в неё
-          два — из содержания и из домашнего задания, каждый там, где
-          лежит то, что правят. Оба открываются только записанной связью:
-          подсказанную строку правят в плане */}
+      {/* 2. Чем занимаемся. Правится здесь же, прямо в блоке: кнопка,
+          живущая в другой карточке, не находится, а окно поверх страницы
+          отвечало на вопрос «куда я попал» */}
       <Collapsible
         name="content"
         title={t('lessonScreen.content')}
-        note={t('lessonScreen.fromPlan')}
-        actions={
-          editable && (
-            <button
-              type="button"
-              className="secondary compact"
-              disabled={busy}
-              onClick={() => setEditing(true)}
-            >
-              {t('lessonScreen.edit')}
-            </button>
-          )
-        }
+        actions={editAction(CONTENT)}
       >
-        {!topic || !CONTENT.some((field) => topic[field]) ? (
+        {editing?.fields === CONTENT ? (
+          fieldsForm
+        ) : !topic || !CONTENT.some((field) => topic[field]) ? (
           <p className="hint">{t('lessonScreen.noContent')}</p>
         ) : (
           CONTENT.filter((field) => topic[field]).map((field) => (
@@ -425,11 +480,7 @@ export default function LessonScreen({ onLoggedOut }) {
       <Collapsible
         name="materials"
         title={t('lessonScreen.materials')}
-        note={
-          topic?.attachments?.length
-            ? `${topic.attachments.length} · ${t('lessonScreen.fromPlan')}`
-            : t('lessonScreen.fromPlan')
-        }
+        note={topic?.attachments?.length || null}
         actions={
           editable && (
             <>
@@ -538,16 +589,7 @@ export default function LessonScreen({ onLoggedOut }) {
         actions={
           may && (
             <>
-              {editable && (
-                <button
-                  type="button"
-                  className="secondary compact"
-                  disabled={busy}
-                  onClick={() => setEditing(true)}
-                >
-                  {t('lessonScreen.edit')}
-                </button>
-              )}
+              {editAction(HOMEWORK)}
               <button
                 type="button"
                 className="secondary compact"
@@ -566,13 +608,10 @@ export default function LessonScreen({ onLoggedOut }) {
             день**: та же работа, что в разделе выше, просто вынесенная
             сюда. Копировать одно в другое мы не стали: подставленный текст
             здесь уже был и оказался не нужен. */}
-        {/* подпись только у верхней половины: нижняя — работы этого
-            занятия, и «из учебного плана» над ними было бы неправдой */}
-        {topic?.homework ? (
-          <div className="lesson-field">
-            <span className="hint">{t('lessonScreen.fromPlan')}</span>
-            <Markdown text={topic.homework} />
-          </div>
+        {editing?.fields === HOMEWORK ? (
+          fieldsForm
+        ) : topic?.homework ? (
+          <Markdown text={topic.homework} />
         ) : (
           <p className="hint">{t('lessonScreen.noHomework')}</p>
         )}
@@ -639,15 +678,6 @@ export default function LessonScreen({ onLoggedOut }) {
         />
       )}
 
-      {editing && topic && (
-        <Suspense fallback={null}>
-          <LessonPanel
-            nodeId={topic.id}
-            onClose={() => setEditing(false)}
-            onSaved={() => load()}
-          />
-        </Suspense>
-      )}
     </main>
   )
 }
