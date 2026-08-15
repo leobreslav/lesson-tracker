@@ -16,7 +16,6 @@ import {
 } from './api'
 import { today } from './calendarLogic'
 import { longDate } from './dates'
-import { remember, remembered } from './remember'
 
 const LessonPanel = lazy(() => import('./LessonPanel'))
 
@@ -27,11 +26,15 @@ const LessonPanel = lazy(() => import('./LessonPanel'))
  * глядя в план, объявил практику, задал домашнее. Раньше это было четыре
  * экрана, и между ними приходилось помнить, где ты.
  *
- * **День вперёд, а не курс.** Экран был устроен наоборот — сначала выбрать
- * класс, потом день, — и на нём было неудобно ровно то, ради чего его
- * открывают: утренний вопрос «что у меня сегодня» это четыре занятия трёх
- * разных курсов, и вечерний «что закрыть» тоже. Курс остался фильтром: он
- * нужен, когда думают об одном классе.
+ * **День показан сеткой, а не списком.** Список карточек отвечал только на
+ * «какие занятия есть», а спрашивают утром другое — «как устроен день»: с
+ * какого урока начинается, где окна, когда кончается. Окно в списке не
+ * видно вовсе, потому что его в нём нет: пустое место нельзя показать
+ * перечислением непустых.
+ *
+ * Поэтому слева столбец часов от первого до последнего занятого, а справа —
+ * то занятие, которое выбрали. Чипы курсов при этом ушли: они выбирали, что
+ * показать, а теперь день показан целиком, и выбирает клик по клетке.
  *
  * Своего расчёта здесь нет ни одного — содержание из плана, тема из
  * раскладки, работы из своих же связей, — и это намеренно: экран собирается
@@ -46,7 +49,7 @@ const LessonPanel = lazy(() => import('./LessonPanel'))
 export default function Today({ onLoggedOut }) {
   const { t } = useTranslation()
   const [courses, setCourses] = useState(null)
-  const [only, setOnly] = useState(() => remembered('today.course', null))
+  const [picked, setPicked] = useState(null) // выбранное занятие дня
   const [date, setDate] = useState(today())
   const [day, setDay] = useState(null)
   const [busy, setBusy] = useState(false)
@@ -83,6 +86,17 @@ export default function Today({ onLoggedOut }) {
     load()
   }, [load])
 
+  useEffect(() => {
+    // день сменился — выбираем первое несорванное занятие: именно с него
+    // человек и начнёт. Держать прошлый выбор нельзя, он из другого дня
+    if (!day) return
+    const first =
+      day.lessons.find((slot) => !slot.is_cancelled) ?? day.lessons[0] ?? null
+    setPicked((current) =>
+      day.lessons.some((slot) => slot.id === current) ? current : first?.id ?? null,
+    )
+  }, [day])
+
   const run = async (request) => {
     setBusy(true)
     setError(null)
@@ -95,11 +109,6 @@ export default function Today({ onLoggedOut }) {
     } finally {
       setBusy(false)
     }
-  }
-
-  const filter = (id) => {
-    setOnly(id)
-    remember('today.course', id)
   }
 
   if (courses === null) {
@@ -121,40 +130,27 @@ export default function Today({ onLoggedOut }) {
     )
   }
 
-  const shown = (day?.lessons ?? []).filter(
-    (slot) => only === null || slot.course.id === only,
-  )
+  const lessons = day?.lessons ?? []
   // подтверждать можно только то, что уже случилось
   const done = day ? day.date <= today() : false
+  const chosen = lessons.find((slot) => slot.id === picked) ?? null
+
+  // Часы от первого до последнего занятого. Не «всегда с первого по
+  // десятый»: пустые хвосты снизу и сверху — это не окна, это просто конец
+  // дня, и рисовать их значит топить настоящие окна в шуме.
+  const last = lessons.reduce((top, slot) => Math.max(top, slot.lesson_number), 0)
+  const hours = Array.from({ length: last }, (_, index) => ({
+    number: index + 1,
+    // одно окно держит несколько занятий: отменённое места не занимает, и
+    // рядом с ним законно стоит урок другого курса
+    slots: lessons.filter((slot) => slot.lesson_number === index + 1),
+  }))
 
   return (
     <main className="page">
       <header className="page-header">
         <h1>{t('today.title')}</h1>
       </header>
-
-      {/* чипы — фильтр, а не выбор экрана: по умолчанию виден весь день */}
-      <div className="agenda-bar">
-        <span className="year-picker">
-          <button
-            type="button"
-            className={only === null ? 'chip active' : 'chip'}
-            onClick={() => filter(null)}
-          >
-            {t('today.allCourses')}
-          </button>
-          {courses.map((course) => (
-            <button
-              type="button"
-              key={course.id}
-              className={course.id === only ? 'chip active' : 'chip'}
-              onClick={() => filter(course.id)}
-            >
-              {course.name}
-            </button>
-          ))}
-        </span>
-      </div>
 
       {error && (
         <p className="error" role="alert">
@@ -199,35 +195,44 @@ export default function Today({ onLoggedOut }) {
             <strong>{longDate(day.date)}</strong>
           </div>
 
-          {shown.length === 0 ? (
+          {lessons.length === 0 ? (
             <p className="hint">{t('today.noLesson')}</p>
           ) : (
-            shown.map((slot) => (
-              <SlotCard
-                key={slot.id}
-                slot={slot}
-                busy={busy}
-                done={done}
-                onConfirm={() =>
-                  run(() => updateSlot(slot.id, { lesson: slot.topic.id }))
-                }
-                onHomework={() => setAdding({ slot, homework: slot.topic?.homework })}
-                onOpen={() => setOpened(slot.topic.id)}
-                onRename={(title) => run(() => updatePlanNode(slot.topic.id, { title }))}
-                onInsert={(title) =>
-                  run(() =>
-                    createPlanNode({
-                      course: slot.course.id,
-                      parent: slot.topic.section_id,
-                      title,
-                      // перед предложенным уроком: «мы всё ещё на синусе»
-                      // значит, что сегодняшнее занятие идёт до него
-                      before: slot.topic.id,
-                    }),
-                  )
-                }
-              />
-            ))
+            <div className="day">
+              <DayGrid hours={hours} picked={picked} onPick={setPicked} />
+
+              {chosen ? (
+                <SlotCard
+                  slot={chosen}
+                  busy={busy}
+                  done={done}
+                  onConfirm={() =>
+                    run(() => updateSlot(chosen.id, { lesson: chosen.topic.id }))
+                  }
+                  onHomework={() =>
+                    setAdding({ slot: chosen, homework: chosen.topic?.homework })
+                  }
+                  onOpen={() => setOpened(chosen.topic.id)}
+                  onRename={(title) =>
+                    run(() => updatePlanNode(chosen.topic.id, { title }))
+                  }
+                  onInsert={(title) =>
+                    run(() =>
+                      createPlanNode({
+                        course: chosen.course.id,
+                        parent: chosen.topic.section_id,
+                        title,
+                        // перед предложенным уроком: «мы всё ещё на синусе»
+                        // значит, что сегодняшнее занятие идёт до него
+                        before: chosen.topic.id,
+                      }),
+                    )
+                  }
+                />
+              ) : (
+                <p className="hint">{t('today.pickLesson')}</p>
+              )}
+            </div>
           )}
         </>
       )}
@@ -269,6 +274,69 @@ export default function Today({ onLoggedOut }) {
     </main>
   )
 }
+
+/**
+ * Столбец часов: где занятия, а где окна.
+ *
+ * Ради окон сетка и заведена. В списке карточек их нет — пустое место
+ * нельзя показать перечислением непустых, — а утренний вопрос «как устроен
+ * день» это в первую очередь про них: во сколько начинаю, где дыра, когда
+ * свободен.
+ *
+ * Часы идут от первого до последнего занятого. Пустой хвост снизу — это не
+ * окно, а конец дня, и рисовать его значит топить настоящие окна в шуме.
+ *
+ * В одном часу бывает несколько занятий: отменённое места не занимает, и
+ * рядом с ним законно стоит урок другого курса. Поэтому клетка — список, а
+ * не одно значение.
+ */
+function DayGrid({ hours, picked, onPick }) {
+  const { t } = useTranslation()
+
+  return (
+    <ol className="day-grid">
+      {hours.map(({ number, slots }) => (
+        <li key={number} className={slots.length ? '' : 'empty'} data-hour={number}>
+          <span className="hour">{number}</span>
+
+          {slots.length === 0 ? (
+            <span className="window">{t('today.window')}</span>
+          ) : (
+            <span className="taken">
+              {slots.map((slot) => (
+                <button
+                  type="button"
+                  key={slot.id}
+                  data-slot={slot.id}
+                  aria-pressed={slot.id === picked}
+                  className={
+                    'slot' +
+                    (slot.id === picked ? ' picked' : '') +
+                    (slot.is_cancelled ? ' cancelled' : '') +
+                    (slot.is_extra ? ' extra' : '')
+                  }
+                  onClick={() => onPick(slot.id)}
+                >
+                  <span className="course">{slot.course.name}</span>
+                  <span className="topic">
+                    {/* короткая пометка, а не фраза из карточки: колонка
+                        узкая, и целое предложение в ней всё равно обрежется
+                        многоточием на втором слове */}
+                    {slot.topic ? slot.topic.title : t('agenda.noTopic')}
+                  </span>
+                  {/* подтверждённое помечается: по столбцу видно, докуда
+                      день закрыт, и это ровно то, чего не хватало списку */}
+                  {slot.confirmed && <span className="done">✓</span>}
+                </button>
+              ))}
+            </span>
+          )}
+        </li>
+      ))}
+    </ol>
+  )
+}
+
 
 /**
  * Одно занятие дня: чем занимаемся, что задавали, что дальше.
@@ -314,11 +382,19 @@ function SlotCard({
   return (
     <section className="panel lesson-card">
       <div className="panel-head spread">
-        <h2 className="section-title">
-          {t('today.lessonNumber', { number: slot.lesson_number })} ·{' '}
-          {slot.course.name}
-          {topic && <> · {topic.title}</>}
-        </h2>
+        {/* Заголовок — тема, а не «2-й урок · курс · тема»: номер и курс
+            стоят в клетке слева, из которой сюда и пришли, и повторять их
+            крупным шрифтом значит переносить заголовок на вторую строку
+            ради того, что уже прочитано. */}
+        <span className="lesson-head">
+          <span className="hint">
+            {t('today.lessonNumber', { number: slot.lesson_number })} ·{' '}
+            {slot.course.name}
+          </span>
+          <h2 className="section-title">
+            {topic ? topic.title : t('agenda.noTopic')}
+          </h2>
+        </span>
         {slot.is_cancelled && (
           <span className="badge">
             {t('today.cancelled')}

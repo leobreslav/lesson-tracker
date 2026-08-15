@@ -989,12 +989,13 @@
     "homeworkTitle": "Homework",
     "noCourses": "No courses yet",
     "noCoursesHint": "Ask the school administrator to put you on a course.",
-    "allCourses": "All",
     "editContent": "Content…",
     "rename": "Rename…",
     "insert": "Add a lesson here…",
     "renameTitle": "New title",
-    "insertTitle": "What we actually did"
+    "insertTitle": "What we actually did",
+    "window": "free",
+    "pickLesson": "Pick a lesson to see what it is about."
   },
   "table": {
     "open": "Check",

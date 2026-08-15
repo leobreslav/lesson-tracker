@@ -2437,6 +2437,151 @@ button.compact,
   gap: 0.2rem 0.6rem;
 }
 
+/*
+ * Экран «Сегодня»: столбец часов слева, выбранное занятие справа.
+ *
+ * Ради левого столбца всё и переделывалось. Список карточек отвечал только
+ * на «какие занятия есть», а спрашивают утром другое — «как устроен день»:
+ * с какого урока начинается, где окна, когда кончается. Окно в списке не
+ * видно вовсе, потому что его в нём нет.
+ *
+ * Столбец узкий и фиксированной ширины: он читается сверху вниз как
+ * расписание, и номера в нём обязаны стоять на одной вертикали.
+ */
+.day {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--card-gap);
+}
+
+.day > .panel {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.day-grid {
+  flex: 0 0 15rem;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.day-grid > li {
+  display: flex;
+  align-items: stretch;
+  gap: 0.4rem;
+  min-height: 2.6rem;
+}
+
+/* номер часа — колонка, а не подпись: столбец читается по левому краю */
+.day-grid .hour {
+  flex: 0 0 1.4rem;
+  padding-top: 0.55rem;
+  color: #999;
+  font-size: 0.8rem;
+  text-align: right;
+}
+
+.day-grid .taken {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+/* окно: пунктир, а не пустота. Пустое место и «мы сюда ничего не
+   нарисовали» на экране неразличимы, а разница вся */
+.day-grid .window {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  padding: 0 0.5rem;
+  border: 1px dashed #d8d8d8;
+  border-radius: var(--row-radius);
+  color: #aaa;
+  font-size: 0.85rem;
+}
+
+.day-grid .slot {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0 0.4rem;
+  padding: 0.3rem 0.5rem;
+  text-align: left;
+  background: var(--surface-1);
+  border: 1px solid transparent;
+  border-radius: var(--row-radius);
+  cursor: pointer;
+}
+
+.day-grid .slot:hover {
+  border-color: #c9d8f0;
+}
+
+.day-grid .slot.picked {
+  border-color: #1a73e8;
+  background: #eaf1fd;
+}
+
+.day-grid .slot .course {
+  font-size: 0.9rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.day-grid .slot .topic {
+  grid-column: 1 / -1;
+  color: #777;
+  font-size: 0.78rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* «докуда день закрыт» видно по столбцу — того и не хватало списку */
+.day-grid .slot .done {
+  color: #1e8e3e;
+  font-size: 0.85rem;
+}
+
+.day-grid .slot.cancelled .course,
+.day-grid .slot.cancelled .topic {
+  text-decoration: line-through;
+  color: #aaa;
+}
+
+.day-grid .slot.extra {
+  background: #fff6e5;
+}
+
+/* на телефоне столбец и карточка встают друг под друга: рядом им тесно */
+@media (max-width: 48rem) {
+  .day {
+    flex-direction: column;
+  }
+
+  .day-grid {
+    flex: 1 1 auto;
+    align-self: stretch;
+  }
+}
+
+/* номер и курс мелким над темой: они уже прочитаны в клетке слева */
+.lesson-head {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  min-width: 0;
+}
+
 .work-links {
   grid-column: 1 / -1;
   margin: 0.3rem 0 0;

@@ -134,18 +134,10 @@ test('на «Сегодня» видно урок, а подтвердить б�
   signIn,
 }) => {
   await signIn(PEOPLE.ivanova)
-  await page.goto('/today')
-  await ready(page)
-  await page.getByRole('button', { name: 'Grade 6 Algebra' }).click()
+  // курс с полным планом: у него раскладке есть что предложить
+  const slots = await firstDayWithLessons(page, { course: 'Grade 6 Algebra' })
+  await slots.first().click()
 
-  // листаем к дню с уроком: «сегодня» в демо-данных до начала учебного года
-  const card = page.locator('.lesson-card')
-  for (let step = 0; step < 40 && !(await card.count()); step += 1) {
-    await page.getByRole('button', { name: '→' }).click()
-    await page.waitForTimeout(120)
-  }
-
-  await expect(card.first()).toBeVisible()
   await expect(page.getByText('Раскладка предполагает эту тему.')).toBeVisible()
   await expect(page.getByRole('button', { name: 'занятие проведено' })).toHaveCount(0)
 })
@@ -185,44 +177,55 @@ test('перенос оставляет отмену на прежнем мес�
   await expect(page.locator(`[data-lesson="${FRIDAY}:7"]`)).toBeVisible()
 })
 
-/** Долистать «Сегодня» до дня, в котором есть занятия. */
-async function firstDayWithLessons(page) {
+/**
+ * Долистать «Сегодня» до дня с занятиями — и, если попросили, до дня с
+ * занятием нужного курса: «сегодня» в демо-данных до начала учебного года.
+ */
+async function firstDayWithLessons(page, { course = null, atLeast = 1 } = {}) {
   await page.goto('/today')
   await ready(page)
 
-  const cards = page.locator('.lesson-card')
-  for (let step = 0; step < 40 && !(await cards.count()); step += 1) {
+  const slots = course
+    ? page.locator('.day-grid .slot', { hasText: course })
+    : page.locator('.day-grid .slot')
+
+  for (let step = 0; step < 40 && (await slots.count()) < atLeast; step += 1) {
     await page.getByRole('button', { name: '→' }).click()
     await page.waitForTimeout(120)
   }
-  await expect(cards.first()).toBeVisible()
-  return cards
+  await expect(slots.first()).toBeVisible()
+  return slots
 }
 
-test('«Сегодня» показывает день целиком, а курс — это фильтр', async ({
+test('«Сегодня» показывает день сеткой: занятия и окна между ними', async ({
   page,
   signIn,
 }) => {
-  // Утренний вопрос — «что у меня сегодня», а это занятия разных курсов.
-  // Экран, устроенный курсом вперёд, заставлял переключать их по одному.
+  // Список карточек отвечал только на «какие занятия есть». Спрашивают
+  // утром другое — «как устроен день»: с какого урока начинается, где окна.
+  // Окна в списке не видно вовсе: пустое место нельзя показать
+  // перечислением непустых.
   await signIn(PEOPLE.ivanova)
-  const cards = await firstDayWithLessons(page)
+  // день с двумя занятиями: на дне из одного окна между ними не бывает
+  const slots = await firstDayWithLessons(page, { atLeast: 2 })
 
-  // у каждой карточки в шапке назван курс: иначе они неразличимы
-  await expect(cards.first().locator('.section-title')).toContainText('Grade')
+  const hours = page.locator('.day-grid > li')
+  // столбец идёт подряд от первого часа до последнего занятого
+  const numbers = await hours.locator('.hour').allTextContents()
+  expect(numbers).toEqual(numbers.map((_, index) => String(index + 1)))
 
-  // чип курса сужает день, «Все» возвращает его целиком
-  const shown = await cards.count()
-  await page.getByRole('button', { name: 'Grade 6 Algebra' }).click()
-  await expect
-    .poll(async () => {
-      const names = await cards.locator('.section-title').allTextContents()
-      return names.every((name) => name.includes('Grade 6 Algebra'))
-    })
-    .toBe(true)
+  // окно между занятиями — то, ради чего сетка и заведена
+  await expect(page.locator('.day-grid .window').first()).toBeVisible()
 
-  await page.getByRole('button', { name: 'Все', exact: true }).click()
-  await expect.poll(() => cards.count()).toBe(shown)
+  // клик по клетке открывает её занятие справа
+  const second = slots.nth(1)
+  const course = await second.locator('.course').textContent()
+  await second.click()
+
+  // курс назван мелким над темой: крупно стоит сама тема, а номер и курс
+  // уже прочитаны в клетке, из которой сюда и пришли
+  await expect(page.locator('.lesson-head .hint')).toContainText(course)
+  await expect(second).toHaveAttribute('aria-pressed', 'true')
 })
 
 test('план правится прямо с карточки дня', async ({ page, signIn }) => {
@@ -230,15 +233,10 @@ test('план правится прямо с карточки дня', async ({
   // Уходить за правкой в «Учебный план» и искать строку среди сорока —
   // ровно та заминка, из-за которой готовиться будут не здесь.
   await signIn(PEOPLE.ivanova)
-  await page.goto('/today')
-  await ready(page)
-  await page.getByRole('button', { name: 'Grade 6 Algebra' }).click()
+  const slots = await firstDayWithLessons(page, { course: 'Grade 6 Algebra' })
+  await slots.first().click()
 
   const card = page.locator('.lesson-card')
-  for (let step = 0; step < 40 && !(await card.count()); step += 1) {
-    await page.getByRole('button', { name: '→' }).click()
-    await page.waitForTimeout(120)
-  }
   await expect(card.first()).toBeVisible()
 
   await card.first().getByRole('button', { name: 'Переименовать…' }).click()
