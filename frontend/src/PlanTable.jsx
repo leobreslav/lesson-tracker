@@ -72,6 +72,8 @@ const FREE_OPEN_KEY = 'planFreeOpen'
 // заставить нажать кнопку ради трёх строк
 const FREE_INLINE = 5
 
+const EMPTY_SET = new Set()
+
 export default function PlanTable({
   nodes,
   layout,
@@ -84,6 +86,7 @@ export default function PlanTable({
   editing,
   adding,
   spotlight = null,
+  debts = EMPTY_SET,
   actions,
 }) {
   const {
@@ -449,8 +452,17 @@ export default function PlanTable({
     if (empty) return <span className="plan-date" />
     const slot = layout.byId.get(node.id)?.slot
 
+    // час прошёл, а записи за ним нет: точка у даты. Не предупреждение —
+    // пометка, но видно её на любой строке, и по ней сразу понятно, где
+    // именно учёт прервался
+    const unclosed = debts.has(slot?.id)
+
     return slot ? (
-      <Link className="plan-date" to={`/lesson/${slot.id}`} title={t('plan.openLesson')}>
+      <Link
+        className={unclosed ? 'plan-date unclosed' : 'plan-date'}
+        to={`/lesson/${slot.id}`}
+        title={t(unclosed ? 'plan.unclosedHint' : 'plan.openLesson')}
+      >
         {dayMonth(slot.date)} <em>{shortWeekday(slot.date)}</em>
       </Link>
     ) : (

@@ -11,7 +11,7 @@ import { readFileSync } from 'node:fs'
 import { describe, it } from 'node:test'
 import { fileURLToPath } from 'node:url'
 
-import { freeSlots, layoutTotals, stitchLayout } from '../src/planLayout.js'
+import { debtSlots, freeSlots, layoutTotals, stitchLayout } from '../src/planLayout.js'
 import { planRows } from '../src/planLogic.js'
 
 /** Лента: по слоту в день, с 1 октября. */
@@ -510,4 +510,41 @@ describe('общие случаи с сервером', () => {
       )
     })
   }
+})
+
+describe('долги', () => {
+  it('считаются от первой записи и не протухают', () => {
+  const ribbon = (rows) =>
+    rows.map(([date, lesson_id], i) => ({ id: i + 1, date, lesson_id }))
+
+  // кнопкой не пользовались — долгов нет вовсе, работает позиционная догадка
+  assert.deepEqual(
+    debtSlots(ribbon([['2026-09-01', null], ['2026-09-02', null]]), '2026-09-10'),
+    [],
+  )
+
+  // начали со второго часа: первый — «до начала учёта», а не долг
+  const started = debtSlots(
+    ribbon([
+      ['2026-09-01', null],
+      ['2026-09-02', 7],
+      ['2026-09-03', null],
+      ['2026-09-04', 9],
+      ['2026-09-05', null],
+    ]),
+    '2026-09-04',
+  )
+  assert.deepEqual(
+    started.map((slot) => slot.date),
+    ['2026-09-03'],
+    'будущее не долг, а первый час до начала учёта — тем более',
+  )
+
+  // срока давности нет: полугодовалый долг считается наравне со вчерашним
+  const old = debtSlots(
+    ribbon([['2026-09-01', 1], ['2026-09-02', null], ['2027-03-02', null]]),
+    '2027-03-10',
+  )
+  assert.equal(old.length, 2)
+  })
 })

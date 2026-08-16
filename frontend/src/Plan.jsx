@@ -16,10 +16,11 @@ import PlanCsvHelp from './PlanCsvHelp'
 import PlanTable from './PlanTable'
 import { dragId } from './PlanDnd'
 import Modal from './Modal'
-import { freeSlots, layoutTotals, stitchLayout } from './planLayout'
+import { debtSlots, freeSlots, layoutTotals, stitchLayout } from './planLayout'
 import { shortDate } from './dates'
 import { today } from './calendarLogic'
 import CoursePicker from './CoursePicker'
+import DebtsDialog from './DebtsDialog'
 import { lastChoice, remember, remembered, rememberChoice } from './remember'
 import { applyMove, countBlocks, planRows } from './planLogic'
 import {
@@ -109,6 +110,7 @@ export default function Plan({ onLoggedOut }) {
   const [error, setError] = useState(null)
   const [editing, setEditing] = useState(null) // {id, title} — folders only
   const [opened, setOpened] = useState(null) // the lesson whose panel is open
+  const [debts, setDebts] = useState(false) // открыт ли разбор долгов
   // адрес, откуда пришли за правкой: закрытие окна возвращает туда, а не
   // оставляет в плане, который человек и не собирался открывать
   const [returnTo, setReturnTo] = useState(null)
@@ -297,8 +299,16 @@ export default function Plan({ onLoggedOut }) {
       byId: new Map(stitched.map((row) => [row.id, row])),
       totals: layoutTotals(stitched, ribbon),
       free: freeSlots(stitched, ribbon),
+      // прошедшие часы без записи: их видно строкой в таблице, а не только
+      // счётчиком — час стоит в окружении, с датой, темой и соседями
+      debts: debtSlots(ribbon, today()),
     }
   }, [data, ribbon])
+
+  const debtIds = useMemo(
+    () => new Set(layout.debts.map((slot) => slot.id)),
+    [layout.debts],
+  )
 
   /** Узел по id: дерево двухуровневое, и плоского вида у него нет. */
   const nodeById = useMemo(() => {
@@ -717,6 +727,19 @@ export default function Plan({ onLoggedOut }) {
               </p>
             )}
 
+            {/* долги: прошедшие часы, за которыми ничего не записано. Жили
+                они на «Моих курсах» строчкой в раскрытой карточке, а до того
+                полосой на «Сегодня» — и вместе с тем экраном пропали. Место
+                им здесь: в таблице виден каждый, а не только их число */}
+            {layout.debts.length > 0 && (
+              <p className="hint approval draft">
+                {t('plan.debts', { count: layout.debts.length })}{' '}
+                <button type="button" className="link" onClick={() => setDebts(true)}>
+                  {t('status.closeDebts')}
+                </button>
+              </p>
+            )}
+
             {/* уроки вне тем — не число сводки, а замечание о структуре */}
             {data && blocks.loose > 0 && (
               <p className="hint plan-loose">
@@ -790,6 +813,7 @@ export default function Plan({ onLoggedOut }) {
                 editing={editing}
                 adding={adding}
                 spotlight={target.row}
+              debts={debtIds}
                 // всё, что таблица умеет попросить у страницы, — одним
                 // списком: сама она в базу не ходит
                 actions={{
@@ -925,6 +949,21 @@ export default function Plan({ onLoggedOut }) {
             </>
           )}
         </>
+      )}
+
+      {debts && (
+        <DebtsDialog
+          courseId={classId}
+          onDone={() => {
+            setDebts(false)
+            // лента перечитывается: закрытые часы перестают быть долгами,
+            // а записанные связи меняют раскладку
+            fetchPlanSlots(classId)
+              .then((result) => setRibbon(result.slots))
+              .catch(handleError)
+          }}
+          onClose={() => setDebts(false)}
+        />
       )}
 
       {opened && (

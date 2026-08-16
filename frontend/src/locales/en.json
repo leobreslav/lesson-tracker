@@ -400,7 +400,10 @@
     "publishFromCourse": "The subject and the year of study come from the course: {{subject}}, year {{grade}}.",
     "taught": "Lesson already taught: it keeps its place.",
     "openLesson": "Open the lesson",
-    "courseLabel": "Course"
+    "courseLabel": "Course",
+    "debts_one": "{{count}} lesson is not marked.",
+    "debts_other": "{{count}} lessons are not marked.",
+    "unclosedHint": "The lesson is past and unmarked"
   },
   "status": {
     "title": "My courses",

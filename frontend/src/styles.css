@@ -3672,6 +3672,14 @@ a.plan-date {
   color: #5f6368;
 }
 
+/* час прошёл, а записи за ним нет: точка у даты, янтарная. Не ошибка —
+   пропуск, и цвет тот же, что у «черновика» в состоянии утверждения */
+.plan-date.unclosed::after {
+  content: ' •';
+  color: #b06000;
+  font-weight: 700;
+}
+
 a.plan-date:hover {
   color: #1a73e8;
   text-decoration: underline;
