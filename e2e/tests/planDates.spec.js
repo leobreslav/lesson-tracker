@@ -192,10 +192,10 @@ test('уроки без слота помечены', async ({
   await expect(missing.first()).toBeVisible()
   await expect(missing.first().locator('.plan-date')).toHaveText('не помещается')
 
-  // баланс отрицательный, вместо даты последнего урока — «план не помещается»
+  // баланс отрицательный, и счётчик непоместившихся стоит отдельной
+  // плашкой: это единственное число ряда, которого в таблице одним
+  // взглядом не видно
   await expect(page.locator('[data-card="balance"].bad')).toBeVisible()
-  await expect(page.locator('[data-card="last"]')).toContainText('не помещается')
-  // и отдельная плашка со счётчиком непоместившихся, она ведёт на раскладку
   await expect(page.locator('[data-card="missing"]')).toBeVisible()
 
   // у главы дат нет вовсе — только число уроков: даты живут в левой зоне

@@ -17,7 +17,7 @@ import PlanTable from './PlanTable'
 import { dragId } from './PlanDnd'
 import Modal from './Modal'
 import { freeSlots, layoutTotals, stitchLayout } from './planLayout'
-import { longDate, shortDate } from './dates'
+import { shortDate } from './dates'
 import { today } from './calendarLogic'
 import { remember, remembered } from './remember'
 import { applyMove, countBlocks, planRows } from './planLogic'
@@ -612,44 +612,29 @@ export default function Plan({ onLoggedOut }) {
                     </h2>
                     <p className="hint">{t('plan.summary.balance')}</p>
                   </section>
-                  <section className="panel card-stat" data-card="last">
-                    <h2 className="small">
-                      {layout.totals.lastDate
-                        ? longDate(layout.totals.lastDate)
-                        : '—'}
-                    </h2>
-                    <p className="hint">
-                      {t(
-                        layout.totals.lastDate
-                          ? 'plan.summary.last'
-                          : 'plan.summary.doesNotFit',
-                      )}
-                    </p>
-                  </section>
+                  {/*
+                    Плашек было пять, а разных чисел в них три.
 
-                  {/* эти две ведут на «Раскладку»: там видно, какие именно
-                      дни остались пустыми и какие уроки не влезли */}
-                  {layout.totals.balance > 0 && (
-                    <button
-                      type="button"
-                      data-card="free"
-                      className="panel card-stat link-card"
-                      onClick={() => navigate('/')}
-                    >
-                      <h2>{layout.totals.balance}</h2>
-                      <p className="hint">{t('plan.summary.free')}</p>
-                    </button>
-                  )}
+                    «Свободные слоты» показывали ровно баланс, только без
+                    знака: +39 и 39 стояли рядом. Дата последнего урока
+                    отвечала на вопрос, который в таблице виден строкой —
+                    последняя строка плана несёт свою дату, — а когда план
+                    не помещался, обе плашки говорили об этом разом.
+
+                    «Не помещается» осталась: это единственное число ряда,
+                    которого в таблице одним взглядом не видно. Кнопкой она
+                    быть перестала — вела на «Раскладку», а того раздела
+                    давно нет; строки, которым слота не хватило, подсвечены
+                    в таблице прямо под ней.
+                  */}
                   {layout.totals.missing > 0 && (
-                    <button
-                      type="button"
+                    <section
                       data-card="missing"
-                      className="panel card-stat bad link-card"
-                      onClick={() => navigate('/')}
+                      className="panel card-stat bad"
                     >
                       <h2>{layout.totals.missing}</h2>
                       <p className="hint">{t('plan.summary.missing')}</p>
-                    </button>
+                    </section>
                   )}
                 </>
               )}
