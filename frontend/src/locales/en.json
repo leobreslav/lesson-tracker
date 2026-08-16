@@ -782,8 +782,7 @@
     "discard": "The lesson has unsaved changes. Close and lose them?",
     "attachments": "Resources",
     "dropHere": "Drop files here, or click to choose",
-    "linkUrl": "Address",
-    "linkTitle": "Title",
+    "linkTitle": "Link title",
     "download": "Download",
     "removeAttachment": "Remove «{{title}}» from this lesson?",
     "shared": "from the library",
@@ -801,12 +800,14 @@
       "noSlot": "Does not fit into the school year",
       "notTaught": "the lesson has not been taught yet, and any edit above moves the date"
     },
-    "textPlaceholder": "for example, «Textbook, §14»",
     "add": {
       "file": "Add a file…",
       "link": "Add a link…",
       "text": "Add text…"
-    }
+    },
+    "resourcePlaceholder": "https://… or «Textbook, §14»",
+    "resourceLabel": "A link or a note",
+    "textPlaceholder": "for example, «Textbook, §14»"
   },
   "reviews": {
     "noTeacher": "nobody teaches it yet",

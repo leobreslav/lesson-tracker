@@ -1093,6 +1093,20 @@ button.chip.active:hover:not(:disabled) {
   box-shadow: var(--card-shadow);
 }
 
+/*
+ * Ряд внутри раздела — просто ряд, а не карточка.
+ *
+ * `.inline-form` задумана карточкой и живёт так на странице года; внутри
+ * серого блока материалов та же карточка читалась как вложенное окно —
+ * своя заливка, свой радиус, своя тень.
+ */
+.inline-form.bare {
+  padding: 0.5rem 0.65rem;
+  background: none;
+  border-radius: 0;
+  box-shadow: none;
+}
+
 .inline-form .field {
   margin-bottom: 0;
 }
@@ -5040,7 +5054,11 @@ input.lesson-title:focus {
  * везде.
  */
 button.dropzone {
-  flex: 1;
+  /* во всю ширину раздела: обрезанная по содержимому зона выглядела
+     случайным куском, а не целью, в которую метят */
+  display: block;
+  width: calc(100% - 1.3rem);
+  margin: 0 0.65rem;
   padding: 0.9rem;
   text-align: center;
   font: inherit;

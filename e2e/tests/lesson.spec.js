@@ -159,10 +159,9 @@ test('материалом бывает просто строка текста',
   const panel = await openLesson(page, 'Простые и составные числа')
   await panel.getByRole('button', { name: /Материалы/ }).click()
 
-  // поля добавления стоят открытыми: нажатие «сейчас я буду добавлять
-  // ссылку» ничего не решает, решает написанное
-  const form = panel.locator('.inline-form').last()
-  await form.getByLabel('Добавить текст…').fill('Мордкович, §14')
+  // поле одно на ссылку и заметку: что именно набрали, видно из набранного
+  const form = panel.locator('.inline-form')
+  await form.getByLabel('Ссылка или заметка').fill('Мордкович, §14')
   await form.getByRole('button', { name: 'Добавить' }).click()
 
   const row = panel.locator('.attachment')
@@ -172,11 +171,11 @@ test('материалом бывает просто строка текста',
   await expect(row.locator('a')).toHaveCount(0)
   await expect(row.getByRole('button', { name: 'Мордкович, §14' })).toHaveCount(0)
 
-  // поле очистилось, а не закрылось: следующий материал набирают тут же
-  await expect(form.getByLabel('Добавить текст…')).toHaveValue('')
-  // и все три способа на месте: файл, ссылка, текст
+  // поле очистилось: следующий материал набирают тут же
+  await expect(form.getByLabel('Ссылка или заметка')).toHaveValue('')
+  // «Название» спрашивается только у адреса — у заметки название и есть она
+  await expect(form.getByLabel('Название ссылки')).toHaveCount(0)
   await expect(panel.locator('button.dropzone')).toBeVisible()
-  await expect(panel.locator('.inline-form')).toHaveCount(2)
 
   // и это настоящая запись: пережила перезагрузку
   await page.reload()
@@ -196,8 +195,8 @@ test('ссылка добавляется к уроку и сразу видна
   // материалы теперь такой же сворачиваемый раздел, как остальные, и у
   // урока без них он закрыт
   await panel.getByRole('button', { name: /Материалы/ }).click()
-  // поле ссылки стоит открытым, как и остальные два способа
-  const form = panel.locator('.inline-form').first()
+  // то же поле: адрес целиком значит ссылку
+  const form = panel.locator('.inline-form')
 
   // ряд остаётся рядом: `.modal-body form` кладёт детей колонкой, и поле с
   // `flex-basis: 8rem` вырастало вверх, а форма занимала пол-окна
@@ -208,8 +207,9 @@ test('ссылка добавляется к уроку и сразу видна
     .evaluateAll((nodes) => nodes.map((node) => Math.round(node.getBoundingClientRect().height)))
   expect(new Set(heights).size, `разная высота: ${heights}`).toBe(1)
 
-  await form.getByLabel('Адрес').fill('https://example.org/sieve')
-  await form.getByLabel('Название').fill('Решето Эратосфена')
+  await form.getByLabel('Ссылка или заметка').fill('https://example.org/sieve')
+  // поле названия появилось само, потому что в первом адрес
+  await form.getByLabel('Название ссылки').fill('Решето Эратосфена')
   await form.getByRole('button', { name: 'Добавить' }).click()
 
   await expect(panel.locator('.attachment')).toHaveCount(1)

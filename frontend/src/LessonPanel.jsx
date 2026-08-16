@@ -30,6 +30,9 @@ import {
  *   button would mean an upload that quietly never happened.
  */
 
+/** Целиком адрес — и ничего кроме: пробел внутри уже делает это записью. */
+const looksLikeUrl = (value) => /^https?:\/\/\S+$/i.test(value.trim())
+
 const FIELDS = ['objectives', 'body', 'formative', 'homework']
 
 const empty = { title: '', note: '', objectives: '', body: '', formative: '', homework: '' }
@@ -53,10 +56,9 @@ export default function LessonPanel({ nodeId, where = null, onClose, onSaved }) 
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
   const [overDropZone, setOverDropZone] = useState(false)
-  // поля добавления стоят открытыми, и в них просто набирают; закрывать
-  // нечего, поэтому и состояния «какую форму открыли» нет
+  // одно поле на ссылку и запись: что именно набрали, видно из набранного
+  const [draftResource, setDraftResource] = useState('')
   const [link, setLink] = useState({ url: '', title: '' })
-  const [text, setText] = useState('')
 
   const fileInput = useRef(null)
 
@@ -139,37 +141,31 @@ export default function LessonPanel({ nodeId, where = null, onClose, onSaved }) 
     }
   }
 
-  const submitText = async (event) => {
+  /**
+   * Один материал из одного поля.
+   *
+   * Что это — решает написанное: целиком адрес значит ссылку, всё остальное
+   * запись. Правило сходится или не сходится, серединки нет, поэтому и
+   * угадыванием это не является: «см. http://…» не адрес, значит запись.
+   */
+  const submitResource = async (event) => {
     event.preventDefault()
-    if (!text.trim()) return
+    const value = draftResource.trim()
+    if (!value) return
 
     setBusy(true)
     setError(null)
     try {
-      const added = await addTextAttachment({ planRow: nodeId, title: text.trim() })
-      setAttachments((current) => [...current, added])
-      setText('')
-      onSaved?.()
-    } catch (err) {
-      setError(err.message)
-    } finally {
-      setBusy(false)
-    }
-  }
+      const added = looksLikeUrl(value)
+        ? await addLinkAttachment({
+            planRow: nodeId,
+            url: value,
+            title: link.title.trim() || value,
+          })
+        : await addTextAttachment({ planRow: nodeId, title: value })
 
-  const submitLink = async (event) => {
-    event.preventDefault()
-    if (!link.url.trim()) return
-
-    setBusy(true)
-    setError(null)
-    try {
-      const added = await addLinkAttachment({
-        planRow: nodeId,
-        url: link.url.trim(),
-        title: link.title.trim() || link.url.trim(),
-      })
       setAttachments((current) => [...current, added])
+      setDraftResource('')
       setLink({ url: '', title: '' })
       onSaved?.()
     } catch (err) {
@@ -491,16 +487,23 @@ export default function LessonPanel({ nodeId, where = null, onClose, onSaved }) 
             />
 
             {/*
-              Три вида материала — три ряда, и все три стоят открытыми.
+              Один ряд на два вида материала и зона на третий.
 
-              Сначала это были кнопки, открывающие форму; кнопки висели над
-              открытой формой и предлагали то, что человек уже выбрал.
-              Убрали и их: нажатие «сейчас я буду добавлять ссылку» ничего
-              не решает — решает то, что человек написал. Ряд с пустым полем
-              занимает столько же места, сколько кнопка, и на один клик
-              меньше.
+              Рядов было три — по одному на файл, ссылку и запись, — и это
+              три белые карточки с тенью внутри серого блока: `.inline-form`
+              задумана как отдельная карточка, и внутри раздела читалась как
+              вложенное окно. Плюс две одинаковые синие «Добавить» друг под
+              другом.
 
-              В просмотре рядов нет вовсе: там ничего не заводят.
+              А спрашивать вид отдельной строкой и не нужно: он **виден из
+              написанного**. Целиком адрес — ссылка, всё остальное — запись.
+              Правило сходится или не сходится, серединки у него нет: «см.
+              http://…» это запись, потому что это не адрес. Тот же довод, по
+              которому отсюда ушли кнопки «сейчас я буду добавлять ссылку»:
+              решает набранное, а не объявленное заранее.
+
+              Название спрашивается только у адреса и только потому, что
+              голый URL в списке нечитаем; у записи название и есть она сама.
             */}
             {!preview && (
               <>
@@ -521,34 +524,26 @@ export default function LessonPanel({ nodeId, where = null, onClose, onSaved }) 
                   {t('lesson.dropHere')}
                 </button>
 
-                <form className="inline-form" onSubmit={submitLink}>
+                <form className="inline-form bare" onSubmit={submitResource}>
                   <input
-                    value={link.url}
-                    placeholder="https://…"
-                    aria-label={t('lesson.linkUrl')}
-                    onChange={(event) => setLink({ ...link, url: event.target.value })}
+                    value={draftResource}
+                    maxLength={500}
+                    placeholder={t('lesson.resourcePlaceholder')}
+                    aria-label={t('lesson.resourceLabel')}
+                    onChange={(event) => setDraftResource(event.target.value)}
                   />
-                  <input
-                    value={link.title}
-                    maxLength={200}
-                    placeholder={t('lesson.linkTitle')}
-                    aria-label={t('lesson.linkTitle')}
-                    onChange={(event) => setLink({ ...link, title: event.target.value })}
-                  />
-                  <button type="submit" disabled={busy || !link.url.trim()}>
-                    {t('common.add')}
-                  </button>
-                </form>
-
-                <form className="inline-form" onSubmit={submitText}>
-                  <input
-                    value={text}
-                    maxLength={200}
-                    placeholder={t('lesson.textPlaceholder')}
-                    aria-label={t('lesson.add.text')}
-                    onChange={(event) => setText(event.target.value)}
-                  />
-                  <button type="submit" disabled={busy || !text.trim()}>
+                  {looksLikeUrl(draftResource) && (
+                    <input
+                      value={link.title}
+                      maxLength={200}
+                      placeholder={t('lesson.linkTitle')}
+                      aria-label={t('lesson.linkTitle')}
+                      onChange={(event) =>
+                        setLink({ ...link, title: event.target.value })
+                      }
+                    />
+                  )}
+                  <button type="submit" disabled={busy || !draftResource.trim()}>
                     {t('common.add')}
                   </button>
                 </form>
