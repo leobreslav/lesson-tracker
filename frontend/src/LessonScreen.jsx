@@ -156,8 +156,13 @@ export default function LessonScreen({ onLoggedOut }) {
   const editable = may && card.confirmed && topic
   const inPlan = topic ? `/plan?course=${card.course.id}&row=${topic.id}` : null
   // раздел, в котором нечего показывать, рисуется одной строкой: пустота не
-  // должна занимать столько же места, сколько содержимое
-  const hasContent = topic && CONTENT.some((field) => topic[field])
+  // должна занимать столько же места, сколько содержимое.
+  //
+  // Заполненные поля считаются **один раз** и здесь, а не фильтром в
+  // разметке: у пустого раздела тело не рисуется, но выражение с ним
+  // вычисляется всё равно — JSX считает детей до того, как отдать их
+  // компоненту, — и `topic[field]` у занятия без строки плана валил страницу
+  const filled = topic ? CONTENT.filter((field) => topic[field]) : []
   const hasHomework = Boolean(topic?.homework) || homework.length > 0
 
   const open = (kind) => {
@@ -483,14 +488,14 @@ export default function LessonScreen({ onLoggedOut }) {
       <Collapsible
         name="content"
         title={t('lessonScreen.content')}
-        empty={!hasContent && editing?.fields !== CONTENT}
-        note={hasContent ? null : t('lessonScreen.blank')}
+        empty={!filled.length && editing?.fields !== CONTENT}
+        note={filled.length ? null : t('lessonScreen.blank')}
         actions={editAction(CONTENT)}
       >
         {editing?.fields === CONTENT ? (
           fieldsForm
         ) : (
-          CONTENT.filter((field) => topic[field]).map((field) => (
+          filled.map((field) => (
             <div className="lesson-field" key={field}>
               <span className="hint">{t(`lesson.fields.${field}`)}</span>
               <Markdown text={topic[field]} />

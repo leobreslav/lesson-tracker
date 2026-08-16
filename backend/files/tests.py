@@ -935,7 +935,7 @@ class DatabaseDumpTests(SimpleTestCase):
 
     def run_backup(self, r2, body=b"gzipped dump", **options):
         out = StringIO()
-        options.setdefault("name", "lessons_2026-08-14_0330.sql.gz")
+        options.setdefault("name", self.dump_name())
         with mock.patch.object(storage, "backup_client", return_value=r2):
             call_command(
                 "backup_db", stdout=out, stderr=out, stdin=BytesIO(body), **options
@@ -951,7 +951,7 @@ class DatabaseDumpTests(SimpleTestCase):
 
         output = self.run_backup(r2)
 
-        self.assertIn("db/lessons_2026-08-14_0330.sql.gz", r2.buckets["backup"])
+        self.assertIn(self.dump_key(0), r2.buckets["backup"])
         self.assertIn("загружено", output)
 
     def test_an_empty_dump_is_refused(self):
@@ -959,10 +959,14 @@ class DatabaseDumpTests(SimpleTestCase):
         with self.assertRaises(CommandError):
             self.run_backup(FakeR2(backup={}), body=b"")
 
-    def dump_key(self, days_ago: int) -> str:
+    def dump_name(self, days_ago: int = 0) -> str:
         """Имя дампа, снятого столько-то дней назад. Считается от сегодня:
-        зашитые даты в тесте про срок хранения протухают вместе с ним."""
-        return f"db/lessons_{timezone.localdate() - timedelta(days=days_ago)}_0330.sql.gz"
+        зашитая дата протухает вместе со сроком хранения — снятый «сегодня»
+        дамп однажды оказался старше `keep_days` и удалил сам себя."""
+        return f"lessons_{timezone.localdate() - timedelta(days=days_ago)}_0330.sql.gz"
+
+    def dump_key(self, days_ago: int) -> str:
+        return f"db/{self.dump_name(days_ago)}"
 
     def test_old_copies_go_and_fresh_ones_stay(self):
         old, fresh = self.dump_key(30), self.dump_key(1)

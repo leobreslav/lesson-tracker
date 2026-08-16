@@ -519,6 +519,30 @@ test('записанная связь открывает туннель, и он
   ).toHaveCount(0)
 })
 
+test('занятие без строки плана открывается, а не падает', async ({
+  page,
+  signIn,
+  api,
+}) => {
+  // Курс без плана — обычное состояние, а не редкость: план кончился раньше
+  // расписания или его не начинали вовсе. Раздел «Чем занимаемся» в этом
+  // случае пуст, тело у него не рисуется — но выражение с телом JSX
+  // вычисляет всё равно, и страница валилась на строке плана, которой нет.
+  const teacher = await api(PEOPLE.ivanova)
+  const courses = await teacher.get('/api/courses/')
+  const course = courses.body.find((item) => item.name === 'Grade 6 Geometry')
+  const slots = await teacher.get(`/api/slots/?course=${course.id}`)
+
+  await signIn(PEOPLE.ivanova)
+  await page.goto(`/lesson/${slots.body[0].id}`)
+  await ready(page)
+
+  await expect(page.locator('h1')).toHaveText('(тема не назначена)')
+  await expect(page.locator('[data-block="content"]')).toContainText('пусто')
+  // и собственное занятия на месте: журнал от плана не зависит
+  await expect(page.locator('[data-block="attendance"]')).toBeVisible()
+})
+
 test('собственные блоки занятия работают независимо от связи', async ({
   page,
   signIn,
