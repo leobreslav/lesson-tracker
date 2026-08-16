@@ -17,9 +17,8 @@ export default function RangeDialog({ range, busy, onSubmit, onCancel }) {
   const length = eachDate(range.start_date, range.end_date).length
 
   return (
-    <Modal onClose={onCancel}>
+    <Modal onClose={onCancel} title={t('rangeDialog.title')}>
       <form onSubmit={handleSubmit}>
-        <h3>{t('rangeDialog.title')}</h3>
         <p className="hint">
           {dateRange(range.start_date, range.end_date)} —{' '}
           {t('common.dayCount', { count: length })}

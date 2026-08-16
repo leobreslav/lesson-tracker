@@ -298,11 +298,10 @@ function SlotPreview({ slot, busy, done, onConfirm, onClose }) {
   const topic = slot.topic
 
   return (
-    <Modal onClose={onClose}>
+    <Modal onClose={onClose} title={topic ? topic.title : t('agenda.noTopic')}>
       <p className="hint">
         {t('today.lessonNumber', { number: slot.lesson_number })} · {slot.course.name}
       </p>
-      <h3>{topic ? topic.title : t('agenda.noTopic')}</h3>
 
       {slot.is_cancelled ? (
         <p className="hint warning">
@@ -344,9 +343,6 @@ function SlotPreview({ slot, busy, done, onConfirm, onClose }) {
             {t('today.confirm')}
           </button>
         )}
-        <button type="button" className="secondary" onClick={onClose}>
-          {t('common.close')}
-        </button>
       </div>
     </Modal>
   )

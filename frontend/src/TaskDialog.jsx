@@ -59,9 +59,8 @@ export default function TaskDialog({ task, busy, onSubmit, onRecheck, onClose })
   }
 
   return (
-    <Modal onClose={onClose}>
+    <Modal onClose={onClose} title={t(task ? 'works.task.edit' : 'works.task.add')}>
       <form onSubmit={submit}>
-        <h3>{t(task ? 'works.task.edit' : 'works.task.add')}</h3>
 
         {impact?.answers > 0 && (
           <p className="hint warning">

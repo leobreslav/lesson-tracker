@@ -54,8 +54,7 @@ export default function LibraryDialog({
     })
 
   return (
-    <Modal className="shelf" onClose={onClose}>
-      <h3>{t('plan.importLibrary')}</h3>
+    <Modal className="shelf" onClose={onClose} title={t('plan.importLibrary')}>
 
       {!templates.length ? (
         <p className="hint">{t('library.empty.hint')}</p>
@@ -194,8 +193,7 @@ export function TemplateView({ template, busy, onUse, onClose }) {
   let number = 0
 
   return (
-    <Modal onClose={onClose}>
-      <h3>{template.title}</h3>
+    <Modal onClose={onClose} title={template.title}>
       <p className="hint">
         {t('library.line', {
           subject: template.subject_name,
@@ -227,9 +225,6 @@ export function TemplateView({ template, busy, onUse, onClose }) {
       <div className="actions wrap">
         <button type="button" disabled={busy} onClick={onUse}>
           {t('library.use')}
-        </button>
-        <button type="button" className="secondary" onClick={onClose}>
-          {t('agenda.menu.close')}
         </button>
       </div>
     </Modal>

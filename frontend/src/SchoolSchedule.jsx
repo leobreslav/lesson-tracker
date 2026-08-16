@@ -424,9 +424,8 @@ function AddSchoolSlot({ date, number, courses, busy, onSubmit, onClose }) {
   const leads = (chosen?.teachers ?? []).map((teacher) => teacher.name).join(', ')
 
   return (
-    <Modal onClose={onClose}>
+    <Modal onClose={onClose} title={t('schoolSchedule.addTitle', { number })}>
       <form onSubmit={submit}>
-        <h3>{t('schoolSchedule.addTitle', { number })}</h3>
 
         <label>
           {t('school.courses.title')}

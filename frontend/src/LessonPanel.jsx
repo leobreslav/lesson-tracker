@@ -293,9 +293,6 @@ export default function LessonPanel({ nodeId, onClose, onSaved }) {
               >
                 {t(preview ? 'lesson.edit' : 'lesson.preview')}
               </button>
-              <button type="button" className="secondary" onClick={close}>
-                {t('common.close')}
-              </button>
             </div>
           </header>
 

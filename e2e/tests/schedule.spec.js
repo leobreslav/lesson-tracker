@@ -86,6 +86,25 @@ test('из расписания открывается сам урок, а не 
   )
 })
 
+test('окно закрывается крестиком, а отдельной кнопки для этого нет', async ({
+  page,
+  signIn,
+}) => {
+  // «Закрыть» ничего не решала, только уводила, — и занимала место в ряду
+  // рядом с четырьмя настоящими действиями. Уйти можно было и до неё, но
+  // Escape с кликом по фону беззвучны: ниоткуда не видно, что они есть.
+  await signIn(PEOPLE.ivanova)
+  await openWeek(page, MONDAY)
+
+  await page.locator(`[data-lesson="${MONDAY}:1"]`).click()
+  const menu = page.locator('dialog.modal')
+  await expect(menu.getByRole('button', { name: 'Открыть урок' })).toBeVisible()
+  await expect(menu.getByRole('button', { name: 'Закрыть', exact: true })).toHaveCount(0)
+
+  await menu.getByRole('button', { name: 'Закрыть окно' }).click()
+  await expect(menu).toBeHidden()
+})
+
 test('копирование недели на месяц не ставит уроки в каникулы', async ({
   page,
   signIn,

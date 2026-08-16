@@ -93,9 +93,8 @@ export default function GradeDialog({
   const papers = student.papers ?? []
 
   return (
-    <Modal onClose={onClose}>
+    <Modal onClose={onClose} title={student.name}>
       <form onSubmit={submit}>
-        <h3>{student.name}</h3>
 
         {error && (
           <p className="error" role="alert">
@@ -198,9 +197,6 @@ export default function GradeDialog({
         <div className="actions">
           <button type="submit" disabled={busy}>
             {t('common.save')}
-          </button>
-          <button type="button" className="secondary" onClick={onClose}>
-            {t('common.close')}
           </button>
         </div>
       </form>

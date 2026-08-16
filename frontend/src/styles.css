@@ -1076,6 +1076,49 @@ button.chip.active:hover:not(:disabled) {
   padding: 1.25rem;
 }
 
+/*
+ * Шапка окна: заголовок и крестик, один на все окна (см. `Modal.jsx`).
+ *
+ * `align-items: start` — заголовок бывает в две строки, и крестик должен
+ * остаться у верхнего края, а не уехать в середину. `margin-left: auto`
+ * держит его справа и когда заголовка нет вовсе: у окна со своей шапкой
+ * (панель урока, надзор методиста) в этом ряду один крестик.
+ */
+.modal-head {
+  display: flex;
+  gap: 0.5rem;
+  align-items: start;
+}
+
+.modal-head h3 {
+  margin: 0;
+}
+
+/* цель у крестика 1.75rem: меньше — и на телефоне в неё не попасть */
+button.modal-close {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 1.75rem;
+  min-height: 1.75rem;
+  height: 1.75rem;
+  margin-left: auto;
+  padding: 0;
+  color: #5f6368;
+  font-size: 1rem;
+  line-height: 1;
+  background: none;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+button.modal-close:hover {
+  color: #202124;
+  background: var(--surface-1);
+}
+
 /* полка планов: строка тут — название, описание и три действия, и в
    тридцати ремах они складываются в гармошку */
 .modal-body.shelf {

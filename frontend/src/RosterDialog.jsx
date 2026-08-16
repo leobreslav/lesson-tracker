@@ -88,8 +88,7 @@ export default function RosterDialog({ course, onClose, onChanged }) {
     preview && !preview.enrol && !preview.restore && !preview.invite
 
   return (
-    <Modal onClose={onClose} className="roster-window">
-      <h3>{t('roster.title', { name: course.name })}</h3>
+    <Modal onClose={onClose} className="roster-window" title={t('roster.title', { name: course.name })}>
 
       {error && (
         <p className="error" role="alert">
@@ -271,9 +270,6 @@ export default function RosterDialog({ course, onClose, onChanged }) {
             onClick={submit}
           >
             {t('roster.enrol')}
-          </button>
-          <button type="button" className="secondary" onClick={onClose}>
-            {t('common.close')}
           </button>
         </div>
       </section>

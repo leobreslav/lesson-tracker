@@ -125,9 +125,8 @@ export default function SplitDialog({ students, busy, onSubmit, onClose }) {
     pieces.find((piece) => number >= piece.first && number <= piece.last)
 
   return (
-    <Modal className="shelf" onClose={onClose}>
+    <Modal className="shelf" onClose={onClose} title={t('split.title')}>
       <form onSubmit={submit}>
-        <h3>{t('split.title')}</h3>
 
         {error && (
           <p className="error" role="alert">

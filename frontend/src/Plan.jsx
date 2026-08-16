@@ -909,8 +909,7 @@ export default function Plan({ onLoggedOut }) {
       )}
 
       {dialog?.type === 'reviewer' && (
-        <Modal onClose={() => setDialog(null)}>
-          <h3>{t('plan.baseline.chooseTitle')}</h3>
+        <Modal onClose={() => setDialog(null)} title={t('plan.baseline.chooseTitle')}>
           <p className="hint">{t('plan.baseline.chooseHint')}</p>
           <ul className="people-list">
             {(baseline?.methodists ?? []).map((person) => (
@@ -965,8 +964,10 @@ export default function Plan({ onLoggedOut }) {
       )}
 
       {deleting && (
-        <Modal onClose={() => setDeleting(null)}>
-          <h3>{t('plan.removeSection.title', { title: deleting.title })}</h3>
+        <Modal
+          onClose={() => setDeleting(null)}
+          title={t('plan.removeSection.title', { title: deleting.title })}
+        >
           <p className="hint">
             {t('plan.removeSection.hint', {
               count: t('common.lessonCount', { count: deleting.children.length }),
@@ -1019,8 +1020,7 @@ function PublishDialog({ course, subjects, existing, busy, onSubmit, onClose }) 
 
   if (existing) {
     return (
-      <Modal onClose={onClose}>
-        <h3>{t('plan.refreshTemplate')}</h3>
+      <Modal onClose={onClose} title={t('plan.refreshTemplate')}>
         <p className="hint">{t('plan.refreshHint', { title: existing.title })}</p>
         <div className="actions">
           <button type="button" disabled={busy} onClick={() => onSubmit({})}>

@@ -178,12 +178,12 @@ export default function Reviews({ onLoggedOut }) {
       )}
 
       {opened && (
-        <Modal onClose={() => setOpened(null)}>
-          <h3>
-            {opened.course.name}
-            {opened.teacher && ` · ${opened.teacher.name}`}
-          </h3>
-
+        <Modal
+          onClose={() => setOpened(null)}
+          title={`${opened.course.name}${
+            opened.teacher ? ` · ${opened.teacher.name}` : ''
+          }`}
+        >
           <div className="cards">
             <section className="panel card-stat">
               <h2>{opened.lessons}</h2>

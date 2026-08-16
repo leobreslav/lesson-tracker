@@ -162,6 +162,6 @@ test('год с чужими уроками не удаляется, и окно
   // подтверждения в этом окне нет вовсе: нажимать нечего
   await expect(dialog.getByRole('button', { name: 'Удалить год' })).toHaveCount(0)
 
-  await dialog.getByRole('button', { name: 'Закрыть' }).click()
+  await dialog.getByRole('button', { name: 'Закрыть окно' }).click()
   await expect(page.locator('.calendar-side')).toBeVisible()
 })

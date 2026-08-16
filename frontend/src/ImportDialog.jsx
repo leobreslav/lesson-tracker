@@ -103,9 +103,8 @@ export default function ImportDialog({ classId, busy, onSubmit, onClose }) {
   }
 
   return (
-    <Modal onClose={onClose}>
+    <Modal onClose={onClose} title={t('csv.title')}>
       <form onSubmit={handleSubmit}>
-        <h3>{t('csv.title')}</h3>
         <p className="hint">{t('csv.hint', { header: 'id,Тема,Урок,Заметка' })}</p>
 
         <label

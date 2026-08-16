@@ -71,9 +71,8 @@ export default function CopyDialog({
   }
 
   return (
-    <Modal onClose={onClose}>
+    <Modal onClose={onClose} title={title ?? t('copy.title')}>
       <form onSubmit={handleSubmit}>
-        <h3>{title ?? t('copy.title')}</h3>
         <p className="hint">
           {t('copy.source', {
             range: dateRange(source.start, source.end),

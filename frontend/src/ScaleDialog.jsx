@@ -64,9 +64,8 @@ export default function ScaleDialog({ work, scale, busy, onSubmit, onClose }) {
     )
 
   return (
-    <Modal onClose={onClose}>
+    <Modal onClose={onClose} title={t('grading.title')}>
       <form onSubmit={submit}>
-        <h3>{t('grading.title')}</h3>
 
         {impact?.marks > 0 && (
           <p className="hint warning">

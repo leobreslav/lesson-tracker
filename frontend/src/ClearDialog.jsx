@@ -25,9 +25,8 @@ export default function ClearDialog({ range, slots, classes, busy, onSubmit, onC
   }
 
   return (
-    <Modal onClose={onClose}>
+    <Modal onClose={onClose} title={t('clear.title')}>
       <form onSubmit={handleSubmit}>
-        <h3>{t('clear.title')}</h3>
         <p className="hint">{dateRange(range.start, range.end)}</p>
 
         <ClassPicker classes={classes} picked={picked} onChange={setPicked} />

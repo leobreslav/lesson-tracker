@@ -43,8 +43,7 @@ export default function CellDialog({ student, task, onChanged, onClose }) {
   }
 
   return (
-    <Modal onClose={onClose}>
-      <h3>{student.name}</h3>
+    <Modal onClose={onClose} title={student.name}>
 
       {/* что спрашивали и что считается верным: проверяя ячейку, учитель
           сверяется с эталоном, а не вспоминает его */}
@@ -83,12 +82,6 @@ export default function CellDialog({ student, task, onChanged, onClose }) {
           ))}
         </ul>
       )}
-
-      <div className="actions">
-        <button type="button" className="secondary" onClick={onClose}>
-          {t('common.close')}
-        </button>
-      </div>
     </Modal>
   )
 }

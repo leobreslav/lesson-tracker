@@ -613,9 +613,10 @@ export default function Calendar({ user, onLoggedOut }) {
       )}
 
       {removing && (
-        <Modal onClose={() => setRemoving(null)}>
-          <h3>{t('calendar.removeYear.title', { name: year.name })}</h3>
-
+        <Modal
+          onClose={() => setRemoving(null)}
+          title={t('calendar.removeYear.title', { name: year.name })}
+        >
           {removing.slots || removing.plan_rows ? (
             /* уроки и планы держат курсы через PROTECT: сервер откажет, и
                сказать об этом лучше здесь, чем показать ошибку после нажатия */
@@ -626,11 +627,6 @@ export default function Calendar({ user, onLoggedOut }) {
                   rows: removing.plan_rows,
                 })}
               </p>
-              <div className="actions">
-                <button type="button" onClick={() => setRemoving(null)}>
-                  {t('common.close')}
-                </button>
-              </div>
             </>
           ) : (
             <>

@@ -23,9 +23,8 @@ export function AddLessonDialog({ date, number, classes, busy, onSubmit, onClose
   }
 
   return (
-    <Modal onClose={onClose}>
+    <Modal onClose={onClose} title={t('agenda.add.title', { date: weekdayWithDate(date), number })}>
       <form onSubmit={handleSubmit}>
-        <h3>{t('agenda.add.title', { date: weekdayWithDate(date), number })}</h3>
 
         {!classes.length ? (
           <p className="hint">{t('agenda.add.nobody')}</p>
@@ -135,13 +134,13 @@ export function LessonMenu({
   }
 
   return (
-    <Modal onClose={onClose}>
-      <h3>
-        {t('agenda.menu.title', {
-          className: lesson.course_name,
-          number: lesson.lesson_number,
-        })}
-      </h3>
+    <Modal
+      onClose={onClose}
+      title={t('agenda.menu.title', {
+        className: lesson.course_name,
+        number: lesson.lesson_number,
+      })}
+    >
       <p className="hint">{weekdayWithDate(date)}</p>
 
       {lesson.is_extra && <p className="hint">{t('agenda.menu.extra')}</p>}
@@ -255,9 +254,6 @@ export function LessonMenu({
           )}
           <button type="button" className="secondary" disabled={busy} onClick={onDelete}>
             {t('common.delete')}
-          </button>
-          <button type="button" className="secondary" onClick={onClose}>
-            {t('agenda.menu.close')}
           </button>
         </div>
       )}

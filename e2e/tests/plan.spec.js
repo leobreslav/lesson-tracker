@@ -401,7 +401,7 @@ test('просмотр шаблона показывает уроки до то�
     preview.getByRole('button', { name: 'Импортировать в курс' }),
   ).toBeEnabled()
 
-  await preview.getByRole('button', { name: 'Закрыть' }).click()
+  await preview.getByRole('button', { name: 'Закрыть окно' }).click()
 
   await expect(page.locator('dialog.modal')).toHaveCount(1)
   await expect(shelf.locator('.template-list')).toBeVisible()

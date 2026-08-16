@@ -64,9 +64,8 @@ export default function DebtsDialog({ courseId = null, busy, onDone, onClose }) 
   }
 
   return (
-    <Modal onClose={onClose}>
+    <Modal onClose={onClose} title={t('debts.title')}>
       <form onSubmit={submit}>
-        <h3>{t('debts.title')}</h3>
         <p className="hint">{t('debts.hint')}</p>
 
         {error && (

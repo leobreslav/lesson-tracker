@@ -78,9 +78,8 @@ export default function WorkDialog({
   }
 
   return (
-    <Modal onClose={onClose}>
+    <Modal onClose={onClose} title={t(work ? 'works.edit' : 'works.add')}>
       <form onSubmit={submit}>
-        <h3>{t(work ? 'works.edit' : 'works.add')}</h3>
 
         {impact?.answers > 0 && (
           <p className="hint warning">

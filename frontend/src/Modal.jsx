@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react'
+import { useTranslation } from 'react-i18next'
 
 /**
  * A wrapper around the native <dialog> in showModal mode.
@@ -8,8 +9,35 @@ import { useEffect, useRef } from 'react'
  * the browser's job; a click outside the content lands on the dialog itself
  * (.modal has zero padding, so the only way to hit it is through the
  * backdrop).
+ *
+ * **Крестик в углу — один на все окна, и живёт он здесь.** Уйти из окна и
+ * до него было чем — Escape и клик по фону, — но оба беззвучны: ниоткуда не
+ * видно, что они есть. Поэтому у окон стояла кнопка «Закрыть», и в тех, где
+ * решать нечего, она занимала целую строку ряда действий ради выхода. В меню
+ * урока это выглядело как «Открыть урок · Отменить · Перенести · Удалить ·
+ * Закрыть» — четыре действия и одно не-действие в одном ряду.
+ *
+ * **«Отмена» в форме при этом остаётся, и это не непоследовательность.**
+ * «Сохранить / Отмена» — вопрос и два ответа на него, и стоять они должны
+ * рядом, в точке решения; крестик в дальнем углу как «нет, не надо» не
+ * читается. Убрана только та кнопка, которая ничего не решала.
+ *
+ * `title` необязателен: у окна бывает свой заголовок сложнее строки — поле
+ * ввода в панели урока, две части в надзоре методиста. Тогда в шапке стоит
+ * один крестик, а заголовок остаётся там, где его нарисовали.
+ *
+ * Крестик уважает `onBeforeClose` наравне с Escape и фоном: три выхода из
+ * одного окна должны вести себя одинаково, иначе несохранённое теряется
+ * ровно тем из них, о котором забыли.
  */
-export default function Modal({ onClose, onBeforeClose, className = '', children }) {
+export default function Modal({
+  onClose,
+  onBeforeClose,
+  title = null,
+  className = '',
+  children,
+}) {
+  const { t } = useTranslation()
   const dialogRef = useRef(null)
 
   useEffect(() => {
@@ -33,7 +61,23 @@ export default function Modal({ onClose, onBeforeClose, className = '', children
         if (event.target === dialogRef.current && mayClose()) onClose()
       }}
     >
-      <div className={`modal-body ${className}`.trim()}>{children}</div>
+      <div className={`modal-body ${className}`.trim()}>
+        <div className="modal-head">
+          {title !== null && <h3>{title}</h3>}
+          <button
+            type="button"
+            className="modal-close"
+            aria-label={t('common.closeWindow')}
+            title={t('common.closeWindow')}
+            onClick={() => {
+              if (mayClose()) onClose()
+            }}
+          >
+            ✕
+          </button>
+        </div>
+        {children}
+      </div>
     </dialog>
   )
 }

@@ -278,7 +278,7 @@ test('скан бумажной работы достаётся только с�
   const dialog = page.locator('dialog.modal')
   await expect(dialog.getByText('Скан работы')).toBeVisible()
   await expect(dialog.getByRole('link', { name: 'stepanov.pdf' })).toBeVisible()
-  await dialog.getByRole('button', { name: 'Закрыть' }).click()
+  await dialog.getByRole('button', { name: 'Закрыть окно' }).click()
 
   // свой ученик видит свою работу
   await signIn(PEOPLE.student)

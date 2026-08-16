@@ -62,7 +62,7 @@ test('проверка столбцом ставит отметку, и табл
   await expect(dialog).toContainText(/ждёт проверки|ждут проверки/)
   // непроверенные идут первыми — ради них сюда и заходят
   await dialog.locator('.attempt-list li').first().getByTitle(/Отметить «верно»/).click()
-  await dialog.getByRole('button', { name: 'Закрыть' }).click()
+  await dialog.getByRole('button', { name: 'Закрыть окно' }).click()
 
   await expect(page.locator('.work-table td.sent')).toHaveCount(before - 1)
 })
@@ -83,7 +83,7 @@ test('история ячейки открывается кликом и отм�
   await expect(dialog.locator('.attempt-list li')).toHaveCount(1)
   // повторное нажатие на ту же отметку снимает её: третьей кнопки нет
   await dialog.getByTitle(/Отметить «неверно»/).click()
-  await dialog.getByRole('button', { name: 'Закрыть' }).click()
+  await dialog.getByRole('button', { name: 'Закрыть окно' }).click()
 
   await expect(page.locator('.work-table td.sent')).not.toHaveCount(0)
 })
@@ -110,7 +110,7 @@ test('таблица обновляется сама, а переделанны�
   await cell.locator('td .cell').first().click()
   const dialog = page.locator('dialog.modal')
   await dialog.getByTitle(/Отметить «верно»/).click()
-  await dialog.getByRole('button', { name: 'Закрыть' }).click()
+  await dialog.getByRole('button', { name: 'Закрыть окно' }).click()
   await expect(cell.locator('td').first()).toHaveClass(/correct/)
 
   await student.post(`/api/student/tasks/${task.id}/answer/`, { answer: 'передумал' })

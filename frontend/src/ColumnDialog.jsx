@@ -42,8 +42,7 @@ export default function ColumnDialog({ task, onChanged, onClose }) {
   const done = latest.filter((row) => row.is_correct !== null)
 
   return (
-    <Modal className="shelf" onClose={onClose}>
-      <h3>{t('table.checking')}</h3>
+    <Modal className="shelf" onClose={onClose} title={t('table.checking')}>
 
       <TaskBrief task={task} />
 
@@ -75,12 +74,6 @@ export default function ColumnDialog({ task, onChanged, onClose }) {
           </ul>
         </>
       )}
-
-      <div className="actions">
-        <button type="button" className="secondary" onClick={onClose}>
-          {t('common.close')}
-        </button>
-      </div>
     </Modal>
   )
 }

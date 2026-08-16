@@ -3,30 +3,31 @@
     "name": "Lesson Tracker"
   },
   "common": {
-    "loading": "Loading…",
-    "save": "Save",
-    "saving": "Saving…",
-    "saved": "Saved",
-    "cancel": "Cancel",
-    "delete": "Delete",
-    "retry": "Try again",
-    "lessonCount_one": "{{count}} lesson",
-    "lessonCount_other": "{{count}} lessons",
-    "termCount_one": "{{count}} term",
-    "termCount_other": "{{count}} terms",
+    "add": "Add",
     "breakCount_one": "{{count}} break",
     "breakCount_other": "{{count}} breaks",
-    "add": "Add",
-    "edit": "Edit",
-    "from": "From",
-    "to": "to",
+    "cancel": "Cancel",
+    "close": "Close",
+    "closeWindow": "Close the window",
     "dayCount_one": "{{count}} day",
     "dayCount_other": "{{count}} days",
-    "studyDayCount_one": "{{count}} study day",
-    "studyDayCount_other": "{{count}} study days",
+    "delete": "Delete",
+    "edit": "Edit",
+    "from": "From",
+    "lessonCount_one": "{{count}} lesson",
+    "lessonCount_other": "{{count}} lessons",
+    "loading": "Loading…",
     "memberCount_one": "{{count}} member",
     "memberCount_other": "{{count}} members",
-    "close": "Close"
+    "retry": "Try again",
+    "save": "Save",
+    "saved": "Saved",
+    "saving": "Saving…",
+    "studyDayCount_one": "{{count}} study day",
+    "studyDayCount_other": "{{count}} study days",
+    "termCount_one": "{{count}} term",
+    "termCount_other": "{{count}} terms",
+    "to": "to"
   },
   "language": {
     "label": "Language"
@@ -572,8 +573,7 @@
       "movedReason": "Moved to {{date}}",
       "moveSubmit": "Move",
       "restore": "Restore",
-      "cancel": "Cancel the lesson",
-      "close": "Close"
+      "cancel": "Cancel the lesson"
     }
   },
   "noSchool": {
