@@ -1035,6 +1035,15 @@ button.chip {
   border-radius: 999px;
 }
 
+/* «Просмотр» включён: та же кнопка, только вдавленная. Круглой таблеткой
+   она была, и рядом с прямоугольным «Сохранить» это читалось как два
+   разных сорта органов управления */
+button.secondary.pressed {
+  color: #1a73e8;
+  border-color: #1a73e8;
+  background: #e8f0fe;
+}
+
 button.chip:hover:not(:disabled) {
   background: #f1f5fd;
 }
@@ -4751,8 +4760,9 @@ button.day-head:hover {
   border-bottom: 1px solid #eee;
 }
 
-.lesson-title {
-  flex: 1;
+input.lesson-title {
+  width: 100%;
+  box-sizing: border-box;
   min-width: 0;
   padding: 0.4rem 0.5rem;
   font: inherit;
@@ -4764,11 +4774,13 @@ button.day-head:hover {
   background: transparent;
 }
 
-.lesson-title:hover {
+/* рамка под курсором — обещание правки по клику, и в просмотре её быть не
+   должно: правится всё одной кнопкой наверху */
+input.lesson-title:hover {
   border-color: #ddd;
 }
 
-.lesson-title:focus {
+input.lesson-title:focus {
   outline: 2px solid #1a73e8;
   outline-offset: -1px;
   background: #fff;
@@ -4781,9 +4793,11 @@ button.day-head:hover {
  * который нельзя тронуть, — самое частое «почему у меня не печатается».
  */
 .lesson-title.static {
-  font-size: 1.05rem;
+  padding: 0.4rem 0;
+  font-size: 1.1rem;
   font-weight: 600;
-  padding: 0.25rem 0;
+  border: none;
+  background: none;
 }
 
 .lesson-note.static {
@@ -4828,6 +4842,16 @@ button.day-head:hover {
   background: none;
   border: none;
   cursor: pointer;
+}
+
+/* шапка раздела, который не разворачивается: та же строка, но не кнопка —
+   ни каретки, ни отклика под курсором. Место каретки при этом занято:
+   названия разделов стоят на одной вертикали, разворачивается он или нет */
+.lesson-field-head.static {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  padding: 0.5rem 0.65rem 0.5rem 1.6rem;
 }
 
 .lesson-field-head:hover {

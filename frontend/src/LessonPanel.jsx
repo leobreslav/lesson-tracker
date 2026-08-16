@@ -68,6 +68,7 @@ export default function LessonPanel({ nodeId, where = null, onClose, onSaved }) 
         // a field with something in it opens itself; an empty lesson opens
         // the body, so there is somewhere to start typing
         const filled = FIELDS.filter((field) => node[field]?.trim())
+        if (node.attachments?.length) filled.push('materials')
         setExpanded(new Set(filled.length ? filled : ['body']))
       })
       .catch((err) => !cancelled && setError(err.message))
@@ -192,26 +193,54 @@ export default function LessonPanel({ nodeId, where = null, onClose, onSaved }) 
 
   // --- rendering ---
 
+  /**
+   * Шапка раздела: каретка, название и что внутри.
+   *
+   * В просмотре у пустого раздела разворачивать нечего, и он перестаёт быть
+   * кнопкой вовсе: каретка, которая раскрывает пустоту, — обещание
+   * содержимого, которого нет. В правке кнопка остаётся: там пустое поле
+   * как раз и открывают, чтобы написать.
+   */
+  const head = (name, label, mark, frozen) =>
+    frozen ? (
+      <span className="lesson-field-head static">
+        <span className="lesson-field-name">{label}</span>
+        {mark}
+      </span>
+    ) : (
+      <button
+        type="button"
+        className="lesson-field-head"
+        aria-expanded={expanded.has(name)}
+        onClick={() => toggle(name)}
+      >
+        <span className="caret">{expanded.has(name) ? '▾' : '▸'}</span>
+        <span className="lesson-field-name">{label}</span>
+        {mark}
+      </button>
+    )
+
   const field = (name) => {
     const value = draft[name]
-    const isOpen = expanded.has(name)
+    const frozen = preview && !value.trim()
+    const isOpen = !frozen && expanded.has(name)
 
     return (
-      <section className="lesson-field" key={name} data-field={name}>
-        <button
-          type="button"
-          className="lesson-field-head"
-          aria-expanded={isOpen}
-          onClick={() => toggle(name)}
-        >
-          <span className="caret">{isOpen ? '▾' : '▸'}</span>
-          <span className="lesson-field-name">{t(`lesson.fields.${name}`)}</span>
-          {value.trim() ? (
+      <section
+        className={frozen ? 'lesson-field frozen' : 'lesson-field'}
+        key={name}
+        data-field={name}
+      >
+        {head(
+          name,
+          t(`lesson.fields.${name}`),
+          value.trim() ? (
             <span className="dot" title={t('lesson.filled')} />
           ) : (
             <span className="hint">{t('lesson.blank')}</span>
-          )}
-        </button>
+          ),
+          frozen,
+        )}
 
         {isOpen &&
           (preview ? (
@@ -291,9 +320,12 @@ export default function LessonPanel({ nodeId, where = null, onClose, onSaved }) 
       })}
       actions={
         <>
+          {/* обе кнопки одной формы: круглая «таблетка» рядом с
+              прямоугольной читалась как два разных сорта органов
+              управления, хотя это просто переключатель и подтверждение */}
           <button
             type="button"
-            className={preview ? 'chip active' : 'chip'}
+            className={preview ? 'secondary compact pressed' : 'secondary compact'}
             aria-pressed={preview}
             onClick={() => setPreview(!preview)}
           >
@@ -389,9 +421,33 @@ export default function LessonPanel({ nodeId, where = null, onClose, onSaved }) 
 
           {FIELDS.map(field)}
 
-          <section className="lesson-files">
-            <h3>{t('lesson.attachments')}</h3>
+          {/*
+            Материалы — такой же раздел, как цели и ход урока, а не приписка
+            снизу. Это список того, чем на уроке пользуются: файл, ссылка, а
+            со временем и просто строка текста; разворачивается он и
+            подписывается тем же способом, что остальные.
+          */}
+          <section
+            className={
+              preview && !attachments.length
+                ? 'lesson-field lesson-files frozen'
+                : 'lesson-field lesson-files'
+            }
+            data-field="materials"
+          >
+            {head(
+              'materials',
+              t('lesson.attachments'),
+              attachments.length ? (
+                <span className="hint">{attachments.length}</span>
+              ) : (
+                <span className="hint">{t('lesson.blank')}</span>
+              ),
+              preview && !attachments.length,
+            )}
 
+            {expanded.has('materials') && !(preview && !attachments.length) && (
+            <>
             {attachments.length > 0 && (
               <ul className="attachments">{attachments.map(attachmentRow)}</ul>
             )}
@@ -470,6 +526,8 @@ export default function LessonPanel({ nodeId, where = null, onClose, onSaved }) 
                   {t('common.cancel')}
                 </button>
               </form>
+            )}
+            </>
             )}
           </section>
 

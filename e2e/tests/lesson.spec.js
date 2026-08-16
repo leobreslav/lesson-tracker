@@ -112,6 +112,13 @@ test('в просмотре не правится ничего, включая �
   await expect(panel.locator('.dropzone')).toHaveCount(0)
   await expect(panel.getByRole('button', { name: 'Добавить файл' })).toHaveCount(0)
 
+  // а пустой раздел в просмотре и не разворачивается: каретка, за которой
+  // пустота, — обещание содержимого, которого нет
+  // у этого урока расписаны все четыре поля, а материалов нет
+  const empty = panel.locator('[data-field="materials"]')
+  await expect(empty).toHaveClass(/frozen/)
+  await expect(empty.locator('.caret')).toHaveCount(0)
+
   // «Правка» возвращает поля
   await panel.getByRole('button', { name: 'Правка' }).click()
   await expect(panel.locator('input.lesson-title')).toBeVisible()
@@ -150,6 +157,9 @@ test('ссылка добавляется к уроку и сразу видна
   const target = 'Простые и составные числа'
   const panel = await openLesson(page, target)
 
+  // материалы теперь такой же сворачиваемый раздел, как остальные, и у
+  // урока без них он закрыт
+  await panel.getByRole('button', { name: /Материалы/ }).click()
   await panel.getByRole('button', { name: 'Добавить ссылку…' }).click()
   // scoped to the form: the lesson title above carries the same label
   const form = panel.locator('.inline-form')
