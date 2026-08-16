@@ -243,3 +243,4 @@ def suggested_topics(course) -> dict:
         for entry in plan_services.build_layout(lessons, slots)
         if entry.slot is not None and entry.lesson is not None
     }
+

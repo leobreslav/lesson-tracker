@@ -1004,6 +1004,21 @@ class SlotViewSet(SchoolScopedViewSet):
                 # иначе страница гадала бы о нём по роли, а правило сложнее
                 # роли — ведущий курса **или** администратор школы
                 "may_write": allowed_to_write_schedule(request.user, slot.course),
+                # что мешает записать этот час: очередь без дырок значит,
+                # что закрывают их по одной, а экран должен сказать — какую
+                # именно, а не просто отказать после нажатия
+                "record_after": (
+                    {"id": blocker.pk, "date": blocker.date}
+                    if (blocker := record_blocker(slot)) is not None
+                    else None
+                ),
+                # снять можно только последнюю запись курса: у снятия нет
+                # следа, и всё, что глубже, было бы правкой прошлого
+                "may_withdraw": (
+                    slot.lesson_id is not None
+                    and (last := Slot.last_record(slot.course)) is not None
+                    and last.pk == slot.pk
+                ),
             }
         )
 
@@ -1075,19 +1090,21 @@ class SlotViewSet(SchoolScopedViewSet):
         короткий, у каждой строки подставлена тема из раскладки, и закрыть
         его можно одним движением — см. `close` ниже.
 
-        Правила отбора — те же, что у счётчика на обзоре
-        (`plans.services.record_state`), и это важно: число на главной и
-        список за ним обязаны говорить одно и то же.
+        Правила отбора — те же, что у счётчика (`plans.services.record_state`
+        и `planLayout.debtSlots` на клиенте), и это важно: число и список за
+        ним обязаны говорить одно и то же.
+
+        Срока давности у долга нет: двухнедельная амнистия отменена вместе с
+        приходом строгого порядка — при нём дырка не протухает, а блокирует
+        следующую запись.
         """
         today = timezone.localdate()
-        edge = today - timedelta(days=plan_services.RECORD_WINDOW_DAYS)
 
         slots = (
             Slot.objects.filter(
                 course__in=self.my_courses(),
                 is_cancelled=False,
                 date__lte=today,
-                date__gte=edge,
                 lesson__isnull=True,
             )
             .select_related("course")
@@ -1212,6 +1229,21 @@ class SlotViewSet(SchoolScopedViewSet):
                 .count(),
             }
         )
+
+
+def record_blocker(slot):
+    """
+    Час, который надо закрыть раньше этого, — или `None`.
+
+    Экран спрашивает не «можно ли», а «что мешает»: отказ после нажатия
+    объясняет то же самое, но уже задним числом, а тут кнопки просто нет и
+    рядом написано, куда идти.
+    """
+    if slot.lesson_id is not None or slot.is_cancelled:
+        return None
+
+    nxt = Slot.next_unclosed(slot.course, timezone.localdate())
+    return nxt if nxt is not None and nxt.pk != slot.pk else None
 
 
 def slot_day_payload(slot, suggested) -> dict:

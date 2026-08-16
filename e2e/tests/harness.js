@@ -119,6 +119,77 @@ export { expect }
 export const lessonCount = (page, card = 'lessons') =>
   page.locator(`[data-card="${card}"] :is(h2, b)`)
 
+/**
+ * Курс на живом годе с одним записанным занятием.
+ *
+ * Записать можно только прошедший час, а год посеянных данных начинается
+ * первого сентября — прошедших часов в нём нет ни одного, и раньше эти
+ * тесты обходили правило тем, что сервер принимал любую дату. Теперь не
+ * принимает: очередь записи строгая, и будущее в неё не входит.
+ *
+ * Поэтому курс собирается через настоящее API: год вокруг сегодня, курс,
+ * назначение, три строки плана, три часа — позавчера, вчера и сегодня, — и
+ * запись за первым из них. Ничего закулисного тут нет, ровно те же запросы
+ * делает человек руками.
+ */
+export async function liveCourse(api, { record = true } = {}) {
+  const admin = await api(PEOPLE.admin)
+  const teacher = await api(PEOPLE.ivanova)
+
+  const day = (shift) => {
+    const at = new Date()
+    at.setDate(at.getDate() + shift)
+    return at.toISOString().slice(0, 10)
+  }
+
+  const year = await admin.post('/api/calendar/years/', {
+    name: `живой ${Date.now()}`,
+    start_date: day(-60),
+    end_date: day(60),
+    weekend_days: [],
+  })
+  expect(year.status, JSON.stringify(year.body)).toBe(201)
+
+  const course = await admin.post('/api/courses/', {
+    name: `Живой курс ${year.body.id}`,
+    year: year.body.id,
+  })
+  expect(course.status, JSON.stringify(course.body)).toBe(201)
+  const members = await admin.get('/api/school/members/')
+  const assigned = await admin.post('/api/school/assignments/', {
+    course: course.body.id,
+    teacher: members.body.find((person) => person.email === PEOPLE.ivanova).id,
+  })
+  expect(assigned.status, JSON.stringify(assigned.body)).toBe(201)
+
+  const rows = []
+  for (const title of ['Первый урок', 'Второй урок', 'Третий урок']) {
+    const row = await teacher.post('/api/plan/', { course: course.body.id, title })
+    expect(row.status, JSON.stringify(row.body)).toBe(201)
+    rows.push(row.body)
+  }
+
+  const slots = []
+  for (const shift of [-2, -1, 0]) {
+    const slot = await teacher.post('/api/slots/', {
+      course: course.body.id,
+      date: day(shift),
+      lesson_number: 1,
+    })
+    expect(slot.status, JSON.stringify(slot.body)).toBe(201)
+    slots.push(slot.body)
+  }
+
+  if (record) {
+    const done = await teacher.patch(`/api/slots/${slots[0].id}/`, {
+      lesson: rows[0].id,
+    })
+    expect(done.status, JSON.stringify(done.body)).toBe(200)
+  }
+
+  return { course: course.body, rows, slots, teacher }
+}
+
 /** The seeded cast, so tests name people rather than addresses. */
 export const PEOPLE = {
   admin: 'director@example.com',

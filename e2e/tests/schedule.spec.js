@@ -1,4 +1,4 @@
-import { PEOPLE, expect, ready, test } from './harness.js'
+import { PEOPLE, expect, liveCourse, ready, test } from './harness.js'
 
 /**
  * Scenarios 4 and 5: living with a personal schedule.
@@ -497,20 +497,10 @@ test('записанная связь открывает туннель, и он
   signIn,
   api,
 }) => {
-  // Записать связь можно только у прошедшего занятия, а год демо-данных весь
-  // в будущем — поэтому связь ставится запросом, как в planDates. Дата серверу
-  // не мешает: он записывает, что ему сказали, а не предлагать кнопку — дело
-  // экрана.
-  const teacher = await api(PEOPLE.ivanova)
-  const courses = await teacher.get('/api/courses/')
-  const course = courses.body.find((item) => item.name === 'Grade 6 Algebra')
-  const ribbon = await teacher.get(`/api/plan/layout/slots/?course=${course.id}`)
-  const tree = await teacher.get(`/api/plan/?course=${course.id}`)
-  const rows = tree.body.nodes.flatMap((node) =>
-    node.is_section ? node.children : [node],
-  )
-  const slot = ribbon.body.slots[0]
-  await teacher.patch(`/api/slots/${slot.id}/`, { lesson: rows[0].id })
+  // Записать можно только прошедший час, а год посеянных данных весь в
+  // будущем — поэтому курс собирается живым, настоящими запросами
+  const { rows, slots } = await liveCourse(api)
+  const [slot] = slots
 
   await signIn(PEOPLE.ivanova)
   await page.goto(`/lesson/${slot.id}`)
@@ -539,10 +529,9 @@ test('записанная связь открывает туннель, и он
   await expect(page.locator('h1')).toHaveText('Синус суммы. Начало')
 
   // и правка настоящая: это строка плана, а не поле занятия
-  const after = await teacher.get(`/api/plan/?course=${course.id}`)
-  const titles = after.body.nodes.flatMap((node) =>
-    node.is_section ? node.children.map((row) => row.title) : [node.title],
-  )
+  const after = await api(PEOPLE.ivanova)
+  const tree = await after.get(`/api/plan/?course=${rows[0].course}`)
+  const titles = tree.body.nodes.map((node) => node.title)
   expect(titles).toContain('Синус суммы. Начало')
 
   // повторное нажатие на плашку снимает запись — как отметка в журнале
@@ -551,6 +540,40 @@ test('записанная связь открывает туннель, и он
   const locked = page.locator('[data-block="content"]')
   await expect(locked.getByRole('button', { name: 'Правка…' })).toHaveCount(0)
   await expect(locked.getByRole('link', { name: 'Правка в плане…' })).toBeVisible()
+})
+
+test('записи идут подряд, и снять можно только последнюю', async ({
+  page,
+  signIn,
+  api,
+}) => {
+  // Дырка посреди закрытого хвоста — два разных факта в одном виде: «провёл,
+  // но не отметил» и «не было, а отменить забыл». Пока их не различили,
+  // «сколько курса пройдено» неизвестно, а это читает методист.
+  const { slots } = await liveCourse(api)
+  const [first, second, third] = slots
+
+  await signIn(PEOPLE.ivanova)
+
+  // третий час записать нельзя: второй ещё не закрыт, и сказано какой
+  await page.goto(`/lesson/${third.id}`)
+  await ready(page)
+  await expect(page.getByRole('button', { name: 'Так и было' })).toHaveCount(0)
+  const hint = page.getByRole('link', { name: /сначала/ })
+  await expect(hint).toBeVisible()
+
+  // ссылка ведёт на тот самый час, и там кнопка есть
+  await hint.click()
+  await ready(page)
+  await expect(page).toHaveURL(new RegExp(`/lesson/${second.id}$`))
+  await page.getByRole('button', { name: 'Так и было' }).click()
+  await expect(page.getByRole('button', { name: 'урок проведён' })).toBeVisible()
+
+  // а у первого запись снять уже нельзя: она больше не последняя
+  await page.goto(`/lesson/${first.id}`)
+  await ready(page)
+  await expect(page.getByText('урок проведён')).toBeVisible()
+  await expect(page.getByRole('button', { name: 'урок проведён' })).toHaveCount(0)
 })
 
 test('у отменённого занятия остаётся журнал, а содержания нет', async ({

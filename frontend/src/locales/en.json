@@ -231,7 +231,10 @@
     "not_on_paper": "This work is not written on paper: there is nothing to split.",
     "plan_lesson_taught": "«{{title}}» was taught on {{date}}: a lesson already given keeps its place.",
     "slot_lesson_taken": "«{{title}}» is already recorded on {{date}}.",
-    "attachment_title_required": "A text resource is its title — it cannot be empty."
+    "attachment_title_required": "A text resource is its title — it cannot be empty.",
+    "slot_record_out_of_order": "Close the lesson on {{date}} first: records go in order, without gaps.",
+    "slot_record_not_last": "Only the last record of the course — {{date}} — can be changed.",
+    "slot_record_future": "The lesson has not happened yet: only the past is recorded."
   },
   "classPicker": {
     "label": "Classes:",
@@ -1067,6 +1070,8 @@
     "restoreLesson": "Restore the lesson",
     "toSchedule": "back to the schedule",
     "editInPlan": "Edit in the plan…",
-    "blankInPlan": "empty in the plan"
+    "blankInPlan": "empty in the plan",
+    "recordAfter": "{{date}} comes first",
+    "recordAfterHint": "Records go in order: mark the previous lesson first"
   }
 }

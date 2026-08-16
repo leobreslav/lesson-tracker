@@ -18,6 +18,7 @@ from django.utils import timezone
 from rest_framework.test import APITestCase
 from schools.testing import (
     MONDAY,
+    live_year,
     SchoolTestMixin,
     assign,
     make_course,
@@ -202,6 +203,26 @@ class RecordingTests(DayTestCase):
     нечем — «связать с другой строкой» больше не предлагается.
     """
 
+    def setUp(self):
+        """
+        Свой курс на живом годе: запись идёт только по прошедшим часам.
+
+        Общая фикстура стоит на зашитом 2026/2027, а он в будущем целиком —
+        записать там нечего. Поэтому здесь год вокруг сегодня, вчера и
+        позавчера, и порядок записи виден на настоящих датах.
+        """
+        super().setUp()
+        self.year = live_year(self.school)
+        self.course = make_course(self.school, self.year, "9Б Живой")
+        assign(self.user, self.course)
+
+        self.first = make_node(self.user, self.course, "Синус суммы", position=0)
+        self.second = make_node(self.user, self.course, "Косинус суммы", position=1)
+
+        today = timezone.localdate()
+        self.monday = make_slot(self.user, self.course, today - timedelta(days=2), 1)
+        self.tuesday = make_slot(self.user, self.course, today - timedelta(days=1), 1)
+
     def card(self, slot=None):
         return self.client.get(
             reverse("slot-card", args=[(slot or self.monday).pk])
@@ -261,12 +282,14 @@ class RecordingTests(DayTestCase):
 
     def test_the_api_stays_permissive_about_which_row(self):
         """
-        Ограничение — решение интерфейса, а не сервера.
+        Какую строку записать — решение интерфейса, а не сервера.
 
-        Тот же порядок, что с датой: сервер записывает, что ему сказали, а
-        не предлагать выбор — дело экрана. Правило «подтверждаем подсказку»
-        держится тем, что выбора негде взять, и добавлять к нему серверную
-        проверку значило бы завести второе место, где оно живёт.
+        Сервер записывает, что ему сказали: правило «подтверждаем подсказку»
+        держится тем, что выбора негде взять, и серверная проверка завела бы
+        второе место, где оно живёт.
+
+        А вот **какой час** записать, сервер решает сам: очередь без дырок —
+        это про данные, а не про экран.
         """
         response = self.client.patch(
             reverse("slot-detail", args=[self.monday.pk]),
@@ -277,6 +300,107 @@ class RecordingTests(DayTestCase):
         self.assertEqual(response.status_code, 200, response.content)
         self.monday.refresh_from_db()
         self.assertEqual(self.monday.lesson, self.second)
+
+
+class OrderTests(RecordingTests):
+    """
+    Записи идут подряд, и снять можно только последнюю.
+
+    Дырка посреди закрытого хвоста — два разных факта в одном виде: «провёл,
+    но не отметил» и «не было, а отменить забыл». Пока их не различили,
+    «сколько курса пройдено» неизвестно, а это число читает методист.
+
+    Снятие ограничено последней записью потому, что следа у него нет: у
+    оценки исправление — событие (`MarkChange`), а тут поле молча
+    возвращается в пустоту. Отмена последнего действия прошлого не
+    переписывает; всё, что глубже, — уже переписывает.
+    """
+
+    def record(self, slot, lesson):
+        return self.client.patch(
+            reverse("slot-detail", args=[slot.pk]),
+            {"lesson": lesson.pk if lesson else None},
+            format="json",
+        )
+
+    def test_the_first_record_may_be_any_past_hour(self):
+        """До первой записи очереди нет: система ничего и не обещала знать."""
+        answer = self.record(self.tuesday, self.first)
+
+        self.assertEqual(answer.status_code, 200, answer.content)
+
+    def test_after_the_first_one_the_order_is_strict(self):
+        self.record(self.monday, self.first)
+        later = make_slot(self.user, self.course, timezone.localdate(), 1)
+
+        refused = self.record(later, self.second)
+
+        self.assertEqual(refused.status_code, 400)
+        self.assertEqual(refused.json()["code"], "slot_record_out_of_order")
+        # называем час, который мешает: искать его руками — не ответ
+        self.assertEqual(refused.json()["params"]["date"], str(self.tuesday.date))
+
+    def test_a_cancelled_hour_closes_itself(self):
+        """«Не было» — такой же ответ, как «так и было», и очередь он двигает."""
+        self.record(self.monday, self.first)
+        self.client.patch(
+            reverse("slot-detail", args=[self.tuesday.pk]),
+            {"is_cancelled": True, "reason": "Карантин"},
+            format="json",
+        )
+        later = make_slot(self.user, self.course, timezone.localdate(), 1)
+
+        answer = self.record(later, self.second)
+
+        self.assertEqual(answer.status_code, 200, answer.content)
+
+    def test_the_future_is_not_recorded(self):
+        ahead = make_slot(
+            self.user, self.course, timezone.localdate() + timedelta(days=3), 1
+        )
+
+        refused = self.record(ahead, self.first)
+
+        self.assertEqual(refused.status_code, 400)
+        self.assertEqual(refused.json()["code"], "slot_record_future")
+
+    def test_only_the_last_record_is_withdrawn(self):
+        self.record(self.monday, self.first)
+        self.record(self.tuesday, self.second)
+
+        refused = self.record(self.monday, None)
+
+        self.assertEqual(refused.status_code, 400)
+        self.assertEqual(refused.json()["code"], "slot_record_not_last")
+        self.assertEqual(refused.json()["params"]["date"], str(self.tuesday.date))
+
+    def test_the_last_one_is_withdrawn_and_then_the_one_before(self):
+        """Отматывать можно сколько угодно — по одной, с конца."""
+        self.record(self.monday, self.first)
+        self.record(self.tuesday, self.second)
+
+        self.assertEqual(self.record(self.tuesday, None).status_code, 200)
+        self.assertEqual(self.record(self.monday, None).status_code, 200)
+
+    def test_an_older_record_is_not_rewritten_either(self):
+        """Правка записанного — то же переписывание прошлого, что и снятие."""
+        self.record(self.monday, self.first)
+        self.record(self.tuesday, self.second)
+
+        refused = self.record(self.monday, self.second)
+
+        self.assertEqual(refused.status_code, 400)
+        self.assertEqual(refused.json()["code"], "slot_record_not_last")
+
+    def test_cancelling_a_lesson_is_not_a_record_and_needs_no_order(self):
+        """Очередь — про записи; отмена и причина к ней отношения не имеют."""
+        answer = self.client.patch(
+            reverse("slot-detail", args=[self.tuesday.pk]),
+            {"is_cancelled": True, "reason": "Актированный день"},
+            format="json",
+        )
+
+        self.assertEqual(answer.status_code, 200, answer.content)
 
 
 class HomeworkTests(DayTestCase):

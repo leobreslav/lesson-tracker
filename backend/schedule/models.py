@@ -569,6 +569,51 @@ class Slot(models.Model):
             .exists()
         )
 
+    @staticmethod
+    def recorded_slots(course):
+        """Часы курса с записанной строкой плана, от старых к новым."""
+        return Slot.objects.filter(
+            course=course, is_cancelled=False, lesson__isnull=False
+        ).order_by("date", "lesson_number")
+
+    @staticmethod
+    def next_unclosed(course, today):
+        """
+        Час, который курс закрывает следующим, — или `None`, если нечего.
+
+        Порядок записи строгий и без дырок: прошедший час либо записан («так
+        и было»), либо отменён с причиной («не было»). Отменённых здесь нет
+        вовсе, и это не упущение: отменённый час закрыт самой отменой.
+
+        Дырка посреди закрытого хвоста — два разных факта в одном виде:
+        «провёл, но не отметил» и «не было, а отменить забыл». Пока их не
+        различили, неизвестно, сколько курса пройдено, а «пройдено» читает
+        методист.
+
+        **Счёт идёт от первой записи.** Учителю, который кнопкой не
+        пользуется, каждый прошедший час был бы долгом, и первое же нажатие
+        потребовало бы закрыть полгода — то есть не вспомнить, а нажать сто
+        раз. До начала учёта работает позиционная догадка, как работала
+        всегда; `None` тут значит «закрывать нечего», и первым можно
+        записать любой прошедший час.
+        """
+        past = list(
+            Slot.objects.filter(
+                course=course, is_cancelled=False, date__lte=today
+            ).order_by("date", "lesson_number")
+        )
+
+        started = next((i for i, slot in enumerate(past) if slot.lesson_id), None)
+        if started is None:
+            return None
+
+        return next((slot for slot in past[started:] if slot.lesson_id is None), None)
+
+    @staticmethod
+    def last_record(course):
+        """Последняя запись курса — единственная, которую можно снять."""
+        return Slot.recorded_slots(course).last()
+
     @classmethod
     def find_conflict(cls, *, teacher_id, year, date, lesson_number, exclude_pk=None):
         """

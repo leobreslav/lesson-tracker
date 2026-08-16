@@ -1,4 +1,4 @@
-import { PEOPLE, expect, ready, test } from './harness.js'
+import { PEOPLE, expect, liveCourse, ready, test } from './harness.js'
 
 /**
  * Даты прямо в таблице плана.
@@ -675,22 +675,18 @@ test('проведённый урок держится за дату и не п�
   signIn,
   api,
 }) => {
-  const teacher = await api(PEOPLE.ivanova)
-  const courses = await teacher.get('/api/courses/')
-  const course = courses.body.find((item) => item.name === COURSE)
-
-  const ribbon = await teacher.get(`/api/plan/layout/slots/?course=${course.id}`)
-  const tree = await teacher.get(`/api/plan/?course=${course.id}`)
-  const rows = tree.body.nodes.flatMap((node) =>
-    node.is_section ? node.children : [node],
-  )
-  // третий урок плана записываем за третьим часом — как оно и лежит сейчас
-  const anchored = rows[2]
-  const third = ribbon.body.slots[2]
-  await teacher.patch(`/api/slots/${third.id}/`, { lesson: anchored.id })
+  // курс живой: записать можно только прошедший час, а у посеянного года
+  // прошедших нет ни одного
+  const { course, rows } = await liveCourse(api)
+  const anchored = rows[0]
 
   await signIn(PEOPLE.ivanova)
-  await openPlan(page)
+  await page.goto('/plan')
+  await ready(page)
+  // выбираем по id, а не по названию: живых годов в базе несколько, и
+  // подпись курса несёт ещё и год
+  await page.getByLabel('Курс').selectOption(String(course.id))
+  await expect(page.locator('.plan-cards')).toBeVisible()
 
   const before = await dateOfLesson(page, anchored.title)
   const row = page.locator('.plan-row.lesson', { hasText: anchored.title }).first()
@@ -701,7 +697,7 @@ test('проведённый урок держится за дату и не п�
 
   // вставляем урок выше него — всё, что ниже, обычно уезжает на день
   const first = page.locator('.plan-row.lesson').first()
-  const drifting = rows[3].title
+  const drifting = rows[1].title
   const driftingBefore = await dateOfLesson(page, drifting)
 
   await first.hover()

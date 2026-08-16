@@ -393,7 +393,7 @@ export default function LessonScreen({ onLoggedOut }) {
                   // в журнале и вердикт в проверке работ. Без него исправить
                   // запись было бы нечем: «связать с другой строкой» больше
                   // не предлагается
-                    may ? (
+                    may && card.may_withdraw ? (
                       <button
                         type="button"
                         className="badge state good"
@@ -412,7 +412,22 @@ export default function LessonScreen({ onLoggedOut }) {
                     )
                   ) : (
                     may &&
-                    done && (
+                    done &&
+                    (card.record_after ? (
+                      // записи идут подряд: пока предыдущий час не закрыт,
+                      // кнопки нет, а рядом сказано, какой именно мешает.
+                      // Отказ после нажатия объяснил бы то же самое, но
+                      // задним числом
+                      <Link
+                        className="link-button"
+                        to={`/lesson/${card.record_after.id}`}
+                        title={t('lessonScreen.recordAfterHint')}
+                      >
+                        {t('lessonScreen.recordAfter', {
+                          date: longDate(card.record_after.date),
+                        })}
+                      </Link>
+                    ) : (
                       <button
                         type="button"
                         className="secondary compact"
@@ -423,7 +438,7 @@ export default function LessonScreen({ onLoggedOut }) {
                       >
                         {t('lessonScreen.bind')}
                       </button>
-                    )
+                    ))
                   )}
 
                   <Link className="link-button" to={inPlan}>

@@ -15,8 +15,10 @@
 from datetime import timedelta
 
 from django.urls import reverse
+from django.utils import timezone
 from rest_framework.test import APITestCase
 from schools.testing import (
+    live_year,
     MONDAY,
     SchoolTestMixin,
     assign,
@@ -49,18 +51,23 @@ class LessonRecordTestCase(SchoolTestMixin, APITestCase):
 
 class RecordTests(LessonRecordTestCase):
     def test_the_lesson_remembers_what_was_covered_and_who_taught_it(self):
-        slot = make_slot(self.user, self.course)
+        # запись идёт по прошедшему часу, а зашитый год стоит в будущем:
+        # курсу нужен живой, иначе записывать нечего
+        course = make_course(self.school, live_year(self.school), "9Б Живой")
+        assign(self.user, course)
+        topic = make_node(self.user, course, "Синус суммы")
+        slot = make_slot(self.user, course, timezone.localdate() - timedelta(days=1))
 
         response = self.client.patch(
             reverse("slot-detail", args=[slot.pk]),
-            {"lesson": self.topic.pk, "taught_by": self.colleague.pk},
+            {"lesson": topic.pk, "taught_by": self.colleague.pk},
             format="json",
         )
 
         self.assertEqual(response.status_code, 200, response.content)
         self.assertEqual(response.json()["lesson_title"], "Синус суммы")
         slot.refresh_from_db()
-        self.assertEqual(slot.lesson, self.topic)
+        self.assertEqual(slot.lesson, topic)
         self.assertEqual(slot.taught_by, self.colleague)
 
     def test_a_plan_lesson_of_another_course_cannot_be_named(self):

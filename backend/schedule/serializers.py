@@ -3,6 +3,7 @@ from calendars.serializers import CurrentSchoolDefault, school_years
 from config.errors import Codes, api_error, error_payload
 from calendars.models import SchoolYear
 from django.contrib.auth import get_user_model
+from django.utils import timezone
 from rest_framework import serializers
 from rest_framework.validators import UniqueTogetherValidator
 
@@ -393,6 +394,67 @@ class SlotSerializer(serializers.ModelSerializer):
             title=day.title,
         )
 
+    def check_record_order(self, course, lesson):
+        """
+        Записи идут подряд, и снять можно только последнюю.
+
+        Дырка посреди закрытого хвоста — два разных факта в одном виде:
+        «провёл, но не отметил» и «не было, а отменить забыл»; пока их не
+        различили, «сколько курса пройдено» неизвестно.
+
+        Снятие ограничено последней записью потому, что следа у него нет: у
+        оценки исправление — событие (`MarkChange`), а тут поле молча
+        возвращается в пустоту. Отмена последнего действия — это ещё не
+        переписывание прошлого; всё, что глубже, им уже было бы.
+        """
+        today = timezone.localdate()
+        slot = self.instance
+        was = slot.lesson_id
+
+        if lesson is None:
+            if was is None:
+                return
+            last = Slot.last_record(course)
+            if last is None or last.pk != slot.pk:
+                api_error(
+                    Codes.SLOT_RECORD_NOT_LAST,
+                    "Only the last record of a course can be withdrawn.",
+                    field="lesson",
+                    date=str(last.date) if last else "",
+                    number=last.lesson_number if last else 0,
+                )
+            return
+
+        if slot.date > today:
+            api_error(
+                Codes.SLOT_RECORD_FUTURE,
+                "A lesson can only be recorded once it has happened.",
+                field="lesson",
+            )
+
+        # правка уже записанного — то же переписывание прошлого, что и снятие
+        if was is not None:
+            last = Slot.last_record(course)
+            if last is None or last.pk != slot.pk:
+                api_error(
+                    Codes.SLOT_RECORD_NOT_LAST,
+                    "Only the last record of a course can be changed.",
+                    field="lesson",
+                    date=str(last.date) if last else "",
+                    number=last.lesson_number if last else 0,
+                )
+            return
+
+        nxt = Slot.next_unclosed(course, today)
+        if nxt is not None and nxt.pk != slot.pk:
+            api_error(
+                Codes.SLOT_RECORD_OUT_OF_ORDER,
+                f"Close {nxt.date} first: records go in order, without gaps.",
+                field="lesson",
+                date=str(nxt.date),
+                number=nxt.lesson_number,
+            )
+
     def validate(self, attrs):
         def value(name):
             return attrs.get(name, getattr(self.instance, name, None))
@@ -402,6 +464,13 @@ class SlotSerializer(serializers.ModelSerializer):
         slot_date = value("date")
 
         lesson = value("lesson")
+
+        # запись идёт строго по порядку, и меняется только последняя, —
+        # проверяется это лишь когда связь трогают, а не при каждой правке
+        # часа: отмена, причина и «кто вёл» к очереди отношения не имеют
+        if self.instance is not None and "lesson" in attrs:
+            self.check_record_order(course, lesson)
+
         if lesson is not None:
             if lesson.course_id != course.pk:
                 api_error(

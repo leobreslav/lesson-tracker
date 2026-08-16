@@ -84,20 +84,26 @@ class CountingTests(DebtTestCase):
         self.assertEqual(self.records()["unclosed"], 1)
         self.assertEqual(len(self.debts()), 1)
 
-    def test_an_old_gap_stops_nagging(self):
+    def test_an_old_gap_does_not_expire(self):
         """
-        Через две недели дожимать нечего: подсказка врёт, память не помнит.
+        Срока давности у долга нет — и это пересмотр прежнего решения.
 
-        Дыра при этом не заклеивается выдумкой — она просто перестаёт
-        считаться долгом и досчитывается позиционно, как было всегда.
+        Две недели тут были: старое переставало считаться и досчитывалось
+        позиционно, чтобы настойчивость не догоняла человека через месяц.
+        Отменено вместе со строгим порядком: при нём дырка не протухает, а
+        блокирует следующую запись, и амнистия означала бы навсегда закрытую
+        очередь.
+
+        Настойчивости при этом не прибавилось: долги видно в таблице плана,
+        куда приходят сами, а не полосой на дороге.
         """
         done = self.slot_on(30)
         done.lesson = self.first
         done.save(update_fields=["lesson"])
         self.slot_on(20, number=2)
 
-        self.assertEqual(self.records()["unclosed"], 0)
-        self.assertEqual(self.debts(), [])
+        self.assertEqual(self.records()["unclosed"], 1)
+        self.assertEqual(len(self.debts()), 1)
 
     def test_the_future_owes_nothing(self):
         done = self.slot_on(3)
