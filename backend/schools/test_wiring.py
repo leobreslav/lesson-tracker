@@ -20,9 +20,11 @@ from config.access import (
     IsTeacher,
     SchoolScopedViewSet,
 )
+from io import StringIO
 from pathlib import Path
 
 from django.core.exceptions import FieldDoesNotExist
+from django.core.management import call_command
 from django.test import SimpleTestCase
 from django.urls import URLPattern, URLResolver, get_resolver
 
@@ -272,3 +274,33 @@ class ActionCoverageTests(SimpleTestCase):
             [],
             "в ACTIONS_WITHOUT_ID остались действия, которых больше нет",
         )
+
+
+class MigrationTests(SimpleTestCase):
+    """
+    Модель изменили — миграция должна быть написана.
+
+    Сторож соседний, и стоит он здесь не от сегодняшней беды: сегодня
+    миграция как раз **была** написана и не была применена к базе
+    разработки, а этого ни один тест увидеть не может — и `manage.py test`,
+    и стенд браузерных тестов поднимают базу с нуля и мигрируют её целиком.
+    Единственная база, которая умеет отставать, — долгоживущая dev, и по
+    ней не гоняется ничего.
+
+    А вот обратный случай — поле в модели есть, миграции нет — ловится
+    отсюда и стоит дёшево: расхождение доедет до прода как падающий
+    `migrate` при старте контейнера.
+    """
+
+    # `makemigrations` сверяет историю миграций с базой, то есть ходит в
+    # неё; без этого `SimpleTestCase` запрещает запрос
+    databases = {"default"}
+
+    def test_the_models_have_no_changes_left_without_a_migration(self):
+        out = StringIO()
+        try:
+            call_command(
+                "makemigrations", "--check", "--dry-run", stdout=out, stderr=out
+            )
+        except SystemExit:
+            self.fail(f"модель изменена без миграции:\n{out.getvalue()}")
