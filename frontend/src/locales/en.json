@@ -781,9 +781,7 @@
     "allSaved": "Everything saved",
     "discard": "The lesson has unsaved changes. Close and lose them?",
     "attachments": "Resources",
-    "dropHere": "Drop files here",
-    "addFile": "Add a file…",
-    "addLink": "Add a link…",
+    "dropHere": "Drop files here, or click to choose",
     "linkUrl": "Address",
     "linkTitle": "Title",
     "download": "Download",
@@ -803,8 +801,12 @@
       "noSlot": "Does not fit into the school year",
       "notTaught": "the lesson has not been taught yet, and any edit above moves the date"
     },
-    "addText": "Add text…",
-    "textPlaceholder": "for example, «Textbook, §14»"
+    "textPlaceholder": "for example, «Textbook, §14»",
+    "add": {
+      "file": "Add a file…",
+      "link": "Add a link…",
+      "text": "Add text…"
+    }
   },
   "reviews": {
     "noTeacher": "nobody teaches it yet",
@@ -1051,7 +1053,6 @@
     "allPresent": "everybody was there",
     "removedStudent": "no longer in the course",
     "bind": "It was this one",
-    "addLink": "Add a link",
     "linkAddress": "Address",
     "linkTitle": "Title",
     "noStudents": "Nobody is enrolled in this course yet.",

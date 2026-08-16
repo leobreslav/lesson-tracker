@@ -160,6 +160,11 @@ test('материалом бывает просто строка текста',
   await panel.getByRole('button', { name: /Материалы/ }).click()
   await panel.getByRole('button', { name: 'Добавить текст…' }).click()
 
+  // кнопки уходят: висеть над открытой формой и предлагать то, что человек
+  // уже выбрал, им незачем — и двух форм разом не бывает
+  await expect(panel.getByRole('button', { name: 'Добавить ссылку…' })).toHaveCount(0)
+  await expect(panel.locator('.inline-form')).toHaveCount(1)
+
   const form = panel.locator('.inline-form')
   await form.getByLabel('Добавить текст…').fill('Мордкович, §14')
   await form.getByRole('button', { name: 'Добавить' }).click()
@@ -170,6 +175,15 @@ test('материалом бывает просто строка текста',
   // нажимать не на что: ни ссылки, ни кнопки скачивания
   await expect(row.locator('a')).toHaveCount(0)
   await expect(row.getByRole('button', { name: 'Мордкович, §14' })).toHaveCount(0)
+
+  // файл заводится так же: зона перетаскивания появляется по кнопке и
+  // занимает ряд, а не стоит всегда, делая из файла исключение
+  await panel.getByRole('button', { name: 'Добавить файл…' }).click()
+  const zone = panel.locator('.inline-form button.dropzone')
+  await expect(zone).toBeVisible()
+  await expect(panel.getByRole('button', { name: 'Добавить текст…' })).toHaveCount(0)
+  await panel.locator('.inline-form').getByRole('button', { name: 'Отмена' }).click()
+  await expect(panel.getByRole('button', { name: 'Добавить текст…' })).toBeVisible()
 
   // и это настоящая запись: пережила перезагрузку
   await page.reload()

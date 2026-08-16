@@ -5030,6 +5030,34 @@ input.lesson-title:focus {
   color: #b00020;
 }
 
+/*
+ * Зона перетаскивания — она же кнопка выбора файла.
+ *
+ * Стояла она в панели всегда, отчего файл вёл себя не как два соседних
+ * вида материала, а как исключение; теперь она появляется по кнопке
+ * «Добавить файл…» и занимает ряд, как форма ссылки или записи. Кнопкой
+ * она стала не ради вида: тащить умеют не все и не везде, а нажать —
+ * везде.
+ */
+button.dropzone {
+  flex: 1;
+  padding: 0.9rem;
+  text-align: center;
+  font: inherit;
+  font-size: 0.85rem;
+  color: #777;
+  background: none;
+  border: 2px dashed #d0d0d0;
+  border-radius: var(--row-radius);
+  cursor: pointer;
+  white-space: normal;
+}
+
+button.dropzone:hover:not(:disabled) {
+  color: #1a73e8;
+  border-color: #1a73e8;
+}
+
 .dropzone {
   padding: 0.9rem;
   text-align: center;

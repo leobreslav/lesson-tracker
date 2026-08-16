@@ -53,8 +53,11 @@ export default function LessonPanel({ nodeId, where = null, onClose, onSaved }) 
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
   const [overDropZone, setOverDropZone] = useState(false)
-  const [link, setLink] = useState(null) // {url, title} while the form is open
-  const [text, setText] = useState(null) // строка материала, пока её пишут
+  // какой материал заводят прямо сейчас: 'file' | 'link' | 'text'. Одно
+  // состояние на три формы — двух открытых разом не бывает
+  const [adding, setAdding] = useState(null)
+  const [link, setLink] = useState({ url: '', title: '' })
+  const [text, setText] = useState('')
 
   const fileInput = useRef(null)
 
@@ -129,6 +132,8 @@ export default function LessonPanel({ nodeId, where = null, onClose, onSaved }) 
         const added = await uploadAttachment({ planRow: nodeId, file })
         setAttachments((current) => [...current, added])
       }
+      // форма закрывается сама, как у ссылки и записи: файл уже в списке
+      setAdding(null)
       onSaved?.()
     } catch (err) {
       setError(err.message)
@@ -146,7 +151,7 @@ export default function LessonPanel({ nodeId, where = null, onClose, onSaved }) 
     try {
       const added = await addTextAttachment({ planRow: nodeId, title: text.trim() })
       setAttachments((current) => [...current, added])
-      setText(null)
+      setAdding(null)
       onSaved?.()
     } catch (err) {
       setError(err.message)
@@ -168,7 +173,7 @@ export default function LessonPanel({ nodeId, where = null, onClose, onSaved }) 
         title: link.title.trim() || link.url.trim(),
       })
       setAttachments((current) => [...current, added])
-      setLink(null)
+      setAdding(null)
       onSaved?.()
     } catch (err) {
       setError(err.message)
@@ -476,81 +481,99 @@ export default function LessonPanel({ nodeId, where = null, onClose, onSaved }) 
               <ul className="attachments">{attachments.map(attachmentRow)}</ul>
             )}
 
-            {!preview && (
-            <div
-              className={overDropZone ? 'dropzone over' : 'dropzone'}
-              onDragOver={(event) => {
-                event.preventDefault()
-                setOverDropZone(true)
-              }}
-              onDragLeave={() => setOverDropZone(false)}
-              onDrop={onDrop}
-            >
-              {t('lesson.dropHere')}
-            </div>
-            )}
-
             <input
               ref={fileInput}
               type="file"
               multiple
               hidden
-              aria-label={t('lesson.addFile')}
+              aria-label={t('lesson.add.file')}
               onChange={(event) => {
                 attach([...event.target.files])
                 event.target.value = ''
               }}
             />
 
-            {!preview && (
+            {/*
+              Три вида материала — три кнопки, и каждая открывает свою форму
+              **вместо** этого ряда.
+
+              Кнопки висели над открытой формой и продолжали предлагать то,
+              что человек уже выбрал; открыть можно было две формы разом.
+              Зона перетаскивания при этом стояла всегда, отчего файл вёл
+              себя не как два соседних вида, а как исключение.
+            */}
+            {!preview && adding === null && (
               <div className="actions wrap">
+                {['file', 'link', 'text'].map((kind) => (
+                  <button
+                    key={kind}
+                    type="button"
+                    className="secondary"
+                    disabled={busy}
+                    onClick={() => {
+                      setLink({ url: '', title: '' })
+                      setText('')
+                      setAdding(kind)
+                    }}
+                  >
+                    {t(`lesson.add.${kind}`)}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {adding === 'file' && (
+              <div className="inline-form">
+                {/* та же зона, только по требованию: и цель для перетаскивания,
+                    и кнопка выбора — тащить умеют не все и не везде */}
                 <button
                   type="button"
-                  className="secondary"
+                  className={overDropZone ? 'dropzone over' : 'dropzone'}
                   disabled={busy}
                   onClick={() => fileInput.current.click()}
+                  onDragOver={(event) => {
+                    event.preventDefault()
+                    setOverDropZone(true)
+                  }}
+                  onDragLeave={() => setOverDropZone(false)}
+                  onDrop={onDrop}
                 >
-                  {t('lesson.addFile')}
+                  {t('lesson.dropHere')}
                 </button>
                 <button
                   type="button"
                   className="secondary"
-                  disabled={busy}
-                  onClick={() => setLink({ url: '', title: '' })}
+                  onClick={() => setAdding(null)}
                 >
-                  {t('lesson.addLink')}
-                </button>
-                <button
-                  type="button"
-                  className="secondary"
-                  disabled={busy}
-                  onClick={() => setText('')}
-                >
-                  {t('lesson.addText')}
+                  {t('common.cancel')}
                 </button>
               </div>
             )}
 
-            {text !== null && (
+            {adding === 'text' && (
               <form className="inline-form" onSubmit={submitText}>
                 <input
                   autoFocus
                   value={text}
                   maxLength={200}
                   placeholder={t('lesson.textPlaceholder')}
-                  aria-label={t('lesson.addText')}
+                  aria-label={t('lesson.add.text')}
                   onChange={(event) => setText(event.target.value)}
                 />
                 <button type="submit" disabled={busy || !text.trim()}>
                   {t('common.add')}
                 </button>
-                <button type="button" className="secondary" onClick={() => setText(null)}>
+                <button
+                  type="button"
+                  className="secondary"
+                  onClick={() => setAdding(null)}
+                >
                   {t('common.cancel')}
                 </button>
               </form>
             )}
 
-            {link && (
+            {adding === 'link' && (
               <form className="inline-form" onSubmit={submitLink}>
                 <input
                   autoFocus
@@ -572,12 +595,13 @@ export default function LessonPanel({ nodeId, where = null, onClose, onSaved }) 
                 <button
                   type="button"
                   className="secondary"
-                  onClick={() => setLink(null)}
+                  onClick={() => setAdding(null)}
                 >
                   {t('common.cancel')}
                 </button>
               </form>
             )}
+
             </>
             )}
           </section>

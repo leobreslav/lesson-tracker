@@ -632,7 +632,7 @@ export default function LessonScreen({ onLoggedOut }) {
                 disabled={busy}
                 onClick={() => open('link')}
               >
-                {t('lessonScreen.addLink')}
+                {t('lesson.add.link')}
               </button>
               <button
                 type="button"
@@ -640,7 +640,7 @@ export default function LessonScreen({ onLoggedOut }) {
                 disabled={busy}
                 onClick={() => open('text')}
               >
-                {t('lesson.addText')}
+                {t('lesson.add.text')}
               </button>
               <button
                 type="button"
@@ -648,7 +648,7 @@ export default function LessonScreen({ onLoggedOut }) {
                 disabled={busy}
                 onClick={() => fileInput.current?.click()}
               >
-                {t('lesson.addFile')}
+                {t('lesson.add.file')}
               </button>
               {/* нативный input прячется: его подпись браузер рисует сам,
                   на своём языке и своей кнопкой */}
@@ -656,7 +656,7 @@ export default function LessonScreen({ onLoggedOut }) {
                 ref={fileInput}
                 type="file"
                 className="hidden-file"
-                aria-label={t('lesson.addFile')}
+                aria-label={t('lesson.add.file')}
                 onChange={(event) => {
                   const file = event.target.files?.[0]
                   if (file) run(() => uploadAttachment({ planRow: topic.id, file }))
@@ -711,7 +711,7 @@ export default function LessonScreen({ onLoggedOut }) {
               value={text}
               maxLength={200}
               placeholder={t('lesson.textPlaceholder')}
-              aria-label={t('lesson.addText')}
+              aria-label={t('lesson.add.text')}
               onChange={(event) => setText(event.target.value)}
             />
             <button type="submit" disabled={busy || !text.trim()}>
