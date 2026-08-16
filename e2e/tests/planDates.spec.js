@@ -66,6 +66,24 @@ test('даты видны, сводка сходится с раскладкой
   await expect(page.locator('.plan-row.lesson .plan-date')).toHaveCount(lessons)
 })
 
+test('над таблицей одна полоса, а не три строки', async ({ page, signIn }) => {
+  // Чекбоксы, «Утверждён…» и «уроков вне тем» стояли тремя блоками страницы,
+  // каждый со своим зазором, и вместе занимали высоту шести строк таблицы.
+  await signIn(PEOPLE.ivanova)
+  await openPlan(page)
+
+  const bar = page.locator('.plan-bar')
+  await expect(bar).toBeVisible()
+  const box = await bar.boundingBox()
+  expect(Math.round(box.height), 'полоса разъехалась на несколько строк').toBeLessThan(60)
+
+  // чекбоксы внутри неё и прижаты вправо
+  const toggles = await bar.locator('.dates-toggle').boundingBox()
+  expect(Math.round(toggles.x + toggles.width)).toBeLessThanOrEqual(
+    Math.round(box.x + box.width) + 1,
+  )
+})
+
 test('дата в плане ведёт в занятие этого дня', async ({ page, signIn }) => {
   // Строка плана отвечает «что проходим», занятие — «как оно прошло»:
   // журнал, работы, отмена. Обратный путь (со страницы занятия в план) есть

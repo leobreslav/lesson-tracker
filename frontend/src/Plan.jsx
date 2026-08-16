@@ -666,79 +666,95 @@ export default function Plan({ onLoggedOut }) {
             </div>
           )}
 
+          {/*
+            Одна строка на всё, что стоит между сводкой и таблицей.
+
+            Было три: чекбоксы, прижатые вправо, строка про утверждение и
+            замечание про уроки вне тем — каждая своим блоком страницы, то
+            есть с зазором в рем сверху и снизу. Три строки текста занимали
+            высоту таблицы из шести уроков и ничего друг о друге не
+            сообщали.
+
+            Слева — что сказано про этот план, справа — что показывать в
+            таблице. Заголовок терма в эту строку **не** переехал, хотя
+            стоит следом: он повторяется у каждой четверти внутри таблицы, и
+            место ему там.
+          */}
+          <div className="plan-bar">
+            {/* состояние утверждения: у плана его нет, оно есть у снимка */}
+            {baseline && (baseline.approved || baseline.request) && (
+              <p className={`hint approval ${baseline.request?.status ?? 'approved'}`}>
+                {baseline.request?.status === 'pending' &&
+                  t('plan.baseline.pending', {
+                    name: baseline.request.reviewer?.name ?? '',
+                  })}
+                {baseline.request?.status === 'returned' && (
+                  <>
+                    {t('plan.baseline.returned', {
+                      name: baseline.request.reviewer?.name ?? '',
+                    })}{' '}
+                    <b>{baseline.request.comment}</b>
+                  </>
+                )}
+                {!baseline.request &&
+                  baseline.approved &&
+                  t(
+                    baseline.approved.self_approved
+                      ? 'plan.baseline.approvedSelf'
+                      : 'plan.baseline.approved',
+                    {
+                      date: shortDate(baseline.approved.approved_at.slice(0, 10)),
+                      name: baseline.approved.reviewer?.name ?? '',
+                    },
+                  )}
+              </p>
+            )}
+
+            {/* уроки вне тем — не число сводки, а замечание о структуре */}
+            {data && blocks.loose > 0 && (
+              <p className="hint plan-loose">
+                {t('plan.loose', { count: blocks.loose })}
+              </p>
+            )}
+
           {ribbon.length > 0 && (
             <div className="dates-toggle">
-              <label className="checkbox">
-                <input
-                  type="checkbox"
-                  checked={showDates}
-                  onChange={(event) => {
-                    setShowDates(event.target.checked)
-                    remember(DATES_KEY, event.target.checked)
-                  }}
-                />
-                {t('plan.summary.dates')}
-              </label>
-              <label className="checkbox">
-                <input
-                  type="checkbox"
-                  checked={showWeeks}
-                  onChange={(event) => {
-                    setShowWeeks(event.target.checked)
-                    remember(WEEKS_KEY, event.target.checked)
-                  }}
-                />
-                {t('plan.summary.weeks')}
-              </label>
-              <label className="checkbox">
-                <input
-                  type="checkbox"
-                  checked={showFree}
-                  onChange={(event) => {
-                    setShowFree(event.target.checked)
-                    remember(FREE_KEY, event.target.checked)
-                  }}
-                />
-                {t('plan.summary.freeSlots')}
-              </label>
+                <label className="checkbox">
+                  <input
+                    type="checkbox"
+                    checked={showDates}
+                    onChange={(event) => {
+                      setShowDates(event.target.checked)
+                      remember(DATES_KEY, event.target.checked)
+                    }}
+                  />
+                  {t('plan.summary.dates')}
+                </label>
+                <label className="checkbox">
+                  <input
+                    type="checkbox"
+                    checked={showWeeks}
+                    onChange={(event) => {
+                      setShowWeeks(event.target.checked)
+                      remember(WEEKS_KEY, event.target.checked)
+                    }}
+                  />
+                  {t('plan.summary.weeks')}
+                </label>
+                <label className="checkbox">
+                  <input
+                    type="checkbox"
+                    checked={showFree}
+                    onChange={(event) => {
+                      setShowFree(event.target.checked)
+                      remember(FREE_KEY, event.target.checked)
+                    }}
+                  />
+                  {t('plan.summary.freeSlots')}
+                </label>
             </div>
           )}
-
-          {/* состояние утверждения: у плана его нет, оно есть у снимка */}
-          {baseline && (baseline.approved || baseline.request) && (
-            <p className={`hint approval ${baseline.request?.status ?? 'approved'}`}>
-              {baseline.request?.status === 'pending' &&
-                t('plan.baseline.pending', {
-                  name: baseline.request.reviewer?.name ?? '',
-                })}
-              {baseline.request?.status === 'returned' && (
-                <>
-                  {t('plan.baseline.returned', {
-                    name: baseline.request.reviewer?.name ?? '',
-                  })}{' '}
-                  <b>{baseline.request.comment}</b>
-                </>
-              )}
-              {!baseline.request &&
-                baseline.approved &&
-                t(
-                  baseline.approved.self_approved
-                    ? 'plan.baseline.approvedSelf'
-                    : 'plan.baseline.approved',
-                  {
-                    date: shortDate(baseline.approved.approved_at.slice(0, 10)),
-                    name: baseline.approved.reviewer?.name ?? '',
-                  },
-                )}
-            </p>
-          )}
-
-          {/* уроки вне тем — не число сводки, а замечание о структуре */}
-          {data && blocks.loose > 0 && (
-            <p className="hint plan-loose">
-              {t('plan.loose', { count: blocks.loose })}
-            </p>
-          )}
+          </div>
 
           {error && (
             <p className="error" role="alert">
