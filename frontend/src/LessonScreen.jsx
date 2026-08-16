@@ -9,6 +9,7 @@ import { useDismissable } from './UserMenu'
 import { iconFor } from './fileKind'
 import {
   addLinkAttachment,
+  addTextAttachment,
   createWork,
   deleteAttachment,
   fetchSlotCard,
@@ -103,7 +104,7 @@ export default function LessonScreen({ onLoggedOut }) {
   // вопрос «что сейчас сохранится»
   const [editing, setEditing] = useState(null)
   const [adding, setAdding] = useState(null) // 'work' | 'homework'
-  const [form, setForm] = useState(null) // 'rename' | 'cancel' | 'link'
+  const [form, setForm] = useState(null) // 'rename' | 'cancel' | 'link' | 'text'
   const [text, setText] = useState('')
   const [link, setLink] = useState({ url: '', title: '' })
   const [menuOpen, setMenuOpen] = useState(false)
@@ -298,6 +299,12 @@ export default function LessonScreen({ onLoggedOut }) {
       return
     }
     if (!value) return
+
+    // материал без файла и адреса: сказанное и есть весь материал
+    if (form === 'text') {
+      run(() => addTextAttachment({ planRow: topic.id, title: value }))
+      return
+    }
 
     // переименование — жёсткая правка: та же строка, сказанная точнее
     // («Синус суммы. Начало»). Меняется программа курса, и это осознанно
@@ -631,6 +638,14 @@ export default function LessonScreen({ onLoggedOut }) {
                 type="button"
                 className="secondary compact"
                 disabled={busy}
+                onClick={() => open('text')}
+              >
+                {t('lesson.addText')}
+              </button>
+              <button
+                type="button"
+                className="secondary compact"
+                disabled={busy}
                 onClick={() => fileInput.current?.click()}
               >
                 {t('lesson.addFile')}
@@ -658,7 +673,9 @@ export default function LessonScreen({ onLoggedOut }) {
                 <span className="attachment-icon" aria-hidden="true">
                   {iconFor(item)}
                 </span>
-                {item.kind === 'link' ? (
+                {item.kind === 'text' ? (
+                  <span className="title">{item.title}</span>
+                ) : item.kind === 'link' ? (
                   <a href={item.url} target="_blank" rel="noreferrer" className="title">
                     {item.title}
                   </a>
@@ -685,6 +702,25 @@ export default function LessonScreen({ onLoggedOut }) {
               </li>
             ))}
           </ul>
+        )}
+
+        {editable && form === 'text' && (
+          <form className="row" onSubmit={submit}>
+            <input
+              autoFocus
+              value={text}
+              maxLength={200}
+              placeholder={t('lesson.textPlaceholder')}
+              aria-label={t('lesson.addText')}
+              onChange={(event) => setText(event.target.value)}
+            />
+            <button type="submit" disabled={busy || !text.trim()}>
+              {t('common.save')}
+            </button>
+            <button type="button" className="secondary" onClick={() => setForm(null)}>
+              {t('common.cancel')}
+            </button>
+          </form>
         )}
 
         {editable && form === 'link' && (

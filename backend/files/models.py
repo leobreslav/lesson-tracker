@@ -20,7 +20,10 @@ from django.db.models import Q
 
 KIND_FILE = "file"
 KIND_LINK = "link"
-KINDS = ((KIND_FILE, "file"), (KIND_LINK, "link"))
+# A resource that is only named: «Мордкович, §14», «принести линейку».
+# Nothing is stored and nothing is fetched — the title *is* the resource.
+KIND_TEXT = "text"
+KINDS = ((KIND_FILE, "file"), (KIND_LINK, "link"), (KIND_TEXT, "text"))
 
 
 class StoredFile(models.Model):
@@ -76,7 +79,12 @@ class StoredFile(models.Model):
 
 class Attachment(models.Model):
     """
-    Ссылка на файл или на адрес в сети — из одного места, где она нужна.
+    Материал урока: файл, адрес в сети или просто запись.
+
+    Третий вид не хранит и не открывает ничего — «Мордкович, §14», «принести
+    линейку». Своего поля ему не нужно: название и есть весь материал, а
+    заводить ради него отдельную таблицу значило бы делить надвое один
+    список, который человек видит и правит как один.
 
     Мест три, и ровно одно у каждой ссылки: строка учебного плана, строка
     шаблона на полке и **работа конкретного ученика** (скан того, что он
@@ -160,6 +168,7 @@ class Attachment(models.Model):
                 condition=(
                     Q(kind=KIND_FILE, stored_file__isnull=False)
                     | Q(kind=KIND_LINK, stored_file__isnull=True)
+                    | Q(kind=KIND_TEXT, stored_file__isnull=True, url="")
                 ),
                 name="attachment_kind_matches_target",
             ),
@@ -202,6 +211,14 @@ class Attachment(models.Model):
                 problems["stored_file"] = "A link attachment must not name a file."
             if not self.url:
                 problems["url"] = "A link attachment must carry an address."
+        if self.kind == KIND_TEXT:
+            # у записи нет цели вовсе: её название и есть весь материал
+            if self.stored_file_id is not None:
+                problems["stored_file"] = "A text resource must not name a file."
+            if self.url:
+                problems["url"] = "A text resource carries no address."
+            if not self.title.strip():
+                problems["title"] = "A text resource is its title."
 
         if problems:
             raise ValidationError(problems)

@@ -6,6 +6,7 @@ import Rendered from './Markdown'
 import { formatSize, iconFor } from './fileKind'
 import {
   addLinkAttachment,
+  addTextAttachment,
   deleteAttachment,
   fetchPlanNode,
   openAttachment,
@@ -53,6 +54,7 @@ export default function LessonPanel({ nodeId, where = null, onClose, onSaved }) 
   const [error, setError] = useState(null)
   const [overDropZone, setOverDropZone] = useState(false)
   const [link, setLink] = useState(null) // {url, title} while the form is open
+  const [text, setText] = useState(null) // строка материала, пока её пишут
 
   const fileInput = useRef(null)
 
@@ -127,6 +129,24 @@ export default function LessonPanel({ nodeId, where = null, onClose, onSaved }) 
         const added = await uploadAttachment({ planRow: nodeId, file })
         setAttachments((current) => [...current, added])
       }
+      onSaved?.()
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const submitText = async (event) => {
+    event.preventDefault()
+    if (!text.trim()) return
+
+    setBusy(true)
+    setError(null)
+    try {
+      const added = await addTextAttachment({ planRow: nodeId, title: text.trim() })
+      setAttachments((current) => [...current, added])
+      setText(null)
       onSaved?.()
     } catch (err) {
       setError(err.message)
@@ -268,7 +288,11 @@ export default function LessonPanel({ nodeId, where = null, onClose, onSaved }) 
           {iconFor(attachment)}
         </span>
 
-        {attachment.kind === 'link' ? (
+        {/* у записи нет цели: её название и есть весь материал, и нажимать
+            на него некуда */}
+        {attachment.kind === 'text' ? (
+          <span className="title">{attachment.title}</span>
+        ) : attachment.kind === 'link' ? (
           <a href={attachment.url} target="_blank" rel="noreferrer" className="title">
             {attachment.title}
           </a>
@@ -496,7 +520,34 @@ export default function LessonPanel({ nodeId, where = null, onClose, onSaved }) 
                 >
                   {t('lesson.addLink')}
                 </button>
+                <button
+                  type="button"
+                  className="secondary"
+                  disabled={busy}
+                  onClick={() => setText('')}
+                >
+                  {t('lesson.addText')}
+                </button>
               </div>
+            )}
+
+            {text !== null && (
+              <form className="inline-form" onSubmit={submitText}>
+                <input
+                  autoFocus
+                  value={text}
+                  maxLength={200}
+                  placeholder={t('lesson.textPlaceholder')}
+                  aria-label={t('lesson.addText')}
+                  onChange={(event) => setText(event.target.value)}
+                />
+                <button type="submit" disabled={busy || !text.trim()}>
+                  {t('common.add')}
+                </button>
+                <button type="button" className="secondary" onClick={() => setText(null)}>
+                  {t('common.cancel')}
+                </button>
+              </form>
             )}
 
             {link && (

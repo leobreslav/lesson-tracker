@@ -391,6 +391,17 @@ export const uploadAttachment = ({ planRow, templateRow, studentWork, file, titl
   return request('/api/attachments/', { method: 'POST', body: form })
 }
 
+/** Материал, у которого нет ни файла, ни адреса: «Мордкович, §14». */
+export const addTextAttachment = ({ planRow, templateRow, title }) =>
+  request('/api/attachments/', {
+    method: 'POST',
+    body: {
+      ...(planRow ? { plan_row: planRow } : { template_row: templateRow }),
+      kind: 'text',
+      title,
+    },
+  })
+
 export const addLinkAttachment = ({ planRow, templateRow, url, title }) =>
   request('/api/attachments/', {
     method: 'POST',

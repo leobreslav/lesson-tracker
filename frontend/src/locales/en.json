@@ -230,7 +230,8 @@
     "split_not_in_course": "That student does not study in this course.",
     "not_on_paper": "This work is not written on paper: there is nothing to split.",
     "plan_lesson_taught": "«{{title}}» was taught on {{date}}: a lesson already given keeps its place.",
-    "slot_lesson_taken": "«{{title}}» is already recorded on {{date}}."
+    "slot_lesson_taken": "«{{title}}» is already recorded on {{date}}.",
+    "attachment_title_required": "A text resource is its title — it cannot be empty."
   },
   "classPicker": {
     "label": "Classes:",
@@ -801,7 +802,9 @@
       "taughtOn": "Taught on {{date}}",
       "noSlot": "Does not fit into the school year",
       "notTaught": "the lesson has not been taught yet, and any edit above moves the date"
-    }
+    },
+    "addText": "Add text…",
+    "textPlaceholder": "for example, «Textbook, §14»"
   },
   "reviews": {
     "noTeacher": "nobody teaches it yet",

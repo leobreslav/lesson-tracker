@@ -150,6 +150,35 @@ test('правка помечается несохранённой и доезж
   )
 })
 
+test('материалом бывает просто строка текста', async ({ page, signIn }) => {
+  // «Мордкович, §14», «принести линейку» — материал, который нечего
+  // открывать: его название и есть он весь.
+  await signIn(PEOPLE.ivanova)
+  await openPlan(page)
+
+  const panel = await openLesson(page, 'Простые и составные числа')
+  await panel.getByRole('button', { name: /Материалы/ }).click()
+  await panel.getByRole('button', { name: 'Добавить текст…' }).click()
+
+  const form = panel.locator('.inline-form')
+  await form.getByLabel('Добавить текст…').fill('Мордкович, §14')
+  await form.getByRole('button', { name: 'Добавить' }).click()
+
+  const row = panel.locator('.attachment')
+  await expect(row).toHaveCount(1)
+  await expect(row.locator('.title')).toHaveText('Мордкович, §14')
+  // нажимать не на что: ни ссылки, ни кнопки скачивания
+  await expect(row.locator('a')).toHaveCount(0)
+  await expect(row.getByRole('button', { name: 'Мордкович, §14' })).toHaveCount(0)
+
+  // и это настоящая запись: пережила перезагрузку
+  await page.reload()
+  await ready(page)
+  await openPlan(page)
+  const again = await openLesson(page, 'Простые и составные числа')
+  await expect(again.locator('.attachment .title')).toHaveText('Мордкович, §14')
+})
+
 test('ссылка добавляется к уроку и сразу видна значком', async ({ page, signIn }) => {
   await signIn(PEOPLE.ivanova)
   await openPlan(page)

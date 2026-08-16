@@ -30,6 +30,8 @@ const MB = KB * 1024
 /** The icon for an attachment: by extension first, by declared type second. */
 export function iconFor({ kind, file_name: name, content_type: type } = {}) {
   if (kind === 'link') return '🔗'
+  // запись: ни файла, ни адреса — только строка, которую написали руками
+  if (kind === 'text') return '📝'
 
   const extension = String(name || '')
     .split('.')

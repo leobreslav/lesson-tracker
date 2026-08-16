@@ -253,6 +253,49 @@ class UploadTests(FilesTestCase):
         self.assertEqual(response.data["kind"], "link")
         self.assertFalse(StoredFile.objects.exists())
 
+    def text_resource(self, title="Мордкович, §14", **extra):
+        return self.client.post(
+            reverse("attachment-list"),
+            {"plan_row": self.lesson.pk, "kind": "text", "title": title, **extra},
+            format="json",
+        )
+
+    def test_a_text_resource_is_its_title(self):
+        """Ни файла, ни адреса: «Мордкович, §14» — уже весь материал."""
+        response = self.text_resource()
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.data["kind"], "text")
+        self.assertEqual(response.data["title"], "Мордкович, §14")
+        self.assertEqual(response.data["url"], "")
+        self.assertFalse(StoredFile.objects.exists())
+
+    def test_a_text_resource_without_a_title_is_refused(self):
+        """Пустая запись — материал, о котором ничего не сказано."""
+        refused = self.text_resource(title="   ")
+
+        self.assertEqual(refused.status_code, 400)
+        self.assertEqual(refused.data["code"], "attachment_title_required")
+
+    def test_a_text_resource_carries_no_address(self):
+        refused = self.text_resource(url="https://example.org/task")
+
+        self.assertEqual(refused.status_code, 400)
+        self.assertEqual(refused.data["code"], "attachment_kind_mismatch")
+
+    def test_a_text_resource_lives_in_the_same_list(self):
+        """Список материалов один: делить его по видам незачем."""
+        self.text_resource()
+        self.client.post(
+            reverse("attachment-list"),
+            {"plan_row": self.lesson.pk, "url": "https://example.org/", "title": "Разбор"},
+            format="json",
+        )
+
+        listed = self.client.get(reverse("attachment-list") + f"?plan_row={self.lesson.pk}")
+
+        self.assertEqual([row["kind"] for row in listed.data], ["text", "link"])
+
     def test_a_section_header_takes_no_attachments(self):
         section = make_node(self.user, self.course, "Тема", section=True)
         refused = self.attach_via_api(row=section)

@@ -2,7 +2,7 @@ from config.errors import Codes, api_error
 from django.db.models import Count
 from rest_framework import serializers
 
-from .models import Attachment, KIND_FILE, KIND_LINK, StoredFile
+from .models import Attachment, KIND_FILE, KIND_LINK, KIND_TEXT, KINDS, StoredFile
 
 
 def with_sharing(queryset):
@@ -71,6 +71,9 @@ class AttachmentCreateSerializer(serializers.Serializer):
     title = serializers.CharField(max_length=200, required=False, allow_blank=True)
     url = serializers.URLField(max_length=500, required=False, allow_blank=True)
     file = serializers.FileField(required=False)
+    # вид называется только у записи: у файла и ссылки он и так виден по
+    # тому, что прислали, а у записи присылать нечего
+    kind = serializers.ChoiceField(choices=KINDS, required=False)
 
     def get_fields(self):
         from .access import (
@@ -112,6 +115,21 @@ class AttachmentCreateSerializer(serializers.Serializer):
 
         upload = attrs.get("file")
         url = attrs.get("url")
+
+        if attrs.get("kind") == KIND_TEXT:
+            if upload or url:
+                api_error(
+                    Codes.ATTACHMENT_KIND_MISMATCH,
+                    "A text resource carries neither a file nor an address.",
+                    field="file",
+                )
+            if not (attrs.get("title") or "").strip():
+                api_error(
+                    Codes.ATTACHMENT_TITLE_REQUIRED,
+                    "A text resource is its title — it cannot be empty.",
+                    field="title",
+                )
+            return attrs
 
         if bool(upload) == bool(url):
             api_error(

@@ -146,6 +146,7 @@ class Codes:
     CONTENT_ON_SECTION = "content_on_section"
     ATTACHMENT_OWNER_REQUIRED = "attachment_owner_required"
     ATTACHMENT_KIND_MISMATCH = "attachment_kind_mismatch"
+    ATTACHMENT_TITLE_REQUIRED = "attachment_title_required"
     ATTACHMENT_FORBIDDEN = "attachment_forbidden"
     URL_REQUIRED = "url_required"
     FILE_TYPE_NOT_ALLOWED = "file_type_not_allowed"
