@@ -53,9 +53,8 @@ export default function LessonPanel({ nodeId, where = null, onClose, onSaved }) 
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
   const [overDropZone, setOverDropZone] = useState(false)
-  // какой материал заводят прямо сейчас: 'file' | 'link' | 'text'. Одно
-  // состояние на три формы — двух открытых разом не бывает
-  const [adding, setAdding] = useState(null)
+  // поля добавления стоят открытыми, и в них просто набирают; закрывать
+  // нечего, поэтому и состояния «какую форму открыли» нет
   const [link, setLink] = useState({ url: '', title: '' })
   const [text, setText] = useState('')
 
@@ -132,8 +131,6 @@ export default function LessonPanel({ nodeId, where = null, onClose, onSaved }) 
         const added = await uploadAttachment({ planRow: nodeId, file })
         setAttachments((current) => [...current, added])
       }
-      // форма закрывается сама, как у ссылки и записи: файл уже в списке
-      setAdding(null)
       onSaved?.()
     } catch (err) {
       setError(err.message)
@@ -151,7 +148,7 @@ export default function LessonPanel({ nodeId, where = null, onClose, onSaved }) 
     try {
       const added = await addTextAttachment({ planRow: nodeId, title: text.trim() })
       setAttachments((current) => [...current, added])
-      setAdding(null)
+      setText('')
       onSaved?.()
     } catch (err) {
       setError(err.message)
@@ -173,7 +170,7 @@ export default function LessonPanel({ nodeId, where = null, onClose, onSaved }) 
         title: link.title.trim() || link.url.trim(),
       })
       setAttachments((current) => [...current, added])
-      setAdding(null)
+      setLink({ url: '', title: '' })
       onSaved?.()
     } catch (err) {
       setError(err.message)
@@ -494,38 +491,21 @@ export default function LessonPanel({ nodeId, where = null, onClose, onSaved }) 
             />
 
             {/*
-              Три вида материала — три кнопки, и каждая открывает свою форму
-              **вместо** этого ряда.
+              Три вида материала — три ряда, и все три стоят открытыми.
 
-              Кнопки висели над открытой формой и продолжали предлагать то,
-              что человек уже выбрал; открыть можно было две формы разом.
-              Зона перетаскивания при этом стояла всегда, отчего файл вёл
-              себя не как два соседних вида, а как исключение.
+              Сначала это были кнопки, открывающие форму; кнопки висели над
+              открытой формой и предлагали то, что человек уже выбрал.
+              Убрали и их: нажатие «сейчас я буду добавлять ссылку» ничего
+              не решает — решает то, что человек написал. Ряд с пустым полем
+              занимает столько же места, сколько кнопка, и на один клик
+              меньше.
+
+              В просмотре рядов нет вовсе: там ничего не заводят.
             */}
-            {!preview && adding === null && (
-              <div className="actions wrap">
-                {['file', 'link', 'text'].map((kind) => (
-                  <button
-                    key={kind}
-                    type="button"
-                    className="secondary"
-                    disabled={busy}
-                    onClick={() => {
-                      setLink({ url: '', title: '' })
-                      setText('')
-                      setAdding(kind)
-                    }}
-                  >
-                    {t(`lesson.add.${kind}`)}
-                  </button>
-                ))}
-              </div>
-            )}
-
-            {adding === 'file' && (
-              <div className="inline-form">
-                {/* та же зона, только по требованию: и цель для перетаскивания,
-                    и кнопка выбора — тащить умеют не все и не везде */}
+            {!preview && (
+              <>
+                {/* зона перетаскивания — она же кнопка выбора: тащить умеют
+                    не все и не везде, а нажать везде */}
                 <button
                   type="button"
                   className={overDropZone ? 'dropzone over' : 'dropzone'}
@@ -540,66 +520,39 @@ export default function LessonPanel({ nodeId, where = null, onClose, onSaved }) 
                 >
                   {t('lesson.dropHere')}
                 </button>
-                <button
-                  type="button"
-                  className="secondary"
-                  onClick={() => setAdding(null)}
-                >
-                  {t('common.cancel')}
-                </button>
-              </div>
-            )}
 
-            {adding === 'text' && (
-              <form className="inline-form" onSubmit={submitText}>
-                <input
-                  autoFocus
-                  value={text}
-                  maxLength={200}
-                  placeholder={t('lesson.textPlaceholder')}
-                  aria-label={t('lesson.add.text')}
-                  onChange={(event) => setText(event.target.value)}
-                />
-                <button type="submit" disabled={busy || !text.trim()}>
-                  {t('common.add')}
-                </button>
-                <button
-                  type="button"
-                  className="secondary"
-                  onClick={() => setAdding(null)}
-                >
-                  {t('common.cancel')}
-                </button>
-              </form>
-            )}
+                <form className="inline-form" onSubmit={submitLink}>
+                  <input
+                    value={link.url}
+                    placeholder="https://…"
+                    aria-label={t('lesson.linkUrl')}
+                    onChange={(event) => setLink({ ...link, url: event.target.value })}
+                  />
+                  <input
+                    value={link.title}
+                    maxLength={200}
+                    placeholder={t('lesson.linkTitle')}
+                    aria-label={t('lesson.linkTitle')}
+                    onChange={(event) => setLink({ ...link, title: event.target.value })}
+                  />
+                  <button type="submit" disabled={busy || !link.url.trim()}>
+                    {t('common.add')}
+                  </button>
+                </form>
 
-            {adding === 'link' && (
-              <form className="inline-form" onSubmit={submitLink}>
-                <input
-                  autoFocus
-                  value={link.url}
-                  placeholder="https://…"
-                  aria-label={t('lesson.linkUrl')}
-                  onChange={(event) => setLink({ ...link, url: event.target.value })}
-                />
-                <input
-                  value={link.title}
-                  maxLength={200}
-                  placeholder={t('lesson.linkTitle')}
-                  aria-label={t('lesson.linkTitle')}
-                  onChange={(event) => setLink({ ...link, title: event.target.value })}
-                />
-                <button type="submit" disabled={busy || !link.url.trim()}>
-                  {t('common.add')}
-                </button>
-                <button
-                  type="button"
-                  className="secondary"
-                  onClick={() => setAdding(null)}
-                >
-                  {t('common.cancel')}
-                </button>
-              </form>
+                <form className="inline-form" onSubmit={submitText}>
+                  <input
+                    value={text}
+                    maxLength={200}
+                    placeholder={t('lesson.textPlaceholder')}
+                    aria-label={t('lesson.add.text')}
+                    onChange={(event) => setText(event.target.value)}
+                  />
+                  <button type="submit" disabled={busy || !text.trim()}>
+                    {t('common.add')}
+                  </button>
+                </form>
+              </>
             )}
 
             </>
