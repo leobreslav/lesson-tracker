@@ -72,7 +72,7 @@ const HOMEWORK = ['homework']
  * **У отменённого занятия остаётся один блок — журнал.** Содержания,
  * материалов и домашнего задания у него быть не может: занятия не было, а
  * все три и так принадлежат строке плана, которой у отменённого часа нет
- * (раскладка считает по неотменённым). Четыре карточки со словом «нет»
+ * (раскладка считает по неотменённым). Четыре карточки со словом «пусто»
  * сообщали об этом четыре раза и ничего не добавляли. Журнал остаётся:
  * «кто пришёл на урок, которого не было» — законный вопрос, и ответ на него
  * бывает нужен.
@@ -538,7 +538,7 @@ export default function LessonScreen({ onLoggedOut }) {
         name="works"
         title={t('lessonScreen.works')}
         empty={!classwork.length}
-        note={classwork.length || t('lessonScreen.none')}
+        note={classwork.length || t('lessonScreen.blank')}
         actions={
           may && !cancelled && (
             <button
@@ -573,7 +573,7 @@ export default function LessonScreen({ onLoggedOut }) {
         name="materials"
         title={t('lessonScreen.materials')}
         empty={!topic?.attachments?.length && form !== 'link'}
-        note={topic?.attachments?.length || t('lessonScreen.none')}
+        note={topic?.attachments?.length || t('lessonScreen.blank')}
         actions={
           editable && (
             <>
@@ -680,7 +680,7 @@ export default function LessonScreen({ onLoggedOut }) {
         name="homework"
         title={t('lessonScreen.homework')}
         empty={!hasHomework && editing?.fields !== HOMEWORK}
-        note={homework.length || t('lessonScreen.none')}
+        note={homework.length || t('lessonScreen.blank')}
         actions={
           may && !cancelled && (
             <>

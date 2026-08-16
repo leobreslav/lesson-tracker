@@ -400,10 +400,12 @@ test('работа заводится прямо на уроке и остаёт
   await signIn(PEOPLE.ivanova)
   await openLesson(page)
 
-  // пустой раздел — одна строка со словом «нет», а не карточка с фразой
+  // пустой раздел — одна строка со словом «пусто», а не карточка с фразой.
+  // Слово одно на все разделы: «нет» у работ рядом с «пусто» у содержания
+  // читалось как разница по существу, которой нет
   const worksBlock = page.locator('[data-block="works"]')
   await expect(worksBlock).toHaveClass(/empty/)
-  await expect(worksBlock).toContainText('нет')
+  await expect(worksBlock).toContainText('пусто')
 
   // действия появляются под курсором — как кнопки строки в таблице плана
   await worksBlock.hover()
