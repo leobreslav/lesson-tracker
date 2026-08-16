@@ -222,7 +222,7 @@ test('пока связь не записана, план со страницы 
   // запрет объяснён словами: пустое место на месте кнопок читалось бы как
   // поломка
   await expect(
-    page.getByText(/Тема пока только предполагается/),
+    page.getByText(/Занятие ещё не проведено/),
   ).toBeVisible()
 
   for (const name of ['Правка…', 'Добавить ссылку'])
@@ -254,7 +254,7 @@ test('урок листается по своему курсу и показыв
   await openLesson(page)
 
   // страница про урок целиком: тема заголовком, состояние, работы
-  await expect(page.getByText(/Тема пока только предполагается/)).toBeVisible()
+  await expect(page.getByText(/Занятие ещё не проведено/)).toBeVisible()
   await expect(page.locator('.panel-title', { hasText: 'Работы' })).toBeVisible()
 
   const first = await page.locator('h1').textContent()
@@ -469,7 +469,7 @@ test('записанная связь открывает туннель, и он
   ).toBeVisible()
   // и объяснение запрета убрано — запрещать больше нечего
   await expect(
-    page.getByText(/Содержание, материалы и домашнее задание принадлежат/),
+    page.getByText(/Занятие ещё не проведено/),
   ).toHaveCount(0)
 
   // название правится кликом по нему, как в таблице плана
@@ -487,7 +487,7 @@ test('записанная связь открывает туннель, и он
 
   // повторное нажатие на плашку снимает запись — как отметка в журнале
   await page.getByRole('button', { name: 'урок проведён' }).click()
-  await expect(page.getByText(/Тема пока только предполагается/)).toBeVisible()
+  await expect(page.getByText(/Занятие ещё не проведено/)).toBeVisible()
   await expect(
     page.locator('[data-block="content"]').getByRole('button', { name: 'Правка…' }),
   ).toHaveCount(0)
