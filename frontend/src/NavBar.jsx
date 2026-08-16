@@ -4,11 +4,10 @@ import { Link, NavLink, useLocation } from 'react-router-dom'
 import UserMenu, { useDismissable } from './UserMenu'
 
 const SECTIONS = [
-  // «Сегодня» первым: с него начинается день, и заходят сюда чаще всего.
-  // Он же и корень — обзор переехал на свой адрес и стоит следом
-  { to: '/today', key: 'today', needs: 'classes' },
-  { to: '/overview', key: 'overview', needs: null },
+  // расписание первым и оно же корень: с него заходят в занятие, а
+  // «как идут курсы» смотрят раз в неделю
   { to: '/schedule', key: 'schedule', needs: 'classes' },
+  { to: '/overview', key: 'overview', needs: null },
   { to: '/plan', key: 'plan', needs: 'classes' },
   { to: '/works', key: 'works', needs: 'classes' },
   // «Курсы» и «Учебный год» из бара убраны: оба живут в разделе «Школа»,

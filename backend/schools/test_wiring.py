@@ -191,7 +191,6 @@ class ApiWiringTests(SimpleTestCase):
 ACTIONS_WITHOUT_ID = {
     "slot-agenda": "период и только он: своё расписание за даты",
     "slot-summary": "сводка по расписанию школы, id на входе нет",
-    "slot-day": "день курса: на входе курс и дата, урока по id нет",
     "slot-unclosed": "долги по своим курсам: на входе ничего",
     "slot-close": "закрытие пачкой: список в теле, id на входе нет",
     "plannode-layout-agenda": "то же самое, темы уроков за период",

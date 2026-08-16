@@ -301,8 +301,8 @@ export default function LessonScreen({ onLoggedOut }) {
         </button>
         {/* ссылка в ряду кнопок — кнопкой: подчёркнутый текст между
             контролами читается как сбой вёрстки */}
-        <Link to="/today" className="link-button">
-          {t('lessonScreen.toDay')}
+        <Link to="/schedule" className="link-button">
+          {t('lessonScreen.toSchedule')}
         </Link>
       </div>
 

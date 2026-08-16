@@ -9,7 +9,6 @@ import {
 import ErrorBoundary from './ErrorBoundary'
 import Agenda from './Agenda'
 import LessonScreen from './LessonScreen'
-import Today from './Today'
 import Calendar from './Calendar'
 import Dashboard from './Dashboard'
 import Login from './Login'
@@ -145,11 +144,9 @@ export default function App() {
 
       <PageBoundary>
         <Routes>
-          {/* Корень — день, а не сводка: систему открывают ради того, что
-              сегодня, а «как идут курсы» смотрят раз в неделю. Обзор
-              переехал на свой адрес и стоит в баре рядом. */}
-          <Route path="/" element={<Navigate to="/today" replace />} />
-          <Route path="/today" element={guarded(Today)} />
+          {/* Корень — расписание: с него теперь и заходят в занятие, а
+              «как идут курсы» смотрят раз в неделю и на своём адресе */}
+          <Route path="/" element={<Navigate to="/schedule" replace />} />
           {/* работа с одним уроком: прошлым, сегодняшним или будущим —
               заходят сюда одинаково, разница лишь в том, какие действия
               имеют смысл */}

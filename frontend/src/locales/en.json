@@ -43,7 +43,6 @@
     "school": "School",
     "schools": "Schools",
     "works": "Assignments",
-    "today": "Today",
     "overview": "My courses"
   },
   "auth": {
@@ -979,18 +978,11 @@
     "done": "Handed out {{created}} works."
   },
   "today": {
-    "title": "Today",
     "lessonNumber": "Lesson {{number}}",
-    "noLesson": "No lesson of this course on that day.",
     "noTopic": "The curriculum map has nothing left for this lesson.",
-    "suggested": "The layout suggests this topic.",
-    "confirm": "lesson taught",
     "cancelled": "cancelled",
-    "noCourses": "No courses yet",
-    "noCoursesHint": "Ask the school administrator to put you on a course.",
     "rename": "Rename…",
     "renameTitle": "New title",
-    "window": "free",
     "openLesson": "Open the lesson"
   },
   "table": {
@@ -1034,7 +1026,6 @@
     "submit_other": "Close {{count}} lessons"
   },
   "lessonScreen": {
-    "toDay": "back to the day",
     "recorded": "lesson taught",
     "works": "Assignments",
     "attendance": "Attendance",
@@ -1062,6 +1053,7 @@
     "cancelLesson": "Cancel the lesson…",
     "blank": "empty",
     "more": "Lesson actions",
-    "restoreLesson": "Restore the lesson"
+    "restoreLesson": "Restore the lesson",
+    "toSchedule": "back to the schedule"
   }
 }

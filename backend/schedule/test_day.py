@@ -1,10 +1,10 @@
 """
-Экран «Сегодня»: один урок со всем, что к нему относится.
+Карточка занятия: один урок со всем, что к нему относится.
 
-День учителя выглядит так: выбрал класс, попал в текущий урок, ведёт его
-глядя в план, объявляет практику, задаёт домашнее. Ответ этого эндпоинта —
-ровно этот экран, и своего расчёта в нём нет ни одного: содержание из плана,
-подсказка из раскладки, работы из своих же связей.
+Учитель заходит в занятие из расписания и ведёт его глядя в план, объявляет
+практику, задаёт домашнее. Ответ `card` — ровно этот экран, и своего расчёта
+в нём нет ни одного: содержание из плана, подсказка из раскладки, работы из
+своих же связей.
 
 Проверяется главным образом одно: **записанное сильнее подсказанного**.
 Раскладка позиционная и съезжает от любой правки плана, а отметка «прошли»
@@ -41,18 +41,18 @@ class DayTestCase(SchoolTestMixin, APITestCase):
         self.monday = make_slot(self.user, self.course, MONDAY, 1)
         self.tuesday = make_slot(self.user, self.course, MONDAY + timedelta(days=1), 1)
 
-    def day(self, when=None, course=None):
+    def lesson(self, slot=None):
+        """Карточка занятия. Экрана «день целиком» больше нет: в занятие
+        заходят из расписания, и день там виден сеткой."""
         return self.client.get(
-            reverse("slot-day"),
-            {"course": (course or self.course).pk, "date": (when or MONDAY).isoformat()},
-        )
+            reverse("slot-card", args=[(slot or self.monday).pk])
+        ).json()
 
 
 class TopicTests(DayTestCase):
     def test_the_layout_suggests_what_is_being_covered(self):
-        body = self.day().json()
+        lesson = self.lesson()
 
-        lesson = body["lessons"][0]
         self.assertEqual(lesson["topic"]["title"], "Синус суммы")
         self.assertFalse(lesson["confirmed"], "подсказка — ещё не запись")
 
@@ -60,7 +60,7 @@ class TopicTests(DayTestCase):
         self.monday.lesson = self.second
         self.monday.save(update_fields=["lesson"])
 
-        lesson = self.day().json()["lessons"][0]
+        lesson = self.lesson()
 
         self.assertEqual(lesson["topic"]["title"], "Косинус суммы")
         self.assertTrue(lesson["confirmed"])
@@ -82,44 +82,30 @@ class TopicTests(DayTestCase):
         self.monday.save(update_fields=["lesson"])
         self.insert_first()
 
-        self.assertEqual(self.day().json()["lessons"][0]["topic"]["title"], "Синус суммы")
+        self.assertEqual(self.lesson()["topic"]["title"], "Синус суммы")
 
     def test_the_suggestion_does_move(self):
         """И это честно: подсказка — свойство сегодняшней раскладки."""
         self.insert_first()
 
-        self.assertEqual(self.day().json()["lessons"][0]["topic"]["title"], "Вводный")
+        self.assertEqual(self.lesson()["topic"]["title"], "Вводный")
 
     def test_the_content_of_the_plan_comes_along(self):
         self.first.objectives = "Понять формулу"
         self.first.homework = "Параграф 12"
         self.first.save(update_fields=["objectives", "homework"])
 
-        topic = self.day().json()["lessons"][0]["topic"]
+        topic = self.lesson()["topic"]
 
         self.assertEqual(topic["objectives"], "Понять формулу")
         self.assertEqual(topic["homework"], "Параграф 12")
-
-    def test_a_day_with_no_lesson_is_empty_and_says_where_the_next_one_is(self):
-        body = self.day(MONDAY + timedelta(days=4)).json()
-
-        self.assertEqual(body["lessons"], [])
-        self.assertEqual(body["previous"], str(MONDAY + timedelta(days=1)))
-        self.assertIsNone(body["next"])
-
-    def test_it_leafs_through_the_days_that_have_lessons(self):
-        body = self.day().json()
-
-        self.assertIsNone(body["previous"])
-        self.assertEqual(body["next"], str(MONDAY + timedelta(days=1)))
-
 
 class WorkTests(DayTestCase):
     def test_the_works_of_this_lesson_are_listed(self):
         mine = make_work(self.user, self.course, title="Практика", slot=self.monday)
         make_work(self.user, self.course, title="Чужая", slot=self.tuesday)
 
-        works = self.day().json()["lessons"][0]["works"]
+        works = self.lesson()["works"]
 
         self.assertEqual([item["title"] for item in works], ["Практика"])
         self.assertEqual(works[0]["id"], mine.pk)
@@ -127,110 +113,7 @@ class WorkTests(DayTestCase):
     def test_a_work_with_no_lesson_belongs_to_no_day(self):
         make_work(self.user, self.course, title="Четвертная")
 
-        self.assertEqual(self.day().json()["lessons"][0]["works"], [])
-
-
-class AccessTests(DayTestCase):
-    def test_a_course_of_another_school_is_not_found(self):
-        alien = make_course(self.alien_school, name="Чужой")
-
-        self.assertEqual(self.day(course=alien).status_code, 404)
-
-    def test_a_colleague_of_the_same_school_may_look(self):
-        """Расписание общее: по нему живут все, и день курса — его часть."""
-        self.sign_in(self.colleague)
-
-        self.assertEqual(self.day().status_code, 200)
-
-    def test_a_student_has_no_teachers_day(self):
-        self.sign_in(self.student)
-
-        response = self.day()
-
-        self.assertEqual(response.status_code, 403)
-        self.assertEqual(response.json()["code"], "teachers_only")
-
-    def test_without_a_date_it_answers_about_today(self):
-        response = self.client.get(reverse("slot-day"), {"course": self.course.pk})
-
-        self.assertEqual(response.json()["date"], str(timezone.localdate()))
-
-
-class WholeDayTests(DayTestCase):
-    """
-    Без курса — весь день целиком, все занятия подряд.
-
-    Утро начинается с вопроса «что у меня сегодня», а это четыре занятия
-    трёх разных курсов. Экран, устроенный курсом вперёд, заставлял бы
-    переключать их по одному и каждый раз вспоминать, где ты; вечером, когда
-    закрывают день, то же самое ещё и умножается на число курсов.
-    """
-
-    def setUp(self):
-        super().setUp()
-        self.other = make_course(self.school, self.year, "8А Геометрия")
-        assign(self.user, self.other)
-        self.their_slot = make_slot(self.user, self.other, MONDAY, 2)
-
-    def whole(self, when=None):
-        return self.client.get(
-            reverse("slot-day"), {"date": (when or MONDAY).isoformat()}
-        ).json()
-
-    def test_the_day_holds_every_course(self):
-        numbers = [
-            (item["lesson_number"], item["course"]["name"])
-            for item in self.whole()["lessons"]
-        ]
-
-        self.assertEqual(numbers, [(1, "9Б Алгебра"), (2, "8А Геометрия")])
-
-    def test_each_lesson_says_whose_course_it_is(self):
-        """Иначе четыре карточки подряд неразличимы."""
-        first = self.whole()["lessons"][0]
-
-        self.assertEqual(first["course"]["id"], self.course.pk)
-
-    def test_the_topic_is_suggested_for_every_course_at_once(self):
-        make_node(self.user, self.other, "Признаки равенства", position=0)
-
-        topics = {
-            item["course"]["name"]: item["topic"]["title"]
-            for item in self.whole()["lessons"]
-        }
-
-        self.assertEqual(topics["9Б Алгебра"], "Синус суммы")
-        self.assertEqual(topics["8А Геометрия"], "Признаки равенства")
-
-    def test_leafing_goes_by_days_that_have_anything_at_all(self):
-        """Пустой день пропускается, чей бы курс ни стоял следующим."""
-        far = make_course(self.school, self.year, "7В Алгебра")
-        assign(self.user, far)
-        make_slot(self.user, far, MONDAY + timedelta(days=3), 1)
-
-        self.assertEqual(
-            self.whole(MONDAY + timedelta(days=1))["next"],
-            str(MONDAY + timedelta(days=3)),
-        )
-
-    def test_a_course_of_somebody_else_is_not_in_my_day(self):
-        alien = make_course(self.school, self.year, "11А Алгебра")
-        assign(self.colleague, alien)
-        make_slot(self.colleague, alien, MONDAY, 5)
-
-        names = {item["course"]["name"] for item in self.whole()["lessons"]}
-
-        self.assertNotIn("11А Алгебра", names)
-
-    def test_asking_about_one_course_still_narrows_it(self):
-        body = self.client.get(
-            reverse("slot-day"),
-            {"course": self.course.pk, "date": MONDAY.isoformat()},
-        ).json()
-
-        self.assertEqual(
-            [item["course"]["name"] for item in body["lessons"]], ["9Б Алгебра"]
-        )
+        self.assertEqual(self.lesson()["works"], [])
 
 
 class CardTests(DayTestCase):

@@ -157,34 +157,6 @@ test('неучебные дни в сетке приглушены и подпи
   await expect(head).toHaveClass(/locked/)
   await expect(head).toContainText('Осенние каникулы')
 })
-
-/**
- * Экран «Сегодня»: день учителя одним местом.
- *
- * Главное здесь — разница между подсказкой и записью. Раскладка позиционная
- * и съезжает от любой правки плана, поэтому «что прошли» она предлагает, а
- * записывает человек.
- *
- * Записать можно только то, что уже случилось: кнопка, нажатая накануне,
- * стала бы ложью после утренней пожарной тревоги, и заметить это было бы
- * некому. Учебный год демо-данных весь в будущем, поэтому здесь проверяется
- * именно эта половина правила — подсказка есть, кнопки нет; саму запись
- * проверяют питоновские тесты, которым дата не мешает.
- */
-test('на «Сегодня» видно урок, а подтвердить будущее нельзя', async ({
-  page,
-  signIn,
-}) => {
-  await signIn(PEOPLE.ivanova)
-  // курс с полным планом: у него раскладке есть что предложить
-  const slots = await firstDayWithLessons(page, { course: 'Grade 6 Algebra' })
-  await slots.first().click()
-
-  const preview = page.locator('dialog.modal')
-  await expect(preview.getByText('Раскладка предполагает эту тему.')).toBeVisible()
-  await expect(preview.getByRole('button', { name: 'занятие проведено' })).toHaveCount(0)
-})
-
 test('перенос оставляет отмену на прежнем месте и занятие на новом', async ({
   page,
   signIn,
@@ -220,55 +192,6 @@ test('перенос оставляет отмену на прежнем мес�
   await expect(page.locator(`[data-lesson="${FRIDAY}:7"]`)).toBeVisible()
 })
 
-/**
- * Долистать «Сегодня» до дня с занятиями — и, если попросили, до дня с
- * занятием нужного курса: «сегодня» в демо-данных до начала учебного года.
- */
-async function firstDayWithLessons(page, { course = null, atLeast = 1 } = {}) {
-  await page.goto('/today')
-  await ready(page)
-
-  const slots = course
-    ? page.locator('.day-grid .slot', { hasText: course })
-    : page.locator('.day-grid .slot')
-
-  for (let step = 0; step < 40 && (await slots.count()) < atLeast; step += 1) {
-    await page.getByRole('button', { name: '→' }).click()
-    await page.waitForTimeout(120)
-  }
-  await expect(slots.first()).toBeVisible()
-  return slots
-}
-
-test('«Сегодня» показывает день сеткой: занятия и окна между ними', async ({
-  page,
-  signIn,
-}) => {
-  // Список карточек отвечал только на «какие занятия есть». Спрашивают
-  // утром другое — «как устроен день»: с какого урока начинается, где окна.
-  // Окна в списке не видно вовсе: пустое место нельзя показать
-  // перечислением непустых.
-  await signIn(PEOPLE.ivanova)
-  // день с двумя занятиями: на дне из одного окна между ними не бывает
-  const slots = await firstDayWithLessons(page, { atLeast: 2 })
-
-  const hours = page.locator('.day-grid > li')
-  // столбец идёт подряд от первого часа до последнего занятого
-  const numbers = await hours.locator('.hour').allTextContents()
-  expect(numbers).toEqual(numbers.map((_, index) => String(index + 1)))
-
-  // окно между занятиями — то, ради чего сетка и заведена
-  await expect(page.locator('.day-grid .window').first()).toBeVisible()
-
-  // клик по клетке открывает окно предпросмотра, а из него — сам урок
-  const second = slots.nth(1)
-  const course = await second.locator('.course').textContent()
-  await second.click()
-
-  const preview = page.locator('dialog.modal')
-  await expect(preview.locator('.hint').first()).toContainText(course)
-  await expect(preview.getByRole('button', { name: 'Открыть урок' })).toBeVisible()
-})
 
 test('пока связь не записана, план со страницы урока не правится', async ({
   page,
@@ -284,15 +207,17 @@ test('пока связь не записана, план со страницы 
   // целиком в будущем, прошедших занятий на стенде не бывает — а связать
   // можно только прошедшее. Открытый туннель проверяют питоновские тесты.
   await signIn(PEOPLE.ivanova)
-  const slots = await firstDayWithLessons(page, { course: 'Grade 6 Algebra' })
-  await slots.first().click()
-  await page.locator('dialog.modal').getByRole('button', { name: 'Открыть урок' }).click()
-  await ready(page)
+  await openLesson(page)
 
   await expect(page).toHaveURL(/\/lesson\/\d+$/)
   await expect(
     page.locator('.lesson-title-head .hint').first(),
   ).toContainText('Grade 6 Algebra')
+
+  // записать можно только то, что уже случилось: кнопка, нажатая накануне,
+  // стала бы ложью после утренней пожарной тревоги. Год демо-данных весь в
+  // будущем, поэтому здесь проверяется именно эта половина правила
+  await expect(page.getByRole('button', { name: 'Так и было' })).toHaveCount(0)
 
   // запрет объяснён словами: пустое место на месте кнопок читалось бы как
   // поломка
@@ -326,10 +251,7 @@ test('урок листается по своему курсу и показыв
   // Соседи по курсу, а не по дню: «что было на прошлом» — вопрос про этот
   // же класс, а не про то, что стояло следующим часом у другого.
   await signIn(PEOPLE.ivanova)
-  const slots = await firstDayWithLessons(page, { course: 'Grade 6 Algebra' })
-  await slots.first().click()
-  await page.locator('dialog.modal').getByRole('button', { name: 'Открыть урок' }).click()
-  await ready(page)
+  await openLesson(page)
 
   // страница про урок целиком: тема заголовком, состояние, работы
   await expect(page.getByText(/Тема пока только предполагается/)).toBeVisible()
@@ -362,12 +284,20 @@ test('урок листается по своему курсу и показыв
 })
 
 /** Открыть страницу урока курса с полным планом. */
-async function openLesson(page, course = 'Grade 6 Algebra') {
-  const slots = await firstDayWithLessons(page, { course })
-  await slots.first().click()
+/**
+ * Открыть страницу занятия так, как это делает учитель: из расписания.
+ *
+ * Понедельник, первый урок — «Grade 6 Algebra», курс с полным планом:
+ * раскладке есть что предложить. Экрана «Сегодня» больше нет, и листать
+ * дни в поисках занятия теперь не нужно: неделя видна сеткой.
+ */
+async function openLesson(page, cell = `${MONDAY}:1`) {
+  await openWeek(page, MONDAY)
+  await page.locator(`[data-lesson="${cell}"]`).click()
   await page.locator('dialog.modal').getByRole('button', { name: 'Открыть урок' }).click()
   await ready(page)
 }
+
 
 test('страница урока идёт в порядке урока, а не наших таблиц', async ({
   page,

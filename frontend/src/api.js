@@ -642,12 +642,6 @@ export const fetchScheduleSummary = (params) =>
 export const fetchSlotStats = (classId) =>
   request(`/api/slots/stats/?course=${encodeURIComponent(classId)}`)
 
-/** Один день курса: чем занимаемся, что задавали, куда листать дальше. */
-// без курса — весь день целиком: утренний вопрос «что у меня сегодня» это
-// несколько занятий разных курсов, и переключать их по одному незачем
-export const fetchSlotDay = (date) =>
-  request(`/api/slots/day/?${new URLSearchParams({ date })}`)
-
 export const fetchAgenda = (start, end) =>
   request(`/api/slots/agenda/?${new URLSearchParams({ start, end })}`)
 

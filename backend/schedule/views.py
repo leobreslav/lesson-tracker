@@ -944,62 +944,6 @@ class SlotViewSet(SchoolScopedViewSet):
             }
         )
 
-    @action(detail=False, methods=["get"])
-    def day(self, request):
-        """
-        День целиком: все занятия, что на них проходим и что задавали.
-
-        Экран «Сегодня» собирается из готового — плана, раскладки и работ, —
-        и своего расчёта здесь нет ни одного. Единственное, что этот ответ
-        добавляет: **что говорит раскладка** про каждое занятие
-        (`suggested`), чтобы отметить «прошли» одним нажатием, а не искать
-        строку плана в списке.
-
-        Записанное (`lesson`) сильнее подсказанного: раскладка съезжает от
-        любой правки плана, а запись держится за дату.
-
-        **Без `course` отвечает про весь день** — все занятия своих курсов
-        подряд, по номеру урока. Так и спрашивают: утро начинается с вопроса
-        «что у меня сегодня», а это четыре занятия трёх разных курсов, и
-        переключать их по одному значит четыре раза вспоминать, где ты.
-        Курсом ответ сужается, когда спрашивают именно про него.
-        """
-        mine = self.my_courses()
-        requested = request.query_params.get("course")
-        if requested:
-            courses = [
-                get_object_or_404(
-                    Course.objects.filter(school_id=request.user.school_id),
-                    pk=requested if requested.isdigit() else 0,
-                )
-            ]
-        else:
-            courses = list(mine)
-
-        day = read_date(request.query_params.get("date")) or timezone.localdate()
-
-        slots = list(
-            Slot.objects.filter(course__in=courses, date=day)
-            .select_related("lesson", "taught_by", "course")
-            .prefetch_related("works")
-            .order_by("lesson_number", "course__name")
-        )
-
-        # раскладка считается по всему году: обрезать её датами значило бы
-        # сдвинуть номера. Спрашиваем только те курсы, что есть в этом дне
-        suggested = {}
-        for course in {slot.course for slot in slots}:
-            suggested.update(services.suggested_topics(course))
-
-        return Response(
-            {
-                "date": day,
-                "lessons": [slot_day_payload(item, suggested) for item in slots],
-                "previous": neighbour(courses, day, forward=False),
-                "next": neighbour(courses, day, forward=True),
-            }
-        )
-
     @action(detail=True, methods=["get"])
     def card(self, request, pk=None):
         """
@@ -1270,21 +1214,9 @@ class SlotViewSet(SchoolScopedViewSet):
         )
 
 
-def neighbour(courses, day, *, forward: bool):
-    """Ближайший день с занятием — чтобы листать, а не искать пустые."""
-    rows = Slot.objects.filter(course__in=courses)
-    rows = rows.filter(date__gt=day) if forward else rows.filter(date__lt=day)
-
-    return (
-        rows.order_by("date" if forward else "-date")
-        .values_list("date", flat=True)
-        .first()
-    )
-
-
 def slot_day_payload(slot, suggested) -> dict:
     """
-    Одно занятие на экране «Сегодня»: содержание, работы и что прошли.
+    Одно занятие целиком: содержание, работы и что прошли.
 
     Содержание берётся у той строки плана, которую **записали**; не
     записали — у подсказанной раскладкой. `confirmed` говорит, что это:
