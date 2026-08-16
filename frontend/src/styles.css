@@ -3572,6 +3572,27 @@ button.link.free-summary {
   color: #9aa0a6;
 }
 
+/*
+ * Дата — ссылка на занятие, но выглядеть должна датой.
+ *
+ * Синий подчёркнутый текст в сорока строках подряд превратил бы левую
+ * колонку в лестницу; подчёркивание появляется под курсором, когда человек
+ * уже целится.
+ */
+a.plan-date {
+  text-decoration: none;
+  color: #5f6368;
+}
+
+a.plan-date:hover {
+  color: #1a73e8;
+  text-decoration: underline;
+}
+
+a.plan-date:hover em {
+  color: #1a73e8;
+}
+
 /* урок, которому слота не досталось: строка целиком, а не одна ячейка —
    иначе на длинном плане это незаметно */
 .plan-row.no-slot {
@@ -4677,6 +4698,16 @@ button.day-head:hover {
  * крестика: −1.25 (её вынос за поле окна) + 0.75 (её верхний отступ) + 1.75
  * (рост самого крестика).
  */
+.modal-body.sheet > .modal-head h3 {
+  /* рост шапки задаёт крестик (1.75rem), и заголовок не должен его
+     перерастать: под него посчитан `top` у прижатой шапки панели */
+  font-size: 1rem;
+  line-height: 1.75rem;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
 .modal-body.sheet > .modal-head {
   position: sticky;
   top: -1.25rem;

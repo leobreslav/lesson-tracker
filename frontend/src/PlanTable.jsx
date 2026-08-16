@@ -17,6 +17,7 @@ import {
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable'
 import { EmptyDropZone, SortableRow, dragId, emptyZoneId } from './PlanDnd'
+import { Link } from 'react-router-dom'
 import { dayMonth, shortDate, shortWeekday } from './dates'
 import { resolveDropTarget } from './planLogic'
 import { remember, remembered } from './remember'
@@ -396,9 +397,13 @@ export default function PlanTable({
                 <span className="plan-weekmark">
                   {showWeeks && labelled && t('plan.week', { number: slot.week })}
                 </span>
-                <span className="plan-date">
+                <Link
+                  className="plan-date"
+                  to={`/lesson/${slot.id}`}
+                  title={t('plan.openLesson')}
+                >
                   {dayMonth(slot.date)} <em>{shortWeekday(slot.date)}</em>
-                </span>
+                </Link>
                 {/* ни ручки, ни номера: это не строка плана, а пустое место
                     в расписании */}
                 <span />
@@ -432,6 +437,12 @@ export default function PlanTable({
    *
    * У темы даты нет (её диапазон стоит в полосе), но ячейка нужна пустой:
    * иначе полоса съехала бы влево относительно строк уроков.
+   *
+   * **Дата — ссылка на занятие.** Строка плана отвечает «что проходим», а
+   * занятие — «как оно прошло»: журнал, работы, отмена. Раньше из плана в
+   * занятие пути не было вовсе, хотя обратный (со страницы занятия в план)
+   * мы завели давно. Ведёт именно дата: она и есть то место строки, где
+   * речь заходит о конкретном дне.
    */
   const dateCells = (node, empty = false) => {
     if (!dated) return null
@@ -439,9 +450,9 @@ export default function PlanTable({
     const slot = layout.byId.get(node.id)?.slot
 
     return slot ? (
-      <span className="plan-date">
+      <Link className="plan-date" to={`/lesson/${slot.id}`} title={t('plan.openLesson')}>
         {dayMonth(slot.date)} <em>{shortWeekday(slot.date)}</em>
-      </span>
+      </Link>
     ) : (
       <span className="plan-date missing">{t('plan.noSlot')}</span>
     )

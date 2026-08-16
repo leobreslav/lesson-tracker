@@ -274,11 +274,10 @@ test('«Правка в плане…» открывает окно правки
   await expect(panel).toBeVisible()
   await expect(panel.locator('.lesson-title')).toHaveValue(title)
 
-  // шапка говорит, что перед вами: строка программы, её номер, куда она
-  // ложится по раскладке и что занятие ещё не проведено
-  await expect(panel.locator('.lesson-where')).toContainText('Строка учебного плана')
-  await expect(panel.locator('.lesson-where')).toContainText(/урок \d+/)
-  await expect(panel.locator('.lesson-where')).toContainText(/по раскладке — \d+/)
+  // шапка говорит, что перед вами: какая это строка программы по счёту,
+  // куда она ложится по раскладке и что занятие ещё не проведено
+  await expect(panel.locator('.modal-head h3')).toHaveText(/Урок \d+ учебного плана/)
+  await expect(panel.locator('.lesson-where')).toContainText(/По раскладке — \d+/)
   await expect(panel.locator('.lesson-where')).toContainText('ещё не проведено')
 
   // крестик не перекрыт прижатой шапкой панели: обе прижимаются стопкой,

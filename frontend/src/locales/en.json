@@ -400,7 +400,8 @@
       "sendTo": "Send"
     },
     "publishFromCourse": "The subject and the year of study come from the course: {{subject}}, year {{grade}}.",
-    "taught": "Lesson already taught: it keeps its place."
+    "taught": "Lesson already taught: it keeps its place.",
+    "openLesson": "Open the lesson"
   },
   "status": {
     "title": "My courses",
@@ -795,10 +796,10 @@
     },
     "where": {
       "plan": "A row of the curriculum map",
-      "row": "A row of the curriculum map · lesson {{number}}",
-      "planned": "falls on {{date}} as the plan stands",
-      "taughtOn": "taught on {{date}}",
-      "noSlot": "does not fit into the school year",
+      "row": "Lesson {{number}} of the curriculum map",
+      "planned": "Falls on {{date}} as the plan stands",
+      "taughtOn": "Taught on {{date}}",
+      "noSlot": "Does not fit into the school year",
       "notTaught": "the lesson has not been taught yet, and any edit above moves the date"
     }
   },

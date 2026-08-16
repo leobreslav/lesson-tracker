@@ -277,7 +277,18 @@ export default function LessonPanel({ nodeId, where = null, onClose, onSaved }) 
   }
 
   return (
-    <Modal className="sheet" onClose={onClose} onBeforeClose={mayClose}>
+    <Modal
+      className="sheet"
+      onClose={onClose}
+      onBeforeClose={mayClose}
+      // заголовок окна: что именно правится. «Урок», а не «тема» — в этом
+      // интерфейсе тема это папка, и рядом стоит кнопка «+ тема»
+      title={
+        where?.number
+          ? t('lesson.where.row', { number: where.number })
+          : t('lesson.where.plan')
+      }
+    >
       {!draft ? (
         <p>{error ? <span className="error">{error}</span> : t('common.loading')}</p>
       ) : (
@@ -298,16 +309,11 @@ export default function LessonPanel({ nodeId, where = null, onClose, onSaved }) 
             */}
             {where && (
               <p className="hint lesson-where">
-                {[
-                  where.number
-                    ? t('lesson.where.row', { number: where.number })
-                    : t('lesson.where.plan'),
-                  where.date
-                    ? t(where.taught ? 'lesson.where.taughtOn' : 'lesson.where.planned', {
-                        date: longDate(where.date),
-                      })
-                    : t('lesson.where.noSlot'),
-                ].join(' · ')}
+                {where.date
+                  ? t(where.taught ? 'lesson.where.taughtOn' : 'lesson.where.planned', {
+                      date: longDate(where.date),
+                    })
+                  : t('lesson.where.noSlot')}
                 {!where.taught && ` — ${t('lesson.where.notTaught')}`}
               </p>
             )}

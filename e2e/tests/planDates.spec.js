@@ -64,6 +64,22 @@ test('даты видны, сводка сходится с раскладкой
   await expect(page.locator('.plan-row.lesson .plan-date')).toHaveCount(lessons)
 })
 
+test('дата в плане ведёт в занятие этого дня', async ({ page, signIn }) => {
+  // Строка плана отвечает «что проходим», занятие — «как оно прошло»:
+  // журнал, работы, отмена. Обратный путь (со страницы занятия в план) есть
+  // давно, а этого не было вовсе.
+  await signIn(PEOPLE.ivanova)
+  await openPlan(page)
+
+  const row = page.locator('.plan-row.lesson').first()
+  const title = await row.locator('.title').first().textContent()
+  await row.locator('.plan-date').click()
+  await ready(page)
+
+  await expect(page).toHaveURL(/\/lesson\/\d+$/)
+  await expect(page.locator('h1')).toHaveText(title.trim())
+})
+
 test('добавление урока сдвигает даты ниже, удаление возвращает', async ({
   page,
   signIn,
