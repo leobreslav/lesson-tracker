@@ -89,6 +89,12 @@ export default function Plan({ onLoggedOut }) {
     // приходят именно за ним, и «мы вас привели, теперь нажмите» это ещё
     // одно нажатие ради того, о чём уже попросили
     edit: search.get('edit') === '1',
+    // куда вернуться, закрыв окно. Принимается только адрес занятия: в
+    // параметр можно написать что угодно, и «навигация по присланной
+    // строке» — это открытый редирект, даже когда он внутренний
+    back: /^\/lesson\/\d+$/.test(search.get('back') || '')
+      ? search.get('back')
+      : null,
   }))
 
   const [classes, setClasses] = useState(null)
@@ -102,6 +108,9 @@ export default function Plan({ onLoggedOut }) {
   const [error, setError] = useState(null)
   const [editing, setEditing] = useState(null) // {id, title} — folders only
   const [opened, setOpened] = useState(null) // the lesson whose panel is open
+  // адрес, откуда пришли за правкой: закрытие окна возвращает туда, а не
+  // оставляет в плане, который человек и не собирался открывать
+  const [returnTo, setReturnTo] = useState(null)
   const [helpOpen, setHelpOpen] = useState(false) // справка о формате
   // xlsx по умолчанию: в нём нет ни кодировки, ни разделителя, ни кавычек,
   // то есть ровно тех трёх вещей, на которых спотыкается CSV
@@ -153,6 +162,7 @@ export default function Plan({ onLoggedOut }) {
     if (!target.row || !target.edit || !data || panelOpened.current) return
     panelOpened.current = true
     setOpened(target.row)
+    setReturnTo(target.back)
   }, [target, data])
 
   /**
@@ -891,7 +901,10 @@ export default function Plan({ onLoggedOut }) {
         <Suspense fallback={null}>
           <LessonPanel
             nodeId={opened}
-            onClose={() => setOpened(null)}
+            onClose={() => {
+              setOpened(null)
+              if (returnTo) navigate(returnTo)
+            }}
             // the marks in the table come from the tree, so a save has to be
             // followed by a re-read — the paperclip appears the moment a file does
             onSaved={() => load(classId).catch(handleError)}

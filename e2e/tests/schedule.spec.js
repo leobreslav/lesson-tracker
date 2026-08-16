@@ -273,7 +273,7 @@ test('«Правка в плане…» открывает окно правки
   const panel = page.locator('dialog.modal')
   await expect(panel.locator('.lesson-title')).toHaveValue(title)
 
-  // и крестик не перекрыт прижатой шапкой панели: обе прижимаются стопкой,
+  // крестик не перекрыт прижатой шапкой панели: обе прижимаются стопкой,
   // и отрицательный отступ шапки однажды уже съел его половину
   const cross = await panel.getByRole('button', { name: 'Закрыть окно' }).boundingBox()
   const head = await panel.locator('.lesson-head').boundingBox()
@@ -281,6 +281,13 @@ test('«Правка в плане…» открывает окно правки
     Math.round(cross.y + cross.height),
     'шапка панели наползает на крестик',
   ).toBeLessThanOrEqual(Math.round(head.y) + 1)
+
+  // а закрыв окно, человек возвращается в занятие, а не остаётся в плане,
+  // который он и не собирался открывать
+  await panel.getByRole('button', { name: 'Закрыть окно' }).click()
+  await ready(page)
+  await expect(page).toHaveURL(/\/lesson\/\d+$/)
+  await expect(page.locator('h1')).toHaveText(title)
 })
 
 test('урок листается по своему курсу и показывает содержание', async ({

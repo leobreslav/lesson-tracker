@@ -171,8 +171,11 @@ export default function LessonScreen({ onLoggedOut }) {
   // правят там, где её видно в окружении
   const editable = may && card.confirmed && topic
   const inPlan = topic ? `/plan?course=${card.course.id}&row=${topic.id}` : null
-  // «Правка в плане…» ведёт сразу в окно правки этой строки: за ним и идут
-  const editInPlan = inPlan && `${inPlan}&edit=1`
+  // «Правка в плане…» ведёт сразу в окно правки этой строки: за ним и идут.
+  // И несёт обратный адрес: закрыв окно, человек должен оказаться там,
+  // откуда пришёл, а не остаться в плане, куда его привели по дороге
+  const editInPlan =
+    inPlan && `${inPlan}&edit=1&back=${encodeURIComponent(`/lesson/${card.id}`)}`
   // раздел, в котором нечего показывать, рисуется одной строкой: пустота не
   // должна занимать столько же места, сколько содержимое.
   //
