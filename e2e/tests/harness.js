@@ -117,7 +117,7 @@ export { expect }
  * от языка не зависит.
  */
 export const lessonCount = (page, card = 'lessons') =>
-  page.locator(`[data-card="${card}"] h2`)
+  page.locator(`[data-card="${card}"] :is(h2, b)`)
 
 /** The seeded cast, so tests name people rather than addresses. */
 export const PEOPLE = {

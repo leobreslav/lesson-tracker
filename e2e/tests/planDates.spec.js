@@ -55,7 +55,7 @@ test('даты видны, сводка сходится с раскладкой
   await openPlan(page)
 
   const number = async (card) =>
-    Number(await page.locator(`[data-card="${card}"] h2`).textContent())
+    Number(await page.locator(`[data-card="${card}"] :is(h2, b)`).textContent())
 
   const slots = await number('slots')
   const lessons = await number('lessons')

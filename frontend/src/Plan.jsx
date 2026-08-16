@@ -604,13 +604,20 @@ export default function Plan({ onLoggedOut }) {
             <div className="cards plan-cards">
               {ribbon.length > 0 && (
                 <>
-                  <section className="panel card-stat" data-card="slots">
-                    <h2>{layout.totals.slots}</h2>
-                    <p className="hint">{t('plan.summary.slots')}</p>
-                  </section>
-                  <section className="panel card-stat" data-card="lessons">
-                    <h2>{layout.totals.lessons}</h2>
-                    <p className="hint">{t('plan.summary.lessons')}</p>
+                  {/* Два числа в одной плашке, двумя равными строками: это
+                      два измерения одного и того же — сколько курс идёт и
+                      сколько в нём написано, — и порознь ни одно из них ни о
+                      чём не говорит. Рядом стоящие карточки предлагали читать
+                      их как три независимых показателя, хотя третий и есть
+                      разность первых двух. Приём не новый: так же собрана
+                      плашка «начали / прошли целиком» в сводке работы. */}
+                  <section className="panel card-stat">
+                    <p className="pair" data-card="slots">
+                      <b>{layout.totals.slots}</b> {t('plan.summary.slots')}
+                    </p>
+                    <p className="pair" data-card="lessons">
+                      <b>{layout.totals.lessons}</b> {t('plan.summary.lessons')}
+                    </p>
                   </section>
                   <section
                     data-card="balance"
