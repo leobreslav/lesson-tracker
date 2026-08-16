@@ -1121,6 +1121,23 @@ button.chip.active:hover:not(:disabled) {
 
 .modal-head h3 {
   margin: 0;
+  /* заголовок отдаёт лишнее место действиям, а не растягивает ряд */
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.modal-actions {
+  display: flex;
+  flex: none;
+  gap: 0.4rem;
+  align-items: center;
+  margin-left: auto;
+}
+
+/* крестик и так прижат вправо; с соседями слева ему хватает своего зазора */
+.modal-actions + button.modal-close {
+  margin-left: 0.4rem;
 }
 
 /* цель у крестика 1.75rem: меньше — и на телефоне в неё не попасть */
@@ -4717,13 +4734,8 @@ button.day-head:hover {
   background: #fff;
 }
 
-/* шапка стала в две строки: сперва «что это», потом само название */
-.lesson-head-row {
-  display: flex;
-  gap: 0.75rem;
-  align-items: center;
-}
-
+/* шапка в две строки: сперва «что это», потом само название. Кнопки уехали
+   в строку заголовка окна, и ряда для них здесь больше нет */
 .lesson-where {
   margin-bottom: 0.4rem;
 }
@@ -4760,6 +4772,23 @@ button.day-head:hover {
   outline: 2px solid #1a73e8;
   outline-offset: -1px;
   background: #fff;
+}
+
+/*
+ * Просмотр — значит просмотр: название и заметка перестают быть полями.
+ *
+ * Поле ввода обещает правку, а её в этом режиме нет; и рамка вокруг текста,
+ * который нельзя тронуть, — самое частое «почему у меня не печатается».
+ */
+.lesson-title.static {
+  font-size: 1.05rem;
+  font-weight: 600;
+  padding: 0.25rem 0;
+}
+
+.lesson-note.static {
+  color: #5f6368;
+  font-size: 0.9rem;
 }
 
 .lesson-note {
@@ -4970,15 +4999,6 @@ button.day-head:hover {
   color: #1a73e8;
   border-color: #1a73e8;
   background: #eaf2fe;
-}
-
-.lesson-foot {
-  position: sticky;
-  bottom: -1.25rem;
-  margin: 0 -1.25rem -1.25rem;
-  padding: 0.75rem 1.25rem;
-  background: #fff;
-  border-top: 1px solid #eee;
 }
 
 /* значки в таблице плана: содержание и вложения — разные вещи */

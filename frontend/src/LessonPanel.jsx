@@ -263,15 +263,17 @@ export default function LessonPanel({ nodeId, where = null, onClose, onSaved }) 
           </span>
         )}
 
-        <button
-          type="button"
-          className="link remove"
-          title={t('common.delete')}
-          disabled={busy}
-          onClick={() => remove(attachment)}
-        >
-          ✕
-        </button>
+        {!preview && (
+          <button
+            type="button"
+            className="link remove"
+            title={t('common.delete')}
+            disabled={busy}
+            onClick={() => remove(attachment)}
+          >
+            ✕
+          </button>
+        )}
       </li>
     )
   }
@@ -287,6 +289,26 @@ export default function LessonPanel({ nodeId, where = null, onClose, onSaved }) 
         number: where?.number,
         course: where?.course ?? '',
       })}
+      actions={
+        <>
+          <button
+            type="button"
+            className={preview ? 'chip active' : 'chip'}
+            aria-pressed={preview}
+            onClick={() => setPreview(!preview)}
+          >
+            {t(preview ? 'lesson.edit' : 'lesson.preview')}
+          </button>
+          <button
+            type="button"
+            className="compact"
+            disabled={busy || !dirty}
+            onClick={save}
+          >
+            {t('common.save')}
+          </button>
+        </>
+      }
     >
       {!draft ? (
         <p>{error ? <span className="error">{error}</span> : t('common.loading')}</p>
@@ -317,25 +339,21 @@ export default function LessonPanel({ nodeId, where = null, onClose, onSaved }) 
               </p>
             )}
 
-            <div className="lesson-head-row">
-            <input
-              className="lesson-title"
-              value={draft.title}
-              maxLength={200}
-              aria-label={t('plan.titleLabel')}
-              onChange={(event) => set('title', event.target.value)}
-            />
-            <div className="actions">
-              <button
-                type="button"
-                className={preview ? 'chip active' : 'chip'}
-                aria-pressed={preview}
-                onClick={() => setPreview(!preview)}
-              >
-                {t(preview ? 'lesson.edit' : 'lesson.preview')}
-              </button>
-            </div>
-            </div>
+            {/* В просмотре название и заметка — текст, а не поля: режим
+                называется «просмотр», и поле ввода в нём обещает правку,
+                которой не будет. Правится всё одной кнопкой, а не по
+                частям */}
+            {preview ? (
+              <p className="lesson-title static">{draft.title}</p>
+            ) : (
+              <input
+                className="lesson-title"
+                value={draft.title}
+                maxLength={200}
+                aria-label={t('plan.titleLabel')}
+                onChange={(event) => set('title', event.target.value)}
+              />
+            )}
           </header>
 
           <p className="lesson-status">
@@ -356,14 +374,18 @@ export default function LessonPanel({ nodeId, where = null, onClose, onSaved }) 
             </p>
           )}
 
-          <input
-            className="lesson-note"
-            value={draft.note}
-            maxLength={500}
-            placeholder={t('plan.notePlaceholder')}
-            aria-label={t('plan.noteLabel')}
-            onChange={(event) => set('note', event.target.value)}
-          />
+          {preview
+            ? draft.note.trim() && <p className="lesson-note static">{draft.note}</p>
+            : (
+                <input
+                  className="lesson-note"
+                  value={draft.note}
+                  maxLength={500}
+                  placeholder={t('plan.notePlaceholder')}
+                  aria-label={t('plan.noteLabel')}
+                  onChange={(event) => set('note', event.target.value)}
+                />
+              )}
 
           {FIELDS.map(field)}
 
@@ -374,6 +396,7 @@ export default function LessonPanel({ nodeId, where = null, onClose, onSaved }) 
               <ul className="attachments">{attachments.map(attachmentRow)}</ul>
             )}
 
+            {!preview && (
             <div
               className={overDropZone ? 'dropzone over' : 'dropzone'}
               onDragOver={(event) => {
@@ -385,6 +408,7 @@ export default function LessonPanel({ nodeId, where = null, onClose, onSaved }) 
             >
               {t('lesson.dropHere')}
             </div>
+            )}
 
             <input
               ref={fileInput}
@@ -398,24 +422,26 @@ export default function LessonPanel({ nodeId, where = null, onClose, onSaved }) 
               }}
             />
 
-            <div className="actions wrap">
-              <button
-                type="button"
-                className="secondary"
-                disabled={busy}
-                onClick={() => fileInput.current.click()}
-              >
-                {t('lesson.addFile')}
-              </button>
-              <button
-                type="button"
-                className="secondary"
-                disabled={busy}
-                onClick={() => setLink({ url: '', title: '' })}
-              >
-                {t('lesson.addLink')}
-              </button>
-            </div>
+            {!preview && (
+              <div className="actions wrap">
+                <button
+                  type="button"
+                  className="secondary"
+                  disabled={busy}
+                  onClick={() => fileInput.current.click()}
+                >
+                  {t('lesson.addFile')}
+                </button>
+                <button
+                  type="button"
+                  className="secondary"
+                  disabled={busy}
+                  onClick={() => setLink({ url: '', title: '' })}
+                >
+                  {t('lesson.addLink')}
+                </button>
+              </div>
+            )}
 
             {link && (
               <form className="inline-form" onSubmit={submitLink}>
@@ -447,11 +473,6 @@ export default function LessonPanel({ nodeId, where = null, onClose, onSaved }) 
             )}
           </section>
 
-          <footer className="actions lesson-foot">
-            <button type="button" disabled={busy || !dirty} onClick={save}>
-              {t('common.save')}
-            </button>
-          </footer>
         </>
       )}
     </Modal>

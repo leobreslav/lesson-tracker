@@ -90,6 +90,33 @@ test('превью отрисовывает формулы через KaTeX', as
   await expect(rendered.locator('h2')).toContainText('Признак делимости на 3')
 })
 
+test('в просмотре не правится ничего, включая название и заметку', async ({
+  page,
+  signIn,
+}) => {
+  // Режим называется «просмотр», и поле ввода в нём обещает правку, которой
+  // не будет. Раньше замирало только содержание, а название с заметкой
+  // оставались полями — и это читалось как поломка, а не как режим.
+  await signIn(PEOPLE.ivanova)
+  await openPlan(page)
+  const panel = await openLesson(page, WITH_CONTENT)
+
+  await expect(panel.locator('input.lesson-title')).toBeVisible()
+  await panel.getByRole('button', { name: 'Просмотр' }).click()
+
+  await expect(panel.locator('input.lesson-title')).toHaveCount(0)
+  await expect(panel.locator('input.lesson-note')).toHaveCount(0)
+  await expect(panel.locator('.lesson-title.static')).toBeVisible()
+  await expect(panel.locator('textarea')).toHaveCount(0)
+  // и вложения только читаются: ни зоны перетаскивания, ни кнопок
+  await expect(panel.locator('.dropzone')).toHaveCount(0)
+  await expect(panel.getByRole('button', { name: 'Добавить файл' })).toHaveCount(0)
+
+  // «Правка» возвращает поля
+  await panel.getByRole('button', { name: 'Правка' }).click()
+  await expect(panel.locator('input.lesson-title')).toBeVisible()
+})
+
 test('правка помечается несохранённой и доезжает до сервера', async ({
   page,
   signIn,
