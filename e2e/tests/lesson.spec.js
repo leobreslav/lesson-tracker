@@ -192,6 +192,16 @@ test('ссылка добавляется к уроку и сразу видна
   await panel.getByRole('button', { name: 'Добавить ссылку…' }).click()
   // scoped to the form: the lesson title above carries the same label
   const form = panel.locator('.inline-form')
+
+  // ряд остаётся рядом: `.modal-body form` кладёт детей колонкой, и поле с
+  // `flex-basis: 8rem` вырастало вверх, а форма занимала пол-окна
+  const box = await form.boundingBox()
+  expect(Math.round(box.height), 'форма добавления встала столбиком').toBeLessThan(90)
+  const heights = await form
+    .locator('input, button')
+    .evaluateAll((nodes) => nodes.map((node) => Math.round(node.getBoundingClientRect().height)))
+  expect(new Set(heights).size, `разная высота: ${heights}`).toBe(1)
+
   await form.getByLabel('Адрес').fill('https://example.org/sieve')
   await form.getByLabel('Название').fill('Решето Эратосфена')
   await form.getByRole('button', { name: 'Добавить' }).click()
