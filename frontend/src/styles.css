@@ -4686,10 +4686,19 @@ button.day-head:hover {
   background: #fff;
 }
 
-.lesson-head {
+/* шапка стала в две строки: сперва «что это», потом само название */
+.lesson-head-row {
   display: flex;
   gap: 0.75rem;
   align-items: center;
+}
+
+.lesson-where {
+  margin-bottom: 0.4rem;
+}
+
+.lesson-head {
+  display: block;
   position: sticky;
   top: 1.25rem;
   z-index: 1;

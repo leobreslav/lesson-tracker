@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { longDate } from './dates'
 import Modal from './Modal'
 import Rendered from './Markdown'
 import { formatSize, iconFor } from './fileKind'
@@ -35,7 +36,12 @@ const empty = { title: '', note: '', objectives: '', body: '', formative: '', ho
 const pick = (node) =>
   Object.fromEntries(Object.keys(empty).map((field) => [field, node[field] ?? '']))
 
-export default function LessonPanel({ nodeId, onClose, onSaved }) {
+/**
+ * `where` — где эта строка стоит: номер урока, дата по раскладке, проведено
+ * ли занятие. Считает это страница плана: у неё есть и дерево с номерами, и
+ * лента слотов, а панель знает только id и своё содержание.
+ */
+export default function LessonPanel({ nodeId, where = null, onClose, onSaved }) {
   const { t } = useTranslation()
 
   const [saved, setSaved] = useState(null)
@@ -277,6 +283,36 @@ export default function LessonPanel({ nodeId, onClose, onSaved }) {
       ) : (
         <>
           <header className="lesson-head">
+            {/*
+              Чем эта запись является и куда ложится.
+
+              Окно открывается из двух мест — из таблицы плана и со страницы
+              занятия, — и во втором человек приходит сюда за правкой урока,
+              а правит **строку программы**. Без этой шапки он не отличал бы
+              одно от другого: заголовок, поле, кнопка — и ни слова о том,
+              что перед ним.
+
+              Дата названа «по раскладке» ровно потому, что она догадка:
+              строка не привязана к дню, и её сдвинет любая правка плана
+              выше. У проведённого занятия дата уже записана, и слово другое.
+            */}
+            {where && (
+              <p className="hint lesson-where">
+                {[
+                  where.number
+                    ? t('lesson.where.row', { number: where.number })
+                    : t('lesson.where.plan'),
+                  where.date
+                    ? t(where.taught ? 'lesson.where.taughtOn' : 'lesson.where.planned', {
+                        date: longDate(where.date),
+                      })
+                    : t('lesson.where.noSlot'),
+                ].join(' · ')}
+                {!where.taught && ` — ${t('lesson.where.notTaught')}`}
+              </p>
+            )}
+
+            <div className="lesson-head-row">
             <input
               className="lesson-title"
               value={draft.title}
@@ -293,6 +329,7 @@ export default function LessonPanel({ nodeId, onClose, onSaved }) {
               >
                 {t(preview ? 'lesson.edit' : 'lesson.preview')}
               </button>
+            </div>
             </div>
           </header>
 

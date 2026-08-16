@@ -290,6 +290,16 @@ export default function Plan({ onLoggedOut }) {
     }
   }, [data, ribbon])
 
+  /** Узел по id: дерево двухуровневое, и плоского вида у него нет. */
+  const nodeById = useMemo(() => {
+    const map = new Map()
+    for (const node of data?.nodes ?? []) {
+      map.set(node.id, node)
+      for (const child of node.children ?? []) map.set(child.id, child)
+    }
+    return map
+  }, [data])
+
   /**
    * One request per finished drag.
    *
@@ -901,6 +911,13 @@ export default function Plan({ onLoggedOut }) {
         <Suspense fallback={null}>
           <LessonPanel
             nodeId={opened}
+            // номер и признак «проведено» — из дерева, дата — из сшивки с
+            // лентой слотов; знает и то и другое только страница
+            where={{
+              number: nodeById.get(opened)?.number ?? null,
+              taught: Boolean(nodeById.get(opened)?.taught),
+              date: layout.byId.get(opened)?.slot?.date ?? null,
+            }}
             onClose={() => {
               setOpened(null)
               if (returnTo) navigate(returnTo)

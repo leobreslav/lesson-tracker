@@ -271,7 +271,15 @@ test('«Правка в плане…» открывает окно правки
 
   await expect(page).toHaveURL(/\/plan/)
   const panel = page.locator('dialog.modal')
+  await expect(panel).toBeVisible()
   await expect(panel.locator('.lesson-title')).toHaveValue(title)
+
+  // шапка говорит, что перед вами: строка программы, её номер, куда она
+  // ложится по раскладке и что занятие ещё не проведено
+  await expect(panel.locator('.lesson-where')).toContainText('Строка учебного плана')
+  await expect(panel.locator('.lesson-where')).toContainText(/урок \d+/)
+  await expect(panel.locator('.lesson-where')).toContainText(/по раскладке — \d+/)
+  await expect(panel.locator('.lesson-where')).toContainText('ещё не проведено')
 
   // крестик не перекрыт прижатой шапкой панели: обе прижимаются стопкой,
   // и отрицательный отступ шапки однажды уже съел его половину
@@ -342,6 +350,10 @@ async function openLesson(page, cell = `${MONDAY}:1`) {
   await page.locator(`[data-lesson="${cell}"]`).click()
   await page.locator('dialog.modal').getByRole('button', { name: 'Открыть урок' }).click()
   await ready(page)
+  // `ready` ждёт бар и тишину в сети, а не смену страницы: заголовок
+  // расписания успевает пожить на экране ещё кадр, и тест, читающий `h1`
+  // сразу после, примерно раз в пять получал «Моё расписание»
+  await expect(page).toHaveURL(/\/lesson\/\d+$/)
 }
 
 

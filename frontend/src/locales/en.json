@@ -792,6 +792,14 @@
       "b": "{{value}} B",
       "kb": "{{value}} KB",
       "mb": "{{value}} MB"
+    },
+    "where": {
+      "plan": "A row of the curriculum map",
+      "row": "A row of the curriculum map · lesson {{number}}",
+      "planned": "falls on {{date}} as the plan stands",
+      "taughtOn": "taught on {{date}}",
+      "noSlot": "does not fit into the school year",
+      "notTaught": "the lesson has not been taught yet, and any edit above moves the date"
     }
   },
   "reviews": {
