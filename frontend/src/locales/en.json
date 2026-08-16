@@ -801,13 +801,10 @@
       "notTaught": "the lesson has not been taught yet, and any edit above moves the date"
     },
     "add": {
-      "file": "Add a file…",
-      "link": "Add a link…",
-      "text": "Add text…"
+      "file": "Add a file…"
     },
     "resourcePlaceholder": "https://… or «Textbook, §14»",
-    "resourceLabel": "A link or a note",
-    "textPlaceholder": "for example, «Textbook, §14»"
+    "resourceLabel": "A link or a note"
   },
   "reviews": {
     "noTeacher": "nobody teaches it yet",

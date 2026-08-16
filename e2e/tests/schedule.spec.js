@@ -225,8 +225,9 @@ test('пока связь не записана, план со страницы 
     page.getByText(/Занятие ещё не проведено/),
   ).toBeVisible()
 
-  for (const name of ['Правка…', 'Добавить ссылку'])
-    await expect(page.getByRole('button', { name })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Правка…' })).toHaveCount(0)
+  // и поля добавления материала нет: заводить его отсюда тоже нельзя
+  await expect(page.getByLabel('Ссылка или заметка')).toHaveCount(0)
 
   // а на их месте — ссылка туда, где правят: полосы над блоками мало,
   // спрашивают про этот раздел и ровно там, где ищут «Правка…»
@@ -522,10 +523,10 @@ test('записанная связь открывает туннель, и он
 
   await content.hover()
   await expect(content.getByRole('button', { name: 'Правка…' })).toBeVisible()
-  await materials.hover()
-  await expect(
-    materials.getByRole('button', { name: 'Добавить ссылку' }),
-  ).toBeVisible()
+  // материал заводится одним полем — тем же, что в окне правки строки
+  // плана: вид виден из написанного, кнопок «Добавить ссылку/текст» нет
+  await expect(materials.getByLabel('Ссылка или заметка')).toBeVisible()
+  await expect(materials.locator('button.dropzone')).toBeVisible()
   // и объяснение запрета убрано — запрещать больше нечего
   await expect(
     page.getByText(/Занятие ещё не проведено/),

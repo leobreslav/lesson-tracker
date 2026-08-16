@@ -8,7 +8,7 @@
 
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { formatSize, iconFor } from '../src/fileKind.js'
+import { formatSize, iconFor, looksLikeUrl } from '../src/fileKind.js'
 
 test('bytes stay bytes, kilobytes round, megabytes keep a decimal', () => {
   assert.deepEqual(formatSize(0), { unit: 'b', value: 0 })
@@ -38,4 +38,26 @@ test('the icon follows the extension, then the declared type', () => {
   )
   assert.equal(iconFor({ kind: 'file', file_name: 'thing.bin' }), '📎')
   assert.equal(iconFor({ kind: 'link', url: 'https://example.org' }), '🔗')
+})
+
+test('адрес отличается от заметки по строгому правилу, а не по догадке', () => {
+  // от этого зависит вид материала, заводимого одним полем: ссылка или
+  // просто строка текста
+  for (const value of [
+    'https://example.org/a',
+    'http://example.org',
+    '  https://example.org/a  ',
+    'HTTPS://EXAMPLE.ORG',
+  ])
+    assert.equal(looksLikeUrl(value), true, value)
+
+  for (const value of [
+    'Мордкович, §14',
+    'см. http://example.org',
+    'https://example.org и ещё',
+    'example.org',
+    'ftp://example.org',
+    '',
+  ])
+    assert.equal(looksLikeUrl(value), false, value)
 })

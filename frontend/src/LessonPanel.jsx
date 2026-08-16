@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { longDate } from './dates'
 import Modal from './Modal'
 import Rendered from './Markdown'
-import { formatSize, iconFor } from './fileKind'
+import { formatSize, iconFor, looksLikeUrl } from './fileKind'
 import {
   addLinkAttachment,
   addTextAttachment,
@@ -29,9 +29,6 @@ import {
  *   removing one takes effect at once. Holding a file hostage to a Save
  *   button would mean an upload that quietly never happened.
  */
-
-/** Целиком адрес — и ничего кроме: пробел внутри уже делает это записью. */
-const looksLikeUrl = (value) => /^https?:\/\/\S+$/i.test(value.trim())
 
 const FIELDS = ['objectives', 'body', 'formative', 'homework']
 

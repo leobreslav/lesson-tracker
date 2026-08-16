@@ -6,7 +6,7 @@ import LessonAttendance from './LessonAttendance'
 import Markdown from './Markdown'
 import WorkDialog from './WorkDialog'
 import { useDismissable } from './UserMenu'
-import { iconFor } from './fileKind'
+import { iconFor, looksLikeUrl } from './fileKind'
 import {
   addLinkAttachment,
   addTextAttachment,
@@ -104,9 +104,12 @@ export default function LessonScreen({ onLoggedOut }) {
   // вопрос «что сейчас сохранится»
   const [editing, setEditing] = useState(null)
   const [adding, setAdding] = useState(null) // 'work' | 'homework'
-  const [form, setForm] = useState(null) // 'rename' | 'cancel' | 'link' | 'text'
+  const [form, setForm] = useState(null) // 'rename' | 'cancel'
   const [text, setText] = useState('')
-  const [link, setLink] = useState({ url: '', title: '' })
+  // материал заводится одним полем: вид виден из написанного
+  const [resource, setResource] = useState('')
+  const [linkTitle, setLinkTitle] = useState('')
+  const [overDrop, setOverDrop] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
   const [error, setError] = useState(null)
 
@@ -190,7 +193,6 @@ export default function LessonScreen({ onLoggedOut }) {
   const open = (kind) => {
     setForm(kind)
     setText(kind === 'rename' ? topic.title : '')
-    setLink({ url: '', title: '' })
   }
 
   /**
@@ -281,30 +283,12 @@ export default function LessonScreen({ onLoggedOut }) {
   const submit = (event) => {
     event.preventDefault()
 
-    if (form === 'link') {
-      if (!link.url.trim()) return
-      run(() =>
-        addLinkAttachment({
-          planRow: topic.id,
-          url: link.url.trim(),
-          title: link.title.trim() || link.url.trim(),
-        }),
-      )
-      return
-    }
-
     const value = text.trim()
     if (form === 'cancel') {
       run(() => updateSlot(card.id, { is_cancelled: true, reason: value }))
       return
     }
     if (!value) return
-
-    // материал без файла и адреса: сказанное и есть весь материал
-    if (form === 'text') {
-      run(() => addTextAttachment({ planRow: topic.id, title: value }))
-      return
-    }
 
     // переименование — жёсткая правка: та же строка, сказанная точнее
     // («Синус суммы. Начало»). Меняется программа курса, и это осознанно
@@ -619,52 +603,12 @@ export default function LessonScreen({ onLoggedOut }) {
       <Collapsible
         name="materials"
         title={t('lessonScreen.materials')}
-        empty={!topic?.attachments?.length && form !== 'link'}
+        empty={!topic?.attachments?.length && !editable}
         note={topic?.attachments?.length || t('lessonScreen.blankInPlan')}
-        actions={
-          !editable ? (
-            planLink
-          ) : (
-            <>
-              <button
-                type="button"
-                className="secondary compact"
-                disabled={busy}
-                onClick={() => open('link')}
-              >
-                {t('lesson.add.link')}
-              </button>
-              <button
-                type="button"
-                className="secondary compact"
-                disabled={busy}
-                onClick={() => open('text')}
-              >
-                {t('lesson.add.text')}
-              </button>
-              <button
-                type="button"
-                className="secondary compact"
-                disabled={busy}
-                onClick={() => fileInput.current?.click()}
-              >
-                {t('lesson.add.file')}
-              </button>
-              {/* нативный input прячется: его подпись браузер рисует сам,
-                  на своём языке и своей кнопкой */}
-              <input
-                ref={fileInput}
-                type="file"
-                className="hidden-file"
-                aria-label={t('lesson.add.file')}
-                onChange={(event) => {
-                  const file = event.target.files?.[0]
-                  if (file) run(() => uploadAttachment({ planRow: topic.id, file }))
-                }}
-              />
-            </>
-          )
-        }
+        // добавляют материал не кнопкой в шапке, а полем в самом разделе —
+        // тем же, что в окне правки строки плана: список один, и заводиться
+        // он должен одинаково
+        actions={editable ? null : planLink}
       >
         {topic?.attachments?.length > 0 && (
           <ul className="attachments">
@@ -704,49 +648,87 @@ export default function LessonScreen({ onLoggedOut }) {
           </ul>
         )}
 
-        {editable && form === 'text' && (
-          <form className="row" onSubmit={submit}>
+        {/*
+          Тот же ряд, что в окне правки строки плана: зона перетаскивания и
+          одно поле. Вид материала виден из написанного — целиком адрес это
+          ссылка, всё остальное запись, — и спрашивать его отдельной кнопкой
+          незачем. Список тут и там один, и заводится он одинаково.
+        */}
+        {editable && (
+          <>
+            <button
+              type="button"
+              className={overDrop ? 'dropzone over' : 'dropzone'}
+              disabled={busy}
+              onClick={() => fileInput.current?.click()}
+              onDragOver={(event) => {
+                event.preventDefault()
+                setOverDrop(true)
+              }}
+              onDragLeave={() => setOverDrop(false)}
+              onDrop={(event) => {
+                event.preventDefault()
+                setOverDrop(false)
+                const file = event.dataTransfer?.files?.[0]
+                if (file) run(() => uploadAttachment({ planRow: topic.id, file }))
+              }}
+            >
+              {t('lesson.dropHere')}
+            </button>
+            {/* нативный input прячется: его подпись браузер рисует сам, на
+                своём языке и своей кнопкой */}
             <input
-              autoFocus
-              value={text}
-              maxLength={200}
-              placeholder={t('lesson.textPlaceholder')}
-              aria-label={t('lesson.add.text')}
-              onChange={(event) => setText(event.target.value)}
+              ref={fileInput}
+              type="file"
+              className="hidden-file"
+              aria-label={t('lesson.add.file')}
+              onChange={(event) => {
+                const file = event.target.files?.[0]
+                if (file) run(() => uploadAttachment({ planRow: topic.id, file }))
+                event.target.value = ''
+              }}
             />
-            <button type="submit" disabled={busy || !text.trim()}>
-              {t('common.save')}
-            </button>
-            <button type="button" className="secondary" onClick={() => setForm(null)}>
-              {t('common.cancel')}
-            </button>
-          </form>
-        )}
 
-        {editable && form === 'link' && (
-            <form className="row" onSubmit={submit}>
+            <form
+              className="inline-form bare"
+              onSubmit={(event) => {
+                event.preventDefault()
+                const value = resource.trim()
+                if (!value) return
+                run(async () => {
+                  await (looksLikeUrl(value)
+                    ? addLinkAttachment({
+                        planRow: topic.id,
+                        url: value,
+                        title: linkTitle.trim() || value,
+                      })
+                    : addTextAttachment({ planRow: topic.id, title: value }))
+                  setResource('')
+                  setLinkTitle('')
+                })
+              }}
+            >
               <input
-                autoFocus
-                type="url"
-                value={link.url}
-                placeholder={t('lessonScreen.linkAddress')}
-                aria-label={t('lessonScreen.linkAddress')}
-                onChange={(event) => setLink({ ...link, url: event.target.value })}
+                value={resource}
+                maxLength={500}
+                placeholder={t('lesson.resourcePlaceholder')}
+                aria-label={t('lesson.resourceLabel')}
+                onChange={(event) => setResource(event.target.value)}
               />
-              <input
-                value={link.title}
-                maxLength={200}
-                placeholder={t('lessonScreen.linkTitle')}
-                aria-label={t('lessonScreen.linkTitle')}
-                onChange={(event) => setLink({ ...link, title: event.target.value })}
-              />
-              <button type="submit" disabled={busy}>
-                {t('common.save')}
-              </button>
-              <button type="button" className="secondary" onClick={() => setForm(null)}>
-                {t('common.cancel')}
+              {looksLikeUrl(resource) && (
+                <input
+                  value={linkTitle}
+                  maxLength={200}
+                  placeholder={t('lesson.linkTitle')}
+                  aria-label={t('lesson.linkTitle')}
+                  onChange={(event) => setLinkTitle(event.target.value)}
+                />
+              )}
+              <button type="submit" disabled={busy || !resource.trim()}>
+                {t('common.add')}
               </button>
             </form>
+          </>
         )}
       </Collapsible>
       )}

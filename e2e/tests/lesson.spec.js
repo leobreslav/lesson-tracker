@@ -110,7 +110,7 @@ test('в просмотре не правится ничего, включая �
   await expect(panel.locator('textarea')).toHaveCount(0)
   // и вложения только читаются: ни зоны перетаскивания, ни кнопок
   await expect(panel.locator('.dropzone')).toHaveCount(0)
-  await expect(panel.getByRole('button', { name: 'Добавить файл' })).toHaveCount(0)
+  await expect(panel.getByLabel('Ссылка или заметка')).toHaveCount(0)
 
   // а пустой раздел в просмотре и не разворачивается: каретка, за которой
   // пустота, — обещание содержимого, которого нет
