@@ -10,7 +10,9 @@ const MONDAY = '2026-09-07'
 async function openPlan(page, course) {
   await page.goto('/plan')
   await ready(page)
-  await page.getByRole('button', { name: course, exact: true }).click()
+  // курс выбирают селектом в строке заголовка: чипы не пережили
+  // учителя музыки с полутора десятками курсов
+  await page.getByLabel('Курс').selectOption({ label: course })
   await expect(page.locator('.plan-cards')).toBeVisible()
 }
 
@@ -124,10 +126,10 @@ test('второй учитель не видит ни уроков, ни пла
   // now a table of its own, and hers is not in it
   await page.goto('/plan')
   await ready(page)
-  await expect(
-    page.getByRole('button', { name: 'Grade 6 Algebra', exact: true }),
-  ).toHaveCount(0)
-  await expect(page.getByRole('button', { name: 'Grade 9 Algebra', exact: true })).toBeVisible()
+  // курсы перечислены в селекте заголовка, и чужого там нет
+  const offered = await page.getByLabel('Курс').locator('option').allTextContents()
+  expect(offered).not.toContain('Grade 6 Algebra')
+  expect(offered).toContain('Grade 9 Algebra')
 
   // and the API says the same, so it is not the interface hiding things
   const petrov = await api(PEOPLE.petrov)
@@ -140,7 +142,9 @@ test('второй учитель не видит ни уроков, ни пла
 async function openShelf(page, course) {
   await page.goto('/plan')
   await ready(page)
-  await page.getByRole('button', { name: course, exact: true }).click()
+  // курс выбирают селектом в строке заголовка: чипы не пережили
+  // учителя музыки с полутора десятками курсов
+  await page.getByLabel('Курс').selectOption({ label: course })
   await expect(page.locator('.plan-cards')).toBeVisible()
   await page.getByRole('button', { name: 'Из библиотеки' }).click()
   await expect(page.locator('dialog.modal')).toBeVisible()
@@ -199,7 +203,7 @@ test('рост к утверждённому эталону виден на «С
   // добавили урок — план вырос ровно на него
   await page.goto('/plan')
   await ready(page)
-  await page.getByRole('button', { name: 'Grade 6 Algebra', exact: true }).click()
+  await page.getByLabel('Курс').selectOption({ label: 'Grade 6 Algebra' })
   await expect(page.locator('.plan-cards')).toBeVisible()
   await page.getByRole('button', { name: '+ урок' }).click()
   const form = page.locator('.plan-add-form')

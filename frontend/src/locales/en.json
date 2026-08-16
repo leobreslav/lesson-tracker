@@ -399,7 +399,8 @@
     },
     "publishFromCourse": "The subject and the year of study come from the course: {{subject}}, year {{grade}}.",
     "taught": "Lesson already taught: it keeps its place.",
-    "openLesson": "Open the lesson"
+    "openLesson": "Open the lesson",
+    "courseLabel": "Course"
   },
   "status": {
     "title": "My courses",

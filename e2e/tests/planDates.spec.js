@@ -14,7 +14,9 @@ const COURSE = 'Grade 6 Algebra'
 const openPlan = async (page, course = COURSE) => {
   await page.goto('/plan')
   await ready(page)
-  await page.getByRole('button', { name: course, exact: true }).click()
+  // курс выбирают селектом в строке заголовка: чипы не пережили
+  // учителя музыки с полутора десятками курсов
+  await page.getByLabel('Курс').selectOption({ label: course })
   await expect(page.locator('.plan-cards')).toBeVisible()
 }
 
@@ -470,7 +472,7 @@ test('урок вне темы стоит на уровне темы, а вло�
   await page.goto('/plan')
   await ready(page)
   // курс без плана: соберём в нём тему, урок внутри и урок вне
-  await page.getByRole('button', { name: 'Grade 9 Geometry', exact: true }).click()
+  await page.getByLabel('Курс').selectOption({ label: 'Grade 9 Geometry' })
   await expect(page.locator('.plan-cards')).toBeVisible()
 
   const add = async (button, title) => {

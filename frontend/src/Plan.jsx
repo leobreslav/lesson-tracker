@@ -19,7 +19,8 @@ import Modal from './Modal'
 import { freeSlots, layoutTotals, stitchLayout } from './planLayout'
 import { shortDate } from './dates'
 import { today } from './calendarLogic'
-import { remember, remembered } from './remember'
+import CoursePicker from './CoursePicker'
+import { lastChoice, remember, remembered, rememberChoice } from './remember'
 import { applyMove, countBlocks, planRows } from './planLogic'
 import {
   createPlanNode,
@@ -190,7 +191,16 @@ export default function Plan({ onLoggedOut }) {
         if (cancelled) return
         setClasses(classList)
         setYears(yearList)
-        setClassId((current) => current ?? classList[0]?.id ?? null)
+        // порядок: адрес, на который привели, потом прошлый выбор, потом
+        // первый попавшийся — иначе учитель с пятнадцатью курсами каждый
+        // заход начинал бы с первого по алфавиту
+        setClassId((current) => {
+          const remembered = lastChoice('course')
+          const known = (id) => classList.some((item) => item.id === id)
+          if (current && known(current)) return current
+          if (known(remembered)) return remembered
+          return classList[0]?.id ?? null
+        })
       })
       .catch((err) => {
         if (!cancelled) handleError(err)
@@ -403,6 +413,12 @@ export default function Plan({ onLoggedOut }) {
       return next
     })
 
+  /** Выбор курса запоминается: он один на все страницы, см. `remember.js`. */
+  const pickClass = (id) => {
+    setClassId(id)
+    rememberChoice('course', id)
+  }
+
   const classLabel = (item) => {
     const year = yearById.get(item.year)
     return years.length > 1 && year ? `${item.name} · ${year.name}` : item.name
@@ -560,6 +576,15 @@ export default function Plan({ onLoggedOut }) {
     <main className="page wide">
       <header className="page-header">
         <h1>{t('plan.title')}</h1>
+        {/* курс — в строке заголовка: это не фильтр к странице, а то, про
+            что она. Полтора десятка чипов под заголовком занимали две
+            строки ради выбора, который делают раз за заход */}
+        <CoursePicker
+          courses={classes ?? []}
+          value={classId}
+          onChange={pickClass}
+          label={classLabel}
+        />
       </header>
 
       {!classes.length ? (
@@ -575,19 +600,6 @@ export default function Plan({ onLoggedOut }) {
         </EmptyState>
       ) : (
         <>
-          <div className="year-picker">
-            {classes.map((item) => (
-              <button
-                type="button"
-                key={item.id}
-                className={item.id === classId ? 'chip active' : 'chip'}
-                onClick={() => setClassId(item.id)}
-              >
-                {classLabel(item)}
-              </button>
-            ))}
-          </div>
-
           {data && (
             <div className="cards plan-cards">
               {ribbon.length > 0 && (

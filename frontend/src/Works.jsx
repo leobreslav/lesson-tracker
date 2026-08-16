@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
 import EmptyState from './EmptyState'
+import CoursePicker from './CoursePicker'
 import Markdown from './Markdown'
 import TaskDialog from './TaskDialog'
 import WorkDialog from './WorkDialog'
@@ -18,7 +19,7 @@ import {
   updateTask,
   updateWork,
 } from './api'
-import { remember, remembered } from './remember'
+import { lastChoice, remember, remembered, rememberChoice } from './remember'
 
 // показывать ли эталоны в списке задач: это переключатель вида, а не
 // настройка работы, поэтому он помнится браузером, а не хранится в базе
@@ -61,10 +62,23 @@ export default function Works({ onLoggedOut }) {
     fetchCourses()
       .then((list) => {
         setCourses(list)
-        setCourseId((current) => current ?? list[0]?.id ?? null)
+        // прошлый выбор раньше первого по алфавиту: ключ общий со страницей
+        // плана — работают обычно в одном курсе
+        setCourseId((current) => {
+          const remembered = lastChoice('course')
+          const known = (id) => list.some((item) => item.id === id)
+          if (current && known(current)) return current
+          if (known(remembered)) return remembered
+          return list[0]?.id ?? null
+        })
       })
       .catch(handleError)
   }, [handleError])
+
+  const pickCourse = (id) => {
+    setCourseId(id)
+    rememberChoice('course', id)
+  }
 
   const reload = useCallback(
     () => (courseId ? fetchWorks(courseId).then(setWorks) : Promise.resolve()),
@@ -137,6 +151,7 @@ export default function Works({ onLoggedOut }) {
     <main className="page wide">
       <header className="page-header">
         <h1>{t('nav.works')}</h1>
+        <CoursePicker courses={courses} value={courseId} onChange={pickCourse} />
       </header>
 
       {!courses.length ? (
@@ -158,19 +173,6 @@ export default function Works({ onLoggedOut }) {
           {error}
         </p>
       )}
-
-      <div className="year-picker">
-        {courses.map((course) => (
-          <button
-            type="button"
-            key={course.id}
-            className={course.id === courseId ? 'chip active' : 'chip'}
-            onClick={() => setCourseId(course.id)}
-          >
-            {course.name}
-          </button>
-        ))}
-      </div>
 
       <section className="panel">
         <div className="panel-head spread">

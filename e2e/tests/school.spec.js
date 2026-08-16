@@ -46,7 +46,9 @@ test('администратор заводит курс и назначает �
   // где с ними работают
   await signIn(PEOPLE.ivanova)
   await openSection(page, '/plan')
-  await expect(page.getByRole('button', { name: '9А Алгебра' })).toBeVisible()
+  // курс появился в селекте заголовка — там теперь выбирают курс
+  await expect(page.getByLabel('Курс').locator('option', { hasText: '9А Алгебра' }))
+    .toHaveCount(1)
 })
 
 test('длинное название курса сохраняется целиком и не рвёт карточку', async ({

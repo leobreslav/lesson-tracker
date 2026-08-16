@@ -12,7 +12,9 @@ const EMPTY_COURSE = 'Grade 9 Geometry'
 async function openPlan(page, course) {
   await page.goto('/plan')
   await ready(page)
-  await page.getByRole('button', { name: course, exact: true }).click()
+  // курс выбирают селектом в строке заголовка: чипы не пережили
+  // учителя музыки с полутора десятками курсов
+  await page.getByLabel('Курс').selectOption({ label: course })
   await expect(page.locator('.plan-cards')).toBeVisible()
 }
 

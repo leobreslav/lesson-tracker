@@ -1728,6 +1728,34 @@ a.link-button:hover {
   background: #f1f5fd;
 }
 
+/*
+ * Курс в строке заголовка: «Учебный план — 7Б Физика».
+ *
+ * Чипами это было, и на пятнадцати курсах учителя музыки полтора десятка
+ * кнопок занимали две строки над содержимым — ради выбора, который делают
+ * раз за заход. Селект не растёт от их числа вовсе.
+ */
+.page-header .course-picker {
+  /* рядом с заголовком, а не у дальнего края: у шапки `space-between`, и
+     свободное место должно уйти после селекта, а не перед ним */
+  margin-right: auto;
+  height: var(--control-height);
+  max-width: min(20rem, 60vw);
+  padding: 0.2rem 0.5rem;
+  font: inherit;
+  font-size: 1rem;
+  color: inherit;
+  background: #fff;
+  border: 1px solid #c6c6c6;
+  border-radius: 4px;
+}
+
+.page-header .course-picked {
+  margin-right: auto;
+  font-size: 1rem;
+  color: #5f6368;
+}
+
 /* --- календарь --- */
 
 .calendar-layout {

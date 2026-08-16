@@ -26,3 +26,28 @@ export function remember(key, value) {
     // приватный режим — просто не запоминаем
   }
 }
+
+/**
+ * Последний выбранный курс — не переключатель вида, а место работы.
+ *
+ * У учителя музыки полтора десятка курсов, и открывать план всегда на
+ * первом по алфавиту значит заставлять его выбирать заново каждый заход.
+ * Ключ один на все страницы: работают обычно в одном курсе, и «план 7Б, а
+ * работы 5А» — состояние, которого никто не просил.
+ */
+export function lastChoice(key) {
+  try {
+    const saved = localStorage.getItem(key)
+    return saved === null ? null : Number(saved) || null
+  } catch {
+    return null
+  }
+}
+
+export function rememberChoice(key, value) {
+  try {
+    localStorage.setItem(key, String(value))
+  } catch {
+    // приватный режим — просто не запоминаем
+  }
+}

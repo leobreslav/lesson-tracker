@@ -19,7 +19,9 @@ const WITH_LINK = 'Длина окружности'
 async function openPlan(page) {
   await page.goto('/plan')
   await ready(page)
-  await page.getByRole('button', { name: COURSE, exact: true }).click()
+  // курс выбирают селектом в строке заголовка: чипы не пережили
+  // учителя музыки с полутора десятками курсов
+  await page.getByLabel('Курс').selectOption({ label: COURSE })
   await expect(page.locator('.plan-cards')).toBeVisible()
 }
 
