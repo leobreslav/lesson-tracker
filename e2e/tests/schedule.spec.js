@@ -253,6 +253,36 @@ test('пока связь не записана, план со страницы 
   await expect(row).toContainText(title)
 })
 
+test('«Правка в плане…» открывает окно правки, а не просто план', async ({
+  page,
+  signIn,
+}) => {
+  // Приводить на подсвеченную строку и просить нажать ещё раз — лишнее
+  // нажатие ради того, о чём уже попросили.
+  await signIn(PEOPLE.ivanova)
+  await openLesson(page)
+
+  const title = await page.locator('h1').textContent()
+  await page
+    .locator('[data-block="content"]')
+    .getByRole('link', { name: 'Правка в плане…' })
+    .click()
+  await ready(page)
+
+  await expect(page).toHaveURL(/\/plan/)
+  const panel = page.locator('dialog.modal')
+  await expect(panel.locator('.lesson-title')).toHaveValue(title)
+
+  // и крестик не перекрыт прижатой шапкой панели: обе прижимаются стопкой,
+  // и отрицательный отступ шапки однажды уже съел его половину
+  const cross = await panel.getByRole('button', { name: 'Закрыть окно' }).boundingBox()
+  const head = await panel.locator('.lesson-head').boundingBox()
+  expect(
+    Math.round(cross.y + cross.height),
+    'шапка панели наползает на крестик',
+  ).toBeLessThanOrEqual(Math.round(head.y) + 1)
+})
+
 test('урок листается по своему курсу и показывает содержание', async ({
   page,
   signIn,

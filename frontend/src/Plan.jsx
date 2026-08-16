@@ -85,12 +85,17 @@ export default function Plan({ onLoggedOut }) {
   const [target] = useState(() => ({
     course: Number(search.get('course')) || null,
     row: Number(search.get('row')) || null,
+    // `edit=1` — открыть окно правки сразу: со страницы занятия сюда
+    // приходят именно за ним, и «мы вас привели, теперь нажмите» это ещё
+    // одно нажатие ради того, о чём уже попросили
+    edit: search.get('edit') === '1',
   }))
 
   const [classes, setClasses] = useState(null)
   const [years, setYears] = useState([])
   const [classId, setClassId] = useState(target.course)
   const scrolled = useRef(false)
+  const panelOpened = useRef(false)
   const [data, setData] = useState(null) // {nodes, counts}
 
   const [busy, setBusy] = useState(false)
@@ -136,18 +141,36 @@ export default function Plan({ onLoggedOut }) {
   }, [search, setSearch])
 
   /**
-   * Прокрутка к строке — один раз за приход.
+   * Окно правки — как только пришло дерево.
    *
-   * Дерево перечитывается после каждой правки, и эффект без сторожа
-   * возвращал бы человека к той же строке, что бы он ни делал дальше.
+   * От разметки не зависит намеренно: строка появляется в ней не в тот же
+   * миг, и ждать её незачем — панели нужен только id.
+   *
+   * Сторож одноразовый: без него окно возвращалось бы после каждого
+   * закрытия, пока дерево перечитывается.
    */
   useEffect(() => {
-    if (!target.row || !data || scrolled.current) return
+    if (!target.row || !target.edit || !data || panelOpened.current) return
+    panelOpened.current = true
+    setOpened(target.row)
+  }, [target, data])
+
+  /**
+   * Прокрутка к строке — один раз за приход.
+   *
+   * **Зависимостей у эффекта нет вовсе, и это не небрежность.** Строка
+   * появляется в разметке не тогда, когда приходит дерево, а на один-два
+   * рендера позже; эффект, зависевший от `data`, промахивался мимо неё и
+   * больше не повторялся — прокрутка молча не случалась примерно в половине
+   * случаев. Сторож стоит на ref, поэтому лишние проходы бесплатны.
+   */
+  useEffect(() => {
+    if (!target.row || scrolled.current) return
     const row = document.querySelector(`[data-node="${dragId(target.row)}"]`)
     if (!row) return
     scrolled.current = true
     row.scrollIntoView({ block: 'center' })
-  }, [target.row, data])
+  })
 
   useEffect(() => {
     let cancelled = false

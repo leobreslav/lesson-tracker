@@ -171,6 +171,8 @@ export default function LessonScreen({ onLoggedOut }) {
   // правят там, где её видно в окружении
   const editable = may && card.confirmed && topic
   const inPlan = topic ? `/plan?course=${card.course.id}&row=${topic.id}` : null
+  // «Правка в плане…» ведёт сразу в окно правки этой строки: за ним и идут
+  const editInPlan = inPlan && `${inPlan}&edit=1`
   // раздел, в котором нечего показывать, рисуется одной строкой: пустота не
   // должна занимать столько же места, сколько содержимое.
   //
@@ -252,7 +254,7 @@ export default function LessonScreen({ onLoggedOut }) {
    * теперь он есть и под рукой.
    */
   const planLink = may && topic && !cancelled && (
-    <Link className="link-button" to={inPlan}>
+    <Link className="link-button" to={editInPlan}>
       {t('lessonScreen.editInPlan')}
     </Link>
   )
