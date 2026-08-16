@@ -287,7 +287,10 @@ class ReserveSinceTests(LayoutApiTestCase):
         return approval.approve(baseline, self.user)
 
     def reserve(self):
-        rows = self.client.get(reverse("plannode-progress")).json()["courses"]
+        from django.utils import timezone
+        from plans import progress
+
+        rows = progress.rows_for(progress.own_courses(self.user), timezone.localdate())
         row = next(item for item in rows if item["id"] == self.course.pk)
         return row["baseline"]["reserve"]
 
@@ -339,7 +342,10 @@ class ReserveSinceTests(LayoutApiTestCase):
 
         PlanBaseline.objects.all().delete()
 
-        rows = self.client.get(reverse("plannode-progress")).json()["courses"]
+        from django.utils import timezone
+        from plans import progress
+
+        rows = progress.rows_for(progress.own_courses(self.user), timezone.localdate())
         row = next(item for item in rows if item["id"] == self.course.pk)
 
         self.assertIsNone(row["baseline"])

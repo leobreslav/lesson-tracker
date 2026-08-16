@@ -12,7 +12,6 @@ import { PEOPLE, expect, ready, test } from './harness.js'
 const SECTIONS = [
   // корень — расписание: с него заходят в занятие, а обзор рядом
   ['/', 'main'],
-  ['/overview', 'main'],
   ['/schedule', 'schedule'],
   ['/plan', 'plan'],
   ['/works', 'works'],

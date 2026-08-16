@@ -55,7 +55,9 @@ class DebtTestCase(SchoolTestMixin, APITestCase):
         return self.client.get(reverse("slot-unclosed")).json()["slots"]
 
     def records(self, course=None):
-        rows = self.client.get(reverse("plannode-progress")).json()["courses"]
+        from plans import progress
+
+        rows = progress.rows_for(progress.own_courses(self.user), self.today)
         return next(row for row in rows if row["id"] == (course or self.course).pk)[
             "records"
         ]

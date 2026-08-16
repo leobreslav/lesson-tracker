@@ -74,7 +74,12 @@ class ApprovalTestCase(PlanTestCase):
         )
 
     def progress(self, course=None):
-        rows = self.client.get(reverse("plannode-progress")).json()["courses"]
+        from django.utils import timezone
+        from plans import progress as progress_module
+
+        rows = progress_module.rows_for(
+            progress_module.own_courses(self.user), timezone.localdate()
+        )
         return {row["name"]: row for row in rows}[(course or self.course).name]
 
 

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import StartHere from './StartHere'
 import { useNavigate } from 'react-router-dom'
 import { AddLessonDialog, LessonMenu } from './AgendaDialogs'
 import ClearDialog from './ClearDialog'
@@ -76,7 +77,7 @@ function lessonClassName(lesson) {
   )
 }
 
-export default function Agenda({ onLoggedOut }) {
+export default function Agenda({ status, onStatusChange, onLoggedOut }) {
   const { t } = useTranslation()
   const navigate = useNavigate()
   const [anchor, setAnchor] = useState(today)
@@ -642,6 +643,15 @@ export default function Agenda({ onLoggedOut }) {
       <header className="page-header">
         <h1>{t('agenda.title')}</h1>
       </header>
+
+      {/* шаги первого входа: карта для того, у кого ещё ничего не заведено.
+          Жили они на «Моих курсах», а показывать их надо там, куда человек
+          попадает, — то есть на корне. Пропадают, когда всё настроено */}
+      <StartHere
+        status={status}
+        onStatusChange={onStatusChange}
+        onLoggedOut={onLoggedOut}
+      />
 
       <div className="agenda-bar">
         <button type="button" className="secondary" onClick={() => step(-1)}>

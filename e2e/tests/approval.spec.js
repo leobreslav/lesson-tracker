@@ -17,6 +17,19 @@ const openPlan = async (page, course) => {
   await expect(page.locator('.plan-cards')).toBeVisible()
 }
 
+/**
+ * Открыть чужой план под надзором — тем же селектом, из другой группы.
+ *
+ * Раздела «Мои курсы» больше нет: надзор переехал в «Учебный план», и курс
+ * выбирается там же, где свой, только группа другая.
+ */
+const openSupervised = async (page, course) => {
+  await page.goto('/plan')
+  await ready(page)
+  await page.getByLabel('Курс').selectOption({ label: course })
+  await expect(page.locator('.progress-list')).toBeVisible()
+}
+
 /** Назначить человека методистом курса — руками администратора. */
 async function makeMethodist(api, email, courseName) {
   const admin = await api(PEOPLE.admin)
@@ -48,17 +61,10 @@ test('учитель отправляет план, методист утвер�
 
   // методист видит запрос и присланный план
   await signIn(PEOPLE.petrov)
-  // раздела «На утверждение» больше нет: надзор живёт на главной, под
-  // своими курсами
-  await page.goto('/overview')
-  await ready(page)
-  await expect(page.getByRole('heading', { name: 'На утверждение' })).toBeVisible()
-  await page.getByRole('button', { name: 'Открыть' }).click()
-
-  const dialog = page.locator('dialog.modal')
-  await expect(dialog.locator('.review-plan li').first()).toBeVisible()
-  await dialog.getByRole('button', { name: 'Утвердить' }).click()
-  await expect(dialog).toBeHidden()
+  await openSupervised(page, 'Grade 6 Algebra')
+  await expect(page.locator('.review-plan li').first()).toBeVisible()
+  await page.getByRole('button', { name: 'Утвердить' }).click()
+  await expect(page.locator('.review-plan')).toHaveCount(0)
 
   // и учитель видит, что план утверждён
   await signIn(PEOPLE.ivanova)
@@ -75,17 +81,14 @@ test('методист возвращает план с замечанием', a
   await teacher.post(`/api/plan/baseline/submit/?course=${algebra.id}`, {})
 
   await signIn(PEOPLE.petrov)
-  await page.goto('/overview')
-  await ready(page)
-  await page.getByRole('button', { name: 'Открыть' }).click()
+  await openSupervised(page, 'Grade 6 Algebra')
 
-  const dialog = page.locator('dialog.modal')
-  await dialog.getByRole('button', { name: 'Вернуть с замечанием' }).click()
+  await page.getByRole('button', { name: 'Вернуть с замечанием' }).click()
   // без текста кнопка возврата недоступна: возврат молчком — загадка
-  await expect(dialog.getByRole('button', { name: 'Вернуть', exact: true })).toBeDisabled()
-  await dialog.getByLabel('Что поправить').fill('Мало часов на повторение')
-  await dialog.getByRole('button', { name: 'Вернуть', exact: true }).click()
-  await expect(dialog).toBeHidden()
+  await expect(page.getByRole('button', { name: 'Вернуть', exact: true })).toBeDisabled()
+  await page.getByLabel('Что поправить').fill('Мало часов на повторение')
+  await page.getByRole('button', { name: 'Вернуть', exact: true }).click()
+  await expect(page.locator('.review-plan')).toHaveCount(0)
 
   await signIn(PEOPLE.ivanova)
   await openPlan(page, 'Grade 6 Algebra')
@@ -116,11 +119,8 @@ test('правка после отправки запрос не отзывае�
   await expect(page.locator('.hint.approval')).toContainText('На утверждении')
 
   await signIn(PEOPLE.petrov)
-  await page.goto('/overview')
-  await ready(page)
-  await page.getByRole('button', { name: 'Открыть' }).click()
-  const dialog = page.locator('dialog.modal')
-  await expect(dialog.locator('.review-plan')).toContainText('Урок после отправки')
+  await openSupervised(page, 'Grade 6 Algebra')
+  await expect(page.locator('.review-plan')).toContainText('Урок после отправки')
 })
 
 test('без методиста у курса отправка объясняет, почему нельзя', async ({
@@ -151,43 +151,35 @@ test('раздела «На утверждение» у обычного учи�
  * Пока он показывал только присланное, про тех, кто ничего не присылал,
  * методист не знал ничего — а спрашивают с него как раз про них.
  */
-test('методист видит план, который никто не присылал, с теми же числами', async ({
+test('методист видит курс, план которого никто не присылал', async ({
   page,
   signIn,
   api,
 }) => {
   await makeMethodist(api, PEOPLE.petrov, 'Grade 6 Algebra')
 
-  // числа, которые видит у себя учитель
-  await signIn(PEOPLE.ivanova)
-  await page.goto('/overview')
-  await ready(page)
-  const hers = page.locator('.progress-list > li', { hasText: 'Grade 6 Algebra' })
-  await hers.locator('.progress-head').click()
-  const reserve = await hers.locator('.reserve').textContent()
-  const progress = await hers.locator('[data-card="progress"] h2').textContent()
-
-  // ничего не отправляли — и всё равно план виден методисту
   await signIn(PEOPLE.petrov)
-  await page.goto('/overview')
-  await ready(page)
-  await expect(page.locator('.nav-count')).toHaveCount(0)
+  await openSupervised(page, 'Grade 6 Algebra')
 
+  // курс под надзором виден и без запроса — про тех, кто ничего не
+  // присылал, спрашивают с методиста ровно так же
   const row = page.locator('.progress-list > li', { hasText: 'Grade 6 Algebra' })
   await expect(row.locator('.whose')).toContainText('Мария Иванова')
-  await expect(row.locator('.badge.waiting')).toHaveCount(0)
-  await row.locator('.progress-head').click()
+  await expect(page.getByText(/План на утверждение пока не присылали/)).toBeVisible()
 
-  // те же числа: разговор про «отстаёшь» не должен начинаться со спора о них
-  await expect(row.locator('.reserve')).toHaveText(reserve)
-  await expect(row.locator('[data-card="progress"] h2')).toHaveText(progress)
-
-  // чужой план — не свой: звать методиста заполнять его нечем
-  await expect(row.getByRole('button', { name: 'Заполнить план' })).toHaveCount(0)
-  await expect(row.getByRole('button', { name: 'Открыть план' })).toHaveCount(0)
+  // читать чужую программу без запроса методист не может, и переезд новых
+  // прав ему не дал
+  await expect(page.locator('.review-plan')).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Утвердить' })).toHaveCount(0)
 })
 
-test('ожидающий план помечен, остальные — нет', async ({ page, signIn, api }) => {
+test('ожидающий и просто поднадзорный лежат в разных группах селектора', async ({
+  page,
+  signIn,
+  api,
+}) => {
+  // Три группы — это три роли человека, а не три свойства курса: свои он
+  // ведёт, присланные должен утвердить, за остальными смотрит.
   await makeMethodist(api, PEOPLE.petrov, 'Grade 6 Algebra')
   await makeMethodist(api, PEOPLE.petrov, 'Grade 6 Geometry')
 
@@ -197,19 +189,16 @@ test('ожидающий план помечен, остальные — нет'
   await teacher.post(`/api/plan/baseline/submit/?course=${algebra.id}`, {})
 
   await signIn(PEOPLE.petrov)
-  await page.goto('/overview')
+  await page.goto('/plan')
   await ready(page)
 
-  const rows = page.locator('.progress-list > li')
-  expect(await rows.count()).toBeGreaterThan(1)
-  await expect(page.locator('.badge.waiting')).toHaveCount(1)
-  await expect(
-    page.locator('.progress-list > li', { hasText: 'Grade 6 Algebra' }).locator(
-      '.badge.waiting',
-    ),
-  ).toHaveText('ждёт ответа')
+  const groups = page.getByLabel('Курс').locator('optgroup')
+  await expect(groups).toHaveCount(3)
+  await expect(groups.nth(0)).toHaveAttribute('label', 'Мои курсы')
+  await expect(groups.nth(1)).toHaveAttribute('label', 'Ждут ответа')
+  await expect(groups.nth(2)).toHaveAttribute('label', 'Под надзором')
 
-  // ожидающий стоит в своём списке, остальные — ниже, под надзором
-  await expect(page.getByRole('heading', { name: 'На утверждение' })).toBeVisible()
-  await expect(page.getByRole('heading', { name: 'Под надзором' })).toBeVisible()
+  // присланный — во второй группе, остальной надзор — в третьей
+  await expect(groups.nth(1).locator('option')).toHaveText(['Grade 6 Algebra'])
+  await expect(groups.nth(2).locator('option')).toHaveText(['Grade 6 Geometry'])
 })

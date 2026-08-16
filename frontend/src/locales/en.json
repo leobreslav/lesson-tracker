@@ -41,8 +41,7 @@
     "needClass": "add a class first",
     "school": "School",
     "schools": "Schools",
-    "works": "Assignments",
-    "overview": "My courses"
+    "works": "Assignments"
   },
   "auth": {
     "prompt": "Sign in to continue.",
@@ -66,7 +65,6 @@
     "lastName": "Last name"
   },
   "dashboard": {
-    "greeting": "Hello, {{name}}",
     "intro": "The sections build on each other: the year sets the boundaries, classes live inside it, and each class has a schedule and a plan. The list below walks you through it.",
     "steps": {
       "year": {
@@ -406,11 +404,14 @@
     "courseLabel": "Course",
     "debts_one": "{{count}} lesson is not marked.",
     "debts_other": "{{count}} lessons are not marked.",
-    "unclosedHint": "The lesson is past and unmarked"
+    "unclosedHint": "The lesson is past and unmarked",
+    "groups": {
+      "mine": "My courses",
+      "waiting": "Waiting for a reply",
+      "supervised": "Supervised"
+    }
   },
   "status": {
-    "title": "My courses",
-    "hint": "Where each course stands: does the plan still fit the year, what got cancelled and how far it drifted from the baseline. Editing lives on the «Curriculum map» page.",
     "reserveLabel": "reserve",
     "doneOf": "{{done}} of {{total}}",
     "left_one": "{{count}} to go",
@@ -426,8 +427,6 @@
     "looseTheme": "outside the themes",
     "pastYear": "the plan ends on {{date}}, past the end of the year ({{year}})",
     "next": "Coming up",
-    "toPlan": "Open the plan",
-    "toSchedule": "Open the schedule",
     "status": {
       "fine": "on track",
       "short_one": "{{count}} lesson over",
@@ -582,8 +581,7 @@
   },
   "noSchool": {
     "title": "You do not belong to a school yet",
-    "hint": "The tracker works inside a school: the calendar and the courses come from it. Ask your school administrator to invite this address — they need it exactly as it is written below.",
-    "superuser": "You are a superuser: create a school and add yourself to it in the «Schools» section."
+    "hint": "The tracker works inside a school: the calendar and the courses come from it. Ask your school administrator to invite this address — they need it exactly as it is written below."
   },
   "school": {
     "title": "School: {{name}}",
@@ -811,23 +809,15 @@
     "resourceLabel": "A link or a note"
   },
   "reviews": {
-    "noTeacher": "nobody teaches it yet",
-    "title": "For approval",
-    "hint": "Every plan you supervise, with the same numbers its teacher sees. A plan waiting for your answer is marked.",
-    "open": "Open",
-    "sentOn": "sent {{date}}",
-    "lessons": "lessons in the plan",
-    "slots": "lessons scheduled for the year",
     "reserve": "reserve",
     "approve": "Approve",
     "return": "Return with a comment",
     "sendBack": "Return",
     "comment": "What to fix",
-    "mark": "waiting for you",
-    "returned": "returned",
-    "waiting_one": "{{count}} plan is waiting for your answer.",
-    "waiting_other": "{{count}} plans are waiting for your answer.",
-    "rest": "Under your supervision"
+    "nothingSent": "No plan has been sent for approval yet.",
+    "sentPlan": "The plan as sent",
+    "noTeacher": "nobody teaches this course",
+    "mark": "waiting"
   },
   "student": {
     "title": "My courses",

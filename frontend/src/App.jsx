@@ -10,7 +10,6 @@ import ErrorBoundary from './ErrorBoundary'
 import Agenda from './Agenda'
 import LessonScreen from './LessonScreen'
 import Calendar from './Calendar'
-import Dashboard from './Dashboard'
 import Login from './Login'
 import NavBar from './NavBar'
 import NoSchool from './NoSchool'
@@ -151,18 +150,13 @@ export default function App() {
               заходят сюда одинаково, разница лишь в том, какие действия
               имеют смысл */}
           <Route path="/lesson/:id" element={guarded(LessonScreen)} />
+          {/* раздела «Мои курсы» больше нет: числа в нём дублировали план,
+              долги переехали в его таблицу, надзор методиста — в селектор
+              курса, а шаги первого входа сюда, на корень */}
           <Route
-            path="/overview"
-            element={
-              <Dashboard
-                user={user}
-                status={status}
-                onStatusChange={setStatus}
-                onLoggedOut={handleLoggedOut}
-              />
-            }
+            path="/schedule"
+            element={guarded(Agenda, { status, onStatusChange: setStatus })}
           />
-          <Route path="/schedule" element={guarded(Agenda)} />
           <Route path="/plan" element={guarded(Plan)} />
           <Route path="/works" element={guarded(Works)} />
           <Route path="/works/:id" element={guarded(WorkTable)} />

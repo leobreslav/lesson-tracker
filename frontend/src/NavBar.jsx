@@ -7,7 +7,6 @@ const SECTIONS = [
   // расписание первым и оно же корень: с него заходят в занятие, а
   // «как идут курсы» смотрят раз в неделю
   { to: '/schedule', key: 'schedule', needs: 'classes' },
-  { to: '/overview', key: 'overview', needs: null },
   { to: '/plan', key: 'plan', needs: 'classes' },
   { to: '/works', key: 'works', needs: 'classes' },
   // «Курсы» и «Учебный год» из бара убраны: оба живут в разделе «Школа»,

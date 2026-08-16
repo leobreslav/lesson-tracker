@@ -21,6 +21,7 @@ import { shortDate } from './dates'
 import { today } from './calendarLogic'
 import CoursePicker from './CoursePicker'
 import DebtsDialog from './DebtsDialog'
+import Supervision from './Supervision'
 import { lastChoice, remember, remembered, rememberChoice } from './remember'
 import { applyMove, countBlocks, planRows } from './planLogic'
 import {
@@ -36,6 +37,7 @@ import {
   deletePlanNode,
   downloadPlan,
   fetchCourses,
+  fetchReviews,
   fetchPlan,
   fetchBaseline,
   fetchPlanSlots,
@@ -100,6 +102,9 @@ export default function Plan({ onLoggedOut }) {
   }))
 
   const [classes, setClasses] = useState(null)
+  // чужие планы под надзором: у методиста они лежат в том же селекте, в
+  // своих группах. Не методист — пустой список, и групп в селекте нет
+  const [supervised, setSupervised] = useState([])
   const [years, setYears] = useState([])
   const [classId, setClassId] = useState(target.course)
   const scrolled = useRef(false)
@@ -188,6 +193,10 @@ export default function Plan({ onLoggedOut }) {
   useEffect(() => {
     let cancelled = false
 
+    fetchReviews()
+      .then((answer) => !cancelled && setSupervised(answer.plans))
+      .catch(() => !cancelled && setSupervised([]))
+
     Promise.all([fetchCourses(), fetchSchoolYears()])
       .then(([classList, yearList]) => {
         if (cancelled) return
@@ -225,8 +234,11 @@ export default function Plan({ onLoggedOut }) {
    * идёт на клиенте, поэтому даты сдвигаются в тот же миг, без запроса.
    */
   useEffect(() => {
-    if (!classId) {
+    // чужой курс под надзором своего плана нам не отдаст — и правильно: у
+    // методиста прав на него нет, спрашивать значило бы ловить 404 в консоль
+    if (!classId || !(classes ?? []).some((item) => item.id === classId)) {
       setRibbon([])
+      setBaseline(null)
       return undefined
     }
 
@@ -241,10 +253,11 @@ export default function Plan({ onLoggedOut }) {
     return () => {
       cancelled = true
     }
-  }, [classId])
+  }, [classId, classes])
 
   useEffect(() => {
-    if (!classId) {
+    // то же, что с лентой: чужой план запрашивать нечем и незачем
+    if (!classId || !(classes ?? []).some((item) => item.id === classId)) {
       setData(null)
       return undefined
     }
@@ -260,7 +273,7 @@ export default function Plan({ onLoggedOut }) {
     return () => {
       cancelled = true
     }
-  }, [classId, load, handleError])
+  }, [classId, classes, load, handleError])
 
   /** Any structural edit: do it and re-read the whole tree. */
   const run = async (request) => {
@@ -422,6 +435,34 @@ export default function Plan({ onLoggedOut }) {
       else next.add(id)
       return next
     })
+
+  /**
+   * Что лежит в селекте: свои курсы и чужие под надзором.
+   *
+   * Групп три, потому что это три разные роли человека, а не три свойства
+   * курса: свои он ведёт, присланные должен утвердить или вернуть, за
+   * остальными смотрит. Пока надзирать нечего, групп нет вовсе — один
+   * плоский список, как было.
+   */
+  const waiting = supervised.filter((row) => row.review?.status === 'pending')
+  const watched = supervised.filter((row) => row.review?.status !== 'pending')
+  const asCourse = (row) => ({ id: row.id, name: row.name, year: row.year })
+
+  const pickable = [
+    ...(classes ?? []),
+    ...supervised.map(asCourse),
+  ]
+
+  const groups = supervised.length
+    ? [
+        { key: 'mine', items: classes ?? [] },
+        { key: 'waiting', items: waiting.map(asCourse) },
+        { key: 'supervised', items: watched.map(asCourse) },
+      ].filter((group) => group.items.length)
+    : []
+
+  /** Строка надзора для выбранного курса — или `null`, если курс свой. */
+  const supervising = supervised.find((row) => row.id === classId) ?? null
 
   /** Выбор курса запоминается: он один на все страницы, см. `remember.js`. */
   const pickClass = (id) => {
@@ -590,14 +631,29 @@ export default function Plan({ onLoggedOut }) {
             что она. Полтора десятка чипов под заголовком занимали две
             строки ради выбора, который делают раз за заход */}
         <CoursePicker
-          courses={classes ?? []}
+          courses={pickable}
           value={classId}
           onChange={pickClass}
           label={classLabel}
+          groups={groups}
         />
       </header>
 
-      {!classes.length ? (
+      {/* чужой план под надзором: числа те же, что видит учитель у себя, и
+          считает их тот же код. Правки тут нет никакой — только утвердить
+          или вернуть с замечанием */}
+      {supervising ? (
+        <Supervision
+          row={supervising}
+          busy={busy}
+          onError={handleError}
+          onDone={() =>
+            fetchReviews()
+              .then((answer) => setSupervised(answer.plans))
+              .catch(handleError)
+          }
+        />
+      ) : !classes.length ? (
         <EmptyState
           title={t('plan.needClass.title')}
           actions={

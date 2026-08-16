@@ -196,7 +196,6 @@ ACTIONS_WITHOUT_ID = {
     "slot-unclosed": "долги по своим курсам: на входе ничего",
     "slot-close": "закрытие пачкой: список в теле, id на входе нет",
     "plannode-layout-agenda": "то же самое, темы уроков за период",
-    "plannode-progress": "все свои курсы разом, id на входе нет",
     "gradelevel-preset": "«завести 1..N», на вход одно число",
     "gradelevel-delete-unused": "убрать все параллели без курсов",
 }

@@ -14,8 +14,21 @@ import { useTranslation } from 'react-i18next'
  *
  * Один курс — не селект, а просто имя: выбирать не из чего, а сказать, чей
  * это план, всё равно надо.
+ *
+ * `groups` — разбивка списком `{key, items}`: у методиста в одном селекте
+ * лежат три разных вещи, и мешать их нельзя. «Мои курсы» — те, что он ведёт;
+ * «Ждут ответа» — чужие планы, присланные на утверждение; «Под надзором» —
+ * остальные чужие, за которыми он смотрит. Разделены они `optgroup`'ом, а не
+ * значком в подписи: значок читается как свойство курса, а тут разные **роли
+ * человека**, и группа говорит об этом прямо.
  */
-export default function CoursePicker({ courses, value, onChange, label = (item) => item.name }) {
+export default function CoursePicker({
+  courses,
+  value,
+  onChange,
+  label = (item) => item.name,
+  groups = [],
+}) {
   const { t } = useTranslation()
 
   if (!courses?.length) return null
@@ -31,11 +44,21 @@ export default function CoursePicker({ courses, value, onChange, label = (item) 
       aria-label={t('plan.courseLabel')}
       onChange={(event) => onChange(Number(event.target.value))}
     >
-      {courses.map((item) => (
-        <option key={item.id} value={item.id}>
-          {label(item)}
-        </option>
-      ))}
+      {groups.length === 0
+        ? courses.map((item) => (
+            <option key={item.id} value={item.id}>
+              {label(item)}
+            </option>
+          ))
+        : groups.map(({ key, items }) => (
+            <optgroup key={key} label={t(`plan.groups.${key}`)}>
+              {items.map((item) => (
+                <option key={item.id} value={item.id}>
+                  {label(item)}
+                </option>
+              ))}
+            </optgroup>
+          ))}
     </select>
   )
 }

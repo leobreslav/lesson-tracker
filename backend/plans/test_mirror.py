@@ -102,11 +102,15 @@ class LayoutNumbersMirrorTests(PlanTestCase):
                     summary = self.client.get(
                         reverse("plannode-layout-summary"), {"course": self.course.pk}
                     ).json()
+                    from django.utils import timezone
+                    from plans import progress as progress_module
+
                     progress = next(
                         row
-                        for row in self.client.get(reverse("plannode-progress")).json()[
-                            "courses"
-                        ]
+                        for row in progress_module.rows_for(
+                            progress_module.own_courses(self.user),
+                            timezone.localdate(),
+                        )
                         if row["id"] == self.course.pk
                     )
                     ribbon = self.client.get(
@@ -157,7 +161,13 @@ class LayoutNumbersMirrorTests(PlanTestCase):
                 "lessons_total": progress["lessons_total"],
                 "balance": progress["reserve"],
                 "missing": progress["missing"],
-                "last_lesson_date": progress["last_lesson_date"],
+                # расчёт отдаёт `date`, а сводка — строку из json: сверяем
+                # значения, а не то, чем их сериализовали
+                "last_lesson_date": (
+                    str(progress["last_lesson_date"])
+                    if progress["last_lesson_date"]
+                    else None
+                ),
                 "past_lessons": progress["done"],
                 "remaining_lessons": progress["lessons_total"] - progress["done"],
             },

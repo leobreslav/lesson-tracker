@@ -802,11 +802,26 @@ class ProgressTests(LayoutApiTestCase):
     темп, текущий терм и счётчики, которых больше нигде нет.
     """
 
-    def progress(self):
-        return self.client.get(reverse("plannode-progress"))
+    def rows_for_me(self):
+        """
+        Числа своих курсов — прямым вызовом расчёта.
+
+        Эндпоинта `/api/plan/progress/` больше нет: раздел «Мои курсы»
+        удалён, а те же числа читает надзор методиста, и считает их тот же
+        `progress.rows_for`. Проверять здесь надо расчёт, а не транспорт —
+        HTTP-слой над ним покрыт тестами надзора.
+        """
+        from django.utils import timezone
+        from plans import progress
+
+        # именно `own_courses`: он же и подтягивает год с термами, без чего
+        # запросы растут с числом курсов — а это ровно то, что проверяется
+        return progress.rows_for(
+            progress.own_courses(self.user), timezone.localdate()
+        )
 
     def courses(self):
-        return {row["name"]: row for row in self.progress().json()["courses"]}
+        return {row["name"]: row for row in self.rows_for_me()}
 
     def test_it_answers_for_every_course_at_once(self):
         """План всегда про один курс, раскладка — про все."""
@@ -838,7 +853,7 @@ class ProgressTests(LayoutApiTestCase):
         upcoming = self.courses()[self.course.name]["next"]
 
         self.assertEqual(len(upcoming), 2)
-        self.assertEqual(upcoming[0]["date"], str(MONDAY))
+        self.assertEqual(str(upcoming[0]["date"]), str(MONDAY))
         self.assertEqual([row["number"] for row in upcoming], [1, 2])
 
     def test_reserve_is_slots_minus_lessons(self):
@@ -915,7 +930,7 @@ class ProgressTests(LayoutApiTestCase):
 
         row = self.courses()[self.course.name]
 
-        self.assertGreater(row["last_lesson_date"], str(row["year_end"]))
+        self.assertGreater(str(row["last_lesson_date"]), str(row["year_end"]))
 
     def test_the_number_of_queries_does_not_grow_with_the_courses(self):
         """
@@ -927,7 +942,7 @@ class ProgressTests(LayoutApiTestCase):
         self.fill_slots(9)
 
         with CaptureQueriesContext(connection) as one_course:
-            self.progress()
+            self.rows_for_me()
 
         for index in range(3):
             extra = make_course(self.school, year=self.course.year, name=f"9{index}")
@@ -935,9 +950,9 @@ class ProgressTests(LayoutApiTestCase):
             self.add_slot(course=extra, number=index + 3)
 
         with CaptureQueriesContext(connection) as four_courses:
-            response = self.progress()
+            rows = self.rows_for_me()
 
-        self.assertEqual(len(response.json()["courses"]), 4)
+        self.assertEqual(len(rows), 4)
         self.assertEqual(
             len(four_courses),
             len(one_course),
@@ -952,10 +967,5 @@ class ProgressTests(LayoutApiTestCase):
         assign(self.stranger, other)
 
         self.assertNotIn("9В", self.courses())
-
-    def test_requires_authentication(self):
-        self.client.credentials()
-
-        self.assertEqual(self.progress().status_code, 401)
 
 

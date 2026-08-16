@@ -436,7 +436,6 @@ export const openAttachment = async (id) => {
  * же код, что и остальные ответы про раскладку, поэтому разойтись с планом
  * они не могут.
  */
-export const fetchProgress = () => request('/api/plan/progress/')
 
 /**
  * Состояние эталона у плана курса: утверждённое, поданное и кому слать.

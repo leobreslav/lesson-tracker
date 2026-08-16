@@ -209,24 +209,6 @@ class PlanNodeViewSet(CourseScopedViewSet):
         )
 
     @action(detail=False, methods=["get"])
-    def progress(self, request):
-        """
-        Как идут дела **по всем своим курсам сразу** — главная страница.
-
-        План всегда про один курс, главная — про все: учитель ведёт пять и
-        хочет одним взглядом понять, где проблема. Считает это `progress`,
-        и тем же расчётом пользуется экран методиста: вопрос у них один, и
-        двух ответов на него быть не должно.
-        """
-        return Response(
-            {
-                "courses": progress.rows_for(
-                    progress.own_courses(request.user), timezone.localdate()
-                )
-            }
-        )
-
-    @action(detail=False, methods=["get"])
     def baseline(self, request):
         """
         Состояние эталона у этого плана: что утверждено и что на подходе.
