@@ -276,7 +276,9 @@ test('«Правка в плане…» открывает окно правки
 
   // шапка говорит, что перед вами: какая это строка программы по счёту,
   // куда она ложится по раскладке и что занятие ещё не проведено
-  await expect(panel.locator('.modal-head h3')).toHaveText(/Урок \d+ учебного плана/)
+  await expect(panel.locator('.modal-head h3')).toHaveText(
+    /Урок \d+ учебного плана Grade 6 Algebra/,
+  )
   await expect(panel.locator('.lesson-where')).toContainText(/По раскладке — \d+/)
   await expect(panel.locator('.lesson-where')).toContainText('ещё не проведено')
 

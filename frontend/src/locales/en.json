@@ -795,8 +795,8 @@
       "mb": "{{value}} MB"
     },
     "where": {
-      "plan": "A row of the curriculum map",
-      "row": "Lesson {{number}} of the curriculum map",
+      "plan": "A row of the {{course}} curriculum map",
+      "row": "Lesson {{number}} of the {{course}} curriculum map",
       "planned": "Falls on {{date}} as the plan stands",
       "taughtOn": "Taught on {{date}}",
       "noSlot": "Does not fit into the school year",

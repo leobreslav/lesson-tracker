@@ -283,11 +283,10 @@ export default function LessonPanel({ nodeId, where = null, onClose, onSaved }) 
       onBeforeClose={mayClose}
       // заголовок окна: что именно правится. «Урок», а не «тема» — в этом
       // интерфейсе тема это папка, и рядом стоит кнопка «+ тема»
-      title={
-        where?.number
-          ? t('lesson.where.row', { number: where.number })
-          : t('lesson.where.plan')
-      }
+      title={t(where?.number ? 'lesson.where.row' : 'lesson.where.plan', {
+        number: where?.number,
+        course: where?.course ?? '',
+      })}
     >
       {!draft ? (
         <p>{error ? <span className="error">{error}</span> : t('common.loading')}</p>

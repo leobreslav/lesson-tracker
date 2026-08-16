@@ -915,6 +915,10 @@ export default function Plan({ onLoggedOut }) {
             // лентой слотов; знает и то и другое только страница
             where={{
               number: nodeById.get(opened)?.number ?? null,
+              // чей это план: окно открывается и со страницы занятия, где
+              // курс назван, и из таблицы, где он выбран чипом, — а в самом
+              // окне до сих пор не был назван нигде
+              course: course?.name ?? null,
               taught: Boolean(nodeById.get(opened)?.taught),
               date: layout.byId.get(opened)?.slot?.date ?? null,
             }}
