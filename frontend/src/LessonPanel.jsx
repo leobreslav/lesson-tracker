@@ -409,9 +409,6 @@ export default function LessonPanel({ nodeId, onClose, onSaved }) {
             <button type="button" disabled={busy || !dirty} onClick={save}>
               {t('common.save')}
             </button>
-            <button type="button" className="secondary" onClick={close}>
-              {t('common.close')}
-            </button>
           </footer>
         </>
       )}

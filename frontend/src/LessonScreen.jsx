@@ -240,9 +240,27 @@ export default function LessonScreen({ onLoggedOut }) {
   )
 
   /** Кнопка правки блока — пока не правят соседний. */
-  const editAction = (fields) =>
-    editable &&
-    !editing && (
+  /**
+   * Ссылка «Правка в плане…» на месте кнопки правки.
+   *
+   * Полосы над блоками оказалось мало: заказчик дважды сказал, что запрет
+   * не считывается. И правильно — объяснение стоит над всеми пятью
+   * разделами, а спрашивает человек про **этот**, и спрашивает ровно там,
+   * где ищет «Правка…». Пустое место ответом не является.
+   *
+   * Ведёт на ту же строку плана, что и ссылка в шапке: маршрут один, просто
+   * теперь он есть и под рукой.
+   */
+  const planLink = may && topic && !cancelled && (
+    <Link className="link-button" to={inPlan}>
+      {t('lessonScreen.editInPlan')}
+    </Link>
+  )
+
+  const editAction = (fields) => {
+    if (editing) return null
+    if (!editable) return planLink
+    return (
       <button
         type="button"
         className="secondary compact"
@@ -252,6 +270,7 @@ export default function LessonScreen({ onLoggedOut }) {
         {t('lessonScreen.edit')}
       </button>
     )
+  }
 
   const submit = (event) => {
     event.preventDefault()
@@ -527,7 +546,7 @@ export default function LessonScreen({ onLoggedOut }) {
         name="content"
         title={t('lessonScreen.content')}
         empty={!filled.length && editing?.fields !== CONTENT}
-        note={filled.length ? null : t('lessonScreen.blank')}
+        note={filled.length ? null : t('lessonScreen.blankInPlan')}
         actions={editAction(CONTENT)}
       >
         {editing?.fields === CONTENT ? (
@@ -589,9 +608,11 @@ export default function LessonScreen({ onLoggedOut }) {
         name="materials"
         title={t('lessonScreen.materials')}
         empty={!topic?.attachments?.length && form !== 'link'}
-        note={topic?.attachments?.length || t('lessonScreen.blank')}
+        note={topic?.attachments?.length || t('lessonScreen.blankInPlan')}
         actions={
-          editable && (
+          !editable ? (
+            planLink
+          ) : (
             <>
               <button
                 type="button"
@@ -696,7 +717,7 @@ export default function LessonScreen({ onLoggedOut }) {
         name="homework"
         title={t('lessonScreen.homework')}
         empty={!hasHomework && editing?.fields !== HOMEWORK}
-        note={homework.length || t('lessonScreen.blank')}
+        note={homework.length || (topic?.homework ? null : t('lessonScreen.blank'))}
         actions={
           may && !cancelled && (
             <>

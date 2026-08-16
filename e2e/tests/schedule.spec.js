@@ -219,14 +219,23 @@ test('пока связь не записана, план со страницы 
   // будущем, поэтому здесь проверяется именно эта половина правила
   await expect(page.getByRole('button', { name: 'Так и было' })).toHaveCount(0)
 
-  // запрет объяснён словами: пустое место на месте кнопок читалось бы как
-  // поломка
+  // запрет объяснён словами и ссылкой в самом разделе: пустое место на
+  // месте кнопки читалось бы как поломка
   await expect(
     page.getByText(/Занятие ещё не проведено/),
   ).toBeVisible()
 
   for (const name of ['Правка…', 'Добавить ссылку'])
     await expect(page.getByRole('button', { name })).toHaveCount(0)
+
+  // а на их месте — ссылка туда, где правят: полосы над блоками мало,
+  // спрашивают про этот раздел и ровно там, где ищут «Правка…»
+  for (const block of ['content', 'materials', 'homework'])
+    await expect(
+      page.locator(`[data-block="${block}"]`).getByRole('link', {
+        name: 'Правка в плане…',
+      }),
+    ).toBeVisible()
 
   // и название не правится кликом: до записи это делают в плане
   await expect(page.locator('h1 button')).toHaveCount(0)
@@ -488,9 +497,9 @@ test('записанная связь открывает туннель, и он
   // повторное нажатие на плашку снимает запись — как отметка в журнале
   await page.getByRole('button', { name: 'урок проведён' }).click()
   await expect(page.getByText(/Занятие ещё не проведено/)).toBeVisible()
-  await expect(
-    page.locator('[data-block="content"]').getByRole('button', { name: 'Правка…' }),
-  ).toHaveCount(0)
+  const locked = page.locator('[data-block="content"]')
+  await expect(locked.getByRole('button', { name: 'Правка…' })).toHaveCount(0)
+  await expect(locked.getByRole('link', { name: 'Правка в плане…' })).toBeVisible()
 })
 
 test('у отменённого занятия остаётся журнал, а содержания нет', async ({

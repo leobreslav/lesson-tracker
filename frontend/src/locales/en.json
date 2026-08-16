@@ -7,7 +7,6 @@
     "breakCount_one": "{{count}} break",
     "breakCount_other": "{{count}} breaks",
     "cancel": "Cancel",
-    "close": "Close",
     "closeWindow": "Close the window",
     "dayCount_one": "{{count}} day",
     "dayCount_other": "{{count}} days",
@@ -1048,12 +1047,14 @@
     "newHomework": "Set homework",
     "edit": "Edit…",
     "openInPlan": "Open in the curriculum map",
-    "planOwns": "The lesson has not been taught yet, so its content, materials and homework are edited in the curriculum map — follow «Open in the curriculum map» above. On the day, mark it with «That is what happened», and they become editable from here.",
+    "planOwns": "The lesson has not been taught yet. Mark it with «That is what happened» on the day, and its content, materials and homework become editable from here. Until then, edit them in the curriculum map.",
     "withdrawHint": "Lesson taught — click to withdraw",
     "cancelLesson": "Cancel the lesson…",
     "blank": "empty",
     "more": "Lesson actions",
     "restoreLesson": "Restore the lesson",
-    "toSchedule": "back to the schedule"
+    "toSchedule": "back to the schedule",
+    "editInPlan": "Edit in the plan…",
+    "blankInPlan": "empty in the plan"
   }
 }

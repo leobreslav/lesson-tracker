@@ -107,7 +107,7 @@ test('правка помечается несохранённой и доезж
   await expect(panel.locator('.lesson-status')).toContainText('Всё сохранено')
 
   // reopening reads it back from the server, not from what is still on screen
-  await panel.getByRole('button', { name: 'Закрыть', exact: true }).first().click()
+  await panel.getByRole('button', { name: 'Закрыть окно' }).click()
   await expect(panel).toBeHidden()
 
   const again = await openLesson(page, WITH_CONTENT)
@@ -133,7 +133,7 @@ test('ссылка добавляется к уроку и сразу видна
   await expect(panel.locator('.attachment')).toHaveCount(1)
   await expect(panel.locator('.attachment .title')).toHaveText('Решето Эратосфена')
 
-  await panel.getByRole('button', { name: 'Закрыть', exact: true }).first().click()
+  await panel.getByRole('button', { name: 'Закрыть окно' }).click()
   await expect(panel).toBeHidden()
 
   // the table learned about it without a reload
