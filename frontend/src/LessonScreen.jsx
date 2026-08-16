@@ -69,6 +69,19 @@ const HOMEWORK = ['homework']
  * том, какие действия имеют смысл: записать можно то, что уже случилось, а
  * подготовиться можно к чему угодно.
  *
+ * **У отменённого занятия остаётся один блок — журнал.** Содержания,
+ * материалов и домашнего задания у него быть не может: занятия не было, а
+ * все три и так принадлежат строке плана, которой у отменённого часа нет
+ * (раскладка считает по неотменённым). Четыре карточки со словом «нет»
+ * сообщали об этом четыре раза и ничего не добавляли. Журнал остаётся:
+ * «кто пришёл на урок, которого не было» — законный вопрос, и ответ на него
+ * бывает нужен.
+ *
+ * Работы и домашняя работа — исключение из исключения: завести их на
+ * отменённом нельзя, а заведённые **до** отмены остаются на экране. Спрятать
+ * их значило бы потерять из виду чужие ответы; пустой блок при этом уходит,
+ * как и остальные.
+ *
  * Кнопки в шапках карточек **все вторичные**, и это правило, а не вкус:
  * карточек пять, у каждой своё действие, и синяя в каждой шапке дала бы
  * пять спорящих главных кнопок на один экран. Синий остаётся за
@@ -144,6 +157,9 @@ export default function LessonScreen({ onLoggedOut }) {
 
   const topic = card.topic
   const may = card.may_write
+  // отменённого занятия не было, и содержания у него быть не может: тема,
+  // материалы и домашнее задание с этой страницы уходят целиком
+  const cancelled = card.is_cancelled
   // записать можно только то, что уже случилось: нажатая накануне кнопка
   // стала бы ложью после утренней пожарной тревоги
   const done = card.date <= today()
@@ -447,8 +463,13 @@ export default function LessonScreen({ onLoggedOut }) {
         )}
 
         {/* Пустое место на месте пропавших кнопок читалось бы как поломка,
-            поэтому запрет объясняется словами и сразу даёт выход */}
-        {!topic ? (
+            поэтому запрет объясняется словами и сразу даёт выход.
+
+            У отменённого не объясняется ничего: «в плане ничего не
+            осталось» называет не ту причину — темы нет не потому, что план
+            кончился, а потому, что занятия не было. Настоящая причина
+            строкой ниже, и она с указанием, чья */}
+        {cancelled ? null : !topic ? (
           <p className="hint">{t('today.noTopic')}</p>
         ) : (
           !card.confirmed && <p className="hint">{t('lessonScreen.planOwns')}</p>
@@ -485,6 +506,7 @@ export default function LessonScreen({ onLoggedOut }) {
       {/* 2. Чем занимаемся. Правится здесь же, прямо в блоке: кнопка,
           живущая в другой карточке, не находится, а окно поверх страницы
           отвечало на вопрос «куда я попал» */}
+      {!cancelled && (
       <Collapsible
         name="content"
         title={t('lessonScreen.content')}
@@ -503,15 +525,22 @@ export default function LessonScreen({ onLoggedOut }) {
           ))
         )}
       </Collapsible>
+      )}
 
-      {/* 3. Что решаем */}
+      {/* 3. Что решаем.
+
+          У отменённого блок остаётся, только если работа в нём уже есть:
+          завести её на занятии, которого не было, нельзя, а заведённую до
+          отмены прятать — значит потерять чужие ответы из виду. Пустой блок
+          при этом уходит, как и остальные */}
+      {(!cancelled || classwork.length > 0) && (
       <Collapsible
         name="works"
         title={t('lessonScreen.works')}
         empty={!classwork.length}
         note={classwork.length || t('lessonScreen.none')}
         actions={
-          may && (
+          may && !cancelled && (
             <button
               type="button"
               className="secondary compact"
@@ -536,8 +565,10 @@ export default function LessonScreen({ onLoggedOut }) {
           </ul>
         )}
       </Collapsible>
+      )}
 
       {/* 4. Чем пользуемся: файлы и ссылки строки плана */}
+      {!cancelled && (
       <Collapsible
         name="materials"
         title={t('lessonScreen.materials')}
@@ -640,15 +671,18 @@ export default function LessonScreen({ onLoggedOut }) {
             </form>
         )}
       </Collapsible>
+      )}
 
-      {/* 5. Что задаём на дом — последним, потому что объявляют его в конце */}
+      {/* 5. Что задаём на дом — последним, потому что объявляют его в конце.
+          У отменённого — по тому же правилу, что и работы */}
+      {(!cancelled || homework.length > 0) && (
       <Collapsible
         name="homework"
         title={t('lessonScreen.homework')}
         empty={!hasHomework && editing?.fields !== HOMEWORK}
         note={homework.length || t('lessonScreen.none')}
         actions={
-          may && (
+          may && !cancelled && (
             <>
               {editAction(HOMEWORK)}
               <button
@@ -688,6 +722,7 @@ export default function LessonScreen({ onLoggedOut }) {
           </ul>
         )}
       </Collapsible>
+      )}
 
       </div>
 

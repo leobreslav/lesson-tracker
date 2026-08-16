@@ -519,6 +519,78 @@ test('записанная связь открывает туннель, и он
   ).toHaveCount(0)
 })
 
+test('у отменённого занятия остаётся журнал, а содержания нет', async ({
+  page,
+  signIn,
+  api,
+}) => {
+  // Занятия не было — значит не было ни темы, ни материалов, ни домашнего
+  // задания; четыре карточки со словом «нет» сообщали об этом четырежды.
+  // Журнал остаётся: «кто пришёл на урок, которого не было» — вопрос
+  // законный.
+  const teacher = await api(PEOPLE.ivanova)
+  const courses = await teacher.get('/api/courses/')
+  const course = courses.body.find((item) => item.name === 'Grade 6 Algebra')
+  const slots = await teacher.get(`/api/slots/?course=${course.id}`)
+  const cancelled = slots.body.find((slot) => slot.is_cancelled)
+
+  await signIn(PEOPLE.ivanova)
+  await page.goto(`/lesson/${cancelled.id}`)
+  await ready(page)
+
+  await expect(page.locator('.panel-title').first()).toBeVisible()
+  expect(await page.locator('.panel-title').allTextContents()).toEqual([
+    'Посещаемость',
+  ])
+
+  // причина видна, а объяснения про план нет: темы нет не потому, что план
+  // кончился, — вот настоящая причина
+  await expect(page.getByText(`отменён: ${cancelled.reason}`)).toBeVisible()
+  await expect(page.getByText('На этот урок в плане ничего не осталось')).toHaveCount(0)
+})
+
+test('работа, заведённая до отмены, с экрана не пропадает', async ({
+  page,
+  signIn,
+  api,
+}) => {
+  // Завести работу на занятии, которого не было, нельзя — а заведённую
+  // раньше прятать значит потерять из виду чужие ответы.
+  const teacher = await api(PEOPLE.ivanova)
+  const courses = await teacher.get('/api/courses/')
+  const course = courses.body.find((item) => item.name === 'Grade 6 Algebra')
+  const slots = await teacher.get(`/api/slots/?course=${course.id}`)
+  const slot = slots.body.find((item) => !item.is_cancelled)
+
+  const created = await teacher.post('/api/works/', {
+    course: course.id,
+    slot: slot.id,
+    title: 'Самостоятельная по дробям',
+    opens_at: '2026-09-01T08:00:00Z',
+    closes_at: '2027-06-01T08:00:00Z',
+  })
+  expect(created.status, JSON.stringify(created.body)).toBe(201)
+  await teacher.patch(`/api/slots/${slot.id}/`, {
+    is_cancelled: true,
+    reason: 'Актированный день',
+  })
+
+  await signIn(PEOPLE.ivanova)
+  await page.goto(`/lesson/${slot.id}`)
+  await ready(page)
+
+  expect(await page.locator('.panel-title').allTextContents()).toEqual([
+    'Посещаемость',
+    'Работы',
+  ])
+  await expect(page.locator('.work-links > li')).toContainText('Самостоятельная')
+
+  // а новую завести нечем: занятия не было
+  const works = page.locator('[data-block="works"]')
+  await works.hover()
+  await expect(works.getByRole('button', { name: 'Новая работа' })).toHaveCount(0)
+})
+
 test('занятие без строки плана открывается, а не падает', async ({
   page,
   signIn,
