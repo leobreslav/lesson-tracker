@@ -63,6 +63,29 @@ test('урок добавляется, отменяется с причиной 
   await expect(page.locator(`[data-lesson="${MONDAY}:6"]`)).toBeVisible()
 })
 
+test('из расписания открывается сам урок, а не только правка клетки', async ({
+  page,
+  signIn,
+}) => {
+  // Меню отвечало только на вопрос «что сделать с клеткой» — отменить,
+  // перенести, удалить, — и попасть отсюда в занятие было нечем: шли через
+  // «Сегодня» и долистывали до нужного дня.
+  await signIn(PEOPLE.ivanova)
+  await openWeek(page, MONDAY)
+
+  const lesson = page.locator(`[data-lesson="${MONDAY}:1"]`)
+  await expect(lesson).toContainText('Grade 6 Algebra')
+  await lesson.click()
+
+  await page.locator('dialog.modal').getByRole('button', { name: 'Открыть урок' }).click()
+  await ready(page)
+
+  await expect(page).toHaveURL(/\/lesson\/\d+$/)
+  await expect(page.locator('.lesson-title-head .hint').first()).toContainText(
+    'Grade 6 Algebra',
+  )
+})
+
 test('копирование недели на месяц не ставит уроки в каникулы', async ({
   page,
   signIn,

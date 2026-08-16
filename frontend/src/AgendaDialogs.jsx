@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { useNavigate } from 'react-router-dom'
 import Modal from './Modal'
 import { weekdayWithDate } from './dates'
 
@@ -88,6 +89,16 @@ export function AddLessonDialog({ date, number, classes, busy, onSubmit, onClose
  * Перенос стоит здесь же, рядом с отменой, и это не случайно: для человека
  * это одно действие, а в данных — отмена с причиной плюс дополнительное
  * занятие на новой дате. Двойную запись делает сервер; здесь только форма.
+ *
+ * **Первым стоит «Открыть урок»**, и это же единственная синяя кнопка. Меню
+ * отвечало только на вопрос «что сделать с клеткой расписания» — отменить,
+ * перенести, удалить, — и попасть из расписания в само занятие было нечем:
+ * приходилось идти через «Сегодня» и долистывать до нужного дня. А работают
+ * с занятием чаще, чем правят сетку.
+ *
+ * Синей до этого была «Отменить», по единственной причине — она стояла
+ * первой. Отмена редка и разрушительна, и главной кнопкой быть не должна:
+ * то же решение, что увело её в «⋯» на самой странице урока.
  */
 export function LessonMenu({
   lesson,
@@ -100,6 +111,7 @@ export function LessonMenu({
   onClose,
 }) {
   const { t } = useTranslation()
+  const navigate = useNavigate()
   const [reason, setReason] = useState('')
   const [mode, setMode] = useState(null) // null | 'cancel' | 'move'
   const [target, setTarget] = useState({ date: '', number: lesson.lesson_number })
@@ -209,13 +221,26 @@ export function LessonMenu({
 
       {mode === null && (
         <div className="actions">
+          <button type="button" onClick={() => navigate(`/lesson/${lesson.id}`)}>
+            {t('today.openLesson')}
+          </button>
           {lesson.is_cancelled ? (
-            <button type="button" disabled={busy} onClick={onRestore}>
+            <button
+              type="button"
+              className="secondary"
+              disabled={busy}
+              onClick={onRestore}
+            >
               {t('agenda.menu.restore')}
             </button>
           ) : (
             <>
-              <button type="button" disabled={busy} onClick={() => setMode('cancel')}>
+              <button
+                type="button"
+                className="secondary"
+                disabled={busy}
+                onClick={() => setMode('cancel')}
+              >
                 {t('agenda.menu.cancel')}
               </button>
               <button
