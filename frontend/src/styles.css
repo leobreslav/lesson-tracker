@@ -3963,16 +3963,6 @@ a.plan-date:hover em {
   border-radius: 3px;
 }
 
-/* заметка урока рядом с названием: своё место, но не в ущерб названию */
-.plan-row .hint.note {
-  flex: 0 1 auto;
-  min-width: 0;
-  max-width: 30%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 /* прошедшее приглушено — это только оформление, на расчёт не влияет */
 .plan-row.past {
   opacity: 0.55;

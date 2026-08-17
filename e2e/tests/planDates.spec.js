@@ -1024,3 +1024,35 @@ test('в тему, где всё проведено, урок не встави�
   await first.hover()
   await expect(first.getByTitle('Вставить урок после')).toHaveCount(0)
 })
+
+test('выделение мышью не закрывает окно, а клик по фону закрывает', async ({
+  page,
+  signIn,
+}) => {
+  // Выделяешь название справа налево, отпускаешь кнопку чуть за рамкой —
+  // и окно закрывалось вместе с правкой: браузер адресует `click` общему
+  // предку нажатия и отпускания, то есть самому <dialog>. Поле у рамки
+  // узкое, и повторяется это раз за разом.
+  await signIn(PEOPLE.ivanova)
+  await openPlan(page)
+
+  await page.locator('.plan-row.lesson .title').first().click()
+  const dialog = page.locator('dialog.modal')
+  await expect(dialog).toBeVisible()
+
+  const field = dialog.locator('input').first()
+  const box = await field.boundingBox()
+  const modal = await dialog.locator('.modal-body').boundingBox()
+
+  // от конца поля тянем влево и отпускаем **за** окном
+  await page.mouse.move(box.x + box.width - 5, box.y + box.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(modal.x - 60, box.y + box.height / 2, { steps: 10 })
+  await page.mouse.up()
+
+  await expect(dialog).toBeVisible()
+
+  // а честный клик по фону — нажали и отпустили там же — закрывает
+  await page.mouse.click(modal.x - 60, box.y + box.height / 2)
+  await expect(dialog).toHaveCount(0)
+})

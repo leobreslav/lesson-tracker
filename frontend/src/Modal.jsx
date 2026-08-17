@@ -32,6 +32,13 @@ import { useTranslation } from 'react-i18next'
  * Крестик уважает `onBeforeClose` наравне с Escape и фоном: три выхода из
  * одного окна должны вести себя одинаково, иначе несохранённое теряется
  * ровно тем из них, о котором забыли.
+ *
+ * **Клик по фону — это нажали и отпустили на фоне.** Раньше хватало
+ * `event.target === dialog` у `click`, и окно закрывалось от промаха мышью:
+ * выделяешь название в поле справа налево, отпускаешь кнопку чуть за
+ * рамкой — браузер адресует `click` общему предку нажатия и отпускания,
+ * то есть самому `<dialog>`, — и правка исчезает вместе с окном. Поле у
+ * рамки узкое, промахнуться легко, и повторяется это раз за разом.
  */
 export default function Modal({
   onClose,
@@ -43,6 +50,8 @@ export default function Modal({
 }) {
   const { t } = useTranslation()
   const dialogRef = useRef(null)
+  // где нажали кнопку: клик по фону — это нажали **и** отпустили на фоне
+  const startedOnBackdrop = useRef(false)
 
   useEffect(() => {
     dialogRef.current.showModal()
@@ -61,7 +70,17 @@ export default function Modal({
       onCancel={(event) => {
         if (!mayClose()) event.preventDefault()
       }}
+      // Выделение текста мышью кончается там, где кончается, и мимо узкого
+      // поля промахнуться легко. А `click` браузер вешает на общего предка
+      // нажатия и отпускания — то есть на сам <dialog>, если отпустили за
+      // рамкой окна, — и окно закрывалось прямо посреди правки. Поэтому
+      // спрашиваем, где жест **начался**.
+      onMouseDown={(event) => {
+        startedOnBackdrop.current = event.target === dialogRef.current
+      }}
       onClick={(event) => {
+        if (!startedOnBackdrop.current) return
+        startedOnBackdrop.current = false
         if (event.target === dialogRef.current && mayClose()) onClose()
       }}
     >
