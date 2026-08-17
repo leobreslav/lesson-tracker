@@ -84,7 +84,7 @@ test('над таблицей одна панель управления, а п�
     await expect(tools.getByRole('button', { name, exact: true })).toBeVisible()
   }
   await tools.getByRole('button', { name: 'Ещё' }).click()
-  for (const name of [/Импорт из файла/, /Экспорт в xlsx/, 'Из библиотеки']) {
+  for (const name of [/^Импорт/, /Экспорт в xlsx/, 'Из библиотеки']) {
     await expect(
       tools.locator('.dropdown').getByRole('button', { name }),
     ).toBeVisible()

@@ -307,7 +307,7 @@
     },
     "paste": {
       "about": "Copy the rows in Excel and paste them here — the columns sort themselves out. The header is optional.",
-      "hint": "The paste starts at the selected cell — click «Тема» first if your table has no id column.",
+      "hint": "The paste starts at the selected cell — click «Тема» first if your table has no id column. Drag across cells and press Delete to clear them.",
       "addRow": "Add a row",
       "tooBig": "More than {{count}} rows — a table that size is easier to import as a file."
     }
@@ -379,7 +379,7 @@
         "replace": "the plan is wiped and built again from the file — content and attachments go with it."
       }
     },
-    "importFile": "Import from a file…",
+    "importFile": "Import…",
     "noSlot": "no slot",
     "breakBetween": "{{title}} · {{start}} — {{end}}",
     "summary": {

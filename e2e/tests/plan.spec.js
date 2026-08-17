@@ -151,7 +151,7 @@ test('импорт CSV разбирает файл и строит блоки', 
   await signIn(PEOPLE.petrov)
   await openPlan(page, EMPTY_COURSE)
 
-  await planMenu(page, /Импорт из файла/)
+  await planMenu(page, /^Импорт/)
 
   const dialog = page.locator('dialog.modal')
   await dialog.locator('input[type="file"]').setInputFiles(
@@ -183,7 +183,7 @@ test('файл прежнего формата отклоняется с объ�
   await signIn(PEOPLE.petrov)
   await openPlan(page, EMPTY_COURSE)
 
-  await planMenu(page, /Импорт из файла/)
+  await planMenu(page, /^Импорт/)
   const dialog = page.locator('dialog.modal')
   await dialog.locator('input[type="file"]').setInputFiles({
     name: 'plan.csv',
@@ -207,7 +207,7 @@ test('замена предупреждает, что содержание ур�
   await signIn(PEOPLE.ivanova)
   await openPlan(page, 'Grade 6 Algebra')
 
-  await planMenu(page, /Импорт из файла/)
+  await planMenu(page, /^Импорт/)
   const dialog = page.locator('dialog.modal')
   await dialog.locator('input[type="file"]').setInputFiles(PLAIN_CSV)
   await dialog.getByRole('radio', { name: /Заменить/ }).check()
@@ -229,7 +229,7 @@ test('синхронизация недоступна, пока в файле н
   await signIn(PEOPLE.petrov)
   await openPlan(page, EMPTY_COURSE)
 
-  await planMenu(page, /Импорт из файла/)
+  await planMenu(page, /^Импорт/)
   const dialog = page.locator('dialog.modal')
   await dialog.locator('input[type="file"]').setInputFiles(PLAIN_CSV)
 
@@ -254,7 +254,7 @@ test('xlsx: выгрузка возвращается обратно без ед
   const saved = '/tmp/' + download.suggestedFilename()
   await download.saveAs(saved)
 
-  await planMenu(page, /Импорт из файла/)
+  await planMenu(page, /^Импорт/)
   const dialog = page.locator('dialog.modal')
   await dialog.locator('input[type="file"]').setInputFiles(saved)
 
@@ -272,7 +272,7 @@ test('xlsx: чужой файл отклоняется понятным текс
   await signIn(PEOPLE.petrov)
   await openPlan(page, EMPTY_COURSE)
 
-  await planMenu(page, /Импорт из файла/)
+  await planMenu(page, /^Импорт/)
   const dialog = page.locator('dialog.modal')
   await dialog.locator('input[type="file"]').setInputFiles({
     name: 'план.xlsx',
@@ -306,7 +306,7 @@ test('импорт вкладывает уроки в темы, включая �
   await signIn(PEOPLE.petrov)
   await openPlan(page, EMPTY_COURSE)
 
-  await planMenu(page, /Импорт из файла/)
+  await planMenu(page, /^Импорт/)
   const dialog = page.locator('dialog.modal')
   await dialog.locator('input[type="file"]').setInputFiles(
     csvFile(
@@ -517,7 +517,7 @@ test('план вставляют из таблицы, а не файлом', as
   await signIn(PEOPLE.petrov)
   await openPlan(page, EMPTY_COURSE)
 
-  await planMenu(page, /Импорт из файла/)
+  await planMenu(page, /^Импорт/)
   const dialog = page.locator('dialog.modal')
   await dialog.getByRole('button', { name: 'Вставка' }).click()
 
@@ -560,7 +560,7 @@ test('вставка идёт от выбранной ячейки: таблиц
   await signIn(PEOPLE.petrov)
   await openPlan(page, EMPTY_COURSE)
 
-  await planMenu(page, /Импорт из файла/)
+  await planMenu(page, /^Импорт/)
   const dialog = page.locator('dialog.modal')
   await dialog.getByRole('button', { name: 'Вставка' }).click()
 
@@ -576,4 +576,45 @@ test('вставка идёт от выбранной ячейки: таблиц
   await dialog.getByRole('button', { name: 'Импортировать' }).click()
   await expect(dialog).toBeHidden()
   await expect(lessonCount(page)).toHaveText('2')
+})
+
+test('в сетке вставки выделяют кусок мышью и стирают его Delete', async ({
+  page,
+  signIn,
+}) => {
+  // Единственное, что взято у настоящих таблиц: стереть кусок целиком.
+  // Иначе это щелчки по ячейкам по одной.
+  await signIn(PEOPLE.petrov)
+  await openPlan(page, EMPTY_COURSE)
+
+  await planMenu(page, /Импорт/)
+  const dialog = page.locator('dialog.modal')
+  await dialog.getByRole('button', { name: 'Вставка' }).click()
+
+  await pasteInto(
+    page,
+    '.paste-grid td input',
+    '\tВекторы\tПонятие\n\tВекторы\tСложение\n\tОкружность\tКасательная\n',
+  )
+  await expect(dialog.locator('.paste-grid tbody tr')).toHaveCount(3)
+
+  // тянем от «Темы» первой строки до «Урока» второй
+  const cell = (row, column) =>
+    dialog.locator(`.paste-grid tbody tr:nth-child(${row}) td:nth-child(${column})`)
+  const from = await cell(1, 2).boundingBox()
+  const to = await cell(2, 3).boundingBox()
+
+  await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(to.x + to.width / 2, to.y + to.height / 2, { steps: 8 })
+  await page.mouse.up()
+
+  await expect(dialog.locator('.paste-grid td.picked')).toHaveCount(4)
+
+  await page.keyboard.press('Delete')
+
+  await expect(cell(1, 2).locator('input')).toHaveValue('')
+  await expect(cell(2, 3).locator('input')).toHaveValue('')
+  // третья строка не тронута: стёрли ровно выделенное
+  await expect(cell(3, 3).locator('input')).toHaveValue('Касательная')
 })

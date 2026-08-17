@@ -1308,8 +1308,36 @@ outline: 2px solid #1a73e8;
 outline-offset: -2px;
 }
 
+/* выделенный прямоугольник: стереть его целиком — Delete */
+.paste-grid td.picked {
+  background: #e4edfc;
+}
+
 .paste-grid > .row {
 padding: 0.4rem 0.5rem;
+}
+
+/*
+ * Откуда брать план — один переключатель, а не две кнопки рядом.
+ *
+ * Двумя отдельными таблетками это читалось как два действия («нажать
+ * Файл», «нажать Вставку»), хотя вопрос один и ответов у него два. Общая
+ * рамка и черта между половинами говорят это без слов.
+ */
+.source-switch {
+  align-self: start;
+  border: 1px solid #c6c6c6;
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.source-switch button.chip {
+  border: 0;
+  border-radius: 0;
+}
+
+.source-switch button.chip + button.chip {
+  border-left: 1px solid #c6c6c6;
 }
 
 /* сетке вставки нужна ширина: три колонки в узком окне обрезают названия */
@@ -1320,6 +1348,9 @@ padding: 0.4rem 0.5rem;
 /* ячейка сетки — не поле окна: рамку рисует сама таблица, иначе на пятистах
    строках это полторы тысячи прямоугольников со скруглениями */
 .modal-body .paste-grid input[type='text'] {
+  /* поле шириной в ячейку **вместе** с полями: без этого 100% + padding
+     выезжали за колонку, и правый край id налезал на «Тему» */
+  box-sizing: border-box;
   height: auto;
   padding: 0.25rem 0.5rem;
   font-size: 0.9rem;

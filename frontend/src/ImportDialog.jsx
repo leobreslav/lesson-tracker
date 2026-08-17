@@ -164,7 +164,11 @@ export default function ImportDialog({ classId, busy, onSubmit, onClose }) {
         {/* Источника два, а дальше всё общее: режим, предпросмотр, цена.
             Вставка нужна затем, чтобы не возиться с файлами вовсе —
             скопировали кусок листа и вставили. */}
-        <span className="chips" role="group" aria-label={t('csv.source.label')}>
+        <span
+          className="chips source-switch"
+          role="group"
+          aria-label={t('csv.source.label')}
+        >
           {SOURCES.map((name) => (
             <button
               key={name}

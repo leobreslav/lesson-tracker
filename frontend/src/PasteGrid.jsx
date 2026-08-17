@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { parseClipboard } from './clipboardGrid'
 
@@ -28,6 +28,20 @@ const BLANK = ['', '', '']
 export default function PasteGrid({ rows, onChange, disabled = false }) {
   const { t } = useTranslation()
   const [tooBig, setTooBig] = useState(0)
+  /*
+   * Выделение прямоугольника мышью и Delete на нём.
+   *
+   * Единственное, что взято у настоящих таблиц: стереть кусок целиком
+   * иначе значит щёлкать по ячейкам по одной. Тянут за ячейки, а не за
+   * текст: пока курсор не вышел из ячейки, работает обычное выделение
+   * текста внутри неё, и только выход за её край превращает жест в
+   * выделение диапазона.
+   *
+   * Якорь живёт в ref, а не в состоянии: `mouseenter` приходит тем же
+   * тактом, что `mousedown`, и состояние к этому моменту не обновилось бы.
+   */
+  const anchor = useRef(null)
+  const [range, setRange] = useState(null) // {from: {row, column}, to}
 
   const shown = rows.length ? rows : [BLANK]
 
@@ -76,6 +90,65 @@ export default function PasteGrid({ rows, onChange, disabled = false }) {
     onChange(next)
   }
 
+  // тянуть можно в любую сторону, а прямоугольник всегда один
+  const box = range && {
+    top: Math.min(range.from.row, range.to.row),
+    bottom: Math.max(range.from.row, range.to.row),
+    left: Math.min(range.from.column, range.to.column),
+    right: Math.max(range.from.column, range.to.column),
+  }
+  const picked = (line, column) =>
+    Boolean(
+      box &&
+        line >= box.top &&
+        line <= box.bottom &&
+        column >= box.left &&
+        column <= box.right,
+    )
+
+  const extend = (event, line, column) => {
+    // кнопка отпущена — это просто движение мыши над таблицей
+    if (event.buttons !== 1 || !anchor.current) return
+    const start = anchor.current
+    if (start.row === line && start.column === column) return
+
+    // текст, выделившийся по дороге, тут только мешает — в том числе тот,
+    // что выделился внутри поля: у него своё выделение, не документа
+    window.getSelection?.()?.removeAllRanges()
+    document.activeElement?.blur?.()
+    setRange({ from: start, to: { row: line, column } })
+  }
+
+  const clearRange = () => {
+    if (!box) return
+    const next = shown.map((row) => [...row])
+    for (let line = box.top; line <= box.bottom; line += 1) {
+      for (let column = box.left; column <= box.right; column += 1) {
+        if (next[line]) next[line][column] = ''
+      }
+    }
+    onChange(next)
+  }
+
+  const handleKeyDown = (event) => {
+    if (event.key === 'Escape') return setRange(null)
+    if (event.key !== 'Delete' && event.key !== 'Backspace') return
+    // одна ячейка — это обычная правка текста, и мешать ей нельзя
+    if (!box || (box.top === box.bottom && box.left === box.right)) return
+
+    event.preventDefault()
+    clearRange()
+  }
+
+  // жест кончился — якорь снимаем, выделение остаётся: по нему ещё нажмут
+  useEffect(() => {
+    const done = () => {
+      anchor.current = null
+    }
+    window.addEventListener('mouseup', done)
+    return () => window.removeEventListener('mouseup', done)
+  }, [])
+
   const edit = (line, column, value) => {
     const next = shown.map((row) => [...row])
     next[line][column] = value
@@ -88,7 +161,7 @@ export default function PasteGrid({ rows, onChange, disabled = false }) {
   }
 
   return (
-    <div className="paste-grid" onPaste={handlePaste}>
+    <div className="paste-grid" onPaste={handlePaste} onKeyDown={handleKeyDown}>
       <table>
         <thead>
           <tr>
@@ -105,7 +178,17 @@ export default function PasteGrid({ rows, onChange, disabled = false }) {
             // eslint-disable-next-line react/no-array-index-key
             <tr key={line}>
               {COLUMNS.map((name, column) => (
-                <td key={name} className={name === 'id' ? 'id' : ''}>
+                <td
+                  key={name}
+                  className={
+                    (name === 'id' ? 'id' : '') + (picked(line, column) ? ' picked' : '')
+                  }
+                  onMouseDown={() => {
+                    anchor.current = { row: line, column }
+                    setRange(null)
+                  }}
+                  onMouseEnter={(event) => extend(event, line, column)}
+                >
                   <input
                     type="text"
                     value={row[column] ?? ''}
