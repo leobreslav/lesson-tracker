@@ -220,9 +220,39 @@ class SchoolYearSerializer(serializers.ModelSerializer):
                     end=str(outside[0].end_date),
                 )
 
+            self.check_the_terms(start_date, end_date)
             self.check_the_timetable(start_date, end_date)
 
         return attrs
+
+    def check_the_terms(self, start_date, end_date):
+        """
+        Четверть, оказавшаяся снаружи новых границ.
+
+        Разметку сужение проверяло всегда, расписание научилось позже, а
+        термы не проверялись вовсе — и четверть могла целиком оказаться вне
+        своего года. Состояние невыразимое: учебных дней в ней ноль, а в
+        списке она есть. Отказ, а не `force`: у терма нет содержимого,
+        которое жалко, — его просто правят следом.
+        """
+        outside = [
+            term
+            for term in self.instance.terms.all()
+            if not (start_date <= term.start_date and term.end_date <= end_date)
+        ]
+        if not outside:
+            return
+
+        term = outside[0]
+        api_error(
+            Codes.YEAR_SHRINK_CUTS_TERMS,
+            f"The new boundaries cut off «{term.name}» "
+            f"({term.start_date} — {term.end_date}). Move it first.",
+            field="start_date",
+            name=term.name,
+            start=str(term.start_date),
+            end=str(term.end_date),
+        )
 
     def check_the_timetable(self, start_date, end_date):
         """
@@ -243,7 +273,8 @@ class SchoolYearSerializer(serializers.ModelSerializer):
         from schedule.models import Slot
 
         outside = Q(date__lt=start_date) | Q(date__gt=end_date)
-        slots = Slot.objects.filter(outside, year=self.instance).count()
+        left = Slot.objects.filter(outside, year=self.instance)
+        slots = left.count()
         if not slots:
             return
 
@@ -251,6 +282,22 @@ class SchoolYearSerializer(serializers.ModelSerializer):
         forced = getattr(request, "query_params", {}).get("force", "").lower() == "true"
         if forced:
             return
+
+        # Записанный час снаружи — отдельный разговор, и его надо назвать:
+        # очередь смотрит по курсу, а лента раскладки по дням года, поэтому
+        # такой час продолжает держать очередь, но в таблице плана его нет.
+        # Причину отказа «сначала закройте 14 сентября» будет не найти.
+        recorded = left.exclude(lesson=None).count()
+        if recorded:
+            api_error(
+                Codes.YEAR_SHRINK_CUTS_RECORDS,
+                f"The new boundaries leave {slots} lessons outside the year, "
+                f"{recorded} of them recorded: a recorded hour outside the "
+                "year still holds the queue but disappears from the plan.",
+                field="start_date",
+                slots=slots,
+                recorded=recorded,
+            )
 
         api_error(
             Codes.YEAR_SHRINK_CUTS_SLOTS,

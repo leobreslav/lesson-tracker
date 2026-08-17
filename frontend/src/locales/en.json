@@ -242,7 +242,9 @@
     "slot_delete_recorded": "«{{title}}» is recorded on {{date}} — withdraw the record before deleting the lesson",
     "slot_cancel_recorded": "«{{title}}» is recorded here — withdraw the record before cancelling the lesson",
     "slot_order_broken": "After this change {{date}} would sit unrecorded among closed lessons: records go one after another, without gaps",
-    "plan_import_taught": "The import would delete {{count}} rows that have already been taught, and their records with them. Withdraw the records first, or import as «Append»"
+    "plan_import_taught": "The import would delete {{count}} rows that have already been taught, and their records with them. Withdraw the records first, or import as «Append»",
+    "year_shrink_cuts_terms": "The new boundaries cut off «{{name}}» ({{start}} — {{end}}) — move the term first",
+    "year_shrink_cuts_records": "The new boundaries leave {{slots}} lessons outside the year, {{recorded}} of them recorded. A recorded hour outside the year still holds the queue but disappears from the plan — withdraw the records first"
   },
   "classPicker": {
     "label": "Classes:",

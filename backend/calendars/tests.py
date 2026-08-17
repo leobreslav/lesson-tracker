@@ -3,6 +3,7 @@ from datetime import date
 
 from django.urls import reverse
 from rest_framework.test import APITestCase
+from plans.models import PlanNode
 from schedule.models import Course, CourseAssignment
 from schools.testing import (
     YEAR_END,
@@ -174,6 +175,56 @@ class SchoolYearApiTests(CalendarApiTestCase):
         self.assertEqual(forced.status_code, 200, forced.content)
         self.year.refresh_from_db()
         self.assertEqual(self.year.end_date, date(2027, 5, 1))
+
+    def test_shrinking_the_year_past_a_term_is_rejected(self):
+        """
+        Четверть целиком снаружи своего года — состояние невыразимое: дней
+        в ней ноль, а в списке она есть. Отказ без `force`: у терма нет
+        содержимого, которое жалко, — его просто правят следом.
+        """
+        Term.objects.create(
+            year=self.year,
+            name="4 четверть",
+            start_date=date(2027, 5, 5),
+            end_date=date(2027, 5, 25),
+            position=4,
+        )
+
+        response = self.client.patch(
+            reverse("schoolyear-detail", args=[self.year.pk]),
+            {"end_date": "2027-05-01"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400, response.content)
+        self.assertEqual(response.json()["code"], "year_shrink_cuts_terms")
+        self.assertEqual(response.json()["params"]["name"], "4 четверть")
+
+    def test_a_recorded_hour_outside_the_year_is_named_in_the_refusal(self):
+        """
+        Записанный час снаружи держит очередь, но из таблицы плана исчезает.
+
+        Отказ поэтому другой: «уроки останутся снаружи» тут мало — искать
+        причину «сначала закройте 12 мая» будет негде.
+        """
+        course = make_course(self.school, self.year)
+        CourseAssignment.objects.get_or_create(course=course, teacher=self.user)
+        slot = make_slot(self.user, course, day=date(2027, 5, 12))
+        row = PlanNode.objects.create(
+            course=course, parent=None, position=0, is_section=False, title="Урок"
+        )
+        slot.lesson = row
+        slot.save(update_fields=["lesson"])
+
+        response = self.client.patch(
+            reverse("schoolyear-detail", args=[self.year.pk]),
+            {"end_date": "2027-05-01"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400, response.content)
+        self.assertEqual(response.json()["code"], "year_shrink_cuts_records")
+        self.assertEqual(response.json()["params"]["recorded"], 1)
 
     def test_growing_the_year_asks_nothing(self):
         """Расширение границ ничего не отрезает — разговора быть не должно."""
