@@ -387,7 +387,8 @@
       "dates": "Даты",
       "sections": "тем",
       "weeks": "Недели",
-      "freeSlots": "Свободные"
+      "freeSlots": "Свободные",
+      "recorded": "проведено"
     },
     "today": "СЕГОДНЯ",
     "week": "нед {{number}}",

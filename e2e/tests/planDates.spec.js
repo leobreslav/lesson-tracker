@@ -128,14 +128,26 @@ test('в плане видно, какой час записан, а какой 
   await page.getByLabel('Курс').selectOption(String(course.id))
   await expect(page.locator('.plan-cards')).toBeVisible()
 
-  // первый час записан фикстурой, второй прошёл и не записан
-  await expect(page.locator('.plan-state.recorded')).toHaveCount(1)
-  const debts = page.locator('.plan-state.unclosed')
+  // первый час записан фикстурой, второй прошёл и не записан. Значки
+  // спрашиваем в таблице: те же ✓ и • стоят теперь в сводке легендой
+  const table = page.locator('ul.plan').first()
+  await expect(table.locator('.plan-state.recorded')).toHaveCount(1)
+  const debts = table.locator('.plan-state.unclosed')
   await expect(debts).toHaveCount(2)
 
-  // и счётчик над таблицей говорит то же число
-  // и число долгов стоит плашкой в сводке, рядом с прочей статистикой
-  await expect(page.locator('[data-card="debts"]')).toContainText('2')
+  // и оба числа стоят одной плашкой в сводке: «два не отмечено» — беда при
+  // двух записанных и мелочь при сотне. Значки там же и служат легендой
+  const records = page.locator('[data-card="records"]')
+  await expect(records.locator('[data-card="recorded"]')).toContainText('1')
+  await expect(records.locator('[data-card="recorded"] .plan-state.recorded')).toHaveText(
+    '✓',
+  )
+  await expect(records.locator('[data-card="debts"]')).toContainText('2')
+  await expect(records.locator('[data-card="debts"] .plan-state.unclosed')).toHaveText('•')
+
+  // нажатие на число долгов открывает разбор
+  await records.locator('[data-card="debts"] button').click()
+  await expect(page.locator('dialog.modal')).toBeVisible()
 })
 
 test('значки состояния стоят в столбик перед датами', async ({

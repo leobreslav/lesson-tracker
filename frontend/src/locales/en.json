@@ -377,7 +377,8 @@
       "dates": "Dates",
       "sections": "themes",
       "weeks": "Weeks",
-      "freeSlots": "Free"
+      "freeSlots": "Free",
+      "recorded": "marked as taught"
     },
     "today": "TODAY",
     "week": "wk {{number}}",

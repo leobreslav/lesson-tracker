@@ -11,7 +11,7 @@ import { readFileSync } from 'node:fs'
 import { describe, it } from 'node:test'
 import { fileURLToPath } from 'node:url'
 
-import { debtSlots, freeSlots, layoutTotals, stitchLayout } from '../src/planLayout.js'
+import { debtSlots, recordedSlots, freeSlots, layoutTotals, stitchLayout } from '../src/planLayout.js'
 import { planRows } from '../src/planLogic.js'
 
 /** Лента: по слоту в день, с 1 октября. */
@@ -546,5 +546,19 @@ describe('долги', () => {
     '2027-03-10',
   )
   assert.equal(old.length, 2)
+  })
+})
+
+describe('записанные часы', () => {
+  it('считаются по всей ленте, включая будущее — записать его нельзя, а посчитать честно', () => {
+    const ribbon = [
+      { id: 1, date: '2026-09-01', lesson_id: 4 },
+      { id: 2, date: '2026-09-02', lesson_id: null },
+      { id: 3, date: '2026-09-03', lesson_id: 6 },
+    ]
+
+    assert.equal(recordedSlots(ribbon).length, 2)
+    assert.equal(recordedSlots([]).length, 0)
+    assert.equal(recordedSlots(null).length, 0)
   })
 })

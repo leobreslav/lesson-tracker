@@ -187,6 +187,17 @@ export function debtSlots(ribbon, today) {
     .filter((slot) => slot.date <= today && !slot.lesson_id)
 }
 
+/**
+ * Записанные часы: сколько занятий курса отмечено проведёнными.
+ *
+ * Считается по той же ленте, что и долги, и стоит с ними в одной плашке:
+ * порознь ни одно из двух чисел ничего не говорит — «два не отмечено» это
+ * беда при двух записанных и мелочь при сотне.
+ */
+export function recordedSlots(ribbon) {
+  return (ribbon ?? []).filter((slot) => slot.lesson_id)
+}
+
 export function layoutTotals(stitched, ribbon) {
   const lessons = stitched.filter((row) => !row.is_section)
   const placed = lessons.filter((row) => row.slot)

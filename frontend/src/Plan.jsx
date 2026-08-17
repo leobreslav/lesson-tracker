@@ -16,7 +16,13 @@ import PlanCsvHelp from './PlanCsvHelp'
 import PlanTable from './PlanTable'
 import { dragId } from './PlanDnd'
 import Modal from './Modal'
-import { debtSlots, freeSlots, layoutTotals, stitchLayout } from './planLayout'
+import {
+  debtSlots,
+  freeSlots,
+  layoutTotals,
+  recordedSlots,
+  stitchLayout,
+} from './planLayout'
 import { shortDate } from './dates'
 import { today } from './calendarLogic'
 import CoursePicker from './CoursePicker'
@@ -327,6 +333,9 @@ export default function Plan({ onLoggedOut }) {
       // прошедшие часы без записи: их видно строкой в таблице, а не только
       // счётчиком — час стоит в окружении, с датой, темой и соседями
       debts: debtSlots(ribbon, today()),
+      // записанные — рядом с долгами и той же лентой: одно без другого не
+      // читается
+      recorded: recordedSlots(ribbon),
     }
   }, [data, ribbon])
 
@@ -725,17 +734,40 @@ export default function Plan({ onLoggedOut }) {
                     в подвале панели «не отмечено занятий: 1» читалось как
                     сноска, хотя это единственное, что требует действия.
                   */}
-                  {layout.debts.length > 0 && (
-                    <section data-card="debts" className="panel card-stat bad">
-                      <button
-                        type="button"
-                        className="link"
-                        title={t('status.closeDebts')}
-                        onClick={() => setDebts(true)}
-                      >
-                        <h2>{layout.debts.length}</h2>
-                      </button>
-                      <p className="hint">{t('plan.debtsLabel')}</p>
+                  {/* Две строки одной плашки, как слоты и уроки слева:
+                      «два не отмечено» — беда при двух записанных и мелочь
+                      при сотне, порознь эти числа ничего не значат.
+
+                      Значки те же, что в таблице, и стоят они тут заодно
+                      легендой: зелёная галочка — записан, красная точка —
+                      долг. Отдельная строка легенды под сводкой объясняла
+                      бы то же самое, только не там, где на значки смотрят */}
+                  {layout.recorded.length > 0 && (
+                    <section data-card="records" className="panel card-stat">
+                      <p className="pair" data-card="recorded">
+                        <span className="plan-state recorded" aria-hidden="true">
+                          ✓
+                        </span>
+                        <b>{layout.recorded.length}</b> {t('plan.summary.recorded')}
+                      </p>
+                      <p className="pair" data-card="debts">
+                        <span className="plan-state unclosed" aria-hidden="true">
+                          •
+                        </span>
+                        {layout.debts.length > 0 ? (
+                          <button
+                            type="button"
+                            className="link"
+                            title={t('status.closeDebts')}
+                            onClick={() => setDebts(true)}
+                          >
+                            <b>{layout.debts.length}</b>
+                          </button>
+                        ) : (
+                          <b>{layout.debts.length}</b>
+                        )}{' '}
+                        {t('plan.debtsLabel')}
+                      </p>
                     </section>
                   )}
                 </>

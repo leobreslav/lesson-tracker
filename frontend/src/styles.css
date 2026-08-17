@@ -2162,7 +2162,10 @@ button.badge:hover:not(:disabled) {
 }
 
 .card-stat .pair b {
+  display: inline-block;
+  min-width: 1.1rem;
   margin-right: 0.35rem;
+  text-align: right;
   font-size: 1.2rem;
   font-variant-numeric: lining-nums tabular-nums;
   color: #202124;
@@ -3855,6 +3858,29 @@ a.plan-date:hover em {
 /* пункт меню — строка списка, а не контрол ряда: рост ему задаёт текст */
 .plan-menu .dropdown button {
   min-height: 0;
+}
+
+/* значки состояния в сводке: те же ✓ и •, что в таблице, и стоят они там
+   заодно легендой — поэтому им нужна колонка постоянной ширины, иначе
+   числа в двух строках плашки не встанут друг под друга */
+.card-stat .pair .plan-state {
+  display: inline-block;
+  width: 0.9rem;
+  margin-right: 0.2rem;
+  text-align: center;
+}
+
+/* число-кнопка («разобрать долги») ведёт себя как обычное число: свой
+   отступ у неё был бы вторым источником правды о том же зазоре */
+.card-stat .pair .link {
+  padding: 0;
+  /* зазор до подписи тот же, что у обычного числа: иначе подписи двух
+     строк плашки начинаются на разной вертикали */
+  margin-right: 0.35rem;
+}
+
+.card-stat .pair .link b {
+  margin-right: 0;
 }
 
 .plan-bar {
