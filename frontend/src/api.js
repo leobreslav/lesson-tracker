@@ -124,6 +124,10 @@ export const deleteTerm = (id) =>
 export const createException = (fields) =>
   request('/api/calendar/exceptions/', { method: 'POST', body: fields })
 
+/** Переименование пометки: у праздника и каникул своё имя, и его правят. */
+export const updateException = (id, fields) =>
+  request(`/api/calendar/exceptions/${id}/`, { method: 'PATCH', body: fields })
+
 export const deleteException = (id) =>
   request(`/api/calendar/exceptions/${id}/`, { method: 'DELETE' })
 

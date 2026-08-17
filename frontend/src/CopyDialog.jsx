@@ -150,7 +150,7 @@ export default function CopyDialog({
 
         <ClassPicker classes={classes} picked={picked} onChange={setPicked} />
 
-        <p className="hint">
+        <p className="hint copy-preview">
           {preview
             ? t('copy.preview', {
                 created: preview.created,

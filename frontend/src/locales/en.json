@@ -313,7 +313,8 @@
       "hint": "The paste starts at the selected cell — click «Тема» first if your table has no id column. Drag across cells and press Delete to clear them.",
       "addRow": "Add a row",
       "tooBig": "More than {{count}} rows — a table that size is easier to import as a file."
-    }
+    },
+    "pick": "Choose a file"
   },
   "rangeDialog": {
     "title": "New break",
@@ -503,7 +504,8 @@
       "typicalHint": "autumn, winter and spring — you can move the dates later.",
       "hint": "Click a day to mark a holiday, or drag across several days to make a break.",
       "delete": "Delete the markup",
-      "wholePeriod": "«{{title}}» covers a whole period — delete it in the list on the right."
+      "wholePeriod": "«{{title}}» covers a whole period — delete it in the list on the right.",
+      "rename": "Rename"
     },
     "typicalVacations": {
       "autumn": "Autumn break",

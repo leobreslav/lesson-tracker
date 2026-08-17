@@ -571,6 +571,24 @@ class SlotViewSet(SchoolScopedViewSet):
         self.require_write(serializer.validated_data["course"])
         serializer.save()
 
+    def get_serializer_context(self):
+        context = super().get_serializer_context()
+        # функцией, а не значением: запрос нужен только тем ответам, где
+        # долги показывают, а контекст строится и на запись тоже
+        context["recorded_courses"] = self.recorded_courses
+        return context
+
+    def recorded_courses(self):
+        """Курсы школы, в которых запись уже начали, — одним запросом."""
+        if not hasattr(self, "_recorded_courses"):
+            self._recorded_courses = set(
+                Slot.objects.filter(
+                    course__school_id=self.request.user.school_id,
+                    lesson__isnull=False,
+                ).values_list("course_id", flat=True)
+            )
+        return self._recorded_courses
+
     def perform_destroy(self, instance):
         """
         Занятие с записью не удаляют: сначала снимают запись.

@@ -14,12 +14,14 @@
 from datetime import date, timedelta
 
 from django.urls import reverse
+from django.utils import timezone
 from rest_framework.test import APITestCase
 from schools.testing import (
     MONDAY,
     SchoolTestMixin,
     assign,
     make_course,
+    make_node,
     make_slot,
     make_year,
 )
@@ -291,3 +293,64 @@ class AdminCopyTests(SchoolScheduleTestCase):
         self.copy(self.theirs, mode="replace")
 
         self.assertTrue(Slot.objects.filter(pk=kept.pk).exists())
+
+
+class DebtsInTheSchoolViewTests(SchoolTestMixin, APITestCase):
+    """
+    Метки записи и долга есть и в расписании школы.
+
+    Администратор смотрит на то же расписание, и значить на нём метки
+    должны то же самое: галочка — записанный час, красная точка — прошедший
+    без записи. Правило про «только у начавших» общее с учительским видом,
+    иначе одно и то же занятие в двух местах выглядело бы по-разному.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.today = timezone.localdate()
+        self.year = make_year(
+            self.school,
+            start=self.today - timedelta(days=60),
+            end=self.today + timedelta(days=60),
+        )
+        self.course = make_course(self.school, self.year, "9Б Алгебра")
+        assign(self.user, self.course)
+        self.row = make_node(self.user, self.course, "Синус суммы")
+        self.done = make_slot(self.user, self.course, self.today - timedelta(days=2), 1)
+        self.open = make_slot(self.user, self.course, self.today - timedelta(days=1), 1)
+        self.client.force_authenticate(self.admin)
+
+    def slots(self):
+        response = self.client.get(reverse("slot-list") + "?scope=school")
+        self.assertEqual(response.status_code, 200, response.content)
+        return {slot["id"]: slot for slot in response.json()}
+
+    def test_nothing_is_a_debt_before_the_first_record(self):
+        for slot in self.slots().values():
+            self.assertFalse(slot["debt"], slot)
+
+    def test_after_the_first_record_the_gap_is_a_debt(self):
+        self.done.lesson = self.row
+        self.done.save(update_fields=["lesson"])
+
+        slots = self.slots()
+
+        self.assertFalse(slots[self.done.pk]["debt"])
+        self.assertEqual(slots[self.done.pk]["lesson"], self.row.pk)
+        self.assertTrue(slots[self.open.pk]["debt"])
+
+    def test_the_future_is_never_a_debt(self):
+        self.done.lesson = self.row
+        self.done.save(update_fields=["lesson"])
+        ahead = make_slot(self.user, self.course, self.today + timedelta(days=3), 1)
+
+        self.assertFalse(self.slots()[ahead.pk]["debt"])
+
+    def test_a_cancelled_hour_is_closed_by_the_cancellation(self):
+        self.done.lesson = self.row
+        self.done.save(update_fields=["lesson"])
+        self.open.is_cancelled = True
+        self.open.reason = "карантин"
+        self.open.save(update_fields=["is_cancelled", "reason"])
+
+        self.assertFalse(self.slots()[self.open.pk]["debt"])

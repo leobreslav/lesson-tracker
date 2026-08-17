@@ -165,3 +165,33 @@ test('год с чужими уроками не удаляется, и окно
   await dialog.getByRole('button', { name: 'Закрыть окно' }).click()
   await expect(page.locator('.calendar-side')).toBeVisible()
 })
+
+test('праздник и каникулы можно переименовать', async ({ page, signIn }) => {
+  // Название праздника спросить было негде вовсе: клик по дню создавал его
+  // с именем по умолчанию, и поменять это имя не давал ни один экран.
+  await signIn(PEOPLE.admin)
+  await page.goto('/year')
+  await ready(page)
+
+  // помечаем учебный день праздником — имя пока по умолчанию
+  await page.locator('[data-date="2026-11-04"]').click()
+  const item = page.locator('.exceptions li', { hasText: 'Праздник' }).first()
+  await expect(item).toBeVisible()
+
+  // имя кнопки — само название пометки; «Переименовать» живёт в подсказке
+  await item.locator('button.title').click()
+  const field = item.getByRole('textbox')
+  await field.fill('День народного единства')
+  await field.press('Enter')
+
+  await expect(
+    page.locator('.exceptions li', { hasText: 'День народного единства' }),
+  ).toBeVisible()
+
+  // и переживает перезагрузку: имя ушло на сервер
+  await page.reload()
+  await ready(page)
+  await expect(
+    page.locator('.exceptions li', { hasText: 'День народного единства' }),
+  ).toBeVisible()
+})

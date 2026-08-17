@@ -655,3 +655,39 @@ test('кусок выделяют и с клавиатуры: Shift со стр�
   await page.keyboard.press('Escape')
   await expect(dialog.locator('.paste-grid td.picked')).toHaveCount(0)
 })
+
+test('длинная вставка: сетка едет за выделением, а кнопка остаётся на виду', async ({
+  page,
+  signIn,
+}) => {
+  // Строки, выехавшие под нижний край, mouseenter не получают, а Shift со
+  // стрелкой уводил подвижный конец в невидимое. И «Добавить строку»
+  // пряталась вместе с таблицей, потому что скроллилась вместе с ней.
+  await signIn(PEOPLE.petrov)
+  await openPlan(page, EMPTY_COURSE)
+
+  await planMenu(page, /^Импорт/)
+  const dialog = page.locator('dialog.modal')
+  await dialog.getByRole('button', { name: 'Вставка' }).click()
+
+  const rows = Array.from({ length: 40 }, (_, index) => `\tТема\tУрок ${index + 1}`)
+  await pasteInto(page, '.paste-grid td input', `${rows.join('\n')}\n`)
+  await expect(dialog.locator('.paste-grid tbody tr')).toHaveCount(40)
+
+  // кнопка не уехала под нижний край таблицы
+  const add = dialog.getByRole('button', { name: 'Добавить строку' })
+  await expect(add).toBeInViewport()
+
+  const box = dialog.locator('.paste-scroll')
+  expect(await box.evaluate((node) => node.scrollTop)).toBe(0)
+
+  // тянем Shift со стрелками вниз: таблица должна поехать следом
+  await dialog.locator('.paste-grid tbody tr:first-child td:nth-child(3) input').click()
+  for (let step = 0; step < 20; step += 1) {
+    await page.keyboard.press('Shift+ArrowDown')
+  }
+
+  expect(await box.evaluate((node) => node.scrollTop)).toBeGreaterThan(0)
+  await expect(dialog.locator('.paste-grid td.picked')).toHaveCount(21)
+  await expect(add).toBeInViewport()
+})

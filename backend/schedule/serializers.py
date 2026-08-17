@@ -302,6 +302,10 @@ class SlotSerializer(serializers.ModelSerializer):
     teacher_name = serializers.SerializerMethodField()
     lesson_title = serializers.CharField(source="lesson.title", read_only=True)
     warning = serializers.SerializerMethodField()
+    # долг — прошедший час без записи в курсе, где запись уже начали. То же
+    # правило, что в сводном расписании; там оно считается своим кодом,
+    # потому что тот ответ строится не сериализатором
+    debt = serializers.SerializerMethodField()
 
     class Meta:
         model = Slot
@@ -322,6 +326,7 @@ class SlotSerializer(serializers.ModelSerializer):
             "reason",
             "created_at",
             "warning",
+            "debt",
         )
         read_only_fields = ("created_at",)
         validators = [
@@ -333,6 +338,20 @@ class SlotSerializer(serializers.ModelSerializer):
                 message="This course already has a lesson with that number that day.",
             ),
         ]
+
+    def get_debt(self, obj):
+        """
+        Прошедший час без записи — и только там, где запись уже начали.
+
+        Список «начавших» приходит из контекста **функцией**: она нужна
+        только на чтение списка, а контекст строится и на запись тоже, и
+        лишний запрос на каждый PATCH ни к чему.
+        """
+        started = self.context.get("recorded_courses")
+        if started is None or obj.is_cancelled or obj.lesson_id is not None:
+            return False
+
+        return obj.date <= timezone.localdate() and obj.course_id in started()
 
     def get_fields(self):
         fields = super().get_fields()

@@ -41,9 +41,14 @@ export default function PasteGrid({ rows, onChange, disabled = false }) {
    * тактом, что `mousedown`, и состояние к этому моменту не обновилось бы.
    */
   const dragging = useRef(false)
+  const scroll = useRef(null)
+  const auto = useRef(null) // таймер докрутки, пока курсор за краем
   const [range, setRange] = useState(null) // {from: {row, column}, to}
 
   const shown = rows.length ? rows : [BLANK]
+  // жест живёт вне рендера: обработчики на окне читают свежее из ref
+  const live = useRef({ range: null, lines: 1 })
+  live.current = { range, lines: shown.length }
 
   const handlePaste = (event) => {
     const text = event.clipboardData?.getData('text/plain') ?? ''
@@ -123,6 +128,7 @@ export default function PasteGrid({ rows, onChange, disabled = false }) {
     focused?.setSelectionRange?.(0, 0)
 
     setRange({ ...range, to: { row: line, column } })
+    reveal(line)
   }
 
   const clearRange = () => {
@@ -134,6 +140,40 @@ export default function PasteGrid({ rows, onChange, disabled = false }) {
       }
     }
     onChange(next)
+  }
+
+  /**
+   * Подвести к видимой части: выделение ушло за край — таблица едет следом.
+   *
+   * Иначе жест кончается вслепую: тянут мышью вниз, а строки стоят; жмут
+   * Shift со стрелкой — подвижный конец уезжает под нижний край, и куда он
+   * уехал, не видно. `scrollIntoView` у ячейки прокрутил бы и всё окно, а
+   * ехать должен только внутренний ящик.
+   */
+  const reveal = (line, column = null) => {
+    const box = scroll.current
+    const row = box?.querySelectorAll('tbody tr')[line]
+    if (!box || !row) return
+
+    /*
+     * Клавиатуре мало прокрутки — ей нужен переезд фокуса.
+     *
+     * Пока фокус оставался в той ячейке, с которой начали, браузер на
+     * каждое нажатие возвращал её в поле зрения и отматывал прокрутку
+     * обратно к нулю: мы уезжали вниз, он тащил наверх. Поэтому подвижный
+     * конец забирает фокус себе, а выделение по-прежнему держит состояние.
+     */
+    if (column !== null) {
+      row.querySelector(`input[data-column="${column}"]`)?.focus()
+    }
+
+    // шапка липкая и висит поверх строк: подводить надо под неё
+    const head = box.querySelector('thead')?.getBoundingClientRect().height ?? 0
+    const view = box.getBoundingClientRect()
+    const cell = row.getBoundingClientRect()
+
+    if (cell.top < view.top + head) box.scrollTop -= view.top + head - cell.top
+    if (cell.bottom > view.bottom) box.scrollTop += cell.bottom - view.bottom
   }
 
   /** Растянуть выделение клавишами: якорь стоит, двигается второй конец. */
@@ -152,6 +192,7 @@ export default function PasteGrid({ rows, onChange, disabled = false }) {
     event.preventDefault()
     window.getSelection?.()?.removeAllRanges()
     setRange({ from, to: next })
+    reveal(next.row, next.column)
     return true
   }
 
@@ -171,14 +212,59 @@ export default function PasteGrid({ rows, onChange, disabled = false }) {
     clearRange()
   }
 
-  // жест кончился — тянуть больше нечего, а выделение остаётся: по нему ещё
-  // нажмут Delete
+  /*
+   * Курсор ушёл за край — таблица докручивается сама.
+   *
+   * Строки, выехавшие из-под нижнего края, `mouseenter` не получают: курсор
+   * снаружи ящика, и выделение переставало расти на полпути. Поэтому пока
+   * кнопка держится за краем, таблица едет и подвижный конец идёт за ней —
+   * по строке за такт, как в любой таблице.
+   *
+   * Обработчики висят на окне и читают состояние из ref: жест продолжается
+   * там, где React уже ничего не перерисовывает.
+   */
   useEffect(() => {
+    const stop = () => {
+      clearInterval(auto.current)
+      auto.current = null
+    }
+
+    const creep = (down) => {
+      if (auto.current) return
+      auto.current = setInterval(() => {
+        const { range: current, lines } = live.current
+        if (!current || !dragging.current) return stop()
+
+        const row = Math.min(Math.max(current.to.row + (down ? 1 : -1), 0), lines - 1)
+        if (row === current.to.row) return stop()
+
+        setRange({ ...current, to: { ...current.to, row } })
+        reveal(row)
+      }, 90)
+    }
+
+    const track = (event) => {
+      const box = scroll.current
+      if (!dragging.current || !box) return stop()
+
+      const view = box.getBoundingClientRect()
+      if (event.clientY > view.bottom) return creep(true)
+      if (event.clientY < view.top) return creep(false)
+      stop()
+    }
+
     const done = () => {
       dragging.current = false
+      stop()
     }
+
+    window.addEventListener('mousemove', track)
     window.addEventListener('mouseup', done)
-    return () => window.removeEventListener('mouseup', done)
+    return () => {
+      window.removeEventListener('mousemove', track)
+      window.removeEventListener('mouseup', done)
+      stop()
+    }
   }, [])
 
   const edit = (line, column, value) => {
@@ -194,6 +280,9 @@ export default function PasteGrid({ rows, onChange, disabled = false }) {
 
   return (
     <div className="paste-grid" onPaste={handlePaste} onKeyDown={handleKeyDown}>
+      {/* прокручивается только таблица: кнопка «добавить строку» уезжала
+          вместе с ней и на длинной вставке пряталась под нижним краем */}
+      <div className="paste-scroll" ref={scroll}>
       <table>
         <thead>
           <tr>
@@ -252,6 +341,7 @@ export default function PasteGrid({ rows, onChange, disabled = false }) {
           ))}
         </tbody>
       </table>
+      </div>
 
       <div className="row">
         <button

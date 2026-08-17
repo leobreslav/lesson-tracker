@@ -7,6 +7,7 @@ import TermsPanel from './TermsPanel'
 import RangeDialog from './RangeDialog'
 import {
   createException,
+  updateException,
   createTerm,
   deleteTerm,
   fetchTerms,
@@ -72,6 +73,7 @@ export default function Calendar({ user, onLoggedOut }) {
   const [notice, setNotice] = useState(null)
   const [yearForm, setYearForm] = useState(null) // new-year form; null is closed
   const [rangeForm, setRangeForm] = useState(null) // {start_date, end_date, title}
+  const [renaming, setRenaming] = useState(null) // {id, title} — правка имени
   const [terms, setTerms] = useState([])
   // что унесёт удаление года: null — окно закрыто
   const [removing, setRemoving] = useState(null)
@@ -190,6 +192,26 @@ export default function Calendar({ user, onLoggedOut }) {
         createException({ ...fields, year: year.id }),
       )
     },
+    [year, mutate],
+  )
+
+  /**
+   * Переименование пометки прямо в списке.
+   *
+   * Название праздника спросить было негде вовсе: клик по дню создавал его
+   * с именем по умолчанию, и поменять это имя не давал ни один экран.
+   * Каникулам имя задают при создании, а вот исправить опечатку было
+   * нечем. Правится тем же приёмом, что названия в плане: клик по имени,
+   * Enter — сохранить, Escape — отменить.
+   */
+  const renameException = useCallback(
+    (exception, title) =>
+      mutate(
+        year.exceptions.map((item) =>
+          item.id === exception.id ? { ...item, title } : item,
+        ),
+        () => updateException(exception.id, { title }),
+      ),
     [year, mutate],
   )
 
@@ -564,9 +586,48 @@ export default function Calendar({ user, onLoggedOut }) {
                   {year.exceptions.map((exception) => (
                     <li key={exception.id} className={exception.kind}>
                       <div>
-                        <strong>
-                          {exception.title || t(`calendar.kind.${exception.kind}`)}
-                        </strong>
+                        {canEdit && renaming?.id === exception.id ? (
+                          <input
+                            type="text"
+                            autoFocus
+                            value={renaming.title}
+                            aria-label={t('calendar.exceptions.rename')}
+                            onChange={(event) =>
+                              setRenaming({ ...renaming, title: event.target.value })
+                            }
+                            onBlur={() => setRenaming(null)}
+                            onKeyDown={(event) => {
+                              if (event.key === 'Escape') setRenaming(null)
+                              if (event.key !== 'Enter') return
+                              const title = renaming.title.trim()
+                              setRenaming(null)
+                              if (title && title !== exception.title) {
+                                renameException(exception, title)
+                              }
+                            }}
+                          />
+                        ) : canEdit ? (
+                          <button
+                            type="button"
+                            className="link title"
+                            title={t('calendar.exceptions.rename')}
+                            disabled={saving}
+                            onClick={() =>
+                              setRenaming({
+                                id: exception.id,
+                                title:
+                                  exception.title ||
+                                  t(`calendar.kind.${exception.kind}`),
+                              })
+                            }
+                          >
+                            {exception.title || t(`calendar.kind.${exception.kind}`)}
+                          </button>
+                        ) : (
+                          <strong>
+                            {exception.title || t(`calendar.kind.${exception.kind}`)}
+                          </strong>
+                        )}
                         <span className="hint">
                           {t(`calendar.kind.${exception.kind}`)},{' '}
                           {dateRange(exception.start_date, exception.end_date)}

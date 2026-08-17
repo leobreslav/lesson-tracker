@@ -157,8 +157,9 @@ export default function ImportDialog({ classId, busy, onSubmit, onClose }) {
     <Modal
       onClose={onClose}
       title={t('csv.title')}
-      // сетке нужна ширина: три колонки в узком окне обрезают названия
-      className={source === 'paste' ? 'paste-window' : ''}
+      // ширина одна на оба источника: переключатель не должен перекраивать
+      // окно под руками — сетке она нужна, а прыжок читается как перезагрузка
+      className="paste-window"
     >
       <form onSubmit={handleSubmit}>
         {/* Источника два, а дальше всё общее: режим, предпросмотр, цена.
@@ -202,12 +203,18 @@ export default function ImportDialog({ classId, busy, onSubmit, onClose }) {
           onDragLeave={() => setDragging(false)}
           onDrop={handleDrop}
         >
+          {/* Нативное поле прячем, но не убираем: имя выбранного файла оно
+              печатает своё, и рядом с нашим получалось два одинаковых
+              имени подряд. Кнопка и подпись теперь наши, а поле остаётся
+              в разметке ради клавиатуры — метка кликает по нему сама. */}
           <input
             type="file"
+            className="visually-hidden"
             accept=".xlsx,.csv,text/csv"
             onChange={(event) => take(event.target.files?.[0] ?? null)}
           />
-          {file ? file.name : t('csv.dropZone')}
+          <span className="drop-pick">{t('csv.pick')}</span>
+          <span className="drop-name">{file ? file.name : t('csv.dropZone')}</span>
         </label>
           </>
         )}

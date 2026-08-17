@@ -1251,61 +1251,67 @@ button.modal-close:hover {
  * Прокручивается внутри себя: пятьсот строк не должны растягивать окно.
  */
 .paste-grid {
-max-height: 40vh;
-overflow: auto;
-border: 1px solid #e0e0e0;
-border-radius: var(--row-radius);
+  border: 1px solid #e0e0e0;
+  border-radius: var(--row-radius);
+}
+
+/* прокручивается таблица, а не вся сетка: кнопка «добавить строку» и
+   подсказка под ней должны оставаться на виду, сколько бы строк ни
+   вставили — иначе их прячет собственный скролл */
+.paste-scroll {
+  max-height: 40vh;
+  overflow: auto;
 }
 
 .paste-grid table {
-width: 100%;
-border-collapse: collapse;
-table-layout: fixed;
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
 }
 
 .paste-grid th {
-position: sticky;
-top: 0;
-z-index: 1;
-padding: 0.3rem 0.5rem;
-font-size: 0.85rem;
-text-align: left;
-background: var(--surface-1);
-border-bottom: 1px solid #e0e0e0;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 0.3rem 0.5rem;
+  font-size: 0.85rem;
+  text-align: left;
+  background: var(--surface-1);
+  border-bottom: 1px solid #e0e0e0;
 }
 
 .paste-grid th.id,
 .paste-grid td.id {
-width: 4.5rem;
+  width: 4.5rem;
 }
 
 .paste-grid td.drop {
-width: 2rem;
-text-align: center;
+  width: 2rem;
+  text-align: center;
 }
 
 .paste-grid td {
-padding: 0;
-border-bottom: 1px solid #f1f1f1;
+  padding: 0;
+  border-bottom: 1px solid #f1f1f1;
 }
 
 /* поле во всю ячейку и без рамки: рамку рисует сама сетка, иначе на
- пятистах строках это тысяча пятьсот прямоугольников */
+   пятистах строках это тысяча пятьсот прямоугольников */
 .paste-grid td input {
-width: 100%;
-min-width: 0;
-height: auto;
-padding: 0.25rem 0.5rem;
-font: inherit;
-font-size: 0.9rem;
-background: none;
-border: 0;
-border-radius: 0;
+  width: 100%;
+  min-width: 0;
+  height: auto;
+  padding: 0.25rem 0.5rem;
+  font: inherit;
+  font-size: 0.9rem;
+  background: none;
+  border: 0;
+  border-radius: 0;
 }
 
 .paste-grid input:focus {
-outline: 2px solid #1a73e8;
-outline-offset: -2px;
+  outline: 2px solid #1a73e8;
+  outline-offset: -2px;
 }
 
 /* выделенный прямоугольник: стереть его целиком — Delete */
@@ -1314,7 +1320,8 @@ outline-offset: -2px;
 }
 
 .paste-grid > .row {
-padding: 0.4rem 0.5rem;
+  padding: 0.4rem 0.5rem;
+  border-top: 1px solid #e0e0e0;
 }
 
 /*
@@ -3746,10 +3753,17 @@ button.compact,
 }
 
 /* название, пометки и заметка — одна колонка: они про один урок */
+/*
+ * Название и число уроков рядом с ним — по базовой линии, а не по центру.
+ *
+ * Заголовок темы набран прописными и без выносных, счётчик — обычным
+ * текстом с «у» и «р»; выключка по центру опускала его на пару пикселей
+ * ниже, и это было видно на каждой теме.
+ */
 .plan-title-cell {
   display: flex;
   min-width: 0;
-  align-items: center;
+  align-items: baseline;
   gap: var(--plan-row-gap);
 }
 
@@ -4295,13 +4309,36 @@ button.link.toggle {
   border-style: solid;
 }
 
-.drop-zone input[type='file'] {
-  display: block;
-  max-width: 100%;
-  margin: 0 auto 0.6rem;
-  font: inherit;
+/* поле спрятано, но доступно с клавиатуры: метка кликает по нему сама */
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.drop-pick {
+  display: inline-block;
+  margin-bottom: 0.6rem;
+  padding: 0.35rem 0.9rem;
   font-size: 0.85rem;
-  color: #666;
+  color: #1a73e8;
+  background: #fff;
+  border: 1px solid #c6c6c6;
+  border-radius: 4px;
+}
+
+.drop-zone:hover .drop-pick {
+  border-color: #1a73e8;
+  background: #f1f5fd;
+}
+
+.drop-name {
+  display: block;
 }
 
 /* нативная кнопка выбора файла серая и чужая — приводим её к виду

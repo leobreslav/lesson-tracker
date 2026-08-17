@@ -140,38 +140,51 @@ test('копирование недели на месяц не ставит ур
   expect(after.body.length).toBeGreaterThan(0)
 })
 
-test('«через неделю» вдвое сокращает предпросмотр копирования', async ({
-  page,
-  signIn,
-}) => {
-  // Курс, который идёт раз в две недели, копированием каждой недели
-  // получал вдвое больше уроков, чем бывает. Что предпросмотр считает то
-  // же, что положит сервер, проверяют общие случаи в `mirrors/copy.json`;
-  // здесь — что переключатель до него доходит.
-  await signIn(PEOPLE.ivanova)
-  await openWeek(page, MONDAY)
+test('«через неделю» копирует в каждую вторую', async ({ page, signIn, api }) => {
+  // Курс, который идёт раз в две недели, копированием каждой недели получал
+  // вдвое больше уроков, чем бывает. Курс здесь живой и пустой: у
+  // посеянного расписание расписано на год вперёд, и копировать в него
+  // нечего — все номера заняты.
+  const { course, slots, teacher } = await liveCourse(api, { record: false })
+  const monday = slots[0].date
 
-  await page.locator(`[data-day-head="${MONDAY}"]`).click()
-  await page.locator(`[data-day-head="${FRIDAY}"]`).click({ modifiers: ['Shift'] })
+  await signIn(PEOPLE.ivanova)
+  await openWeek(page, monday)
+
+  await page.locator(`[data-day-head="${monday}"]`).click()
   await page.getByRole('button', { name: 'Скопировать на период' }).click()
 
   const dialog = page.locator('dialog.modal')
-  await dialog.getByLabel('С', { exact: true }).fill('2026-10-19')
-  await dialog.getByLabel('по', { exact: true }).fill('2026-11-13')
-
-  const created = async () => {
-    const text = await dialog.locator('.hint').last().textContent()
-    return Number(text.match(/(\d+)/)[1])
+  // только живой курс: у соседей та же неделя занята
+  const picker = dialog.locator('.class-picker')
+  for (const box of await picker.locator('input[type="checkbox"]').all()) {
+    const label = await box.evaluate((node) => node.parentElement.textContent)
+    if (label.trim() !== course.name && (await box.isChecked())) await box.uncheck()
   }
 
-  await expect(dialog.getByRole('radio', { name: 'Каждую неделю' })).toBeChecked()
-  const weekly = await created()
-  expect(weekly).toBeGreaterThan(0)
-
+  const shift = (days) => {
+    const at = new Date(`${monday}T12:00:00`)
+    at.setDate(at.getDate() + days)
+    return at.toISOString().slice(0, 10)
+  }
+  await dialog.getByLabel('С', { exact: true }).fill(shift(7))
+  await dialog.getByLabel('по', { exact: true }).fill(shift(27))
   await dialog.getByRole('radio', { name: 'Через неделю' }).check()
-  const biweekly = await created()
 
-  expect(biweekly).toBeLessThan(weekly)
+  const preview = await dialog.locator('.copy-preview').textContent()
+  await dialog.getByRole('button', { name: 'Скопировать' }).click()
+  await expect(dialog).toBeHidden()
+
+  // чётность считается от источника: заполняется вторая неделя цели
+  const week = async (from) =>
+    (await teacher.get(`/api/slots/?course=${course.id}&start=${shift(from)}&end=${shift(from + 6)}`))
+      .body.length
+
+  expect(await week(7)).toBe(0)
+  expect(await week(14)).toBeGreaterThan(0)
+  expect(await week(21)).toBe(0)
+  // предпросмотр обещал ровно столько же
+  expect(preview).toContain(String(await week(14)))
 })
 
 test('сводка за неделю считает уроки и отмены', async ({ page, signIn }) => {
