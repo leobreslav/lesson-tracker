@@ -1,4 +1,4 @@
-import { PEOPLE, expect, ready, test } from './harness.js'
+import { PEOPLE, expect, planMenu, ready, test } from './harness.js'
 
 /**
  * Scenarios 8 and 9: the layout shifting, and one teacher's work staying
@@ -115,7 +115,7 @@ async function openShelf(page, course) {
   // учителя музыки с полутора десятками курсов
   await page.getByLabel('Курс').selectOption({ label: course })
   await expect(page.locator('.plan-cards')).toBeVisible()
-  await page.getByRole('button', { name: 'Из библиотеки' }).click()
+  await planMenu(page, 'Из библиотеки')
   await expect(page.locator('dialog.modal')).toBeVisible()
   return page.locator('dialog.modal')
 }

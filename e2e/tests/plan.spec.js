@@ -1,4 +1,4 @@
-import { PEOPLE, expect, lessonCount, ready, test } from './harness.js'
+import { PEOPLE, expect, lessonCount, planMenu, ready, test } from './harness.js'
 
 /**
  * Scenarios 6 and 7: the plan tree, dragging, and CSV.
@@ -136,14 +136,14 @@ test('справка о формате раскрывается кнопкой �
   // свёрнутого текста в разметке быть не должно: это состояние, а не display:none
   await expect(card.locator('.csv-help')).toHaveCount(0)
 
-  await card.getByRole('button', { name: 'Как выглядит файл' }).click()
+  await planMenu(page, 'Как выглядит файл')
 
   await expect(card.locator('.csv-sample')).toContainText('id,Тема,Урок,Заметка')
   await expect(card.locator('.csv-help')).toContainText('Одна строка — один урок')
   // три режима названы каждый одной строкой
   await expect(card.locator('.csv-modes-help dt')).toHaveCount(3)
 
-  await card.getByRole('button', { name: 'Как выглядит файл' }).click()
+  await planMenu(page, 'Как выглядит файл')
   await expect(card.locator('.csv-help')).toHaveCount(0)
 })
 
@@ -151,7 +151,7 @@ test('импорт CSV разбирает файл и строит блоки', 
   await signIn(PEOPLE.petrov)
   await openPlan(page, EMPTY_COURSE)
 
-  await page.getByRole('button', { name: 'Импорт', exact: true }).click()
+  await planMenu(page, /Импорт из файла/)
 
   const dialog = page.locator('dialog.modal')
   await dialog.locator('input[type="file"]').setInputFiles(
@@ -183,7 +183,7 @@ test('файл прежнего формата отклоняется с объ�
   await signIn(PEOPLE.petrov)
   await openPlan(page, EMPTY_COURSE)
 
-  await page.getByRole('button', { name: 'Импорт', exact: true }).click()
+  await planMenu(page, /Импорт из файла/)
   const dialog = page.locator('dialog.modal')
   await dialog.locator('input[type="file"]').setInputFiles({
     name: 'plan.csv',
@@ -207,7 +207,7 @@ test('замена предупреждает, что содержание ур�
   await signIn(PEOPLE.ivanova)
   await openPlan(page, 'Grade 6 Algebra')
 
-  await page.getByRole('button', { name: 'Импорт', exact: true }).click()
+  await planMenu(page, /Импорт из файла/)
   const dialog = page.locator('dialog.modal')
   await dialog.locator('input[type="file"]').setInputFiles(PLAIN_CSV)
   await dialog.getByRole('radio', { name: /Заменить/ }).check()
@@ -229,7 +229,7 @@ test('синхронизация недоступна, пока в файле н
   await signIn(PEOPLE.petrov)
   await openPlan(page, EMPTY_COURSE)
 
-  await page.getByRole('button', { name: 'Импорт', exact: true }).click()
+  await planMenu(page, /Импорт из файла/)
   const dialog = page.locator('dialog.modal')
   await dialog.locator('input[type="file"]').setInputFiles(PLAIN_CSV)
 
@@ -248,13 +248,13 @@ test('xlsx: выгрузка возвращается обратно без ед
   // xlsx — формат по умолчанию, поэтому переключать ничего не надо
   const [download] = await Promise.all([
     page.waitForEvent('download'),
-    page.getByRole('button', { name: 'Экспорт' }).click(),
+    planMenu(page, 'Экспорт в xlsx'),
   ])
   expect(download.suggestedFilename()).toMatch(/\.xlsx$/)
   const saved = '/tmp/' + download.suggestedFilename()
   await download.saveAs(saved)
 
-  await page.getByRole('button', { name: 'Импорт', exact: true }).click()
+  await planMenu(page, /Импорт из файла/)
   const dialog = page.locator('dialog.modal')
   await dialog.locator('input[type="file"]').setInputFiles(saved)
 
@@ -272,7 +272,7 @@ test('xlsx: чужой файл отклоняется понятным текс
   await signIn(PEOPLE.petrov)
   await openPlan(page, EMPTY_COURSE)
 
-  await page.getByRole('button', { name: 'Импорт', exact: true }).click()
+  await planMenu(page, /Импорт из файла/)
   const dialog = page.locator('dialog.modal')
   await dialog.locator('input[type="file"]').setInputFiles({
     name: 'план.xlsx',
@@ -288,7 +288,7 @@ test('импорт из библиотеки наполняет пустой п�
   await signIn(PEOPLE.petrov)
   await openPlan(page, EMPTY_COURSE)
 
-  await page.getByRole('button', { name: 'Из библиотеки' }).click()
+  await planMenu(page, 'Из библиотеки')
 
   // полка теперь список с поиском: шаблон выбирается нажатием на название
   const dialog = page.locator('dialog.modal')
@@ -306,7 +306,7 @@ test('импорт вкладывает уроки в темы, включая �
   await signIn(PEOPLE.petrov)
   await openPlan(page, EMPTY_COURSE)
 
-  await page.getByRole('button', { name: 'Импорт', exact: true }).click()
+  await planMenu(page, /Импорт из файла/)
   const dialog = page.locator('dialog.modal')
   await dialog.locator('input[type="file"]').setInputFiles(
     csvFile(
@@ -369,7 +369,7 @@ test('черновик публикуется и снимается с публ�
 
   await signIn(PEOPLE.petrov)
   await openPlan(page, 'Grade 9 Algebra')
-  await page.getByRole('button', { name: 'Из библиотеки' }).click()
+  await planMenu(page, 'Из библиотеки')
 
   const shelf = page.locator('dialog.modal')
   const row = shelf.locator('li', { hasText: 'Свежий черновик' })
@@ -388,7 +388,7 @@ test('просмотр шаблона показывает уроки до то�
 }) => {
   await signIn(PEOPLE.petrov)
   await openPlan(page, 'Grade 9 Algebra')
-  await page.getByRole('button', { name: 'Из библиотеки' }).click()
+  await planMenu(page, 'Из библиотеки')
 
   const shelf = page.locator('dialog.modal').first()
   await shelf
@@ -416,7 +416,7 @@ test('поиск сужает полку, «только мои» прячет �
 }) => {
   await signIn(PEOPLE.petrov)
   await openPlan(page, 'Grade 9 Algebra')
-  await page.getByRole('button', { name: 'Из библиотеки' }).click()
+  await planMenu(page, 'Из библиотеки')
 
   const shelf = page.locator('dialog.modal')
   const rows = shelf.locator('.template-list li')

@@ -375,9 +375,7 @@
         "replace": "план стирается и создаётся заново из файла — вместе с содержанием и вложениями."
       }
     },
-    "importFile": "Импорт",
-    "exportFile": "Экспорт",
-    "exportFormat": "Формат выгрузки",
+    "importFile": "Импорт из файла…",
     "noSlot": "не помещается",
     "breakBetween": "{{title}} · {{start}} — {{end}}",
     "summary": {
@@ -385,7 +383,6 @@
       "lessons": "в плане",
       "balance": "баланс",
       "dates": "Даты",
-      "missing": "не помещается",
       "sections": "тем",
       "weeks": "Недели",
       "freeSlots": "Свободные"
@@ -411,9 +408,6 @@
     "publishFromCourse": "Предмет и год обучения берутся из курса: {{subject}}, год обучения {{grade}}.",
     "openLesson": "Открыть занятие",
     "courseLabel": "Курс",
-    "debts_one": "Не отмечено занятий: {{count}}.",
-    "debts_few": "Не отмечено занятий: {{count}}.",
-    "debts_many": "Не отмечено занятий: {{count}}.",
     "unclosedHint": "Занятие прошло, но не отмечено",
     "groups": {
       "mine": "Мои курсы",
@@ -421,7 +415,10 @@
       "supervised": "Под надзором"
     },
     "recordedHint": "Занятие проведено и записано",
-    "beforeTaught": "Перед проведённым уроком места нет"
+    "beforeTaught": "Перед проведённым уроком места нет",
+    "more": "Ещё",
+    "exportAs": "Экспорт в {{format}}",
+    "debtsLabel": "не отмечено занятий"
   },
   "status": {
     "reserveLabel": "резерв",

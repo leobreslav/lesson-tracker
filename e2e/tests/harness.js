@@ -190,6 +190,18 @@ export async function liveCourse(api, { record = true } = {}) {
   return { course: course.body, rows, slots, teacher }
 }
 
+/**
+ * Пункт меню «⋯» в панели плана.
+ *
+ * Редкое — обмен файлами, полка, отправка на утверждение — живёт под
+ * многоточием, как отмена занятия на странице урока. Тестам от этого нужен
+ * один лишний клик, и пусть он будет в одном месте.
+ */
+export async function planMenu(page, name) {
+  await page.getByRole('button', { name: 'Ещё' }).click()
+  await page.locator('.plan-menu .dropdown').getByRole('button', { name }).click()
+}
+
 /** The seeded cast, so tests name people rather than addresses. */
 export const PEOPLE = {
   admin: 'director@example.com',

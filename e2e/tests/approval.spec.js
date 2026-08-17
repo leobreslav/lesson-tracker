@@ -1,4 +1,4 @@
-import { PEOPLE, expect, ready, test } from './harness.js'
+import { PEOPLE, expect, planMenu, ready, test } from './harness.js'
 
 /**
  * Утверждение плана методистом.
@@ -55,7 +55,7 @@ test('учитель отправляет план, методист утвер�
 
   await signIn(PEOPLE.ivanova)
   await openPlan(page, 'Grade 6 Algebra')
-  await page.getByRole('button', { name: 'На утверждение' }).click()
+  await planMenu(page, 'На утверждение')
   await expect(page.getByText(/Отправлено/)).toBeVisible()
   await expect(page.locator('.hint.approval')).toContainText('На утверждении')
 
@@ -104,7 +104,7 @@ test('правка после отправки запрос не отзывае�
 
   await signIn(PEOPLE.ivanova)
   await openPlan(page, 'Grade 6 Algebra')
-  await page.getByRole('button', { name: 'На утверждение' }).click()
+  await planMenu(page, 'На утверждение')
   await expect(page.locator('.hint.approval')).toContainText('На утверждении')
 
   await page.getByRole('button', { name: '+ урок' }).click()
@@ -130,7 +130,7 @@ test('без методиста у курса отправка объясняе�
   await signIn(PEOPLE.ivanova)
   await openPlan(page, 'Grade 6 Algebra')
 
-  await page.getByRole('button', { name: 'На утверждение' }).click()
+  await planMenu(page, 'На утверждение')
 
   await expect(page.getByText(/некому утверждать|Nobody approves/)).toBeVisible()
 })

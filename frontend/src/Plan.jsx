@@ -20,6 +20,7 @@ import { debtSlots, freeSlots, layoutTotals, stitchLayout } from './planLayout'
 import { shortDate } from './dates'
 import { today } from './calendarLogic'
 import CoursePicker from './CoursePicker'
+import { useDismissable } from './UserMenu'
 import DebtsDialog from './DebtsDialog'
 import Supervision from './Supervision'
 import { lastChoice, remember, remembered, rememberChoice } from './remember'
@@ -118,6 +119,8 @@ export default function Plan({ onLoggedOut }) {
   const [error, setError] = useState(null)
   const [editing, setEditing] = useState(null) // {id, title} — folders only
   const [opened, setOpened] = useState(null) // the lesson whose panel is open
+  const [menuOpen, setMenuOpen] = useState(false)
+  const menuRef = useDismissable(menuOpen, () => setMenuOpen(false))
   const [debts, setDebts] = useState(false) // открыт ли разбор долгов
   // адрес, откуда пришли за правкой: закрытие окна возвращает туда, а не
   // оставляет в плане, который человек и не собирался открывать
@@ -125,7 +128,6 @@ export default function Plan({ onLoggedOut }) {
   const [helpOpen, setHelpOpen] = useState(false) // справка о формате
   // xlsx по умолчанию: в нём нет ни кодировки, ни разделителя, ни кавычек,
   // то есть ровно тех трёх вещей, на которых спотыкается CSV
-  const [format, setFormat] = useState('xlsx')
   const [ribbon, setRibbon] = useState([])
   const [baseline, setBaseline] = useState(null)
   const [showDates, setShowDates] = useState(rememberedDates)
@@ -581,10 +583,10 @@ export default function Plan({ onLoggedOut }) {
     sendForApproval(people[0].id)
   }
 
-  const handleExport = async () => {
+  const handleExport = async (chosen) => {
     setError(null)
     try {
-      await downloadPlan(classId, format)
+      await downloadPlan(classId, chosen)
     } catch (err) {
       handleError(err)
     }
@@ -713,22 +715,27 @@ export default function Plan({ onLoggedOut }) {
                     «Свободные слоты» показывали ровно баланс, только без
                     знака: +39 и 39 стояли рядом. Дата последнего урока
                     отвечала на вопрос, который в таблице виден строкой —
-                    последняя строка плана несёт свою дату, — а когда план
-                    не помещался, обе плашки говорили об этом разом.
+                    последняя строка плана несёт свою дату. «Не помещается»
+                    держалась дольше всех и ушла следом: строки, которым
+                    слота не хватило, подсвечены в самой таблице и говорят
+                    это словами, а число над ней повторяло их счётом.
 
-                    «Не помещается» осталась: это единственное число ряда,
-                    которого в таблице одним взглядом не видно. Кнопкой она
-                    быть перестала — вела на «Раскладку», а того раздела
-                    давно нет; строки, которым слота не хватило, подсвечены
-                    в таблице прямо под ней.
+                    Осталось третье — долги. Числом они стоят здесь, потому
+                    что это статистика курса, а не замечание о нём: строкой
+                    в подвале панели «не отмечено занятий: 1» читалось как
+                    сноска, хотя это единственное, что требует действия.
                   */}
-                  {layout.totals.missing > 0 && (
-                    <section
-                      data-card="missing"
-                      className="panel card-stat bad"
-                    >
-                      <h2>{layout.totals.missing}</h2>
-                      <p className="hint">{t('plan.summary.missing')}</p>
+                  {layout.debts.length > 0 && (
+                    <section data-card="debts" className="panel card-stat bad">
+                      <button
+                        type="button"
+                        className="link"
+                        title={t('status.closeDebts')}
+                        onClick={() => setDebts(true)}
+                      >
+                        <h2>{layout.debts.length}</h2>
+                      </button>
+                      <p className="hint">{t('plan.debtsLabel')}</p>
                     </section>
                   )}
                 </>
@@ -769,6 +776,19 @@ export default function Plan({ onLoggedOut }) {
           */}
           <section className="panel plan-tools">
             <div className="actions wrap">
+              {/*
+                Два действия и меню — вместо восьми кнопок в ряд.
+
+                Восемь одинаковых прямоугольников с одним словом на каждом
+                читались как россыпь, а не как панель: глазу не за что
+                зацепиться, и «+ урок» терялся среди «Из библиотеки» и
+                «На утверждение». Между тем часто нажимают ровно первые
+                две кнопки, а обмен файлами, полку и отправку на
+                утверждение — раз в четверть.
+
+                Приём тот же, что на странице занятия: редкое живёт под
+                «⋯», частое стоит на виду.
+              */}
               <button
                 type="button"
                 disabled={busy}
@@ -785,83 +805,94 @@ export default function Plan({ onLoggedOut }) {
                 {t('plan.addSection')}
               </button>
 
-              <span className="actions-divider" aria-hidden="true" />
+              <div className="plan-menu" ref={menuRef}>
+                <button
+                  type="button"
+                  className="link more"
+                  aria-haspopup="true"
+                  aria-expanded={menuOpen}
+                  aria-label={t('plan.more')}
+                  title={t('plan.more')}
+                  onClick={() => setMenuOpen(!menuOpen)}
+                >
+                  ⋯
+                </button>
+                {menuOpen && (
+                  <div className="dropdown">
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() => {
+                        setMenuOpen(false)
+                        setImporting(true)
+                      }}
+                    >
+                      {t('plan.importFile')}
+                    </button>
+                    {/* формат называет пункт меню: у выгрузки он вопрос
+                        «во что», а не настройка, которую держат включённой */}
+                    {FORMATS.map((name) => (
+                      <button
+                        key={name}
+                        type="button"
+                        disabled={busy}
+                        onClick={() => {
+                          setMenuOpen(false)
+                          handleExport(name)
+                        }}
+                      >
+                        {t('plan.exportAs', { format: name })}
+                      </button>
+                    ))}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setMenuOpen(false)
+                        setHelpOpen(!helpOpen)
+                      }}
+                    >
+                      {t('plan.csvHelp.toggle')}
+                    </button>
 
-              <button
-                type="button"
-                className="secondary"
-                disabled={busy}
-                onClick={() => setImporting(true)}
-              >
-                {t('plan.importFile')}
-              </button>
-              <button
-                type="button"
-                className="secondary"
-                disabled={busy}
-                onClick={handleExport}
-              >
-                {t('plan.exportFile')}
-              </button>
-              {/* формат нужен только выгрузке: у загруженного файла его
-                  называет он сам, по расширению */}
-              <span
-                className="format-switch"
-                role="group"
-                aria-label={t('plan.exportFormat')}
-              >
-                {FORMATS.map((name) => (
-                  <button
-                    key={name}
-                    type="button"
-                    className={name === format ? 'chip active' : 'chip'}
-                    aria-pressed={name === format}
-                    onClick={() => setFormat(name)}
-                  >
-                    {name}
-                  </button>
-                ))}
-              </span>
-              {/* справка о формате — обычное состояние, а не спрятанная
-                  разметка: свёрнутого текста в DOM быть не должно */}
-              <button
-                type="button"
-                className="help-toggle"
-                aria-expanded={helpOpen}
-                aria-label={t('plan.csvHelp.toggle')}
-                title={t('plan.csvHelp.toggle')}
-                onClick={() => setHelpOpen(!helpOpen)}
-              >
-                ?
-              </button>
+                    <span className="dropdown-sep" aria-hidden="true" />
 
-              <span className="actions-divider" aria-hidden="true" />
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() => {
+                        setMenuOpen(false)
+                        setDialog({ type: 'library' })
+                      }}
+                    >
+                      {t('plan.importLibrary')}
+                    </button>
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() => {
+                        setMenuOpen(false)
+                        setDialog({ type: 'publish' })
+                      }}
+                    >
+                      {t(mineOnShelf ? 'plan.refreshTemplate' : 'plan.publish')}
+                    </button>
 
-              <button
-                type="button"
-                className="secondary"
-                disabled={busy}
-                onClick={() => setDialog({ type: 'library' })}
-              >
-                {t('plan.importLibrary')}
-              </button>
-              <button
-                type="button"
-                className="secondary"
-                disabled={busy}
-                onClick={() => setDialog({ type: 'publish' })}
-              >
-                {t(mineOnShelf ? 'plan.refreshTemplate' : 'plan.publish')}
-              </button>
-              <button
-                type="button"
-                className="secondary"
-                disabled={busy || baseline?.request?.status === 'pending'}
-                title={t('plan.baseline.hint')}
-                onClick={handleSubmitPlan}
-              >
-                {t('plan.baseline.submit')}
-              </button>
+                    <span className="dropdown-sep" aria-hidden="true" />
+
+                    <button
+                      type="button"
+                      disabled={busy || baseline?.request?.status === 'pending'}
+                      title={t('plan.baseline.hint')}
+                      onClick={() => {
+                        setMenuOpen(false)
+                        handleSubmitPlan()
+                      }}
+                    >
+                      {t('plan.baseline.submit')}
+                    </button>
+                  </div>
+                )}
+              </div>
 
           {ribbon.length > 0 && (
             <div className="dates-toggle">
@@ -904,10 +935,7 @@ export default function Plan({ onLoggedOut }) {
 
             {helpOpen && <PlanCsvHelp />}
 
-            {(baseline?.approved ||
-              baseline?.request ||
-              layout.debts.length > 0 ||
-              blocks.loose > 0) && (
+            {(baseline?.approved || baseline?.request || blocks.loose > 0) && (
               <div className="plan-bar">
             {/* состояние утверждения: у плана его нет, оно есть у снимка */}
             {baseline && (baseline.approved || baseline.request) && (
@@ -935,19 +963,6 @@ export default function Plan({ onLoggedOut }) {
                       name: baseline.approved.reviewer?.name ?? '',
                     },
                   )}
-              </p>
-            )}
-
-            {/* долги: прошедшие часы, за которыми ничего не записано. Жили
-                они на «Моих курсах» строчкой в раскрытой карточке, а до того
-                полосой на «Сегодня» — и вместе с тем экраном пропали. Место
-                им здесь: в таблице виден каждый, а не только их число */}
-            {layout.debts.length > 0 && (
-              <p className="hint approval draft">
-                {t('plan.debts', { count: layout.debts.length })}{' '}
-                <button type="button" className="link" onClick={() => setDebts(true)}>
-                  {t('status.closeDebts')}
-                </button>
               </p>
             )}
 

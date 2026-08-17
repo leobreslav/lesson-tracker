@@ -391,6 +391,14 @@ body {
   background: #f1f5fd;
 }
 
+/* черта между группами пунктов: файл, полка, утверждение — три разговора,
+   и подряд идущими строками они читаются как один список из шести дел */
+.dropdown-sep {
+  display: block;
+  margin: 0.25rem 0;
+  border-top: 1px solid #eee;
+}
+
 /* переключатель языка: строка меню, но кнопки в ней — чипы в ряд, а не
    пункты во всю ширину, как остальное содержимое выпадающего списка */
 .dropdown-languages {
@@ -3804,6 +3812,51 @@ a.plan-date:hover em {
  * вне тем: 2». Вместе они занимали высоту таблицы из шести уроков и ничего
  * друг о друге не сообщали.
  */
+/* «⋯» в панели плана: редкое — обмен файлами, полка, утверждение — живёт
+   под ним, как отмена занятия под таким же на странице урока */
+.plan-menu {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+/* «⋯» — контрол, а не текст: бледное многоточие между двумя обведёнными
+   кнопками читается как опечатка. Рамка и рост общие с соседями */
+.plan-menu .more {
+  width: var(--control-height);
+  height: var(--control-height);
+  padding: 0;
+  font-size: 1.1rem;
+  line-height: 1;
+  color: #1a73e8;
+  background: #fff;
+  border: 1px solid #c6c6c6;
+  border-radius: 4px;
+}
+
+.plan-menu .more:hover:not(:disabled) {
+  background: #f1f5fd;
+  border-color: #1a73e8;
+}
+
+.plan-menu .more[aria-expanded='true'] {
+  color: #fff;
+  background: #1a73e8;
+  border-color: #1a73e8;
+}
+
+/* открывается вправо: кнопка стоит у левого края панели */
+.plan-menu .dropdown {
+  right: auto;
+  left: 0;
+  min-width: 12rem;
+}
+
+/* пункт меню — строка списка, а не контрол ряда: рост ему задаёт текст */
+.plan-menu .dropdown button {
+  min-height: 0;
+}
+
 .plan-bar {
   display: flex;
   flex-wrap: wrap;

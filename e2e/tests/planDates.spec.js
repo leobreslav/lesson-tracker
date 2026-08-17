@@ -79,9 +79,15 @@ test('над таблицей одна панель управления, а п�
   const tools = page.locator('.plan-tools')
   await expect(tools).toBeVisible()
 
-  // в ней и добавление, и обмен файлами, и полка, и показ
-  for (const name of ['+ урок', '+ тема', 'Импорт', 'Экспорт', 'Из библиотеки']) {
+  // на виду только частое — добавление; редкое под «⋯»
+  for (const name of ['+ урок', '+ тема', 'Ещё']) {
     await expect(tools.getByRole('button', { name, exact: true })).toBeVisible()
+  }
+  await tools.getByRole('button', { name: 'Ещё' }).click()
+  for (const name of [/Импорт из файла/, /Экспорт в xlsx/, 'Из библиотеки']) {
+    await expect(
+      tools.locator('.dropdown').getByRole('button', { name }),
+    ).toBeVisible()
   }
 
   const box = await tools.boundingBox()
@@ -128,7 +134,8 @@ test('в плане видно, какой час записан, а какой 
   await expect(debts).toHaveCount(2)
 
   // и счётчик над таблицей говорит то же число
-  await expect(page.locator('.plan-bar')).toContainText('Не отмечено занятий: 2')
+  // и число долгов стоит плашкой в сводке, рядом с прочей статистикой
+  await expect(page.locator('[data-card="debts"]')).toContainText('2')
 })
 
 test('значки состояния стоят в столбик перед датами', async ({
@@ -302,11 +309,10 @@ test('уроки без слота помечены', async ({
   await expect(missing.first()).toBeVisible()
   await expect(missing.first().locator('.plan-date')).toHaveText('не помещается')
 
-  // баланс отрицательный, и счётчик непоместившихся стоит отдельной
-  // плашкой: это единственное число ряда, которого в таблице одним
-  // взглядом не видно
+  // баланс отрицательный; отдельной плашки «не помещается» нет — строки
+  // говорят это сами, а плашка повторяла их счётом
   await expect(page.locator('[data-card="balance"].bad')).toBeVisible()
-  await expect(page.locator('[data-card="missing"]')).toBeVisible()
+  await expect(page.locator('[data-card="missing"]')).toHaveCount(0)
 
   // у главы дат нет вовсе — только число уроков: даты живут в левой зоне
   await expect(page.locator('.section-head .block-count').first()).toHaveText(
@@ -743,7 +749,7 @@ test('при дефиците свободных нет вовсе', async ({ pa
   await openPlan(page)
 
   // план не помещается — свободному месту взяться неоткуда
-  await expect(page.locator('[data-card="missing"]')).toBeVisible()
+  await expect(page.locator('.plan-row.lesson.no-slot').first()).toBeVisible()
   await expect(page.locator('.free-summary')).toHaveCount(0)
   await expect(page.locator('.plan-row.free')).toHaveCount(0)
 })

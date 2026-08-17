@@ -365,9 +365,7 @@
         "replace": "the plan is wiped and built again from the file — content and attachments go with it."
       }
     },
-    "importFile": "Import",
-    "exportFile": "Export",
-    "exportFormat": "Export format",
+    "importFile": "Import from a file…",
     "noSlot": "no slot",
     "breakBetween": "{{title}} · {{start}} — {{end}}",
     "summary": {
@@ -375,7 +373,6 @@
       "lessons": "in the plan",
       "balance": "balance",
       "dates": "Dates",
-      "missing": "do not fit",
       "sections": "themes",
       "weeks": "Weeks",
       "freeSlots": "Free"
@@ -400,8 +397,6 @@
     "publishFromCourse": "The subject and the year of study come from the course: {{subject}}, year {{grade}}.",
     "openLesson": "Open the lesson",
     "courseLabel": "Course",
-    "debts_one": "{{count}} lesson is not marked.",
-    "debts_other": "{{count}} lessons are not marked.",
     "unclosedHint": "The lesson is past and unmarked",
     "groups": {
       "mine": "My courses",
@@ -409,7 +404,10 @@
       "supervised": "Supervised"
     },
     "recordedHint": "The lesson is taught and recorded",
-    "beforeTaught": "There is no room before a lesson already taught"
+    "beforeTaught": "There is no room before a lesson already taught",
+    "more": "More",
+    "exportAs": "Export as {{format}}",
+    "debtsLabel": "lessons not marked"
   },
   "status": {
     "reserveLabel": "reserve",
