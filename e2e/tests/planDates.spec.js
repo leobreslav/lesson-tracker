@@ -875,11 +875,25 @@ test('черта «сегодня» называет и дату', async ({ page
 
   const line = page.locator('.plan-today')
   await expect(line).toBeVisible()
-  await expect(line).toContainText('СЕГОДНЯ')
+  await expect(line).toContainText('Сегодня:')
   // день недели и число — рядом, спокойным шрифтом
   await expect(line.locator('.hint')).toHaveText(
     /(понедельник|вторник|сред|четверг|пятниц|суббот|воскресень).+\d/,
   )
+
+  // и на одной строке со словом: у `.hint` свой верхний отступ, и в ряду с
+  // центрированием он уводил дату ниже — глазами это «чуть съехало», а
+  // мерится в один вопрос
+  const off = await line.evaluate((el) => {
+    const middle = (node) => {
+      const box = node.getBoundingClientRect()
+      return box.top + box.height / 2
+    }
+    return Math.abs(
+      middle(el.querySelector('.plan-today-label')) - middle(el.querySelector('.hint')),
+    )
+  })
+  expect(off).toBeLessThanOrEqual(1)
 })
 
 test('пока учёт не начат, плашка говорит, сколько часов прошло', async ({

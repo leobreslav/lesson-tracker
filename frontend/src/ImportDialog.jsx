@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import Modal from './Modal'
 import { previewPlanFile, previewPlanRows } from './api'
@@ -42,6 +42,7 @@ export default function ImportDialog({ classId, busy, onSubmit, onClose }) {
   const [agreed, setAgreed] = useState(false)
   const [dragging, setDragging] = useState(false)
   const [error, setError] = useState(null)
+  const picker = useRef(null)
 
   // у книги и у вставки id видит только сервер: читает он
   const syncable = parsed ? parsed.rows.some((row) => row.id) : cost?.syncable
@@ -51,6 +52,10 @@ export default function ImportDialog({ classId, busy, onSubmit, onClose }) {
   const take = async (chosen) => {
     setError(null)
     setFile(chosen)
+    // сброс нативного поля: без него тот же файл, выбранный второй раз
+    // подряд, не поднимет `change` — браузер считает, что ничего не
+    // изменилось, и человек жмёт на пустоту
+    if (!chosen && picker.current) picker.current.value = ''
     setParsed(null)
     setCost(null)
     setAgreed(false)
@@ -194,8 +199,21 @@ export default function ImportDialog({ classId, busy, onSubmit, onClose }) {
           <>
         <p className="hint">{t('csv.hint', { header: 'id,Тема,Урок' })}</p>
 
+        {/*
+          Кнопка и имя стоят в одну строку и по центру друг друга: имя
+          сидело подписью под кнопкой, и рядом с ней это читалось как
+          съехавшее.
+
+          Когда файл выбран, кнопка называется «Выбрать другой», а рядом
+          появляется крестик. Вопрос «а что будет, если я брошу сюда
+          второй файл» возникал именно от их отсутствия: сбросить выбор
+          было нечем, и оставалось гадать, заменит новый файл прежний или
+          добавится к нему.
+        */}
         <label
-          className={dragging ? 'drop-zone over' : 'drop-zone'}
+          className={
+            'drop-zone' + (dragging ? ' over' : '') + (file ? ' chosen' : '')
+          }
           onDragOver={(event) => {
             event.preventDefault()
             setDragging(true)
@@ -208,13 +226,33 @@ export default function ImportDialog({ classId, busy, onSubmit, onClose }) {
               имени подряд. Кнопка и подпись теперь наши, а поле остаётся
               в разметке ради клавиатуры — метка кликает по нему сама. */}
           <input
+            ref={picker}
             type="file"
             className="visually-hidden"
             accept=".xlsx,.csv,text/csv"
             onChange={(event) => take(event.target.files?.[0] ?? null)}
           />
-          <span className="drop-pick">{t('csv.pick')}</span>
-          <span className="drop-name">{file ? file.name : t('csv.dropZone')}</span>
+          <span className="drop-pick">{t(file ? 'csv.pickAnother' : 'csv.pick')}</span>
+          <span className="drop-name" title={file ? file.name : undefined}>
+            {file ? file.name : t('csv.dropZone')}
+          </span>
+          {file && (
+            <button
+              type="button"
+              className="link drop-clear"
+              title={t('csv.clear')}
+              aria-label={t('csv.clear')}
+              // клик по кнопке внутри метки открыл бы выбор файла: это
+              // действие метки по умолчанию, и отменяем именно его
+              onClick={(event) => {
+                event.preventDefault()
+                event.stopPropagation()
+                take(null)
+              }}
+            >
+              ✕
+            </button>
+          )}
         </label>
           </>
         )}

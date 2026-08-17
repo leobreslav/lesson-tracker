@@ -31,6 +31,7 @@ import CoursePicker from './CoursePicker'
 import { useDismissable } from './UserMenu'
 import DebtsDialog from './DebtsDialog'
 import Supervision from './Supervision'
+import Switch from './Switch'
 import { lastChoice, remember, remembered, rememberChoice } from './remember'
 import { applyMove, countBlocks, planRows } from './planLogic'
 import {
@@ -301,16 +302,24 @@ export default function Plan({ onLoggedOut }) {
     }
   }, [classId, classes, load, handleError])
 
-  /** Any structural edit: do it and re-read the whole tree. */
+  /**
+   * Any structural edit: do it and re-read the whole tree.
+   *
+   * Ответ сервера возвращается наружу (при отказе — `undefined`): форме
+   * добавления нужен id только что созданной строки, чтобы переехать за
+   * неё, а не закрыться.
+   */
   const run = async (request) => {
     setBusy(true)
     setError(null)
 
     try {
-      await request()
+      const answer = await request()
       await load(classId)
+      return answer
     } catch (err) {
       handleError(err)
+      return undefined
     } finally {
       setBusy(false)
     }
@@ -546,21 +555,35 @@ export default function Plan({ onLoggedOut }) {
     setAdding({ title: '', parent: null, after: null, is_section: false, ...options })
   }
 
-  const submitAdd = async (event) => {
+  /**
+   * Ввод подряд: форма остаётся открытой, что бы её ни открыло.
+   *
+   * Раньше «вставить после» закрывалась, а «добавить в конец» — нет, и
+   * снаружи это выглядело как две разные формы: один плюсик оставляет поле,
+   * соседний убирает. Причина у закрытия была настоящая — второй урок
+   * встал бы **перед** первым, — но лечится она не закрытием, а переездом:
+   * якорем становится только что созданная строка, и уроки идут по
+   * порядку, как при вводе в конец уровня.
+   *
+   * Закрывают форму три вещи: Escape, «Закрыть» и «Готово» — то есть
+   * человек, а не результат его же действия.
+   */
+  const submitAdd = async (event, { close = false } = {}) => {
     event.preventDefault()
     const { title, parent, after, is_section } = adding
     if (!title.trim()) return
 
-    // an "insert after" form closes, otherwise the next node would land
-    // before the one just created
-    if (after) setAdding(null)
+    // разрез темы «после этой строки» — дело разовое: продолжать в нём
+    // нечем, следующая тема резала бы уже новый хвост
+    const once = close || (after && is_section)
+    if (once) setAdding(null)
     else setAdding({ ...adding, title: '' })
 
     // Тема «после этой строки» — не создание на уровне, а разрез: внутри
     // блока хвост уроков переезжает под новый заголовок, снаружи тема
     // просто встаёт следом. Считает это сервер: где кончается блок и что
     // в него входит, знает он, а не форма.
-    await run(() =>
+    const created = await run(() =>
       is_section && after
         ? splitPlan(after, title.trim())
         : createPlanNode({
@@ -571,6 +594,11 @@ export default function Plan({ onLoggedOut }) {
             title: title.trim(),
           }),
     )
+
+    // Форма могла закрыться, пока летел запрос, — тогда и не открываем:
+    // функциональная правка видит настоящее состояние, а не снимок.
+    if (!once && after && created?.id)
+      setAdding((current) => (current ? { ...current, after: created.id } : current))
   }
 
   // --- CSV ---
@@ -736,23 +764,15 @@ export default function Plan({ onLoggedOut }) {
             из них, а второй, обратный, приходилось искать глазами внутри
             открывшегося экрана — то есть в другом месте, чем открывали. */}
         {!supervising && baseline?.approved && (
-          <span
-            className="chips"
-            role="group"
-            aria-label={t('plan.diff.switch')}
-          >
-            {[false, true].map((mode) => (
-              <button
-                key={String(mode)}
-                type="button"
-                className={comparing === mode ? 'chip active' : 'chip'}
-                aria-pressed={comparing === mode}
-                onClick={() => setComparing(mode)}
-              >
-                {t(mode ? 'plan.diff.toggle' : 'plan.diff.plan')}
-              </button>
-            ))}
-          </span>
+          <Switch
+            label={t('plan.diff.switch')}
+            value={comparing}
+            onChange={setComparing}
+            options={[
+              { value: false, label: t('plan.diff.plan') },
+              { value: true, label: t('plan.diff.toggle') },
+            ]}
+          />
         )}
       </header>
 

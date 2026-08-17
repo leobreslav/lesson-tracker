@@ -40,7 +40,7 @@ export function DiffBody({ data, onVersion }) {
   return (
     <>
       {versions.length > 1 ? (
-        <label className="row diff-version">
+        <label className="row middle diff-version">
           <span className="hint">{t('plan.diff.version')}</span>
           <select
             value={data.baseline.id}

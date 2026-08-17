@@ -23,6 +23,7 @@ import { resolveDropTarget } from './planLogic'
 import { today } from './calendarLogic'
 import { useDismissable } from './UserMenu'
 import MathText from './MathText'
+import Switch from './Switch'
 import { remember, remembered } from './remember'
 
 /**
@@ -290,19 +291,16 @@ export default function PlanTable({
           после»: две кнопки над таблицей и «+» в шапке темы отвечают на
           этот вопрос сами, а тема внутри темы не кладётся вовсе. */}
       {adding.after && (
-        <span className="chips" role="group" aria-label={t('plan.addKind')}>
-          {[false, true].map((section) => (
-            <button
-              key={String(section)}
-              type="button"
-              className={adding.is_section === section ? 'chip active' : 'chip'}
-              aria-pressed={adding.is_section === section}
-              onClick={() => changeAdding({ ...adding, is_section: section })}
-            >
-              {t(section ? 'plan.kindSection' : 'plan.kindLesson')}
-            </button>
-          ))}
-        </span>
+        <Switch
+          label={t('plan.addKind')}
+          value={adding.is_section}
+          disabled={busy}
+          onChange={(value) => changeAdding({ ...adding, is_section: value })}
+          options={[
+            { value: false, label: t('plan.kindLesson') },
+            { value: true, label: t('plan.kindSection') },
+          ]}
+        />
       )}
       <input
         autoFocus
@@ -320,8 +318,19 @@ export default function PlanTable({
       <button type="submit" disabled={busy || !adding.title.trim()}>
         {t('common.add')}
       </button>
-      <button type="button" className="secondary" onClick={() => changeAdding(null)}>
-        {t('plan.done')}
+      {/* Вторая кнопка называет то, что сделает: пустое поле — «Закрыть»,
+          набранное — «Готово», то есть добавить и на этом закончить. Пока
+          она всегда была «Готово», кнопка с этим именем выбрасывала
+          набранное название — самое дорогое, что она могла сделать. */}
+      <button
+        type="button"
+        className="secondary"
+        disabled={busy}
+        onClick={(event) =>
+          adding.title.trim() ? submitAdd(event, { close: true }) : changeAdding(null)
+        }
+      >
+        {t(adding.title.trim() ? 'plan.done' : 'common.close')}
       </button>
       {adding.is_section && tailAfter(adding.parent, adding.after) > 0 && (
         <span className="hint">
@@ -508,10 +517,11 @@ export default function PlanTable({
     if (mark.kind === 'today') {
       return (
         <li className="plan-today" key={key}>
-          {t('plan.today')}
           {/* дата рядом со словом: черта стоит перед первым непрошедшим
               уроком, и «сегодня» без числа не говорит, где именно сегодня
-              на этой ленте */}
+              на этой ленте. Двоеточие — потому что это подпись и её
+              значение, а не два равных слова через пробел */}
+          <span className="plan-today-label">{t('plan.today')}:</span>
           <span className="hint">{weekdayWithDate(today())}</span>
         </li>
       )

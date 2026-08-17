@@ -271,7 +271,7 @@ test('сравнение с эталоном показывает строки, 
 
   await signIn(PEOPLE.ivanova)
   await openPlan(page, 'Grade 6 Algebra')
-  await page.getByRole('button', { name: 'Сравнить с эталоном' }).click()
+  await page.getByRole('radio', { name: 'Сравнение' }).click()
 
   const diff = page.locator('.plan-diff')
   await expect(diff).toBeVisible()
@@ -288,7 +288,7 @@ test('сравнение с эталоном показывает строки, 
   await expect(diff.locator('.diff-row.removed')).toContainText('Обыкновенные дроби')
 
   // возвращает тот же тумблер, которым включили: второй половиной пары
-  await page.getByRole('button', { name: 'План', exact: true }).click()
+  await page.getByRole('radio', { name: 'План', exact: true }).click()
   await expect(page.locator('ul.plan')).toBeVisible()
 })
 
@@ -318,14 +318,14 @@ test('методист смотрит на то же сравнение, что 
   await openSupervised(page, 'Grade 6 Algebra')
   await expect(page.locator('.review-plan li').first()).toBeVisible()
 
-  await page.getByRole('button', { name: 'Сравнить с эталоном' }).click()
+  await page.getByRole('radio', { name: 'Сравнение' }).click()
   const added = page.locator('.diff-row.added')
   await expect(added).toHaveCount(1)
   await expect(added).toContainText('Дополнительный урок')
   // список плана уступил место сравнению, а не встал рядом с ним
   await expect(page.locator('.review-plan')).toHaveCount(0)
 
-  await page.getByRole('button', { name: 'План', exact: true }).click()
+  await page.getByRole('radio', { name: 'План', exact: true }).click()
   await expect(page.locator('.review-plan li').first()).toBeVisible()
 })
 
@@ -354,7 +354,7 @@ test('сравнивают с любым утверждением, а не то�
 
   await signIn(PEOPLE.ivanova)
   await openPlan(page, 'Grade 6 Algebra')
-  await page.getByRole('button', { name: 'Сравнить с эталоном' }).click()
+  await page.getByRole('radio', { name: 'Сравнение' }).click()
 
   // по умолчанию — последнее утверждение: с него добавлен один урок
   await expect(page.locator('.diff-row.added')).toHaveCount(1)

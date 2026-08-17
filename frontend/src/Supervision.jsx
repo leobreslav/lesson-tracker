@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import CourseRow from './CourseRow'
 import { DiffBody } from './PlanDiff'
+import Switch from './Switch'
 import { approveReview, fetchReview, fetchReviewDiff, returnReview } from './api'
 
 /**
@@ -93,23 +94,15 @@ export default function Supervision({ row, busy, onError, onDone }) {
                   первый запрос и есть точка отсчёта. Тумблер тот же, что у
                   автора плана: два вида, оба названы */}
               {diff?.baseline && (
-                <span
-                  className="chips"
-                  role="group"
-                  aria-label={t('plan.diff.switch')}
-                >
-                  {[false, true].map((mode) => (
-                    <button
-                      key={String(mode)}
-                      type="button"
-                      className={comparing === mode ? 'chip active' : 'chip'}
-                      aria-pressed={comparing === mode}
-                      onClick={() => setComparing(mode)}
-                    >
-                      {t(mode ? 'plan.diff.toggle' : 'plan.diff.plan')}
-                    </button>
-                  ))}
-                </span>
+                <Switch
+                  label={t('plan.diff.switch')}
+                  value={comparing}
+                  onChange={setComparing}
+                  options={[
+                    { value: false, label: t('plan.diff.plan') },
+                    { value: true, label: t('plan.diff.toggle') },
+                  ]}
+                />
               )}
               <span className="hint">
                 {t('reviews.reserve')}: {plan.reserve > 0 ? '+' : ''}

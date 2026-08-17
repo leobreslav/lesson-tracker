@@ -80,6 +80,53 @@ test('блок и уроки добавляются, нумерация скво
   await expect(lessonCount(page)).toHaveText('3')
 })
 
+test('форма вставки не закрывается, а переезжает за созданную строку', async ({
+  page,
+  signIn,
+}) => {
+  // Раньше «вставить после» закрывалась после Enter, а «добавить в конец» —
+  // нет, и снаружи это выглядело как две разные формы: один плюсик поле
+  // оставляет, соседний убирает. Закрытие лечило настоящую беду — второй
+  // урок вставал бы перед первым, — но лечится она переездом якоря.
+  await signIn(PEOPLE.petrov)
+  await openPlan(page, EMPTY_COURSE)
+
+  await page.getByRole('button', { name: 'Добавить урок' }).click()
+  const start = page.locator('.plan-add-form')
+  await start.getByLabel('Название').fill('Первый')
+  await start.getByRole('button', { name: 'Добавить' }).click()
+  await expect(page.locator('.plan-row', { hasText: 'Первый' })).toBeVisible()
+  await start.getByRole('button', { name: 'Закрыть' }).click()
+
+  const anchor = page.locator('.plan-row', { hasText: 'Первый' })
+  await anchor.hover()
+  await anchor.getByTitle('Вставить после').click()
+
+  const form = page.locator('.plan-add-form')
+  for (const title of ['Второй', 'Третий']) {
+    await form.getByLabel('Название').fill(title)
+    await form.getByRole('button', { name: 'Добавить' }).click()
+    await expect(page.locator('.plan-row', { hasText: title })).toBeVisible()
+    // форма осталась на месте и пустой — можно вводить дальше
+    await expect(form).toBeVisible()
+    await expect(form.getByLabel('Название')).toHaveValue('')
+  }
+
+  // якорь переехал: уроки идут по порядку ввода, а не задом наперёд
+  const rows = await structure(page)
+  expect(rows.join(' | ')).toContain('1 Первый')
+  expect(rows.join(' | ')).toContain('2 Второй')
+  expect(rows.join(' | ')).toContain('3 Третий')
+
+  // пустое поле — «Закрыть», набранное — «Готово»: кнопка называет то, что
+  // сделает, а не выбрасывает набранное под именем «Готово»
+  await expect(form.getByRole('button', { name: 'Закрыть' })).toBeVisible()
+  await form.getByLabel('Название').fill('Четвёртый')
+  await form.getByRole('button', { name: 'Готово' }).click()
+  await expect(page.locator('.plan-row', { hasText: 'Четвёртый' })).toBeVisible()
+  await expect(page.locator('.plan-add-form')).toHaveCount(0)
+})
+
 test('перетаскивание меняет порядок и пересчитывает номера', async ({
   page,
   signIn,
@@ -730,7 +777,7 @@ test('тема заводится в середине плана и режет �
   await anchor.getByTitle('Вставить после').click()
 
   const cut = page.locator('.plan-add-form')
-  await cut.getByRole('button', { name: 'Тема', exact: true }).click()
+  await cut.getByRole('radio', { name: 'Тема', exact: true }).click()
   // сколько уроков уедет, сказано до нажатия, а не после
   await expect(cut).toContainText('2')
   await cut.getByLabel('Название').fill('Признаки подобия')
