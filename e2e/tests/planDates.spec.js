@@ -80,7 +80,7 @@ test('над таблицей одна панель управления, а п�
   await expect(tools).toBeVisible()
 
   // на виду только частое — добавление; редкое под «⋯»
-  for (const name of ['+ урок', '+ тема', 'Ещё']) {
+  for (const name of ['Добавить урок', 'Добавить тему', 'Ещё']) {
     await expect(tools.getByRole('button', { name, exact: true })).toBeVisible()
   }
   await tools.getByRole('button', { name: 'Ещё' }).click()
@@ -609,7 +609,7 @@ test('урок вне темы стоит на уровне темы, а вло�
     await expect(page.locator('.plan-row', { hasText: title })).toBeVisible()
   }
 
-  await add('+ тема', 'Треугольники')
+  await add('Добавить тему', 'Треугольники')
   const head = page.locator('.plan-section .section-head').first()
   await head.hover()
   await head.getByTitle('Добавить урок в тему').click()
@@ -618,7 +618,7 @@ test('урок вне темы стоит на уровне темы, а вло�
   await inner.getByRole('button', { name: 'Добавить' }).click()
   await expect(page.locator('.plan-row', { hasText: 'Первый признак' })).toBeVisible()
 
-  await add('+ урок', 'Сам по себе')
+  await add('Добавить урок', 'Сам по себе')
 
   const left = (title) =>
     page

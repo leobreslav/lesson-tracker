@@ -44,7 +44,7 @@ test('блок и уроки добавляются, нумерация скво
   await signIn(PEOPLE.petrov)
   await openPlan(page, EMPTY_COURSE)
 
-  await page.getByRole('button', { name: '+ тема' }).click()
+  await page.getByRole('button', { name: 'Добавить тему' }).click()
   const form = page.locator('.plan-add-form')
   await form.getByLabel('Название').fill('Треугольники')
   await form.getByRole('button', { name: 'Добавить' }).click()
@@ -63,7 +63,7 @@ test('блок и уроки добавляются, нумерация скво
   }
 
   // and one at the top level, after the block
-  await page.getByRole('button', { name: '+ урок' }).click()
+  await page.getByRole('button', { name: 'Добавить урок' }).click()
   const top = page.locator('.plan-add-form')
   await top.getByLabel('Название').fill('Итоговый урок')
   await top.getByRole('button', { name: 'Добавить' }).click()

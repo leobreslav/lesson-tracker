@@ -324,8 +324,8 @@
     "expand": "Expand",
     "collapse": "Collapse",
     "deleteConfirm": "Delete «{{title}}»?",
-    "addLesson": "+ lesson",
-    "addSection": "+ theme",
+    "addLesson": "Add a lesson",
+    "addSection": "Add a theme",
     "imported": "Created {{rows}} rows ({{sections}} sections, {{lessons}} lessons).",
     "dndInstructions": "Press space to pick the item up. Choose a new place with the up and down arrows, press space to drop it, Escape cancels the move. The arrow buttons in the row do the same.",
     "needClass": {

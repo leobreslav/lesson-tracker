@@ -107,7 +107,7 @@ test('правка после отправки запрос не отзывае�
   await planMenu(page, 'На утверждение')
   await expect(page.locator('.hint.approval')).toContainText('На утверждении')
 
-  await page.getByRole('button', { name: '+ урок' }).click()
+  await page.getByRole('button', { name: 'Добавить урок' }).click()
   const form = page.locator('.plan-add-form')
   await form.getByLabel('Название').fill('Урок после отправки')
   await form.getByRole('button', { name: 'Добавить' }).click()
