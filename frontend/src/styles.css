@@ -1285,6 +1285,7 @@ button.modal-close:hover {
   width: 4.5rem;
 }
 
+.paste-grid th.drop,
 .paste-grid td.drop {
   width: 2rem;
   text-align: center;
@@ -2596,6 +2597,14 @@ button.chip.active:hover:not(:disabled) {
   height: 2px;
   background: #b00020;
   border-radius: 2px;
+}
+
+/* дата рядом со словом: тем же красным, но спокойнее и без прописных —
+   «сегодня» это метка, а дата при ней подпись */
+.plan-today .hint {
+  color: #b00020;
+  text-transform: none;
+  opacity: 0.75;
 }
 
 /* плашка, по которой можно щёлкнуть: ведёт на «Раскладку» */

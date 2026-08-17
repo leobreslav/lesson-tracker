@@ -867,6 +867,21 @@ test('у проведённой строки органов управления
   await expect(row(3).getByTitle('Ниже')).toBeEnabled()
 })
 
+test('черта «сегодня» называет и дату', async ({ page, signIn }) => {
+  // Слово без числа не говорит, где именно сегодня на этой ленте: черта
+  // стоит перед первым непрошедшим уроком, а какое это число — не видно.
+  await signIn(PEOPLE.ivanova)
+  await openPlan(page)
+
+  const line = page.locator('.plan-today')
+  await expect(line).toBeVisible()
+  await expect(line).toContainText('СЕГОДНЯ')
+  // день недели и число — рядом, спокойным шрифтом
+  await expect(line.locator('.hint')).toHaveText(
+    /(понедельник|вторник|сред|четверг|пятниц|суббот|воскресень).+\d/,
+  )
+})
+
 test('пока учёт не начат, плашка говорит, сколько часов прошло', async ({
   page,
   signIn,

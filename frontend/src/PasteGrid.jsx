@@ -291,7 +291,10 @@ export default function PasteGrid({ rows, onChange, disabled = false }) {
                 {name}
               </th>
             ))}
-            <th aria-hidden="true" />
+            {/* тот же класс, что у ячеек: при `table-layout: fixed` ширину
+                колонки задаёт первая строка, и без него крестик оказывался
+                посреди широкого столбца, а не в конце строки */}
+            <th className="drop" aria-hidden="true" />
           </tr>
         </thead>
         <tbody>

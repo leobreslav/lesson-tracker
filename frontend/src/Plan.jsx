@@ -1073,10 +1073,7 @@ export default function Plan({ onLoggedOut }) {
 
             {helpOpen && <PlanCsvHelp />}
 
-            {(baseline?.approved ||
-              baseline?.request ||
-              selfReview ||
-              blocks.loose > 0) && (
+            {(baseline?.approved || baseline?.request || selfReview) && (
               <div className="plan-bar">
             {/* состояние утверждения: у плана его нет, оно есть у снимка */}
             {baseline && (baseline.approved || baseline.request) && (
@@ -1120,13 +1117,7 @@ export default function Plan({ onLoggedOut }) {
               </p>
             )}
 
-            {/* уроки вне тем — не число сводки, а замечание о структуре */}
-            {data && blocks.loose > 0 && (
-              <p className="hint plan-loose">
-                {t('plan.loose', { count: blocks.loose })}
-              </p>
-            )}
-              </div>
+          </div>
             )}
           </section>
 

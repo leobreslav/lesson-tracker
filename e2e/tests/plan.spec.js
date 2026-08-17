@@ -598,6 +598,12 @@ test('в сетке вставки выделяют кусок мышью и с�
   )
   await expect(dialog.locator('.paste-grid tbody tr')).toHaveCount(3)
 
+  // крестик стоит в самом конце строки, а не посреди широкого столбца
+  const drop = await dialog.locator('.paste-grid tbody tr:first-child td.drop').boundingBox()
+  const table = await dialog.locator('.paste-grid table').boundingBox()
+  expect(drop.width).toBeLessThan(60)
+  expect(Math.round(drop.x + drop.width)).toBe(Math.round(table.x + table.width))
+
   // тянем от «Темы» первой строки до «Урока» второй
   const cell = (row, column) =>
     dialog.locator(`.paste-grid tbody tr:nth-child(${row}) td:nth-child(${column})`)

@@ -18,8 +18,9 @@ import {
 } from '@dnd-kit/sortable'
 import { EmptyDropZone, SortableRow, dragId, emptyZoneId } from './PlanDnd'
 import { Link } from 'react-router-dom'
-import { dayMonth, shortDate, shortWeekday } from './dates'
+import { dayMonth, shortDate, shortWeekday, weekdayWithDate } from './dates'
 import { resolveDropTarget } from './planLogic'
+import { today } from './calendarLogic'
 import { useDismissable } from './UserMenu'
 import MathText from './MathText'
 import { remember, remembered } from './remember'
@@ -468,6 +469,10 @@ export default function PlanTable({
       return (
         <li className="plan-today" key={key}>
           {t('plan.today')}
+          {/* дата рядом со словом: черта стоит перед первым непрошедшим
+              уроком, и «сегодня» без числа не говорит, где именно сегодня
+              на этой ленте */}
+          <span className="hint">{weekdayWithDate(today())}</span>
         </li>
       )
     }
