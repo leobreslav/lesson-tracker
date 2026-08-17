@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useMemo, useState } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
   DndContext,
@@ -128,6 +128,28 @@ export default function PlanTable({
    */
   const [held, setHeld] = useState(null) // {id, isSection, up, down}
   const [drop, setDrop] = useState(null) // {overId, side, parent, index}
+  const titleRef = useRef(null) // поле названия открытой формы добавления
+
+  /**
+   * Escape закрывает форму добавления — откуда угодно.
+   *
+   * Слушатель на документе, а не на форме, и это не перестраховка: форма
+   * теперь остаётся открытой после добавления, то есть живёт долго, а
+   * фокус за это время уходит куда угодно — на кнопку, которая погасла, в
+   * тумблер, просто мимо. «Нажал не туда, и Escape перестал работать»
+   * читается как поломка, а не как правило.
+   */
+  const open = Boolean(adding)
+  useEffect(() => {
+    if (!open) return undefined
+
+    const escape = (event) => {
+      if (event.key === 'Escape') changeAdding(null)
+    }
+
+    document.addEventListener('keydown', escape)
+    return () => document.removeEventListener('keydown', escape)
+  }, [open, changeAdding])
 
   // --- dragging ---
 
@@ -285,8 +307,21 @@ export default function PlanTable({
     return index < 0 ? 0 : children.length - index - 1
   }
 
+  /**
+   * Добавили — и курсор возвращается в поле.
+   *
+   * Форма остаётся открытой ради ввода подряд, но кнопка «Добавить» с
+   * пустым полем гаснет, а погасшая кнопка теряет фокус: нажали мышью — и
+   * фокус уехал в `body`. Печатать следующий урок было некуда, а Escape
+   * улетал мимо формы.
+   */
+  const finishAdd = async (event, options) => {
+    await submitAdd(event, options)
+    titleRef.current?.focus()
+  }
+
   const addForm = () => (
-    <form className="plan-add-form" onSubmit={submitAdd}>
+    <form className="plan-add-form" onSubmit={finishAdd}>
       {/* Что заводим — урок или тему. Спрашивается только у «вставить
           после»: две кнопки над таблицей и «+» в шапке темы отвечают на
           этот вопрос сами, а тема внутри темы не кладётся вовсе. */}
@@ -304,6 +339,7 @@ export default function PlanTable({
       )}
       <input
         autoFocus
+        ref={titleRef}
         value={adding.title}
         maxLength={200}
         placeholder={t(
@@ -311,9 +347,6 @@ export default function PlanTable({
         )}
         aria-label={t('plan.titleLabel')}
         onChange={(event) => changeAdding({ ...adding, title: event.target.value })}
-        onKeyDown={(event) => {
-          if (event.key === 'Escape') changeAdding(null)
-        }}
       />
       <button type="submit" disabled={busy || !adding.title.trim()}>
         {t('common.add')}
@@ -327,7 +360,7 @@ export default function PlanTable({
         className="secondary"
         disabled={busy}
         onClick={(event) =>
-          adding.title.trim() ? submitAdd(event, { close: true }) : changeAdding(null)
+          adding.title.trim() ? finishAdd(event, { close: true }) : changeAdding(null)
         }
       >
         {t(adding.title.trim() ? 'plan.done' : 'common.close')}

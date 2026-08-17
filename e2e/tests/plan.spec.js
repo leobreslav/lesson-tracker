@@ -127,6 +127,46 @@ test('форма вставки не закрывается, а переезжа
   await expect(page.locator('.plan-add-form')).toHaveCount(0)
 })
 
+test('Escape закрывает форму, где бы в ней ни стоял фокус', async ({
+  page,
+  signIn,
+}) => {
+  // Форма стала оставаться открытой после добавления, и Escape из
+  // запасного выхода превратился в основной. Висел он на поле, а рядом с
+  // ним теперь тумблер и две кнопки: нажал не туда — и Escape молча
+  // перестал работать, что читается как поломка, а не как правило.
+  await signIn(PEOPLE.petrov)
+  await openPlan(page, EMPTY_COURSE)
+
+  await page.getByRole('button', { name: 'Добавить урок' }).click()
+  const start = page.locator('.plan-add-form')
+  await start.getByLabel('Название').fill('Первый')
+  await start.getByRole('button', { name: 'Добавить' }).click()
+  await expect(page.locator('.plan-row', { hasText: 'Первый' })).toBeVisible()
+  await page.keyboard.press('Escape')
+  await expect(page.locator('.plan-add-form')).toHaveCount(0)
+
+  const anchor = page.locator('.plan-row', { hasText: 'Первый' })
+  await anchor.hover()
+  await anchor.getByTitle('Вставить после').click()
+
+  // фокус на тумблере — не в поле
+  const form = page.locator('.plan-add-form')
+  await form.getByRole('radio', { name: 'Тема', exact: true }).click()
+  await page.keyboard.press('Escape')
+  await expect(page.locator('.plan-add-form')).toHaveCount(0)
+
+  // и с кнопки: до неё доходят Tab'ом, а закрывать надо оттуда же
+  await anchor.hover()
+  await anchor.getByTitle('Вставить после').click()
+  await page.locator('.plan-add-form').getByLabel('Название').fill('Черновик')
+  await page.locator('.plan-add-form').getByRole('button', { name: 'Готово' }).focus()
+  await page.keyboard.press('Escape')
+  await expect(page.locator('.plan-add-form')).toHaveCount(0)
+  // Escape — это отказ: набранное не создаётся
+  await expect(page.locator('.plan-row', { hasText: 'Черновик' })).toHaveCount(0)
+})
+
 test('перетаскивание меняет порядок и пересчитывает номера', async ({
   page,
   signIn,

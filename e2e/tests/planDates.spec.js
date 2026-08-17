@@ -826,6 +826,57 @@ test('проведённый урок держится за дату и не п�
   expect(await dateOfLesson(page, anchored.title)).toBe(before)
 })
 
+test('форма, оставшаяся открытой, не лезет выше проведённой строки', async ({
+  page,
+  signIn,
+  api,
+}) => {
+  // Форма «вставить после» перестала закрываться и переезжает якорем за
+  // созданную строку. Проверяется здесь ровно то, что этот переезд не
+  // прогрызает жёсткий порядок: вводить подряд можно только вниз, а
+  // записанный час остаётся на своём дне.
+  const { course, rows } = await liveCourse(api)
+  const anchored = rows[0]
+
+  await signIn(PEOPLE.ivanova)
+  await page.goto('/plan')
+  await ready(page)
+  await page.getByLabel('Курс').selectOption(String(course.id))
+  await expect(page.locator('.plan-cards')).toBeVisible()
+
+  const before = await dateOfLesson(page, anchored.title)
+
+  // единственное, что позволено проведённой строке: дописать за ней
+  const taught = page.locator('.plan-row.lesson', { hasText: anchored.title }).first()
+  await taught.hover()
+  await taught.getByTitle('Вставить после').click()
+
+  const form = page.locator('.plan-add-form')
+  for (const title of ['Дописка А', 'Дописка Б']) {
+    await form.getByLabel('Название').fill(title)
+    await form.getByRole('button', { name: 'Добавить' }).click()
+    await expect(page.locator('.plan-row', { hasText: title })).toBeVisible()
+  }
+  await page.keyboard.press('Escape')
+
+  // обе встали ниже проведённой и в порядке ввода, а не задом наперёд
+  const numbers = await page.locator('.plan-row.lesson').evaluateAll((list) =>
+    list.map((row) => [
+      row.querySelector('.plan-number')?.textContent.trim(),
+      row.querySelector('.title')?.textContent.trim(),
+    ]),
+  )
+  const at = (title) => Number(numbers.find((pair) => pair[1] === title)?.[0])
+  expect(at(anchored.title)).toBe(1)
+  expect(at('Дописка А')).toBe(2)
+  expect(at('Дописка Б')).toBe(3)
+
+  // и записанный час никуда не уехал: связь сильнее позиции. Значок
+  // спрашиваем в таблице — те же ✓ стоят и в сводке, легендой
+  expect(await dateOfLesson(page, anchored.title)).toBe(before)
+  await expect(page.locator('ul.plan .plan-state.recorded')).toHaveCount(1)
+})
+
 test('у проведённой строки органов управления нет, кроме «+» у последней', async ({
   page,
   signIn,

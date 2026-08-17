@@ -157,10 +157,16 @@ test('«через неделю» копирует в каждую вторую'
   const dialog = page.locator('dialog.modal')
   // только живой курс: у соседей та же неделя занята
   const picker = dialog.locator('.class-picker')
+  // сперва дождаться, пока список курсов доедет. Пустой пикер снимать
+  // нечего, а курсы, пришедшие следом, встают отмеченными — копирование
+  // заберёт соседей, живой курс упрётся в занятые номера, и «уроков 0»
+  // объяснить будет нечем
+  await expect(picker.getByText(course.name, { exact: true })).toBeVisible()
   for (const box of await picker.locator('input[type="checkbox"]').all()) {
     const label = await box.evaluate((node) => node.parentElement.textContent)
     if (label.trim() !== course.name && (await box.isChecked())) await box.uncheck()
   }
+  await expect(picker.locator('input[type="checkbox"]:checked')).toHaveCount(1)
 
   const shift = (days) => {
     const at = new Date(`${monday}T12:00:00`)
