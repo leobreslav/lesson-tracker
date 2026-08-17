@@ -1081,3 +1081,30 @@ test('строка под курсором подсвечивается и на 
     expect(b - r, `${selector}: подсветка сливается с фоном`).toBeGreaterThan(20)
   }
 })
+
+test('после стрелки строка остаётся под курсором', async ({ page, signIn }) => {
+  // Поднять урок на три позиции — три клика по одной и той же стрелке. Без
+  // компенсации второй клик приходится уже по соседу: строки поменялись
+  // местами, а мышь осталась там же.
+  await page.setViewportSize({ width: 1280, height: 500 })
+  await signIn(PEOPLE.ivanova)
+  await openPlan(page)
+
+  // строку берём пониже, чтобы странице было куда прокручиваться
+  const row = page.locator('.plan-row.lesson').nth(12)
+  // якорь — id узла, а не название: названия в плане повторяются кусками
+  // строка урока — это сам <li>, и id узла лежит на ней: названия в плане
+  // повторяются кусками, а id один
+  const anchor = await row.getAttribute('data-node')
+  const number = await row.locator('.plan-number').textContent()
+  await row.hover()
+  const before = (await row.boundingBox()).y
+
+  const moved = page.locator(`li[data-node="${anchor}"]`)
+  await row.getByTitle('Выше').click()
+  await expect(moved.locator('.plan-number')).not.toHaveText(number)
+
+  // в плане строка поднялась, а на экране осталась там же
+  const after = (await moved.boundingBox()).y
+  expect(Math.abs(after - before), 'строка уехала из-под курсора').toBeLessThan(4)
+})

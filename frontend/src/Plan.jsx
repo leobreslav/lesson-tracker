@@ -655,8 +655,36 @@ export default function Plan({ onLoggedOut }) {
    * Шаг вверх или вниз. Какой эндпоинт звать, решает страница: у главы он
    * свой, и таблице про api знать незачем — она только говорит, что нажали.
    */
-  const handleMove = (nodeId, direction, isSection) =>
-    run(() => (isSection ? movePlanSection : movePlanNode)(nodeId, direction))
+  const handleMove = async (nodeId, direction, isSection) => {
+    /*
+     * Строка уезжает из-под курсора, а поднять её хотят на три позиции.
+     *
+     * Второй клик приходится уже по соседу: строки поменялись местами, а
+     * мышь осталась там же. Сдвинуть курсор браузер не даёт, зато можно
+     * сдвинуть под него страницу — ровно на то, на сколько уехала строка.
+     * Глаза при этом следят за строкой, а не за фоном, и прокрутка
+     * читается как «строка стоит, план едет».
+     *
+     * Работает, пока странице есть куда прокручиваться: на плане в десять
+     * строк компенсировать нечем, и там всё остаётся как было. Клавиатуре
+     * этого не нужно вовсе — фокус остаётся на самой кнопке, и Enter
+     * поднимает ту же строку сколько угодно раз.
+     */
+    const anchor = `[data-node="${dragId(nodeId)}"]`
+    const before = document.querySelector(anchor)?.getBoundingClientRect().top
+
+    await run(() => (isSection ? movePlanSection : movePlanNode)(nodeId, direction))
+
+    if (before === undefined) return
+    // два кадра: первый отдаём React на перерисовку, во втором меряем
+    requestAnimationFrame(() =>
+      requestAnimationFrame(() => {
+        const after = document.querySelector(anchor)?.getBoundingClientRect().top
+        if (after === undefined || after === before) return
+        window.scrollBy(0, after - before)
+      }),
+    )
+  }
 
   const removeSection = (keepChildren) => {
     const section = deleting
