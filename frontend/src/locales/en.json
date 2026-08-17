@@ -396,7 +396,9 @@
       "approvedSelf": "Approved on {{date}} by the author.",
       "chooseTitle": "Who should approve it?",
       "chooseHint": "This course has several methodists.",
-      "sendTo": "Send"
+      "sendTo": "Send",
+      "youReview": "You are the methodist for this course.",
+      "decide": "Review the request"
     },
     "publishFromCourse": "The subject and the year of study come from the course: {{subject}}, year {{grade}}.",
     "openLesson": "Open the lesson",

@@ -202,3 +202,44 @@ test('ожидающий и просто поднадзорный лежат в 
   await expect(groups.nth(1).locator('option')).toHaveText(['Grade 6 Algebra'])
   await expect(groups.nth(2).locator('option')).toHaveText(['Grade 6 Geometry'])
 })
+
+test('свой курс показывает свой план, даже если методист у него ты сам', async ({
+  page,
+  signIn,
+  api,
+}) => {
+  // Самоутверждение законно, и в школе, где предмет ведёт один человек, оно
+  // обычное дело. Списки «мои» и «поднадзорные» при этом пересекались, а
+  // страница выбирала надзор — учитель открывал «Учебный план» и не видел
+  // собственного плана вовсе, только плашки чужими глазами.
+  await makeMethodist(api, PEOPLE.ivanova, 'Grade 6 Algebra')
+
+  await signIn(PEOPLE.ivanova)
+  await openPlan(page, 'Grade 6 Algebra')
+
+  // это мой план: таблица на месте, панель управления тоже
+  await expect(page.locator('ul.plan .plan-row.lesson').first()).toBeVisible()
+  await expect(page.locator('.plan-tools')).toBeVisible()
+
+  // и в селекте курс стоит один раз, без группы «Под надзором»
+  await expect(page.getByLabel('Курс').locator('optgroup')).toHaveCount(0)
+  await expect(
+    page.getByLabel('Курс').locator('option', { hasText: 'Grade 6 Algebra' }),
+  ).toHaveCount(1)
+
+  // отправляем на утверждение — решать можно тут же, по ссылке
+  await planMenu(page, 'На утверждение')
+  await expect(page.locator('.hint.approval.pending')).toContainText('На утверждении')
+  await expect(page.locator('.hint.approval.self')).toContainText(
+    'Методист этого курса — вы.',
+  )
+
+  await page.getByRole('button', { name: 'Рассмотреть запрос' }).click()
+  await expect(page.locator('.review-plan li').first()).toBeVisible()
+  await page.getByRole('button', { name: 'Утвердить' }).click()
+
+  // после решения возвращаемся к своему плану, и оно уже записано
+  await expect(page.locator('ul.plan .plan-row.lesson').first()).toBeVisible()
+  await expect(page.locator('.hint.approval')).toContainText('Утверждён')
+  await expect(page.locator('.hint.approval.self')).toHaveCount(0)
+})

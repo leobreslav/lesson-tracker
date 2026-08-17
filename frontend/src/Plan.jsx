@@ -126,6 +126,9 @@ export default function Plan({ onLoggedOut }) {
   const [editing, setEditing] = useState(null) // {id, title} — folders only
   const [opened, setOpened] = useState(null) // the lesson whose panel is open
   const [menuOpen, setMenuOpen] = useState(false)
+  // свой курс под собственным надзором: решение принимается по просьбе, а
+  // не вместо плана — иначе своего плана не видно вовсе
+  const [reviewing, setReviewing] = useState(false)
   const menuRef = useDismissable(menuOpen, () => setMenuOpen(false))
   const [debts, setDebts] = useState(false) // открыт ли разбор долгов
   // адрес, откуда пришли за правкой: закрытие окна возвращает туда, а не
@@ -469,25 +472,57 @@ export default function Plan({ onLoggedOut }) {
   const watched = supervised.filter((row) => row.review?.status !== 'pending')
   const asCourse = (row) => ({ id: row.id, name: row.name, year: row.year })
 
+  /**
+   * Свой курс — свой, даже если методист у него я же.
+   *
+   * Самоутверждение законно, и в школе, где предмет ведёт один человек, оно
+   * обычное дело: тот же учитель значится и методистом. Списки при этом
+   * пересекаются, и страница выбирала надзор — то есть человек открывал
+   * «Учебный план» и не видел собственного плана вовсе, только плашки
+   * чужими глазами. Мой курс поэтому вычитается из поднадзорных, и в
+   * селекте он стоит один раз.
+   */
+  const mineIds = new Set((classes ?? []).map((item) => item.id))
+  const others = supervised.filter((row) => !mineIds.has(row.id))
+  const otherWaiting = others.filter((row) => row.review?.status === 'pending')
+  const otherWatched = others.filter((row) => row.review?.status !== 'pending')
+
   const pickable = [
     ...(classes ?? []),
-    ...supervised.map(asCourse),
+    ...others.map(asCourse),
   ]
 
-  const groups = supervised.length
+  const groups = others.length
     ? [
         { key: 'mine', items: classes ?? [] },
-        { key: 'waiting', items: waiting.map(asCourse) },
-        { key: 'supervised', items: watched.map(asCourse) },
+        { key: 'waiting', items: otherWaiting.map(asCourse) },
+        { key: 'supervised', items: otherWatched.map(asCourse) },
       ].filter((group) => group.items.length)
     : []
 
-  /** Строка надзора для выбранного курса — или `null`, если курс свой. */
-  const supervising = supervised.find((row) => row.id === classId) ?? null
+  const supervisedRow = supervised.find((row) => row.id === classId) ?? null
+
+  /**
+   * Строка надзора для выбранного курса — или `null`, если курс свой.
+   *
+   * Со своим курсом надзор всё же нужен, и ровно в одном случае: я его
+   * методист, и на нём висит мой же запрос. Тогда решение принимается по
+   * ссылке из строки состояния — переносить сюда «утвердить» и «вернуть»
+   * значило бы завести им второе место жительства.
+   */
+  const supervising =
+    supervisedRow && (!mineIds.has(classId) || reviewing) ? supervisedRow : null
+
+  /** Мой курс, мой запрос, и подписать его могу я сам. */
+  const selfReview =
+    mineIds.has(classId) && supervisedRow?.review?.status === 'pending'
+      ? supervisedRow
+      : null
 
   /** Выбор курса запоминается: он один на все страницы, см. `remember.js`. */
   const pickClass = (id) => {
     setClassId(id)
+    setReviewing(false)
     rememberChoice('course', id)
   }
 
@@ -572,6 +607,11 @@ export default function Plan({ onLoggedOut }) {
       setNotice(
         t('plan.baseline.sent', { name: saved.request.reviewer?.name ?? '' }),
       )
+      // очередь надзора могла измениться этим же нажатием: если методист
+      // курса — я сам, запрос попал ко мне, и решать его отсюда же
+      fetchReviews()
+        .then((answer) => setSupervised(answer.plans))
+        .catch(() => {})
     } catch (err) {
       handleError(err)
     }
@@ -668,11 +708,22 @@ export default function Plan({ onLoggedOut }) {
           row={supervising}
           busy={busy}
           onError={handleError}
-          onDone={() =>
+          onDone={() => {
+            // решили — возвращаемся к своему плану, если это был он
+            setReviewing(false)
             fetchReviews()
               .then((answer) => setSupervised(answer.plans))
               .catch(handleError)
-          }
+            // состояние утверждения на своей странице меняется тем же
+            // решением, поэтому перечитывается и оно — но только у своего
+            // курса: чужой `CourseScopedViewSet` не отдаст, и в консоль
+            // упал бы 404 на ровном месте
+            if (mineIds.has(classId)) {
+              fetchBaseline(classId)
+                .then(setBaseline)
+                .catch(() => setBaseline(null))
+            }
+          }}
         />
       ) : !classes.length ? (
         <EmptyState
@@ -976,7 +1027,10 @@ export default function Plan({ onLoggedOut }) {
 
             {helpOpen && <PlanCsvHelp />}
 
-            {(baseline?.approved || baseline?.request || blocks.loose > 0) && (
+            {(baseline?.approved ||
+              baseline?.request ||
+              selfReview ||
+              blocks.loose > 0) && (
               <div className="plan-bar">
             {/* состояние утверждения: у плана его нет, оно есть у снимка */}
             {baseline && (baseline.approved || baseline.request) && (
@@ -1004,6 +1058,19 @@ export default function Plan({ onLoggedOut }) {
                       name: baseline.approved.reviewer?.name ?? '',
                     },
                   )}
+              </p>
+            )}
+
+            {/* Свой запрос, свой же надзор: решать можно тут, но не вместо
+                плана. Ссылка ведёт в тот же экран надзора, каким методист
+                смотрит чужие курсы, — второго места для «утвердить» и
+                «вернуть» заводить не за чем */}
+            {selfReview && (
+              <p className="hint approval self">
+                {t('plan.baseline.youReview')}{' '}
+                <button type="button" className="link" onClick={() => setReviewing(true)}>
+                  {t('plan.baseline.decide')}
+                </button>
               </p>
             )}
 
