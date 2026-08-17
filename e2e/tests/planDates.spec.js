@@ -95,11 +95,9 @@ test('над таблицей одна панель управления, а п�
     110,
   )
 
-  // чекбоксы показа — там же, прижаты вправо
-  const toggles = await tools.locator('.dates-toggle').boundingBox()
-  expect(Math.round(toggles.x + toggles.width)).toBeLessThanOrEqual(
-    Math.round(box.x + box.width) + 1,
-  )
+  // чекбоксов показа в ней не осталось: даты, недели и свободные слоты
+  // показываются всегда, а прятать их было незачем
+  await expect(tools.locator('input[type="checkbox"]')).toHaveCount(0)
 
   // и стоит она над таблицей, а под таблицей не осталось ни одной карточки
   const table = await page.locator('ul.plan').first().boundingBox()
@@ -361,14 +359,6 @@ test('переключатель дат запоминается и не дви�
     ])
   expect(titles).toHaveLength(1)
 
-  await page.getByLabel('Даты').uncheck()
-  await expect(page.locator('.plan-date')).toHaveCount(0)
-
-  // и переживает перезагрузку
-  await page.reload()
-  await ready(page)
-  await expect(page.getByLabel('Даты')).not.toBeChecked()
-  await expect(page.locator('.plan-date')).toHaveCount(0)
 })
 
 test('недели: подпись в первой строке и заливка через одну', async ({
@@ -482,17 +472,9 @@ test('недели выключаются отдельно, а без дат и�
   await openPlan(page)
 
   await expect(page.locator('.plan-row.week-even').first()).toBeVisible()
-
-  await page.getByLabel('Недели').uncheck()
-  await expect(page.locator('.plan-row.week-even')).toHaveCount(0)
-  await expect(page.locator('.plan-weekmark', { hasText: 'нед' })).toHaveCount(0)
-  // даты на месте: пустая ячейка у главы не в счёт, смотрим на урок
+  // подпись недели стоит в первой строке группы, и она одна на группу
+  await expect(page.locator('.plan-weekmark', { hasText: 'нед' }).first()).toBeVisible()
   await expect(page.locator('.plan-row.lesson .plan-date').first()).toBeVisible()
-
-  await page.getByLabel('Недели').check()
-  await page.getByLabel('Даты').uncheck()
-  // без дат номер недели не значит ничего — колонка уходит вместе с ними
-  await expect(page.locator('.plan-weekmark')).toHaveCount(0)
 })
 
 test('маркеры, номера и названия стоят по вертикалям', async ({ page, signIn }) => {
@@ -539,14 +521,6 @@ test('маркеры, номера и названия стоят по верт�
   expect(before.nested).toHaveLength(1)
   expect(before.nested[0] - before.sectionTitles[0]).toBe(20)
 
-  await page.getByLabel('Даты').uncheck()
-  const after = await columns()
-
-  // левая зона ушла, правая встала к краю, вертикали внутри целы
-  expect(after.sections).toEqual(after.lessons)
-  expect(after.nested).toHaveLength(1)
-  expect(after.nested[0] - after.sectionTitles[0]).toBe(20)
-  expect(after.lessons[0]).toBeLessThan(before.lessons[0])
 })
 
 test('в правой зоне нет ни одной даты', async ({ page, signIn }) => {
@@ -739,12 +713,29 @@ test('в свободный слот вставляется урок, и ост�
   await expect.poll(() => free.count()).toBe(before - 1)
 })
 
-test('без дат свободные слоты не показываются', async ({ page, signIn }) => {
+test('у курса без расписания нет ни дат, ни свободных слотов', async ({
+  page,
+  signIn,
+  api,
+}) => {
+  // Чекбокса «Даты» больше нет, и он не нужен: колонки появляются вместе с
+  // расписанием, то есть ровно тогда, когда им есть что показывать. Нет
+  // расписания — нет и «не помещается» на каждой строке.
+  const teacher = await api(PEOPLE.ivanova)
+  const courses = await teacher.get('/api/courses/')
+  const course = courses.body.find((item) => item.name === COURSE)
+  await teacher.delete(
+    `/api/slots/bulk/?course=${course.id}&start=2026-08-01&end=2027-08-01`,
+  )
+
   await signIn(PEOPLE.ivanova)
-  await openPlan(page)
+  await page.goto('/plan')
+  await ready(page)
+  await page.getByLabel('Курс').selectOption({ label: COURSE })
 
-  await page.getByLabel('Даты').uncheck()
-
+  await expect(page.locator('.plan-row.lesson').first()).toBeVisible()
+  await expect(page.locator('.plan-date')).toHaveCount(0)
+  await expect(page.locator('.plan-weekmark', { hasText: 'нед' })).toHaveCount(0)
   await expect(page.locator('.free-summary')).toHaveCount(0)
   await expect(page.locator('.plan-row.free')).toHaveCount(0)
 })

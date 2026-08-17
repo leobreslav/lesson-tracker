@@ -1,7 +1,8 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
 import Modal from './Modal'
+import { fetchLayoutAgenda } from './api'
 import { weekdayWithDate } from './dates'
 
 /** A new lesson in a free window. */
@@ -114,6 +115,33 @@ export function LessonMenu({
   const [reason, setReason] = useState('')
   const [mode, setMode] = useState(null) // null | 'cancel' | 'move'
   const [target, setTarget] = useState({ date: '', number: lesson.lesson_number })
+  // строка плана, попавшая в этот час: {plan_row_id, title, section_title}
+  const [row, setRow] = useState(null)
+
+  /*
+   * Какая строка плана стоит в этом часе — спрашивается при открытии меню.
+   *
+   * Сводное расписание тянет темы на весь период, но только при включённом
+   * чекбоксе: иначе каждая неделя стоила бы лишнего запроса. Меню открывают
+   * редко и по одному часу, поэтому здесь запрос свой и ровно на один день.
+   *
+   * Ответа может не быть вовсе — у отменённого часа строки нет по
+   * построению, а у лишнего часа её не хватило, — и тогда вести некуда.
+   */
+  useEffect(() => {
+    let cancelled = false
+
+    fetchLayoutAgenda(date, date)
+      .then((payload) => {
+        if (!cancelled) setRow(payload.slots?.[lesson.id] ?? null)
+      })
+      // молча: переход в план — удобство, и меню из-за него ломаться не должно
+      .catch(() => {})
+
+    return () => {
+      cancelled = true
+    }
+  }, [date, lesson.id])
 
   const handleCancel = (event) => {
     event.preventDefault()
@@ -218,11 +246,36 @@ export function LessonMenu({
         </form>
       )}
 
+      {/* какая строка плана стоит в этом часе: по ней и ведёт кнопка ниже */}
+      {mode === null && row && (
+        <p className="hint menu-topic">
+          {row.section_title ? `${row.section_title} · ` : ''}
+          {row.title}
+        </p>
+      )}
+
       {mode === null && (
         <div className="actions">
           <button type="button" onClick={() => navigate(`/lesson/${lesson.id}`)}>
             {t('today.openLesson')}
           </button>
+          {/* Второй путь из клетки — в программу: «что мы вообще проходим и
+              где мы в ней сейчас». Из занятия он есть давно, а из сетки
+              приходилось идти через занятие. Ведёт на **эту** строку: на
+              сотне уроков искать её глазами — минута */}
+          {row && (
+            <button
+              type="button"
+              className="secondary"
+              onClick={() =>
+                navigate(
+                  `/plan?course=${lesson.course_id}&row=${row.plan_row_id}`,
+                )
+              }
+            >
+              {t('agenda.menu.openPlan')}
+            </button>
+          )}
           {lesson.is_cancelled ? (
             <button
               type="button"

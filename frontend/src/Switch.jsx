@@ -34,6 +34,22 @@ export default function Switch({
   const name = useId()
   const active = options.findIndex((option) => option.value === value)
 
+  /**
+   * Нажали в любое место — тумблер переключился.
+   *
+   * Радиокнопки сами по себе отзываются только на **чужой** сегмент: клик
+   * по выбранному ничего не меняет и события не поднимает. Для группы из
+   * трёх вариантов это верно, а для тумблера — нет: он выглядит как один
+   * орган управления, и нажатие по нему значит «переключи», а не «выбери
+   * ровно это». Поэтому у пары вариантов повторное нажатие уводит к
+   * соседнему, и то же делает клик по рамке между сегментами.
+   */
+  const flip = () => {
+    if (options.length !== 2 || disabled) return
+    const other = options.find((option) => option.value !== value)
+    if (other) onChange(other.value)
+  }
+
   return (
     <span
       className={className ? `switch ${className}` : 'switch'}
@@ -41,6 +57,11 @@ export default function Switch({
       aria-label={label}
       data-active={active < 0 ? 0 : active}
       style={{ '--switch-count': options.length }}
+      // только по самой рамке: клик по сегменту разбирает он сам, иначе
+      // выбор чужого сегмента тут же откатывался бы назад
+      onClick={(event) => {
+        if (event.target === event.currentTarget) flip()
+      }}
     >
       <span className="switch-thumb" aria-hidden="true" />
       {options.map((option) => (
@@ -58,6 +79,11 @@ export default function Switch({
             checked={option.value === value}
             disabled={disabled}
             onChange={() => onChange(option.value)}
+            // повторное нажатие на выбранный сегмент: `change` его не
+            // поднимает, а переключиться человек просил именно им
+            onClick={() => {
+              if (option.value === value) flip()
+            }}
           />
           {option.label}
         </label>

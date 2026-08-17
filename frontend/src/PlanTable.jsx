@@ -83,8 +83,6 @@ export default function PlanTable({
   layout,
   blocks,
   dated,
-  showWeeks,
-  showFree,
   busy,
   collapsed,
   editing,
@@ -556,7 +554,11 @@ export default function PlanTable({
               значением, а одна фраза — и набрана она поэтому одинаково,
               от слова до числа */}
           <span className="plan-today-label">{t('plan.today')} –</span>
-          <span className="plan-today-date">{weekdayWithDate(today())}</span>
+          {/* дата приезжает в самой метке: по ней же лента и решает, выше
+              или ниже соседних черт эта стоит */}
+          <span className="plan-today-date">
+            {weekdayWithDate(mark.date ?? today())}
+          </span>
         </li>
       )
     }
@@ -595,7 +597,7 @@ export default function PlanTable({
 
     return (
       <span className="plan-weekmark">
-        {showWeeks && week?.labelled && t('plan.week', { number: week.number })}
+        {week?.labelled && t('plan.week', { number: week.number })}
       </span>
     )
   }
@@ -610,7 +612,7 @@ export default function PlanTable({
    */
   const renderFree = () => {
     const free = layout.free
-    if (!dated || !showFree || !free.length) return null
+    if (!dated || !free.length) return null
 
     const many = free.length > FREE_INLINE
     const open = !many || freeOpen
@@ -650,7 +652,7 @@ export default function PlanTable({
                 }
               >
                 <span className="plan-weekmark">
-                  {showWeeks && labelled && t('plan.week', { number: slot.week })}
+                  {labelled && t('plan.week', { number: slot.week })}
                 </span>
                 <span className="plan-state" />
                 <Link
@@ -684,7 +686,7 @@ export default function PlanTable({
 
   /** Чётные недели закрашены — этим и группируются. */
   const weekStripe = (node) => {
-    const week = dated && showWeeks && layout.byId.get(node.id)?.week
+    const week = dated && layout.byId.get(node.id)?.week
     return week && week.number % 2 === 0 ? ' week-even' : ''
   }
 

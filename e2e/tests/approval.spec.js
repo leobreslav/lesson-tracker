@@ -1,4 +1,4 @@
-import { PEOPLE, expect, planMenu, ready, test } from './harness.js'
+import { PEOPLE, expect, ready, test } from './harness.js'
 
 /**
  * Утверждение плана методистом.
@@ -55,7 +55,7 @@ test('учитель отправляет план, методист утвер�
 
   await signIn(PEOPLE.ivanova)
   await openPlan(page, 'Grade 6 Algebra')
-  await planMenu(page, 'На утверждение')
+  await page.getByRole('button', { name: 'На утверждение' }).click()
   await expect(page.getByText(/Отправлено/)).toBeVisible()
   await expect(page.locator('.hint.approval')).toContainText('На утверждении')
 
@@ -104,7 +104,7 @@ test('правка после отправки запрос не отзывае�
 
   await signIn(PEOPLE.ivanova)
   await openPlan(page, 'Grade 6 Algebra')
-  await planMenu(page, 'На утверждение')
+  await page.getByRole('button', { name: 'На утверждение' }).click()
   await expect(page.locator('.hint.approval')).toContainText('На утверждении')
 
   await page.getByRole('button', { name: 'Добавить урок' }).click()
@@ -130,9 +130,69 @@ test('без методиста у курса отправка объясняе�
   await signIn(PEOPLE.ivanova)
   await openPlan(page, 'Grade 6 Algebra')
 
-  await planMenu(page, 'На утверждение')
+  await page.getByRole('button', { name: 'На утверждение' }).click()
 
   await expect(page.getByText(/некому утверждать|Nobody approves/)).toBeVisible()
+})
+
+test('утверждение целиком живёт в шапке, рядом с тумблером вида', async ({
+  page,
+  signIn,
+  api,
+}) => {
+  // Разговор один — отправить, узнать, чем разошлось, — а стоял он в трёх
+  // местах: кнопка под «⋯», состояние подвальной строкой панели, сравнение
+  // тумблером в шапке. Чтобы отправить план, надо было вспомнить про
+  // многоточие, а узнать, дошёл ли он, — посмотреть в другой конец панели.
+  const { course } = await makeMethodist(api, PEOPLE.ivanova, 'Grade 6 Algebra')
+
+  const teacher = await api(PEOPLE.ivanova)
+  await teacher.post(`/api/plan/baseline/submit/?course=${course.id}`, {})
+  const reviews = await teacher.get('/api/plan/reviews/')
+  const row = reviews.body.plans.find((item) => item.id === course.id)
+  await teacher.post(`/api/plan/reviews/${row.review.id}/approve/`, {})
+
+  await signIn(PEOPLE.ivanova)
+  await openPlan(page, 'Grade 6 Algebra')
+
+  const head = page.locator('.page-header .plan-approval')
+  await expect(head.locator('.hint.approval')).toContainText('Утверждён')
+  await expect(head.getByRole('button', { name: 'На утверждение' })).toBeVisible()
+  await expect(head.getByRole('radio', { name: 'Сравнение' })).toBeVisible()
+
+  // и в «⋯» отправки больше нет: одно действие — одно место
+  await page.getByRole('button', { name: 'Ещё' }).click()
+  await expect(
+    page.locator('.plan-menu .dropdown').getByRole('button', { name: 'На утверждение' }),
+  ).toHaveCount(0)
+})
+
+test('методист без своих курсов видит присланный план', async ({
+  page,
+  signIn,
+  api,
+}) => {
+  // Курс по умолчанию выбирался только среди своих, а пустой список своих
+  // сразу показывал «сначала заведите курс» — до селектора с группой «Ждут
+  // ответа» дело не доходило вовсе. То есть утверждение не работало ровно
+  // для того, кто только утверждает: администратор школы своих курсов не
+  // ведёт, а именно он чаще всего и подписывает.
+  const { course } = await makeMethodist(api, PEOPLE.admin, 'Grade 6 Algebra')
+
+  const teacher = await api(PEOPLE.ivanova)
+  const sent = await teacher.post(`/api/plan/baseline/submit/?course=${course.id}`, {})
+  expect(sent.status, JSON.stringify(sent.body)).toBe(201)
+
+  await signIn(PEOPLE.admin)
+  await page.goto('/plan')
+  await ready(page)
+
+  // экрана «заведите курс» тут быть не должно, а присланный план — должен.
+  // Курс тут один, поэтому в шапке не селект, а имя: выбирать не из чего
+  await expect(page.locator('.empty-state')).toHaveCount(0)
+  await expect(page.locator('.course-picked')).toContainText('Grade 6 Algebra')
+  await expect(page.locator('.review-plan li').first()).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Утвердить' })).toBeVisible()
 })
 
 test('раздела «На утверждение» у обычного учителя нет', async ({ page, signIn }) => {
@@ -228,7 +288,7 @@ test('свой курс показывает свой план, даже есл�
   ).toHaveCount(1)
 
   // отправляем на утверждение — решать можно тут же, по ссылке
-  await planMenu(page, 'На утверждение')
+  await page.getByRole('button', { name: 'На утверждение' }).click()
   await expect(page.locator('.hint.approval.pending')).toContainText('На утверждении')
   await expect(page.locator('.hint.approval.self')).toContainText(
     'Методист этого курса — вы.',

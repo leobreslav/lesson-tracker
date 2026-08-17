@@ -32,7 +32,7 @@ import { useDismissable } from './UserMenu'
 import DebtsDialog from './DebtsDialog'
 import Supervision from './Supervision'
 import Switch from './Switch'
-import { lastChoice, remember, remembered, rememberChoice } from './remember'
+import { lastChoice, rememberChoice } from './remember'
 import { applyMove, countBlocks, planRows } from './planLogic'
 import {
   createPlanNode,
@@ -70,14 +70,6 @@ import {
  * for them.
  */
 const LessonPanel = lazy(() => import('./LessonPanel'))
-
-// показ дат и недель переживает перезагрузку: при наборе плана с нуля они
-// мешают, при планировании нужны, и переключать это каждый раз незачем
-const DATES_KEY = 'planShowDates'
-const WEEKS_KEY = 'planShowWeeks'
-const FREE_KEY = 'planShowFree'
-
-const rememberedDates = () => remembered(DATES_KEY, true)
 
 // xlsx первым: он и по умолчанию
 const FORMATS = ['xlsx', 'csv']
@@ -145,9 +137,6 @@ export default function Plan({ onLoggedOut }) {
   // то есть ровно тех трёх вещей, на которых спотыкается CSV
   const [ribbon, setRibbon] = useState([])
   const [baseline, setBaseline] = useState(null)
-  const [showDates, setShowDates] = useState(rememberedDates)
-  const [showWeeks, setShowWeeks] = useState(() => remembered(WEEKS_KEY, true))
-  const [showFree, setShowFree] = useState(() => remembered(FREE_KEY, true))
   const [adding, setAdding] = useState(null) // {parent, after, is_section, title}
   const [deleting, setDeleting] = useState(null) // the section being removed
   const [importing, setImporting] = useState(false)
@@ -229,16 +218,6 @@ export default function Plan({ onLoggedOut }) {
         if (cancelled) return
         setClasses(classList)
         setYears(yearList)
-        // порядок: адрес, на который привели, потом прошлый выбор, потом
-        // первый попавшийся — иначе учитель с пятнадцатью курсами каждый
-        // заход начинал бы с первого по алфавиту
-        setClassId((current) => {
-          const remembered = lastChoice('course')
-          const known = (id) => classList.some((item) => item.id === id)
-          if (current && known(current)) return current
-          if (known(remembered)) return remembered
-          return classList[0]?.id ?? null
-        })
       })
       .catch((err) => {
         if (!cancelled) handleError(err)
@@ -516,6 +495,34 @@ export default function Plan({ onLoggedOut }) {
       ].filter((group) => group.items.length)
     : []
 
+  /**
+   * Курс по умолчанию — из всего, что человеку доступно, а не только из своего.
+   *
+   * Выбор шёл по списку **своих** курсов, и методист, который сам ничего не
+   * ведёт, не получал ничего: `classId` оставался пустым, а страница
+   * показывала «сначала заведите курс». Присланный на подпись план при этом
+   * лежал в двух кликах и не был виден ни на одном экране — то есть
+   * утверждение просто не работало для человека, который только утверждает.
+   *
+   * Ждущий подписи идёт вперёд своих: методист заходит сюда ради него, а
+   * свои курсы он открывает по прошлому выбору, который стоит выше.
+   */
+  useEffect(() => {
+    if (classes === null) return
+
+    setClassId((current) => {
+      const known = (id) => Boolean(id) && pickable.some((item) => item.id === id)
+      if (known(current)) return current
+
+      const remembered = lastChoice('course')
+      if (known(remembered)) return remembered
+
+      return classes[0]?.id ?? waiting[0]?.id ?? pickable[0]?.id ?? null
+    })
+    // намеренно по спискам, а не по их содержимому: пересобирать выбор на
+    // каждое перечитывание дерева незачем
+  }, [classes, supervised])
+
   const supervisedRow = supervised.find((row) => row.id === classId) ?? null
 
   /**
@@ -744,9 +751,19 @@ export default function Plan({ onLoggedOut }) {
     run(() => updatePlanNode(id, { title: title.trim() }))
   }
 
-  // без расписания раскладывать нечего: «не помещается» на каждой строке —
-  // это шум, а не сообщение
-  const dated = showDates && ribbon.length > 0
+  /*
+   * Даты, недели и свободные слоты показываются всегда.
+   *
+   * Три чекбокса над таблицей это переключали, и держались они на догадке
+   * «при наборе плана с нуля даты мешают». Не мешают: у нового курса ленты
+   * нет вовсе, и колонок тоже — они появляются вместе с расписанием, то
+   * есть ровно тогда, когда начинают что-то значить. А выключенные они
+   * прятали ровно то, ради чего таблица и заведена: где план ложится на
+   * календарь и сколько часов осталось незанятыми.
+   *
+   * Единственное настоящее условие осталось одно — есть ли расписание.
+   */
+  const dated = ribbon.length > 0
 
   if (classes === null) {
     return (
@@ -770,25 +787,95 @@ export default function Plan({ onLoggedOut }) {
           label={classLabel}
           groups={groups}
         />
-        {/* Сравнение — не режим таблицы, а другой вид страницы: там есть
-            удалённые строки, которых в плане уже нет, и трогать их нельзя.
-            Поэтому переключатель стоит здесь, в шапке, а не в панели
-            управления: панель в этом виде не показывается вовсе.
+        {/*
+          Всё про утверждение — одной группой в шапке, рядом с тумблером.
 
-            Тумблер, а не кнопка: это выбор из двух видов, и оба надо
-            назвать. Кнопка «Сравнить с эталоном» говорила только про один
-            из них, а второй, обратный, приходилось искать глазами внутри
-            открывшегося экрана — то есть в другом месте, чем открывали. */}
-        {!supervising && baseline?.approved && (
-          <Switch
-            label={t('plan.diff.switch')}
-            value={comparing}
-            onChange={setComparing}
-            options={[
-              { value: false, label: t('plan.diff.plan') },
-              { value: true, label: t('plan.diff.toggle') },
-            ]}
-          />
+          Разъехалось оно было по трём местам: отправка лежала под «⋯»
+          вместе с импортом и полкой, состояние — подвальной строкой панели
+          управления, а сравнение с эталоном — тумблером здесь. Три
+          половины одного разговора, и ни одна не рядом с другой: чтобы
+          отправить план, надо было вспомнить, что это под многоточием, а
+          узнать, дошёл ли он, — посмотреть в другой конец панели.
+
+          Сравнение — не режим таблицы, а другой вид страницы (там есть
+          удалённые строки, которых в плане уже нет), поэтому оно и стояло
+          в шапке: панель управления в этом виде не показывается вовсе.
+          Остальные две половины переехали к нему.
+        */}
+        {!supervising && (
+          <div className="plan-approval">
+            {/* состояние утверждения: у плана его нет, оно есть у снимка */}
+            {baseline && (baseline.approved || baseline.request) && (
+              <span className={`hint approval ${baseline.request?.status ?? 'approved'}`}>
+                {baseline.request?.status === 'pending' &&
+                  t('plan.baseline.pending', {
+                    name: baseline.request.reviewer?.name ?? '',
+                  })}
+                {baseline.request?.status === 'returned' && (
+                  <>
+                    {t('plan.baseline.returned', {
+                      name: baseline.request.reviewer?.name ?? '',
+                    })}{' '}
+                    <b>{baseline.request.comment}</b>
+                  </>
+                )}
+                {!baseline.request &&
+                  baseline.approved &&
+                  t(
+                    baseline.approved.self_approved
+                      ? 'plan.baseline.approvedSelf'
+                      : 'plan.baseline.approved',
+                    {
+                      date: shortDate(baseline.approved.approved_at.slice(0, 10)),
+                      name: baseline.approved.reviewer?.name ?? '',
+                    },
+                  )}
+              </span>
+            )}
+
+            {/* Свой запрос, свой же надзор: решать можно тут, но не вместо
+                плана. Ссылка ведёт в тот же экран надзора, каким методист
+                смотрит чужие курсы, — второго места для «утвердить» и
+                «вернуть» заводить незачем */}
+            {selfReview && (
+              <span className="hint approval self">
+                {t('plan.baseline.youReview')}{' '}
+                <button
+                  type="button"
+                  className="link"
+                  onClick={() => setReviewing(true)}
+                >
+                  {t('plan.baseline.decide')}
+                </button>
+              </span>
+            )}
+
+            <button
+              type="button"
+              className="secondary"
+              disabled={busy || baseline?.request?.status === 'pending'}
+              title={t('plan.baseline.hint')}
+              onClick={handleSubmitPlan}
+            >
+              {t('plan.baseline.submit')}
+            </button>
+
+            {/* Тумблер, а не кнопка: это выбор из двух видов, и оба надо
+                назвать. Кнопка «Сравнить с эталоном» говорила только про
+                один из них, а второй, обратный, приходилось искать глазами
+                внутри открывшегося экрана — не там, где включали */}
+            {baseline?.approved && (
+              <Switch
+                label={t('plan.diff.switch')}
+                value={comparing}
+                onChange={setComparing}
+                options={[
+                  { value: false, label: t('plan.diff.plan') },
+                  { value: true, label: t('plan.diff.toggle') },
+                ]}
+              />
+            )}
+          </div>
         )}
       </header>
 
@@ -821,7 +908,11 @@ export default function Plan({ onLoggedOut }) {
         /* страница перерисовывается целиком: ни панели, ни сводки, ни
            таблицы — сравнение показывает и то, чего в плане уже нет */
         <PlanDiff classId={classId} />
-      ) : !classes.length ? (
+      ) : /* Пусто — это когда показать нечего **вообще**: ни своих курсов,
+             ни поднадзорных. Условие смотрело только на свои, и методист
+             без своих упирался в «заведите курс», хотя ждущий подписи план
+             лежал в том же селекте строкой ниже */
+      !pickable.length ? (
         <EmptyState
           title={t('plan.needClass.title')}
           actions={
@@ -1092,111 +1183,12 @@ export default function Plan({ onLoggedOut }) {
                     >
                       {t(mineOnShelf ? 'plan.refreshTemplate' : 'plan.publish')}
                     </button>
-
-                    <span className="dropdown-sep" aria-hidden="true" />
-
-                    <button
-                      type="button"
-                      disabled={busy || baseline?.request?.status === 'pending'}
-                      title={t('plan.baseline.hint')}
-                      onClick={() => {
-                        setMenuOpen(false)
-                        handleSubmitPlan()
-                      }}
-                    >
-                      {t('plan.baseline.submit')}
-                    </button>
                   </div>
                 )}
               </div>
-
-          {ribbon.length > 0 && (
-            <div className="dates-toggle">
-                <label className="checkbox">
-                  <input
-                    type="checkbox"
-                    checked={showDates}
-                    onChange={(event) => {
-                      setShowDates(event.target.checked)
-                      remember(DATES_KEY, event.target.checked)
-                    }}
-                  />
-                  {t('plan.summary.dates')}
-                </label>
-                <label className="checkbox">
-                  <input
-                    type="checkbox"
-                    checked={showWeeks}
-                    onChange={(event) => {
-                      setShowWeeks(event.target.checked)
-                      remember(WEEKS_KEY, event.target.checked)
-                    }}
-                  />
-                  {t('plan.summary.weeks')}
-                </label>
-                <label className="checkbox">
-                  <input
-                    type="checkbox"
-                    checked={showFree}
-                    onChange={(event) => {
-                      setShowFree(event.target.checked)
-                      remember(FREE_KEY, event.target.checked)
-                    }}
-                  />
-                  {t('plan.summary.freeSlots')}
-                </label>
-            </div>
-          )}
             </div>
 
             {helpOpen && <PlanCsvHelp />}
-
-            {(baseline?.approved || baseline?.request || selfReview) && (
-              <div className="plan-bar">
-            {/* состояние утверждения: у плана его нет, оно есть у снимка */}
-            {baseline && (baseline.approved || baseline.request) && (
-              <p className={`hint approval ${baseline.request?.status ?? 'approved'}`}>
-                {baseline.request?.status === 'pending' &&
-                  t('plan.baseline.pending', {
-                    name: baseline.request.reviewer?.name ?? '',
-                  })}
-                {baseline.request?.status === 'returned' && (
-                  <>
-                    {t('plan.baseline.returned', {
-                      name: baseline.request.reviewer?.name ?? '',
-                    })}{' '}
-                    <b>{baseline.request.comment}</b>
-                  </>
-                )}
-                {!baseline.request &&
-                  baseline.approved &&
-                  t(
-                    baseline.approved.self_approved
-                      ? 'plan.baseline.approvedSelf'
-                      : 'plan.baseline.approved',
-                    {
-                      date: shortDate(baseline.approved.approved_at.slice(0, 10)),
-                      name: baseline.approved.reviewer?.name ?? '',
-                    },
-                  )}
-              </p>
-            )}
-
-            {/* Свой запрос, свой же надзор: решать можно тут, но не вместо
-                плана. Ссылка ведёт в тот же экран надзора, каким методист
-                смотрит чужие курсы, — второго места для «утвердить» и
-                «вернуть» заводить не за чем */}
-            {selfReview && (
-              <p className="hint approval self">
-                {t('plan.baseline.youReview')}{' '}
-                <button type="button" className="link" onClick={() => setReviewing(true)}>
-                  {t('plan.baseline.decide')}
-                </button>
-              </p>
-            )}
-
-          </div>
-            )}
           </section>
 
           {error && (
@@ -1228,8 +1220,6 @@ export default function Plan({ onLoggedOut }) {
                 layout={layout}
                 blocks={blocks}
                 dated={dated}
-                showWeeks={showWeeks}
-                showFree={showFree}
                 busy={busy}
                 collapsed={collapsed}
                 editing={editing}

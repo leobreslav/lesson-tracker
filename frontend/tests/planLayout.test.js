@@ -148,8 +148,61 @@ describe('границы термов и каникулы', () => {
       rows.map((row) => row.past),
       [true, false, false],
     )
-    assert.deepEqual(marksOf(rows[1], 'today'), [{ kind: 'today' }])
+    assert.deepEqual(marksOf(rows[1], 'today'), [
+      { kind: 'today', date: '2026-10-02' },
+    ])
     assert.equal(rows.filter((row) => marksOf(row, 'today').length).length, 1)
+  })
+
+  it('черты идут по датам: «сегодня» выше терма, который ещё не начался', () => {
+    // Год начинается 1 октября, а на дворе 18 августа: черта «сегодня»
+    // стояла под заголовком четверти, хотя четверть вся в будущем.
+    const rows = stitchLayout([lesson(1), lesson(2)], ribbon(3), '2026-08-18')
+
+    assert.deepEqual(
+      rows[0].before.map((mark) => mark.kind),
+      ['today', 'term'],
+    )
+  })
+
+  it('а начавшийся терм стоит выше «сегодня»', () => {
+    // та же лента, но сегодня уже внутри четверти: заголовок случился
+    // раньше — 1 сентября, — значит и стоит выше
+    const rows = stitchLayout([lesson(1), lesson(2)], ribbon(3), '2026-09-20')
+
+    assert.deepEqual(
+      rows[0].before.map((mark) => mark.kind),
+      ['term', 'today'],
+    )
+  })
+
+  it('каникулы, сегодня и новый терм — все три по датам', () => {
+    // каникулы 27 окт — 4 нояб, вторая четверть с 5 ноября, сегодня 30-го:
+    // между ними. Лента тут своя — у общей все дни в октябре
+    const first = { id: 1, name: '1 четверть', start: '2026-09-01', end: '2026-10-26' }
+    const second = { id: 2, name: '2 четверть', start: '2026-11-05', end: '2026-12-28' }
+    const rows = stitchLayout(
+      [lesson(1), lesson(2)],
+      [
+        { id: 1, date: '2026-10-20', term: first, break_before: null },
+        {
+          id: 2,
+          date: '2026-11-05',
+          term: second,
+          break_before: {
+            title: 'осенние каникулы',
+            start: '2026-10-27',
+            end: '2026-11-04',
+          },
+        },
+      ],
+      '2026-10-30',
+    )
+
+    assert.deepEqual(
+      rows[1].before.map((mark) => mark.kind),
+      ['break', 'today', 'term'],
+    )
   })
 
   it('без сегодняшней даты черты нет вовсе', () => {

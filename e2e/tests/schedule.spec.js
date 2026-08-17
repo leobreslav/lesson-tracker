@@ -86,6 +86,33 @@ test('из расписания открывается сам урок, а не 
   )
 })
 
+test('из клетки расписания есть путь в план, на эту самую строку', async ({
+  page,
+  signIn,
+}) => {
+  // Из клетки можно было уйти в занятие, а в программу — нет: «что мы
+  // вообще проходим и где мы в ней сейчас» приходилось искать, открыв
+  // занятие и оттуда перейдя в план. Меню теперь называет строку и ведёт
+  // прямо на неё: на сотне уроков искать её глазами — минута.
+  await signIn(PEOPLE.ivanova)
+  await openWeek(page, MONDAY)
+
+  await page.locator(`[data-lesson="${MONDAY}:1"]`).click()
+  const menu = page.locator('dialog.modal')
+  // тема названа до нажатия: видно, куда приведут. Своим классом, а не
+  // «последней подсказкой»: их в окне несколько, и приезжает она позже
+  // остальных — строку плана спрашивают отдельным запросом
+  const topic = await menu.locator('.menu-topic').textContent()
+  await menu.getByRole('button', { name: 'Открыть в учебном плане' }).click()
+
+  await ready(page)
+  await expect(page).toHaveURL(/\/plan/)
+  // строка подсвечена, и это именно она
+  const spotlight = page.locator('.plan-row.spotlight')
+  await expect(spotlight).toBeVisible()
+  await expect(spotlight).toContainText(topic.split('·').pop().trim())
+})
+
 test('окно закрывается крестиком, а отдельной кнопки для этого нет', async ({
   page,
   signIn,
@@ -186,11 +213,28 @@ test('«через неделю» копирует в каждую вторую'
     (await teacher.get(`/api/slots/?course=${course.id}&start=${shift(from)}&end=${shift(from + 6)}`))
       .body.length
 
-  expect(await week(7)).toBe(0)
-  expect(await week(14)).toBeGreaterThan(0)
-  expect(await week(21)).toBe(0)
+  /*
+   * Улики на случай падения.
+   *
+   * Тест изредка падает в полном наборе и ни разу — в одиночку (пять
+   * прогонов подряд). «Создано 0» само по себе не говорит ничего: то ли
+   * скопировали не тот курс, то ли не тот период, то ли предпросмотр
+   * обещал то же самое. Поэтому в сообщение едут и он, и всё, что
+   * оказалось у курса в целевом периоде.
+   */
+  const landed = (
+    await teacher.get(
+      `/api/slots/?course=${course.id}&start=${shift(7)}&end=${shift(27)}`,
+    )
+  ).body.map((slot) => `${slot.date}#${slot.lesson_number}`)
+  const where = `источник ${monday}, цель ${shift(7)}—${shift(27)}, ` +
+    `создано: ${landed.join(', ') || 'ничего'}, предпросмотр: ${preview}`
+
+  expect(await week(7), where).toBe(0)
+  expect(await week(14), where).toBeGreaterThan(0)
+  expect(await week(21), where).toBe(0)
   // предпросмотр обещал ровно столько же
-  expect(preview).toContain(String(await week(14)))
+  expect(preview, where).toContain(String(await week(14)))
 })
 
 test('сводка за неделю считает уроки и отмены', async ({ page, signIn }) => {
