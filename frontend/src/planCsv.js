@@ -1,7 +1,7 @@
 /**
  * Клиентский разбор CSV учебного плана — зеркало `parse_plan_csv`.
  *
- * Формат ровно один: `id,Тема,Урок,Заметка`, шапка обязательна, одна строка —
+ * Формат ровно один: `id,Тема,Урок`, шапка обязательна, одна строка —
  * один урок, тема повторяется в каждой строке. Пустая тема значит «урок вне
  * темы», пустой id — «урок новый». Стилей больше не три и угадывать нечего:
  * непонятная строка — ошибка всего файла с её номером.
@@ -11,7 +11,7 @@
  * тот же — из словаря `errors.*`. Импортирует всё равно сервер.
  */
 
-const CSV_HEADER = ['id', 'Тема', 'Урок', 'Заметка']
+const CSV_HEADER = ['id', 'Тема', 'Урок']
 const HEADER_TEXT = CSV_HEADER.join(',')
 const HEADER_NORMALIZED = CSV_HEADER.map(normalizedCell)
 
@@ -89,7 +89,7 @@ export function sniffDelimiter(text) {
 }
 
 /**
- * Четыре ячейки строки — или null, если столбцов не четыре.
+ * Три ячейки строки — или null, если столбцов не три.
  *
  * Пустые столбцы справа Excel дописывает сам; заполненный пятый — уже
  * другой файл.
@@ -145,7 +145,7 @@ export function parsePlanCsv(text) {
       return
     }
 
-    const [idCell, theme, lesson, note] = cells
+    const [idCell, theme, lesson] = cells
 
     if (theme && !lesson) {
       errors.push(problem('csv_section_row', { row, title: theme }))
@@ -179,7 +179,7 @@ export function parsePlanCsv(text) {
     rows.push({
       is_section: false,
       title: lesson,
-      note,
+      note: '',
       id,
       at_top_level: !theme,
     })

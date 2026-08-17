@@ -634,7 +634,7 @@ def structure_problems(*, course_id, parent, is_section) -> dict:
 
 # --- CSV: единственный формат, разбор и выгрузка, тоже без ORM ---
 #
-# Формат один: `id,Тема,Урок,Заметка`, шапка обязательна, одна строка — один
+# Формат один: `id,Тема,Урок`, шапка обязательна, одна строка — один
 # урок. Тема повторяется в каждой строке; пустая ячейка темы значит «урок вне
 # темы», пустой id — «урок новый». Отдельной строки-заголовка нет.
 #
@@ -644,7 +644,7 @@ def structure_problems(*, course_id, parent, is_section) -> dict:
 # на файле, где столбец id не признался. Теперь непонятная строка отклоняет
 # **весь** файл с номером строки: лучше отказ, чем принятый не тот план.
 
-CSV_HEADER = ("id", "Тема", "Урок", "Заметка")
+CSV_HEADER = ("id", "Тема", "Урок")
 CSV_MAX_ROWS = 2000
 TITLE_LIMIT = 200
 
@@ -748,7 +748,7 @@ def sniff_delimiter(text: str) -> str:
 
 def row_cells(raw: Sequence[str]) -> list | None:
     """
-    Четыре ячейки строки — или None, если столбцов не четыре.
+    Три ячейки строки — или None, если столбцов не три.
 
     Пустые столбцы справа Excel дописывает сам, и это не повод для отказа;
     заполненный пятый столбец — уже другой файл.
@@ -846,13 +846,13 @@ def parse_plan_rows(
             errors.append(
                 error_payload(
                     Codes.CSV_BAD_COLUMNS,
-                    f"Row {number}: the file must have exactly four columns.",
+                    f"Row {number}: the file must have exactly three columns.",
                     row=number, count=len(raw),
                 )
             )
             continue
 
-        id_cell, theme, lesson, note = cells
+        id_cell, theme, lesson = cells
 
         if theme and not lesson:
             # раньше это был заголовок темы; сказать об этом прямо, иначе
@@ -909,7 +909,7 @@ def parse_plan_rows(
 
         rows.append(
             ImportedRow(
-                is_section=False, title=lesson, note=note,
+                is_section=False, title=lesson,
                 node_id=node_id, row_number=number,
                 at_top_level=not theme,
             )
@@ -926,8 +926,8 @@ def build_plan_csv(tree: Iterable[Branch]) -> str:
     экспорт → импорт в режиме sync не меняет ни строчки.
 
     Чего в файле нет: темы без уроков (строки для неё не существует) и
-    заметки самой темы — заметка принадлежит уроку. Обратный импорт такую
-    тему удалит, и предпросмотр это показывает.
+    заметки — её столбца в формате не осталось. Обратный импорт такую тему
+    удалит, и предпросмотр это показывает.
 
     BOM в начале — чтобы Excel открыл файл как UTF-8, а не как cp1251.
     """
@@ -936,7 +936,7 @@ def build_plan_csv(tree: Iterable[Branch]) -> str:
     writer.writerow(CSV_HEADER)
 
     def put(node, theme):
-        writer.writerow([node.pk, theme, node.title, node.note])
+        writer.writerow([node.pk, theme, node.title])
 
     for branch in tree:
         if branch.node.is_section:
@@ -1365,16 +1365,14 @@ def apply_sync(course_id: int, plan: SyncPlan) -> dict:
     changed = []
     for node, row, parent_ref, position in plan.update:
         node.title = row.title
-        if not row.is_section:
-            # заметка в файле принадлежит уроку; у темы её выражать нечем,
-            # и стирать поэтому нечего — sync не трогает того, чего не видит
-            node.note = row.note
+        # заметки в файле нет вовсе, значит sync её не трогает — как не
+        # трогает содержание и вложения. Файл правит структуру и названия
         node.parent_id = pk_of(parent_ref)
         node.position = position
         changed.append(node)
 
     if changed:
-        PlanNode.objects.bulk_update(changed, ["title", "note", "parent", "position"])
+        PlanNode.objects.bulk_update(changed, ["title", "parent", "position"])
 
     for index, (row, parent_ref, position) in enumerate(plan.create):
         if not row.is_section:

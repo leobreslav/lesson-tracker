@@ -360,7 +360,7 @@
         "emptyTheme": "An empty theme means the lesson sits outside any theme.",
         "emptyId": "An empty id means the lesson is new; keep the id and the row is recognised."
       },
-      "keeps": "Lesson content and attachments are not in the file and stay in the system: bring the file back as «Sync» and they survive. A theme without lessons is not written to the file.",
+      "keeps": "Lesson content, notes and attachments are not in the file and stay in the system: bring the file back as «Sync» and they survive. A theme without lessons is not written to the file.",
       "modes": {
         "sync": "rows are matched by id — titles, notes and order change, content stays.",
         "append": "the rows are added to the end, ids are ignored, nothing is deleted.",

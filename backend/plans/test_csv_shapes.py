@@ -17,14 +17,14 @@ from django.urls import reverse
 from . import services
 from .tests import PlanTestCase
 
-HEAD = "id,Тема,Урок,Заметка\n"
+HEAD = "id,Тема,Урок\n"
 
 # план, где каждое название с запятой, кавычками и точкой с запятой
 NASTY = (
-    ("Дроби, обыкновенные и десятичные", "", True),
-    ("Сложение и вычитание дробей, имеющих разные знаменатели", "№ 12, 13", False),
-    ('Умножение «в столбик» и деление "уголком"', 'заметка со "скобками"', False),
-    ("Точка с запятой; и запятая, вместе", "первая строка\nвторая строка", False),
+    ("Дроби, обыкновенные и десятичные", True),
+    ("Сложение и вычитание дробей, имеющих разные знаменатели", False),
+    ('Умножение «в столбик» и деление "уголком"', False),
+    ("Точка с запятой; и запятая, вместе", False),
 )
 
 
@@ -37,7 +37,7 @@ class SpecialCharacterTests(SimpleTestCase):
         return [(row.title, row.note) for row in result.rows]
 
     def test_a_comma_inside_a_name_does_not_split_the_cell(self):
-        text = HEAD + ',"Дроби, обычные","Сложение, вычитание",\n'
+        text = HEAD + ',"Дроби, обычные","Сложение, вычитание"\n'
 
         self.assertEqual(
             self.parse(text),
@@ -47,10 +47,10 @@ class SpecialCharacterTests(SimpleTestCase):
     def test_a_file_where_every_name_has_a_comma_still_reads_as_semicolons(self):
         """Русский Excel: разделитель «;», а запятые внутри значений."""
         text = (
-            "id;Тема;Урок;Заметка\n"
-            ';"Дроби, обычные";"Сложение, вычитание";\n'
-            ';"Дроби, обычные";"Умножение, деление";\n'
-            ';"Дроби, обычные";"Точка, ещё";\n'
+            "id;Тема;Урок\n"
+            ';"Дроби, обычные";"Сложение, вычитание"\n'
+            ';"Дроби, обычные";"Умножение, деление"\n'
+            ';"Дроби, обычные";"Точка, ещё"\n'
         )
 
         self.assertEqual(services.sniff_delimiter(text), ";")
@@ -60,7 +60,7 @@ class SpecialCharacterTests(SimpleTestCase):
         )
 
     def test_a_semicolon_inside_a_name_does_not_win_over_the_comma(self):
-        text = HEAD + ',Дроби; и точки,"Урок; раз",\n,Дроби; и точки,"Урок; два",\n'
+        text = HEAD + ',Дроби; и точки,"Урок; раз"\n,Дроби; и точки,"Урок; два"\n'
 
         self.assertEqual(services.sniff_delimiter(text), ",")
         self.assertEqual(
@@ -69,31 +69,31 @@ class SpecialCharacterTests(SimpleTestCase):
         )
 
     def test_doubled_quotes_come_out_as_one(self):
-        text = HEAD + ',Тема 1,"Урок ""в кавычках""",\n'
+        text = HEAD + ',Тема 1,"Урок ""в кавычках"""\n'
 
         self.assertEqual(self.parse(text)[1][0], 'Урок "в кавычках"')
 
-    def test_a_newline_inside_a_note_survives_and_does_not_confuse_the_sniffer(self):
+    def test_a_newline_inside_a_name_survives_and_does_not_confuse_the_sniffer(self):
         """
-        Перевод строки внутри кавычек — часть заметки, а не конец записи.
+        Перевод строки внутри кавычек — часть названия, а не конец записи.
 
         Разделитель считается по записям именно поэтому: порезав текст по
         \\n, эвристика сравнивала бы обрывки строк.
         """
         text = (
-            "id;Тема;Урок;Заметка\n"
-            ';"Дроби, обычные";"Сложение, вычитание";"первая, строка\nвторая, строка"\n'
-            ';"Дроби, обычные";"Умножение, деление";\n'
+            "id;Тема;Урок\n"
+            ';"Дроби, обычные";"Сложение, вычитание"\n'
+            ';"Дроби, обычные";"Умножение,\nделение"\n'
         )
 
         self.assertEqual(services.sniff_delimiter(text), ";")
-        self.assertEqual(self.parse(text)[1][1], "первая, строка\nвторая, строка")
+        self.assertEqual(self.parse(text)[2][0], "Умножение,\nделение")
 
     def test_spaces_around_a_value_are_trimmed(self):
         """Предсказуемо: обрезаются всегда, а не когда как."""
-        text = HEAD + " ,  Тема 1  ,  Урок 1  ,  заметка  \n"
+        text = HEAD + " ,  Тема 1  ,  Урок 1  \n"
 
-        self.assertEqual(self.parse(text), [("Тема 1", ""), ("Урок 1", "заметка")])
+        self.assertEqual(self.parse(text), [("Тема 1", ""), ("Урок 1", "")])
 
 
 class NastyRoundTripTests(PlanTestCase):
@@ -101,15 +101,13 @@ class NastyRoundTripTests(PlanTestCase):
 
     def build_nasty(self):
         section = None
-        for position, (title, note, is_section) in enumerate(NASTY):
+        for position, (title, is_section) in enumerate(NASTY):
             node = self.add(
                 title,
                 parent=None if is_section else section,
                 position=position,
                 is_section=is_section,
             )
-            node.note = note
-            node.save(update_fields=["note"])
             if is_section:
                 section = node
 
@@ -151,9 +149,9 @@ class NastyRoundTripTests(PlanTestCase):
     def test_a_file_saved_by_russian_excel_imports(self):
         """cp1251, разделитель «;», значения в кавычках с запятыми внутри."""
         text = (
-            "id;Тема;Урок;Заметка\n"
-            ';"Дроби, обыкновенные";"Сложение, вычитание";"№ 12, 13"\n'
-            ';"Дроби, обыкновенные";"Умножение, деление";\n'
+            "id;Тема;Урок\n"
+            ';"Дроби, обыкновенные";"Сложение, вычитание"\n'
+            ';"Дроби, обыкновенные";"Умножение, деление"\n'
         )
 
         response = self.import_back(text.encode("cp1251"))
@@ -163,7 +161,7 @@ class NastyRoundTripTests(PlanTestCase):
             self.titles_with_notes(),
             [
                 (None, "Дроби, обыкновенные", "", True),
-                ("Дроби, обыкновенные", "Сложение, вычитание", "№ 12, 13", False),
+                ("Дроби, обыкновенные", "Сложение, вычитание", "", False),
                 ("Дроби, обыкновенные", "Умножение, деление", "", False),
             ],
         )

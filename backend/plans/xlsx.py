@@ -1,7 +1,7 @@
 """
 Учебный план в xlsx: чтение книги и запись её же.
 
-Формат тот же самый, что у CSV, — четыре столбца `id, Тема, Урок, Заметка`,
+Формат тот же самый, что у CSV, — три столбца `id, Тема, Урок`,
 одна строка это один урок, — и разбор структуры общий: здесь только чтение
 ячеек, а решает всё `services.parse_plan_rows`. Ради этого модуль и заведён
 отдельно: единственное место, знающее про openpyxl, как `files/storage.py`
@@ -28,7 +28,7 @@ SHEET_TITLE = "План"
 
 # ширина столбца: минимум, запас на символ и потолок. Потолок нужен: одна
 # заметка в пол-экрана иначе растянула бы столбец на всю ширину листа
-COLUMN_SIZES = ((5, 8), (16, 40), (24, 60), (16, 40))
+COLUMN_SIZES = ((5, 8), (24, 50), (32, 70))
 
 TEXT_FORMAT = "@"
 
@@ -143,9 +143,9 @@ def build_plan_xlsx(tree: Iterable[Branch]) -> bytes:
     for branch in tree:
         if branch.node.is_section:
             for child in branch.children:
-                put([child.pk, branch.node.title, child.title, child.note])
+                put([child.pk, branch.node.title, child.title])
         else:
-            put([branch.node.pk, "", branch.node.title, branch.node.note])
+            put([branch.node.pk, "", branch.node.title])
 
     for index, (minimum, cap) in enumerate(COLUMN_SIZES, start=1):
         sheet.column_dimensions[get_column_letter(index)].width = min(

@@ -105,7 +105,7 @@ export default function ImportDialog({ classId, busy, onSubmit, onClose }) {
   return (
     <Modal onClose={onClose} title={t('csv.title')}>
       <form onSubmit={handleSubmit}>
-        <p className="hint">{t('csv.hint', { header: 'id,Тема,Урок,Заметка' })}</p>
+        <p className="hint">{t('csv.hint', { header: 'id,Тема,Урок' })}</p>
 
         <label
           className={dragging ? 'drop-zone over' : 'drop-zone'}

@@ -80,7 +80,7 @@ class SyncTestCase(PlanTestCase):
 
     def file(self, *lines):
         """Файл единственного формата: шапка и строки уроков."""
-        return "id,Тема,Урок,Заметка\n" + "\n".join(lines) + "\n"
+        return "id,Тема,Урок\n" + "\n".join(lines) + "\n"
 
     def whole_plan(self, **changes):
         """
@@ -90,16 +90,16 @@ class SyncTestCase(PlanTestCase):
         ради одной: `whole_plan(sine="Синус суммы двух углов")`.
         """
         rows = {
-            "sine": (self.sine.pk, "Тригонометрия", "Синус суммы", ""),
-            "cosine": (self.cosine.pk, "Тригонометрия", "Косинус суммы", ""),
-            "loose": (self.loose.pk, "", "Повторение", ""),
+            "sine": (self.sine.pk, "Тригонометрия", "Синус суммы"),
+            "cosine": (self.cosine.pk, "Тригонометрия", "Косинус суммы"),
+            "loose": (self.loose.pk, "", "Повторение"),
         }
         lines = []
-        for name, (pk, theme, title, note) in rows.items():
+        for name, (pk, theme, title) in rows.items():
             if name in changes and changes[name] is None:
                 continue
             title = changes.get(name, title)
-            lines.append(f"{pk},{theme},{title},{note}")
+            lines.append(f"{pk},{theme},{title}")
         return self.file(*lines)
 
 
@@ -122,26 +122,25 @@ class SyncKeepsContentTests(SyncTestCase):
         self.assertTrue(PlanNode.objects.filter(pk=self.sine.pk).exists())
         self.assertEqual(PlanNode.objects.filter(course=self.course).count(), 4)
 
-    def test_notes_are_updated(self):
-        self.send(
-            self.file(
-                f"{self.sine.pk},Тригонометрия,Синус суммы,повторить перед контрольной",
-                f"{self.cosine.pk},Тригонометрия,Косинус суммы,",
-                f"{self.loose.pk},,Повторение,",
-            )
-        )
+    def test_a_note_survives_the_file(self):
+        """
+        Столбца заметки в формате нет вовсе, значит sync её не трогает.
 
-        self.sine.refresh_from_db()
-        self.assertEqual(self.sine.note, "повторить перед контрольной")
-
-    def test_a_note_on_a_theme_survives(self):
-        """Заметка темы в файле не выражена, значит стирать её нечем."""
+        Это то же правило, что у содержания и вложений: файл правит
+        структуру и названия, остальное остаётся в системе. Заметку
+        убрали из формата потому, что в таблице её никто не заполнял, а
+        колонку возили в каждой строке.
+        """
+        self.sine.note = "повторить перед контрольной"
+        self.sine.save(update_fields=["note"])
         self.section.note = "четыре урока, контрольная в конце"
         self.section.save(update_fields=["note"])
 
-        self.send(self.whole_plan())
+        self.send(self.whole_plan(sine="Синус суммы двух углов"))
 
+        self.sine.refresh_from_db()
         self.section.refresh_from_db()
+        self.assertEqual(self.sine.note, "повторить перед контрольной")
         self.assertEqual(self.section.note, "четыре урока, контрольная в конце")
 
 
@@ -151,9 +150,9 @@ class SyncSectionTests(SyncTestCase):
     def test_renaming_a_theme_everywhere_renames_the_section(self):
         response = self.send(
             self.file(
-                f"{self.sine.pk},Тригонометрические формулы,Синус суммы,",
-                f"{self.cosine.pk},Тригонометрические формулы,Косинус суммы,",
-                f"{self.loose.pk},,Повторение,",
+                f"{self.sine.pk},Тригонометрические формулы,Синус суммы",
+                f"{self.cosine.pk},Тригонометрические формулы,Косинус суммы",
+                f"{self.loose.pk},,Повторение",
             )
         )
 
@@ -173,9 +172,9 @@ class SyncSectionTests(SyncTestCase):
         """
         response = self.send(
             self.file(
-                f"{self.sine.pk},Тригонометрия,Синус суммы,",
-                f"{self.cosine.pk},Тригонометрия (вторая половина),Косинус суммы,",
-                f"{self.loose.pk},,Повторение,",
+                f"{self.sine.pk},Тригонометрия,Синус суммы",
+                f"{self.cosine.pk},Тригонометрия (вторая половина),Косинус суммы",
+                f"{self.loose.pk},,Повторение",
             )
         )
 
@@ -196,9 +195,9 @@ class SyncSectionTests(SyncTestCase):
     def test_the_split_is_visible_in_the_preview(self):
         body = self.preview(
             self.file(
-                f"{self.sine.pk},Тригонометрия,Синус суммы,",
-                f"{self.cosine.pk},Тригонометрия (вторая половина),Косинус суммы,",
-                f"{self.loose.pk},,Повторение,",
+                f"{self.sine.pk},Тригонометрия,Синус суммы",
+                f"{self.cosine.pk},Тригонометрия (вторая половина),Косинус суммы",
+                f"{self.loose.pk},,Повторение",
             )
         ).json()
 
@@ -225,10 +224,10 @@ class SyncStructureTests(SyncTestCase):
     def test_a_row_without_an_id_is_created(self):
         response = self.send(
             self.file(
-                f"{self.sine.pk},Тригонометрия,Синус суммы,",
-                f"{self.cosine.pk},Тригонометрия,Косинус суммы,",
-                ",Тригонометрия,Тангенс суммы,добавлен вручную",
-                f"{self.loose.pk},,Повторение,",
+                f"{self.sine.pk},Тригонометрия,Синус суммы",
+                f"{self.cosine.pk},Тригонометрия,Косинус суммы",
+                ",Тригонометрия,Тангенс суммы",
+                f"{self.loose.pk},,Повторение",
             )
         )
 
@@ -254,9 +253,9 @@ class SyncStructureTests(SyncTestCase):
         """Массовую перестановку в таблице делать удобнее, чем мышью."""
         self.send(
             self.file(
-                f"{self.loose.pk},,Повторение,",
-                f"{self.cosine.pk},Тригонометрия,Косинус суммы,",
-                f"{self.sine.pk},Тригонометрия,Синус суммы,",
+                f"{self.loose.pk},,Повторение",
+                f"{self.cosine.pk},Тригонометрия,Косинус суммы",
+                f"{self.sine.pk},Тригонометрия,Синус суммы",
             )
         )
 
@@ -275,8 +274,8 @@ class SyncStructureTests(SyncTestCase):
         self.send(
             # пустая ячейка темы — это «вынести наверх»
             self.file(
-                f"{self.sine.pk},,Синус суммы,",
-                f"{self.loose.pk},,Повторение,",
+                f"{self.sine.pk},,Синус суммы",
+                f"{self.loose.pk},,Повторение",
             )
         )
 
@@ -288,9 +287,9 @@ class SyncStructureTests(SyncTestCase):
     def test_a_new_theme_takes_the_lessons_written_under_it(self):
         self.send(
             self.file(
-                f"{self.sine.pk},Тригонометрия,Синус суммы,",
-                f"{self.cosine.pk},Новая тема,Косинус суммы,",
-                f"{self.loose.pk},,Повторение,",
+                f"{self.sine.pk},Тригонометрия,Синус суммы",
+                f"{self.cosine.pk},Новая тема,Косинус суммы",
+                f"{self.loose.pk},,Повторение",
             )
         )
 
@@ -326,7 +325,7 @@ class SyncRefusalTests(SyncTestCase):
     def test_an_id_from_another_plan_is_refused(self):
         alien = self.add("Чужой урок", course=self.alien_class, teacher=self.stranger)
 
-        response = self.send(self.file(f"{alien.pk},,Синус суммы,"))
+        response = self.send(self.file(f"{alien.pk},,Синус суммы"))
 
         self.assertUntouched(response, "csv_id_unknown")
         self.assertTrue(PlanNode.objects.filter(pk=alien.pk).exists())
@@ -336,21 +335,21 @@ class SyncRefusalTests(SyncTestCase):
         other = make_course(self.school, year=self.course.year, name="9Д")
         theirs = self.add("Их урок", course=other, teacher=self.colleague)
 
-        response = self.send(self.file(f"{theirs.pk},,Синус суммы,"))
+        response = self.send(self.file(f"{theirs.pk},,Синус суммы"))
 
         self.assertUntouched(response, "csv_id_unknown")
         self.assertTrue(PlanNode.objects.filter(pk=theirs.pk).exists())
 
     def test_an_id_that_never_existed_is_refused(self):
-        response = self.send(self.file("9999999,,Синус суммы,"))
+        response = self.send(self.file("9999999,,Синус суммы"))
 
         self.assertUntouched(response, "csv_id_unknown")
 
     def test_the_same_id_twice_is_refused(self):
         response = self.send(
             self.file(
-                f"{self.sine.pk},Тригонометрия,Синус суммы,",
-                f"{self.sine.pk},,Он же ещё раз,",
+                f"{self.sine.pk},Тригонометрия,Синус суммы",
+                f"{self.sine.pk},,Он же ещё раз",
             )
         )
 
@@ -358,7 +357,7 @@ class SyncRefusalTests(SyncTestCase):
 
     def test_a_section_id_on_a_lesson_row_is_refused(self):
         """У темы есть дети; молча превратив её в урок, мы их осиротим."""
-        response = self.send(self.file(f"{self.section.pk},,Тригонометрия,"))
+        response = self.send(self.file(f"{self.section.pk},,Тригонометрия"))
 
         self.assertUntouched(response, "csv_id_kind_changed")
 
@@ -368,13 +367,13 @@ class SyncRefusalTests(SyncTestCase):
         replace — снести всё, создать заново, потеряв содержание.
         """
         response = self.send(
-            self.file(",Тригонометрия,Синус суммы,", ",,Повторение,")
+            self.file(",Тригонометрия,Синус суммы", ",,Повторение")
         )
 
         self.assertUntouched(response, "csv_nothing_to_sync")
 
     def test_a_file_of_the_old_format_is_refused_before_the_mode_matters(self):
-        response = self.send("Тема,Урок,Заметка\nВекторы,,\n,Понятие,\n")
+        response = self.send("Тема,Урок\nВекторы,\n,Понятие\n")
 
         self.assertUntouched(response, "csv_header_invalid")
 
@@ -383,10 +382,10 @@ class SyncRefusalTests(SyncTestCase):
 
         before = self.structure()
         text = self.file(
-            f"{self.sine.pk},Тригонометрия переименованная,Синус суммы,",
-            f"{self.cosine.pk},Тригонометрия переименованная,Косинус суммы,",
-            ",,Новый урок,",
-            f"{self.loose.pk},,Повторение,",
+            f"{self.sine.pk},Тригонометрия переименованная,Синус суммы",
+            f"{self.cosine.pk},Тригонометрия переименованная,Косинус суммы",
+            ",,Новый урок",
+            f"{self.loose.pk},,Повторение",
         )
 
         with patch.object(
@@ -443,7 +442,7 @@ class PreviewTests(SyncTestCase):
     def test_preview_changes_nothing(self):
         before = self.structure()
 
-        self.preview(self.file(f"{self.loose.pk},,Повторение,"))
+        self.preview(self.file(f"{self.loose.pk},,Повторение"))
 
         self.assertEqual(self.structure(), before)
         self.assertEqual(PlanNode.objects.filter(course=self.course).count(), 4)
@@ -458,8 +457,8 @@ class PreviewTests(SyncTestCase):
     def test_preview_counts_the_three_kinds_of_change(self):
         body = self.preview(
             self.file(
-                f"{self.sine.pk},Тригонометрия,Синус суммы,",
-                ",,Тангенс суммы,",
+                f"{self.sine.pk},Тригонометрия,Синус суммы",
+                ",,Тангенс суммы",
             )
         ).json()
 
@@ -472,7 +471,7 @@ class PreviewTests(SyncTestCase):
         self.assertEqual(body["errors"], [])
 
     def test_preview_names_the_rows_whose_content_would_be_lost(self):
-        body = self.preview(self.file(f"{self.cosine.pk},Тригонометрия,Косинус суммы,")).json()
+        body = self.preview(self.file(f"{self.cosine.pk},Тригонометрия,Косинус суммы")).json()
 
         self.assertEqual(body["with_content"], 1)
         self.assertEqual(body["with_attachments"], 1)
@@ -491,7 +490,7 @@ class PreviewTests(SyncTestCase):
 
     def test_preview_of_replace_counts_the_whole_plan(self):
         body = self.preview(
-            self.file(",Векторы,Понятие,"), mode="replace"
+            self.file(",Векторы,Понятие"), mode="replace"
         ).json()
 
         self.assertEqual(body["mode"], "replace")
@@ -504,7 +503,7 @@ class PreviewTests(SyncTestCase):
         self.assertEqual(body["files_lost"], 1)
 
     def test_preview_of_append_loses_nothing(self):
-        body = self.preview(self.file(",Векторы,Понятие,"), mode="append").json()
+        body = self.preview(self.file(",Векторы,Понятие"), mode="append").json()
 
         self.assertEqual(body["delete"], 0)
         self.assertEqual(body["with_content"], 0)
@@ -516,14 +515,14 @@ class PreviewTests(SyncTestCase):
         make_attachment(template, self.stored)
 
         body = self.preview(
-            self.file(f"{self.cosine.pk},Тригонометрия,Косинус суммы,")
+            self.file(f"{self.cosine.pk},Тригонометрия,Косинус суммы")
         ).json()
 
         self.assertEqual(body["with_attachments"], 1)
         self.assertEqual(body["files_lost"], 0)
 
     def test_preview_lists_every_bad_id_at_once(self):
-        body = self.preview(self.file("9999998,,Первый,", "9999999,,Второй,")).json()
+        body = self.preview(self.file("9999998,,Первый", "9999999,,Второй")).json()
 
         self.assertEqual([error["code"] for error in body["errors"]],
                          ["csv_id_unknown", "csv_id_unknown"])
@@ -534,7 +533,7 @@ class PreviewTests(SyncTestCase):
         Предпросмотр ни от чего не отказывается: показать весь список
         полезнее, чем 400 на первой ошибке.
         """
-        body = self.preview(self.file(",Векторы,,", ",,,заметка")).json()
+        body = self.preview(self.file(",Векторы,", "412,,")).json()
 
         self.assertEqual(
             [error["code"] for error in body["errors"]],
@@ -543,7 +542,7 @@ class PreviewTests(SyncTestCase):
         self.assertEqual(body["delete"], 0)
 
     def test_preview_says_when_there_is_nothing_to_sync(self):
-        body = self.preview(self.file(",Векторы,Понятие,")).json()
+        body = self.preview(self.file(",Векторы,Понятие")).json()
 
         self.assertEqual([error["code"] for error in body["errors"]],
                          ["csv_nothing_to_sync"])

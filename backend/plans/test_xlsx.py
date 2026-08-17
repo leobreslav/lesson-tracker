@@ -21,7 +21,7 @@ from .models import PlanNode
 from .tests import PlanTestCase
 
 XLSX_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-HEADER = ("id", "Тема", "Урок", "Заметка")
+HEADER = ("id", "Тема", "Урок")
 
 
 def book_bytes(rows, *, sheets=(), title="План"):
@@ -63,14 +63,14 @@ class CellTextTests(SimpleTestCase):
 class ReadTests(SimpleTestCase):
     def test_the_first_sheet_is_read_and_the_others_are_named(self):
         data = book_bytes(
-            [HEADER, ["", "Векторы", "Понятие", ""]], sheets=("Черновик", "Заметки")
+            [HEADER, ["", "Векторы", "Понятие"]], sheets=("Черновик", "Заметки")
         )
 
         book = xlsx.read_plan_xlsx(data)
 
         self.assertEqual(book.sheet, "План")
         self.assertEqual(book.sheets_ignored, 2)
-        self.assertEqual(book.rows[1], ["", "Векторы", "Понятие", ""])
+        self.assertEqual(book.rows[1], ["", "Векторы", "Понятие"])
 
     def test_the_old_xls_format_is_refused_by_name(self):
         with self.assertRaises(xlsx.PlanImportError) as caught:
@@ -101,7 +101,7 @@ class ExportTests(PlanTestCase):
         self.assertEqual([cell.value for cell in sheet[1]], list(HEADER))
         self.assertEqual(
             [xlsx.cell_text(cell.value) for cell in sheet[2]],
-            [str(sine.pk), "Тригонометрия", "Синус суммы", ""],
+            [str(sine.pk), "Тригонометрия", "Синус суммы"],
         )
 
     def test_the_header_is_bold_and_frozen(self):
@@ -147,7 +147,7 @@ class ExportTests(PlanTestCase):
         sheet = self.sheet(self.export())
 
         self.assertLess(sheet.column_dimensions["A"].width, 10)
-        self.assertLessEqual(sheet.column_dimensions["C"].width, 60)
+        self.assertLessEqual(sheet.column_dimensions["C"].width, 70)
         self.assertGreater(sheet.column_dimensions["C"].width, 20)
 
     def test_the_filename_carries_the_course_and_the_date(self):
@@ -181,9 +181,9 @@ class ImportTests(PlanTestCase):
         data = book_bytes(
             [
                 HEADER,
-                ["", "Векторы", "Понятие вектора", "повторить"],
-                ["", "Векторы", "Сложение векторов", ""],
-                ["", "", "Повторение", ""],
+                ["", "Векторы", "Понятие вектора"],
+                ["", "Векторы", "Сложение векторов"],
+                ["", "", "Повторение"],
             ]
         )
 
@@ -198,7 +198,7 @@ class ImportTests(PlanTestCase):
         self.assertEqual(response.json()["sheets_ignored"], 0)
 
     def test_a_second_sheet_is_ignored_and_said_so(self):
-        data = book_bytes([HEADER, ["", "Векторы", "Понятие", ""]], sheets=("Ещё",))
+        data = book_bytes([HEADER, ["", "Векторы", "Понятие"]], sheets=("Ещё",))
 
         response = self.upload(data)
 
@@ -212,7 +212,7 @@ class ImportTests(PlanTestCase):
         lesson.body = "текст урока"
         lesson.save(update_fields=["body"])
 
-        data = book_bytes([HEADER, [float(lesson.pk), "Векторы", "Понятие", ""]])
+        data = book_bytes([HEADER, [float(lesson.pk), "Векторы", "Понятие"]])
 
         response = self.upload(data, mode="sync")
 
@@ -223,7 +223,7 @@ class ImportTests(PlanTestCase):
 
     def test_empty_rows_at_the_end_are_ignored(self):
         data = book_bytes(
-            [HEADER, ["", "Векторы", "Понятие", ""], [None, None, None, None], []]
+            [HEADER, ["", "Векторы", "Понятие"], [None, None, None], []]
         )
 
         response = self.upload(data)
@@ -236,7 +236,7 @@ class ImportTests(PlanTestCase):
         data = book_bytes(
             [
                 HEADER,
-                ["", 'Дроби, обыкновенные и "десятичные"', "Сложение; вычитание", "№ 12, 13"],
+                ["", 'Дроби, обыкновенные и "десятичные"', "Сложение; вычитание"],
             ]
         )
 
@@ -250,7 +250,7 @@ class ImportTests(PlanTestCase):
                 (
                     'Дроби, обыкновенные и "десятичные"',
                     "Сложение; вычитание",
-                    "№ 12, 13",
+                    "",
                     False,
                 ),
             ],
@@ -258,10 +258,10 @@ class ImportTests(PlanTestCase):
 
     def test_the_same_refusals_as_csv(self):
         cases = {
-            "csv_header_invalid": [["Тема", "Урок", "Заметка"], ["Векторы", "", ""]],
-            "csv_section_row": [HEADER, ["", "Векторы", "", ""]],
-            "csv_bad_id": [HEADER, ["абв", "Векторы", "Понятие", ""]],
-            "csv_row_too_long": [HEADER, ["", "Векторы", "о" * 201, ""]],
+            "csv_header_invalid": [["Тема", "Урок"], ["Векторы", ""]],
+            "csv_section_row": [HEADER, ["", "Векторы", ""]],
+            "csv_bad_id": [HEADER, ["абв", "Векторы", "Понятие"]],
+            "csv_row_too_long": [HEADER, ["", "Векторы", "о" * 201]],
         }
 
         for code, rows in cases.items():
@@ -288,7 +288,7 @@ class ImportTests(PlanTestCase):
         self.assertEqual(response.json()["code"], "file_not_xlsx")
 
     def test_mode_is_required(self):
-        data = book_bytes([HEADER, ["", "Векторы", "Понятие", ""]])
+        data = book_bytes([HEADER, ["", "Векторы", "Понятие"]])
 
         response = self.client.post(
             f"{reverse('plannode-import-xlsx')}?course={self.course.pk}",
@@ -300,7 +300,7 @@ class ImportTests(PlanTestCase):
         self.assertEqual(response.json()["code"], "mode_required")
 
     def test_cannot_import_into_another_users_course(self):
-        data = book_bytes([HEADER, ["", "Векторы", "Понятие", ""]])
+        data = book_bytes([HEADER, ["", "Векторы", "Понятие"]])
 
         response = self.upload(data, course=self.alien_class)
 
@@ -401,7 +401,7 @@ class PreviewTests(PlanTestCase):
         """Клиент xlsx не разбирает — «как прочитано» он узнаёт отсюда."""
         self.add("Старый урок", position=0)
         data = book_bytes(
-            [HEADER, ["", "Векторы", "Понятие", ""], ["", "Векторы", "Сложение", ""]],
+            [HEADER, ["", "Векторы", "Понятие"], ["", "Векторы", "Сложение"]],
             sheets=("Черновик",),
         )
 
@@ -418,7 +418,7 @@ class PreviewTests(PlanTestCase):
     def test_preview_changes_nothing(self):
         self.add("Старый урок", position=0)
 
-        self.preview(book_bytes([HEADER, ["", "Векторы", "Понятие", ""]]),
+        self.preview(book_bytes([HEADER, ["", "Векторы", "Понятие"]]),
                      mode="replace")
 
         self.assertEqual(self.structure(), ["Старый урок"])
