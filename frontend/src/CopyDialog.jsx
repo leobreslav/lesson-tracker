@@ -31,6 +31,7 @@ export default function CopyDialog({
     end: addDays(source.end, span),
   })
   const [mode, setMode] = useState('merge')
+  const [step, setStep] = useState(1) // 1 — каждую неделю, 2 — через неделю
   const [picked, setPicked] = useState(() => new Set(classes.map((item) => item.id)))
 
   // the callback lives in a ref: an inline function from the parent must not
@@ -54,6 +55,7 @@ export default function CopyDialog({
         targetStart: target.start,
         targetEnd: target.end,
         mode,
+        step,
         classIds: picked,
       })
     : null
@@ -65,6 +67,7 @@ export default function CopyDialog({
         target_start: target.start,
         target_end: target.end,
         mode,
+        step,
         classIds: [...picked],
       })
     }
@@ -96,6 +99,31 @@ export default function CopyDialog({
               value={target.end}
               onChange={(event) => setTarget({ ...target, end: event.target.value })}
             />
+          </label>
+        </div>
+
+        {/* Курс, который идёт раз в две недели, копировался вдвое чаще,
+            чем бывает: цикл источника повторялся каждую неделю. Шаг
+            растягивает цикл, а не источник — пропущенная неделя выходит
+            сама, и предпросмотр считает её так же, как сервер. */}
+        <div className="row">
+          <label className="checkbox">
+            <input
+              type="radio"
+              name="step"
+              checked={step === 1}
+              onChange={() => setStep(1)}
+            />
+            {t('copy.everyWeek')}
+          </label>
+          <label className="checkbox">
+            <input
+              type="radio"
+              name="step"
+              checked={step === 2}
+              onChange={() => setStep(2)}
+            />
+            {t('copy.everyOtherWeek')}
           </label>
         </div>
 

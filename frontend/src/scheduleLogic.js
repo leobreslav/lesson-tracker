@@ -19,8 +19,15 @@ import { addDays, daysBetween, eachDate } from './calendarLogic.js'
 export const MAX_LESSON_NUMBER = 10
 
 /** The source cycle in days, rounded up to whole weeks. */
-export function cycleDays(startIso, endIso) {
-  return Math.ceil((daysBetween(startIso, endIso) + 1) / 7) * 7
+/**
+ * Длина цикла источника: недели, округлённые вверх, умноженные на шаг.
+ *
+ * `step` — «через сколько раз повторять»: 1 каждую неделю, 2 через
+ * неделю. Растягивается цикл, а не источник, поэтому пропущенная неделя
+ * получается сама: её даты смотрят в пустой хвост цикла.
+ */
+export function cycleDays(startIso, endIso, step = 1) {
+  return Math.ceil((daysBetween(startIso, endIso) + 1) / 7) * 7 * step
 }
 
 /** Which source day answers for a target date. */
@@ -74,6 +81,7 @@ export function planCopy({
   targetStart,
   targetEnd,
   mode,
+  step = 1,
   classIds = null,
 }) {
   const chosen = (slot) => !classIds || classIds.has(slot.course_id)
@@ -105,7 +113,7 @@ export function planCopy({
     .filter((slot) => !chosen(slot) && !slot.is_cancelled)
     .forEach((slot) => taken.add(at(slot.date, slot.lesson_number)))
 
-  const cycle = cycleDays(sourceStart, sourceEnd)
+  const cycle = cycleDays(sourceStart, sourceEnd, step)
   let created = 0
   let skipped = 0
 

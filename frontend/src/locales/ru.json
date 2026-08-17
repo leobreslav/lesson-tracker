@@ -268,7 +268,9 @@
     "summary": "Создано уроков: {{created}}, пропущено: {{skipped}}",
     "summaryDeleted": ", удалено при замене: {{deleted}}",
     "summaryConflicts": " Уже занято другими классами: {{list}}",
-    "summaryMore": " и ещё {{count}}."
+    "summaryMore": " и ещё {{count}}.",
+    "everyWeek": "Каждую неделю",
+    "everyOtherWeek": "Через неделю"
   },
   "csv": {
     "title": "Импорт плана",

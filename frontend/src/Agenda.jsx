@@ -425,7 +425,7 @@ export default function Agenda({ status, onStatusChange, onLoggedOut }) {
   }
 
   /** Copying: every class in one request, a subset one request per class. */
-  const handleCopy = ({ target_start, target_end, mode, classIds }) => {
+  const handleCopy = ({ target_start, target_end, mode, step, classIds }) => {
     const source = copyRange
     const everyClass = classIds.length === visibleClasses.length
 
@@ -436,6 +436,7 @@ export default function Agenda({ status, onStatusChange, onLoggedOut }) {
         target_start,
         target_end,
         mode,
+        step,
       }
 
       if (everyClass) return copySlots(common)

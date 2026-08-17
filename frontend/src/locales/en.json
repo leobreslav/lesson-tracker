@@ -261,7 +261,9 @@
     "summary": "Created {{created}} lessons, skipped {{skipped}}",
     "summaryDeleted": ", deleted while replacing {{deleted}}",
     "summaryConflicts": " Already taken by other classes: {{list}}",
-    "summaryMore": " and {{count}} more."
+    "summaryMore": " and {{count}} more.",
+    "everyWeek": "Every week",
+    "everyOtherWeek": "Every other week"
   },
   "csv": {
     "title": "Import a plan",

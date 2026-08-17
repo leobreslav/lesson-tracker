@@ -164,7 +164,7 @@ def occupied_message(day: date, lesson_number: int, class_name: str) -> str:
     return f"{day.isoformat()}, lesson {lesson_number} is taken by {class_name}"
 
 
-def cycle_days(start_date: date, end_date: date) -> int:
+def cycle_days(start_date: date, end_date: date, step: int = 1) -> int:
     """
     Длина цикла источника в днях, округлённая вверх до целых недель.
 
@@ -172,10 +172,15 @@ def cycle_days(start_date: date, end_date: date) -> int:
     понедельники: сдвиг на целое число недель дня недели не меняет.
     Двухнедельный источник даёт цикл в 14 дней, то есть чередование недель
     повторяется, а не схлопывается.
+
+    `step` — «через сколько раз повторять»: 1 значит каждую неделю, 2 —
+    через неделю. Растягивается именно цикл, а не источник: в пропущенную
+    неделю целевые даты смотрят в пустой хвост цикла и не находят там
+    ничего. Отдельной ветки «а тут не копируем» поэтому нет вовсе.
     """
     span = (end_date - start_date).days + 1
     weeks = -(-span // 7)  # деление с округлением вверх
-    return weeks * 7
+    return weeks * 7 * step
 
 
 def source_date_for(target: date, source_start: date, cycle: int) -> date:
@@ -192,6 +197,7 @@ def plan_copy(
     target_end: date,
     source_numbers: Mapping[date, Sequence[int]],
     study_dates: Iterable[date],
+    step: int = 1,
 ) -> tuple[list[tuple[date, int]], int]:
     """
     Что нужно создать в целевом периоде.
@@ -199,8 +205,11 @@ def plan_copy(
     `source_numbers` — номера уроков по датам источника, уже отфильтрованные
     по «обычности». Возвращает план (пары дата+номер) и число уроков,
     пропущенных из-за неучебных дней цели.
+
+    `step=2` — «через неделю»: цикл вдвое длиннее источника, и половина
+    целевых дат попадает в его пустую половину.
     """
-    cycle = cycle_days(source_start, source_end)
+    cycle = cycle_days(source_start, source_end, step)
     study = set(study_dates)
     plan: list[tuple[date, int]] = []
     skipped = 0

@@ -118,3 +118,55 @@ class PlanCopyTests(SimpleTestCase):
         plan, skipped = self.plan({}, target_start, target_end, set())
 
         self.assertEqual((plan, skipped), ([], 0))
+
+
+class EveryOtherWeekTests(SimpleTestCase):
+    """
+    «Через неделю»: цикл вдвое длиннее источника.
+
+    Курс, который идёт раз в две недели, копированием каждой недели
+    получал вдвое больше уроков, чем бывает. Отдельной ветки «а сюда не
+    копируем» для этого не понадобилось: растягивается цикл, и половина
+    целевых дат смотрит в его пустой хвост.
+    """
+
+    monday = date(2026, 9, 7)
+
+    def copy(self, *, step, weeks=4):
+        start = self.monday
+        target_start = start + timedelta(days=7)
+        target_end = target_start + timedelta(days=7 * weeks - 1)
+
+        plan, skipped = services.plan_copy(
+            source_start=start,
+            source_end=start + timedelta(days=6),
+            target_start=target_start,
+            target_end=target_end,
+            source_numbers={start: [1], start + timedelta(days=2): [2]},
+            study_dates=services.iter_dates(target_start, target_end),
+            step=step,
+        )
+        return plan, skipped
+
+    def test_every_week_fills_every_week(self):
+        plan, _ = self.copy(step=1)
+
+        self.assertEqual(len(plan), 8)
+
+    def test_every_other_week_skips_half(self):
+        plan, _ = self.copy(step=2)
+
+        self.assertEqual(len(plan), 4)
+
+    def test_the_skipped_weeks_are_the_odd_ones(self):
+        """Чётность считается от источника, а не от начала цели."""
+        plan, _ = self.copy(step=2)
+        weeks = sorted({(day - self.monday).days // 7 for day, _ in plan})
+
+        self.assertEqual(weeks, [2, 4])
+
+    def test_nothing_is_reported_as_skipped_by_the_calendar(self):
+        """Пропущенная неделя — не «пропали уроки»: их там и не было."""
+        _, skipped = self.copy(step=2)
+
+        self.assertEqual(skipped, 0)

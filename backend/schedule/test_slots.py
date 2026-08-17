@@ -13,6 +13,7 @@ from schools.testing import (
     YEAR_START,
     SchoolTestMixin,
     make_course,
+    make_slot,
     make_year,
 )
 
@@ -600,3 +601,55 @@ class StatsTests(SlotTestCase):
         data = self.client.get(reverse("slot-stats")).json()
 
         self.assertEqual(data["total"], 6)
+
+
+class CopyEveryOtherWeekTests(SchoolTestMixin, APITestCase):
+    """Шаг доезжает до сервера: «через неделю» — половина уроков."""
+
+    def setUp(self):
+        super().setUp()
+        self.year = make_year(self.school)
+        self.course = make_course(self.school, self.year, "9Б Алгебра")
+        assign(self.user, self.course)
+        make_slot(self.user, self.course, MONDAY, 1)
+        make_slot(self.user, self.course, MONDAY + timedelta(days=2), 2)
+
+    def copy(self, **extra):
+        response = self.client.post(
+            reverse("slot-copy"),
+            {
+                "course_id": self.course.pk,
+                "source_start": MONDAY.isoformat(),
+                "source_end": (MONDAY + timedelta(days=6)).isoformat(),
+                "target_start": (MONDAY + timedelta(days=7)).isoformat(),
+                "target_end": (MONDAY + timedelta(days=27)).isoformat(),
+                "mode": "merge",
+                **extra,
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200, response.content)
+        return response.json()
+
+    def test_every_week_is_the_default(self):
+        self.assertEqual(self.copy()["created"], 6)
+
+    def test_every_other_week_creates_half(self):
+        """Три недели цели, чётность от источника: заполняется одна, вторая."""
+        self.assertEqual(self.copy(step=2)["created"], 2)
+
+    def test_a_step_of_three_is_refused(self):
+        response = self.client.post(
+            reverse("slot-copy"),
+            {
+                "course_id": self.course.pk,
+                "source_start": MONDAY.isoformat(),
+                "source_end": (MONDAY + timedelta(days=6)).isoformat(),
+                "target_start": (MONDAY + timedelta(days=7)).isoformat(),
+                "target_end": (MONDAY + timedelta(days=13)).isoformat(),
+                "step": 3,
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400)

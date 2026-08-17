@@ -63,6 +63,7 @@ for (const spec of CASES.cases) {
       targetStart: spec.target.start,
       targetEnd: spec.target.end,
       mode: spec.mode,
+      step: spec.step ?? 1,
       classIds: new Set([courseId(spec.copy)]),
     })
 

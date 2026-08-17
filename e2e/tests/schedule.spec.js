@@ -140,6 +140,40 @@ test('копирование недели на месяц не ставит ур
   expect(after.body.length).toBeGreaterThan(0)
 })
 
+test('«через неделю» вдвое сокращает предпросмотр копирования', async ({
+  page,
+  signIn,
+}) => {
+  // Курс, который идёт раз в две недели, копированием каждой недели
+  // получал вдвое больше уроков, чем бывает. Что предпросмотр считает то
+  // же, что положит сервер, проверяют общие случаи в `mirrors/copy.json`;
+  // здесь — что переключатель до него доходит.
+  await signIn(PEOPLE.ivanova)
+  await openWeek(page, MONDAY)
+
+  await page.locator(`[data-day-head="${MONDAY}"]`).click()
+  await page.locator(`[data-day-head="${FRIDAY}"]`).click({ modifiers: ['Shift'] })
+  await page.getByRole('button', { name: 'Скопировать на период' }).click()
+
+  const dialog = page.locator('dialog.modal')
+  await dialog.getByLabel('С', { exact: true }).fill('2026-10-19')
+  await dialog.getByLabel('по', { exact: true }).fill('2026-11-13')
+
+  const created = async () => {
+    const text = await dialog.locator('.hint').last().textContent()
+    return Number(text.match(/(\d+)/)[1])
+  }
+
+  await expect(dialog.getByRole('radio', { name: 'Каждую неделю' })).toBeChecked()
+  const weekly = await created()
+  expect(weekly).toBeGreaterThan(0)
+
+  await dialog.getByRole('radio', { name: 'Через неделю' }).check()
+  const biweekly = await created()
+
+  expect(biweekly).toBeLessThan(weekly)
+})
+
 test('сводка за неделю считает уроки и отмены', async ({ page, signIn }) => {
   await signIn(PEOPLE.ivanova)
   await openWeek(page, MONDAY)

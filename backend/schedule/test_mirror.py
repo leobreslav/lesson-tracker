@@ -111,6 +111,8 @@ class CopyMirrorTests(SchoolTestMixin, APITestCase):
                 "target_start": case["target"]["start"],
                 "target_end": case["target"]["end"],
                 "mode": case["mode"],
+                # шаг есть не у всех случаев: «каждую неделю» — умолчание
+                "step": case.get("step", 1),
             },
             format="json",
         )

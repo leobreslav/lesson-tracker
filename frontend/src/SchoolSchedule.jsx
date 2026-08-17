@@ -343,7 +343,7 @@ export default function SchoolSchedule({ onLoggedOut }) {
           busy={busy}
           title={t('schoolSchedule.copyTitle')}
           note={t('schoolSchedule.copyNote')}
-          onSubmit={({ target_start, target_end, mode }) =>
+          onSubmit={({ target_start, target_end, mode, step }) =>
             run(
               () =>
                 copySlots({
@@ -352,6 +352,7 @@ export default function SchoolSchedule({ onLoggedOut }) {
                   target_start,
                   target_end,
                   mode,
+                  step,
                 }),
               (result) =>
                 t('schoolSchedule.copied', {

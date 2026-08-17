@@ -687,6 +687,9 @@ class CopySerializer(serializers.Serializer):
     target_start = serializers.DateField()
     target_end = serializers.DateField()
     mode = serializers.ChoiceField(choices=("replace", "merge"), default="merge")
+    # «через неделю»: у курса, который идёт раз в две недели, копирование
+    # каждой недели рисовало вдвое больше уроков, чем бывает
+    step = serializers.ChoiceField(choices=(1, 2), default=1)
 
     def get_fields(self):
         fields = super().get_fields()

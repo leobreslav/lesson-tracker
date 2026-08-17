@@ -647,6 +647,7 @@ class SlotViewSet(SchoolScopedViewSet):
             target_end=data["target_end"],
             source_numbers=source_numbers,
             study_dates=study_dates,
+            step=data["step"],
         )
 
         deleted = 0
