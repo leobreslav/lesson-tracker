@@ -698,12 +698,14 @@ export default function Plan({ onLoggedOut }) {
                       их как три независимых показателя, хотя третий и есть
                       разность первых двух. Приём не новый: так же собрана
                       плашка «начали / прошли целиком» в сводке работы. */}
-                  <section className="panel card-stat">
+                  <section className="panel card-stat pairs">
                     <p className="pair" data-card="slots">
-                      <b>{layout.totals.slots}</b> {t('plan.summary.slots')}
+                      <b>{layout.totals.slots}</b>
+                      <span>{t('plan.summary.slots')}</span>
                     </p>
                     <p className="pair" data-card="lessons">
-                      <b>{layout.totals.lessons}</b> {t('plan.summary.lessons')}
+                      <b>{layout.totals.lessons}</b>
+                      <span>{t('plan.summary.lessons')}</span>
                     </p>
                   </section>
                   <section
@@ -743,12 +745,17 @@ export default function Plan({ onLoggedOut }) {
                       долг. Отдельная строка легенды под сводкой объясняла
                       бы то же самое, только не там, где на значки смотрят */}
                   {layout.recorded.length > 0 && (
-                    <section data-card="records" className="panel card-stat">
+                    <section data-card="records" className="panel card-stat pairs marked">
                       <p className="pair" data-card="recorded">
                         <span className="plan-state recorded" aria-hidden="true">
                           ✓
                         </span>
-                        <b>{layout.recorded.length}</b> {t('plan.summary.recorded')}
+                        <b>{layout.recorded.length}</b>
+                        {/* число и подпись врозь, а склонение общее: подпись
+                            знает про count, но его не печатает */}
+                        <span>
+                          {t('plan.summary.recorded', { count: layout.recorded.length })}
+                        </span>
                       </p>
                       <p className="pair" data-card="debts">
                         <span className="plan-state unclosed" aria-hidden="true">
@@ -765,8 +772,10 @@ export default function Plan({ onLoggedOut }) {
                           </button>
                         ) : (
                           <b>{layout.debts.length}</b>
-                        )}{' '}
-                        {t('plan.debtsLabel')}
+                        )}
+                        <span>
+                          {t('plan.debtsLabel', { count: layout.debts.length })}
+                        </span>
                       </p>
                     </section>
                   )}

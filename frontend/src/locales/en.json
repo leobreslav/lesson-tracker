@@ -372,13 +372,14 @@
     "breakBetween": "{{title}} · {{start}} — {{end}}",
     "summary": {
       "slots": "slots",
-      "lessons": "in the plan",
+      "lessons": "lessons in the plan",
       "balance": "balance",
       "dates": "Dates",
       "sections": "themes",
       "weeks": "Weeks",
       "freeSlots": "Free",
-      "recorded": "marked as taught"
+      "recorded_one": "lesson marked as taught",
+      "recorded_other": "lessons marked as taught"
     },
     "today": "TODAY",
     "week": "wk {{number}}",
@@ -410,7 +411,8 @@
     "beforeTaught": "There is no room before a lesson already taught",
     "more": "More",
     "exportAs": "Export as {{format}}",
-    "debtsLabel": "lessons not marked"
+    "debtsLabel_one": "lesson not marked",
+    "debtsLabel_other": "lessons not marked"
   },
   "status": {
     "reserveLabel": "reserve",

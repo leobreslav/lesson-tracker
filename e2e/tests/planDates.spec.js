@@ -867,6 +867,52 @@ test('у проведённой строки органов управления
   await expect(row(3).getByTitle('Ниже')).toBeEnabled()
 })
 
+test('числа в плашках стоят столбиком, а подписи склоняются', async ({
+  page,
+  signIn,
+  api,
+}) => {
+  // «93 слотов» и «102 урока» считали ширину каждый сам, и подписи
+  // начинались на разной вертикали. Числа теперь в общей колонке сетки, а
+  // подпись знает про число, но его не печатает — склонение общее.
+  const { course, teacher } = await liveCourse(api)
+
+  // десять слотов против трёх строк плана: числа разной длины, ради них
+  // проверка и заведена
+  for (let shift = 1; shift <= 7; shift += 1) {
+    const at = new Date()
+    at.setDate(at.getDate() + shift)
+    const slot = await teacher.post('/api/slots/', {
+      course: course.id,
+      date: at.toISOString().slice(0, 10),
+      lesson_number: 1,
+    })
+    expect(slot.status, JSON.stringify(slot.body)).toBe(201)
+  }
+
+  await signIn(PEOPLE.ivanova)
+  await page.goto('/plan')
+  await ready(page)
+  await page.getByLabel('Курс').selectOption(String(course.id))
+  await expect(page.locator('.plan-cards')).toBeVisible()
+
+  const rightEdge = async (card) => {
+    const box = await page.locator(`[data-card="${card}"] b`).boundingBox()
+    return Math.round(box.x + box.width)
+  }
+
+  await expect(page.locator('[data-card="slots"]')).toContainText('10')
+  expect(await rightEdge('slots')).toBe(await rightEdge('lessons'))
+
+  // и подпись согласована с числом: одно занятие — «занятие», два —
+  // «занятия». Пробелов между числом и подписью в разметке нет вовсе —
+  // зазор рисует сетка, — поэтому спрашиваем саму подпись
+  const label = (card) =>
+    page.locator(`[data-card="${card}"] span:not(.plan-state)`)
+  await expect(label('recorded')).toHaveText('занятие проведено')
+  await expect(label('debts')).toHaveText('занятия не отмечены')
+})
+
 test('в тему, где всё проведено, урок не вставить посреди записей', async ({
   page,
   signIn,

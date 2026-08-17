@@ -382,13 +382,15 @@
     "breakBetween": "{{title}} · {{start}} — {{end}}",
     "summary": {
       "slots": "слотов",
-      "lessons": "в плане",
+      "lessons": "уроков в плане",
       "balance": "баланс",
       "dates": "Даты",
       "sections": "тем",
       "weeks": "Недели",
       "freeSlots": "Свободные",
-      "recorded": "проведено"
+      "recorded_one": "занятие проведено",
+      "recorded_few": "занятия проведены",
+      "recorded_many": "занятий проведено"
     },
     "today": "СЕГОДНЯ",
     "week": "нед {{number}}",
@@ -421,7 +423,9 @@
     "beforeTaught": "Перед проведённым уроком места нет",
     "more": "Ещё",
     "exportAs": "Экспорт в {{format}}",
-    "debtsLabel": "не отмечено занятий"
+    "debtsLabel_one": "занятие не отмечено",
+    "debtsLabel_few": "занятия не отмечены",
+    "debtsLabel_many": "занятий не отмечено"
   },
   "status": {
     "reserveLabel": "резерв",

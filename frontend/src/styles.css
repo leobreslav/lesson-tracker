@@ -2155,20 +2155,44 @@ button.badge:hover:not(:disabled) {
 }
 
 /* два числа в одной плашке: они разные по смыслу, и сальдо тут врёт */
+/*
+ * Плашка в две строки — сетка, а не два абзаца.
+ *
+ * Числа в ней разной длины (93 и 102), и пока каждая строка считала свою
+ * ширину сама, подписи начинались на разной вертикали, а числа стояли
+ * враскачку. Строки поэтому раскрываются в общую сетку (`display:
+ * contents`): колонка чисел одна на обе, и выключка у неё правая.
+ */
+.card-stat.pairs {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  align-items: baseline;
+  column-gap: 0.35rem;
+}
+
+/* со значком колонок три: значок, число, подпись */
+.card-stat.pairs.marked {
+  grid-template-columns: max-content max-content 1fr;
+}
+
 .card-stat .pair {
+  display: contents;
   margin: 0;
   font-size: 0.9rem;
   color: #5f6368;
 }
 
 .card-stat .pair b {
-  display: inline-block;
-  min-width: 1.1rem;
-  margin-right: 0.35rem;
-  text-align: right;
+  justify-self: end;
   font-size: 1.2rem;
   font-variant-numeric: lining-nums tabular-nums;
   color: #202124;
+}
+
+/* подпись — обычный текст плашки: числу свой размер, ей свой */
+.card-stat .pair > span:not(.plan-state) {
+  font-size: 0.9rem;
+  color: #5f6368;
 }
 
 /* дефицит в шапке курса — словами и красным */
@@ -2472,6 +2496,13 @@ button.chip.active:hover:not(:disabled) {
 .plan-cards .card-stat {
   padding: 0.4rem 0.6rem;
   gap: 0;
+}
+
+/* плашка в две строки — сетка, и зазор ей нужен по горизонтали: у соседей
+   он обнулён, потому что там число и подпись стоят друг под другом */
+.plan-cards .card-stat.pairs {
+  column-gap: 0.35rem;
+  row-gap: 0.1rem;
 }
 
 .plan-cards .card-stat h2 {
@@ -3864,23 +3895,15 @@ a.plan-date:hover em {
    заодно легендой — поэтому им нужна колонка постоянной ширины, иначе
    числа в двух строках плашки не встанут друг под друга */
 .card-stat .pair .plan-state {
-  display: inline-block;
   width: 0.9rem;
-  margin-right: 0.2rem;
   text-align: center;
 }
 
-/* число-кнопка («разобрать долги») ведёт себя как обычное число: свой
-   отступ у неё был бы вторым источником правды о том же зазоре */
+/* число-кнопка («разобрать долги») занимает ту же колонку, что обычное
+   число, и выключена так же вправо: иначе две строки плашки разъезжаются */
 .card-stat .pair .link {
+  justify-self: end;
   padding: 0;
-  /* зазор до подписи тот же, что у обычного числа: иначе подписи двух
-     строк плашки начинаются на разной вертикали */
-  margin-right: 0.35rem;
-}
-
-.card-stat .pair .link b {
-  margin-right: 0;
 }
 
 .plan-bar {
