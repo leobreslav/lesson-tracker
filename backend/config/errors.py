@@ -90,6 +90,7 @@ class Codes:
     SLOT_RECORD_NO_ROW = "slot_record_no_row"
     PLAN_LESSON_TAUGHT = "plan_lesson_taught"
     PLAN_BEFORE_TAUGHT = "plan_before_taught"
+    PLAN_DELETE_TAUGHT = "plan_delete_taught"
     SLOT_MOVE_BREAKS_ORDER = "slot_move_breaks_order"
     SLOT_NOT_MINE = "slot_not_mine"
 

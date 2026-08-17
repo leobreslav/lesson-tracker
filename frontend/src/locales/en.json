@@ -236,7 +236,8 @@
     "slot_record_no_row": "The plan has no row left for this hour — add one first.",
     "slot_record_not_suggested": "The layout puts «{{title}}» in this hour: rows are recorded in order.",
     "plan_before_taught": "«{{title}}» has already been taught — a lesson not yet given cannot go before it",
-    "slot_move_breaks_order": "The move would leave {{date}} unrecorded among closed lessons: records go one after another, without gaps"
+    "slot_move_breaks_order": "The move would leave {{date}} unrecorded among closed lessons: records go one after another, without gaps",
+    "plan_delete_taught": "«{{title}}» was taught on {{date}} — withdraw the record before deleting the row"
   },
   "classPicker": {
     "label": "Classes:",
@@ -340,7 +341,8 @@
       "title": "Delete the theme «{{title}}»?",
       "hint": "It holds {{count}}. They can be lifted to the top level — they take the theme's place and keep their order.",
       "keep": "Delete, keep the lessons",
-      "withChildren": "Delete with the lessons"
+      "withChildren": "Delete with the lessons",
+      "taught": "Some lessons here have already been taught — the section cannot go together with them: withdraw the records first."
     },
     "importLibrary": "From the library",
     "publish": "To the library",

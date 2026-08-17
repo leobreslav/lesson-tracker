@@ -322,6 +322,93 @@ class NoRoomBeforeTaughtTests(LayoutApiTestCase):
         self.assertEqual(response.status_code, 200, response.content)
 
 
+class TaughtRowsResistCreationAndDeletionTests(LayoutApiTestCase):
+    """
+    Перед проведённой строкой не только не переставляют — туда и не
+    создают, а саму её не удаляют.
+
+    Запрет стоял на переносе, и обе дыры обходили его с других сторон:
+    «+» у строки внутри темы, где всё проведено, вставляла непроведённый
+    урок в середину цепочки записей, а крестик уносил связь вместе со
+    строкой — прошедший час оставался незакрытым посреди закрытых.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.lessons = list(self.trig.children.order_by("position"))
+        self.slot = self.add_slot(MONDAY)
+        self.slot.lesson = self.lessons[0]
+        self.slot.save(update_fields=["lesson"])
+
+    def create(self, **body):
+        return self.client.post(
+            reverse("plannode-list"),
+            {"course": self.course.pk, "title": "Новый урок", **body},
+            format="json",
+        )
+
+    def test_a_row_after_the_last_record_is_allowed(self):
+        """Тот самый случай, ради которого «+» и нужна."""
+        response = self.create(parent=self.trig.pk, after=self.lessons[0].pk)
+
+        self.assertEqual(response.status_code, 201, response.content)
+
+    def test_a_row_before_a_record_is_refused(self):
+        # ставим вторую запись, чтобы «после первой» оказалось «перед второй»
+        second = self.add_slot(MONDAY + timedelta(days=1))
+        second.lesson = self.lessons[1]
+        second.save(update_fields=["lesson"])
+
+        response = self.create(parent=self.trig.pk, after=self.lessons[0].pk)
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json()["code"], "plan_before_taught")
+
+    def test_the_refused_row_is_not_left_behind(self):
+        """Проверка стоит после записи в базу, значит откат обязателен."""
+        second = self.add_slot(MONDAY + timedelta(days=1))
+        second.lesson = self.lessons[1]
+        second.save(update_fields=["lesson"])
+        before = PlanNode.objects.filter(course=self.course).count()
+
+        self.create(parent=self.trig.pk, after=self.lessons[0].pk)
+
+        self.assertEqual(PlanNode.objects.filter(course=self.course).count(), before)
+
+    def test_appending_to_the_end_of_the_plan_is_always_fine(self):
+        response = self.create()
+
+        self.assertEqual(response.status_code, 201, response.content)
+
+    def test_a_taught_row_is_not_deleted(self):
+        response = self.client.delete(
+            reverse("plannode-detail", args=[self.lessons[0].pk])
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json()["code"], "plan_delete_taught")
+        self.assertTrue(PlanNode.objects.filter(pk=self.lessons[0].pk).exists())
+
+    def test_the_section_is_dissolved_even_with_a_taught_lesson(self):
+        """Вынуть уроки — значит снять ярлык: порядок и связи целы."""
+        response = self.client.delete(
+            reverse("plannode-detail", args=[self.trig.pk]) + "?keep_children=true"
+        )
+
+        self.assertEqual(response.status_code, 204, response.content)
+        self.slot.refresh_from_db()
+        self.assertEqual(self.slot.lesson_id, self.lessons[0].pk)
+
+    def test_the_section_is_not_deleted_together_with_a_taught_lesson(self):
+        response = self.client.delete(
+            reverse("plannode-detail", args=[self.trig.pk]) + "?keep_children=false"
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json()["code"], "plan_delete_taught")
+        self.assertTrue(PlanNode.objects.filter(pk=self.trig.pk).exists())
+
+
 class OneHourPerLessonTests(LayoutApiTestCase):
     """
     Одна строка плана — ровно одно занятие, и это ограничение базы.

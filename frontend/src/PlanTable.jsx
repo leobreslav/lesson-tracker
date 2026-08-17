@@ -312,27 +312,29 @@ export default function PlanTable({
   }, [nodes])
 
   /**
-   * Последняя проведённая строка — единственная, к которой ещё есть дело.
+   * Можно ли вставить строку **после** этой.
    *
-   * Провели то, чего в плане нет, — строку дописывают сразу за ней, и «+»
-   * у неё это ровно то нажатие. У проведённых выше не остаётся ни одного
-   * осмысленного действия: ни двинуть, ни удалить, ни вставить между двумя
-   * записями — очередь этого всё равно не примет.
+   * Правило одно на все случаи: новая строка встанет следом, то есть на
+   * номер +1, и он должен быть строго за границей. У проведённой это
+   * значит «только у последней» — за ней место свободно; у непроведённой,
+   * оказавшейся перед границей, «+» не показываем вовсе: сервер откажет
+   * (`plan_before_taught`), а кнопка, умеющая только отказать, обещает
+   * то, чего не будет.
+   *
+   * Тема спрашивает то же про свой последний урок: «+» в её шапке
+   * дописывает в конец блока. Пустая тема номеров не имеет — там и мерить
+   * нечего, спросит сервер.
    */
-  const lastTaughtId = useMemo(() => {
-    let found = null
+  const mayInsertAfter = (node) => {
+    if (!boundary) return true
 
-    const visit = (node) => {
-      if (node.taught && node.number === boundary) found = node.id
+    if (node.is_section) {
+      const numbers = (node.children ?? []).map((child) => child.number).filter(Boolean)
+      return numbers.length === 0 || Math.max(...numbers) >= boundary
     }
 
-    ;(nodes ?? []).forEach((node) => {
-      visit(node)
-      ;(node.children ?? []).forEach(visit)
-    })
-
-    return found
-  }, [nodes, boundary])
+    return (node.number ?? 0) >= boundary
+  }
 
   /** Выше подниматься некуда: там уже проведённые уроки. */
   const beforeTaught = (node) => {
@@ -648,7 +650,7 @@ export default function PlanTable({
 
           <span className="row-actions">
             {moveButtons(node, false)}
-            {(!locked(node) || node.id === lastTaughtId) && (
+            {mayInsertAfter(node) && (
               <button
                 type="button"
                 className="link"
@@ -734,15 +736,17 @@ export default function PlanTable({
 
                   <span className="row-actions">
                     {moveButtons(node, true)}
-                    <button
-                      type="button"
-                      className="link"
-                      title={t('plan.addToSection')}
-                      disabled={busy}
-                      onClick={() => add({ parent: node.id })}
-                    >
-                      +
-                    </button>
+                    {mayInsertAfter(node) && (
+                      <button
+                        type="button"
+                        className="link"
+                        title={t('plan.addToSection')}
+                        disabled={busy}
+                        onClick={() => add({ parent: node.id })}
+                      >
+                        +
+                      </button>
+                    )}
                     <button
                       type="button"
                       className="link"

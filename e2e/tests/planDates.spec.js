@@ -854,3 +854,54 @@ test('у проведённой строки органов управления
   await expect(row(3).getByTitle('Выше')).toBeEnabled()
   await expect(row(3).getByTitle('Ниже')).toBeEnabled()
 })
+
+test('в тему, где всё проведено, урок не вставить посреди записей', async ({
+  page,
+  signIn,
+  api,
+}) => {
+  // Самая тихая из дыр: перенос строки за спину записи запрещали, а «+» в
+  // шапке темы вставляла туда новую — то есть делала руками ровно ту
+  // дыру, которую перенос делать не даёт.
+  const { course, rows, slots, teacher } = await liveCourse(api)
+
+  // заводим тему с одним уроком и записываем его вторым часом; за ней
+  // остаётся третья строка плана — непроведённая
+  const section = await teacher.post('/api/plan/', {
+    course: course.id,
+    title: 'Тема с записью',
+    is_section: true,
+    before: rows[1].id,
+  })
+  expect(section.status, JSON.stringify(section.body)).toBe(201)
+  const inside = await teacher.post('/api/plan/', {
+    course: course.id,
+    parent: section.body.id,
+    title: 'Единственный урок темы',
+  })
+  expect(inside.status, JSON.stringify(inside.body)).toBe(201)
+  const done = await teacher.patch(`/api/slots/${slots[1].id}/`, {
+    lesson: inside.body.id,
+  })
+  expect(done.status, JSON.stringify(done.body)).toBe(200)
+
+  await signIn(PEOPLE.ivanova)
+  await page.goto('/plan')
+  await ready(page)
+  await page.getByLabel('Курс').selectOption(String(course.id))
+  await expect(page.locator('.plan-cards')).toBeVisible()
+
+  // тема кончается последней записью — дописать в неё можно
+  const head = page.locator('.plan-section .section-head', { hasText: 'Тема с записью' })
+  await head.hover()
+  await expect(head.getByTitle('Добавить урок в тему')).toBeVisible()
+
+  // а вот у первой строки, за которой стоит ещё одна запись, «+» нет
+  const first = page
+    .locator('.plan-row.lesson', {
+      has: page.locator('.plan-number', { hasText: /^1$/ }),
+    })
+    .first()
+  await first.hover()
+  await expect(first.getByTitle('Вставить урок после')).toHaveCount(0)
+})

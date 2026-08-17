@@ -1171,6 +1171,14 @@ export default function Plan({ onLoggedOut }) {
               count: t('common.lessonCount', { count: deleting.children.length }),
             })}
           </p>
+          {/* Вынуть уроки можно всегда: тема — ярлык, и её снос не трогает
+              ни порядок, ни записи. А снести вместе с уроками, среди
+              которых есть проведённый, значит оставить прошедший час без
+              записи посреди закрытых; сервер это и не даст
+              (`plan_delete_taught`), но объяснить надо до нажатия */}
+          {deleting.children.some((child) => child.taught) && (
+            <p className="hint">{t('plan.removeSection.taught')}</p>
+          )}
           <div className="actions">
             <button type="button" disabled={busy} onClick={() => removeSection(true)}>
               {t('plan.removeSection.keep')}
@@ -1178,7 +1186,7 @@ export default function Plan({ onLoggedOut }) {
             <button
               type="button"
               className="secondary"
-              disabled={busy}
+              disabled={busy || deleting.children.some((child) => child.taught)}
               onClick={() => removeSection(false)}
             >
               {t('plan.removeSection.withChildren')}

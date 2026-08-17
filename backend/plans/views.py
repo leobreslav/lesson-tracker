@@ -176,6 +176,33 @@ def refuse_if_before_taught(node) -> None:
     )
 
 
+def refuse_if_deleting_taught(node) -> None:
+    """
+    Проведённую строку не удаляют: за ней записан час.
+
+    Удаление уносило бы связь (`SET_NULL`), и прошедший час оставался бы
+    незакрытым посреди закрытых — дыра, из-за которой очередь встаёт.
+    Передумали — сначала снимите запись, а снять можно только последнюю:
+    очередь разбирают с конца, как её и собирали.
+    """
+    from schedule.models import Slot
+
+    taught = (
+        Slot.objects.filter(Q(lesson=node) | Q(lesson__parent=node))
+        .select_related("lesson")
+        .first()
+    )
+    if taught is not None:
+        api_error(
+            Codes.PLAN_DELETE_TAUGHT,
+            f"«{taught.lesson.title}» was taught on {taught.date}: withdraw "
+            "the record before deleting the row.",
+            field="id",
+            title=taught.lesson.title,
+            date=str(taught.date),
+        )
+
+
 def perform_move(node, data) -> Response:
     form = MoveSerializer(data=data)
     form.is_valid(raise_exception=True)
@@ -743,6 +770,23 @@ class PlanNodeViewSet(CourseScopedViewSet):
             )
         )
 
+    def perform_create(self, serializer):
+        """
+        Новая строка тоже не встаёт перед проведённой.
+
+        Запрет ставился на перенос, а создание ходило мимо: «+» у строки
+        внутри темы, где всё проведено, вставляла непроведённый урок в
+        середину непрерывной цепочки записей — то есть делала руками ровно
+        ту дыру, которую перенос делать не даёт.
+
+        Случай, ради которого «+» и нужна, при этом остаётся: если за темой
+        записей больше нет, новая строка приземляется сразу за последней —
+        и это законно.
+        """
+        with transaction.atomic():
+            node = serializer.save()
+            refuse_if_before_taught(node)
+
     def destroy(self, request, *args, **kwargs):
         node = self.get_object()
         # by default the content survives: lessons surface to the top level
@@ -750,6 +794,13 @@ class PlanNodeViewSet(CourseScopedViewSet):
             "false",
             "0",
         )
+
+        # Тема, из которой уроки вынимают, — просто ярлык: порядок и связи
+        # переживают её снос целиком. А вот удалить проведённую строку
+        # значит оставить прошедший час без записи посреди закрытых —
+        # ту же дыру, которую запрещают перенос и создание.
+        if not (node.is_section and keep_children):
+            refuse_if_deleting_taught(node)
 
         with transaction.atomic():
             if node.is_section and keep_children:
