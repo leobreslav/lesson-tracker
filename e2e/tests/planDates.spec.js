@@ -1130,3 +1130,29 @@ test('стрелки отрываются от списка: строка ход
   await expect(floating).toHaveCount(0)
   await expect(held).not.toHaveClass(/held/)
 })
+
+test('формула в названии урока рисуется формулой', async ({ page, signIn }) => {
+  // План читают глазами, и `$\sin(a+b)$` в сорока строках подряд читается
+  // хуже, чем сама формула. KaTeX при этом приезжает отдельным куском и
+  // только когда доллары в строке есть.
+  await signIn(PEOPLE.ivanova)
+  await openPlan(page)
+
+  const row = page.locator('.plan-row.lesson').first()
+  const title = row.locator('.title')
+
+  // пока формул нет, KaTeX на странице тоже нет
+  await expect(page.locator('.katex')).toHaveCount(0)
+
+  await title.click()
+  const panel = page.locator('dialog.modal')
+  const field = panel.getByLabel('Название')
+  await field.fill('Формула $\\sin(a+b)$')
+  await panel.getByRole('button', { name: 'Сохранить' }).click()
+  await panel.locator('.modal-close').click()
+
+  // формула отрисована, а в подсказке остался исходный текст
+  await expect(row.locator('.katex')).toHaveCount(1)
+  await expect(title).toContainText('Формула')
+  await expect(title).toHaveAttribute('title', 'Формула $\\sin(a+b)$')
+})

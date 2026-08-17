@@ -21,6 +21,7 @@ import { Link } from 'react-router-dom'
 import { dayMonth, shortDate, shortWeekday } from './dates'
 import { resolveDropTarget } from './planLogic'
 import { useDismissable } from './UserMenu'
+import MathText from './MathText'
 import { remember, remembered } from './remember'
 
 /**
@@ -685,7 +686,10 @@ export default function PlanTable({
               disabled={busy}
               onClick={() => openLesson(node.id)}
             >
-              {node.title}
+              {/* `$\sin(a+b)$` в сорока строках подряд читается хуже, чем
+                  сама формула; в `title=` при этом остаётся исходный текст —
+                  подсказка должна показывать то, что правят */}
+              <MathText text={node.title} />
             </button>
 
             {/* Значков «есть содержание» и «есть вложения» тут больше нет.
@@ -780,7 +784,7 @@ export default function PlanTable({
                       disabled={busy}
                       onClick={() => startEdit(node)}
                     >
-                      {node.title}
+                      <MathText text={node.title} />
                     </button>
                     {/* только число уроков: даты этой главы и так стоят в её
                         строках, а левая колонка — не место для правой зоны */}
