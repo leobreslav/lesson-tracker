@@ -607,6 +607,7 @@ def make_slots(year, courses) -> int:
 
     unassigned = UNASSIGNED[0]
     schedules = [*COURSES, (unassigned, None, None, None, UNASSIGNED[3])]
+    make_ups = []
 
     for order, (name, _, _, _, week) in enumerate(schedules):
         course = courses[name]
@@ -636,28 +637,58 @@ def make_slots(year, courses) -> int:
                 slot.save(update_fields=["is_cancelled", "reason"])
 
         if past:
-            # отработка: суббота вместо сорванного дня. Номер спрашиваем —
-            # у учителя три курса, и «девятый, он всегда свободен» ставило
-            # бы три отработки в один час
-            make_up = past[0].date + timedelta(days=(5 - past[0].date.weekday()) % 7)
-            lead = CourseAssignment.objects.filter(course=course).first()
-            number = schedule_services.free_number(
-                teacher_id=lead.teacher_id if lead else None,
-                year=year,
-                day=make_up,
-                start=8,
-            )
-            if number is not None:
-                Slot.objects.get_or_create(
-                    year=year,
-                    course=course,
-                    date=make_up,
-                    lesson_number=number,
-                    defaults={"is_extra": True, "reason": "Отработка"},
-                )
-                total += 1
+            make_ups.append((order, course, past[0].date))
 
+    total += place_make_ups(year, study_days, make_ups)
     return total
+
+
+def place_make_ups(year, study_days, make_ups) -> int:
+    """
+    Отработки взамен сорванных дней — **после** того, как разложена вся
+    сетка.
+
+    Порядок здесь не косметика: номер спрашивается у `free_number`, а тот
+    смотрит в базу. Пока отработка ставилась в том же проходе, что и сетка,
+    она видела расписание только тех курсов, до которых цикл уже дошёл, — и
+    занимала час, который следующий курс того же учителя занимал сеткой.
+    Набор падал на собственной проверке `check_conflicts`, и правильно.
+
+    День — учебный, а не «ближайшая суббота», как было сперва: субботу
+    получали **все девятнадцать курсов сразу**, и набор показывал шестнадцать
+    занятий в один неучебный день. Одному курсу суббота оставлена намеренно:
+    отработка в выходной — настоящее состояние с настоящим предупреждением,
+    и увидеть его надо, просто не в шестнадцати экземплярах.
+    """
+    study = set(study_days)
+    added = 0
+
+    for order, course, first in make_ups:
+        make_up = first + timedelta(days=(5 - first.weekday()) % 7)
+        if order % 19:
+            while make_up not in study and make_up <= year.end_date:
+                make_up += timedelta(days=1)
+
+        lead = CourseAssignment.objects.filter(course=course).first()
+        number = schedule_services.free_number(
+            teacher_id=lead.teacher_id if lead else None,
+            year=year,
+            day=make_up,
+            start=8,
+        )
+        if number is None:
+            continue
+
+        Slot.objects.get_or_create(
+            year=year,
+            course=course,
+            date=make_up,
+            lesson_number=number,
+            defaults={"is_extra": True, "reason": "Отработка"},
+        )
+        added += 1
+
+    return added
 
 
 def record(courses, plans) -> None:
@@ -681,9 +712,6 @@ def record(courses, plans) -> None:
             continue
 
         course = courses[name]
-        if Slot.objects.filter(course=course, lesson__isnull=False).exists():
-            continue
-
         past = list(
             Slot.objects.filter(
                 course=course, date__lt=today, is_cancelled=False
@@ -691,11 +719,27 @@ def record(courses, plans) -> None:
         )
         # у каждого второго курса хвост остаётся незакрытым: это и есть долг
         gap = 3 if order % 2 else 0
-        pairs = list(zip(past[: len(past) - gap], plans[name]))
+        closing = past[: len(past) - gap]
 
-        for slot, lesson in pairs:
-            slot.lesson = lesson
-        Slot.objects.bulk_update([slot for slot, _ in pairs], ["lesson"])
+        # Записи **дописываются**, а не ставятся один раз: набор
+        # идемпотентен и его сеют повторно, а между посевами проходят дни —
+        # вчерашнее будущее становится прошлым. Прежний ранний выход «у
+        # курса уже есть записи» оставлял такие часы незакрытыми посреди
+        # закрытого хвоста, а порядок записи теперь строгий, и дырка в нём
+        # держит всё, что после неё.
+        free = [row for row in plans[name] if row.pk not in {
+            slot.lesson_id for slot in closing if slot.lesson_id
+        }]
+        touched = []
+        for slot in closing:
+            if slot.lesson_id:
+                continue
+            if not free:
+                break
+            slot.lesson = free.pop(0)
+            touched.append(slot)
+
+        Slot.objects.bulk_update(touched, ["lesson"])
 
 
 def invite(school, courses, people) -> None:
