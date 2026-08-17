@@ -3729,6 +3729,36 @@ button.link.free-summary {
   background: #dbe7fa;
 }
 
+/*
+ * Строка «в руке» и стрелки, оторванные от списка.
+ *
+ * Курсор двигать нельзя, страницу под него — не всегда есть куда, поэтому
+ * стоит контрол, а ходит строка. Подсветка сильнее наведения: под курсором
+ * в этот момент чужая строка, и надо видеть, какая своя.
+ */
+.plan-row.held,
+.plan-row.held:hover,
+.plan-section.held > .plan-row.section-head {
+  background: #cfe0fb;
+}
+
+.plan-held {
+  position: fixed;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  padding: 2px 4px;
+  background: #fff;
+  border: 1px solid #cfd8e3;
+  border-radius: var(--row-radius);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.16);
+}
+
+.plan-held button.link {
+  padding: 0;
+  color: #1a73e8;
+}
+
 /* у непоместившейся строки свой красный фон — подсветка его не стирает,
    а притемняет: иначе наведение выглядело бы как «ошибка исчезла» */
 .plan-row.no-slot:hover {

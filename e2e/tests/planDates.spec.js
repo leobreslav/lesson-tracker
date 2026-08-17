@@ -1108,3 +1108,52 @@ test('после стрелки строка остаётся под курсо�
   const after = (await moved.boundingBox()).y
   expect(Math.abs(after - before), 'строка уехала из-под курсора').toBeLessThan(4)
 })
+
+test('стрелки отрываются от списка: строка ходит, блок стоит', async ({
+  page,
+  signIn,
+}) => {
+  // Второе нажатие приходилось по соседу: строки поменялись местами, а мышь
+  // осталась там же. Теперь после первого нажатия на том же месте стоит
+  // маленький блок со стрелками — он не двигается, ходит строка.
+  await signIn(PEOPLE.ivanova)
+  await openPlan(page)
+
+  // строку берём в середине темы: у первой и последней шаг вверх — это
+  // выход из блока, и сквозной номер при нём не меняется
+  const row = page
+    .locator('.plan-row.lesson', {
+      has: page.locator('.plan-number', { hasText: /^10$/ }),
+    })
+    .first()
+  const anchor = await row.getAttribute('data-node')
+  const held = page.locator(`li[data-node="${anchor}"]`)
+  const number = 10
+
+  await row.hover()
+  const arrow = row.getByTitle('Выше')
+  const box = await arrow.boundingBox()
+  await arrow.click()
+
+  // блок появился ровно там, где была кнопка
+  const floating = page.locator('.plan-held')
+  await expect(floating).toBeVisible()
+  const up = await floating.getByTitle('Выше').boundingBox()
+  expect(Math.abs(up.x - box.x), 'стрелка уехала по горизонтали').toBeLessThan(3)
+  expect(Math.abs(up.y - box.y), 'стрелка уехала по вертикали').toBeLessThan(3)
+
+  // строка подсвечена, и это она
+  await expect(held).toHaveClass(/held/)
+  await expect(held.locator('.plan-number')).toHaveText(String(number - 1))
+
+  // два нажатия по плавающей стрелке двигают ту же строку
+  await floating.getByTitle('Выше').click()
+  await expect(held.locator('.plan-number')).toHaveText(String(number - 2))
+  await floating.getByTitle('Выше').click()
+  await expect(held.locator('.plan-number')).toHaveText(String(number - 3))
+
+  // Escape отпускает
+  await page.keyboard.press('Escape')
+  await expect(floating).toHaveCount(0)
+  await expect(held).not.toHaveClass(/held/)
+})

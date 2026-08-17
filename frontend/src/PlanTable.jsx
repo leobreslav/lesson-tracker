@@ -20,6 +20,7 @@ import { EmptyDropZone, SortableRow, dragId, emptyZoneId } from './PlanDnd'
 import { Link } from 'react-router-dom'
 import { dayMonth, shortDate, shortWeekday } from './dates'
 import { resolveDropTarget } from './planLogic'
+import { useDismissable } from './UserMenu'
 import { remember, remembered } from './remember'
 
 /**
@@ -109,6 +110,20 @@ export default function PlanTable({
 
   const [freeOpen, setFreeOpen] = useState(() => remembered(FREE_OPEN_KEY, false))
   const [dragged, setDragged] = useState(null) // {node} — what is being dragged
+  /*
+   * Строка «в руке»: стрелки отрываются от списка.
+   *
+   * Поднять урок на три позиции — три нажатия по одной кнопке, а после
+   * первого строки меняются местами, и второе приходится уже по соседу.
+   * Курсор двигать браузер не даёт; прокрутка страницы под курсор помогает
+   * не всегда — выше нуля не прокрутишь, и на коротком плане тоже нечем.
+   *
+   * Поэтому после первого нажатия на том же месте появляется маленький
+   * плавающий блок со стрелками: он не двигается вообще никогда, ходит
+   * строка, и она же подсвечена. Никакой магии — видно, что взяли, и
+   * видно что именно.
+   */
+  const [held, setHeld] = useState(null) // {id, isSection, up, down}
   const [drop, setDrop] = useState(null) // {overId, side, parent, index}
 
   // --- dragging ---
@@ -357,6 +372,38 @@ export default function PlanTable({
    * и вот тут кнопка нужна на месте: пропавшая читалась бы как «сюда вообще
    * нельзя», а нельзя ей ровно в одну сторону.
    */
+  const closeHeld = useCallback(() => setHeld(null), [])
+  const heldRef = useDismissable(Boolean(held), closeHeld)
+
+  /**
+   * Взять строку в руку.
+   *
+   * Геометрию берём у самих кнопок ряда, обеих: плавающий блок повторяет
+   * их положение пиксель в пиксель, и нажатая стрелка оказывается ровно
+   * под курсором — считать отступы руками не надо.
+   */
+  const pickUp = (button, node, isSection) => {
+    const arrows = [...button.parentElement.querySelectorAll('button')].slice(0, 2)
+    if (arrows.length < 2) return
+
+    const [up, down] = arrows.map((arrow) => arrow.getBoundingClientRect())
+    setHeld({ id: node.id, isSection, up, down })
+  }
+
+  /** Узел, который держат: его могло не стать — курс сменили, строку снесли. */
+  const heldNode = useMemo(() => {
+    if (!held) return null
+
+    for (const node of nodes ?? []) {
+      if (node.id === held.id) return node
+      for (const child of node.children ?? []) if (child.id === held.id) return child
+    }
+
+    return null
+  }, [held, nodes])
+
+  const heldNoRoom = heldNode ? locked(heldNode) || beforeTaught(heldNode) : false
+
   const moveButtons = (node, isSection) => {
     if (locked(node)) return null
 
@@ -369,7 +416,10 @@ export default function PlanTable({
           className="link"
           title={t(noRoom ? 'plan.beforeTaught' : 'plan.up')}
           disabled={busy || noRoom}
-          onClick={() => move(node.id, 'up', isSection)}
+          onClick={(event) => {
+            pickUp(event.currentTarget, node, isSection)
+            move(node.id, 'up', isSection)
+          }}
         >
           ↑
         </button>
@@ -378,7 +428,10 @@ export default function PlanTable({
           className="link"
           title={t('plan.down')}
           disabled={busy}
-          onClick={() => move(node.id, 'down', isSection)}
+          onClick={(event) => {
+            pickUp(event.currentTarget, node, isSection)
+            move(node.id, 'down', isSection)
+          }}
         >
           ↓
         </button>
@@ -609,6 +662,7 @@ export default function PlanTable({
         'plan-row lesson' +
         weekStripe(node) +
         spotlightFor(node.id) +
+        (held?.id === node.id ? ' held' : '') +
         (dated && !layout.byId.get(node.id)?.slot ? ' no-slot' : '') +
         (dated && layout.byId.get(node.id)?.past ? ' past' : '')
       }
@@ -690,7 +744,9 @@ export default function PlanTable({
         key={node.id}
         id={dragId(node.id)}
         className={
-          `plan-section${isTarget ? ' drop-inside' : ''}` + spotlightFor(node.id)
+          `plan-section${isTarget ? ' drop-inside' : ''}` +
+          spotlightFor(node.id) +
+          (held?.id === node.id ? ' held' : '')
         }
         indicator={indicatorFor(node.id)}
         locked={locked(node)}
@@ -833,6 +889,42 @@ export default function PlanTable({
       </DndContext>
 
       {renderFree()}
+
+      {/* Стрелки, оторванные от списка: строка ходит, блок стоит. Ставим
+          его ровно туда, где были кнопки строки, — нажатая стрелка
+          остаётся под курсором, и второе нажатие попадает по ней же. */}
+      {heldNode && (
+        <div
+          ref={heldRef}
+          className="plan-held"
+          style={{
+            left: `${held.up.left - 4}px`,
+            top: `${held.up.top - 2}px`,
+            gap: `${Math.max(held.down.left - held.up.right, 0)}px`,
+          }}
+        >
+          <button
+            type="button"
+            className="link"
+            title={t(heldNoRoom ? 'plan.beforeTaught' : 'plan.up')}
+            disabled={busy || heldNoRoom}
+            style={{ width: `${held.up.width}px` }}
+            onClick={() => move(held.id, 'up', held.isSection)}
+          >
+            ↑
+          </button>
+          <button
+            type="button"
+            className="link"
+            title={t('plan.down')}
+            disabled={busy}
+            style={{ width: `${held.down.width}px` }}
+            onClick={() => move(held.id, 'down', held.isSection)}
+          >
+            ↓
+          </button>
+        </div>
+      )}
     </>
   )
 }
