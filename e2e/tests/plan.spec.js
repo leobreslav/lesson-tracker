@@ -127,6 +127,42 @@ test('форма вставки не закрывается, а переезжа
   await expect(page.locator('.plan-add-form')).toHaveCount(0)
 })
 
+test('тумблер переключается нажатием в любое место', async ({ page, signIn }) => {
+  // Радиокнопки отзываются только на чужой сегмент: клик по выбранному
+  // ничего не меняет и события не поднимает. Для группы из трёх вариантов
+  // это верно, а тумблер выглядит одним органом управления, и нажатие по
+  // нему значит «переключи», а не «выбери ровно это».
+  await signIn(PEOPLE.petrov)
+  await openPlan(page, EMPTY_COURSE)
+
+  await page.getByRole('button', { name: 'Добавить урок' }).click()
+  const start = page.locator('.plan-add-form')
+  await start.getByLabel('Название').fill('Первый')
+  await start.getByRole('button', { name: 'Добавить' }).click()
+  await expect(page.locator('.plan-row', { hasText: 'Первый' })).toBeVisible()
+  await page.keyboard.press('Escape')
+
+  const anchor = page.locator('.plan-row', { hasText: 'Первый' })
+  await anchor.hover()
+  await anchor.getByTitle('Вставить после').click()
+
+  const form = page.locator('.plan-add-form')
+  const lesson = form.getByRole('radio', { name: 'Урок', exact: true })
+  const section = form.getByRole('radio', { name: 'Тема', exact: true })
+  await expect(lesson).toBeChecked()
+
+  // нажатие по уже выбранному сегменту уводит к соседнему
+  await lesson.click()
+  await expect(section).toBeChecked()
+  await section.click()
+  await expect(lesson).toBeChecked()
+
+  // и по рамке между сегментами — тоже: это один орган управления
+  const box = await form.locator('.switch').boundingBox()
+  await page.mouse.click(box.x + box.width / 2, box.y + 1)
+  await expect(section).toBeChecked()
+})
+
 test('Escape закрывает форму, где бы в ней ни стоял фокус', async ({
   page,
   signIn,
