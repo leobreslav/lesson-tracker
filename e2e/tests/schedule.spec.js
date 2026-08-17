@@ -806,3 +806,29 @@ test('записанный час помечен галочкой, а занят
   const still = await teacher.get(`/api/slots/?course=${course.id}`)
   expect(still.body.some((slot) => slot.id === recorded.id)).toBe(true)
 })
+
+test('у записанного часа в меню нет ни отмены, ни удаления', async ({
+  page,
+  signIn,
+  api,
+}) => {
+  // Обе кнопки стирают запись, и сервер их отклоняет. Кнопка, умеющая
+  // только отказать, честнее не рисоваться: запись снимают на странице
+  // занятия, оттуда и продолжают.
+  const { slots } = await liveCourse(api)
+  const recorded = slots[0]
+
+  await signIn(PEOPLE.ivanova)
+  await openWeek(page, recorded.date)
+
+  await page
+    .locator(`[data-lesson="${recorded.date}:${recorded.lesson_number}"]`)
+    .click()
+
+  const menu = page.locator('dialog.modal')
+  await expect(menu.getByRole('button', { name: 'Открыть урок' })).toBeVisible()
+  await expect(menu.getByRole('button', { name: 'Отменить' })).toHaveCount(0)
+  await expect(menu.getByRole('button', { name: 'Удалить' })).toHaveCount(0)
+  // перенос остаётся: он не стирает запись, а везёт её с собой
+  await expect(menu.getByRole('button', { name: 'Перенести' })).toBeVisible()
+})

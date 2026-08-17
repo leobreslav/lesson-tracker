@@ -636,8 +636,16 @@ class Slot(models.Model):
         if not recorded:
             return None
 
+        # считаем **от первой записи**, а не от начала года: часы до неё —
+        # «до начала учёта», и требовать их закрытия значило бы отменять
+        # правило «первая запись ставится на любой прошедший час»
         hole = next(
-            (slot for slot in past[: recorded[-1]] if slot.lesson_id is None), None
+            (
+                slot
+                for slot in past[recorded[0] : recorded[-1]]
+                if slot.lesson_id is None
+            ),
+            None,
         )
         if hole is not None:
             return hole

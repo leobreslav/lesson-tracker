@@ -545,6 +545,19 @@ class SlotSerializer(serializers.ModelSerializer):
                 title=suggested.title,
             )
 
+        # Отмена записанного часа — то же стирание записи, что и удаление,
+        # только исподтишка: `Slot.lesson` остаётся, а очередь и раскладка
+        # отменённых не видят. Строка плана после такого заперта навсегда —
+        # снять запись нельзя, она уже не последняя.
+        if value("is_cancelled") and value("lesson") is not None:
+            api_error(
+                Codes.SLOT_CANCEL_RECORDED,
+                f"«{value('lesson').title}» is recorded here: withdraw the "
+                "record before cancelling the lesson.",
+                field="is_cancelled",
+                title=value("lesson").title,
+            )
+
         if year != course.year:
             api_error(
                 Codes.SLOT_YEAR_MISMATCH,

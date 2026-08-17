@@ -5,6 +5,7 @@ from django.db.models import Prefetch
 from files.models import Attachment
 from files.serializers import with_sharing
 from plans import services as plan_services
+from plans.views import refuse_if_taught_lost
 from plans.content import CONTENT_FIELDS
 from plans.models import PlanNode
 from rest_framework.decorators import action
@@ -285,6 +286,14 @@ class ImportFromTemplateView(APIView):
         form = UseTemplateSerializer(data=request.data, context={"request": request})
         form.is_valid(raise_exception=True)
         data = form.validated_data
+
+        # полка пишет в план тем же `apply_import`, а значит и сносит его
+        # так же: без этой проверки шаблон уносил бы записи о занятиях —
+        # ровно то, за что отказывает импорт файлом
+        if data["mode"] != "append":
+            refuse_if_taught_lost(
+                data["course"], plan_services.plan_nodes(data["course"].pk)
+            )
 
         result = services.import_into_course(
             template=data["template"],

@@ -94,6 +94,9 @@ class Codes:
     ROWS_INVALID = "rows_invalid"
     SLOT_MOVE_BREAKS_ORDER = "slot_move_breaks_order"
     SLOT_DELETE_RECORDED = "slot_delete_recorded"
+    SLOT_CANCEL_RECORDED = "slot_cancel_recorded"
+    SLOT_ORDER_BROKEN = "slot_order_broken"
+    PLAN_IMPORT_TAUGHT = "plan_import_taught"
     SLOT_NOT_MINE = "slot_not_mine"
 
     # bulk operations over the schedule

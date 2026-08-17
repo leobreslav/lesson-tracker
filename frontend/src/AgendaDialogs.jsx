@@ -234,14 +234,20 @@ export function LessonMenu({
             </button>
           ) : (
             <>
-              <button
-                type="button"
-                className="secondary"
-                disabled={busy}
-                onClick={() => setMode('cancel')}
-              >
-                {t('agenda.menu.cancel')}
-              </button>
+              {/* За записанным часом стоит урок: и отмена, и удаление
+                  стирают запись, а сервер их отклоняет. Кнопка, которая
+                  умеет только отказать, честнее не рисоваться — снимают
+                  запись на самой странице занятия, оттуда и продолжают */}
+              {!lesson.recorded && (
+                <button
+                  type="button"
+                  className="secondary"
+                  disabled={busy}
+                  onClick={() => setMode('cancel')}
+                >
+                  {t('agenda.menu.cancel')}
+                </button>
+              )}
               <button
                 type="button"
                 className="secondary"
@@ -252,9 +258,16 @@ export function LessonMenu({
               </button>
             </>
           )}
-          <button type="button" className="secondary" disabled={busy} onClick={onDelete}>
-            {t('common.delete')}
-          </button>
+          {!lesson.recorded && (
+            <button
+              type="button"
+              className="secondary"
+              disabled={busy}
+              onClick={onDelete}
+            >
+              {t('common.delete')}
+            </button>
+          )}
         </div>
       )}
     </Modal>

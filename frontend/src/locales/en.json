@@ -239,7 +239,10 @@
     "slot_move_breaks_order": "The move would leave {{date}} unrecorded among closed lessons: records go one after another, without gaps",
     "plan_delete_taught": "«{{title}}» was taught on {{date}} — withdraw the record before deleting the row",
     "rows_invalid": "The paste could not be read: send the table rows.",
-    "slot_delete_recorded": "«{{title}}» is recorded on {{date}} — withdraw the record before deleting the lesson"
+    "slot_delete_recorded": "«{{title}}» is recorded on {{date}} — withdraw the record before deleting the lesson",
+    "slot_cancel_recorded": "«{{title}}» is recorded here — withdraw the record before cancelling the lesson",
+    "slot_order_broken": "After this change {{date}} would sit unrecorded among closed lessons: records go one after another, without gaps",
+    "plan_import_taught": "The import would delete {{count}} rows that have already been taught, and their records with them. Withdraw the records first, or import as «Append»"
   },
   "classPicker": {
     "label": "Classes:",

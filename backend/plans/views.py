@@ -203,6 +203,45 @@ def refuse_if_deleting_taught(node) -> None:
         )
 
 
+def refuse_if_taught_lost(course, doomed) -> None:
+    """
+    Импорт не уносит проведённые строки — ни `replace`, ни `sync`.
+
+    Одиночное удаление такой строки отклоняется давно
+    (`plan_delete_taught`), а файл делал то же самое пачкой и молча: снёс
+    план, унёс записи, и восстановить их неоткуда. Отказ называет число —
+    остальное человек увидит в предпросмотре.
+    """
+    ids = [node.pk for node in doomed]
+    if not ids:
+        return
+
+    taught = Slot.objects.filter(course=course, lesson_id__in=ids).count()
+    if taught:
+        api_error(
+            Codes.PLAN_IMPORT_TAUGHT,
+            f"The import would delete {taught} rows that have already been "
+            "taught, and their records with them.",
+            field="file",
+            count=taught,
+        )
+
+
+def refuse_if_records_broken(course) -> None:
+    """Пост-условие: после правки плана записи всё ещё идут по порядку."""
+    from schedule.models import Slot as Hour
+
+    broken = Hour.broken_record(course, timezone.localdate())
+    if broken is not None:
+        api_error(
+            Codes.SLOT_ORDER_BROKEN,
+            f"{broken.date} would sit unrecorded among closed lessons: "
+            "records go one after another, without gaps.",
+            field="file",
+            date=str(broken.date),
+        )
+
+
 def perform_move(node, data) -> Response:
     form = MoveSerializer(data=data)
     form.is_valid(raise_exception=True)
@@ -661,10 +700,21 @@ class PlanNodeViewSet(CourseScopedViewSet):
                 # человека разбираться, какую именно
                 self.refuse(plan.errors)
 
+            refuse_if_taught_lost(course, plan.delete)
+
             with transaction.atomic():
                 done = services.apply_sync(course.pk, plan)
+                # файл задаёт и порядок: переставленные строки способны
+                # обогнать записи, и это ловится тем же правилом
+                refuse_if_records_broken(course)
 
             return Response({**done, **about})
+
+        if mode == "replace":
+            # replace сносит план целиком, а с ним и записи о занятиях —
+            # молча и без следа. Это то же удаление проведённой строки, за
+            # которое поодиночке отказывает `plan_delete_taught`
+            refuse_if_taught_lost(course, services.plan_nodes(course.pk))
 
         with transaction.atomic():
             if mode == "replace":

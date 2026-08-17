@@ -18,8 +18,11 @@ Replace и append читают файл как весь план целиком,
 тему, а переименование в части строк делит её надвое.
 """
 
+from datetime import timedelta
+
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.urls import reverse
+from django.utils import timezone
 from files.models import Attachment
 from schools.testing import make_attachment, make_course, make_stored_file
 
@@ -656,3 +659,83 @@ class PasteTests(SyncTestCase):
 
         self.assertEqual(response.status_code, 400)
         self.assertEqual(response.json()["code"], "csv_bad_columns")
+
+
+class ImportKeepsRecordsTests(SyncTestCase):
+    """
+    Файл не уносит записи о занятиях — ни `replace`, ни `sync`.
+
+    Одиночное удаление проведённой строки отклоняется давно, а импорт делал
+    то же самое пачкой и молча: снёс план, унёс записи, восстановить
+    неоткуда. Третий случай тоньше — порядок: файл задаёт позиции, и
+    переставленные строки способны обогнать записи.
+    """
+
+    def setUp(self):
+        super().setUp()
+        from schedule.models import Slot
+        from schools.testing import make_slot
+
+        self.hour = make_slot(
+            self.user, self.course, timezone.localdate() - timedelta(days=1), 1
+        )
+        self.hour.lesson = self.sine
+        self.hour.save(update_fields=["lesson"])
+        self.slots = Slot
+
+    def test_replace_over_a_recorded_plan_is_refused(self):
+        response = self.send(self.file(",Новая тема,Новый урок"), mode="replace")
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json()["code"], "plan_import_taught")
+        self.assertEqual(response.json()["params"]["count"], 1)
+
+    def test_sync_that_deletes_a_recorded_row_is_refused(self):
+        response = self.send(
+            self.file(
+                f"{self.cosine.pk},Тригонометрия,Косинус суммы",
+                f"{self.loose.pk},,Повторение",
+            ),
+            mode="sync",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json()["code"], "plan_import_taught")
+
+    def test_sync_that_overtakes_a_record_is_refused(self):
+        """Порядок строк в файле становится порядком плана — и обгоняет."""
+        second = self.make_recorded_second()
+
+        response = self.send(
+            self.file(
+                f"{second.pk},Тригонометрия,Косинус суммы",
+                f"{self.sine.pk},Тригонометрия,Синус суммы",
+                f"{self.loose.pk},,Повторение",
+            ),
+            mode="sync",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json()["code"], "slot_order_broken")
+
+    def test_a_sync_that_keeps_the_order_still_works(self):
+        response = self.send(self.whole_plan(sine="Синус суммы двух углов"), mode="sync")
+
+        self.assertEqual(response.status_code, 200, response.content)
+        self.sine.refresh_from_db()
+        self.assertEqual(self.sine.title, "Синус суммы двух углов")
+
+    def test_append_is_never_in_the_way(self):
+        """Дописать в конец записи не трогает — режим и остаётся выходом."""
+        response = self.send(self.file(",Новая тема,Новый урок"), mode="append")
+
+        self.assertEqual(response.status_code, 200, response.content)
+
+    def make_recorded_second(self):
+        """Второй записанный час, чтобы обгон был выразим."""
+        from schools.testing import make_slot
+
+        later = make_slot(self.user, self.course, timezone.localdate(), 1)
+        later.lesson = self.cosine
+        later.save(update_fields=["lesson"])
+        return self.cosine

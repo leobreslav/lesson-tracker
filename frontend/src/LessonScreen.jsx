@@ -451,7 +451,10 @@ export default function LessonScreen({ onLoggedOut }) {
                   Кнопкой в потоке страницы отмена стояла последним пунктом
                   и читалась как шаг урока. Меню стоит вне ветки темы:
                   занятие без строки плана отменяют так же */}
-              {may && (
+              {/* у записанного занятия отменять нечего: отмена стёрла бы
+                  запись, и сервер её не примет (`slot_cancel_recorded`).
+                  Сначала снимают запись — кнопка рядом, в шапке */}
+              {may && !(card.confirmed && !card.is_cancelled) && (
                 <div className="lesson-menu" ref={menuRef}>
                   <button
                     type="button"

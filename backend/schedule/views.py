@@ -567,9 +567,44 @@ class SlotViewSet(SchoolScopedViewSet):
         """
         require_schedule_write(self.request.user, course)
 
+    def guard_order(self, course):
+        """
+        Пост-условие: после правки очередь записей осталась очередью.
+
+        Проверок «нельзя вот так» было девять штук в девяти местах, и
+        каждая новая ручка их не наследовала: `close` писал связь мимо всех
+        правил, отмена прятала запись, копирование в прошлое дырявило
+        хвост. Поэтому правило одно и стоит **после** записи, внутри
+        транзакции: сделали — спросили — откатили, если сломали. Так же
+        устроен перенос занятия, и это единственный путь, который никогда
+        не тёк.
+        """
+        broken = Slot.broken_record(course, timezone.localdate())
+        if broken is None:
+            return
+
+        api_error(
+            Codes.SLOT_ORDER_BROKEN,
+            f"{broken.date} would sit unrecorded among closed lessons: "
+            "records go one after another, without gaps.",
+            field="date",
+            date=str(broken.date),
+        )
+
     def perform_create(self, serializer):
         self.require_write(serializer.validated_data["course"])
-        serializer.save()
+        with transaction.atomic():
+            slot = serializer.save()
+            # час, созданный в закрытом прошлом, — та же дыра, что и
+            # незакрытый: очередь встанет на нём
+            self.guard_order(slot.course)
+
+    def perform_update(self, serializer):
+        with transaction.atomic():
+            slot = serializer.save()
+            # сюда попадают и правка даты мимо `move`, и возврат отменённого
+            # часа: оба способны обогнать записи или открыть дыру
+            self.guard_order(slot.course)
 
     def get_serializer_context(self):
         context = super().get_serializer_context()
@@ -602,6 +637,27 @@ class SlotViewSet(SchoolScopedViewSet):
         Массовых операций это правило касалось всегда (`sweepable`
         пропускает всё, на чём есть запись); одиночное удаление было
         единственной дырой в нём.
+        """
+        if instance.lesson_id:
+            api_error(
+                Codes.SLOT_DELETE_RECORDED,
+                f"«{instance.lesson.title}» is recorded on {instance.date}: "
+                "withdraw the record before deleting the lesson.",
+                field="id",
+                title=instance.lesson.title,
+                date=str(instance.date),
+            )
+
+        instance.delete()
+
+    def perform_destroy(self, instance):
+        """
+        Занятие с записью не удаляют: сначала снимают запись.
+
+        Одиночное удаление было свободным, пока клетка ничего не значила.
+        Теперь за ней бывает записан урок, и удаление уносило запись молча:
+        строка плана возвращалась в общую очередь и получала **другую**
+        дату, а с ней уезжало и всё, что за ней.
         """
         if instance.lesson_id:
             api_error(
@@ -809,6 +865,10 @@ class SlotViewSet(SchoolScopedViewSet):
                 for key in ("created", "skipped", "deleted"):
                     totals[key] += result[key]
                 totals["conflicts"].extend(result["conflicts"])
+
+                # копирование в уже закрытое прошлое дырявит хвост записей
+                # пачкой: те же часы, что поодиночке отклоняет создание
+                self.guard_order(course)
 
         return Response(totals)
 
@@ -1278,21 +1338,29 @@ class SlotViewSet(SchoolScopedViewSet):
                         field="closed",
                     )
 
-                if row.get("cancelled"):
-                    slot.is_cancelled = True
-                    slot.reason = row.get("reason", "")
-                    slot.save(update_fields=["is_cancelled", "reason"])
-                    continue
+                # Через тот же сериализатор, что и одиночная запись, а не
+                # полем напрямую. Полем — это был второй способ записывать,
+                # не знающий ни про очередь, ни про подсказанную строку, ни
+                # про «только прошедшее»: закрыть можно было будущий час
+                # чужой строкой и не по порядку.
+                changes = (
+                    {"is_cancelled": True, "reason": row.get("reason", "")}
+                    if row.get("cancelled")
+                    else {"lesson": row.get("lesson").pk if row.get("lesson") else None}
+                )
+                form = SlotSerializer(
+                    slot,
+                    data=changes,
+                    partial=True,
+                    context=self.get_serializer_context(),
+                )
+                form.is_valid(raise_exception=True)
+                form.save()
 
-                node = row.get("lesson")
-                if node is None or node.course_id != slot.course_id:
-                    api_error(
-                        Codes.PARENT_OTHER_CLASS,
-                        "That plan lesson belongs to another course.",
-                        field="closed",
-                    )
-                slot.lesson = node
-                slot.save(update_fields=["lesson"])
+            # порядок строк в запросе задаёт клиент, и закрыть вторую,
+            # оставив первую, он всё ещё может — это ловит общая проверка
+            for course in {slot.course for slot in mine.values()}:
+                self.guard_order(course)
 
         return Response({"closed": len(rows)})
 
