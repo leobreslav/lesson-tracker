@@ -1056,3 +1056,28 @@ test('выделение мышью не закрывает окно, а кли�
   await page.mouse.click(modal.x - 60, box.y + box.height / 2)
   await expect(dialog).toHaveCount(0)
 })
+
+test('строка под курсором подсвечивается и на полосе недели', async ({
+  page,
+  signIn,
+}) => {
+  // Подсветка стояла в файле **до** заливки недели, вес у правил
+  // одинаковый — и на каждой второй неделе её не было вовсе. А там, где
+  // была, от полосы её было не отличить.
+  await signIn(PEOPLE.ivanova)
+  await openPlan(page)
+
+  const colour = (row) =>
+    row.evaluate((el) => getComputedStyle(el).backgroundColor)
+
+  for (const selector of ['.plan-row.lesson.week-even', '.plan-row.lesson:not(.week-even)']) {
+    const row = page.locator(selector).first()
+    const before = await colour(row)
+    await row.hover()
+    const after = await colour(row)
+    expect(after, `${selector}: наведение не меняет фон`).not.toBe(before)
+    // и это заметный шаг, а не полтона: синий канал уходит вперёд остальных
+    const [r, g, b] = after.match(/\d+/g).map(Number)
+    expect(b - r, `${selector}: подсветка сливается с фоном`).toBeGreaterThan(20)
+  }
+})
