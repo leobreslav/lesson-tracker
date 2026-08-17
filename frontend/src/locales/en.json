@@ -335,7 +335,7 @@
     },
     "empty": {
       "title": "The plan is empty",
-      "hint": "A list of sections and lessons in order. It will be laid onto the dates of the schedule, and you will see whether the hours last until the end of the year. Add a lesson with the button below or load a ready list from CSV."
+      "hint": "A list of sections and lessons in order. It will be laid onto the dates of the schedule, and you will see whether the hours last until the end of the year. Add a lesson with the button above or import a ready list from a file."
     },
     "removeSection": {
       "title": "Delete the theme «{{title}}»?",

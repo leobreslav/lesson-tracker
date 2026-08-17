@@ -476,3 +476,21 @@ test('тему бросают на весь блок, а не в её шапку
     /Делимость чисел/,
   )
 })
+
+test('«План пуст» стоит над таблицей, а не под пустотой', async ({ page, signIn }) => {
+  // Под пустой таблицей объяснение находят, пролистав пустоту, а кнопки, к
+  // которым оно отсылает, стоят наверху.
+  await signIn(PEOPLE.petrov)
+  await openPlan(page, EMPTY_COURSE)
+
+  const empty = page.locator('.empty-state')
+  await expect(empty).toBeVisible()
+
+  const tools = await page.locator('.plan-tools').boundingBox()
+  const box = await empty.boundingBox()
+  const table = await page.locator('ul.plan').first().boundingBox()
+
+  expect(box.y, 'пустое состояние уехало над панелью').toBeGreaterThan(tools.y)
+  expect(box.y + box.height, 'пустое состояние осталось под таблицей')
+    .toBeLessThanOrEqual(table.y + 1)
+})

@@ -1141,6 +1141,15 @@ export default function Plan({ onLoggedOut }) {
             <p>{t('common.loading')}</p>
           ) : (
             <>
+              {/* Пустое состояние — над таблицей, а не под ней: под пустой
+                  таблицей объяснение находят, только пролистав пустоту, а
+                  кнопки, к которым оно отсылает, стоят наверху */}
+              {!data.nodes.length && (
+                <EmptyState title={t('plan.empty.title')}>
+                  {t('plan.empty.hint')}
+                </EmptyState>
+              )}
+
               <PlanTable
                 nodes={data.nodes}
                 layout={layout}
@@ -1171,12 +1180,6 @@ export default function Plan({ onLoggedOut }) {
                   moveTo: dropNode,
                 }}
               />
-
-              {!data.nodes.length && (
-                <EmptyState title={t('plan.empty.title')}>
-                  {t('plan.empty.hint')}
-                </EmptyState>
-              )}
 
             </>
           )}
