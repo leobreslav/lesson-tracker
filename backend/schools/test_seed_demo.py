@@ -6,11 +6,13 @@ The test runner turns DEBUG off, which is why the refusal is checked without
 any setup and everything else runs under `override_settings(DEBUG=True)`.
 """
 
+from datetime import timedelta
 from io import StringIO
 
 from calendars.models import DayException, SchoolYear, Term
 from django.contrib.auth import get_user_model
 from django.core.management import call_command
+from django.db.models import F
 from django.core.management.base import CommandError
 from django.test import TestCase, override_settings
 from plans.models import PlanNode
@@ -443,6 +445,90 @@ class RichSeedTests(TestCase):
             ),
             before,
         )
+
+    def test_records_leave_no_gap_behind_them(self):
+        """
+        Записи идут подряд: незакрытых часов **до последней записи** нет.
+
+        Сторож заведён по следам живой базы. Дырка там появилась не от
+        кривой раскладки, а от времени: набор сеют повторно, между посевами
+        проходят дни, и вчерашнее будущее становится прошлым. Пока `record`
+        выходил рано («у курса уже есть записи»), такие часы оставались
+        незакрытыми **позади** записанных, а строгая очередь этого не
+        прощает — следующую запись такая дырка держит навсегда.
+        """
+        seed("--rich")
+        today = timezone.localdate()
+
+        # Между посевами проходят дни, и вчерашнее будущее становится
+        # прошлым: запись, поставленная в прошлый раз, оказывается **за**
+        # сегодняшней границей «закрываем всё, кроме хвоста». Двигать даты
+        # нечем — недельная сетка ляжет сама на себя, — но состояние то же:
+        # записанный час позади границы. Ставим его руками и сеем снова.
+        # курс, у которого набор намеренно оставляет хвост незакрытым:
+        # именно за этой границей и оказывается запись из прошлого посева
+        course = Course.objects.get(name="Grade 8 Algebra")
+        last = (
+            Slot.objects.filter(
+                course=course, date__lt=today, is_cancelled=False, lesson__isnull=True
+            )
+            .order_by("-date", "-lesson_number")
+            .first()
+        )
+        self.assertIsNotNone(last, "у курса нет незакрытого хвоста")
+        taken = set(
+            Slot.objects.filter(course=course, lesson__isnull=False).values_list(
+                "lesson_id", flat=True
+            )
+        )
+        free = (
+            PlanNode.objects.filter(course=course, is_section=False)
+            .exclude(pk__in=taken)
+            .order_by("-position")
+            .first()
+        )
+        self.assertIsNotNone(free, "в плане не осталось свободной строки")
+        last.lesson = free
+        last.save(update_fields=["lesson"])
+
+        seed("--rich")
+
+        holes = {}
+        for course in Course.objects.all():
+            past = list(
+                Slot.objects.filter(
+                    course=course, date__lte=today, is_cancelled=False
+                ).order_by("date", "lesson_number")
+            )
+            recorded = [i for i, slot in enumerate(past) if slot.lesson_id]
+            if not recorded:
+                continue
+            gap = sum(1 for slot in past[: recorded[-1]] if slot.lesson_id is None)
+            if gap:
+                holes[course.name] = gap
+
+        self.assertEqual(holes, {}, "перед записанными часами остались незакрытые")
+
+    def test_make_ups_land_on_study_days_bar_one(self):
+        """
+        Отработка в выходной — настоящее состояние, но не в шестнадцати
+        экземплярах.
+
+        «Ближайшую субботу» получали все девятнадцать курсов сразу, и набор
+        показывал шестнадцать занятий в один неучебный день — то есть учил
+        читать предупреждение как фон.
+        """
+        seed("--rich")
+        year = SchoolYear.objects.order_by("-start_date").first()
+        study = {day.date for day in year.build_days() if day.status == "study"}
+
+        stray = [
+            slot
+            for slot in Slot.objects.filter(year=year, is_cancelled=False)
+            if slot.date not in study
+        ]
+
+        self.assertLessEqual(len(stray), 1, [str(slot.date) for slot in stray])
 
     def test_recording_shows_all_three_states(self):
         """
