@@ -20,6 +20,7 @@ import {
   debtSlots,
   freeSlots,
   layoutTotals,
+  passedSlots,
   recordedSlots,
   stitchLayout,
 } from './planLayout'
@@ -339,6 +340,8 @@ export default function Plan({ onLoggedOut }) {
       // записанные — рядом с долгами и той же лентой: одно без другого не
       // читается
       recorded: recordedSlots(ribbon),
+      // прошедшие часы: пока их нет, год не начался и учёт показывать нечем
+      passed: passedSlots(ribbon, today()),
     }
   }, [data, ribbon])
 
@@ -795,7 +798,7 @@ export default function Plan({ onLoggedOut }) {
                       легендой: зелёная галочка — записан, красная точка —
                       долг. Отдельная строка легенды под сводкой объясняла
                       бы то же самое, только не там, где на значки смотрят */}
-                  {layout.recorded.length > 0 && (
+                  {layout.passed.length > 0 && (
                     <section data-card="records" className="panel card-stat pairs marked">
                       <p className="pair" data-card="recorded">
                         <span className="plan-state recorded" aria-hidden="true">
@@ -808,26 +811,54 @@ export default function Plan({ onLoggedOut }) {
                           {t('plan.summary.recorded', { count: layout.recorded.length })}
                         </span>
                       </p>
-                      <p className="pair" data-card="debts">
-                        <span className="plan-state unclosed" aria-hidden="true">
-                          •
-                        </span>
-                        {layout.debts.length > 0 ? (
+                      {/* Учёт не начат — вторая строка говорит не «0 не
+                          отмечено», а сколько часов прошло. Ноль был бы
+                          неправдой по существу: занятия прошли, просто
+                          долгами они не считаются, пока учитель не начал
+                          (иначе первое же нажатие потребовало бы закрыть
+                          полгода). Нажатие ведёт на первый прошедший час —
+                          там и стоит кнопка «так и было» */}
+                      {layout.recorded.length === 0 ? (
+                        <p className="pair" data-card="not-started">
+                          <span className="plan-state unclosed" aria-hidden="true">
+                            •
+                          </span>
                           <button
                             type="button"
                             className="link"
-                            title={t('status.closeDebts')}
-                            onClick={() => setDebts(true)}
+                            title={t('plan.summary.startRecording')}
+                            onClick={() => navigate(`/lesson/${layout.passed[0].id}`)}
                           >
-                            <b>{layout.debts.length}</b>
+                            <b>{layout.passed.length}</b>
                           </button>
-                        ) : (
-                          <b>{layout.debts.length}</b>
-                        )}
-                        <span>
-                          {t('plan.debtsLabel', { count: layout.debts.length })}
-                        </span>
-                      </p>
+                          <span>
+                            {t('plan.summary.notStarted', {
+                              count: layout.passed.length,
+                            })}
+                          </span>
+                        </p>
+                      ) : (
+                        <p className="pair" data-card="debts">
+                          <span className="plan-state unclosed" aria-hidden="true">
+                            •
+                          </span>
+                          {layout.debts.length > 0 ? (
+                            <button
+                              type="button"
+                              className="link"
+                              title={t('status.closeDebts')}
+                              onClick={() => setDebts(true)}
+                            >
+                              <b>{layout.debts.length}</b>
+                            </button>
+                          ) : (
+                            <b>{layout.debts.length}</b>
+                          )}
+                          <span>
+                            {t('plan.debtsLabel', { count: layout.debts.length })}
+                          </span>
+                        </p>
+                      )}
                     </section>
                   )}
                 </>

@@ -198,6 +198,17 @@ export function recordedSlots(ribbon) {
   return (ribbon ?? []).filter((slot) => slot.lesson_id)
 }
 
+/**
+ * Прошедшие часы курса: те, которые уже можно записать.
+ *
+ * Отменённых в ленте нет вовсе, так что это ровно те занятия, про которые
+ * учитель может сказать «так и было». Пока их ноль, плашка учёта не
+ * показывается: год ещё не начался, и сообщать нечего.
+ */
+export function passedSlots(ribbon, today) {
+  return (ribbon ?? []).filter((slot) => slot.date <= today)
+}
+
 export function layoutTotals(stitched, ribbon) {
   const lessons = stitched.filter((row) => !row.is_section)
   const placed = lessons.filter((row) => row.slot)

@@ -867,6 +867,67 @@ test('у проведённой строки органов управления
   await expect(row(3).getByTitle('Ниже')).toBeEnabled()
 })
 
+test('пока учёт не начат, плашка говорит, сколько часов прошло', async ({
+  page,
+  signIn,
+  api,
+}) => {
+  // «0 не отмечено» было бы неправдой по существу: занятия прошли, просто
+  // долгами они не считаются, пока учитель не начал. Поэтому вторая строка
+  // здесь называет прошедшие часы и ведёт к первому из них.
+  const { course, slots } = await liveCourse(api, { record: false })
+
+  await signIn(PEOPLE.ivanova)
+  await page.goto('/plan')
+  await ready(page)
+  await page.getByLabel('Курс').selectOption(String(course.id))
+  await expect(page.locator('.plan-cards')).toBeVisible()
+
+  const card = page.locator('[data-card="records"]')
+  await expect(card.locator('[data-card="recorded"] b')).toHaveText('0')
+  const notStarted = card.locator('[data-card="not-started"]')
+  await expect(notStarted.locator('b')).toHaveText('3')
+  await expect(notStarted.locator('span:not(.plan-state)')).toHaveText(
+    'занятия прошли — учёт не начат',
+  )
+  // долгов при этом нет ни одного: счёт идёт от первой записи
+  await expect(page.locator('ul.plan .plan-state.unclosed')).toHaveCount(0)
+
+  // нажатие ведёт на первый прошедший час — там и стоит «так и было»
+  await notStarted.locator('button').click()
+  await expect(page).toHaveURL(new RegExp(`/lesson/${slots[0].id}$`))
+})
+
+test('пока год не начался, плашки учёта нет вовсе', async ({ page, signIn, api }) => {
+  const { course, slots, teacher } = await liveCourse(api, { record: false })
+
+  // убираем прошедшие часы и ставим только будущие: записывать нечего
+  for (const slot of slots) {
+    const gone = await teacher.delete(`/api/slots/${slot.id}/`)
+    expect(gone.status).toBe(204)
+  }
+  for (const shift of [3, 5]) {
+    const at = new Date()
+    at.setDate(at.getDate() + shift)
+    const added = await teacher.post('/api/slots/', {
+      course: course.id,
+      date: at.toISOString().slice(0, 10),
+      lesson_number: 1,
+    })
+    expect(added.status, JSON.stringify(added.body)).toBe(201)
+  }
+
+  await signIn(PEOPLE.ivanova)
+  await page.goto('/plan')
+  await ready(page)
+  await page.getByLabel('Курс').selectOption(String(course.id))
+  await expect(page.locator('.plan-cards')).toBeVisible()
+
+  // слоты и баланс на месте, а сообщать про учёт нечего
+  await expect(page.locator('[data-card="slots"]')).toContainText('2')
+  await expect(page.locator('[data-card="records"]')).toHaveCount(0)
+})
+
 test('числа в плашках стоят столбиком, а подписи склоняются', async ({
   page,
   signIn,

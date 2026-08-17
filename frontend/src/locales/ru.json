@@ -381,7 +381,7 @@
     "noSlot": "не помещается",
     "breakBetween": "{{title}} · {{start}} — {{end}}",
     "summary": {
-      "slots": "слотов",
+      "slots": "слотов в году",
       "lessons": "уроков в плане",
       "balance": "баланс",
       "dates": "Даты",
@@ -390,7 +390,11 @@
       "freeSlots": "Свободные",
       "recorded_one": "занятие проведено",
       "recorded_few": "занятия проведены",
-      "recorded_many": "занятий проведено"
+      "recorded_many": "занятий проведено",
+      "notStarted_one": "занятие прошло — учёт не начат",
+      "notStarted_few": "занятия прошли — учёт не начат",
+      "notStarted_many": "занятий прошло — учёт не начат",
+      "startRecording": "Открыть первое прошедшее занятие"
     },
     "today": "СЕГОДНЯ",
     "week": "нед {{number}}",

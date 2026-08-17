@@ -371,7 +371,7 @@
     "noSlot": "no slot",
     "breakBetween": "{{title}} · {{start}} — {{end}}",
     "summary": {
-      "slots": "slots",
+      "slots": "slots in the year",
       "lessons": "lessons in the plan",
       "balance": "balance",
       "dates": "Dates",
@@ -379,7 +379,10 @@
       "weeks": "Weeks",
       "freeSlots": "Free",
       "recorded_one": "lesson marked as taught",
-      "recorded_other": "lessons marked as taught"
+      "recorded_other": "lessons marked as taught",
+      "notStarted_one": "lesson has passed — no records yet",
+      "notStarted_other": "lessons have passed — no records yet",
+      "startRecording": "Open the first lesson that has passed"
     },
     "today": "TODAY",
     "week": "wk {{number}}",
