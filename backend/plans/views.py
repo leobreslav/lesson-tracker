@@ -543,6 +543,33 @@ class PlanNodeViewSet(CourseScopedViewSet):
 
         return parsed, {"sheet": book.sheet, "sheets_ignored": book.sheets_ignored}
 
+    def read_pasted(self, *, refusing=True):
+        """
+        Вставка: матрица ячеек → строки плана.
+
+        Шапка тут необязательна. Файл выгружают целиком, и шапка в нём есть
+        всегда, а из таблицы копируют по-разному: кто-то возьмёт с шапкой,
+        кто-то ткнёт в первую ячейку данных. Первая строка сравнивается с
+        шапкой дословно — совпала, значит шапка.
+        """
+        rows = self.request.data.get("rows")
+        if not isinstance(rows, list) or any(
+            not isinstance(row, list) for row in rows
+        ):
+            api_error(
+                Codes.ROWS_INVALID,
+                "Send «rows» as a list of cell lists.",
+                field="rows",
+            )
+
+        cells = [["" if cell is None else str(cell) for cell in row] for row in rows]
+        try:
+            parsed = services.parse_plan_rows(cells, header_required=False)
+        except services.PlanImportError as error:
+            parsed = self.unreadable(Codes.FILE_UNREADABLE, error, refusing=refusing)
+
+        return parsed, {}
+
     def read_mode(self, parsed, *, refusing=True):
         """
         Режим обязателен: умолчания у разрушительной операции быть не должно.
@@ -590,6 +617,21 @@ class PlanNodeViewSet(CourseScopedViewSet):
         # право спрашивается до чтения файла: разбирать присланное у того,
         # кому сюда нельзя, незачем
         return self.run_import(self.requested_course(write=True), *self.read_upload())
+
+    @action(detail=False, methods=["post"], url_path="import-rows",
+            url_name="import-rows")
+    def import_rows(self, request):
+        """
+        Импорт вставкой из таблицы — третий источник тех же строк.
+
+        Табуляции, кавычки и переводы строк внутри ячеек разбирает браузер,
+        там же, где происходит вставка; сюда приезжает готовая матрица. И
+        правила, и коды ошибок, и режимы у неё общие с файлом — разного
+        только то, откуда взялись ячейки.
+        """
+        return self.run_import(
+            self.requested_course(write=True), *self.read_pasted()
+        )
 
     @action(detail=False, methods=["post"], url_path="import-xlsx",
             url_name="import-xlsx")
@@ -646,6 +688,12 @@ class PlanNodeViewSet(CourseScopedViewSet):
     def import_preview(self, request):
         """Что сделает импорт CSV, до того как он что-то сделает."""
         return self.run_preview(*self.read_upload(refusing=False))
+
+    @action(detail=False, methods=["post"], url_path="import-preview-rows",
+            url_name="import-preview-rows")
+    def import_preview_rows(self, request):
+        """Что сделает вставка — до того, как она что-то сделает."""
+        return self.run_preview(*self.read_pasted(refusing=False))
 
     @action(detail=False, methods=["post"], url_path="import-preview-xlsx",
             url_name="import-preview-xlsx")

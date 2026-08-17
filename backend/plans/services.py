@@ -792,16 +792,36 @@ def parse_plan_csv(text: str, *, max_rows: int = CSV_MAX_ROWS) -> ParsedPlan:
     )
 
 
+def is_header(raw: Sequence[str]) -> bool:
+    """Первая строка — это шапка? Сравнение дословное, без догадок."""
+    head = row_cells(raw)
+    return (
+        head is not None
+        and tuple(normalized_cell(cell) for cell in head) == HEADER_NORMALIZED
+    )
+
+
 def parse_plan_rows(
-    raw_rows: Iterable[Sequence[str]], *, max_rows: int = CSV_MAX_ROWS
+    raw_rows: Iterable[Sequence[str]],
+    *,
+    max_rows: int = CSV_MAX_ROWS,
+    header_required: bool = True,
 ) -> ParsedPlan:
     """
-    Разбор таблицы единственного формата — общий для CSV и xlsx.
+    Разбор таблицы единственного формата — общий для файла и вставки.
 
-    Форматы различаются только тем, как получить ячейки: у CSV это
-    кодировка, разделитель и кавычки, у xlsx — openpyxl. Всё остальное —
-    шапка, столбцы, id, темы, уроки — здесь, в одном месте, иначе два
-    формата разошлись бы правилами уже на второй правке.
+    Источники различаются только тем, как получить ячейки: у CSV это
+    кодировка, разделитель и кавычки, у xlsx — openpyxl, у вставки —
+    разбор буфера в браузере. Всё остальное — шапка, столбцы, id, темы,
+    уроки — здесь, в одном месте, иначе три источника разошлись бы
+    правилами уже на второй правке.
+
+    `header_required=False` — для вставки: файл выгружают целиком и шапка в
+    нём есть всегда, а из таблицы копируют по-разному, и требовать шапку от
+    выделенного куска значит требовать лишнего. Первая строка сравнивается
+    с шапкой дословно: совпала — это шапка, не совпала — это первый урок.
+    Угадыванием это не является, «id / Тема / Урок» настоящими данными не
+    бывает.
 
     Ошибки собираются все разом и ничего не пишут: показать человеку весь
     список полезнее, чем первую строку, на которой разбор сдался. Отказ
@@ -817,8 +837,8 @@ def parse_plan_rows(
         rows_read.append(list(raw))
     raw_rows = rows_read
 
-    head = row_cells(raw_rows[0]) if raw_rows else None
-    if head is None or tuple(normalized_cell(cell) for cell in head) != HEADER_NORMALIZED:
+    has_header = bool(raw_rows) and is_header(raw_rows[0])
+    if header_required and not has_header:
         # без шапки читать нечего: порядок столбцов больше не угадывается
         return ParsedPlan([], [
             error_payload(
@@ -834,7 +854,8 @@ def parse_plan_rows(
     current_theme: str | None = None
     data_rows = 0
 
-    for number, raw in enumerate(raw_rows[1:], start=2):
+    body = raw_rows[1:] if has_header else raw_rows
+    for number, raw in enumerate(body, start=2 if has_header else 1):
         if not any(cell.strip() for cell in raw):
             # пустая строка в конце файла — обычное дело у Excel
             continue

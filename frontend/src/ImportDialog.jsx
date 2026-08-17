@@ -1,14 +1,19 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import Modal from './Modal'
-import { previewPlanFile } from './api'
+import { previewPlanFile, previewPlanRows } from './api'
 import { decodeCsv, parsePlanCsv } from './planCsv'
+import PasteGrid from './PasteGrid'
 
 /** Книгу здесь не читают: её разбирает сервер. */
 const isWorkbook = (file) => /\.xlsx$/i.test(file?.name ?? '')
 
 const PREVIEW_LIMIT = 20
 const MODES = ['sync', 'append', 'replace']
+const SOURCES = ['file', 'paste']
+
+/** Пустая строка сетки в разбор не едет: это место, а не урок. */
+const filled = (rows) => rows.filter((row) => row.some((cell) => cell.trim()))
 
 /**
  * Importing a plan from a file: the file, the mode and two previews.
@@ -27,6 +32,8 @@ const MODES = ['sync', 'append', 'replace']
  */
 export default function ImportDialog({ classId, busy, onSubmit, onClose }) {
   const { t } = useTranslation()
+  const [source, setSource] = useState('file')
+  const [rows, setRows] = useState([])
   const [file, setFile] = useState(null)
   const [mode, setMode] = useState('sync')
   const [parsed, setParsed] = useState(null) // {rows, errors, dataRows}
@@ -36,8 +43,10 @@ export default function ImportDialog({ classId, busy, onSubmit, onClose }) {
   const [dragging, setDragging] = useState(false)
   const [error, setError] = useState(null)
 
-  // у книги id видно только серверу: файл читает он
+  // у книги и у вставки id видит только сервер: читает он
   const syncable = parsed ? parsed.rows.some((row) => row.id) : cost?.syncable
+  const pasted = filled(rows)
+  const ready = source === 'file' ? Boolean(file) : pasted.length > 0
 
   const take = async (chosen) => {
     setError(null)
@@ -59,28 +68,60 @@ export default function ImportDialog({ classId, busy, onSubmit, onClose }) {
     }
   }
 
-  // the cost is asked again on every change of mode: replace and sync lose
-  // entirely different things
+  /*
+   * Цена спрашивается заново на каждую смену режима: replace и sync теряют
+   * совершенно разное.
+   *
+   * У вставки к этому добавляется правка ячеек, поэтому запрос отложен на
+   * полсекунды: печатать название и слать запрос на каждую букву незачем.
+   */
   useEffect(() => {
-    if (!file || parsed?.errors.length) return undefined
-    if (!parsed && !isWorkbook(file)) return undefined
+    if (!ready || parsed?.errors.length) return undefined
+    if (source === 'file' && !parsed && !isWorkbook(file)) return undefined
 
     let current = true
     setCost(null)
     setAgreed(false)
 
-    previewPlanFile(classId, file, mode)
-      .then((result) => current && setCost(result))
-      .catch((err) => {
-        if (!current) return
-        setCost(null)
-        setError(err.message)
-      })
+    const ask = () =>
+      (source === 'file'
+        ? previewPlanFile(classId, file, mode)
+        : previewPlanRows(classId, pasted, mode)
+      )
+        .then((result) => current && setCost(result))
+        .catch((err) => {
+          if (!current) return
+          setCost(null)
+          setError(err.message)
+        })
 
+    if (source === 'file') {
+      ask()
+      return () => {
+        current = false
+      }
+    }
+
+    const timer = setTimeout(ask, 500)
     return () => {
       current = false
+      clearTimeout(timer)
     }
-  }, [classId, file, parsed, mode])
+    // сама матрица в зависимостях лишняя: её содержимое меняется на каждую
+    // букву, а строка из неё — то, что действительно уедет на сервер
+  }, [classId, source, file, parsed, mode, JSON.stringify(pasted)])
+
+  /*
+   * Синхронизировать не с чем — переключаемся сами.
+   *
+   * У CSV это видно на клиенте и делается сразу при выборе файла, а у
+   * книги и у вставки про id знает только сервер. Без этого человек,
+   * вставивший свой план из Excel (там id нет и быть не может), первым
+   * делом видел красный отказ вместо чисел.
+   */
+  useEffect(() => {
+    if (cost?.syncable === false && mode === 'sync') setMode('append')
+  }, [cost, mode])
 
   const handleDrop = (event) => {
     event.preventDefault()
@@ -99,12 +140,53 @@ export default function ImportDialog({ classId, busy, onSubmit, onClose }) {
 
   const handleSubmit = (event) => {
     event.preventDefault()
-    if (file && !blocked) onSubmit({ file, mode })
+    if (blocked) return
+    if (source === 'file' && file) onSubmit({ file, mode })
+    if (source === 'paste') onSubmit({ rows: pasted, mode })
+  }
+
+  const changeSource = (name) => {
+    setSource(name)
+    setError(null)
+    setCost(null)
+    setParsed(null)
+    setAgreed(false)
   }
 
   return (
-    <Modal onClose={onClose} title={t('csv.title')}>
+    <Modal
+      onClose={onClose}
+      title={t('csv.title')}
+      // сетке нужна ширина: три колонки в узком окне обрезают названия
+      className={source === 'paste' ? 'paste-window' : ''}
+    >
       <form onSubmit={handleSubmit}>
+        {/* Источника два, а дальше всё общее: режим, предпросмотр, цена.
+            Вставка нужна затем, чтобы не возиться с файлами вовсе —
+            скопировали кусок листа и вставили. */}
+        <span className="chips" role="group" aria-label={t('csv.source.label')}>
+          {SOURCES.map((name) => (
+            <button
+              key={name}
+              type="button"
+              className={name === source ? 'chip active' : 'chip'}
+              aria-pressed={name === source}
+              onClick={() => changeSource(name)}
+            >
+              {t(`csv.source.${name}`)}
+            </button>
+          ))}
+        </span>
+
+        {source === 'paste' && (
+          <>
+            <p className="hint">{t('csv.paste.about')}</p>
+            <PasteGrid rows={rows} onChange={setRows} disabled={busy} />
+          </>
+        )}
+
+        {source === 'file' && (
+          <>
         <p className="hint">{t('csv.hint', { header: 'id,Тема,Урок' })}</p>
 
         <label
@@ -123,6 +205,8 @@ export default function ImportDialog({ classId, busy, onSubmit, onClose }) {
           />
           {file ? file.name : t('csv.dropZone')}
         </label>
+          </>
+        )}
 
         <ul className="csv-modes">
           {MODES.map((name) => {

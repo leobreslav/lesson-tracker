@@ -91,6 +91,7 @@ class Codes:
     PLAN_LESSON_TAUGHT = "plan_lesson_taught"
     PLAN_BEFORE_TAUGHT = "plan_before_taught"
     PLAN_DELETE_TAUGHT = "plan_delete_taught"
+    ROWS_INVALID = "rows_invalid"
     SLOT_MOVE_BREAKS_ORDER = "slot_move_breaks_order"
     SLOT_NOT_MINE = "slot_not_mine"
 

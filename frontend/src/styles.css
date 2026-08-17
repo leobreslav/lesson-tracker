@@ -1245,6 +1245,90 @@ button.modal-close:hover {
 }
 
 /*
+ * Сетка вставки: три колонки с закреплённой шапкой.
+ *
+ * Она нарочно скромная — это поле для вставки, а не редактор таблиц.
+ * Прокручивается внутри себя: пятьсот строк не должны растягивать окно.
+ */
+.paste-grid {
+max-height: 40vh;
+overflow: auto;
+border: 1px solid #e0e0e0;
+border-radius: var(--row-radius);
+}
+
+.paste-grid table {
+width: 100%;
+border-collapse: collapse;
+table-layout: fixed;
+}
+
+.paste-grid th {
+position: sticky;
+top: 0;
+z-index: 1;
+padding: 0.3rem 0.5rem;
+font-size: 0.85rem;
+text-align: left;
+background: var(--surface-1);
+border-bottom: 1px solid #e0e0e0;
+}
+
+.paste-grid th.id,
+.paste-grid td.id {
+width: 4.5rem;
+}
+
+.paste-grid td.drop {
+width: 2rem;
+text-align: center;
+}
+
+.paste-grid td {
+padding: 0;
+border-bottom: 1px solid #f1f1f1;
+}
+
+/* поле во всю ячейку и без рамки: рамку рисует сама сетка, иначе на
+ пятистах строках это тысяча пятьсот прямоугольников */
+.paste-grid td input {
+width: 100%;
+min-width: 0;
+height: auto;
+padding: 0.25rem 0.5rem;
+font: inherit;
+font-size: 0.9rem;
+background: none;
+border: 0;
+border-radius: 0;
+}
+
+.paste-grid input:focus {
+outline: 2px solid #1a73e8;
+outline-offset: -2px;
+}
+
+.paste-grid > .row {
+padding: 0.4rem 0.5rem;
+}
+
+/* сетке вставки нужна ширина: три колонки в узком окне обрезают названия */
+.modal-body.paste-window {
+  width: min(44rem, calc(100vw - 3rem));
+}
+
+/* ячейка сетки — не поле окна: рамку рисует сама таблица, иначе на пятистах
+   строках это полторы тысячи прямоугольников со скруглениями */
+.modal-body .paste-grid input[type='text'] {
+  height: auto;
+  padding: 0.25rem 0.5rem;
+  font-size: 0.9rem;
+  background: none;
+  border: 0;
+  border-radius: 0;
+}
+
+/*
  * Состав курса: три списка одной формы и поле для вставки.
  *
  * Списка три — учатся, ждут первого входа, сняты, — и различаются они не

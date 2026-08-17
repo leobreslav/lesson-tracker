@@ -554,3 +554,105 @@ class PreviewTests(SyncTestCase):
 
         template = make_template(self.school, self.user, rows=((False, "Урок"),))
         return PlanTemplateRow.objects.get(template=template)
+
+
+class PasteTests(SyncTestCase):
+    """
+    Вставка из таблицы — третий источник тех же строк.
+
+    Табуляции, кавычки и переводы строк внутри ячеек разбирает браузер, и
+    сюда приезжает готовая матрица. Проверяется поэтому не разбор буфера
+    (он под узловыми тестами), а то, что правила у вставки общие с файлом:
+    те же режимы, те же отказы, тот же предпросмотр.
+    """
+
+    def paste(self, rows, mode="replace", url="plannode-import-rows"):
+        return self.client.post(
+            f"{reverse(url)}?course={self.course.pk}",
+            {"rows": rows, "mode": mode},
+            format="json",
+        )
+
+    def test_rows_without_a_header_are_read_as_lessons(self):
+        """Из таблицы копируют по-разному: шапка тут необязательна."""
+        response = self.paste([["", "Векторы", "Понятие"], ["", "Векторы", "Сложение"]])
+
+        self.assertEqual(response.status_code, 200, response.content)
+        self.assertEqual(self.structure(), ["Векторы", "  Понятие", "  Сложение"])
+
+    def test_a_pasted_header_is_recognised_and_dropped(self):
+        response = self.paste(
+            [["id", "Тема", "Урок"], ["", "Векторы", "Понятие"]]
+        )
+
+        self.assertEqual(response.status_code, 200, response.content)
+        self.assertEqual(self.structure(), ["Векторы", "  Понятие"])
+
+    def test_the_row_number_in_an_error_counts_from_the_first_pasted_row(self):
+        """Шапки не было, значит первая строка — первая, а не вторая."""
+        response = self.paste([["", "Векторы", ""]])
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json()["params"]["row"], 1)
+
+    def test_sync_recognises_rows_by_id_as_usual(self):
+        response = self.paste(
+            [
+                [str(self.sine.pk), "Тригонометрия", "Синус суммы двух углов"],
+                [str(self.cosine.pk), "Тригонометрия", "Косинус суммы"],
+                [str(self.loose.pk), "", "Повторение"],
+            ],
+            mode="sync",
+        )
+
+        self.assertEqual(response.status_code, 200, response.content)
+        self.assertEqual(response.json()["created"], 0)
+        self.sine.refresh_from_db()
+        self.assertEqual(self.sine.title, "Синус суммы двух углов")
+
+    def test_content_survives_a_pasted_sync(self):
+        """Вставка правит структуру и названия, остальное не её дело."""
+        self.sine.body = "## Ход урока"
+        self.sine.note = "повторить"
+        self.sine.save(update_fields=["body", "note"])
+
+        self.paste(
+            [
+                [str(self.sine.pk), "Тригонометрия", "Синус суммы"],
+                [str(self.cosine.pk), "Тригонометрия", "Косинус суммы"],
+                [str(self.loose.pk), "", "Повторение"],
+            ],
+            mode="sync",
+        )
+
+        self.sine.refresh_from_db()
+        self.assertEqual(self.sine.body, "## Ход урока")
+        self.assertEqual(self.sine.note, "повторить")
+
+    def test_the_preview_counts_without_writing(self):
+        before = PlanNode.objects.filter(course=self.course).count()
+
+        body = self.paste(
+            [["", "Векторы", "Понятие"]],
+            url="plannode-import-preview-rows",
+        ).json()
+
+        self.assertEqual(body["lessons"], 1)
+        self.assertEqual(body["sections"], 1)
+        self.assertEqual(PlanNode.objects.filter(course=self.course).count(), before)
+
+    def test_garbage_instead_of_rows_is_refused(self):
+        response = self.client.post(
+            f"{reverse('plannode-import-rows')}?course={self.course.pk}",
+            {"rows": "Векторы", "mode": "replace"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json()["code"], "rows_invalid")
+
+    def test_a_row_with_four_cells_is_refused_like_a_file(self):
+        response = self.paste([["", "Векторы", "Понятие", "лишнее"]])
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json()["code"], "csv_bad_columns")

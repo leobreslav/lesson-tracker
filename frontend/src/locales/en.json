@@ -237,7 +237,8 @@
     "slot_record_not_suggested": "The layout puts «{{title}}» in this hour: rows are recorded in order.",
     "plan_before_taught": "«{{title}}» has already been taught — a lesson not yet given cannot go before it",
     "slot_move_breaks_order": "The move would leave {{date}} unrecorded among closed lessons: records go one after another, without gaps",
-    "plan_delete_taught": "«{{title}}» was taught on {{date}} — withdraw the record before deleting the row"
+    "plan_delete_taught": "«{{title}}» was taught on {{date}} — withdraw the record before deleting the row",
+    "rows_invalid": "The paste could not be read: send the table rows."
   },
   "classPicker": {
     "label": "Classes:",
@@ -298,7 +299,18 @@
     "modeAppend": "add to the end",
     "replaceWarning": "The current plan of the course will be deleted in full.",
     "sheetUsed_one": "Read the sheet «{{sheet}}»; {{count}} more sheet in the book is left alone.",
-    "sheetUsed_other": "Read the sheet «{{sheet}}»; {{count}} more sheets in the book are left alone."
+    "sheetUsed_other": "Read the sheet «{{sheet}}»; {{count}} more sheets in the book are left alone.",
+    "source": {
+      "label": "Where the plan comes from",
+      "file": "File",
+      "paste": "Paste"
+    },
+    "paste": {
+      "about": "Copy the rows in Excel and paste them here — the columns sort themselves out. The header is optional.",
+      "hint": "The paste starts at the selected cell — click «Тема» first if your table has no id column.",
+      "addRow": "Add a row",
+      "tooBig": "More than {{count}} rows — a table that size is easier to import as a file."
+    }
   },
   "rangeDialog": {
     "title": "New break",

@@ -344,6 +344,24 @@ export const previewPlanFile = (classId, file, mode) =>
   )
 
 /**
+ * Вставка из таблицы: те же строки, только приехали не файлом.
+ *
+ * Табуляции и кавычки разобрал браузер, сюда едет матрица ячеек — сервер
+ * читает её тем же кодом, что ячейки книги.
+ */
+export const importPlanRows = (classId, rows, mode) =>
+  request(`/api/plan/import-rows/?course=${encodeURIComponent(classId)}`, {
+    method: 'POST',
+    body: { rows, mode },
+  })
+
+export const previewPlanRows = (classId, rows, mode) =>
+  request(`/api/plan/import-preview-rows/?course=${encodeURIComponent(classId)}`, {
+    method: 'POST',
+    body: { rows, mode },
+  })
+
+/**
  * Downloading the plan.
  *
  * A plain link will not do: the endpoint wants a token in the header, so the

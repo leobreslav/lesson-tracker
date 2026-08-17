@@ -114,6 +114,12 @@ class MatrixTests(AccessTestCase):
                 {"name": "plannode-import", "param": "course", "method": "post"},
                 {"name": "plannode-import-xlsx", "param": "course", "method": "post"},
                 {"name": "plannode-import-preview", "param": "course", "method": "post"},
+                {"name": "plannode-import-rows", "param": "course", "method": "post"},
+                {
+                    "name": "plannode-import-preview-rows",
+                    "param": "course",
+                    "method": "post",
+                },
                 {
                     "name": "plannode-import-preview-xlsx",
                     "param": "course",

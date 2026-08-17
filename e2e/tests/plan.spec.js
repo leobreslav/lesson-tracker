@@ -494,3 +494,86 @@ test('«План пуст» стоит над таблицей, а не под �
   expect(box.y + box.height, 'пустое состояние осталось под таблицей')
     .toBeLessThanOrEqual(table.y + 1)
 })
+
+/** Вставка как из Excel: браузер кладёт в буфер TSV. */
+const pasteInto = (page, selector, text) =>
+  page.evaluate(
+    ([where, value]) => {
+      const target = document.querySelector(where)
+      target.focus()
+      const data = new DataTransfer()
+      data.setData('text/plain', value)
+      target.dispatchEvent(
+        new ClipboardEvent('paste', { clipboardData: data, bubbles: true }),
+      )
+    },
+    [selector, text],
+  )
+
+test('план вставляют из таблицы, а не файлом', async ({ page, signIn }) => {
+  // Скопировали кусок листа в Excel — и вставили. Колонки раскладываются
+  // сами, шапку копировать не обязательно, и видно это сразу: сетка и есть
+  // предпросмотр.
+  await signIn(PEOPLE.petrov)
+  await openPlan(page, EMPTY_COURSE)
+
+  await planMenu(page, /Импорт из файла/)
+  const dialog = page.locator('dialog.modal')
+  await dialog.getByRole('button', { name: 'Вставка' }).click()
+
+  await pasteInto(
+    page,
+    '.paste-grid td input',
+    'id\tТема\tУрок\n' +
+      '\tНачальные сведения\tТочки, прямые, отрезки\n' +
+      '\tНачальные сведения\tЛуч и угол\n' +
+      '\tТреугольники\tПервый признак равенства\n',
+  )
+
+  // шапка узнана и в данные не попала: три строки, а не четыре
+  await expect(dialog.locator('.paste-grid tbody tr')).toHaveCount(3)
+  await expect(dialog.locator('.paste-grid tbody tr').first().locator('input').nth(1))
+    .toHaveValue('Начальные сведения')
+
+  // числа считает сервер, теми же правилами, что для файла
+  await expect(dialog).toContainText('уроков: 3')
+  await expect(dialog).toContainText('тем: 2')
+  // синхронизировать не с чем — режим переключился сам
+  await expect(dialog.getByRole('radio', { name: /Добавить/ })).toBeChecked()
+
+  await dialog.getByRole('button', { name: 'Импортировать' }).click()
+  await expect(dialog).toBeHidden()
+
+  await expect(lessonCount(page)).toHaveText('3')
+  const rows = await structure(page)
+  expect(rows.join(' | ')).toContain('Начальные сведения')
+  expect(rows.join(' | ')).toContain('3 Первый признак равенства')
+})
+
+test('вставка идёт от выбранной ячейки: таблица без столбца id', async ({
+  page,
+  signIn,
+}) => {
+  // Своя таблица из школьного шаблона: две колонки, id в ней нет и быть не
+  // может. Никакого «назначения колонок» для этого не нужно — встали в
+  // «Тему» и вставили туда, ровно как в Excel.
+  await signIn(PEOPLE.petrov)
+  await openPlan(page, EMPTY_COURSE)
+
+  await planMenu(page, /Импорт из файла/)
+  const dialog = page.locator('dialog.modal')
+  await dialog.getByRole('button', { name: 'Вставка' }).click()
+
+  await pasteInto(
+    page,
+    '.paste-grid tbody tr:first-child td:nth-child(2) input',
+    'Векторы\tПонятие вектора\nВекторы\tСложение векторов\n',
+  )
+
+  await expect(dialog).toContainText('уроков: 2')
+  await expect(dialog).toContainText('тем: 1')
+
+  await dialog.getByRole('button', { name: 'Импортировать' }).click()
+  await expect(dialog).toBeHidden()
+  await expect(lessonCount(page)).toHaveText('2')
+})

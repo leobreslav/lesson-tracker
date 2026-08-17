@@ -52,6 +52,7 @@ import {
   submitBaseline,
   fetchSchoolYears,
   importPlanFile,
+  importPlanRows,
   movePlanNode,
   movePlanNodeTo,
   movePlanSection,
@@ -564,14 +565,17 @@ export default function Plan({ onLoggedOut }) {
 
   // --- CSV ---
 
-  const handleImport = async ({ file, mode }) => {
+  const handleImport = async ({ file, rows, mode }) => {
     setImporting(false)
     setBusy(true)
     setError(null)
     setNotice(null)
 
     try {
-      const result = await importPlanFile(classId, file, mode)
+      // файл или вставка — дальше всё общее: те же режимы, тот же ответ
+      const result = rows
+        ? await importPlanRows(classId, rows, mode)
+        : await importPlanFile(classId, file, mode)
       await load(classId)
       setNotice(
         (mode === 'sync'
