@@ -256,6 +256,12 @@ class MoveSerializer(serializers.Serializer):
     direction = serializers.ChoiceField(choices=services.DIRECTIONS)
 
 
+class SplitSerializer(serializers.Serializer):
+    """Название новой темы — больше разрезу ничего не нужно."""
+
+    title = serializers.CharField(max_length=200)
+
+
 class MoveToSerializer(serializers.Serializer):
     parent = serializers.PrimaryKeyRelatedField(
         queryset=PlanNode.objects.none(), allow_null=True

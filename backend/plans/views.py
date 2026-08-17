@@ -25,7 +25,7 @@ from rest_framework.viewsets import ReadOnlyModelViewSet
 from calendars.models import DayException
 from schedule.models import Course, Slot
 
-from . import approval, progress, services, xlsx
+from . import approval, diff, progress, services, xlsx
 from .models import PlanBaseline, PlanNode
 from .serializers import (
     MoveSerializer,
@@ -33,9 +33,11 @@ from .serializers import (
     PlanNodeCreateSerializer,
     PlanNodeDetailSerializer,
     PlanNodeUpdateSerializer,
+    SplitSerializer,
     baseline_payload,
     check_structure,
     layout_payload,
+    person,
     request_payload,
     review_payload,
     tree_payload,
@@ -240,6 +242,33 @@ def refuse_if_records_broken(course) -> None:
             field="file",
             date=str(broken.date),
         )
+
+
+def diff_payload(course) -> dict:
+    """
+    Чем план отличается от утверждённого эталона — построчно.
+
+    Числа («+6 −2») отвечают на «сильно ли разошлось», а спрашивают обычно
+    «что именно я поменял»: учитель перед отправкой, методист перед
+    решением. Вопрос один, значит и ответ один — иначе две стороны
+    разговора смотрели бы на разные списки и начинали бы со спора о них.
+    """
+    baseline = approval.approved_baseline(course.pk)
+    if baseline is None:
+        return {"baseline": None, "rows": [], "counts": {}}
+
+    changes = diff.plan_diff(
+        list(baseline.rows.all()), services.plan_snapshot(course.pk)
+    )
+
+    return {
+        "baseline": {
+            "approved_at": baseline.approved_at,
+            "reviewer": person(baseline.reviewer),
+        },
+        "rows": [change.payload() for change in changes],
+        "counts": diff.summary(changes),
+    }
 
 
 def perform_move(node, data) -> Response:
@@ -852,6 +881,11 @@ class PlanNodeViewSet(CourseScopedViewSet):
         )
         return response
 
+    @action(detail=False, methods=["get"])
+    def diff(self, request):
+        """Чем план отличается от утверждённого эталона — построчно."""
+        return Response(diff_payload(self.requested_course()))
+
     @action(detail=False, methods=["get"], url_path="layout/summary", url_name="layout-summary")
     def layout_summary(self, request):
         course = self.requested_course()
@@ -940,6 +974,29 @@ class PlanNodeViewSet(CourseScopedViewSet):
 
         return Response({"moved": True})
 
+    @action(detail=True, methods=["post"])
+    def split(self, request, pk=None):
+        """
+        Тема сразу за этой строкой — с разрезом, если строка лежит внутри темы.
+
+        Пост-условие тут то же, что у импорта, и стоит оно не для порядка:
+        разрез плоскую последовательность уроков не меняет (голова, потом
+        хвост — в том же порядке), и очередь записей его пережить обязана.
+        Проверить это дешевле, чем поверить.
+        """
+        anchor = self.get_object()
+
+        form = SplitSerializer(data=request.data)
+        form.is_valid(raise_exception=True)
+
+        with transaction.atomic():
+            section, moved = services.split_at(anchor, form.validated_data["title"])
+            refuse_if_records_broken(anchor.course)
+
+        return Response(
+            {"id": section.pk, "moved": moved}, status=status.HTTP_201_CREATED
+        )
+
 
 class SectionMoveView(APIView):
     """Moving a whole section against its neighbours on the top level."""
@@ -1020,6 +1077,17 @@ class PlanReviewViewSet(ReadOnlyModelViewSet):
                 "reserve": slots - lessons,
             }
         )
+
+    @action(detail=True, methods=["get"])
+    def diff(self, request, pk=None):
+        """
+        То же сравнение, что видит автор, — присланный план против эталона.
+
+        Граница доступа та же, что у `retrieve`: план показывается, когда
+        его прислали. Читать чужую программу без запроса методист не может
+        и здесь — сравнение не новое право, а другой взгляд на то же самое.
+        """
+        return Response(diff_payload(self.get_object().course))
 
     @action(detail=True, methods=["post"])
     def approve(self, request, pk=None):

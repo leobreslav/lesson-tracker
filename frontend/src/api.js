@@ -124,6 +124,10 @@ export const deleteTerm = (id) =>
 export const createException = (fields) =>
   request('/api/calendar/exceptions/', { method: 'POST', body: fields })
 
+/** Чем план отличается от утверждённого эталона — построчно. */
+export const fetchPlanDiff = (classId) =>
+  request(`/api/plan/diff/?course=${encodeURIComponent(classId)}`)
+
 /** Переименование пометки: у праздника и каникул своё имя, и его правят. */
 export const updateException = (id, fields) =>
   request(`/api/calendar/exceptions/${id}/`, { method: 'PATCH', body: fields })
@@ -308,6 +312,13 @@ export const fetchPlan = (classId) =>
 
 export const createPlanNode = (fields) =>
   request('/api/plan/', { method: 'POST', body: fields })
+
+// тема сразу за этой строкой; внутри темы это разрез — хвост уезжает в новую
+// то же сравнение глазами методиста: границу доступа держит сам запрос
+export const fetchReviewDiff = (id) => request(`/api/plan/reviews/${id}/diff/`)
+
+export const splitPlan = (id, title) =>
+  request(`/api/plan/${id}/split/`, { method: 'POST', body: { title } })
 
 export const updatePlanNode = (id, fields) =>
   request(`/api/plan/${id}/`, { method: 'PATCH', body: fields })

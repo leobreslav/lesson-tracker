@@ -211,6 +211,10 @@ class PlanBaselineRow(models.Model):
     is_section = models.BooleanField("section", default=False)
     title = models.CharField("title", max_length=200)
     node_id = models.PositiveIntegerField("plan node id", null=True, blank=True)
+    # отпечаток содержания на момент снимка: само содержание в эталон не
+    # кладётся, а факт правки показать надо. Пусто у тем и у снимков,
+    # снятых до того, как отпечаток завели, — тогда про содержание молчим
+    content_hash = models.CharField("content hash", max_length=32, blank=True)
 
     class Meta:
         verbose_name = "plan baseline row"

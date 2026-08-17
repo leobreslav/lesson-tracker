@@ -102,6 +102,7 @@ class MatrixTests(AccessTestCase):
             # курсе, и это правильно
             actions=(
                 ("plannode-list", "course"),
+                ("plannode-diff", "course"),
                 ("plannode-layout", "course"),
                 ("plannode-layout-slots", "course"),
                 ("plannode-layout-summary", "course"),
@@ -219,6 +220,11 @@ class MatrixTests(AccessTestCase):
                     "name": "plansection-move",
                     "method": "post",
                     "body": {"direction": "up"},
+                },
+                {
+                    "name": "plannode-split",
+                    "method": "post",
+                    "body": {"title": "Новая тема"},
                 },
             ),
         )
@@ -1035,6 +1041,7 @@ class ActionDoorTests(AccessTestCase):
 
         self.assertActionRules(
             actions=(
+                "planreview-diff",
                 {"name": "planreview-approve", "method": "post"},
                 {
                     "name": "planreview-return",

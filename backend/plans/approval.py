@@ -192,6 +192,7 @@ def approve(baseline: PlanBaseline, reviewer) -> PlanBaseline:
             is_section=row.is_section,
             title=row.title,
             node_id=row.node_id,
+            content_hash=row.content_hash,
         )
         for position, row in enumerate(services.plan_snapshot(baseline.course_id))
     )

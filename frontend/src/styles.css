@@ -1348,6 +1348,93 @@ button.modal-close:hover {
   border-left: 1px solid #c6c6c6;
 }
 
+/*
+ * Сравнение с эталоном: цвет слева, а не заливка строки.
+ *
+ * Заливка на сорока строках рябит и спорит с полосами недель, а глазами
+ * ведут по левому краю — там и стоит полоса с одним знаком: «+» добавлено,
+ * «−» удалено, «±» правка, «↕» переехало. Цвета те же, что везде в
+ * приложении: зелёный записи, красный долга, янтарный правки, синий ссылок.
+ */
+.plan-diff .diff-rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.diff-row {
+  display: flex;
+  gap: 0.5rem;
+  align-items: baseline;
+  padding: 0.15rem 0.5rem;
+  border-left: 3px solid transparent;
+}
+
+.diff-row .diff-mark {
+  width: 0.9rem;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+  color: #9aa0a6;
+}
+
+.diff-row .diff-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* тема — тем же шрифтом, что в самом плане: строка, под которой список */
+.diff-row.section .diff-title {
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.diff-row.added {
+  border-left-color: #1c7a34;
+  background: #eef7f0;
+}
+
+.diff-row.removed {
+  border-left-color: #c5221f;
+  background: #fdecea;
+}
+
+/* удалённой строки в плане уже нет — и читается она как след, а не как урок */
+.diff-row.removed .diff-title {
+  color: #80868b;
+  text-decoration: line-through;
+}
+
+.diff-row.changed {
+  border-left-color: #b06000;
+  background: #fdf6e9;
+}
+
+.diff-row.moved {
+  border-left-color: #1a73e8;
+  background: #eef3fd;
+}
+
+.diff-counts {
+  display: flex;
+  gap: 1rem;
+}
+
+.diff-count b {
+  color: #202124;
+}
+
+.diff-count.added b {
+  color: #1c7a34;
+}
+
+.diff-count.removed b {
+  color: #c5221f;
+}
+
 /* сетке вставки нужна ширина: три колонки в узком окне обрезают названия */
 .modal-body.paste-window {
   width: min(44rem, calc(100vw - 3rem));

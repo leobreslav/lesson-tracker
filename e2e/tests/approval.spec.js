@@ -243,3 +243,87 @@ test('свой курс показывает свой план, даже есл�
   await expect(page.locator('.hint.approval')).toContainText('Утверждён')
   await expect(page.locator('.hint.approval.self')).toHaveCount(0)
 })
+
+test('сравнение с эталоном показывает строки, а не только числа', async ({
+  page,
+  signIn,
+  api,
+}) => {
+  // «+6 −2» отвечает на «сильно ли разошлось», а спрашивают «что именно я
+  // поменял». Удалённые строки при этом видно призраками на их местах —
+  // ради них сравнение и сделано отдельным видом, а не подкраской таблицы.
+  const { course } = await makeMethodist(api, PEOPLE.ivanova, 'Grade 6 Algebra')
+
+  const teacher = await api(PEOPLE.ivanova)
+  await teacher.post(`/api/plan/baseline/submit/?course=${course.id}`, {})
+  const reviews = await teacher.get('/api/plan/reviews/')
+  const row = reviews.body.plans.find((item) => item.id === course.id)
+  await teacher.post(`/api/plan/reviews/${row.review.id}/approve/`, {})
+
+  // правим план: переименовали, удалили, добавили
+  const tree = await teacher.get(`/api/plan/?course=${course.id}`)
+  const section = tree.body.nodes[0]
+  await teacher.patch(`/api/plan/${section.children[0].id}/`, {
+    title: 'Натуральные числа и ноль',
+  })
+  await teacher.delete(`/api/plan/${section.children[1].id}/`)
+  await teacher.post('/api/plan/', { course: course.id, title: 'Совсем новый урок' })
+
+  await signIn(PEOPLE.ivanova)
+  await openPlan(page, 'Grade 6 Algebra')
+  await page.getByRole('button', { name: 'Сравнить с эталоном' }).click()
+
+  const diff = page.locator('.plan-diff')
+  await expect(diff).toBeVisible()
+  // таблицы плана в этом виде нет вовсе: страница перерисована целиком
+  await expect(page.locator('ul.plan')).toHaveCount(0)
+  await expect(page.locator('.plan-tools')).toHaveCount(0)
+
+  await expect(diff.locator('.diff-row.added')).toHaveCount(1)
+  await expect(diff.locator('.diff-row.removed')).toHaveCount(1)
+  await expect(diff.locator('.diff-row.changed')).toHaveCount(1)
+  // переименование видно переименованием, а не парой «удалили и добавили»
+  await expect(diff.locator('.diff-row.changed')).toContainText('было: Натуральные числа')
+  // удалённая строка стоит там, где стояла
+  await expect(diff.locator('.diff-row.removed')).toContainText('Обыкновенные дроби')
+
+  await diff.getByRole('button', { name: 'К плану' }).click()
+  await expect(page.locator('ul.plan')).toBeVisible()
+})
+
+test('методист смотрит на то же сравнение, что и автор плана', async ({
+  page,
+  signIn,
+  api,
+}) => {
+  // Сравнение — не новое право, а другой взгляд: план всё так же виден
+  // только присланный. Разговор «вы переписали половину» иначе начинался
+  // бы со спора о том, что у кого на экране.
+  const { course } = await makeMethodist(api, PEOPLE.petrov, 'Grade 6 Algebra')
+
+  const teacher = await api(PEOPLE.ivanova)
+  await teacher.post(`/api/plan/baseline/submit/?course=${course.id}`, {})
+
+  const methodist = await api(PEOPLE.petrov)
+  const reviews = await methodist.get('/api/plan/reviews/')
+  const row = reviews.body.plans.find((item) => item.id === course.id)
+  await methodist.post(`/api/plan/reviews/${row.review.id}/approve/`, {})
+
+  // после утверждения учитель дописывает урок и снова шлёт на подпись
+  await teacher.post('/api/plan/', { course: course.id, title: 'Дополнительный урок' })
+  await teacher.post(`/api/plan/baseline/submit/?course=${course.id}`, {})
+
+  await signIn(PEOPLE.petrov)
+  await openSupervised(page, 'Grade 6 Algebra')
+  await expect(page.locator('.review-plan li').first()).toBeVisible()
+
+  await page.getByRole('button', { name: 'Сравнить с эталоном' }).click()
+  const added = page.locator('.diff-row.added')
+  await expect(added).toHaveCount(1)
+  await expect(added).toContainText('Дополнительный урок')
+  // список плана уступил место сравнению, а не встал рядом с ним
+  await expect(page.locator('.review-plan')).toHaveCount(0)
+
+  await page.getByRole('button', { name: 'План целиком' }).click()
+  await expect(page.locator('.review-plan li').first()).toBeVisible()
+})

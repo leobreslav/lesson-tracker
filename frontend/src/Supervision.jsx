@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import CourseRow from './CourseRow'
-import { approveReview, fetchReview, returnReview } from './api'
+import { DiffBody } from './PlanDiff'
+import { approveReview, fetchReview, fetchReviewDiff, returnReview } from './api'
 
 /**
  * Чужой план глазами методиста — на месте своего.
@@ -21,6 +22,10 @@ import { approveReview, fetchReview, returnReview } from './api'
 export default function Supervision({ row, busy, onError, onDone }) {
   const { t } = useTranslation()
   const [plan, setPlan] = useState(null)
+  // сравнение с эталоном — второй взгляд на тот же присланный план, а не
+  // второй экран: спрашивают тут «что изменилось», а не «что написано»
+  const [diff, setDiff] = useState(null)
+  const [comparing, setComparing] = useState(false)
   const [returning, setReturning] = useState(false)
   const [comment, setComment] = useState('')
 
@@ -28,11 +33,14 @@ export default function Supervision({ row, busy, onError, onDone }) {
 
   useEffect(() => {
     setPlan(null)
+    setDiff(null)
+    setComparing(false)
     setReturning(false)
     setComment('')
     if (!request) return
 
     fetchReview(request.id).then(setPlan).catch(onError)
+    fetchReviewDiff(request.id).then(setDiff).catch(onError)
   }, [request?.id])
 
   const decide = async (action) => {
@@ -69,25 +77,42 @@ export default function Supervision({ row, busy, onError, onDone }) {
       {plan && (
         <section className="panel">
           <div className="panel-head spread">
-            <h3>{t('reviews.sentPlan')}</h3>
-            <span className="hint">
-              {t('reviews.reserve')}: {plan.reserve > 0 ? '+' : ''}
-              {plan.reserve}
+            <h3>{t(comparing ? 'plan.diff.title' : 'reviews.sentPlan')}</h3>
+            <span className="row">
+              {/* сравнивать не с чем, пока план не утверждали ни разу:
+                  первый запрос и есть точка отсчёта */}
+              {diff?.baseline && (
+                <button
+                  type="button"
+                  className="secondary compact"
+                  onClick={() => setComparing(!comparing)}
+                >
+                  {t(comparing ? 'plan.diff.wholePlan' : 'plan.diff.toggle')}
+                </button>
+              )}
+              <span className="hint">
+                {t('reviews.reserve')}: {plan.reserve > 0 ? '+' : ''}
+                {plan.reserve}
+              </span>
             </span>
           </div>
 
           {/* план целиком — тот, что методист видит сейчас: правки после
               отправки ничего не отзывают, и утверждается увиденное */}
-          <ul className="review-plan">
-            {plan.rows.map((item) => (
-              <li
-                key={item.position}
-                className={item.is_section ? 'section' : 'lesson'}
-              >
-                {item.title}
-              </li>
-            ))}
-          </ul>
+          {comparing && diff ? (
+            <DiffBody data={diff} />
+          ) : (
+            <ul className="review-plan">
+              {plan.rows.map((item) => (
+                <li
+                  key={item.position}
+                  className={item.is_section ? 'section' : 'lesson'}
+                >
+                  {item.title}
+                </li>
+              ))}
+            </ul>
+          )}
 
           {returning ? (
             <>

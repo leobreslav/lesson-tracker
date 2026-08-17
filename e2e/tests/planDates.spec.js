@@ -225,7 +225,7 @@ test('добавление урока сдвигает даты ниже, уда
   // вставляем урок после первого — второй уезжает на слот вперёд
   // кнопки строки появляются при наведении
   await lessons.first().hover()
-  await lessons.first().getByTitle('Вставить урок после').click()
+  await lessons.first().getByTitle('Вставить после').click()
   const form = page.locator('.plan-add-form')
   await form.getByLabel('Название').fill('Вставка')
   await form.getByRole('button', { name: 'Добавить' }).click()
@@ -258,7 +258,7 @@ test('граница четверти приходится на другой у�
 
   const first = page.locator('.plan-row.lesson').first()
   await first.hover()
-  await first.getByTitle('Вставить урок после').click()
+  await first.getByTitle('Вставить после').click()
   const form = page.locator('.plan-add-form')
   await form.getByLabel('Название').fill('Ещё один урок')
   await form.getByRole('button', { name: 'Добавить' }).click()
@@ -464,7 +464,7 @@ test('вставленный урок переносит уроки через �
 
   const first = page.locator('.plan-row.lesson').first()
   await first.hover()
-  await first.getByTitle('Вставить урок после').click()
+  await first.getByTitle('Вставить после').click()
   const form = page.locator('.plan-add-form')
   await form.getByLabel('Название').fill('Ещё урок')
   await form.getByRole('button', { name: 'Добавить' }).click()
@@ -814,7 +814,7 @@ test('проведённый урок держится за дату и не п�
   const driftingBefore = await dateOfLesson(page, drifting)
 
   await first.hover()
-  await first.getByTitle('Вставить урок после').click()
+  await first.getByTitle('Вставить после').click()
   const form = page.locator('.plan-add-form')
   await form.getByLabel('Название').fill('Вставка')
   await form.getByRole('button', { name: 'Добавить' }).click()
@@ -852,7 +852,7 @@ test('у проведённой строки органов управления
 
   // первая проведена: один «+», и больше ничего
   await expect(row(1).locator('.row-actions button')).toHaveCount(1)
-  await expect(row(1).getByTitle('Вставить урок после')).toBeEnabled()
+  await expect(row(1).getByTitle('Вставить после')).toBeEnabled()
 
   // непроведённые строки полны кнопок, как и были
   for (const number of [2, 3]) {
@@ -1037,7 +1037,7 @@ test('в тему, где всё проведено, урок не встави�
     })
     .first()
   await first.hover()
-  await expect(first.getByTitle('Вставить урок после')).toHaveCount(0)
+  await expect(first.getByTitle('Вставить после')).toHaveCount(0)
 })
 
 test('выделение мышью не закрывает окно, а клик по фону закрывает', async ({

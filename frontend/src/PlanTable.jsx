@@ -267,8 +267,43 @@ export default function PlanTable({
     </form>
   )
 
+  /**
+   * Сколько уроков уедет в новую тему — счёт до нажатия, а не после.
+   *
+   * Разрез отвечает на «начинается новый раздел»: хвост темы переезжает
+   * под новый заголовок. Число тут единственное, чего не видно глазами:
+   * хвост бывает в десяток строк и уходит за край экрана.
+   */
+  const tailAfter = (parent, after) => {
+    if (!parent || !after) return 0
+
+    const section = (nodes ?? []).find((node) => node.id === parent)
+    const children = section?.children ?? []
+    const index = children.findIndex((child) => child.id === after)
+
+    return index < 0 ? 0 : children.length - index - 1
+  }
+
   const addForm = () => (
     <form className="plan-add-form" onSubmit={submitAdd}>
+      {/* Что заводим — урок или тему. Спрашивается только у «вставить
+          после»: две кнопки над таблицей и «+» в шапке темы отвечают на
+          этот вопрос сами, а тема внутри темы не кладётся вовсе. */}
+      {adding.after && (
+        <span className="chips" role="group" aria-label={t('plan.addKind')}>
+          {[false, true].map((section) => (
+            <button
+              key={String(section)}
+              type="button"
+              className={adding.is_section === section ? 'chip active' : 'chip'}
+              aria-pressed={adding.is_section === section}
+              onClick={() => changeAdding({ ...adding, is_section: section })}
+            >
+              {t(section ? 'plan.kindSection' : 'plan.kindLesson')}
+            </button>
+          ))}
+        </span>
+      )}
       <input
         autoFocus
         value={adding.title}
@@ -288,6 +323,11 @@ export default function PlanTable({
       <button type="button" className="secondary" onClick={() => changeAdding(null)}>
         {t('plan.done')}
       </button>
+      {adding.is_section && tailAfter(adding.parent, adding.after) > 0 && (
+        <span className="hint">
+          {t('plan.splitTail', { count: tailAfter(adding.parent, adding.after) })}
+        </span>
+      )}
     </form>
   )
 

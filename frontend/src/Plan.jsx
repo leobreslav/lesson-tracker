@@ -14,6 +14,7 @@ import ImportDialog from './ImportDialog'
 import LibraryDialog, { TemplateView } from './LibraryDialog'
 import PlanCsvHelp from './PlanCsvHelp'
 import PlanTable from './PlanTable'
+import PlanDiff from './PlanDiff'
 import { dragId } from './PlanDnd'
 import Modal from './Modal'
 import {
@@ -34,6 +35,7 @@ import { lastChoice, remember, remembered, rememberChoice } from './remember'
 import { applyMove, countBlocks, planRows } from './planLogic'
 import {
   createPlanNode,
+  splitPlan,
   deleteTemplate,
   fetchSubjects,
   fetchTemplate,
@@ -128,6 +130,7 @@ export default function Plan({ onLoggedOut }) {
   const [editing, setEditing] = useState(null) // {id, title} — folders only
   const [opened, setOpened] = useState(null) // the lesson whose panel is open
   const [menuOpen, setMenuOpen] = useState(false)
+  const [comparing, setComparing] = useState(false)
   // свой курс под собственным надзором: решение принимается по просьбе, а
   // не вместо плана — иначе своего плана не видно вовсе
   const [reviewing, setReviewing] = useState(false)
@@ -527,6 +530,7 @@ export default function Plan({ onLoggedOut }) {
   const pickClass = (id) => {
     setClassId(id)
     setReviewing(false)
+    setComparing(false)
     rememberChoice('course', id)
   }
 
@@ -552,14 +556,20 @@ export default function Plan({ onLoggedOut }) {
     if (after) setAdding(null)
     else setAdding({ ...adding, title: '' })
 
+    // Тема «после этой строки» — не создание на уровне, а разрез: внутри
+    // блока хвост уроков переезжает под новый заголовок, снаружи тема
+    // просто встаёт следом. Считает это сервер: где кончается блок и что
+    // в него входит, знает он, а не форма.
     await run(() =>
-      createPlanNode({
-        course: classId,
-        parent,
-        after,
-        is_section,
-        title: title.trim(),
-      }),
+      is_section && after
+        ? splitPlan(after, title.trim())
+        : createPlanNode({
+            course: classId,
+            parent,
+            after,
+            is_section,
+            title: title.trim(),
+          }),
     )
   }
 
@@ -716,6 +726,20 @@ export default function Plan({ onLoggedOut }) {
           label={classLabel}
           groups={groups}
         />
+        {/* Сравнение — не режим таблицы, а другой вид страницы: там есть
+            удалённые строки, которых в плане уже нет, и трогать их нельзя.
+            Поэтому тумблер стоит здесь, в шапке, а не в панели управления:
+            панель в этом виде не показывается вовсе */}
+        {!supervising && baseline?.approved && (
+          <button
+            type="button"
+            className={comparing ? 'chip active' : 'chip'}
+            aria-pressed={comparing}
+            onClick={() => setComparing(!comparing)}
+          >
+            {t('plan.diff.toggle')}
+          </button>
+        )}
       </header>
 
       {/* чужой план под надзором: числа те же, что видит учитель у себя, и
@@ -743,6 +767,10 @@ export default function Plan({ onLoggedOut }) {
             }
           }}
         />
+      ) : comparing ? (
+        /* страница перерисовывается целиком: ни панели, ни сводки, ни
+           таблицы — сравнение показывает и то, чего в плане уже нет */
+        <PlanDiff classId={classId} onClose={() => setComparing(false)} />
       ) : !classes.length ? (
         <EmptyState
           title={t('plan.needClass.title')}

@@ -14,6 +14,7 @@ ORM и переписывают позиции.
 from __future__ import annotations
 
 import csv
+import hashlib
 import io
 from datetime import timedelta
 from collections import defaultdict
@@ -1079,6 +1080,55 @@ def move(node, direction: str) -> bool:
     return True
 
 
+def split_at(anchor, title: str):
+    """
+    Тема в середине плана: новая тема сразу за строкой, на которую нажали.
+
+    Кнопка «+» у строки заводила только урок, и тема появлялась либо в конце
+    плана, либо перетаскиванием оттуда наверх — а поводов завести её в
+    середине ровно два, и оба обычные: начинается новый раздел, и надо
+    разрезать надвое разросшуюся тему.
+
+    Поэтому у действия две ветки, и обе выражаются одним движением:
+
+    * якорь на верхнем уровне — новая тема просто встаёт за ним, пустой;
+    * якорь внутри темы — тема **разрезается**: хвост её уроков переезжает
+      в новую, а голова остаётся на месте.
+
+    Ключевое свойство второй ветки: **плоская последовательность уроков не
+    меняется**. Голова, потом хвост — в том же порядке, в каком они и шли;
+    меняется только заголовок над хвостом. Значит ни номера, ни раскладка,
+    ни очередь записей не двигаются, и резать можно где угодно, в том числе
+    посреди проведённых. Сторожит это пост-условие вызывающего кода, а не
+    вера в этот комментарий.
+
+    Возвращает пару «новая тема, сколько уроков в неё уехало»: число надо
+    сказать до нажатия, а показать — после.
+    """
+    from .models import PlanNode
+
+    if anchor.parent_id is None:
+        block, tail = anchor, []
+    else:
+        block = anchor.parent
+        siblings = level(anchor.course_id, anchor.parent_id)
+        index = next(i for i, item in enumerate(siblings) if item.pk == anchor.pk)
+        tail = siblings[index + 1 :]
+
+    top = level(anchor.course_id, None)
+    at = next(i for i, item in enumerate(top) if item.pk == block.pk) + 1
+
+    section = PlanNode.objects.create(
+        course_id=anchor.course_id, is_section=True, title=title, position=0
+    )
+    place(section, None, at)
+
+    for position, node in enumerate(tail):
+        place(node, section, position)
+
+    return section, len(tail)
+
+
 def dissolve_section(section) -> None:
     """Delete a section, lifting its lessons to its place on the top level."""
     from .models import PlanNode
@@ -1459,6 +1509,26 @@ class SnapshotRow(NamedTuple):
     is_section: bool
     title: str
     node_id: int
+    content_hash: str = ""
+
+
+def content_hash(node) -> str:
+    """
+    Отпечаток содержания урока — чтобы снимок мог сказать «его правили».
+
+    Само содержание в эталон не кладётся: копия удвоила бы хранение ради
+    вопроса, которого никто не задаёт. А вот **факт** правки нужен —
+    иначе жёлтая строка в сравнении означает только «переименовали», и
+    методист прочтёт это как «остального не трогали».
+
+    Тридцать два байта на строку, и завести их надо сразу: снимки, снятые
+    без отпечатка, задним числом не дополнить.
+    """
+    if node.is_section:
+        return ""
+
+    payload = "\u0000".join(getattr(node, field, "") or "" for field in CONTENT_FIELDS)
+    return hashlib.sha256(payload.encode()).hexdigest()[:32]
 
 
 def plan_snapshot(course_id: int) -> list[SnapshotRow]:
@@ -1468,14 +1538,15 @@ def plan_snapshot(course_id: int) -> list[SnapshotRow]:
     Та же форма, что у строк шаблона в библиотеке: дерево ровно
     двухуровневое, и плоский список с заголовками выражает его полностью.
     """
+    def row(node):
+        return SnapshotRow(
+            node.is_section, node.title, node.pk, content_hash(node)
+        )
+
     rows = []
     for branch in get_tree(course_id):
-        rows.append(SnapshotRow(True, branch.node.title, branch.node.pk)
-                    if branch.node.is_section
-                    else SnapshotRow(False, branch.node.title, branch.node.pk))
-        rows.extend(
-            SnapshotRow(False, child.title, child.pk) for child in branch.children
-        )
+        rows.append(row(branch.node))
+        rows.extend(row(child) for child in branch.children)
 
     return rows
 

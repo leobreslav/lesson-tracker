@@ -697,3 +697,54 @@ test('длинная вставка: сетка едет за выделение
   await expect(dialog.locator('.paste-grid td.picked')).toHaveCount(21)
   await expect(add).toBeInViewport()
 })
+
+test('тема заводится в середине плана и режет блок надвое', async ({
+  page,
+  signIn,
+}) => {
+  // Тема появлялась только в конце плана и ехала наверх перетаскиванием
+  // через десяток строк. Поводов завести её в середине два, и оба обычные:
+  // начинается новый раздел, и надо разрезать разросшуюся тему.
+  await signIn(PEOPLE.petrov)
+  await openPlan(page, EMPTY_COURSE)
+
+  await page.getByRole('button', { name: 'Добавить тему' }).click()
+  const form = page.locator('.plan-add-form')
+  await form.getByLabel('Название').fill('Треугольники')
+  await form.getByRole('button', { name: 'Добавить' }).click()
+  await expect(page.getByText('Треугольники')).toBeVisible()
+
+  for (const title of ['Первый признак', 'Второй признак', 'Третий признак']) {
+    const head = page.locator('.plan-section .section-head').first()
+    await head.hover()
+    await head.getByTitle('Добавить урок в тему').click()
+    const inner = page.locator('.plan-add-form')
+    await inner.getByLabel('Название').fill(title)
+    await inner.getByRole('button', { name: 'Добавить' }).click()
+    await expect(page.locator('.plan-row', { hasText: title })).toBeVisible()
+  }
+
+  // режем после первого признака: два последних урока должны уехать
+  const anchor = page.locator('.plan-row', { hasText: 'Первый признак' })
+  await anchor.hover()
+  await anchor.getByTitle('Вставить после').click()
+
+  const cut = page.locator('.plan-add-form')
+  await cut.getByRole('button', { name: 'Тема', exact: true }).click()
+  // сколько уроков уедет, сказано до нажатия, а не после
+  await expect(cut).toContainText('2')
+  await cut.getByLabel('Название').fill('Признаки подобия')
+  await cut.getByRole('button', { name: 'Добавить' }).click()
+
+  await expect(page.locator('.plan-section')).toHaveCount(2)
+  const rows = await structure(page)
+  // плоская последовательность уроков не изменилась — только заголовок над хвостом
+  expect(rows.join(' | ')).toContain('1 Первый признак')
+  expect(rows.join(' | ')).toContain('2 Второй признак')
+  expect(rows.join(' | ')).toContain('3 Третий признак')
+
+  const second = page.locator('.plan-section').nth(1)
+  await expect(second).toContainText('Признаки подобия')
+  await expect(second).toContainText('2 урока')
+  await expect(page.locator('.plan-section').first()).toContainText('1 урок')
+})

@@ -760,3 +760,89 @@ class InsertBeforeTests(PlanTestCase):
         )
 
         self.assertEqual(self.titles(self.trig)[1], "Доработка")
+
+
+class SplitTests(PlanTestCase):
+    """
+    Тема в середине плана — и разрез темы надвое, когда якорь внутри неё.
+
+    Кнопка «+» у строки заводила только урок; тема появлялась в конце плана
+    и ехала наверх перетаскиванием — через десяток строк, каждая из которых
+    отвечала отказом «тема в тему не кладётся».
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.trig, self.vectors, self.stereo = self.build_sample()
+
+    def split(self, anchor, title="Новая тема"):
+        return self.client.post(
+            reverse("plannode-split", args=[anchor.pk]),
+            {"title": title},
+            format="json",
+        )
+
+    def test_a_top_level_anchor_gets_an_empty_theme_after_it(self):
+        response = self.split(self.node("Повторение"))
+
+        self.assertEqual(response.status_code, 201, response.content)
+        self.assertEqual(response.json()["moved"], 0)
+        self.assertEqual(
+            self.structure()[-5:],
+            [
+                "Повторение",
+                "Новая тема",
+                "Контрольная работа",
+                "Стереометрия",
+                "  Аксиомы",
+            ],
+        )
+
+    def test_a_block_anchor_puts_the_theme_after_the_whole_block(self):
+        """Якорь — сама тема: за ней встаёт соседняя, а не вложенная."""
+        self.split(self.trig)
+
+        self.assertEqual(
+            self.structure()[:4],
+            ["Тригонометрия", "  Синус суммы", "  Косинус суммы", "Новая тема"],
+        )
+
+    def test_an_anchor_inside_a_block_cuts_the_tail_off(self):
+        response = self.split(self.node("Синус суммы"))
+
+        self.assertEqual(response.json()["moved"], 1)
+        self.assertEqual(
+            self.structure()[:4],
+            ["Тригонометрия", "  Синус суммы", "Новая тема", "  Косинус суммы"],
+        )
+
+    def test_the_cut_does_not_move_a_single_lesson(self):
+        """
+        Плоская последовательность — то, по чему считаются номера, раскладка
+        и очередь записей. Разрез меняет заголовок над хвостом и ничего
+        больше, поэтому резать можно даже посреди проведённых.
+        """
+        before = self.numbers()
+
+        self.split(self.node("Понятие вектора"))
+
+        self.assertEqual(self.numbers(), before)
+
+    def test_cutting_among_recorded_hours_is_allowed(self):
+        from schools.testing import make_slot
+
+        lesson = self.node("Синус суммы")
+        make_slot(self.user, self.course, day=date(2026, 9, 7), lesson=lesson)
+
+        response = self.split(lesson)
+
+        self.assertEqual(response.status_code, 201, response.content)
+        lesson.refresh_from_db()
+        # запись осталась на своей строке, строка — на своём месте
+        self.assertEqual(lesson.parent_id, self.trig.pk)
+        self.assertEqual(self.numbers()["Синус суммы"], 1)
+
+    def test_a_nameless_theme_is_refused(self):
+        response = self.split(self.node("Повторение"), title="")
+
+        self.assertEqual(response.status_code, 400)
