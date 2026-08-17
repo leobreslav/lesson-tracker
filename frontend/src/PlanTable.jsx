@@ -518,26 +518,12 @@ export default function PlanTable({
               {node.title}
             </button>
 
-            {/* two separate marks: one says there is a lesson written, the
-                other that something comes with it */}
-            {node.has_content && (
-              <span
-                className="mark"
-                title={t('plan.hasContent')}
-                aria-label={t('plan.hasContent')}
-              >
-                📝
-              </span>
-            )}
-            {node.attachments > 0 && (
-              <span
-                className="mark"
-                title={t('plan.hasAttachments', { count: node.attachments })}
-                aria-label={t('plan.hasAttachments', { count: node.attachments })}
-              >
-                📎
-              </span>
-            )}
+            {/* Значков «есть содержание» и «есть вложения» тут больше нет.
+                Они отвечали на вопрос, которого таблице не задают: за
+                содержанием идут в строку, а не выбирают её по значку. Зато
+                на сорока строках это восемьдесят картинок справа от
+                названий — и они спорили с ✓ и • слева, которые как раз про
+                состояние и нужны. */}
 
             {node.note && (
               <span className="hint note" title={node.note}>

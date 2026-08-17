@@ -358,10 +358,6 @@
     "refreshTemplate": "Обновить в библиотеке",
     "refreshHint": "«{{title}}» будет перезаписан текущим планом курса. У коллег, которые уже взяли копию, ничего не изменится.",
     "published": "«{{title}}» на полке.",
-    "hasContent": "У урока есть содержание",
-    "hasAttachments_one": "{{count}} вложение",
-    "hasAttachments_few": "{{count}} вложения",
-    "hasAttachments_many": "{{count}} вложений",
     "synced": "Синхронизовано: создано {{created}}, обновлено {{updated}}, удалено {{deleted}}.",
     "csvHelp": {
       "toggle": "Как выглядит файл",

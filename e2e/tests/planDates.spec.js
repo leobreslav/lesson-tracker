@@ -108,6 +108,28 @@ test('в плане видно, какой час записан, а какой 
   await expect(page.locator('.plan-bar')).toContainText('Не отмечено занятий: 2')
 })
 
+test('значки состояния стоят в столбик перед датами', async ({
+  page,
+  signIn,
+  api,
+}) => {
+  // Место под значок занято всегда: иначе даты у помеченных строк съезжали
+  // бы относительно остальных, а значки не складывались бы в столбик.
+  const { course } = await liveCourse(api)
+
+  await signIn(PEOPLE.ivanova)
+  await page.goto('/plan')
+  await ready(page)
+  await page.getByLabel('Курс').selectOption(String(course.id))
+  await expect(page.locator('.plan-cards')).toBeVisible()
+
+  const left = await page
+    .locator('.plan-row.lesson .plan-date')
+    .evaluateAll((nodes) => nodes.map((node) => Math.round(node.getBoundingClientRect().x)))
+
+  expect(new Set(left).size, `даты съехали: ${left}`).toBe(1)
+})
+
 test('в сетке расписания у долга красная точка', async ({ page, signIn, api }) => {
   // Час, который держит очередь, надо увидеть не заходя в занятие.
   const { slots } = await liveCourse(api)

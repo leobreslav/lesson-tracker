@@ -36,18 +36,16 @@ async function openLesson(page, title) {
   return panel
 }
 
-test('урок с содержанием помечен в таблице и открывается панелью', async ({
+test('строка плана открывается панелью, а значков в таблице нет', async ({
   page,
   signIn,
 }) => {
   await signIn(PEOPLE.ivanova)
   await openPlan(page)
 
-  // the two marks are separate on purpose: written up, and has something with it
-  await expect(rowFor(page, WITH_CONTENT).locator('.mark')).toHaveCount(1)
-  await expect(rowFor(page, WITH_LINK).locator('.mark')).toHaveCount(2)
-  // a lesson nobody has written up carries neither
-  await expect(rowFor(page, 'Простые и составные числа').locator('.mark')).toHaveCount(0)
+  // значков «есть содержание» и «есть вложения» в таблице больше нет: за
+  // содержанием идут в строку, а не выбирают её по картинке
+  await expect(page.locator('.plan-row .mark')).toHaveCount(0)
 
   const panel = await openLesson(page, WITH_CONTENT)
 
@@ -220,6 +218,7 @@ test('ссылка добавляется к уроку и сразу видна
   await panel.getByRole('button', { name: 'Закрыть окно' }).click()
   await expect(panel).toBeHidden()
 
-  // the table learned about it without a reload
-  await expect(rowFor(page, target).locator('.mark')).toHaveCount(1)
+  // а таблица про вложение узнала без перезагрузки — проверить это стало
+  // нечем: значка нет, а дерево всё равно перечитывается ради содержания
+  await expect(rowFor(page, target)).toBeVisible()
 })

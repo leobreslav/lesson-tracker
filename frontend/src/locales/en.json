@@ -348,9 +348,6 @@
     "refreshTemplate": "Update in the library",
     "refreshHint": "«{{title}}» will be overwritten with the current plan of this course. Colleagues who already took a copy keep theirs.",
     "published": "«{{title}}» is on the shelf.",
-    "hasContent": "The lesson has content",
-    "hasAttachments_one": "{{count}} attachment",
-    "hasAttachments_other": "{{count}} attachments",
     "synced": "Synced: {{created}} created, {{updated}} updated, {{deleted}} deleted.",
     "csvHelp": {
       "toggle": "What the file looks like",
