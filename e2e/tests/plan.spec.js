@@ -430,3 +430,48 @@ test('поиск сужает полку, «только мои» прячет �
   // у Петрова на полке свой черновик, чужая «Алгебра 6» уходит
   await expect(shelf.getByText('Алгебра 6, по учебнику')).toHaveCount(0)
 })
+
+test('тему бросают на весь блок, а не в её шапку', async ({ page, signIn }) => {
+  // Пока целиться приходилось в шапку соседней темы — строку в 29 px, —
+  // перетащить тему было почти нельзя: блок из восьми уроков занимает
+  // пол-экрана, и весь этот экран отвечал отказом.
+  await signIn(PEOPLE.ivanova)
+  await openPlan(page, 'Grade 6 Algebra')
+
+  // `.plan-section` — это весь блок вместе с уроками, поэтому шапку
+  // спрашиваем отдельным классом: иначе `.title` внутри блока девять
+  const sections = page.locator('.plan-section')
+  const head = (block) => block.locator('.section-head .title')
+  const second = sections.nth(1)
+  await expect(head(second)).toHaveText(/Делимость чисел/)
+
+  // берём вторую тему за ручку и ведём в середину первого блока
+  await second.locator('.section-head').hover()
+  const handle = second.locator('.section-head').getByTitle('Перетащить')
+  const inside = page
+    .locator('.plan-section')
+    .first()
+    .locator('.plan-row.lesson')
+    .nth(1)
+
+  const from = await handle.boundingBox()
+  const to = await inside.boundingBox()
+  await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(to.x + to.width / 2, to.y + 2, { steps: 12 })
+  await page.mouse.up()
+
+  // блок встал перед первым целиком, вместе со своими уроками
+  await expect(head(sections.first())).toHaveText(/Делимость чисел/)
+  await expect(page.locator('.plan-row.lesson').first().locator('.title')).toHaveText(
+    'Делители и кратные',
+  )
+
+  // и сервер согласен
+  await page.reload()
+  await ready(page)
+  await openPlan(page, 'Grade 6 Algebra')
+  await expect(head(page.locator('.plan-section').first())).toHaveText(
+    /Делимость чисел/,
+  )
+})

@@ -164,18 +164,20 @@ describe('пересчёт после правок дерева', () => {
 describe('перетаскивание за спину проведённого', () => {
   // «нед 1» проведена, дальше свободно; ключи — id для dnd-kit
   const items = new Map([
-    ['n-11', { node: lesson(11, 'Синус'), parent: null, index: 0, number: 1 }],
-    ['n-12', { node: lesson(12, 'Косинус'), parent: null, index: 1, number: 2 }],
-    ['n-13', { node: lesson(13, 'Тангенс'), parent: null, index: 2, number: 3 }],
+    ['n-11', { id: 'n-11', node: lesson(11, 'Синус'), parent: null, index: 0, number: 1 }],
+    ['n-12', { id: 'n-12', node: lesson(12, 'Косинус'), parent: null, index: 1, number: 2 }],
+    ['n-13', { id: 'n-13', node: lesson(13, 'Тангенс'), parent: null, index: 2, number: 3 }],
     [
       'n-2',
       {
+        id: 'n-2',
         node: section(2, 'Векторы', [lesson(21, 'Понятие')]),
         parent: null,
         index: 3,
         number: null,
         first: 4,
         last: 4,
+        count: 1,
       },
     ],
   ])
@@ -184,7 +186,12 @@ describe('перетаскивание за спину проведённого'
     resolveDropTarget({ items, activeId: 'n-13', overId, below, boundary })
 
   it('без единой записи место свободно везде', () => {
-    assert.deepEqual(drop('n-11', false, 0), { parent: null, index: 0 })
+    assert.deepEqual(drop('n-11', false, 0), {
+      parent: null,
+      index: 0,
+      overId: 'n-11',
+      side: 'before',
+    })
   })
 
   it('на место проведённого урока не встать', () => {
@@ -192,7 +199,7 @@ describe('перетаскивание за спину проведённого'
   })
 
   it('сразу за последней записью — можно', () => {
-    assert.deepEqual(drop('n-11', true, 1), { parent: null, index: 1 })
+    assert.equal(drop('n-11', true, 1).index, 1)
   })
 
   it('между двумя записями места нет', () => {
@@ -202,6 +209,128 @@ describe('перетаскивание за спину проведённого'
   it('тема приземляется своими уроками, а не собой', () => {
     assert.equal(drop('n-2', false, 4), null)
     // индекс среди сиблингов, из которого уже вычтен сам переносимый узел
-    assert.deepEqual(drop('n-2', true, 4), { parent: null, index: 3 })
+    assert.equal(drop('n-2', true, 4).index, 3)
+  })
+})
+
+/**
+ * Цель для темы — весь её блок, а не шапка.
+ *
+ * Пока целиться приходилось в шапку соседней темы, перетащить тему было
+ * почти нельзя: блок из десяти уроков занимает пол-экрана, и весь этот
+ * экран отвечал отказом — «тема в тему не кладётся».
+ */
+describe('перетаскивание темы через блоки', () => {
+  const trig = section(1, 'Тригонометрия', [
+    lesson(11, 'Синус'),
+    lesson(12, 'Косинус'),
+    lesson(13, 'Тангенс'),
+    lesson(14, 'Котангенс'),
+  ])
+  const vectors = section(2, 'Векторы', [lesson(21, 'Понятие')])
+  const probability = section(3, 'Вероятность', [lesson(31, 'Событие')])
+
+  const trigEntry = {
+    id: 'n-1',
+    node: trig,
+    parent: null,
+    index: 0,
+    number: null,
+    first: 1,
+    last: 4,
+    count: 4,
+  }
+  const vectorsEntry = {
+    id: 'n-2',
+    node: vectors,
+    parent: null,
+    index: 1,
+    number: null,
+    first: 5,
+    last: 5,
+    count: 1,
+  }
+
+  const items = new Map([
+    ['n-1', trigEntry],
+    ...trig.children.map((child, index) => [
+      `n-${child.id}`,
+      {
+        id: `n-${child.id}`,
+        node: child,
+        parent: trig.id,
+        index,
+        number: index + 1,
+        section: trigEntry,
+      },
+    ]),
+    ['n-2', vectorsEntry],
+    [
+      'n-21',
+      {
+        id: 'n-21',
+        node: vectors.children[0],
+        parent: vectors.id,
+        index: 0,
+        number: 5,
+        section: vectorsEntry,
+      },
+    ],
+    [
+      'n-3',
+      {
+        id: 'n-3',
+        node: probability,
+        parent: null,
+        index: 2,
+        number: null,
+        first: 6,
+        last: 6,
+        count: 1,
+      },
+    ],
+  ])
+
+  // тащим третий блок: у второго место «за Тригонометрией» и так занято,
+  // а сброс, ничего не меняющий, законно отвечает null
+  const drag = (overId, below) =>
+    resolveDropTarget({ items, activeId: 'n-3', overId, below })
+
+  it('наведение на верхнюю половину блока ставит тему перед ним', () => {
+    assert.deepEqual(drag('n-11', false), {
+      parent: null,
+      index: 0,
+      overId: 'n-1',
+      side: 'before',
+    })
+  })
+
+  it('наведение на нижнюю половину блока ставит тему за ним', () => {
+    // третий и четвёртый уроки блока из четырёх — это уже «ниже»
+    assert.equal(drag('n-14', true).side, 'after')
+    assert.equal(drag('n-14', true).parent, null)
+  })
+
+  it('черта рисуется на блоке, а не на строке под курсором', () => {
+    assert.equal(drag('n-12', false).overId, 'n-1')
+  })
+
+  it('внутрь себя тема не кладётся', () => {
+    assert.equal(
+      resolveDropTarget({ items, activeId: 'n-1', overId: 'n-12', below: true }),
+      null,
+    )
+  })
+
+  it('урок по-прежнему кладётся внутрь блока', () => {
+    const target = resolveDropTarget({
+      items,
+      activeId: 'n-21',
+      overId: 'n-12',
+      below: true,
+    })
+
+    assert.equal(target.parent, trig.id)
+    assert.equal(target.index, 2)
   })
 })

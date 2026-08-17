@@ -175,8 +175,16 @@ export function applyMove(data, nodeId, parent, index) {
 /**
  * Where a drop will land.
  *
- * `items` is Map<drag id, {node, parent, index}>. Returns {parent, index}, or
- * null when the drop is not allowed or would change nothing.
+ * `items` is Map<drag id, {id, node, parent, index, …}>. Returns
+ * {parent, index, overId, side} — the last two say, куда рисовать черту, —
+ * или null, когда сброс не разрешён или ничего не меняет.
+ *
+ * **У темы цель — весь её блок, а не шапка.** Тема ходит только по верхнему
+ * уровню, и пока целиться в неё приходилось в 29-пиксельную шапку соседней
+ * темы, перетащить её было почти нельзя: блок из десяти уроков занимает
+ * пол-экрана, и весь этот экран отвечал отказом. Наведение на любую строку
+ * блока значит теперь «рядом с этим блоком» — выше в его верхней половине,
+ * ниже в нижней.
  */
 export function resolveDropTarget({ items, activeId, overId, below, boundary = 0 }) {
   const active = items.get(activeId)
@@ -185,19 +193,36 @@ export function resolveDropTarget({ items, activeId, overId, below, boundary = 0
   if (typeof overId === 'string' && overId.startsWith('empty-')) {
     // an empty section: the only way to put a first lesson into it
     if (active.node.is_section) return null
-    return { parent: Number(overId.slice('empty-'.length)), index: 0 }
+    return {
+      parent: Number(overId.slice('empty-'.length)),
+      index: 0,
+      overId,
+      side: 'before',
+    }
   }
 
-  const over = items.get(overId)
+  let over = items.get(overId)
   if (!over || over.node.id === active.node.id) return null
+
+  let after = below
+
+  if (active.node.is_section && over.parent !== null) {
+    const host = over.section
+    if (!host || host.node.id === active.node.id) return null
+
+    // половина блока решает сторону: у урока номер три из десяти «выше»,
+    // у восьмого — «ниже», и целиться в шапку больше не надо
+    after = over.index + (below ? 1 : 0) > (host.count ?? 0) / 2
+    over = host
+  }
 
   // За спину проведённого урока ходу нет: `boundary` — его сквозной номер,
   // и место, в которое строка приземлится, должно быть строго за ним. Тема
   // приземляется своим первым уроком (сверху) или сразу за последним
   // (снизу); тема без уроков места в ленте не занимает, и мерить нечего.
   if (boundary) {
-    const at = over.node.is_section ? (below ? over.last : over.first) : over.number
-    if (at && (below ? at + 1 : at) <= boundary) return null
+    const at = over.node.is_section ? (after ? over.last : over.first) : over.number
+    if (at && (after ? at + 1 : at) <= boundary) return null
   }
 
   let parent
@@ -205,13 +230,11 @@ export function resolveDropTarget({ items, activeId, overId, below, boundary = 0
     // a section header means the place next to it on the top level;
     // hovering over its contents is what puts a lesson inside
     parent = null
-  } else if (active.node.is_section && over.parent !== null) {
-    return null // a section cannot go inside a section
   } else {
     parent = over.parent
   }
 
-  let index = over.index + (below ? 1 : 0)
+  let index = over.index + (after ? 1 : 0)
 
   if (parent === active.parent) {
     // the index is counted without the node itself
@@ -219,5 +242,5 @@ export function resolveDropTarget({ items, activeId, overId, below, boundary = 0
     if (index === active.index) return null
   }
 
-  return { parent, index }
+  return { parent, index, overId: over.id ?? overId, side: after ? 'after' : 'before' }
 }

@@ -134,9 +134,11 @@ export default function PlanTable({
     const map = new Map()
 
     ;(nodes ?? []).forEach((node, index) => {
-      const numbers = (node.children ?? []).map((child) => child.number).filter(Boolean)
+      const children = node.children ?? []
+      const numbers = children.map((child) => child.number).filter(Boolean)
 
-      map.set(dragId(node.id), {
+      const entry = {
+        id: dragId(node.id),
         node,
         parent: null,
         index,
@@ -145,13 +147,20 @@ export default function PlanTable({
         number: node.number ?? null,
         first: numbers.length ? Math.min(...numbers) : null,
         last: numbers.length ? Math.max(...numbers) : null,
-      })
-      ;(node.children ?? []).forEach((child, childIndex) => {
+        count: children.length,
+      }
+      map.set(entry.id, entry)
+
+      children.forEach((child, childIndex) => {
         map.set(dragId(child.id), {
+          id: dragId(child.id),
           node: child,
           parent: node.id,
           index: childIndex,
           number: child.number ?? null,
+          // ссылка на блок: наведение на урок внутри темы — это цель для
+          // самой темы, а её шапкой в такой момент никто не целится
+          section: entry,
         })
       })
     })
@@ -179,7 +188,9 @@ export default function PlanTable({
       boundary,
     })
 
-    return target && { ...target, overId, side: isBelow(event) ? 'after' : 'before' }
+    // куда рисовать черту, решает сам расчёт: у темы целью становится весь
+    // блок, а не та строка, над которой стоит курсор
+    return target
   }
 
   const handleDragStart = (event) => {
