@@ -131,7 +131,8 @@ test('справка о формате раскрывается кнопкой �
   await signIn(PEOPLE.petrov)
   await openPlan(page, EMPTY_COURSE)
 
-  const card = page.locator('.panel', { hasText: 'Импорт и экспорт' })
+  // всё управление планом — одна панель над таблицей
+  const card = page.locator('.plan-tools')
   // свёрнутого текста в разметке быть не должно: это состояние, а не display:none
   await expect(card.locator('.csv-help')).toHaveCount(0)
 

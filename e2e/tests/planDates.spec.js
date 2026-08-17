@@ -66,22 +66,45 @@ test('даты видны, сводка сходится с раскладкой
   await expect(page.locator('.plan-row.lesson .plan-date')).toHaveCount(lessons)
 })
 
-test('над таблицей одна полоса, а не три строки', async ({ page, signIn }) => {
-  // Чекбоксы, «Утверждён…» и «уроков вне тем» стояли тремя блоками страницы,
-  // каждый со своим зазором, и вместе занимали высоту шести строк таблицы.
+test('над таблицей одна панель управления, а под таблицей пусто', async ({
+  page,
+  signIn,
+}) => {
+  // Кнопки жили в двух карточках под таблицей, чекбоксы — полосой над ней,
+  // и до «+ урок» на плане в сорок уроков надо было прокрутить полторы
+  // тысячи пикселей. Теперь всё, что делают с планом целиком, — один ряд.
   await signIn(PEOPLE.ivanova)
   await openPlan(page)
 
-  const bar = page.locator('.plan-bar')
-  await expect(bar).toBeVisible()
-  const box = await bar.boundingBox()
-  expect(Math.round(box.height), 'полоса разъехалась на несколько строк').toBeLessThan(60)
+  const tools = page.locator('.plan-tools')
+  await expect(tools).toBeVisible()
 
-  // чекбоксы внутри неё и прижаты вправо
-  const toggles = await bar.locator('.dates-toggle').boundingBox()
+  // в ней и добавление, и обмен файлами, и полка, и показ
+  for (const name of ['+ урок', '+ тема', 'Импорт', 'Экспорт', 'Из библиотеки']) {
+    await expect(tools.getByRole('button', { name, exact: true })).toBeVisible()
+  }
+
+  const box = await tools.boundingBox()
+  expect(Math.round(box.height), 'панель разъехалась на несколько рядов').toBeLessThan(
+    110,
+  )
+
+  // чекбоксы показа — там же, прижаты вправо
+  const toggles = await tools.locator('.dates-toggle').boundingBox()
   expect(Math.round(toggles.x + toggles.width)).toBeLessThanOrEqual(
     Math.round(box.x + box.width) + 1,
   )
+
+  // и стоит она над таблицей, а под таблицей не осталось ни одной карточки
+  const table = await page.locator('ul.plan').first().boundingBox()
+  expect(box.y + box.height).toBeLessThanOrEqual(table.y + 1)
+  const below = await page.evaluate(() => {
+    const list = document.querySelector('ul.plan').getBoundingClientRect()
+    return [...document.querySelectorAll('.page > .panel')].filter(
+      (panel) => panel.getBoundingClientRect().top > list.top,
+    ).length
+  })
+  expect(below, 'под таблицей снова что-то выросло').toBe(0)
 })
 
 test('в плане видно, какой час записан, а какой — долг', async ({

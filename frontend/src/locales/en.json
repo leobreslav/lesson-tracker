@@ -304,8 +304,6 @@
     "placeholder": "Name, for example «Autumn break»"
   },
   "plan": {
-    "addTitle": "Add",
-    "transferTitle": "Import and export",
     "drag": "Drag",
     "dropHere": "Drop a lesson here",
     "title": "Curriculum map",
@@ -388,7 +386,7 @@
     "freeSummary_one": "{{count}} free lesson, {{start}} — {{end}}",
     "freeSummary_other": "{{count}} free lessons, {{start}} — {{end}}",
     "baseline": {
-      "submit": "Send for approval",
+      "submit": "Submit for approval",
       "hint": "A snapshot goes to the methodist of the course; «My courses» on the main page then counts the drift from what was approved.",
       "sent": "Sent to {{name}}.",
       "pending": "On approval with {{name}}.",

@@ -750,20 +750,165 @@ export default function Plan({ onLoggedOut }) {
           )}
 
           {/*
-            Одна строка на всё, что стоит между сводкой и таблицей.
+            Одна панель управления над таблицей — всё, что делают с планом
+            целиком.
 
-            Было три: чекбоксы, прижатые вправо, строка про утверждение и
-            замечание про уроки вне тем — каждая своим блоком страницы, то
-            есть с зазором в рем сверху и снизу. Три строки текста занимали
-            высоту таблицы из шести уроков и ничего друг о друге не
-            сообщали.
+            Кнопки жили в двух карточках **под** таблицей: «Добавить» и
+            «Импорт и экспорт», каждая со своим заголовком. На плане в сорок
+            уроков это полторы тысячи пикселей прокрутки до кнопки «+ урок»,
+            и обе карточки при этом отвечали на вопрос «что сделать с
+            планом» — то есть на тот же, что и чекбоксы показа, стоявшие
+            наверху. Заголовки у них были подписями к очевидному: два ряда
+            кнопок объясняют себя сами.
 
-            Слева — что сказано про этот план, справа — что показывать в
-            таблице. Заголовок терма в эту строку **не** переехал, хотя
-            стоит следом: он повторяется у каждой четверти внутри таблицы, и
-            место ему там.
+            Внутри панели три строки, и каждая своя: ряд действий (справа
+            прижаты чекбоксы показа), развёрнутая справка о формате и
+            строка состояния — утверждение, долги, уроки вне тем. Последняя
+            появляется, только когда есть что сказать: пустая занимала бы
+            высоту ряда молча.
           */}
-          <div className="plan-bar">
+          <section className="panel plan-tools">
+            <div className="actions wrap">
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => openAdd({ parent: null })}
+              >
+                {t('plan.addLesson')}
+              </button>
+              <button
+                type="button"
+                className="secondary"
+                disabled={busy}
+                onClick={() => openAdd({ parent: null, is_section: true })}
+              >
+                {t('plan.addSection')}
+              </button>
+
+              <span className="actions-divider" aria-hidden="true" />
+
+              <button
+                type="button"
+                className="secondary"
+                disabled={busy}
+                onClick={() => setImporting(true)}
+              >
+                {t('plan.importFile')}
+              </button>
+              <button
+                type="button"
+                className="secondary"
+                disabled={busy}
+                onClick={handleExport}
+              >
+                {t('plan.exportFile')}
+              </button>
+              {/* формат нужен только выгрузке: у загруженного файла его
+                  называет он сам, по расширению */}
+              <span
+                className="format-switch"
+                role="group"
+                aria-label={t('plan.exportFormat')}
+              >
+                {FORMATS.map((name) => (
+                  <button
+                    key={name}
+                    type="button"
+                    className={name === format ? 'chip active' : 'chip'}
+                    aria-pressed={name === format}
+                    onClick={() => setFormat(name)}
+                  >
+                    {name}
+                  </button>
+                ))}
+              </span>
+              {/* справка о формате — обычное состояние, а не спрятанная
+                  разметка: свёрнутого текста в DOM быть не должно */}
+              <button
+                type="button"
+                className="help-toggle"
+                aria-expanded={helpOpen}
+                aria-label={t('plan.csvHelp.toggle')}
+                title={t('plan.csvHelp.toggle')}
+                onClick={() => setHelpOpen(!helpOpen)}
+              >
+                ?
+              </button>
+
+              <span className="actions-divider" aria-hidden="true" />
+
+              <button
+                type="button"
+                className="secondary"
+                disabled={busy}
+                onClick={() => setDialog({ type: 'library' })}
+              >
+                {t('plan.importLibrary')}
+              </button>
+              <button
+                type="button"
+                className="secondary"
+                disabled={busy}
+                onClick={() => setDialog({ type: 'publish' })}
+              >
+                {t(mineOnShelf ? 'plan.refreshTemplate' : 'plan.publish')}
+              </button>
+              <button
+                type="button"
+                className="secondary"
+                disabled={busy || baseline?.request?.status === 'pending'}
+                title={t('plan.baseline.hint')}
+                onClick={handleSubmitPlan}
+              >
+                {t('plan.baseline.submit')}
+              </button>
+
+          {ribbon.length > 0 && (
+            <div className="dates-toggle">
+                <label className="checkbox">
+                  <input
+                    type="checkbox"
+                    checked={showDates}
+                    onChange={(event) => {
+                      setShowDates(event.target.checked)
+                      remember(DATES_KEY, event.target.checked)
+                    }}
+                  />
+                  {t('plan.summary.dates')}
+                </label>
+                <label className="checkbox">
+                  <input
+                    type="checkbox"
+                    checked={showWeeks}
+                    onChange={(event) => {
+                      setShowWeeks(event.target.checked)
+                      remember(WEEKS_KEY, event.target.checked)
+                    }}
+                  />
+                  {t('plan.summary.weeks')}
+                </label>
+                <label className="checkbox">
+                  <input
+                    type="checkbox"
+                    checked={showFree}
+                    onChange={(event) => {
+                      setShowFree(event.target.checked)
+                      remember(FREE_KEY, event.target.checked)
+                    }}
+                  />
+                  {t('plan.summary.freeSlots')}
+                </label>
+            </div>
+          )}
+            </div>
+
+            {helpOpen && <PlanCsvHelp />}
+
+            {(baseline?.approved ||
+              baseline?.request ||
+              layout.debts.length > 0 ||
+              blocks.loose > 0) && (
+              <div className="plan-bar">
             {/* состояние утверждения: у плана его нет, оно есть у снимка */}
             {baseline && (baseline.approved || baseline.request) && (
               <p className={`hint approval ${baseline.request?.status ?? 'approved'}`}>
@@ -812,45 +957,9 @@ export default function Plan({ onLoggedOut }) {
                 {t('plan.loose', { count: blocks.loose })}
               </p>
             )}
-
-          {ribbon.length > 0 && (
-            <div className="dates-toggle">
-                <label className="checkbox">
-                  <input
-                    type="checkbox"
-                    checked={showDates}
-                    onChange={(event) => {
-                      setShowDates(event.target.checked)
-                      remember(DATES_KEY, event.target.checked)
-                    }}
-                  />
-                  {t('plan.summary.dates')}
-                </label>
-                <label className="checkbox">
-                  <input
-                    type="checkbox"
-                    checked={showWeeks}
-                    onChange={(event) => {
-                      setShowWeeks(event.target.checked)
-                      remember(WEEKS_KEY, event.target.checked)
-                    }}
-                  />
-                  {t('plan.summary.weeks')}
-                </label>
-                <label className="checkbox">
-                  <input
-                    type="checkbox"
-                    checked={showFree}
-                    onChange={(event) => {
-                      setShowFree(event.target.checked)
-                      remember(FREE_KEY, event.target.checked)
-                    }}
-                  />
-                  {t('plan.summary.freeSlots')}
-                </label>
-            </div>
-          )}
-          </div>
+              </div>
+            )}
+          </section>
 
           {error && (
             <p className="error" role="alert">
@@ -904,115 +1013,6 @@ export default function Plan({ onLoggedOut }) {
                 </EmptyState>
               )}
 
-              <section className="panel">
-                <h3>{t('plan.addTitle')}</h3>
-                <div className="actions wrap">
-                  <button
-                    type="button"
-                    disabled={busy}
-                    onClick={() => openAdd({ parent: null })}
-                  >
-                    {t('plan.addLesson')}
-                  </button>
-                  <button
-                    type="button"
-                    className="secondary"
-                    disabled={busy}
-                    onClick={() => openAdd({ parent: null, is_section: true })}
-                  >
-                    {t('plan.addSection')}
-                  </button>
-                </div>
-              </section>
-
-              <section className="panel">
-                <div className="panel-head">
-                  <h3>{t('plan.transferTitle')}</h3>
-                  {/* справка о формате — обычное состояние, а не спрятанная
-                      разметка: свёрнутого текста в DOM быть не должно */}
-                  <button
-                    type="button"
-                    className="help-toggle"
-                    aria-expanded={helpOpen}
-                    aria-label={t('plan.csvHelp.toggle')}
-                    title={t('plan.csvHelp.toggle')}
-                    onClick={() => setHelpOpen(!helpOpen)}
-                  >
-                    ?
-                  </button>
-                </div>
-
-                <div className="actions wrap">
-                  <button
-                    type="button"
-                    className="secondary"
-                    disabled={busy}
-                    onClick={() => setImporting(true)}
-                  >
-                    {t('plan.importFile')}
-                  </button>
-                  <button
-                    type="button"
-                    className="secondary"
-                    disabled={busy}
-                    onClick={handleExport}
-                  >
-                    {t('plan.exportFile')}
-                  </button>
-                  {/* формат нужен только выгрузке: у загруженного файла его
-                      называет он сам, по расширению */}
-                  <span
-                    className="format-switch"
-                    role="group"
-                    aria-label={t('plan.exportFormat')}
-                  >
-                    {FORMATS.map((name) => (
-                      <button
-                        key={name}
-                        type="button"
-                        className={name === format ? 'chip active' : 'chip'}
-                        aria-pressed={name === format}
-                        onClick={() => setFormat(name)}
-                      >
-                        {name}
-                      </button>
-                    ))}
-                  </span>
-
-                  <span className="actions-divider" aria-hidden="true" />
-
-                  <button
-                    type="button"
-                    className="secondary"
-                    disabled={busy}
-                    onClick={() => setDialog({ type: 'library' })}
-                  >
-                    {t('plan.importLibrary')}
-                  </button>
-                  <button
-                    type="button"
-                    className="secondary"
-                    disabled={busy}
-                    onClick={() => setDialog({ type: 'publish' })}
-                  >
-                    {t(mineOnShelf ? 'plan.refreshTemplate' : 'plan.publish')}
-                  </button>
-
-                  <span className="actions-divider" aria-hidden="true" />
-
-                  <button
-                    type="button"
-                    className="secondary"
-                    disabled={busy || baseline?.request?.status === 'pending'}
-                    title={t('plan.baseline.hint')}
-                    onClick={handleSubmitPlan}
-                  >
-                    {t('plan.baseline.submit')}
-                  </button>
-                </div>
-
-                {helpOpen && <PlanCsvHelp />}
-              </section>
             </>
           )}
         </>
