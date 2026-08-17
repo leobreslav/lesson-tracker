@@ -40,7 +40,7 @@ export default function PasteGrid({ rows, onChange, disabled = false }) {
    * Якорь живёт в ref, а не в состоянии: `mouseenter` приходит тем же
    * тактом, что `mousedown`, и состояние к этому моменту не обновилось бы.
    */
-  const anchor = useRef(null)
+  const dragging = useRef(false)
   const [range, setRange] = useState(null) // {from: {row, column}, to}
 
   const shown = rows.length ? rows : [BLANK]
@@ -108,15 +108,21 @@ export default function PasteGrid({ rows, onChange, disabled = false }) {
 
   const extend = (event, line, column) => {
     // кнопка отпущена — это просто движение мыши над таблицей
-    if (event.buttons !== 1 || !anchor.current) return
-    const start = anchor.current
-    if (start.row === line && start.column === column) return
+    if (event.buttons !== 1 || !dragging.current || !range) return
+    if (range.to.row === line && range.to.column === column) return
 
-    // текст, выделившийся по дороге, тут только мешает — в том числе тот,
-    // что выделился внутри поля: у него своё выделение, не документа
+    /*
+     * Текст, выделившийся по дороге, тут только мешает — но **гасим его, а
+     * не фокус**. Фокус остаётся на ячейке, с которой начали: клавиатура
+     * приходит именно туда, и Delete на выделенном куске ловится обработчиком
+     * таблицы. Пока поле снималось с фокуса, нажатие уходило в `body` мимо
+     * неё, и кнопка «не работала».
+     */
     window.getSelection?.()?.removeAllRanges()
-    document.activeElement?.blur?.()
-    setRange({ from: start, to: { row: line, column } })
+    const focused = document.activeElement
+    focused?.setSelectionRange?.(0, 0)
+
+    setRange({ ...range, to: { row: line, column } })
   }
 
   const clearRange = () => {
@@ -130,8 +136,33 @@ export default function PasteGrid({ rows, onChange, disabled = false }) {
     onChange(next)
   }
 
+  /** Растянуть выделение клавишами: якорь стоит, двигается второй конец. */
+  const step = (event) => {
+    const shift = { ArrowUp: [-1, 0], ArrowDown: [1, 0], ArrowLeft: [0, -1], ArrowRight: [0, 1] }
+    const move = shift[event.key]
+    if (!move) return false
+
+    const from = range?.from ?? { row: 0, column: 0 }
+    const to = range?.to ?? from
+    const next = {
+      row: Math.min(Math.max(to.row + move[0], 0), shown.length - 1),
+      column: Math.min(Math.max(to.column + move[1], 0), COLUMNS.length - 1),
+    }
+
+    event.preventDefault()
+    window.getSelection?.()?.removeAllRanges()
+    setRange({ from, to: next })
+    return true
+  }
+
   const handleKeyDown = (event) => {
     if (event.key === 'Escape') return setRange(null)
+
+    // Shift со стрелками тянет выделение по ячейкам. Внутри поля Shift+←
+    // выделял бы текст, но выделять текст мышью никто не мешает, а вот
+    // растянуть кусок с клавиатуры иначе нечем
+    if (event.shiftKey && step(event)) return
+
     if (event.key !== 'Delete' && event.key !== 'Backspace') return
     // одна ячейка — это обычная правка текста, и мешать ей нельзя
     if (!box || (box.top === box.bottom && box.left === box.right)) return
@@ -140,10 +171,11 @@ export default function PasteGrid({ rows, onChange, disabled = false }) {
     clearRange()
   }
 
-  // жест кончился — якорь снимаем, выделение остаётся: по нему ещё нажмут
+  // жест кончился — тянуть больше нечего, а выделение остаётся: по нему ещё
+  // нажмут Delete
   useEffect(() => {
     const done = () => {
-      anchor.current = null
+      dragging.current = false
     }
     window.addEventListener('mouseup', done)
     return () => window.removeEventListener('mouseup', done)
@@ -184,8 +216,13 @@ export default function PasteGrid({ rows, onChange, disabled = false }) {
                     (name === 'id' ? 'id' : '') + (picked(line, column) ? ' picked' : '')
                   }
                   onMouseDown={() => {
-                    anchor.current = { row: line, column }
-                    setRange(null)
+                    dragging.current = true
+                    // одна ячейка — это уже выделение из одной ячейки:
+                    // от неё считаются и стрелки с Shift, и протягивание
+                    setRange({
+                      from: { row: line, column },
+                      to: { row: line, column },
+                    })
                   }}
                   onMouseEnter={(event) => extend(event, line, column)}
                 >

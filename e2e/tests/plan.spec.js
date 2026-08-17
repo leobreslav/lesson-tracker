@@ -587,7 +587,7 @@ test('в сетке вставки выделяют кусок мышью и с�
   await signIn(PEOPLE.petrov)
   await openPlan(page, EMPTY_COURSE)
 
-  await planMenu(page, /Импорт/)
+  await planMenu(page, /^Импорт/)
   const dialog = page.locator('dialog.modal')
   await dialog.getByRole('button', { name: 'Вставка' }).click()
 
@@ -617,4 +617,41 @@ test('в сетке вставки выделяют кусок мышью и с�
   await expect(cell(2, 3).locator('input')).toHaveValue('')
   // третья строка не тронута: стёрли ровно выделенное
   await expect(cell(3, 3).locator('input')).toHaveValue('Касательная')
+})
+
+test('кусок выделяют и с клавиатуры: Shift со стрелками', async ({ page, signIn }) => {
+  // Мышь есть не у всех и не всегда, а главное — после протягивания фокус
+  // должен остаться в таблице: пока он уходил в body, Delete не долетал до
+  // обработчика вовсе, и кнопка «не работала».
+  await signIn(PEOPLE.petrov)
+  await openPlan(page, EMPTY_COURSE)
+
+  await planMenu(page, /^Импорт/)
+  const dialog = page.locator('dialog.modal')
+  await dialog.getByRole('button', { name: 'Вставка' }).click()
+
+  await pasteInto(
+    page,
+    '.paste-grid td input',
+    '\tВекторы\tПонятие\n\tВекторы\tСложение\n\tОкружность\tКасательная\n',
+  )
+
+  const cell = (row, column) =>
+    dialog.locator(`.paste-grid tbody tr:nth-child(${row}) td:nth-child(${column})`)
+
+  // встаём в «Тему» первой строки и тянем вправо и вниз
+  await cell(1, 2).locator('input').click()
+  await page.keyboard.press('Shift+ArrowRight')
+  await page.keyboard.press('Shift+ArrowDown')
+  await expect(dialog.locator('.paste-grid td.picked')).toHaveCount(4)
+
+  await page.keyboard.press('Delete')
+
+  await expect(cell(1, 3).locator('input')).toHaveValue('')
+  await expect(cell(2, 2).locator('input')).toHaveValue('')
+  await expect(cell(3, 2).locator('input')).toHaveValue('Окружность')
+
+  // Escape снимает выделение, и Delete больше ничего не стирает
+  await page.keyboard.press('Escape')
+  await expect(dialog.locator('.paste-grid td.picked')).toHaveCount(0)
 })
