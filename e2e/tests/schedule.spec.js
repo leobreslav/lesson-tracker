@@ -237,13 +237,24 @@ test('«через неделю» копирует в каждую вторую'
   expect(preview, where).toContain(String(await week(14)))
 })
 
-test('сводка за неделю считает уроки и отмены', async ({ page, signIn }) => {
+test('вида «месяц» нет, а сводки под сеткой — тем более', async ({
+  page,
+  signIn,
+}) => {
+  // Месяц был вторым видом той же сетки и отвечал на вопрос «в какую неделю
+  // пойти», а на него отвечает поле «перейти к дате». Сводка под сеткой
+  // считала уроки за период по курсам — числа, за которыми никто не
+  // приходил: расписание читают клетками.
   await signIn(PEOPLE.ivanova)
   await openWeek(page, MONDAY)
 
-  const summary = page.locator('.agenda-summary')
-  await expect(summary).toContainText('За неделю')
-  await expect(summary).toContainText(/\d+ урок/)
+  await expect(page.locator('.agenda-summary')).toHaveCount(0)
+  for (const name of ['Неделя', 'Месяц']) {
+    await expect(page.getByRole('button', { name, exact: true })).toHaveCount(0)
+  }
+  // сетка при этом на месте, и она недельная
+  await expect(page.locator('.week-grid')).toBeVisible()
+  await expect(page.locator('.agenda-months')).toHaveCount(0)
 })
 
 test('неучебные дни в сетке приглушены и подписаны', async ({ page, signIn }) => {

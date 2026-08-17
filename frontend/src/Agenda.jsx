@@ -23,24 +23,12 @@ import {
 import {
   addDays,
   eachDate,
-  endOfMonth,
   endOfWeek,
-  formatDate,
   daysBetween,
-  groupByMonth,
-  parseDate,
-  startOfMonth,
   startOfWeek,
   today,
-  weekdayOf,
 } from './calendarLogic'
-import {
-  dateRange,
-  firstWeekday,
-  monthTitle,
-  shortWeekday,
-  weekdayHeadings,
-} from './dates'
+import { dateRange, firstWeekday } from './dates'
 import { MAX_LESSON_NUMBER, describeCopyResult } from './scheduleLogic'
 
 const NUMBERS = Array.from({ length: MAX_LESSON_NUMBER }, (_, index) => index + 1)
@@ -64,11 +52,6 @@ function studyDatesOf(days) {
     .map(([date]) => date)
 }
 
-function shiftMonth(iso, step) {
-  const date = parseDate(iso)
-  return formatDate(new Date(date.getFullYear(), date.getMonth() + step, 1, 12))
-}
-
 function lessonClassName(lesson) {
   return (
     'cell lesson' +
@@ -88,7 +71,6 @@ export default function Agenda({ status, onStatusChange, onLoggedOut }) {
   const { t } = useTranslation()
   const navigate = useNavigate()
   const [anchor, setAnchor] = useState(today)
-  const [mode, setMode] = useState('week')
   const [data, setData] = useState(EMPTY)
   const [years, setYears] = useState([])
   // the school timetable, only as far as «is there anything of mine in it»:
@@ -123,12 +105,17 @@ export default function Agenda({ status, onStatusChange, onLoggedOut }) {
   // the week runs from the language's first weekday: Monday in Russian,
   // Sunday in American English
   const weekStart = firstWeekday()
+  /*
+   * Показывается всегда неделя.
+   *
+   * Месяц был вторым видом той же сетки и отвечал на вопрос «в какую неделю
+   * пойти», а ответ на него есть проще — поле «перейти к дате» рядом.
+   * Клеток в нём вчетверо больше, а в клетке те же курс, номер и тема, так
+   * что неделя читается, а месяц просматривается.
+   */
   const period = useMemo(
-    () =>
-      mode === 'week'
-        ? { start: startOfWeek(anchor, weekStart), end: endOfWeek(anchor, weekStart) }
-        : { start: startOfMonth(anchor), end: endOfMonth(anchor) },
-    [anchor, mode, weekStart],
+    () => ({ start: startOfWeek(anchor, weekStart), end: endOfWeek(anchor, weekStart) }),
+    [anchor, weekStart],
   )
 
   useEffect(() => {
@@ -268,17 +255,6 @@ export default function Agenda({ status, onStatusChange, onLoggedOut }) {
     (date) => (data.lessons[date] || []).filter((item) => !hidden.has(item.course_id)),
     [data, hidden],
   )
-
-  const summary = useMemo(() => {
-    const visible = dates.flatMap((date) => lessonsOn(date))
-    const live = visible.filter((item) => !item.is_cancelled)
-    const byClass = {}
-    live.forEach((item) => {
-      byClass[item.course_name] = (byClass[item.course_name] || 0) + 1
-    })
-
-    return { total: live.length, cancelled: visible.length - live.length, byClass }
-  }, [dates, lessonsOn])
 
   /** An optimistic edit: draw at once, restore the old answer on failure. */
   const mutate = useCallback(
@@ -486,10 +462,7 @@ export default function Agenda({ status, onStatusChange, onLoggedOut }) {
       return next
     })
 
-  const step = (direction) =>
-    setAnchor((current) =>
-      mode === 'week' ? addDays(current, 7 * direction) : shiftMonth(current, direction),
-    )
+  const step = (direction) => setAnchor((current) => addDays(current, 7 * direction))
 
   /** A click on a day heading selects it, Shift+click drags a range. */
   const pickDay = (date, event) => {
@@ -581,71 +554,6 @@ export default function Agenda({ status, onStatusChange, onLoggedOut }) {
     />
   )
 
-  const renderMonth = () => {
-    const grid = dates.map((date) => ({
-      date,
-      weekday: weekdayOf(date),
-      ...(data.days[date] || {}),
-    }))
-
-    return (
-      <div className="months agenda-months">
-        {groupByMonth(grid, firstWeekday()).map((month) => (
-          <section className="month" key={month.key}>
-            <h3>{monthTitle(month.first)}</h3>
-            <div className="month-grid">
-              {weekdayHeadings().map((heading) => (
-                <div className="weekday" key={heading.weekday}>
-                  {heading.label}
-                </div>
-              ))}
-              {Array.from({ length: month.leading }, (_, index) => (
-                <div className="day blank" key={`blank-${index}`} />
-              ))}
-              {month.days.map((day) => (
-                <div
-                  key={day.date}
-                  className={
-                    `day agenda-day ${day.status || 'outside'}` +
-                    (day.is_study ? '' : ' locked') +
-                    (day.date === today() ? ' today' : '')
-                  }
-                  title={day.title || undefined}
-                >
-                  <button
-                    type="button"
-                    className="link date"
-                    title={t('agenda.openWeek')}
-                    onClick={() => {
-                      setAnchor(day.date)
-                      setMode('week')
-                    }}
-                  >
-                    {parseDate(day.date).getDate()}
-                  </button>
-                  {lessonsOn(day.date).map((lesson) => (
-                    <button
-                      type="button"
-                      key={lesson.id}
-                      className={lessonClassName(lesson)}
-                      title={lesson.reason || undefined}
-                      disabled={busy}
-                      onClick={() => openLesson(day.date, lesson)}
-                    >
-                      <span className="slot">{lesson.lesson_number}</span>{' '}
-                      {lesson.course_name}
-                      {topicOf(lesson)}
-                    </button>
-                  ))}
-                </div>
-              ))}
-            </div>
-          </section>
-        ))}
-      </div>
-    )
-  }
-
   return (
     <main className="page wide">
       <header className="page-header">
@@ -681,23 +589,6 @@ export default function Agenda({ status, onStatusChange, onLoggedOut }) {
           onChange={(event) => event.target.value && setAnchor(event.target.value)}
         />
 
-        <span className="year-picker">
-          <button
-            type="button"
-            className={mode === 'week' ? 'chip active' : 'chip'}
-            onClick={() => setMode('week')}
-          >
-            {t('agenda.week')}
-          </button>
-          <button
-            type="button"
-            className={mode === 'month' ? 'chip active' : 'chip'}
-            onClick={() => setMode('month')}
-          >
-            {t('agenda.month')}
-          </button>
-        </span>
-
         <button
           type="button"
           disabled={busy || loading || !!selection}
@@ -707,7 +598,7 @@ export default function Agenda({ status, onStatusChange, onLoggedOut }) {
             setDialog({ type: 'copy' })
           }}
         >
-          {t(mode === 'week' ? 'agenda.copyWeek' : 'agenda.copyMonth')}
+          {t('agenda.copyWeek')}
         </button>
       </div>
 
@@ -797,33 +688,7 @@ export default function Agenda({ status, onStatusChange, onLoggedOut }) {
         </p>
       )}
 
-      {loading ? (
-        <p>{t('common.loading')}</p>
-      ) : mode === 'week' ? (
-        renderWeek()
-      ) : (
-        renderMonth()
-      )}
-
-      <section className="panel agenda-summary">
-        <strong>
-          {t('agenda.summary', {
-            period: t(mode === 'week' ? 'agenda.forWeek' : 'agenda.forMonth'),
-            count: t('common.lessonCount', { count: summary.total }),
-          })}
-        </strong>
-        {summary.cancelled > 0 && (
-          <span className="hint">
-            {t('agenda.summaryCancelled', { count: summary.cancelled })}
-          </span>
-        )}
-        {Object.entries(summary.byClass).map(([name, count]) => (
-          <span key={name} className="hint">
-            {name}: {count}
-          </span>
-        ))}
-        {!summary.total && <span className="hint">{t('agenda.noLessons')}</span>}
-      </section>
+      {loading ? <p>{t('common.loading')}</p> : renderWeek()}
 
       {dialog?.type === 'add' && (
         <AddLessonDialog
@@ -844,13 +709,7 @@ export default function Agenda({ status, onStatusChange, onLoggedOut }) {
           classes={visibleClasses}
           busy={busy}
           title={
-            selection
-              ? t('agenda.copySelected')
-              : t(
-                  mode === 'week'
-                    ? 'agenda.copyWholeWeek'
-                    : 'agenda.copyWholeMonth',
-                )
+            selection ? t('agenda.copySelected') : t('agenda.copyWholeWeek')
           }
           note={t('agenda.copyNote')}
           onTargetChange={loadTarget}
