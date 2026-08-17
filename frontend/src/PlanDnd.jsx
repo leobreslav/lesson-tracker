@@ -23,10 +23,11 @@ export const emptyZoneId = (sectionId) => `empty-${sectionId}`
  * a phone the list would stop scrolling.
  *
  * `locked` — проведённый урок: за ним записан час, и позиция ему больше не
- * указ. Ручка у такой строки остаётся на месте, но не тянется и объясняет
- * почему: исчезнувшая ручка читалась бы как поломка, а сервер всё равно
- * откажет (`plan_lesson_taught`). Двигается всё, что ниже последней
- * связи, — то есть будущее, ради которого перетаскивание и заведено.
+ * указ. Ручки у такой строки нет, но место под неё занято: убрать её совсем
+ * значило бы сдвинуть строку относительно соседних, а показывать бледную
+ * значило бы предлагать движение, которого не будет. Двигается всё, что
+ * ниже последней связи, — то есть будущее, ради которого перетаскивание и
+ * заведено.
  */
 export function SortableRow({ id, className = '', indicator, locked = false, children }) {
   const { t } = useTranslation()
@@ -46,7 +47,8 @@ export function SortableRow({ id, className = '', indicator, locked = false, chi
   }
 
   const handle = locked ? (
-    <span className="handle locked" title={t('plan.taught')} aria-hidden="true">
+    // тот же знак, только невидимый: колонки держит он, а не отступ
+    <span className="handle locked" aria-hidden="true">
       ⠿
     </span>
   ) : (

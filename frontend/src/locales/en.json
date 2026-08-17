@@ -400,7 +400,6 @@
       "sendTo": "Send"
     },
     "publishFromCourse": "The subject and the year of study come from the course: {{subject}}, year {{grade}}.",
-    "taught": "Lesson already taught: it keeps its place.",
     "openLesson": "Open the lesson",
     "courseLabel": "Course",
     "debts_one": "{{count}} lesson is not marked.",
@@ -412,7 +411,6 @@
       "supervised": "Supervised"
     },
     "recordedHint": "The lesson is taught and recorded",
-    "movedTaught": "A lesson already taught does not move",
     "beforeTaught": "There is no room before a lesson already taught"
   },
   "status": {

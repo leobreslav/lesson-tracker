@@ -300,6 +300,29 @@ export default function PlanTable({
     return last
   }, [nodes])
 
+  /**
+   * Последняя проведённая строка — единственная, к которой ещё есть дело.
+   *
+   * Провели то, чего в плане нет, — строку дописывают сразу за ней, и «+»
+   * у неё это ровно то нажатие. У проведённых выше не остаётся ни одного
+   * осмысленного действия: ни двинуть, ни удалить, ни вставить между двумя
+   * записями — очередь этого всё равно не примет.
+   */
+  const lastTaughtId = useMemo(() => {
+    let found = null
+
+    const visit = (node) => {
+      if (node.taught && node.number === boundary) found = node.id
+    }
+
+    ;(nodes ?? []).forEach((node) => {
+      visit(node)
+      ;(node.children ?? []).forEach(visit)
+    })
+
+    return found
+  }, [nodes, boundary])
+
   /** Выше подниматься некуда: там уже проведённые уроки. */
   const beforeTaught = (node) => {
     if (!boundary) return false
@@ -312,22 +335,26 @@ export default function PlanTable({
   }
 
   /**
-   * Кнопки перестановки — на месте всегда, но у проведённого не нажимаются.
+   * Кнопки перестановки: у проведённой строки их нет, у следующей за ней
+   * не нажимается верхняя.
    *
-   * Пропадали они совсем, и это была та же ошибка, что с ручкой: исчезнувший
-   * орган управления читается как поломка, а не как запрет. Теперь бледнеют
-   * и объясняются подсказкой — ровно как ручка рядом.
+   * Разница не в строгости, а в том, о чём вопрос. Проведённая строка не
+   * двигается никуда и никогда — предлагать ей движение незачем, как незачем
+   * ей и ручка. А непроведённая двигается свободно, просто не выше границы,
+   * и вот тут кнопка нужна на месте: пропавшая читалась бы как «сюда вообще
+   * нельзя», а нельзя ей ровно в одну сторону.
    */
   const moveButtons = (node, isSection) => {
-    const stuck = locked(node)
-    const noRoom = stuck || beforeTaught(node)
+    if (locked(node)) return null
+
+    const noRoom = beforeTaught(node)
 
     return (
       <>
         <button
           type="button"
           className="link"
-          title={t(stuck ? 'plan.movedTaught' : noRoom ? 'plan.beforeTaught' : 'plan.up')}
+          title={t(noRoom ? 'plan.beforeTaught' : 'plan.up')}
           disabled={busy || noRoom}
           onClick={() => move(node.id, 'up', isSection)}
         >
@@ -336,8 +363,8 @@ export default function PlanTable({
         <button
           type="button"
           className="link"
-          title={t(stuck ? 'plan.movedTaught' : 'plan.down')}
-          disabled={busy || stuck}
+          title={t('plan.down')}
+          disabled={busy}
           onClick={() => move(node.id, 'down', isSection)}
         >
           ↓
@@ -610,24 +637,28 @@ export default function PlanTable({
 
           <span className="row-actions">
             {moveButtons(node, false)}
-            <button
-              type="button"
-              className="link"
-              title={t('plan.insertAfter')}
-              disabled={busy}
-              onClick={() => add({ parent, after: node.id })}
-            >
-              +
-            </button>
-            <button
-              type="button"
-              className="link"
-              title={t('common.delete')}
-              disabled={busy}
-              onClick={() => removeLesson(node)}
-            >
-              ✕
-            </button>
+            {(!locked(node) || node.id === lastTaughtId) && (
+              <button
+                type="button"
+                className="link"
+                title={t('plan.insertAfter')}
+                disabled={busy}
+                onClick={() => add({ parent, after: node.id })}
+              >
+                +
+              </button>
+            )}
+            {!locked(node) && (
+              <button
+                type="button"
+                className="link"
+                title={t('common.delete')}
+                disabled={busy}
+                onClick={() => removeLesson(node)}
+              >
+                ✕
+              </button>
+            )}
           </span>
         </>
       )}

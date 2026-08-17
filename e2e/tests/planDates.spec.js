@@ -758,9 +758,14 @@ test('проведённый урок держится за дату и не п�
   const before = await dateOfLesson(page, anchored.title)
   const row = page.locator('.plan-row.lesson', { hasText: anchored.title }).first()
 
-  // ручка на месте, но не тянется, и кнопок перестановки у строки нет
-  await expect(row.locator('.handle.locked')).toBeVisible()
-  await expect(row.locator('button[title="Вверх"]')).toHaveCount(0)
+  // ручки нет, а место под неё есть: строка не должна съезжать
+  const handle = row.locator('.handle.locked')
+  await expect(handle).toBeHidden()
+  const free = page.locator('.plan-row.lesson button.handle').first()
+  expect((await handle.boundingBox()).width).toBeCloseTo(
+    (await free.boundingBox()).width,
+    0,
+  )
 
   // вставляем урок выше него — всё, что ниже, обычно уезжает на день
   const first = page.locator('.plan-row.lesson').first()
@@ -780,14 +785,15 @@ test('проведённый урок держится за дату и не п�
   expect(await dateOfLesson(page, anchored.title)).toBe(before)
 })
 
-test('кнопки строки на месте, но за спину проведённого не пускают', async ({
+test('у проведённой строки органов управления нет, кроме «+» у последней', async ({
   page,
   signIn,
   api,
 }) => {
-  // Пропадали они совсем — вместе с ненужными значками, — и исчезнувший
-  // орган управления читается как поломка, а не как запрет. Теперь стоят
-  // всегда, а бледнеют там, где места действительно нет.
+  // Сперва их прятали совсем, потом вернули бледными — и оба раза мимо.
+  // Проведённой строке нечего предложить: ни двинуть, ни удалить. Дело к
+  // ней остаётся ровно одно, и только к последней: провели то, чего в
+  // плане нет, — строку дописывают сразу за ней.
   const { course } = await liveCourse(api)
 
   await signIn(PEOPLE.ivanova)
@@ -803,13 +809,15 @@ test('кнопки строки на месте, но за спину прове
       })
       .first()
 
-  // у каждой строки свои три кнопки, сколько бы записей ни стояло
-  for (const number of [1, 2, 3]) {
+  // первая проведена: один «+», и больше ничего
+  await expect(row(1).locator('.row-actions button')).toHaveCount(1)
+  await expect(row(1).getByTitle('Вставить урок после')).toBeEnabled()
+
+  // непроведённые строки полны кнопок, как и были
+  for (const number of [2, 3]) {
     await expect(row(number).locator('.row-actions button')).toHaveCount(4)
   }
 
-  // первая проведена — её не двигают вовсе
-  await expect(row(1).getByTitle('Проведённый урок с места не двигают')).toHaveCount(2)
   // вторая свободна, но подниматься ей некуда: выше проведённая
   await expect(row(2).getByTitle('Перед проведённым уроком места нет')).toBeDisabled()
   await expect(row(2).getByTitle('Ниже')).toBeEnabled()
