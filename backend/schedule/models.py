@@ -610,6 +610,47 @@ class Slot(models.Model):
         return next((slot for slot in past[started:] if slot.lesson_id is None), None)
 
     @staticmethod
+    def broken_record(course, today):
+        """
+        Час, из-за которого очередь записей курса перестала быть очередью.
+
+        Спрашивают это **после** правки календаря: перенос двигает не строку
+        плана, а дату, — и порядок ломается с другого конца. Сломан он двумя
+        способами, и оба здесь:
+
+        - **дыра**: незакрытый прошедший час позади последней записи;
+        - **обгон**: две записи, у которых даты идут вперёд, а строки плана
+          назад. Между ними может не оказаться ни одного живого часа —
+          отменённые дыр не образуют, — поэтому одной проверки на дыры мало.
+
+        `None` значит «очередь цела»; курс без записей цел по определению.
+        """
+        from plans.services import flatten_lessons
+
+        past = list(
+            Slot.objects.filter(
+                course=course, is_cancelled=False, date__lte=today
+            ).order_by("date", "lesson_number")
+        )
+        recorded = [i for i, slot in enumerate(past) if slot.lesson_id]
+        if not recorded:
+            return None
+
+        hole = next(
+            (slot for slot in past[: recorded[-1]] if slot.lesson_id is None), None
+        )
+        if hole is not None:
+            return hole
+
+        order = {lesson.node.pk: lesson.number for lesson in flatten_lessons(course.pk)}
+        numbered = [(past[i], order.get(past[i].lesson_id, 0)) for i in recorded]
+        for (slot, number), (_, before) in zip(numbered[1:], numbered):
+            if number <= before:
+                return slot
+
+        return None
+
+    @staticmethod
     def last_record(course):
         """Последняя запись курса — единственная, которую можно снять."""
         return Slot.recorded_slots(course).last()

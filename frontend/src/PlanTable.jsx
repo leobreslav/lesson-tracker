@@ -134,9 +134,25 @@ export default function PlanTable({
     const map = new Map()
 
     ;(nodes ?? []).forEach((node, index) => {
-      map.set(dragId(node.id), { node, parent: null, index })
+      const numbers = (node.children ?? []).map((child) => child.number).filter(Boolean)
+
+      map.set(dragId(node.id), {
+        node,
+        parent: null,
+        index,
+        // сквозные номера нужны, чтобы понять, куда строка приземлится
+        // относительно проведённых: у темы это номера её уроков
+        number: node.number ?? null,
+        first: numbers.length ? Math.min(...numbers) : null,
+        last: numbers.length ? Math.max(...numbers) : null,
+      })
       ;(node.children ?? []).forEach((child, childIndex) => {
-        map.set(dragId(child.id), { node: child, parent: node.id, index: childIndex })
+        map.set(dragId(child.id), {
+          node: child,
+          parent: node.id,
+          index: childIndex,
+          number: child.number ?? null,
+        })
       })
     })
 
@@ -160,6 +176,7 @@ export default function PlanTable({
       activeId: event.active.id,
       overId,
       below: isBelow(event),
+      boundary,
     })
 
     return target && { ...target, overId, side: isBelow(event) ? 'after' : 'before' }
@@ -260,14 +277,58 @@ export default function PlanTable({
   const locked = (node) =>
     Boolean(node.taught) || (node.children ?? []).some((child) => child.taught)
 
-  const moveButtons = (node, isSection) =>
-    locked(node) ? null : (
+  /**
+   * Сквозной номер последней проведённой строки — граница прошлого.
+   *
+   * Запрет двусторонний: проведённую строку не двигают (`locked`), а
+   * непроведённую не ставят перед ней. Без второй половины первая
+   * обходилась с другого конца — мартовскую строку никто не трогал, а
+   * сентябрьскую перетаскивали ей за спину.
+   */
+  const boundary = useMemo(() => {
+    let last = 0
+
+    const visit = (node) => {
+      if (node.taught && node.number) last = Math.max(last, node.number)
+    }
+
+    ;(nodes ?? []).forEach((node) => {
+      visit(node)
+      ;(node.children ?? []).forEach(visit)
+    })
+
+    return last
+  }, [nodes])
+
+  /** Выше подниматься некуда: там уже проведённые уроки. */
+  const beforeTaught = (node) => {
+    if (!boundary) return false
+
+    const numbers = node.is_section
+      ? (node.children ?? []).map((child) => child.number).filter(Boolean)
+      : [node.number].filter(Boolean)
+
+    return numbers.length > 0 && Math.min(...numbers) <= boundary + 1
+  }
+
+  /**
+   * Кнопки перестановки — на месте всегда, но у проведённого не нажимаются.
+   *
+   * Пропадали они совсем, и это была та же ошибка, что с ручкой: исчезнувший
+   * орган управления читается как поломка, а не как запрет. Теперь бледнеют
+   * и объясняются подсказкой — ровно как ручка рядом.
+   */
+  const moveButtons = (node, isSection) => {
+    const stuck = locked(node)
+    const noRoom = stuck || beforeTaught(node)
+
+    return (
       <>
         <button
           type="button"
           className="link"
-          title={t('plan.up')}
-          disabled={busy}
+          title={t(stuck ? 'plan.movedTaught' : noRoom ? 'plan.beforeTaught' : 'plan.up')}
+          disabled={busy || noRoom}
           onClick={() => move(node.id, 'up', isSection)}
         >
           ↑
@@ -275,14 +336,15 @@ export default function PlanTable({
         <button
           type="button"
           className="link"
-          title={t('plan.down')}
-          disabled={busy}
+          title={t(stuck ? 'plan.movedTaught' : 'plan.down')}
+          disabled={busy || stuck}
           onClick={() => move(node.id, 'down', isSection)}
         >
           ↓
         </button>
       </>
     )
+  }
 
   const indicatorFor = (id) => (drop?.overId === dragId(id) ? drop.side : null)
 
@@ -407,6 +469,7 @@ export default function PlanTable({
                 <span className="plan-weekmark">
                   {showWeeks && labelled && t('plan.week', { number: slot.week })}
                 </span>
+                <span className="plan-state" />
                 <Link
                   className="plan-date"
                   to={`/lesson/${slot.id}`}
@@ -456,7 +519,14 @@ export default function PlanTable({
    */
   const dateCells = (node, empty = false) => {
     if (!dated) return null
-    if (empty) return <span className="plan-date" />
+    if (empty) {
+      return (
+        <>
+          <span className="plan-state" />
+          <span className="plan-date" />
+        </>
+      )
+    }
     const slot = layout.byId.get(node.id)?.slot
 
     // три состояния часа, и все три видно на своей строке: записан (за ним
@@ -466,22 +536,28 @@ export default function PlanTable({
     const recorded = Boolean(slot?.lesson_id)
     const mark = recorded ? ' recorded' : unclosed ? ' unclosed' : ''
 
-    return slot ? (
-      <Link
-        className={`plan-date${mark}`}
-        to={`/lesson/${slot.id}`}
-        title={t(
-          recorded
-            ? 'plan.recordedHint'
-            : unclosed
-              ? 'plan.unclosedHint'
-              : 'plan.openLesson',
+    return (
+      <>
+        <span
+          className={`plan-state${mark}`}
+          title={
+            mark ? t(recorded ? 'plan.recordedHint' : 'plan.unclosedHint') : undefined
+          }
+        >
+          {recorded ? '✓' : unclosed ? '•' : ''}
+        </span>
+        {slot ? (
+          <Link
+            className="plan-date"
+            to={`/lesson/${slot.id}`}
+            title={t('plan.openLesson')}
+          >
+            {dayMonth(slot.date)} <em>{shortWeekday(slot.date)}</em>
+          </Link>
+        ) : (
+          <span className="plan-date missing">{t('plan.noSlot')}</span>
         )}
-      >
-        {dayMonth(slot.date)} <em>{shortWeekday(slot.date)}</em>
-      </Link>
-    ) : (
-      <span className="plan-date missing">{t('plan.noSlot')}</span>
+      </>
     )
   }
 

@@ -338,3 +338,79 @@ class MoveTests(LessonRecordTestCase):
 
         self.assertEqual(response.status_code, 400)
         self.assertEqual(response.json()["code"], "slot_outside_year")
+
+
+class MoveKeepsTheOrderTests(SchoolTestMixin, APITestCase):
+    """
+    Порядок записей строгий и на календарной оси тоже.
+
+    Запись напрямую очередь не ломает: записать можно только следующий
+    незакрытый час. А перенос двигает не строку плана, а дату — и ломает её
+    с другого конца. Занятие, уехавшее за спину соседней записи, оставляет
+    ровно ту дыру, которую кнопка «так и было» сделать не даёт.
+
+    Отвечает на оба способа сломать одна проверка (`Slot.broken_record`):
+    незакрытый час позади последней записи и две записи, у которых даты
+    идут вперёд, а строки плана назад. Второе без первого достижимо —
+    отменённые часы дыр не образуют.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.today = timezone.localdate()
+        self.year = live_year(self.school)
+        self.course = make_course(self.school, self.year, "9Б Алгебра")
+        assign(self.user, self.course)
+        self.rows = [
+            make_node(self.user, self.course, f"Урок {number}")
+            for number in range(1, 4)
+        ]
+        self.past = [
+            make_slot(self.user, self.course, self.today - timedelta(days=days), 1)
+            for days in (30, 20)
+        ]
+        for slot, row in zip(self.past, self.rows):
+            slot.lesson = row
+            slot.save(update_fields=["lesson"])
+
+        self.ahead = make_slot(
+            self.user, self.course, self.today + timedelta(days=10), 1
+        )
+
+    def move(self, slot, date, number=1):
+        return self.client.post(
+            reverse("slot-move", args=[slot.pk]),
+            {"date": date.isoformat(), "lesson_number": number},
+            format="json",
+        )
+
+    def test_a_hole_behind_the_last_record_is_refused(self):
+        """Пустой час между двумя записанными — это и есть дыра."""
+        response = self.move(self.ahead, self.today - timedelta(days=25))
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json()["code"], "slot_move_breaks_order")
+
+    def test_the_refusal_rolls_the_whole_move_back(self):
+        self.move(self.ahead, self.today - timedelta(days=25))
+
+        self.ahead.refresh_from_db()
+        self.assertFalse(self.ahead.is_cancelled)
+        self.assertEqual(Slot.objects.filter(course=self.course).count(), 3)
+
+    def test_a_record_overtaking_another_is_refused(self):
+        """Даты идут вперёд, а строки плана назад — записи обогнали друг друга."""
+        response = self.move(self.past[0], self.today - timedelta(days=10))
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json()["code"], "slot_move_breaks_order")
+
+    def test_moving_ahead_of_everything_recorded_is_allowed(self):
+        response = self.move(self.past[1], self.today - timedelta(days=5))
+
+        self.assertEqual(response.status_code, 201, response.content)
+
+    def test_the_future_moves_freely(self):
+        response = self.move(self.ahead, self.today + timedelta(days=20))
+
+        self.assertEqual(response.status_code, 201, response.content)

@@ -127,6 +127,55 @@ def refuse_if_taught(node) -> None:
         )
 
 
+def refuse_if_before_taught(node) -> None:
+    """
+    Непроведённую строку не ставят перед проведённой.
+
+    Половина правила уже стояла рядом: проведённую строку не двигают вовсе
+    (`refuse_if_taught`). Без второй половины запрет обходился с другого
+    конца — мартовскую строку никто не трогал, а сентябрьскую перетаскивали
+    ей за спину, и очередь раскладки получала дыру ровно там, где её и
+    запретили делать напрямую.
+
+    Спрашивается это **после** переноса, внутри его транзакции: «куда
+    строка попадёт» на двухуровневом дереве считается перебором позиций,
+    входов и выходов из тем, и второй такой расчёт разошёлся бы с первым.
+    Отказ откатывает перенос целиком.
+    """
+    lessons = services.flatten_lessons(node.course_id)
+    taught = set(
+        Slot.objects.filter(lesson__course_id=node.course_id)
+        .exclude(lesson=None)
+        .values_list("lesson_id", flat=True)
+    )
+    if not taught:
+        return
+
+    def moved(lesson):
+        # тема двигает свои уроки целиком, поэтому вопрос к ним, а не к ней
+        return lesson.node.pk == node.pk or (
+            lesson.section is not None and lesson.section.pk == node.pk
+        )
+
+    last = max((i for i, l in enumerate(lessons) if l.node.pk in taught), default=None)
+    first = min((i for i, l in enumerate(lessons) if moved(l)), default=None)
+
+    if last is None or first is None or first > last:
+        return
+
+    # Номер здесь не называется намеренно: считается он по состоянию
+    # **после** переноса, а на экране останется состояние до него — откат
+    # вернёт прежнюю нумерацию, и число разошлось бы с таблицей.
+    blocker = lessons[last].node
+    api_error(
+        Codes.PLAN_BEFORE_TAUGHT,
+        f"«{blocker.title}» has already been taught: a lesson that has "
+        "not been given yet cannot be placed before it.",
+        field="position",
+        title=blocker.title,
+    )
+
+
 def perform_move(node, data) -> Response:
     form = MoveSerializer(data=data)
     form.is_valid(raise_exception=True)
@@ -134,6 +183,7 @@ def perform_move(node, data) -> Response:
 
     with transaction.atomic():
         moved = services.move(node, form.validated_data["direction"])
+        refuse_if_before_taught(node)
 
     # False means the node hit the edge of the tree; that is not an error
     return Response({"moved": moved})
@@ -737,6 +787,7 @@ class PlanNodeViewSet(CourseScopedViewSet):
 
         with transaction.atomic():
             services.place(node, parent, form.validated_data["position"])
+            refuse_if_before_taught(node)
 
         return Response({"moved": True})
 

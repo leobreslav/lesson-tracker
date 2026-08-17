@@ -237,6 +237,91 @@ class TaughtRowsStayPutTests(LayoutApiTestCase):
         )
 
 
+class NoRoomBeforeTaughtTests(LayoutApiTestCase):
+    """
+    Непроведённую строку не ставят перед проведённой.
+
+    Половина запрета стояла рядом и раньше: проведённую строку не двигают
+    вовсе. Обходилась она с другого конца — мартовскую строку никто не
+    трогал, а сентябрьскую перетаскивали ей за спину, и очередь получала
+    дыру ровно там, где её запретили делать напрямую.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.lessons = list(self.trig.children.order_by("position"))
+        slot = self.add_slot(MONDAY)
+        slot.lesson = self.lessons[0]
+        slot.save(update_fields=["lesson"])
+
+    def positions(self):
+        return [
+            lesson.node.pk for lesson in services.flatten_lessons(self.course.pk)
+        ]
+
+    def test_stepping_up_into_the_taught_row_is_refused(self):
+        response = self.client.post(
+            reverse("plannode-move", args=[self.lessons[1].pk]),
+            {"direction": "up"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json()["code"], "plan_before_taught")
+
+    def test_dragging_to_the_top_is_refused(self):
+        response = self.client.post(
+            reverse("plannode-move-to", args=[self.lessons[1].pk]),
+            {"parent": None, "position": 0},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json()["code"], "plan_before_taught")
+
+    def test_the_answer_names_the_row_that_blocks_the_way(self):
+        body = self.client.post(
+            reverse("plannode-move", args=[self.lessons[1].pk]),
+            {"direction": "up"},
+            format="json",
+        ).json()
+
+        self.assertEqual(body["params"]["title"], self.lessons[0].title)
+
+    def test_the_refusal_rolls_the_move_back(self):
+        """Проверка стоит после переноса, значит откат обязателен."""
+        before = self.positions()
+
+        self.client.post(
+            reverse("plannode-move", args=[self.lessons[1].pk]),
+            {"direction": "up"},
+            format="json",
+        )
+
+        self.assertEqual(self.positions(), before)
+
+    def test_below_the_taught_row_everything_still_moves(self):
+        response = self.client.post(
+            reverse("plannode-move", args=[self.lessons[1].pk]),
+            {"direction": "down"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200, response.content)
+        self.assertTrue(response.json()["moved"])
+
+    def test_without_a_single_record_the_plan_moves_freely(self):
+        Slot.objects.update(lesson=None)
+
+        response = self.client.post(
+            reverse("plannode-move", args=[self.lessons[1].pk]),
+            {"direction": "up"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200, response.content)
+
+
 class OneHourPerLessonTests(LayoutApiTestCase):
     """
     Одна строка плана — ровно одно занятие, и это ограничение базы.

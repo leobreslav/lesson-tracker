@@ -825,6 +825,20 @@ class SlotViewSet(SchoolScopedViewSet):
             slot.taught_by = None
             slot.save(update_fields=["is_cancelled", "reason", "taught_by"])
 
+            # Порядок записей строгий и на календарной оси тоже: занятие,
+            # уехавшее за спину соседней записи, оставляет ровно ту дырку,
+            # которую запись напрямую сделать не даёт. Спрашивается это
+            # после переноса — отказ откатывает его целиком.
+            broken = Slot.broken_record(slot.course, timezone.localdate())
+            if broken is not None:
+                api_error(
+                    Codes.SLOT_MOVE_BREAKS_ORDER,
+                    f"The move would leave {broken.date} out of order: "
+                    "records go one after another, without gaps.",
+                    field="date",
+                    date=str(broken.date),
+                )
+
         return Response(arrival.data, status=status.HTTP_201_CREATED)
 
     @action(detail=False, methods=["delete"])

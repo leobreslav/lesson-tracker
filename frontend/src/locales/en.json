@@ -234,7 +234,9 @@
     "slot_record_not_last": "Only the last record of the course — {{date}} — can be changed.",
     "slot_record_future": "The lesson has not happened yet: only the past is recorded.",
     "slot_record_no_row": "The plan has no row left for this hour — add one first.",
-    "slot_record_not_suggested": "The layout puts «{{title}}» in this hour: rows are recorded in order."
+    "slot_record_not_suggested": "The layout puts «{{title}}» in this hour: rows are recorded in order.",
+    "plan_before_taught": "«{{title}}» has already been taught — a lesson not yet given cannot go before it",
+    "slot_move_breaks_order": "The move would leave {{date}} unrecorded among closed lessons: records go one after another, without gaps"
   },
   "classPicker": {
     "label": "Classes:",
@@ -409,7 +411,9 @@
       "waiting": "Waiting for a reply",
       "supervised": "Supervised"
     },
-    "recordedHint": "The lesson is taught and recorded"
+    "recordedHint": "The lesson is taught and recorded",
+    "movedTaught": "A lesson already taught does not move",
+    "beforeTaught": "There is no room before a lesson already taught"
   },
   "status": {
     "reserveLabel": "reserve",

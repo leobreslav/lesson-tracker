@@ -7,6 +7,7 @@ import {
   applyMove,
   countBlocks,
   planRows,
+  resolveDropTarget,
 } from '../src/planLogic.js'
 
 const section = (id, title, children = []) => ({
@@ -151,3 +152,56 @@ describe('пересчёт после правок дерева', () => {
   })
 })
 
+
+
+/**
+ * Зеркало серверного запрета: за спину проведённого урока строку не кладут.
+ *
+ * Сервер откажет всё равно (`plan_before_taught`), но подсветить цель, а
+ * потом отказать — это обещать место, которого нет. Клиент обязан не
+ * предлагать того, что сервер не сделает.
+ */
+describe('перетаскивание за спину проведённого', () => {
+  // «нед 1» проведена, дальше свободно; ключи — id для dnd-kit
+  const items = new Map([
+    ['n-11', { node: lesson(11, 'Синус'), parent: null, index: 0, number: 1 }],
+    ['n-12', { node: lesson(12, 'Косинус'), parent: null, index: 1, number: 2 }],
+    ['n-13', { node: lesson(13, 'Тангенс'), parent: null, index: 2, number: 3 }],
+    [
+      'n-2',
+      {
+        node: section(2, 'Векторы', [lesson(21, 'Понятие')]),
+        parent: null,
+        index: 3,
+        number: null,
+        first: 4,
+        last: 4,
+      },
+    ],
+  ])
+
+  const drop = (overId, below, boundary) =>
+    resolveDropTarget({ items, activeId: 'n-13', overId, below, boundary })
+
+  it('без единой записи место свободно везде', () => {
+    assert.deepEqual(drop('n-11', false, 0), { parent: null, index: 0 })
+  })
+
+  it('на место проведённого урока не встать', () => {
+    assert.equal(drop('n-11', false, 1), null)
+  })
+
+  it('сразу за последней записью — можно', () => {
+    assert.deepEqual(drop('n-11', true, 1), { parent: null, index: 1 })
+  })
+
+  it('между двумя записями места нет', () => {
+    assert.equal(drop('n-11', true, 2), null)
+  })
+
+  it('тема приземляется своими уроками, а не собой', () => {
+    assert.equal(drop('n-2', false, 4), null)
+    // индекс среди сиблингов, из которого уже вычтен сам переносимый узел
+    assert.deepEqual(drop('n-2', true, 4), { parent: null, index: 3 })
+  })
+})

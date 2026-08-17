@@ -178,7 +178,7 @@ export function applyMove(data, nodeId, parent, index) {
  * `items` is Map<drag id, {node, parent, index}>. Returns {parent, index}, or
  * null when the drop is not allowed or would change nothing.
  */
-export function resolveDropTarget({ items, activeId, overId, below }) {
+export function resolveDropTarget({ items, activeId, overId, below, boundary = 0 }) {
   const active = items.get(activeId)
   if (!active || !overId) return null
 
@@ -190,6 +190,15 @@ export function resolveDropTarget({ items, activeId, overId, below }) {
 
   const over = items.get(overId)
   if (!over || over.node.id === active.node.id) return null
+
+  // За спину проведённого урока ходу нет: `boundary` — его сквозной номер,
+  // и место, в которое строка приземлится, должно быть строго за ним. Тема
+  // приземляется своим первым уроком (сверху) или сразу за последним
+  // (снизу); тема без уроков места в ленте не занимает, и мерить нечего.
+  if (boundary) {
+    const at = over.node.is_section ? (below ? over.last : over.first) : over.number
+    if (at && (below ? at + 1 : at) <= boundary) return null
+  }
 
   let parent
   if (over.node.is_section) {

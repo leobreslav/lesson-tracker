@@ -100,8 +100,8 @@ test('в плане видно, какой час записан, а какой 
   await expect(page.locator('.plan-cards')).toBeVisible()
 
   // первый час записан фикстурой, второй прошёл и не записан
-  await expect(page.locator('.plan-date.recorded')).toHaveCount(1)
-  const debts = page.locator('.plan-date.unclosed')
+  await expect(page.locator('.plan-state.recorded')).toHaveCount(1)
+  const debts = page.locator('.plan-state.unclosed')
   await expect(debts).toHaveCount(2)
 
   // и счётчик над таблицей говорит то же число
@@ -123,11 +123,15 @@ test('значки состояния стоят в столбик перед д
   await page.getByLabel('Курс').selectOption(String(course.id))
   await expect(page.locator('.plan-cards')).toBeVisible()
 
-  const left = await page
-    .locator('.plan-row.lesson .plan-date')
-    .evaluateAll((nodes) => nodes.map((node) => Math.round(node.getBoundingClientRect().x)))
-
-  expect(new Set(left).size, `даты съехали: ${left}`).toBe(1)
+  // и даты, и значки: у обоих один левый край на всю таблицу
+  for (const what of ['.plan-date', '.plan-state']) {
+    const left = await page
+      .locator(`.plan-row.lesson ${what}`)
+      .evaluateAll((nodes) =>
+        nodes.map((node) => Math.round(node.getBoundingClientRect().x)),
+      )
+    expect(new Set(left).size, `${what} съехали: ${left}`).toBe(1)
+  }
 })
 
 test('в сетке расписания у долга красная точка', async ({ page, signIn, api }) => {
@@ -774,4 +778,42 @@ test('проведённый урок держится за дату и не п�
   await expect.poll(() => dateOfLesson(page, drifting)).not.toBe(driftingBefore)
   // а записанный стоит там же: за ним записан час
   expect(await dateOfLesson(page, anchored.title)).toBe(before)
+})
+
+test('кнопки строки на месте, но за спину проведённого не пускают', async ({
+  page,
+  signIn,
+  api,
+}) => {
+  // Пропадали они совсем — вместе с ненужными значками, — и исчезнувший
+  // орган управления читается как поломка, а не как запрет. Теперь стоят
+  // всегда, а бледнеют там, где места действительно нет.
+  const { course } = await liveCourse(api)
+
+  await signIn(PEOPLE.ivanova)
+  await page.goto('/plan')
+  await ready(page)
+  await page.getByLabel('Курс').selectOption(String(course.id))
+  await expect(page.locator('.plan-cards')).toBeVisible()
+
+  const row = (number) =>
+    page
+      .locator('.plan-row.lesson', {
+        has: page.locator('.plan-number', { hasText: new RegExp(`^${number}$`) }),
+      })
+      .first()
+
+  // у каждой строки свои три кнопки, сколько бы записей ни стояло
+  for (const number of [1, 2, 3]) {
+    await expect(row(number).locator('.row-actions button')).toHaveCount(4)
+  }
+
+  // первая проведена — её не двигают вовсе
+  await expect(row(1).getByTitle('Проведённый урок с места не двигают')).toHaveCount(2)
+  // вторая свободна, но подниматься ей некуда: выше проведённая
+  await expect(row(2).getByTitle('Перед проведённым уроком места нет')).toBeDisabled()
+  await expect(row(2).getByTitle('Ниже')).toBeEnabled()
+  // третья ходит в обе стороны
+  await expect(row(3).getByTitle('Выше')).toBeEnabled()
+  await expect(row(3).getByTitle('Ниже')).toBeEnabled()
 })
