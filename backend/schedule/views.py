@@ -874,6 +874,18 @@ class SlotViewSet(SchoolScopedViewSet):
             .filter(date__range=(start, end))
             .select_related("course")
         )
+
+        # долг — прошедший час без записи, и только в курсе, где запись уже
+        # начали: тому, кто кнопкой не пользуется, каждый прошедший час был
+        # бы долгом. Список «начавших» берётся одним запросом на всю сетку,
+        # а не по курсу на каждую клетку
+        today = timezone.localdate()
+        started = set(
+            Slot.objects.filter(
+                course__in=self.my_courses(), lesson__isnull=False
+            ).values_list("course_id", flat=True)
+        )
+
         for slot in slots:
             lessons[slot.date.isoformat()].append(
                 {
@@ -884,6 +896,13 @@ class SlotViewSet(SchoolScopedViewSet):
                     "is_cancelled": slot.is_cancelled,
                     "is_extra": slot.is_extra,
                     "reason": slot.reason,
+                    "recorded": slot.lesson_id is not None,
+                    "debt": (
+                        slot.lesson_id is None
+                        and not slot.is_cancelled
+                        and slot.date <= today
+                        and slot.course_id in started
+                    ),
                 }
             )
 

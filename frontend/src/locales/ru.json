@@ -424,7 +424,8 @@
       "mine": "Мои курсы",
       "waiting": "Ждут ответа",
       "supervised": "Под надзором"
-    }
+    },
+    "recordedHint": "Занятие проведено и записано"
   },
   "status": {
     "reserveLabel": "резерв",

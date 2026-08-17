@@ -73,7 +73,11 @@ function lessonClassName(lesson) {
   return (
     'cell lesson' +
     (lesson.is_cancelled ? ' cancelled' : '') +
-    (lesson.is_extra ? ' extra' : '')
+    (lesson.is_extra ? ' extra' : '') +
+    // час прошёл, а записи за ним нет: красная точка в углу. Очередь записи
+    // строгая, и такой час держит всё, что после него, — увидеть его надо
+    // не заходя в занятие
+    (lesson.debt ? ' debt' : '')
   )
 }
 

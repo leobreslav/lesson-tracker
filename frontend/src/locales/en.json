@@ -411,7 +411,8 @@
       "mine": "My courses",
       "waiting": "Waiting for a reply",
       "supervised": "Supervised"
-    }
+    },
+    "recordedHint": "The lesson is taught and recorded"
   },
   "status": {
     "reserveLabel": "reserve",

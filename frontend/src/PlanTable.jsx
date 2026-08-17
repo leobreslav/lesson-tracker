@@ -459,16 +459,24 @@ export default function PlanTable({
     if (empty) return <span className="plan-date" />
     const slot = layout.byId.get(node.id)?.slot
 
-    // час прошёл, а записи за ним нет: точка у даты. Не предупреждение —
-    // пометка, но видно её на любой строке, и по ней сразу понятно, где
-    // именно учёт прервался
+    // три состояния часа, и все три видно на своей строке: записан (за ним
+    // стоит проведённое занятие), долг (прошёл, а записи нет) и обычный.
+    // По ним и видно, где учёт остановился
     const unclosed = debts.has(slot?.id)
+    const recorded = Boolean(slot?.lesson_id)
+    const mark = recorded ? ' recorded' : unclosed ? ' unclosed' : ''
 
     return slot ? (
       <Link
-        className={unclosed ? 'plan-date unclosed' : 'plan-date'}
+        className={`plan-date${mark}`}
         to={`/lesson/${slot.id}`}
-        title={t(unclosed ? 'plan.unclosedHint' : 'plan.openLesson')}
+        title={t(
+          recorded
+            ? 'plan.recordedHint'
+            : unclosed
+              ? 'plan.unclosedHint'
+              : 'plan.openLesson',
+        )}
       >
         {dayMonth(slot.date)} <em>{shortWeekday(slot.date)}</em>
       </Link>

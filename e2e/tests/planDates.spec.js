@@ -84,6 +84,47 @@ test('над таблицей одна полоса, а не три строки
   )
 })
 
+test('в плане видно, какой час записан, а какой — долг', async ({
+  page,
+  signIn,
+  api,
+}) => {
+  // Три состояния часа, и все три на своей строке: записан, долг, обычный.
+  // По ним и видно, где учёт остановился — очередь-то строгая.
+  const { course, slots } = await liveCourse(api)
+
+  await signIn(PEOPLE.ivanova)
+  await page.goto('/plan')
+  await ready(page)
+  await page.getByLabel('Курс').selectOption(String(course.id))
+  await expect(page.locator('.plan-cards')).toBeVisible()
+
+  // первый час записан фикстурой, второй прошёл и не записан
+  await expect(page.locator('.plan-date.recorded')).toHaveCount(1)
+  const debts = page.locator('.plan-date.unclosed')
+  await expect(debts).toHaveCount(2)
+
+  // и счётчик над таблицей говорит то же число
+  await expect(page.locator('.plan-bar')).toContainText('Не отмечено занятий: 2')
+})
+
+test('в сетке расписания у долга красная точка', async ({ page, signIn, api }) => {
+  // Час, который держит очередь, надо увидеть не заходя в занятие.
+  const { slots } = await liveCourse(api)
+
+  await signIn(PEOPLE.ivanova)
+  await page.goto('/schedule')
+  await ready(page)
+  await page.getByLabel('Перейти к дате').fill(slots[1].date)
+
+  const debt = page.locator(`[data-lesson="${slots[1].date}:1"]`)
+  await expect(debt).toHaveClass(/debt/)
+  // записанный час точки не носит
+  await expect(page.locator(`[data-lesson="${slots[0].date}:1"]`)).not.toHaveClass(
+    /debt/,
+  )
+})
+
 test('дата в плане ведёт в занятие этого дня', async ({ page, signIn }) => {
   // Строка плана отвечает «что проходим», занятие — «как оно прошло»:
   // журнал, работы, отмена. Обратный путь (со страницы занятия в план) есть
