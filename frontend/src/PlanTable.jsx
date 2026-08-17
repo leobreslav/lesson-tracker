@@ -552,10 +552,11 @@ export default function PlanTable({
         <li className="plan-today" key={key}>
           {/* дата рядом со словом: черта стоит перед первым непрошедшим
               уроком, и «сегодня» без числа не говорит, где именно сегодня
-              на этой ленте. Двоеточие — потому что это подпись и её
-              значение, а не два равных слова через пробел */}
-          <span className="plan-today-label">{t('plan.today')}:</span>
-          <span className="hint">{weekdayWithDate(today())}</span>
+              на этой ленте. Тире, а не двоеточие: это не подпись со
+              значением, а одна фраза — и набрана она поэтому одинаково,
+              от слова до числа */}
+          <span className="plan-today-label">{t('plan.today')} –</span>
+          <span className="plan-today-date">{weekdayWithDate(today())}</span>
         </li>
       )
     }

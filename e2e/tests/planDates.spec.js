@@ -926,25 +926,35 @@ test('черта «сегодня» называет и дату', async ({ page
 
   const line = page.locator('.plan-today')
   await expect(line).toBeVisible()
-  await expect(line).toContainText('Сегодня:')
-  // день недели и число — рядом, спокойным шрифтом
-  await expect(line.locator('.hint')).toHaveText(
+  await expect(line).toContainText('Сегодня –')
+  // день недели и число — рядом
+  await expect(line.locator('.plan-today-date')).toHaveText(
     /(понедельник|вторник|сред|четверг|пятниц|суббот|воскресень).+\d/,
   )
 
-  // и на одной строке со словом: у `.hint` свой верхний отступ, и в ряду с
-  // центрированием он уводил дату ниже — глазами это «чуть съехало», а
-  // мерится в один вопрос
-  const off = await line.evaluate((el) => {
-    const middle = (node) => {
+  // Одна фраза — один набор: слово и дата стоят на одной линии и написаны
+  // одинаково. Слово было мельче и жирнее, дата крупнее и приглушённее, а
+  // сверх того у неё был свой верхний отступ, уводивший её вниз, — глазами
+  // это «чуть съехало и чем-то отличается», а мерится в один вопрос.
+  const same = await line.evaluate((el) => {
+    const read = (selector) => {
+      const node = el.querySelector(selector)
       const box = node.getBoundingClientRect()
-      return box.top + box.height / 2
+      const style = getComputedStyle(node)
+      return {
+        middle: box.top + box.height / 2,
+        font: `${style.fontSize} ${style.fontWeight} ${style.fontFamily}`,
+        color: style.color,
+        opacity: style.opacity,
+      }
     }
-    return Math.abs(
-      middle(el.querySelector('.plan-today-label')) - middle(el.querySelector('.hint')),
-    )
+    return { label: read('.plan-today-label'), date: read('.plan-today-date') }
   })
-  expect(off).toBeLessThanOrEqual(1)
+
+  expect(Math.abs(same.label.middle - same.date.middle)).toBeLessThanOrEqual(1)
+  expect(same.date.font).toBe(same.label.font)
+  expect(same.date.color).toBe(same.label.color)
+  expect(same.date.opacity).toBe(same.label.opacity)
 })
 
 test('пока учёт не начат, плашка говорит, сколько часов прошло', async ({
