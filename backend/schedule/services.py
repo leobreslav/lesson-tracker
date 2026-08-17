@@ -189,6 +189,36 @@ def source_date_for(target: date, source_start: date, cycle: int) -> date:
     return source_start + timedelta(days=(target - source_start).days % cycle)
 
 
+def covered_dates(
+    *,
+    source_start: date,
+    source_end: date,
+    target_start: date,
+    target_end: date,
+    step: int = 1,
+) -> list[date]:
+    """
+    Целевые даты, которые копирование действительно накрывает.
+
+    Нужно это `replace`: заменять надо там, куда кладут, а не во всём
+    периоде. При шаге «через неделю» пропущенные недели копирование не
+    трогает вовсе — и стирать в них тоже нечего, иначе выходило самое
+    неприятное: уроки исчезли, а взамен ничего не появилось.
+
+    То же правило чинит и старую странность с неполной неделей: источник
+    «пн–пт», растянутый на месяц, выметал в цели и субботы с воскресеньями,
+    хотя ничего в них не клал.
+    """
+    cycle = cycle_days(source_start, source_end, step)
+    span = (source_end - source_start).days
+
+    return [
+        target
+        for target in iter_dates(target_start, target_end)
+        if (target - source_start).days % cycle <= span
+    ]
+
+
 def plan_copy(
     *,
     source_start: date,

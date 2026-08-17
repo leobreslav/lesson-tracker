@@ -3953,6 +3953,18 @@ a.plan-date {
   border-radius: 50%;
 }
 
+/* записанный час: галочка тем же углом и тем же зелёным, что в таблице
+   плана. Долгом и записью один час быть не может, так что угол общий */
+.cell.lesson.recorded::after {
+  content: '\2713';
+  position: absolute;
+  top: 0;
+  right: 3px;
+  font-size: 0.7rem;
+  line-height: 1.2;
+  color: #1c7a34;
+}
+
 a.plan-date:hover {
   color: #1a73e8;
   text-decoration: underline;

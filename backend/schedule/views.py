@@ -571,6 +571,32 @@ class SlotViewSet(SchoolScopedViewSet):
         self.require_write(serializer.validated_data["course"])
         serializer.save()
 
+    def perform_destroy(self, instance):
+        """
+        Занятие с записью не удаляют: сначала снимают запись.
+
+        Раньше одиночное удаление было свободным — «нажать на клетку и
+        удалить её обдуманное действие», — и это было верно, пока клетка
+        ничего не значила. Теперь за ней бывает записан урок, и удаление
+        уносит запись молча: строка плана возвращается в общую очередь и
+        получает **другую** дату, а вместе с ней уезжает и всё, что за ней.
+
+        Массовых операций это правило касалось всегда (`sweepable`
+        пропускает всё, на чём есть запись); одиночное удаление было
+        единственной дырой в нём.
+        """
+        if instance.lesson_id:
+            api_error(
+                Codes.SLOT_DELETE_RECORDED,
+                f"«{instance.lesson.title}» is recorded on {instance.date}: "
+                "withdraw the record before deleting the lesson.",
+                field="id",
+                title=instance.lesson.title,
+                date=str(instance.date),
+            )
+
+        instance.delete()
+
     def get_queryset(self):
         queryset = super().get_queryset().select_related("course", "year")
         # year.periods() нужен каждому слоту для предупреждения о неучебном
@@ -652,13 +678,22 @@ class SlotViewSet(SchoolScopedViewSet):
 
         deleted = 0
         if data["mode"] == "replace":
+            # только то, куда копирование действительно кладёт: при шаге
+            # «через неделю» пропущенные недели остаются как были
+            covered = services.covered_dates(
+                source_start=data["source_start"],
+                source_end=data["source_end"],
+                target_start=data["target_start"],
+                target_end=data["target_end"],
+                step=data["step"],
+            )
             # заменяются только пустые клетки сетки. Отмена с причиной,
             # дополнительный урок, отметка «что прошли», замена и заданная
             # работа — всё это записи о том, что было, и массовая операция
             # их не трогает. Администратора правило касается тем более: он
             # раскатывает сетку на весь год и стёр бы чужую историю разом
             deleted, _ = sweepable(
-                Slot.objects.filter(course=course, date__range=target)
+                Slot.objects.filter(course=course, date__in=covered)
             ).delete()
 
         occupied = set(

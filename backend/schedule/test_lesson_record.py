@@ -414,3 +414,69 @@ class MoveKeepsTheOrderTests(SchoolTestMixin, APITestCase):
         response = self.move(self.ahead, self.today + timedelta(days=20))
 
         self.assertEqual(response.status_code, 201, response.content)
+
+
+class RecordedSlotsAreNotSweptTests(LessonRecordTestCase):
+    """
+    Занятие с записью не удаляется ни поодиночке, ни массово.
+
+    Массовых операций правило касалось всегда — `sweepable` пропускает всё,
+    на чём есть запись, — а одиночное удаление было в нём единственной
+    дырой: клетку сносили, запись уходила вместе с ней, строка плана
+    возвращалась в общую очередь и получала другую дату.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.slot = make_slot(self.user, self.course, MONDAY, 1)
+        self.slot.lesson = self.topic
+        self.slot.save(update_fields=["lesson"])
+
+    def test_deleting_a_recorded_lesson_is_refused(self):
+        response = self.client.delete(reverse("slot-detail", args=[self.slot.pk]))
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json()["code"], "slot_delete_recorded")
+        self.assertTrue(Slot.objects.filter(pk=self.slot.pk).exists())
+
+    def test_the_answer_names_the_lesson_and_the_day(self):
+        body = self.client.delete(reverse("slot-detail", args=[self.slot.pk])).json()
+
+        self.assertEqual(body["params"]["title"], self.topic.title)
+        self.assertEqual(body["params"]["date"], str(MONDAY))
+
+    def test_an_empty_lesson_is_still_deleted(self):
+        empty = make_slot(self.user, self.course, MONDAY + timedelta(days=1), 1)
+
+        response = self.client.delete(reverse("slot-detail", args=[empty.pk]))
+
+        self.assertEqual(response.status_code, 204, response.content)
+
+    def test_a_bulk_delete_walks_around_it(self):
+        response = self.clear()
+
+        self.assertEqual(response.status_code, 200, response.content)
+        self.assertTrue(Slot.objects.filter(pk=self.slot.pk).exists())
+
+    def test_copying_with_replace_walks_around_it_too(self):
+        """Замена — та же массовая операция: историю она не трогает."""
+        source = MONDAY + timedelta(days=7)
+        make_slot(self.user, self.course, source, 2)
+
+        response = self.client.post(
+            reverse("slot-copy"),
+            {
+                "course_id": self.course.pk,
+                "source_start": source.isoformat(),
+                "source_end": (source + timedelta(days=6)).isoformat(),
+                "target_start": MONDAY.isoformat(),
+                "target_end": (MONDAY + timedelta(days=6)).isoformat(),
+                "mode": "replace",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200, response.content)
+        self.assertEqual(response.json()["deleted"], 0)
+        self.slot.refresh_from_db()
+        self.assertEqual(self.slot.lesson_id, self.topic.pk)

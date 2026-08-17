@@ -93,6 +93,7 @@ class Codes:
     PLAN_DELETE_TAUGHT = "plan_delete_taught"
     ROWS_INVALID = "rows_invalid"
     SLOT_MOVE_BREAKS_ORDER = "slot_move_breaks_order"
+    SLOT_DELETE_RECORDED = "slot_delete_recorded"
     SLOT_NOT_MINE = "slot_not_mine"
 
     # bulk operations over the schedule

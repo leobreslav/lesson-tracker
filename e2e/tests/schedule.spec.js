@@ -762,3 +762,34 @@ test('собственные блоки занятия работают неза
   await homework.hover()
   await expect(homework.getByRole('button', { name: 'Создать' })).toBeVisible()
 })
+
+test('записанный час помечен галочкой, а занятие с записью не удаляется', async ({
+  page,
+  signIn,
+  api,
+}) => {
+  // Один факт должен выглядеть одинаково везде: в таблице плана запись —
+  // зелёная галочка, и в сетке расписания тоже. А удаление такой клетки
+  // уносило бы запись молча: строка плана вернулась бы в общую очередь и
+  // получила другую дату.
+  const { course, slots } = await liveCourse(api)
+  const recorded = slots[0] // фикстура записывает первый час
+  const debt = slots[1]
+
+  await signIn(PEOPLE.ivanova)
+  await openWeek(page, recorded.date)
+
+  const cell = (slot) => page.locator(`[data-lesson="${slot.date}:${slot.lesson_number}"]`)
+  await expect(cell(recorded)).toHaveClass(/recorded/)
+  // соседний час прошёл и не записан — он долг, и метка у него другая
+  await expect(cell(debt)).toHaveClass(/debt/)
+
+  // сервер такое занятие не отдаёт удалить
+  const teacher = await api(PEOPLE.ivanova)
+  const refused = await teacher.delete(`/api/slots/${recorded.id}/`)
+  expect(refused.status).toBe(400)
+  expect(refused.body.code).toBe('slot_delete_recorded')
+
+  const still = await teacher.get(`/api/slots/?course=${course.id}`)
+  expect(still.body.some((slot) => slot.id === recorded.id)).toBe(true)
+})

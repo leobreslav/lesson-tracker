@@ -98,12 +98,18 @@ export function planCopy({
     (slot) => slot.date >= targetStart && slot.date <= targetEnd,
   )
 
+  const cycle = cycleDays(sourceStart, sourceEnd, step)
+  const span = daysBetween(sourceStart, sourceEnd)
+  // куда копирование действительно кладёт: при шаге «через неделю»
+  // пропущенные недели оно не трогает, значит и replace их не трогает
+  const covered = (date) => daysBetween(sourceStart, date) % cycle <= span
+
   // taken by a course we are copying: replace removes its regular lessons,
   // the hand-made ones (cancelled, extra) survive and keep the place
   const taken = new Set(
     inTarget
       .filter(chosen)
-      .filter((slot) => mode !== 'replace' || !isRegular(slot))
+      .filter((slot) => mode !== 'replace' || !isRegular(slot) || !covered(slot.date))
       .map((slot) => at(slot.date, slot.lesson_number)),
   )
 
@@ -113,7 +119,6 @@ export function planCopy({
     .filter((slot) => !chosen(slot) && !slot.is_cancelled)
     .forEach((slot) => taken.add(at(slot.date, slot.lesson_number)))
 
-  const cycle = cycleDays(sourceStart, sourceEnd, step)
   let created = 0
   let skipped = 0
 

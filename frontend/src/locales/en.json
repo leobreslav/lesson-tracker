@@ -238,7 +238,8 @@
     "plan_before_taught": "«{{title}}» has already been taught — a lesson not yet given cannot go before it",
     "slot_move_breaks_order": "The move would leave {{date}} unrecorded among closed lessons: records go one after another, without gaps",
     "plan_delete_taught": "«{{title}}» was taught on {{date}} — withdraw the record before deleting the row",
-    "rows_invalid": "The paste could not be read: send the table rows."
+    "rows_invalid": "The paste could not be read: send the table rows.",
+    "slot_delete_recorded": "«{{title}}» is recorded on {{date}} — withdraw the record before deleting the lesson"
   },
   "classPicker": {
     "label": "Classes:",

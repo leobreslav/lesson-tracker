@@ -309,7 +309,9 @@ export default function SchoolSchedule({ onLoggedOut }) {
           </>
         )}
         lessonClassName={(slot) =>
-          slot.teacher ? 'cell lesson' : 'cell lesson unassigned'
+          (slot.teacher ? 'cell lesson' : 'cell lesson unassigned') +
+          // записанный час: та же галочка, что у учителя и в таблице плана
+          (slot.lesson ? ' recorded' : '')
         }
         lessonTitle={(slot) =>
           [slot.course_name, slot.teacher_name].filter(Boolean).join(' — ')
