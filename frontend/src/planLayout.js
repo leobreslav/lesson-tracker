@@ -57,13 +57,22 @@ export function stitchLayout(rows, ribbon, today = null) {
 
     const before = []
 
+    /*
+     * Каникулы выше заголовка терма — по хронологии, а не по «крупности».
+     *
+     * Порядок был обратный, от крупного к мелкому, и на границе четвертей
+     * это врало: зимние каникулы кончаются 6 января, третья четверть
+     * начинается 7-го, а синяя черта каникул стояла **под** заголовком
+     * четверти. Каникулы всегда случились раньше, чем начался следующий
+     * терм: они лежат между прошлым уроком и этим.
+     */
+    if (slot?.break_before) before.push({ kind: 'break', ...slot.break_before })
+
     const key = slot?.term?.id ?? null
     if (slot && key !== term) {
       term = key
       if (slot.term) before.push({ kind: 'term', ...slot.term })
     }
-
-    if (slot?.break_before) before.push({ kind: 'break', ...slot.break_before })
 
     // черта «сегодня» — перед первым уроком, который ещё не прошёл
     const past = Boolean(today && slot && slot.date < today)
