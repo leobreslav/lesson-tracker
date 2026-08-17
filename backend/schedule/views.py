@@ -1007,6 +1007,15 @@ class SlotViewSet(SchoolScopedViewSet):
                 # что мешает записать этот час: очередь без дырок значит,
                 # что закрывают их по одной, а экран должен сказать — какую
                 # именно, а не просто отказать после нажатия
+                # часу не досталось строки плана: слотов больше, чем строк.
+                # Это не тупик, а требование — дописать строку, — и сказать
+                # об этом должна страница, а не отказ после нажатия
+                "needs_row": (
+                    slot.lesson_id is None
+                    and not slot.is_cancelled
+                    and slot.date <= timezone.localdate()
+                    and services.suggested_topics(slot.course).get(slot.pk) is None
+                ),
                 "record_after": (
                     {"id": blocker.pk, "date": blocker.date}
                     if (blocker := record_blocker(slot)) is not None

@@ -86,6 +86,7 @@ export default function PlanTable({
   editing,
   adding,
   spotlight = null,
+  spotlightSlot = null,
   debts = EMPTY_SET,
   actions,
 }) {
@@ -395,7 +396,13 @@ export default function PlanTable({
             {free.map(({ slot, labelled }) => (
               <li
                 key={slot.id}
-                className={`plan-row free${slot.week % 2 === 0 ? ' week-even' : ''}`}
+                // якорь для ссылки со страницы занятия: «допишите строку»
+                // должно приводить к нужному дню, а не «в план вообще»
+                data-slot={slot.id}
+                className={
+                  `plan-row free${slot.week % 2 === 0 ? ' week-even' : ''}` +
+                  (slot.id === spotlightSlot ? ' spotlight' : '')
+                }
               >
                 <span className="plan-weekmark">
                   {showWeeks && labelled && t('plan.week', { number: slot.week })}

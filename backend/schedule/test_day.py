@@ -280,26 +280,57 @@ class RecordingTests(DayTestCase):
         self.assertEqual(body["code"], "slot_lesson_taken")
         self.assertEqual(body["params"]["date"], str(self.tuesday.date))
 
-    def test_the_api_stays_permissive_about_which_row(self):
+    def test_only_the_suggested_row_is_accepted(self):
         """
-        Какую строку записать — решение интерфейса, а не сервера.
+        Строку тоже не выбирают: записывается предложенная раскладкой.
 
-        Сервер записывает, что ему сказали: правило «подтверждаем подсказку»
-        держится тем, что выбора негде взять, и серверная проверка завела бы
-        второе место, где оно живёт.
+        Правило это было и раньше, но держалось тем, что в интерфейсе выбора
+        негде взять; по API можно было записать любую, оставив предыдущие
+        строки неиспользованными — и они молча уезжали на более поздние дни.
 
-        А вот **какой час** записать, сервер решает сам: очередь без дырок —
-        это про данные, а не про экран.
+        Пропуск темы выражается теперь перестановкой строки в плане, то есть
+        видимой правкой программы. Непроведённые строки двигаются свободно,
+        так что путь остаётся.
         """
-        response = self.client.patch(
+        refused = self.client.patch(
             reverse("slot-detail", args=[self.monday.pk]),
             {"lesson": self.second.pk},
             format="json",
         )
 
-        self.assertEqual(response.status_code, 200, response.content)
-        self.monday.refresh_from_db()
-        self.assertEqual(self.monday.lesson, self.second)
+        self.assertEqual(refused.status_code, 400)
+        self.assertEqual(refused.json()["code"], "slot_record_not_suggested")
+        self.assertEqual(refused.json()["params"]["title"], "Синус суммы")
+
+    def test_an_hour_with_no_row_left_asks_for_one(self):
+        """
+        Слотов больше, чем строк: записывать нечего, и это не тупик.
+
+        «Провели то, чего в плане нет» значит дописать строку — та же
+        доктрина, что «не успели — дописывается строка». Отменять час, который
+        был, нельзя: отмена это «не было».
+        """
+        self.client.patch(
+            reverse("slot-detail", args=[self.monday.pk]),
+            {"lesson": self.first.pk},
+            format="json",
+        )
+        self.client.patch(
+            reverse("slot-detail", args=[self.tuesday.pk]),
+            {"lesson": self.second.pk},
+            format="json",
+        )
+        spare = make_slot(self.user, self.course, timezone.localdate(), 2)
+
+        refused = self.client.patch(
+            reverse("slot-detail", args=[spare.pk]),
+            {"lesson": self.first.pk},
+            format="json",
+        )
+
+
+        self.assertEqual(refused.status_code, 400)
+        self.assertEqual(refused.json()["code"], "slot_record_no_row")
 
 
 class OrderTests(RecordingTests):
@@ -324,8 +355,13 @@ class OrderTests(RecordingTests):
         )
 
     def test_the_first_record_may_be_any_past_hour(self):
-        """До первой записи очереди нет: система ничего и не обещала знать."""
-        answer = self.record(self.tuesday, self.first)
+        """
+        До первой записи очереди нет: система ничего и не обещала знать.
+
+        Час любой, а строка всё равно та, что предлагает раскладка: за
+        вторником по позиции стоит вторая строка.
+        """
+        answer = self.record(self.tuesday, self.second)
 
         self.assertEqual(answer.status_code, 200, answer.content)
 
@@ -384,10 +420,11 @@ class OrderTests(RecordingTests):
 
     def test_an_older_record_is_not_rewritten_either(self):
         """Правка записанного — то же переписывание прошлого, что и снятие."""
+        third = make_node(self.user, self.course, "Тангенс суммы", position=2)
         self.record(self.monday, self.first)
         self.record(self.tuesday, self.second)
 
-        refused = self.record(self.monday, self.second)
+        refused = self.record(self.monday, third)
 
         self.assertEqual(refused.status_code, 400)
         self.assertEqual(refused.json()["code"], "slot_record_not_last")

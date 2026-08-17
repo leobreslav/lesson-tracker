@@ -413,7 +413,7 @@ class SlotSerializer(serializers.ModelSerializer):
 
         if lesson is None:
             if was is None:
-                return
+                return None
             last = Slot.last_record(course)
             if last is None or last.pk != slot.pk:
                 api_error(
@@ -423,7 +423,7 @@ class SlotSerializer(serializers.ModelSerializer):
                     date=str(last.date) if last else "",
                     number=last.lesson_number if last else 0,
                 )
-            return
+            return None
 
         if slot.date > today:
             api_error(
@@ -443,7 +443,7 @@ class SlotSerializer(serializers.ModelSerializer):
                     date=str(last.date) if last else "",
                     number=last.lesson_number if last else 0,
                 )
-            return
+            return None
 
         nxt = Slot.next_unclosed(course, today)
         if nxt is not None and nxt.pk != slot.pk:
@@ -455,6 +455,15 @@ class SlotSerializer(serializers.ModelSerializer):
                 number=nxt.lesson_number,
             )
 
+        suggested = services.suggested_topics(course).get(slot.pk)
+        if suggested is None:
+            api_error(
+                Codes.SLOT_RECORD_NO_ROW,
+                "The plan has no row left for this hour — add one first.",
+                field="lesson",
+            )
+        return suggested
+
     def validate(self, attrs):
         def value(name):
             return attrs.get(name, getattr(self.instance, name, None))
@@ -465,20 +474,28 @@ class SlotSerializer(serializers.ModelSerializer):
 
         lesson = value("lesson")
 
-        # запись идёт строго по порядку, и меняется только последняя, —
-        # проверяется это лишь когда связь трогают, а не при каждой правке
-        # часа: отмена, причина и «кто вёл» к очереди отношения не имеют
+        # Порядок проверок — от частного к общему, и он не случаен: человек
+        # должен получить самое узкое объяснение из верных.
+        #
+        #   1. строка чужого курса — про саму строку;
+        #   2. очередь: будущее, не последняя, не по порядку — про час;
+        #   3. «в плане не осталось строки» — тоже про час, и раньше «занято»:
+        #      когда план исчерпан, **любая** названная строка окажется
+        #      записанной, и человек пойдёт разбираться не туда;
+        #   4. строка занята другим днём — про строку;
+        #   5. и только потом «раскладка предлагает другую».
+        if lesson is not None and lesson.course_id != course.pk:
+            api_error(
+                Codes.PARENT_OTHER_CLASS,
+                "That plan lesson belongs to another course.",
+                field="lesson",
+            )
+
+        suggested = None
         if self.instance is not None and "lesson" in attrs:
-            self.check_record_order(course, lesson)
+            suggested = self.check_record_order(course, lesson)
 
         if lesson is not None:
-            if lesson.course_id != course.pk:
-                api_error(
-                    Codes.PARENT_OTHER_CLASS,
-                    "That plan lesson belongs to another course.",
-                    field="lesson",
-                )
-
             # одна строка плана — ровно одно занятие. Сказать надо не
             # «занято», а **где** занято: иначе это искать руками
             taken = (
@@ -494,6 +511,20 @@ class SlotSerializer(serializers.ModelSerializer):
                     title=lesson.title,
                     date=str(taken.date),
                 )
+
+        # строка тоже не выбирается: записывается та, которую предлагает
+        # раскладка. Правило было и раньше, но держалось тем, что в
+        # интерфейсе выбора негде взять; по API можно было записать любую,
+        # оставив предыдущие строки неиспользованными — и они молча уезжали
+        # на более поздние дни. Пропуск темы выражается теперь перестановкой
+        # строки в плане, то есть видимой правкой программы
+        if suggested is not None and lesson is not None and suggested.pk != lesson.pk:
+            api_error(
+                Codes.SLOT_RECORD_NOT_SUGGESTED,
+                f"The layout puts «{suggested.title}» in this hour.",
+                field="lesson",
+                title=suggested.title,
+            )
 
         if year != course.year:
             api_error(

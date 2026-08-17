@@ -576,6 +576,43 @@ test('записи идут подряд, и снять можно только 
   await expect(page.getByRole('button', { name: 'урок проведён' })).toHaveCount(0)
 })
 
+test('часу без строки плана предлагают дописать её, а не тупик', async ({
+  page,
+  signIn,
+  api,
+}) => {
+  // Слотов больше, чем строк: записать нечего, отменить — соврать, а
+  // очередь записи стоит. «Провели то, чего в плане нет» значит дописать
+  // строку — та же доктрина, что «не успели — дописывается строка».
+  const { course, rows, slots, teacher } = await liveCourse(api)
+  for (const [index, slot] of slots.slice(1).entries()) {
+    const done = await teacher.patch(`/api/slots/${slot.id}/`, {
+      lesson: rows[index + 1].id,
+    })
+    expect(done.status, JSON.stringify(done.body)).toBe(200)
+  }
+  // четвёртый час — строк на него уже не осталось
+  const spare = await teacher.post('/api/slots/', {
+    course: course.id,
+    date: slots[2].date,
+    lesson_number: 2,
+  })
+  expect(spare.status, JSON.stringify(spare.body)).toBe(201)
+
+  await signIn(PEOPLE.ivanova)
+  await page.goto(`/lesson/${spare.body.id}`)
+  await ready(page)
+
+  await expect(page.getByText(/в плане не осталось строки/)).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Так и было' })).toHaveCount(0)
+
+  // ссылка приводит к этому самому дню в плане, а не «в план вообще»
+  await page.getByRole('link', { name: 'дописать в план' }).click()
+  await ready(page)
+  await expect(page.locator(`[data-slot="${spare.body.id}"]`)).toBeVisible()
+  await expect(page.locator(`[data-slot="${spare.body.id}"]`)).toHaveClass(/spotlight/)
+})
+
 test('у отменённого занятия остаётся журнал, а содержания нет', async ({
   page,
   signIn,

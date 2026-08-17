@@ -499,7 +499,21 @@ export default function LessonScreen({ onLoggedOut }) {
             осталось» называет не ту причину — темы нет не потому, что план
             кончился, а потому, что занятия не было. Настоящая причина
             строкой ниже, и она с указанием, чья */}
-        {!cancelled && !topic && <p className="hint">{t('today.noTopic')}</p>}
+        {/* часу не досталось строки плана: слотов больше, чем строк.
+            Раньше тут была пустота с фразой «в плане ничего не осталось», и
+            это был тупик: записать нечего, отменить — соврать, а очередь
+            записи стоит. «Провели то, чего в плане нет» значит дописать
+            строку — та же доктрина, что «не успели — дописывается строка» */}
+        {!cancelled && !topic && (
+          <p className={card.needs_row ? 'lesson-locked' : 'hint'}>
+            {t(card.needs_row ? 'lessonScreen.needsRow' : 'today.noTopic')}{' '}
+            {card.needs_row && may && (
+              <Link to={`/plan?course=${card.course.id}&slot=${card.id}`}>
+                {t('lessonScreen.addRow')}
+              </Link>
+            )}
+          </p>
+        )}
       </header>
 
       {error && (

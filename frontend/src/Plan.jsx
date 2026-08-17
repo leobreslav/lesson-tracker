@@ -89,6 +89,9 @@ export default function Plan({ onLoggedOut }) {
   const [target] = useState(() => ({
     course: Number(search.get('course')) || null,
     row: Number(search.get('row')) || null,
+    // свободный час, к которому нужно дописать строку: приходят сюда со
+    // страницы занятия, у которого строки не осталось
+    slot: Number(search.get('slot')) || null,
     // `edit=1` — открыть окно правки сразу: со страницы занятия сюда
     // приходят именно за ним, и «мы вас привели, теперь нажмите» это ещё
     // одно нажатие ради того, о чём уже попросили
@@ -183,8 +186,15 @@ export default function Plan({ onLoggedOut }) {
    * случаев. Сторож стоит на ref, поэтому лишние проходы бесплатны.
    */
   useEffect(() => {
-    if (!target.row || scrolled.current) return
-    const row = document.querySelector(`[data-node="${dragId(target.row)}"]`)
+    if (scrolled.current) return
+    const anchor = target.row
+      ? `[data-node="${dragId(target.row)}"]`
+      : target.slot
+        ? `[data-slot="${target.slot}"]`
+        : null
+    if (!anchor) return
+
+    const row = document.querySelector(anchor)
     if (!row) return
     scrolled.current = true
     row.scrollIntoView({ block: 'center' })
@@ -869,6 +879,7 @@ export default function Plan({ onLoggedOut }) {
                 editing={editing}
                 adding={adding}
                 spotlight={target.row}
+              spotlightSlot={target.slot}
               debts={debtIds}
                 // всё, что таблица умеет попросить у страницы, — одним
                 // списком: сама она в базу не ходит

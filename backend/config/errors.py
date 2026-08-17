@@ -86,6 +86,8 @@ class Codes:
     SLOT_RECORD_OUT_OF_ORDER = "slot_record_out_of_order"
     SLOT_RECORD_NOT_LAST = "slot_record_not_last"
     SLOT_RECORD_FUTURE = "slot_record_future"
+    SLOT_RECORD_NOT_SUGGESTED = "slot_record_not_suggested"
+    SLOT_RECORD_NO_ROW = "slot_record_no_row"
     PLAN_LESSON_TAUGHT = "plan_lesson_taught"
     SLOT_NOT_MINE = "slot_not_mine"
 
