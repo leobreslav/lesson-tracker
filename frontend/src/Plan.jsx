@@ -728,17 +728,31 @@ export default function Plan({ onLoggedOut }) {
         />
         {/* Сравнение — не режим таблицы, а другой вид страницы: там есть
             удалённые строки, которых в плане уже нет, и трогать их нельзя.
-            Поэтому тумблер стоит здесь, в шапке, а не в панели управления:
-            панель в этом виде не показывается вовсе */}
+            Поэтому переключатель стоит здесь, в шапке, а не в панели
+            управления: панель в этом виде не показывается вовсе.
+
+            Тумблер, а не кнопка: это выбор из двух видов, и оба надо
+            назвать. Кнопка «Сравнить с эталоном» говорила только про один
+            из них, а второй, обратный, приходилось искать глазами внутри
+            открывшегося экрана — то есть в другом месте, чем открывали. */}
         {!supervising && baseline?.approved && (
-          <button
-            type="button"
-            className={comparing ? 'chip active' : 'chip'}
-            aria-pressed={comparing}
-            onClick={() => setComparing(!comparing)}
+          <span
+            className="chips"
+            role="group"
+            aria-label={t('plan.diff.switch')}
           >
-            {t('plan.diff.toggle')}
-          </button>
+            {[false, true].map((mode) => (
+              <button
+                key={String(mode)}
+                type="button"
+                className={comparing === mode ? 'chip active' : 'chip'}
+                aria-pressed={comparing === mode}
+                onClick={() => setComparing(mode)}
+              >
+                {t(mode ? 'plan.diff.toggle' : 'plan.diff.plan')}
+              </button>
+            ))}
+          </span>
         )}
       </header>
 
@@ -770,7 +784,7 @@ export default function Plan({ onLoggedOut }) {
       ) : comparing ? (
         /* страница перерисовывается целиком: ни панели, ни сводки, ни
            таблицы — сравнение показывает и то, чего в плане уже нет */
-        <PlanDiff classId={classId} onClose={() => setComparing(false)} />
+        <PlanDiff classId={classId} />
       ) : !classes.length ? (
         <EmptyState
           title={t('plan.needClass.title')}

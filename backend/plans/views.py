@@ -244,7 +244,7 @@ def refuse_if_records_broken(course) -> None:
         )
 
 
-def diff_payload(course) -> dict:
+def diff_payload(course, chosen=None) -> dict:
     """
     Чем план отличается от утверждённого эталона — построчно.
 
@@ -252,20 +252,46 @@ def diff_payload(course) -> dict:
     «что именно я поменял»: учитель перед отправкой, методист перед
     решением. Вопрос один, значит и ответ один — иначе две стороны
     разговора смотрели бы на разные списки и начинали бы со спора о них.
+
+    **Версию выбирают.** По умолчанию сравнение идёт с последним
+    утверждением — это ответ на «что я поменял с тех пор, как подписали», —
+    но у курса их за год несколько, и вопрос «что изменилось с начала года»
+    такой же законный. История утверждений копилась в базе с самого начала;
+    ответить по ней было нечем.
+
+    Список версий едет тем же ответом: селект должен появиться сразу, а не
+    вторым запросом после того, как человек уже посмотрел на одну версию.
     """
-    baseline = approval.approved_baseline(course.pk)
-    if baseline is None:
-        return {"baseline": None, "rows": [], "counts": {}}
+    history = list(approval.approved_history(course.pk))
+    if not history:
+        return {"baseline": None, "versions": [], "rows": [], "counts": {}}
+
+    baseline = history[0]
+    if chosen:
+        baseline = next((item for item in history if str(item.pk) == str(chosen)), None)
+        if baseline is None:
+            # чужой или несуществующий id: подтверждать существование чужого
+            # снимка незачем, поэтому код один на оба случая
+            api_error(
+                Codes.BASELINE_UNKNOWN,
+                "No such approved baseline for this course.",
+                field="baseline",
+            )
 
     changes = diff.plan_diff(
         list(baseline.rows.all()), services.plan_snapshot(course.pk)
     )
 
+    def version(item):
+        return {"id": item.pk, "approved_at": item.approved_at}
+
     return {
         "baseline": {
+            "id": baseline.pk,
             "approved_at": baseline.approved_at,
             "reviewer": person(baseline.reviewer),
         },
+        "versions": [version(item) for item in history],
         "rows": [change.payload() for change in changes],
         "counts": diff.summary(changes),
     }
@@ -884,7 +910,11 @@ class PlanNodeViewSet(CourseScopedViewSet):
     @action(detail=False, methods=["get"])
     def diff(self, request):
         """Чем план отличается от утверждённого эталона — построчно."""
-        return Response(diff_payload(self.requested_course()))
+        return Response(
+            diff_payload(
+                self.requested_course(), request.query_params.get("baseline")
+            )
+        )
 
     @action(detail=False, methods=["get"], url_path="layout/summary", url_name="layout-summary")
     def layout_summary(self, request):
@@ -1087,7 +1117,11 @@ class PlanReviewViewSet(ReadOnlyModelViewSet):
         его прислали. Читать чужую программу без запроса методист не может
         и здесь — сравнение не новое право, а другой взгляд на то же самое.
         """
-        return Response(diff_payload(self.get_object().course))
+        return Response(
+            diff_payload(
+                self.get_object().course, request.query_params.get("baseline")
+            )
+        )
 
     @action(detail=True, methods=["post"])
     def approve(self, request, pk=None):

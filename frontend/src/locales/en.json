@@ -444,7 +444,6 @@
       "since": "Baseline approved on {{date}}",
       "none": "The plan has never been approved — nothing to compare with.",
       "empty": "Nothing has changed since approval.",
-      "back": "Back to the plan",
       "added": "added",
       "removed": "deleted",
       "moved": "moved",
@@ -452,7 +451,9 @@
       "was": "was: {{title}}",
       "content": "content changed",
       "legend": "Green is added, red is deleted, yellow is edited, blue is moved.",
-      "wholePlan": "Whole plan"
+      "switch": "What to show",
+      "plan": "Plan",
+      "version": "Compare with"
     },
     "addKind": "What to add",
     "kindLesson": "Lesson",

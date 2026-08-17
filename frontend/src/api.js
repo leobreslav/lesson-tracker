@@ -124,9 +124,17 @@ export const deleteTerm = (id) =>
 export const createException = (fields) =>
   request('/api/calendar/exceptions/', { method: 'POST', body: fields })
 
-/** Чем план отличается от утверждённого эталона — построчно. */
-export const fetchPlanDiff = (classId) =>
-  request(`/api/plan/diff/?course=${encodeURIComponent(classId)}`)
+/**
+ * Чем план отличается от эталона — построчно.
+ *
+ * Без версии сравнение идёт с последним утверждением; их у курса за год
+ * несколько, и «что изменилось с начала года» — такой же вопрос.
+ */
+export const fetchPlanDiff = (classId, baseline) =>
+  request(
+    `/api/plan/diff/?course=${encodeURIComponent(classId)}` +
+      (baseline ? `&baseline=${encodeURIComponent(baseline)}` : ''),
+  )
 
 /** Переименование пометки: у праздника и каникул своё имя, и его правят. */
 export const updateException = (id, fields) =>
@@ -315,7 +323,11 @@ export const createPlanNode = (fields) =>
 
 // тема сразу за этой строкой; внутри темы это разрез — хвост уезжает в новую
 // то же сравнение глазами методиста: границу доступа держит сам запрос
-export const fetchReviewDiff = (id) => request(`/api/plan/reviews/${id}/diff/`)
+export const fetchReviewDiff = (id, baseline) =>
+  request(
+    `/api/plan/reviews/${id}/diff/` +
+      (baseline ? `?baseline=${encodeURIComponent(baseline)}` : ''),
+  )
 
 export const splitPlan = (id, title) =>
   request(`/api/plan/${id}/split/`, { method: 'POST', body: { title } })

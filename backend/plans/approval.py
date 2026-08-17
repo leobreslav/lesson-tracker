@@ -74,6 +74,20 @@ def approved_baseline(course_id: int):
     )
 
 
+def approved_history(course_id: int):
+    """
+    Все утверждения курса, свежее сверху.
+
+    Снимок остаётся после каждого утверждения — `approve` переписывает
+    только собственные строки, — то есть история копится сама. Пока
+    сравнивать умели с одним лишь последним, эта история была невидимой:
+    «что было в сентябре» лежало в базе и не отвечалось ничем.
+    """
+    return PlanBaseline.objects.filter(
+        course_id=course_id, status=PlanBaseline.Status.APPROVED
+    ).order_by("-approved_at", "-id")
+
+
 def approved_baselines(course_ids) -> dict:
     """
     Утверждённые эталоны сразу по нескольким курсам: `{course_id: baseline}`.

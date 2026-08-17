@@ -287,7 +287,8 @@ test('сравнение с эталоном показывает строки, 
   // удалённая строка стоит там, где стояла
   await expect(diff.locator('.diff-row.removed')).toContainText('Обыкновенные дроби')
 
-  await diff.getByRole('button', { name: 'К плану' }).click()
+  // возвращает тот же тумблер, которым включили: второй половиной пары
+  await page.getByRole('button', { name: 'План', exact: true }).click()
   await expect(page.locator('ul.plan')).toBeVisible()
 })
 
@@ -324,6 +325,48 @@ test('методист смотрит на то же сравнение, что 
   // список плана уступил место сравнению, а не встал рядом с ним
   await expect(page.locator('.review-plan')).toHaveCount(0)
 
-  await page.getByRole('button', { name: 'План целиком' }).click()
+  await page.getByRole('button', { name: 'План', exact: true }).click()
   await expect(page.locator('.review-plan li').first()).toBeVisible()
+})
+
+test('сравнивают с любым утверждением, а не только с последним', async ({
+  page,
+  signIn,
+  api,
+}) => {
+  // История снимков копилась с самого начала: каждое утверждение остаётся
+  // в базе целиком. «Что изменилось с начала года» — такой же вопрос, как
+  // «что с последней подписи», и до выбора версии ответить было нечем.
+  const { course } = await makeMethodist(api, PEOPLE.ivanova, 'Grade 6 Algebra')
+  const teacher = await api(PEOPLE.ivanova)
+
+  const sign = async () => {
+    await teacher.post(`/api/plan/baseline/submit/?course=${course.id}`, {})
+    const reviews = await teacher.get('/api/plan/reviews/')
+    const row = reviews.body.plans.find((item) => item.id === course.id)
+    await teacher.post(`/api/plan/reviews/${row.review.id}/approve/`, {})
+  }
+
+  await sign()
+  await teacher.post('/api/plan/', { course: course.id, title: 'Урок после первой' })
+  await sign()
+  await teacher.post('/api/plan/', { course: course.id, title: 'Урок после второй' })
+
+  await signIn(PEOPLE.ivanova)
+  await openPlan(page, 'Grade 6 Algebra')
+  await page.getByRole('button', { name: 'Сравнить с эталоном' }).click()
+
+  // по умолчанию — последнее утверждение: с него добавлен один урок
+  await expect(page.locator('.diff-row.added')).toHaveCount(1)
+
+  const versions = page.getByLabel('Сравнить с версией')
+  const options = await versions.locator('option').all()
+  expect(options.length).toBe(2)
+
+  // выбираем прежнее утверждение: с него добавлены оба
+  await versions.selectOption(await options[1].getAttribute('value'))
+  await expect(page.locator('.diff-row.added')).toHaveCount(2)
+  await expect(page.locator('.diff-row.added').first()).toContainText(
+    'Урок после первой',
+  )
 })

@@ -470,3 +470,91 @@ class MetricsTests(ApprovalTestCase):
         PlanNode.objects.filter(course=self.course, title="Аксиомы").delete()
 
         self.assertEqual(self.progress()["baseline"]["removed"], 1)
+
+
+class DiffVersionTests(ApprovalTestCase):
+    """
+    Сравнивать можно с любым утверждением, а не только с последним.
+
+    История снимков копилась с самого начала: `approve` переписывает только
+    свои строки, и прежние утверждения остаются в базе целиком. Вопрос «что
+    изменилось с начала года» такой же законный, как «что с последней
+    подписи», — и до появления выбора ответить на него было нечем.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.make_methodist(self.methodist)
+
+    def sign(self):
+        """Отправить и утвердить — одно утверждение целиком."""
+        request = self.submit(self.methodist).json()["request"]
+        self.client.force_authenticate(self.methodist)
+        self.approve(request["id"])
+        self.client.force_authenticate(self.user)
+        return request["id"]
+
+    def diff(self, baseline=None):
+        query = {"course": self.course.pk}
+        if baseline is not None:
+            query["baseline"] = baseline
+        return self.client.get(reverse("plannode-diff"), query)
+
+    def test_every_approval_stays_a_version(self):
+        first = self.sign()
+        self.add("Новый урок", position=9)
+        second = self.sign()
+
+        versions = self.diff().json()["versions"]
+
+        # свежее сверху: сравнивают обычно с последним, и он же по умолчанию
+        self.assertEqual([item["id"] for item in versions], [second, first])
+
+    def test_the_latest_approval_is_the_default(self):
+        self.sign()
+        self.add("Новый урок", position=9)
+        second = self.sign()
+        self.add("Ещё один", position=10)
+
+        body = self.diff().json()
+        added = [row for row in body["rows"] if row["state"] == "added"]
+
+        self.assertEqual(body["baseline"]["id"], second)
+        self.assertEqual([row["title"] for row in added], ["Ещё один"])
+
+    def test_an_older_version_counts_everything_since_it(self):
+        first = self.sign()
+        self.add("Новый урок", position=9)
+        self.sign()
+        self.add("Ещё один", position=10)
+
+        body = self.diff(first).json()
+        added = [row["title"] for row in body["rows"] if row["state"] == "added"]
+
+        self.assertEqual(body["baseline"]["id"], first)
+        self.assertEqual(added, ["Новый урок", "Ещё один"])
+
+    def test_a_stranger_baseline_is_refused(self):
+        """Чужой снимок и несуществующий — один отказ: подтверждать нечего."""
+        self.sign()
+
+        response = self.diff(baseline=999999)
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json()["code"], "baseline_unknown")
+
+    def test_the_methodist_sees_the_same_versions(self):
+        first = self.sign()
+        self.add("Новый урок", position=9)
+        request = self.submit(self.methodist).json()["request"]
+
+        self.client.force_authenticate(self.methodist)
+        body = self.client.get(
+            reverse("planreview-diff", args=[request["id"]]), {"baseline": first}
+        ).json()
+
+        self.assertEqual(body["baseline"]["id"], first)
+        self.assertEqual(
+            [row["title"] for row in body["rows"] if row["state"] == "added"],
+            ["Новый урок"],
+        )

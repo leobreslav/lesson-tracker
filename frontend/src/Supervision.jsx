@@ -26,6 +26,8 @@ export default function Supervision({ row, busy, onError, onDone }) {
   // второй экран: спрашивают тут «что изменилось», а не «что написано»
   const [diff, setDiff] = useState(null)
   const [comparing, setComparing] = useState(false)
+  // версия эталона: null — последнее утверждение
+  const [chosen, setChosen] = useState(null)
   const [returning, setReturning] = useState(false)
   const [comment, setComment] = useState('')
 
@@ -35,13 +37,21 @@ export default function Supervision({ row, busy, onError, onDone }) {
     setPlan(null)
     setDiff(null)
     setComparing(false)
+    setChosen(null)
     setReturning(false)
     setComment('')
     if (!request) return
 
     fetchReview(request.id).then(setPlan).catch(onError)
-    fetchReviewDiff(request.id).then(setDiff).catch(onError)
   }, [request?.id])
+
+  useEffect(() => {
+    // прежнее сравнение остаётся на экране, пока едет новая версия: иначе
+    // смена версии на миг возвращала бы к списку плана
+    if (!request) return
+
+    fetchReviewDiff(request.id, chosen).then(setDiff).catch(onError)
+  }, [request?.id, chosen])
 
   const decide = async (action) => {
     try {
@@ -80,15 +90,26 @@ export default function Supervision({ row, busy, onError, onDone }) {
             <h3>{t(comparing ? 'plan.diff.title' : 'reviews.sentPlan')}</h3>
             <span className="row">
               {/* сравнивать не с чем, пока план не утверждали ни разу:
-                  первый запрос и есть точка отсчёта */}
+                  первый запрос и есть точка отсчёта. Тумблер тот же, что у
+                  автора плана: два вида, оба названы */}
               {diff?.baseline && (
-                <button
-                  type="button"
-                  className="secondary compact"
-                  onClick={() => setComparing(!comparing)}
+                <span
+                  className="chips"
+                  role="group"
+                  aria-label={t('plan.diff.switch')}
                 >
-                  {t(comparing ? 'plan.diff.wholePlan' : 'plan.diff.toggle')}
-                </button>
+                  {[false, true].map((mode) => (
+                    <button
+                      key={String(mode)}
+                      type="button"
+                      className={comparing === mode ? 'chip active' : 'chip'}
+                      aria-pressed={comparing === mode}
+                      onClick={() => setComparing(mode)}
+                    >
+                      {t(mode ? 'plan.diff.toggle' : 'plan.diff.plan')}
+                    </button>
+                  ))}
+                </span>
               )}
               <span className="hint">
                 {t('reviews.reserve')}: {plan.reserve > 0 ? '+' : ''}
@@ -100,7 +121,7 @@ export default function Supervision({ row, busy, onError, onDone }) {
           {/* план целиком — тот, что методист видит сейчас: правки после
               отправки ничего не отзывают, и утверждается увиденное */}
           {comparing && diff ? (
-            <DiffBody data={diff} />
+            <DiffBody data={diff} onVersion={setChosen} />
           ) : (
             <ul className="review-plan">
               {plan.rows.map((item) => (
