@@ -1,6 +1,5 @@
 import {
   Suspense,
-  lazy,
   useCallback,
   useEffect,
   useMemo,
@@ -33,6 +32,7 @@ import DebtsDialog from './DebtsDialog'
 import Supervision from './Supervision'
 import Switch from './Switch'
 import { lastChoice, rememberChoice } from './remember'
+import { lazyChunk } from './lazyChunk'
 import { applyMove, countBlocks, planRows } from './planLogic'
 import {
   createPlanNode,
@@ -69,7 +69,7 @@ import {
  * table needs neither — a teacher who only reorders lessons should never pay
  * for them.
  */
-const LessonPanel = lazy(() => import('./LessonPanel'))
+const LessonPanel = lazyChunk(() => import('./LessonPanel'))
 
 // xlsx первым: он и по умолчанию
 const FORMATS = ['xlsx', 'csv']

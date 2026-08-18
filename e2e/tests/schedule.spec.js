@@ -855,7 +855,11 @@ test('записанный час помечен галочкой, а занят
 
   const cell = (slot) => page.locator(`[data-lesson="${slot.date}:${slot.lesson_number}"]`)
   await expect(cell(recorded)).toHaveClass(/recorded/)
-  // соседний час прошёл и не записан — он долг, и метка у него другая
+
+  // К соседнему часу надо перейти: часы живого курса идут подряд, а сетка
+  // показывает одну неделю — во вторник эти два дня уже в разных
+  await openWeek(page, debt.date)
+  // он прошёл и не записан, то есть долг, и метка у него другая
   await expect(cell(debt)).toHaveClass(/debt/)
 
   // сервер такое занятие не отдаёт удалить

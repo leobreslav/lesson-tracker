@@ -1,7 +1,8 @@
-import { Suspense, lazy } from 'react'
+import { Suspense } from 'react'
 import { hasMath } from './mathText'
+import { lazyChunk } from './lazyChunk'
 
-const MathInline = lazy(() => import('./MathInline'))
+const MathInline = lazyChunk(() => import('./MathInline'))
 
 /**
  * Однострочный текст, в котором могут быть формулы.

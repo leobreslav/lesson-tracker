@@ -21,8 +21,24 @@ const IGNORED = [
   /accounts\.google\.com|gsi\/client/,
 ]
 
-function interesting(text) {
-  return !IGNORED.some((pattern) => pattern.test(text))
+/*
+ * Ошибки, которых тест ждёт **сам**.
+ *
+ * Список выше глобальный и потому короткий: всё, что в нём, перестаёт быть
+ * видимым во всех тестах сразу. А бывает ошибка ожидаемая ровно в одном
+ * тесте — например, тот, что нарочно ломает загрузку куска бандла и
+ * смотрит, как вкладка чинит себя. Глушить её на весь набор значило бы
+ * ослепить сторожа там, где такая ошибка настоящая.
+ */
+const expected = new WeakMap()
+
+export function expectConsoleError(page, pattern) {
+  expected.set(page, [...(expected.get(page) ?? []), pattern])
+}
+
+function interesting(page, text) {
+  if (IGNORED.some((pattern) => pattern.test(text))) return false
+  return !(expected.get(page) ?? []).some((pattern) => pattern.test(text))
 }
 
 export const test = base.extend({
@@ -44,8 +60,7 @@ export const test = base.extend({
 
     page.on('console', (message) => {
       if (message.type() !== 'error') return
-      const text = message.text()
-      if (interesting(text)) problems.push(`console: ${text}`)
+      problems.push(`console: ${message.text()}`)
     })
 
     page.on('pageerror', (error) => {
@@ -54,7 +69,12 @@ export const test = base.extend({
 
     await use(page)
 
-    expect(problems, 'браузер сообщил об ошибках').toEqual([])
+    // фильтруем в конце, а не на событии: `expectConsoleError` тест зовёт
+    // тогда, когда ему удобно, и ошибка может успеть прилететь раньше
+    expect(
+      problems.filter((text) => interesting(page, text)),
+      'браузер сообщил об ошибках',
+    ).toEqual([])
   },
 
   /**
@@ -131,6 +151,16 @@ export const lessonCount = (page, card = 'lessons') =>
  * назначение, три строки плана, три часа — позавчера, вчера и сегодня, — и
  * запись за первым из них. Ничего закулисного тут нет, ровно те же запросы
  * делает человек руками.
+ */
+/*
+ * Живой курс: год вокруг сегодня, три часа подряд и запись на первом.
+ *
+ * Часы стоят на **подряд идущих** днях — позавчера, вчера, сегодня, — и это
+ * не то же самое, что «в одной неделе»: неделя начинается с понедельника, и
+ * во вторник позавчерашний час лежит уже в прошлой. Сетка расписания
+ * показывает одну неделю, поэтому тест, который смотрит на два таких часа,
+ * обязан перейти к каждому — иначе он проходит по понедельникам и падает по
+ * вторникам, а выглядит это как случайная поломка.
  */
 export async function liveCourse(api, { record = true } = {}) {
   const admin = await api(PEOPLE.admin)
