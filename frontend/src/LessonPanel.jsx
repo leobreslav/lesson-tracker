@@ -105,10 +105,45 @@ export default function LessonPanel({ nodeId, where = null, onClose, onSaved }) 
       const node = await updatePlanNode(nodeId, draft)
       setSaved(pick(node))
       onSaved?.()
+      return true
     } catch (err) {
       setError(err.message)
+      return false
     } finally {
       setBusy(false)
+    }
+  }
+
+  /**
+   * Клавиатура: сохранить и закрыть, сохранить и остаться.
+   *
+   * Чаще всего сюда заходят поправить название — одно слово, — и рука на
+   * этом жмёт Enter. Поле названия однострочное, другого смысла у Enter в
+   * нём нет, а до правки он не делал **ничего**: жест выполнен, отклика
+   * нет, и человек решает, что промахнулся мимо поля.
+   *
+   * «Сохранить» и «закрыть» при этом разные намерения, и выбирать за
+   * человека нельзя — но и спрашивать окном поверх окна незачем: вопрос
+   * стоил бы двух нажатий всегда, ради сомнения, возникающего изредка.
+   * Поэтому два жеста: Enter уходит, Ctrl/⌘+Enter остаётся. Второй работает
+   * и в многострочных полях, где Enter законно занят переводом строки.
+   *
+   * Ошибка сохранения окно не закрывает: текст остаётся при человеке, а
+   * причина — на экране.
+   */
+  const saveAndClose = async () => {
+    if (busy) return
+    if (!dirty || (await save())) onClose()
+  }
+
+  const keys = (event) => {
+    if (event.key !== 'Enter') return
+    // IME: пока строка набирается, Enter принадлежит вводу, а не форме
+    if (event.nativeEvent?.isComposing) return
+
+    if (event.ctrlKey || event.metaKey) {
+      event.preventDefault()
+      if (dirty && !busy) save()
     }
   }
 
@@ -364,7 +399,10 @@ export default function LessonPanel({ nodeId, where = null, onClose, onSaved }) 
       {!draft ? (
         <p>{error ? <span className="error">{error}</span> : t('common.loading')}</p>
       ) : (
-        <>
+        // Ctrl/⌘+Enter ловится на всём содержимом окна: жест «сохранить, не
+        // отрываясь» нужен и в многострочных полях, где Enter законно занят
+        // переводом строки. Обычный Enter разбирает само поле названия
+        <div className="lesson-sheet" onKeyDown={keys}>
           <header className="lesson-head">
             {/*
               Чем эта запись является и куда ложится.
@@ -403,6 +441,12 @@ export default function LessonPanel({ nodeId, where = null, onClose, onSaved }) 
                 maxLength={200}
                 aria-label={t('plan.titleLabel')}
                 onChange={(event) => set('title', event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key !== 'Enter' || event.nativeEvent?.isComposing) return
+                  if (event.ctrlKey || event.metaKey) return // это уже другой жест
+                  event.preventDefault()
+                  saveAndClose()
+                }}
               />
             )}
           </header>
@@ -417,6 +461,9 @@ export default function LessonPanel({ nodeId, where = null, onClose, onSaved }) 
                 {t('lesson.allSaved')}
               </span>
             )}
+            {/* без подписи оба жеста невидимы — это единственная цена
+                схемы без вопроса на экране */}
+            <span className="hint keys">{t('lesson.keys')}</span>
           </p>
 
           {error && (
@@ -550,8 +597,7 @@ export default function LessonPanel({ nodeId, where = null, onClose, onSaved }) 
             </>
             )}
           </section>
-
-        </>
+        </div>
       )}
     </Modal>
   )

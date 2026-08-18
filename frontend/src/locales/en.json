@@ -822,6 +822,7 @@
     "preview": "Preview",
     "edit": "Edit",
     "unsaved": "Unsaved changes",
+    "keys": "⏎ save and close · Ctrl/⌘+⏎ save",
     "allSaved": "Everything saved",
     "discard": "The lesson has unsaved changes. Close and lose them?",
     "attachments": "Resources",

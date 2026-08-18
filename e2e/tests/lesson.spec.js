@@ -222,3 +222,40 @@ test('ссылка добавляется к уроку и сразу видна
   // нечем: значка нет, а дерево всё равно перечитывается ради содержания
   await expect(rowFor(page, target)).toBeVisible()
 })
+
+test('Enter в названии сохраняет и закрывает, Ctrl+Enter — сохраняет', async ({
+  page,
+  signIn,
+}) => {
+  // Сюда чаще всего заходят поправить название — одно слово, — и рука на
+  // этом жмёт Enter. Поле однострочное, другого смысла у Enter в нём нет, а
+  // до правки он не делал ничего: жест выполнен, отклика нет.
+  await signIn(PEOPLE.ivanova)
+  await openPlan(page)
+  const panel = await openLesson(page, WITH_CONTENT)
+
+  // Ctrl+Enter из многострочного поля: сохранили и остались писать дальше
+  const homework = panel.locator('[data-field="homework"] textarea')
+  await homework.fill('№ 84–89')
+  await expect(panel.locator('.lesson-status')).toContainText('несохранённые')
+  await homework.press('Control+Enter')
+  await expect(panel.locator('.lesson-status')).toContainText('Всё сохранено')
+  await expect(panel).toBeVisible()
+
+  // Enter в названии: сохранили и ушли, без вопросов
+  const title = panel.locator('input.lesson-title')
+  await title.fill('Признаки делимости на 3 и 9 (повторение)')
+  await title.press('Enter')
+  await expect(panel).toBeHidden()
+
+  // и правка на сервере, а не только на экране
+  await expect(
+    rowFor(page, 'Признаки делимости на 3 и 9 (повторение)'),
+  ).toBeVisible()
+  await page.reload()
+  await ready(page)
+  await page.getByLabel('Курс').selectOption({ label: COURSE })
+  await expect(
+    rowFor(page, 'Признаки делимости на 3 и 9 (повторение)'),
+  ).toBeVisible()
+})

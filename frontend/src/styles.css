@@ -5509,6 +5509,22 @@ input.lesson-title:focus {
   font-weight: 600;
 }
 
+/* строка состояния теперь говорит две вещи: сохранено ли и чем сохранить.
+   Подпись прижата вправо — она справочная и не должна спорить с
+   состоянием, которое читают первым */
+.lesson-status {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.lesson-status .keys {
+  font-size: 0.75rem;
+  white-space: nowrap;
+}
+
 .lesson-field {
   border: 1px solid #e6e6e6;
   border-radius: var(--row-radius);
