@@ -349,7 +349,6 @@
     "deleteSection": "Delete the theme",
     "expand": "Expand",
     "collapse": "Collapse",
-    "deleteConfirm": "Delete «{{title}}»?",
     "addLesson": "Add a lesson",
     "addSection": "Add a theme",
     "select": "Select",
@@ -357,6 +356,7 @@
     "pickNothing": "Nothing selected — tick the rows you want to delete",
     "dropPicked": {
       "title": "Delete {{lessons}}?",
+      "one": "Delete «{{title}}»?",
       "cost": "{{content}} of them have content and {{attachments}} have attachments."
     },
     "imported": "Created {{rows}} rows ({{sections}} sections, {{lessons}} lessons).",
@@ -375,6 +375,9 @@
       "hint": "It holds {{count}}. They can be lifted to the top level — they take the theme's place and keep their order.",
       "keep": "Delete, keep the lessons",
       "withChildren": "Delete with the lessons",
+      "withCount_one": "Delete with {{count}} lesson",
+      "withCount_other": "Delete with {{count}} lessons",
+      "confirmLoss": "I understand: {{content}} of them have content and {{attachments}} have attachments, and it all goes.",
       "taught": "Some lessons here have already been taught — the section cannot go together with them: withdraw the records first."
     },
     "importLibrary": "Load from the library…",

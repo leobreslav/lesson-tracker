@@ -173,6 +173,9 @@ export default function Plan({ onLoggedOut }) {
   const [picked, setPicked] = useState([])
   const [anchor, setAnchor] = useState(null)
   const [dropping, setDropping] = useState(null) // подтверждение удаления пачки
+  // «понимаю, что теряю» у сноса темы вместе с уроками: спрашивается
+  // только когда есть что терять, кроме названий
+  const [dropSection, setDropSection] = useState(false)
   const [importing, setImporting] = useState(false)
   // the library, only as far as this page needs it: what can be taken, and
   // whether this plan is already on the shelf under my name
@@ -396,24 +399,39 @@ export default function Plan({ onLoggedOut }) {
    * содержание едет отдельным запросом на урок), так что сказать «из них
    * три с содержанием» можно до нажатия и не спрашивая сервер.
    */
-  const price = useMemo(() => {
-    const wanted = new Set(chosen)
-    let content = 0
-    let attachments = 0
+  /**
+   * Цена удаления — из уже загруженного дерева, без запроса.
+   *
+   * Дерево возит `has_content` и число вложений у каждой строки (само
+   * содержание едет отдельным запросом на урок), так что «из них три с
+   * содержанием» можно сказать до нажатия и не спрашивая сервер.
+   *
+   * Считается по списку id, а не по выбранному: один и тот же расчёт
+   * обслуживает и пачку, и одиночный крестик, и снос темы вместе с
+   * уроками. Три разных ответа на вопрос «что я сейчас потеряю» разъехались
+   * бы молча.
+   */
+  const priceOf = useCallback(
+    (ids) => {
+      const wanted = new Set(ids ?? [])
+      let content = 0
+      let attachments = 0
 
-    const look = (node) => {
-      if (!wanted.has(node.id)) return
-      if (node.has_content) content += 1
-      attachments += node.attachments ?? 0
-    }
+      const look = (node) => {
+        if (!wanted.has(node.id)) return
+        if (node.has_content) content += 1
+        attachments += node.attachments ?? 0
+      }
 
-    for (const node of data?.nodes ?? []) {
-      look(node)
-      for (const child of node.children ?? []) look(child)
-    }
+      for (const node of data?.nodes ?? []) {
+        look(node)
+        for (const child of node.children ?? []) look(child)
+      }
 
-    return { content, attachments }
-  }, [chosen, data])
+      return { content, attachments, lost: content > 0 || attachments > 0 }
+    },
+    [data],
+  )
 
   /** Нажали на флажок: Shift тянет диапазон от прошлого нажатия. */
   const pick = (id, { range = false } = {}) => {
@@ -427,8 +445,16 @@ export default function Plan({ onLoggedOut }) {
     setAnchor(null)
   }
 
+  /**
+   * Удаляется то, что показано в окне, а не то, что выбрано.
+   *
+   * Раньше здесь стоял `chosen`, и для пачки это было одно и то же — а
+   * крестик у строки, пришедший в то же окно, не удалял ничего: выбор при
+   * нём пуст. Окно называет цену по `dropping`, значит и удалять обязано
+   * его же, иначе спрошено одно, а сделано другое.
+   */
   const removePicked = async () => {
-    const ids = chosen
+    const ids = dropping ?? []
     setDropping(null)
     await run(() => deletePlanNodes(classId, ids))
     stopSelecting()
@@ -861,10 +887,15 @@ export default function Plan({ onLoggedOut }) {
 
   // --- deleting ---
 
-  const removeLesson = (node) => {
-    if (!window.confirm(t('plan.deleteConfirm', { title: node.title }))) return
-    run(() => deletePlanNode(node.id, true))
-  }
+  /**
+   * Крестик у строки — тот же вопрос, что у пачки, и то же окно.
+   *
+   * Нативным `confirm` это было, и он называл одно название: сколько при
+   * этом уходит содержания и вложений, человек не узнавал ни до, ни после.
+   * Раз у пачки цена уже считается, второму способу спрашивать про то же
+   * самое взяться неоткуда — окно одно, путь один.
+   */
+  const removeLesson = (node) => setDropping([node.id])
 
   /**
    * Шаг вверх или вниз. Какой эндпоинт звать, решает страница: у главы он
@@ -884,10 +915,30 @@ export default function Plan({ onLoggedOut }) {
   const handleMove = (nodeId, direction, isSection) =>
     run(() => (isSection ? movePlanSection : movePlanNode)(nodeId, direction))
 
+  const askRemoveSection = (node) => {
+    setDropSection(false)
+    setDeleting(node)
+  }
+
   const removeSection = (keepChildren) => {
     const section = deleting
     setDeleting(null)
     run(() => deletePlanNode(section.id, keepChildren))
+  }
+
+  // что унесёт «вместе с уроками»: цена считается тем же расчётом, что у
+  // пачки и у одиночного крестика
+  const sectionPrice = priceOf((deleting?.children ?? []).map((child) => child.id))
+
+  /** Название строки по id — окно удаления одной строки называет её. */
+  const titleOf = (id) => {
+    for (const node of data?.nodes ?? []) {
+      if (node.id === id) return node.title
+      for (const child of node.children ?? []) {
+        if (child.id === id) return child.title
+      }
+    }
+    return ''
   }
 
   // --- rendering ---
@@ -1427,7 +1478,7 @@ export default function Plan({ onLoggedOut }) {
                   submitAdd,
                   openLesson: setOpened,
                   removeLesson,
-                  removeSection: setDeleting,
+                  removeSection: askRemoveSection,
                   move: handleMove,
                   moveTo: dropNode,
                   pick,
@@ -1618,6 +1669,31 @@ export default function Plan({ onLoggedOut }) {
           {deleting.children.some((child) => child.taught) && (
             <p className="hint">{t('plan.removeSection.taught')}</p>
           )}
+
+          {/*
+            Цена — в самой кнопке, а не рядом с ней.
+
+            Две кнопки стояли рядом, обе разрушительные, и разница между
+            ними была в одном слове: «оставить» против «вместе». Промах
+            стоил шести уроков с содержанием. Теперь вторая называет, что
+            именно унесёт, а при потере содержания ещё и требует галочку —
+            тот же приём, что у импорта, и по той же причине: там, где
+            теряется только название, лишних вопросов не задают.
+          */}
+          {sectionPrice.lost && (
+            <label className="checkbox danger">
+              <input
+                type="checkbox"
+                checked={dropSection}
+                onChange={(event) => setDropSection(event.target.checked)}
+              />
+              {t('plan.removeSection.confirmLoss', {
+                content: sectionPrice.content,
+                attachments: sectionPrice.attachments,
+              })}
+            </label>
+          )}
+
           <div className="actions">
             <button type="button" disabled={busy} onClick={() => removeSection(true)}>
               {t('plan.removeSection.keep')}
@@ -1625,10 +1701,21 @@ export default function Plan({ onLoggedOut }) {
             <button
               type="button"
               className="secondary"
-              disabled={busy || deleting.children.some((child) => child.taught)}
+              disabled={
+                busy ||
+                deleting.children.some((child) => child.taught) ||
+                (sectionPrice.lost && !dropSection)
+              }
               onClick={() => removeSection(false)}
             >
-              {t('plan.removeSection.withChildren')}
+              {/* счётчик настоящий, а не склеенный из готовой формы:
+                  «вместе с 5 уроков» — не по-русски, а подставить сюда
+                  `lessonCount` значит собрать фразу руками */}
+              {deleting.children.length
+                ? t('plan.removeSection.withCount', {
+                    count: deleting.children.length,
+                  })
+                : t('plan.removeSection.withChildren')}
             </button>
             <button type="button" className="secondary" onClick={() => setDeleting(null)}>
               {t('common.cancel')}
@@ -1649,15 +1736,22 @@ export default function Plan({ onLoggedOut }) {
       {dropping && (
         <Modal
           onClose={() => setDropping(null)}
-          title={t('plan.dropPicked.title', {
-            lessons: t('common.lessonCount', { count: dropping.length }),
-          })}
+          // одну строку окно называет по имени, пачку — числом: «удалить
+          // 1 урок?» не говорит, какой именно, а крестик нажимают у
+          // конкретной строки
+          title={
+            dropping.length === 1
+              ? t('plan.dropPicked.one', { title: titleOf(dropping[0]) })
+              : t('plan.dropPicked.title', {
+                  lessons: t('common.lessonCount', { count: dropping.length }),
+                })
+          }
         >
-          {(price.content > 0 || price.attachments > 0) && (
+          {priceOf(dropping).lost && (
             <p className="hint">
               {t('plan.dropPicked.cost', {
-                content: price.content,
-                attachments: price.attachments,
+                content: priceOf(dropping).content,
+                attachments: priceOf(dropping).attachments,
               })}
             </p>
           )}

@@ -1105,3 +1105,72 @@ test('в библиотеку кладут сразу с ответом «ком
   const draft = after.body.find((item) => item.title === 'Геометрия, черновик')
   expect(draft.is_published).toBe(false)
 })
+
+test('удаление называет цену: строка по имени, тема — числом и галочкой', async ({
+  page,
+  signIn,
+  api,
+}) => {
+  // Два разрушительных нажатия стояли без цены: нативный confirm называл
+  // одно название, а «Удалить вместе с уроками» и вовсе ничего — разница с
+  // соседней кнопкой была в одном слове, а промах стоил шести уроков с
+  // содержанием.
+  const teacher = await api(PEOPLE.ivanova)
+  const courses = await teacher.get('/api/courses/')
+  const course = courses.body.find((item) => item.name === 'Grade 6 Algebra')
+  const tree = await teacher.get(`/api/plan/?course=${course.id}`)
+  const withContent = tree.body.nodes
+    .flatMap((node) => (node.is_section ? node.children : [node]))
+    .find((node) => node.has_content)
+  expect(withContent, 'в посеянном плане должен быть урок с содержанием').toBeTruthy()
+
+  await signIn(PEOPLE.ivanova)
+  await page.goto('/plan')
+  await ready(page)
+  await expect(page.locator('.plan-cards')).toBeVisible()
+
+  // одиночный крестик: строка названа по имени, и цена названа
+  const row = page.locator('.plan-row.lesson', { hasText: withContent.title }).first()
+  await row.hover()
+  await row.getByTitle('Удалить').click()
+  const ask = page.locator('dialog[open]')
+  await expect(ask).toContainText(withContent.title)
+  await expect(ask).toContainText('с содержанием')
+  await page.keyboard.press('Escape')
+
+  // тема: число уроков стоит в самой кнопке
+  const head = page.locator('.plan-section .section-head').first()
+  await head.hover()
+  await head.getByTitle('Удалить').click()
+  const drop = ask.getByRole('button', { name: /Удалить вместе с \d+ урок/ })
+  await expect(drop).toBeVisible()
+})
+
+test('снос темы с содержанием требует галочки', async ({ page, signIn }) => {
+  await signIn(PEOPLE.ivanova)
+  await page.goto('/plan')
+  await ready(page)
+  await expect(page.locator('.plan-cards')).toBeVisible()
+
+  // ищем тему, внутри которой есть что терять: у неё появляется галочка
+  const sections = page.locator('.plan-section')
+  for (let i = 0; i < (await sections.count()); i += 1) {
+    const head = sections.nth(i).locator('.section-head')
+    await head.hover()
+    await head.getByTitle('Удалить').click()
+    const ask = page.locator('dialog[open]')
+    const check = ask.locator('.checkbox.danger input')
+
+    if (await check.count()) {
+      const drop = ask.getByRole('button', { name: /Удалить вместе с/ })
+      // пока не подтвердили потерю — кнопка не нажимается
+      await expect(drop).toBeDisabled()
+      await check.check()
+      await expect(drop).toBeEnabled()
+      return
+    }
+    await page.keyboard.press('Escape')
+  }
+
+  throw new Error('в посеянном плане нет темы с содержанием — случай не проверен')
+})

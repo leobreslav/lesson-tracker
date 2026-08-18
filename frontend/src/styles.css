@@ -4806,7 +4806,10 @@ button.link.toggle {
   background: #fff5f5;
 }
 
-.csv-cost .checkbox.danger {
+/* «понимаю, что теряю» — там, где удаление уносит содержание и вложения.
+   Правило общее: вопрос один и тот же у импорта и у сноса темы, и второй
+   его копии в файле быть не должно */
+.checkbox.danger {
   margin-top: 0.4rem;
   font-weight: 600;
 }

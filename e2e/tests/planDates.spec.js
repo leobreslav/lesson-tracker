@@ -251,11 +251,15 @@ test('добавление урока сдвигает даты ниже, уда
   // а сама вставка встала на освободившуюся дату
   expect(await dateOfLesson(page, 'Вставка')).toBe(dateOfSecond)
 
-  // и обратно: удалили — даты вернулись
-  page.once('dialog', (dialog) => dialog.accept())
+  // и обратно: удалили — даты вернулись. Подтверждение теперь своё окно, а
+  // не нативное: оно называет строку и цену, которой у нативного не было
   const inserted = page.locator('.plan-row', { hasText: 'Вставка' })
   await inserted.hover()
   await inserted.getByTitle('Удалить').click()
+  await page
+    .locator('dialog[open]')
+    .getByRole('button', { name: 'Удалить', exact: true })
+    .click()
 
   await expect(page.locator('.plan-row', { hasText: 'Вставка' })).toHaveCount(0)
   await expect.poll(() => dateOfLesson(page, second)).toBe(dateOfSecond)
