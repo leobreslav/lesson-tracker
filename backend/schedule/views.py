@@ -470,7 +470,10 @@ class CourseViewSet(SchoolScopedViewSet):
 
         return (
             queryset.select_related("year", "subject", "grade")
-            .prefetch_related("assignments__teacher")
+            # приглашения — той же предвыборкой, что и назначения: карточка
+            # показывает обе плашки рядом, и спрашивать их по курсу значило
+            # бы рисовать список в два приёма
+            .prefetch_related("assignments__teacher", "pending_invitations")
             .annotate(
                 active_students=Count(
                     "students",

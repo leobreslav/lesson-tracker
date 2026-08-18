@@ -11,7 +11,7 @@ from django.contrib.auth import get_user_model
 from django.test import Client, TestCase
 from django.urls import reverse
 
-from schedule.models import Course
+from schedule.models import Course, CourseAssignment
 
 from . import services
 from .models import Invitation, School
@@ -259,6 +259,90 @@ class StudentEnrolmentTests(TestCase):
             ),
             ["9Б Алгебра", "9Б Геометрия"],
         )
+
+
+class TeacherLoadTests(TestCase):
+    """
+    Курс поручают приглашённому — до того, как он впервые вошёл.
+
+    Нагрузку раздают в тот же день, когда вписывают адреса, а первого входа
+    ждут неделями. Учётки в этот момент ещё нет, значит и назначения быть не
+    может: курс ждёт человека в самом приглашении, тем же полем, которым
+    ученика ждёт зачисление.
+    """
+
+    def setUp(self):
+        self.school = make_school("Test school")
+        self.admin = make_user(self.school, "admin@example.com", admin=True)
+        self.year = make_year(self.school)
+        self.algebra = make_course(self.school, self.year, "9Б Алгебра")
+        self.geometry = make_course(self.school, self.year, "9Б Геометрия")
+
+    def invite_teacher(self, email="newcomer@example.com", courses=()):
+        invitation = Invitation.objects.create(
+            school=self.school, email=email, kind="teacher", created_by=self.admin
+        )
+        invitation.courses.set(courses)
+        return invitation
+
+    def test_a_teacher_gets_the_courses_on_the_first_sign_in(self):
+        self.invite_teacher(courses=[self.algebra, self.geometry])
+
+        google_login()
+
+        user = User.objects.get(email="newcomer@example.com")
+        self.assertFalse(user.is_student)
+        self.assertEqual(
+            sorted(item.course.name for item in user.course_assignments.all()),
+            ["9Б Алгебра", "9Б Геометрия"],
+        )
+
+    def test_a_course_taken_meanwhile_stays_with_the_one_who_took_it(self):
+        """
+        Ведущий у курса один, а между приглашением и входом проходят дни.
+
+        Побеждает решение администратора, а не пожелтевшее приглашение — и
+        вход при этом не падает отказом.
+        """
+        colleague = make_user(self.school, "colleague@example.com")
+        CourseAssignment.objects.create(course=self.algebra, teacher=colleague)
+        self.invite_teacher(courses=[self.algebra, self.geometry])
+
+        response = google_login()
+
+        self.assertEqual(response.status_code, 200, response.content)
+        self.assertEqual(self.algebra.assignments.get().teacher, colleague)
+        user = User.objects.get(email="newcomer@example.com")
+        self.assertEqual(
+            [item.course.name for item in user.course_assignments.all()],
+            ["9Б Геометрия"],
+        )
+
+    def test_the_invitation_is_spent_once(self):
+        """Сняли с курса — второй вход не возвращает его обратно."""
+        self.invite_teacher(courses=[self.algebra])
+        google_login()
+        user = User.objects.get(email="newcomer@example.com")
+        user.course_assignments.all().delete()
+
+        google_login()
+
+        self.assertFalse(user.course_assignments.exists())
+
+    def test_a_student_invitation_does_not_hand_out_courses_to_lead(self):
+        invitation = Invitation.objects.create(
+            school=self.school,
+            email="pupil@example.com",
+            kind="student",
+            created_by=self.admin,
+        )
+        invitation.courses.set([self.algebra])
+
+        google_login({"email": "pupil@example.com"})
+
+        user = User.objects.get(email="pupil@example.com")
+        self.assertFalse(CourseAssignment.objects.filter(teacher=user).exists())
+        self.assertEqual(user.enrolments.count(), 1)
 
 
 class SchoolModelTests(TestCase):

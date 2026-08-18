@@ -1051,3 +1051,57 @@ test('у темы флажка нет: у неё спрашивают про е�
   await page.locator('.plan-selection').getByRole('button', { name: 'Отмена' }).click()
   await expect(page.locator('.plan-pick')).toHaveCount(0)
 })
+
+test('в библиотеку кладут сразу с ответом «кому видно»', async ({
+  page,
+  signIn,
+  api,
+}) => {
+  // Публикация была отдельной кнопкой в окне полки: положить на полку и
+  // положить на **общую** полку были двумя действиями в разных местах, и
+  // второе забывалось — на полке лежал черновик, которого никто, кроме
+  // автора, не видел.
+  const teacher = await api(PEOPLE.ivanova)
+  const courses = await teacher.get('/api/courses/')
+  const empty = courses.body.find((item) => item.name === 'Grade 6 Geometry')
+  for (const title of ['Первый урок', 'Второй урок']) {
+    await teacher.post('/api/plan/', { course: empty.id, title })
+  }
+
+  await signIn(PEOPLE.ivanova)
+  await page.goto('/plan')
+  await ready(page)
+  await page.getByLabel('Курс').selectOption({ label: 'Grade 6 Geometry' })
+  await expect(page.locator('.plan-cards')).toBeVisible()
+
+  await planMenu(page, /в библиотек/)
+  const dialog = page.locator('dialog[open]')
+  await dialog.getByLabel('Название').fill('Геометрия, общая полка')
+
+  // умолчание — «всей школе»: кладут туда ради того, чтобы этим пользовались
+  await expect(dialog.getByRole('radio', { name: 'Всей школе' })).toBeChecked()
+  await dialog.getByRole('button', { name: /Сохранить в библиотеку/ }).click()
+  await expect(dialog).toBeHidden()
+
+  // и это настоящая публикация, а не состояние экрана
+  const shelf = await teacher.get('/api/library/templates/')
+  const made = shelf.body.find((item) => item.title === 'Геометрия, общая полка')
+  expect(made.is_published).toBe(true)
+
+  // а «только мне» кладёт черновиком — тем же окном, вторым ответом
+  await teacher.delete(`/api/library/templates/${made.id}/`)
+  await page.reload()
+  await ready(page)
+  await page.getByLabel('Курс').selectOption({ label: 'Grade 6 Geometry' })
+  await expect(page.locator('.plan-cards')).toBeVisible()
+
+  await planMenu(page, /в библиотек/)
+  await dialog.getByLabel('Название').fill('Геометрия, черновик')
+  await dialog.getByRole('radio', { name: 'Только мне' }).click()
+  await dialog.getByRole('button', { name: /Сохранить в библиотеку/ }).click()
+  await expect(dialog).toBeHidden()
+
+  const after = await teacher.get('/api/library/templates/')
+  const draft = after.body.find((item) => item.title === 'Геометрия, черновик')
+  expect(draft.is_published).toBe(false)
+})

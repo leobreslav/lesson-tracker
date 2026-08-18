@@ -65,8 +65,12 @@ def accept(user, invitation) -> bool:
     user.is_school_admin = invitation.is_school_admin
     user.save(update_fields=["school", "kind", "is_school_admin"])
 
+    # Курсы, названные в приглашении, достаются человеку в первый же вход:
+    # ученика записывают, учителю поручают вести.
     if invitation.kind == Kind.STUDENT:
         enrol_all(user, invitation.courses.all(), by=invitation.created_by)
+    else:
+        lead_all(user, invitation.courses.all())
 
     invitation.accepted_at = timezone.now()
     invitation.save(update_fields=["accepted_at"])
@@ -113,6 +117,34 @@ def enrol(student, course, *, by=None):
 
 def enrol_all(student, courses, *, by=None) -> int:
     return sum(1 for course in courses if enrol(student, course, by=by))
+
+
+# --- нагрузка учителя -----------------------------------------------------------
+
+
+def lead(teacher, course):
+    """
+    Поручить курс учителю — если его ещё никому не поручили.
+
+    Ведущий у курса один (`one_teacher_per_course`), а между приглашением и
+    первым входом проходят дни: за это время администратор мог поставить на
+    курс кого-то другого. Побеждает он, а не пожелтевшее приглашение —
+    поэтому занятый курс молча пропускается, а не отбирается и не роняет
+    вход отказом.
+
+    Кто назначил, здесь не записывается: у `CourseAssignment` такого поля
+    нет вовсе — строка отвечает на вопрос «кто ведёт», а не «кто поручил».
+    """
+    from schedule.models import CourseAssignment
+
+    if CourseAssignment.objects.filter(course=course).exists():
+        return None
+
+    return CourseAssignment.objects.create(course=course, teacher=teacher)
+
+
+def lead_all(teacher, courses) -> int:
+    return sum(1 for course in courses if lead(teacher, course) is not None)
 
 
 def remove_from_course(row) -> None:

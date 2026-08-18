@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import StartHere from './StartHere'
 import { useNavigate } from 'react-router-dom'
 import { AddLessonDialog, LessonMenu } from './AgendaDialogs'
 import ClearDialog from './ClearDialog'
@@ -67,7 +66,7 @@ function lessonClassName(lesson) {
   )
 }
 
-export default function Agenda({ status, onStatusChange, onLoggedOut }) {
+export default function Agenda({ onLoggedOut }) {
   const { t } = useTranslation()
   const navigate = useNavigate()
   const [anchor, setAnchor] = useState(today)
@@ -136,8 +135,23 @@ export default function Agenda({ status, onStatusChange, onLoggedOut }) {
     }
   }, [handleError])
 
+  /*
+   * Период, к которому относится **показанная** сетка.
+   *
+   * Заголовок и стрелки отвечают сразу, а сетка меняется вместе с данными:
+   * дни без ответа сервера считаются неучебными, и перерисованная раньше
+   * времени неделя на долю секунды становилась серой.
+   */
+  const [shown, setShown] = useState(period)
+  const [loaded, setLoaded] = useState(false)
+
   const load = useCallback(
-    () => fetchAgenda(period.start, period.end).then(setData),
+    () =>
+      fetchAgenda(period.start, period.end).then((payload) => {
+        setData(payload)
+        setShown(period)
+        setLoaded(true)
+      }),
     [period],
   )
 
@@ -187,10 +201,7 @@ export default function Agenda({ status, onStatusChange, onLoggedOut }) {
     remember(TOPICS_KEY, value)
   }
 
-  const dates = useMemo(
-    () => eachDate(period.start, period.end),
-    [period],
-  )
+  const dates = useMemo(() => eachDate(shown.start, shown.end), [shown])
 
   const yearById = useMemo(
     () => new Map(years.map((year) => [year.id, year])),
@@ -560,23 +571,28 @@ export default function Agenda({ status, onStatusChange, onLoggedOut }) {
         <h1>{t('agenda.title')}</h1>
       </header>
 
-      {/* шаги первого входа: карта для того, у кого ещё ничего не заведено.
-          Жили они на «Моих курсах», а показывать их надо там, куда человек
-          попадает, — то есть на корне. Пропадают, когда всё настроено */}
-      <StartHere
-        status={status}
-        onStatusChange={onStatusChange}
-        onLoggedOut={onLoggedOut}
-      />
-
       <div className="agenda-bar">
-        <button type="button" className="secondary" onClick={() => step(-1)}>
+        {/* стрелка — не имя: читалка объявляла кнопку как «←», и куда она
+            ведёт, было неизвестно. Подпись видимая остаётся стрелкой */}
+        <button
+          type="button"
+          className="secondary"
+          aria-label={t('agenda.prevWeek')}
+          title={t('agenda.prevWeek')}
+          onClick={() => step(-1)}
+        >
           ←
         </button>
         <button type="button" className="secondary" onClick={() => setAnchor(today())}>
           {t('agenda.today')}
         </button>
-        <button type="button" className="secondary" onClick={() => step(1)}>
+        <button
+          type="button"
+          className="secondary"
+          aria-label={t('agenda.nextWeek')}
+          title={t('agenda.nextWeek')}
+          onClick={() => step(1)}
+        >
           →
         </button>
 
@@ -639,7 +655,11 @@ export default function Agenda({ status, onStatusChange, onLoggedOut }) {
         </div>
       )}
 
-      {!loading && !visibleClasses.length && (
+      {/* пустое состояние держится на том, что **показано**, а не на том,
+          идёт ли запрос: пока оно пряталось на время загрузки, страница
+          укорачивалась на целый блок — и прокрутка съезжала в начало ровно
+          так же, как от исчезавшей сетки */}
+      {loaded && !visibleClasses.length && (
         <EmptyState
           title={t('agenda.empty.title')}
           actions={
@@ -688,7 +708,26 @@ export default function Agenda({ status, onStatusChange, onLoggedOut }) {
         </p>
       )}
 
-      {loading ? <p>{t('common.loading')}</p> : renderWeek()}
+      {/*
+        Сетка не исчезает, пока грузится следующая неделя.
+
+        Раньше на время запроса она заменялась строкой «Загрузка…»:
+        страница схлопывалась до нескольких сотен пикселей, браузер
+        прижимал прокрутку к её новой высоте — и вернувшаяся сетка
+        оказывалась пролистанной в начало. Пролистал вниз до седьмого
+        урока, нажал стрелку — и ты наверху.
+
+        Поэтому показанное остаётся на месте и только гаснет, а меняется
+        вместе с данными. Строка «Загрузка…» осталась ровно для первого
+        раза, когда показывать ещё нечего.
+      */}
+      {loaded ? (
+        <div className={loading ? 'refreshing' : undefined} aria-busy={loading}>
+          {renderWeek()}
+        </div>
+      ) : (
+        <p>{t('common.loading')}</p>
+      )}
 
       {dialog?.type === 'add' && (
         <AddLessonDialog

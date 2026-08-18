@@ -228,7 +228,13 @@ export async function liveCourse(api, { record = true } = {}) {
  * один лишний клик, и пусть он будет в одном месте.
  */
 export async function planMenu(page, name) {
-  await page.getByRole('button', { name: 'Ещё' }).click()
+  // Меню над таблицей два — «Файл» и «Библиотека», — и тест называет
+  // только пункт: какое из них его держит, знает эта функция. Иначе каждый
+  // вызов повторял бы раскладку меню, и переезд пункта правился бы в
+  // двадцати местах.
+  const menu = /библиотек/i.test(String(name)) ? 'Библиотека' : 'Файл'
+
+  await page.getByRole('button', { name: menu, exact: true }).click()
   await page.locator('.plan-menu .dropdown').getByRole('button', { name }).click()
 }
 

@@ -160,11 +160,15 @@ test('утверждение целиком живёт в шапке, рядом
   await expect(head.getByRole('button', { name: 'На утверждение' })).toBeVisible()
   await expect(head.getByRole('radio', { name: 'Сравнение' })).toBeVisible()
 
-  // и в «⋯» отправки больше нет: одно действие — одно место
-  await page.getByRole('button', { name: 'Ещё' }).click()
-  await expect(
-    page.locator('.plan-menu .dropdown').getByRole('button', { name: 'На утверждение' }),
-  ).toHaveCount(0)
+  // и ни в одном меню отправки больше нет: одно действие — одно место
+  for (const menu of ['Файл', 'Библиотека']) {
+    await page.getByRole('button', { name: menu, exact: true }).click()
+    await expect(
+      page
+        .locator('.plan-menu .dropdown')
+        .getByRole('button', { name: 'На утверждение' }),
+    ).toHaveCount(0)
+  }
 })
 
 test('методист без своих курсов видит присланный план', async ({

@@ -348,6 +348,7 @@ class MemberViewSet(
 class InvitationViewSet(
     mixins.ListModelMixin,
     mixins.CreateModelMixin,
+    mixins.UpdateModelMixin,
     mixins.DestroyModelMixin,
     viewsets.GenericViewSet,
 ):
@@ -360,6 +361,10 @@ class InvitationViewSet(
     An accepted invitation is kept — it is the record of who let whom in.
     Deleting one only withdraws an invitation nobody has used yet; it does not
     remove a member who already joined.
+
+    Правится в приглашении ровно одно — курсы: нагрузку раздают отдельно от
+    того, кого позвали, и чаще всего позже. Всё остальное read-only, см.
+    `InvitationSerializer.get_fields`.
     """
 
     serializer_class = InvitationSerializer

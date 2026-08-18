@@ -187,6 +187,22 @@ class InvitationSerializer(serializers.ModelSerializer):
         return value.strip().lower()
 
     def validate(self, attrs):
+        """
+        У существующего приглашения правятся только курсы.
+
+        Адрес, вид и роль — то, за что поручились, когда приглашение писали:
+        сменить их значит выписать другое, а не поправить это. Курсы же
+        правятся ровно потому, что нагрузку раздают отдельно и позже — часто
+        через неделю после того, как вписали адрес.
+
+        Лишнее отбрасывается здесь, а не помечается `read_only` в
+        `get_fields`: поле, помеченное после сборки сериализатора, всё равно
+        доезжает до `update` — проверено тестом, который на этом и падал.
+        """
+        if self.instance is not None:
+            return {"courses": attrs["courses"]} if "courses" in attrs else {}
+
+
         school = self.context["request"].user.school
         email = attrs["email"]
         kind = attrs.get("kind", Kind.TEACHER)

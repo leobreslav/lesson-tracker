@@ -150,6 +150,10 @@ class FromPlanSerializer(serializers.Serializer):
         queryset=Subject.objects.none(), required=False, allow_null=True
     )
     grade = serializers.IntegerField(required=False, allow_null=True)
+    # «всей школе или только себе» — вопрос того же разговора, что название
+    # и описание: на полку кладут ради того, чтобы этим пользовались, и
+    # отдельным шагом публикация означала лишь шанс про неё забыть
+    is_published = serializers.BooleanField(required=False, default=False)
 
     def get_fields(self):
         fields = super().get_fields()

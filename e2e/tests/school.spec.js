@@ -34,7 +34,9 @@ test('администратор заводит курс и назначает �
 
   await card.locator('.toggle').click()
   await card.getByLabel('Учитель для 9А Алгебра').selectOption({ label: 'Мария Иванова' })
-  await card.getByRole('button', { name: 'Назначить', exact: true }).click()
+  // подпись у кнопки короткая, а доступное имя называет роль: в карточке
+  // курса две кнопки «Назначить» — ведущего и методиста
+  await card.getByRole('button', { name: /Назначить ведущего/ }).click()
 
   await expect(card.locator('.tag')).toContainText('Мария Иванова')
   // строка осталась раскрытой: назначать людей по одному, каждый раз
@@ -266,4 +268,53 @@ test('в школьном расписании урок ставится в об
 
   await expect(dialog).toBeHidden()
   await expect(page.locator('[data-lesson="2026-09-07:6"]')).toHaveCount(1)
+})
+
+test('курс поручают приглашённому — до его первого входа', async ({
+  page,
+  signIn,
+  api,
+}) => {
+  // Нагрузку раздают в тот же день, когда вписывают адреса, а первого входа
+  // ждут неделями. Учётки в этот момент ещё нет, значит и назначения быть не
+  // может: курс ждёт человека в самом приглашении.
+  const admin = await api(PEOPLE.admin)
+  await admin.post('/api/school/invitations/', {
+    email: 'novichok@example.com',
+    name: 'Новичок Новичков',
+    kind: 'teacher',
+  })
+
+  // освобождаем курс: ведущий у него один, и пока он есть, формы выбора нет
+  const courses = await admin.get('/api/courses/?scope=school')
+  const course = courses.body[0]
+  const rows = await admin.get(`/api/school/assignments/?course=${course.id}`)
+  for (const row of rows.body) {
+    await admin.delete(`/api/school/assignments/${row.id}/?force=true`)
+  }
+
+  await signIn(PEOPLE.admin)
+  await page.goto('/school/courses')
+  await ready(page)
+  await page.locator('.course-row').first().locator('button').first().click()
+  const body = page.locator('.course-body')
+  await expect(body).toBeVisible()
+
+  await body.locator('select').first().selectOption({ label: 'Новичок Новичков' })
+  await body.getByRole('button', { name: /Назначить ведущего/ }).click()
+
+  // место занято, но пока обещанием — и об этом сказано словами
+  const pending = page.locator('.tag.pending')
+  await expect(pending).toContainText('ждём первого входа')
+  // ведущий у курса один: пока место занято, выбирать больше не из чего
+  await expect(body.getByRole('button', { name: /Назначить ведущего/ })).toHaveCount(0)
+
+  // и это настоящая запись, а не состояние экрана
+  const after = await admin.get('/api/courses/?scope=school')
+  expect(after.body[0].pending_teachers[0].email).toBe('novichok@example.com')
+
+  // передумали — курс уходит из приглашения, форма возвращается
+  await pending.getByRole('button').click()
+  await expect(page.locator('.tag.pending')).toHaveCount(0)
+  await expect(body.getByRole('button', { name: /Назначить ведущего/ })).toBeVisible()
 })

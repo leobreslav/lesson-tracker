@@ -132,10 +132,16 @@ class PlanTemplateViewSet(SchoolScopedViewSet):
     @action(detail=False, methods=["post"], url_path="from-plan")
     def from_plan(self, request):
         """
-        Put the plan of a course onto the shelf, as a draft.
+        Put the plan of a course onto the shelf.
 
         A snapshot, not a link: what happens to the course plan afterwards
         does not reach the template, and vice versa.
+
+        **Видимость спрашивается сразу.** Раньше сюда всегда клали
+        черновиком, а «Опубликовать» жило отдельной кнопкой в окне полки —
+        то есть класть на полку и класть **на общую** полку было двумя
+        действиями в разных местах, и второе легко забывалось. Черновик
+        никуда не делся: это ответ «пока только себе».
         """
         form = FromPlanSerializer(data=request.data, context={"request": request})
         form.is_valid(raise_exception=True)
@@ -157,7 +163,7 @@ class PlanTemplateViewSet(SchoolScopedViewSet):
                 title=data["title"],
                 description=data["description"],
                 author=request.user,
-                is_published=False,
+                is_published=data["is_published"],
             )
             services.write_rows(template, rows)
 

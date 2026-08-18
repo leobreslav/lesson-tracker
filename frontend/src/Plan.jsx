@@ -129,12 +129,21 @@ export default function Plan({ onLoggedOut }) {
   const [error, setError] = useState(null)
   const [editing, setEditing] = useState(null) // {id, title} — folders only
   const [opened, setOpened] = useState(null) // the lesson whose panel is open
-  const [menuOpen, setMenuOpen] = useState(false)
+  /*
+   * Меню два, и это не дробление ради дробления.
+   *
+   * Было одно, и в нём под одной чертой лежали две разные темы: обмен
+   * файлами («как перенести план в таблицу и обратно») и полка («взять
+   * чужой план, отдать свой»). Черта — слабый разделитель: чтобы найти
+   * «Из библиотеки», приходилось читать все шесть пунктов. Теперь тема
+   * названа на самой кнопке, и читать надо два-три пункта своей.
+   */
+  const [menuOpen, setMenuOpen] = useState(null) // null | 'file' | 'library'
   const [comparing, setComparing] = useState(false)
   // свой курс под собственным надзором: решение принимается по просьбе, а
   // не вместо плана — иначе своего плана не видно вовсе
   const [reviewing, setReviewing] = useState(false)
-  const menuRef = useDismissable(menuOpen, () => setMenuOpen(false))
+  const menuRef = useDismissable(menuOpen !== null, () => setMenuOpen(null))
   const [debts, setDebts] = useState(false) // открыт ли разбор долгов
   // адрес, откуда пришли за правкой: закрытие окна возвращает туда, а не
   // оставляет в плане, который человек и не собирался открывать
@@ -1269,80 +1278,101 @@ export default function Plan({ onLoggedOut }) {
                 {t('plan.select')}
               </button>
 
-              <div className="plan-menu" ref={menuRef}>
-                <button
-                  type="button"
-                  className="link more"
-                  aria-haspopup="true"
-                  aria-expanded={menuOpen}
-                  aria-label={t('plan.more')}
-                  title={t('plan.more')}
-                  onClick={() => setMenuOpen(!menuOpen)}
-                >
-                  ⋯
-                </button>
-                {menuOpen && (
-                  <div className="dropdown">
-                    <button
-                      type="button"
-                      disabled={busy}
-                      onClick={() => {
-                        setMenuOpen(false)
-                        setImporting(true)
-                      }}
-                    >
-                      {t('plan.importFile')}
-                    </button>
-                    {/* формат называет пункт меню: у выгрузки он вопрос
-                        «во что», а не настройка, которую держат включённой */}
-                    {FORMATS.map((name) => (
+              {/* два меню в одной обёртке: клик мимо закрывает открытое,
+                  каким бы из двух оно ни было */}
+              <span className="plan-menus" ref={menuRef}>
+                <div className="plan-menu">
+                  <button
+                    type="button"
+                    className="secondary"
+                    aria-haspopup="true"
+                    aria-expanded={menuOpen === 'file'}
+                    onClick={() =>
+                      setMenuOpen((current) => (current === 'file' ? null : 'file'))
+                    }
+                  >
+                    {t('plan.fileMenu')}
+                  </button>
+                  {menuOpen === 'file' && (
+                    <div className="dropdown">
                       <button
-                        key={name}
                         type="button"
                         disabled={busy}
                         onClick={() => {
-                          setMenuOpen(false)
-                          handleExport(name)
+                          setMenuOpen(null)
+                          setImporting(true)
                         }}
                       >
-                        {t('plan.exportAs', { format: name })}
+                        {t('plan.importFile')}
                       </button>
-                    ))}
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setMenuOpen(false)
-                        setHelpOpen(!helpOpen)
-                      }}
-                    >
-                      {t('plan.csvHelp.toggle')}
-                    </button>
+                      {/* формат называет пункт меню: у выгрузки он вопрос
+                          «во что», а не настройка, которую держат включённой */}
+                      {FORMATS.map((name) => (
+                        <button
+                          key={name}
+                          type="button"
+                          disabled={busy}
+                          onClick={() => {
+                            setMenuOpen(null)
+                            handleExport(name)
+                          }}
+                        >
+                          {t('plan.exportAs', { format: name })}
+                        </button>
+                      ))}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setMenuOpen(null)
+                          setHelpOpen(!helpOpen)
+                        }}
+                      >
+                        {t('plan.csvHelp.toggle')}
+                      </button>
+                    </div>
+                  )}
+                </div>
 
-                    <span className="dropdown-sep" aria-hidden="true" />
-
-                    <button
-                      type="button"
-                      disabled={busy}
-                      onClick={() => {
-                        setMenuOpen(false)
-                        setDialog({ type: 'library' })
-                      }}
-                    >
-                      {t('plan.importLibrary')}
-                    </button>
-                    <button
-                      type="button"
-                      disabled={busy}
-                      onClick={() => {
-                        setMenuOpen(false)
-                        setDialog({ type: 'publish' })
-                      }}
-                    >
-                      {t(mineOnShelf ? 'plan.refreshTemplate' : 'plan.publish')}
-                    </button>
-                  </div>
-                )}
-              </div>
+                <div className="plan-menu">
+                  <button
+                    type="button"
+                    className="secondary"
+                    aria-haspopup="true"
+                    aria-expanded={menuOpen === 'library'}
+                    onClick={() =>
+                      setMenuOpen((current) =>
+                        current === 'library' ? null : 'library',
+                      )
+                    }
+                  >
+                    {t('plan.libraryMenu')}
+                  </button>
+                  {menuOpen === 'library' && (
+                    <div className="dropdown">
+                      <button
+                        type="button"
+                        disabled={busy}
+                        onClick={() => {
+                          setMenuOpen(null)
+                          setDialog({ type: 'library' })
+                        }}
+                      >
+                        {t('plan.importLibrary')}
+                      </button>
+                      <button
+                        type="button"
+                        disabled={busy}
+                        onClick={() => {
+                          setMenuOpen(null)
+                          setDialog({ type: 'publish' })
+                        }}
+                      >
+                        {t(mineOnShelf ? 'plan.refreshTemplate' : 'plan.publish')}
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </span>
             </div>
 
             {helpOpen && <PlanCsvHelp />}
@@ -1665,6 +1695,17 @@ function PublishDialog({ course, subjects, existing, busy, onSubmit, onClose }) 
   const [description, setDescription] = useState('')
   const [subject, setSubject] = useState(subjects[0]?.id ?? null)
   const [grade, setGrade] = useState('')
+  /*
+   * Кому видно — вопрос того же разговора, что название и описание.
+   *
+   * Раньше шаблон всегда ложился черновиком, а «Опубликовать» жило
+   * отдельной кнопкой в окне полки: положить на полку и положить на
+   * **общую** полку были двумя действиями в разных местах, и второе
+   * забывалось — на полке лежал черновик, которого никто, кроме автора, не
+   * видел. Умолчание при этом «всей школе»: кладут туда ради того, чтобы
+   * этим пользовались.
+   */
+  const [published, setPublished] = useState(true)
 
   // курс обычно знает и то и другое — тогда не спрашиваем и не отправляем:
   // шаблон снимается с этого курса, и разойтись с ним ему нечем. Спрашиваем
@@ -1698,6 +1739,7 @@ function PublishDialog({ course, subjects, existing, busy, onSubmit, onClose }) 
             onSubmit({
               title: title.trim(),
               description,
+              is_published: published,
               ...(asksSubject ? { subject } : {}),
               ...(asksGrade ? { grade } : {}),
             })
@@ -1705,7 +1747,6 @@ function PublishDialog({ course, subjects, existing, busy, onSubmit, onClose }) 
         }}
       >
         <h3>{t('plan.publish')}</h3>
-        <p className="hint">{t('plan.publishHint')}</p>
 
         <div className="field">
           <label htmlFor="template-title">{t('plan.titleLabel')}</label>
@@ -1767,6 +1808,24 @@ function PublishDialog({ course, subjects, existing, busy, onSubmit, onClose }) 
             maxLength={500}
             onChange={(event) => setDescription(event.target.value)}
           />
+        </div>
+
+        <div className="field">
+          {/* подпись видимая, как у соседних полей: тумблер без неё
+              выглядел приблудой между «Заметкой» и кнопками */}
+          <label>{t('plan.visibility')}</label>
+          <Switch
+            label={t('plan.visibility')}
+            value={published}
+            onChange={setPublished}
+            options={[
+              { value: true, label: t('plan.toEveryone') },
+              { value: false, label: t('plan.toMyself') },
+            ]}
+          />
+          <p className="hint">
+            {published ? t('plan.toEveryoneHint') : t('plan.toMyselfHint')}
+          </p>
         </div>
 
         <div className="actions">

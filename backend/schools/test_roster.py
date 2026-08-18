@@ -8,6 +8,7 @@ API, потому что именно там сходятся права, кур
 
 from accounts.models import Kind
 from django.contrib.auth import get_user_model
+from django.utils import timezone
 from django.urls import reverse
 from rest_framework.test import APITestCase
 from schedule.models import CourseStudent
@@ -15,7 +16,14 @@ from schedule.models import CourseStudent
 from . import roster
 from .models import Invitation
 from .services import enrol, remove_from_course
-from .testing import make_course, make_school, make_user, sign_in
+from .testing import (
+    SchoolTestMixin,
+    make_course,
+    make_school,
+    make_user,
+    make_year,
+    sign_in,
+)
 
 User = get_user_model()
 
@@ -345,3 +353,104 @@ class ConflictMarkTests(RosterTestCase):
         ).json()
 
         self.assertEqual([row["email"] for row in rows], ["here@school.ru"])
+
+
+class PendingTeacherApiTests(SchoolTestMixin, APITestCase):
+    """
+    Приглашённому учителю курс поручают через само приглашение.
+
+    Учётки ещё нет, назначению не на кого встать — а нагрузку раздают уже
+    сейчас. Поэтому у приглашения правятся курсы, и карточка курса
+    показывает такого человека отдельной плашкой: место занято, но пока
+    обещанием.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.year = make_year(self.school)
+        self.course = make_course(self.school, self.year, "9Б Алгебра")
+        self.invitation = Invitation.objects.create(
+            school=self.school,
+            email="newcomer@example.com",
+            name="Новенький",
+            kind="teacher",
+            created_by=self.admin,
+        )
+        self.client.force_authenticate(self.admin)
+
+    def attach(self, courses):
+        return self.client.patch(
+            reverse("invitation-detail", args=[self.invitation.pk]),
+            {"courses": courses},
+            format="json",
+        )
+
+    def test_a_course_is_attached_to_an_invitation(self):
+        response = self.attach([self.course.pk])
+
+        self.assertEqual(response.status_code, 200, response.content)
+        self.assertEqual(
+            [course.pk for course in self.invitation.courses.all()], [self.course.pk]
+        )
+
+    def test_the_course_card_names_who_is_expected(self):
+        self.attach([self.course.pk])
+
+        response = self.client.get(reverse("course-detail", args=[self.course.pk]))
+
+        self.assertEqual(response.status_code, 200, response.content)
+        self.assertEqual(
+            response.json()["pending_teachers"],
+            [
+                {
+                    "invitation": self.invitation.pk,
+                    "name": "Новенький",
+                    "email": "newcomer@example.com",
+                }
+            ],
+        )
+
+    def test_an_accepted_invitation_stops_being_pending(self):
+        """Вошёл — плашка ожидания уходит, на её место встаёт назначение."""
+        self.attach([self.course.pk])
+        self.invitation.accepted_at = timezone.now()
+        self.invitation.save(update_fields=["accepted_at"])
+
+        response = self.client.get(reverse("course-detail", args=[self.course.pk]))
+
+        self.assertEqual(response.json()["pending_teachers"], [])
+
+    def test_a_student_invitation_is_not_a_pending_teacher(self):
+        self.invitation.kind = "student"
+        self.invitation.save(update_fields=["kind"])
+        self.attach([self.course.pk])
+
+        response = self.client.get(reverse("course-detail", args=[self.course.pk]))
+
+        self.assertEqual(response.json()["pending_teachers"], [])
+
+    def test_the_address_is_not_editable(self):
+        """Адрес — то, за что поручились: сменить его значит выписать другое."""
+        response = self.client.patch(
+            reverse("invitation-detail", args=[self.invitation.pk]),
+            {"email": "someone.else@example.com"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200, response.content)
+        self.invitation.refresh_from_db()
+        self.assertEqual(self.invitation.email, "newcomer@example.com")
+
+    def test_detaching_is_the_same_patch_with_the_course_left_out(self):
+        self.attach([self.course.pk])
+
+        self.attach([])
+
+        self.assertFalse(self.invitation.courses.exists())
+
+    def test_a_teacher_without_the_role_cannot_hand_out_load(self):
+        self.client.force_authenticate(self.user)
+
+        response = self.attach([self.course.pk])
+
+        self.assertEqual(response.status_code, 403)

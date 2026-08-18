@@ -79,12 +79,25 @@ test('над таблицей одна панель управления, а п�
   const tools = page.locator('.plan-tools')
   await expect(tools).toBeVisible()
 
-  // на виду только частое — добавление; редкое под «⋯»
-  for (const name of ['Добавить урок', 'Добавить тему', 'Ещё']) {
+  // на виду только частое — добавление и выбор; редкое под двумя меню,
+  // и каждое названо своей темой: обмен файлами и полка
+  for (const name of ['Добавить урок', 'Добавить тему', 'Выбрать', 'Файл', 'Библиотека']) {
     await expect(tools.getByRole('button', { name, exact: true })).toBeVisible()
   }
-  await tools.getByRole('button', { name: 'Ещё' }).click()
-  for (const name of [/^Импорт/, /Экспорт в xlsx/, 'Из библиотеки']) {
+
+  await tools.getByRole('button', { name: 'Файл', exact: true }).click()
+  for (const name of [/^Импорт/, /Экспорт в xlsx/, /Как выглядит файл/]) {
+    await expect(
+      tools.locator('.dropdown').getByRole('button', { name }),
+    ).toBeVisible()
+  }
+  // полки в меню файла нет: темы разные, и это всё, ради чего их разделили
+  await expect(
+    tools.locator('.dropdown').getByRole('button', { name: /библиотек/ }),
+  ).toHaveCount(0)
+
+  await tools.getByRole('button', { name: 'Библиотека', exact: true }).click()
+  for (const name of [/Загрузить из библиотеки/, /в библиотек/]) {
     await expect(
       tools.locator('.dropdown').getByRole('button', { name }),
     ).toBeVisible()

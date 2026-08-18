@@ -897,3 +897,58 @@ test('у записанного часа в меню нет ни отмены, �
   // перенос остаётся: он не стирает запись, а везёт её с собой
   await expect(menu.getByRole('button', { name: 'Перенести' })).toBeVisible()
 })
+
+test('шагов первого входа на расписании нет — они на корне', async ({
+  page,
+  signIn,
+}) => {
+  // Расписание открывают каждый день и ради сетки, а карта первого входа
+  // отвечает на вопрос, который задают один раз: полтора экрана поверх
+  // рабочей страницы читались как реклама.
+  await signIn(PEOPLE.ivanova)
+
+  await page.goto('/schedule')
+  await ready(page)
+  await expect(page.locator('.week-grid')).toBeVisible()
+  await expect(page.locator('.start-here')).toHaveCount(0)
+})
+
+test('листание недель не уносит страницу в начало', async ({ page, signIn }) => {
+  // Сетка заменялась строкой «Загрузка…»: страница схлопывалась, браузер
+  // прижимал прокрутку к её новой высоте — и вернувшаяся сетка оказывалась
+  // пролистанной в начало. Пролистал вниз, нажал стрелку — и ты наверху.
+  await signIn(PEOPLE.ivanova)
+  await page.goto('/schedule')
+  await ready(page)
+  await expect(page.locator('.week-grid')).toBeVisible()
+
+  await page.evaluate(() => window.scrollTo(0, 300))
+  const before = await page.evaluate(() => window.scrollY)
+  expect(before, 'странице некуда прокручиваться — тест бессмыслен').toBeGreaterThan(100)
+
+  // Нажимаем из кода, а не `click()`: Playwright подводит элемент под
+  // курсор и сам прокручивает страницу к нему — то есть проверял бы
+  // собственную прокрутку, а не поведение приложения.
+  const heights = await page.evaluate(async (label) => {
+    const before = document.documentElement.scrollHeight
+    const button = [...document.querySelectorAll('button')].find(
+      (item) => item.getAttribute('aria-label') === label,
+    )
+    button.click()
+
+    // даём кадр на перерисовку «пока грузится» и ждём ответа сервера
+    const seen = []
+    for (let i = 0; i < 60; i += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 10))
+      seen.push(document.documentElement.scrollHeight)
+    }
+    return { before, min: Math.min(...seen), last: seen.at(-1) }
+  }, 'Следующая неделя')
+
+  // страница не укорачивается ни на кадр: именно из-за этого браузер и
+  // прижимал прокрутку к её новой высоте
+  expect(heights.min, 'страница схлопнулась на время загрузки').toBe(heights.before)
+  expect(heights.last).toBe(heights.before)
+  await expect(page.locator('.week-grid')).toBeVisible()
+  expect(await page.evaluate(() => window.scrollY)).toBe(before)
+})

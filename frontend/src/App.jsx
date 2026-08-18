@@ -26,6 +26,7 @@ import Works from './Works'
 import WorkTable from './WorkTable'
 import SchoolTeachers from './SchoolTeachers'
 import SchoolSchedule from './SchoolSchedule'
+import StartHere, { hasSteps } from './StartHere'
 import Schools from './Schools'
 import {
   clearToken,
@@ -34,6 +35,7 @@ import {
   getToken,
   updateMe,
 } from './api'
+import { useTranslation } from 'react-i18next'
 import i18n, { normalizeLanguage } from './i18n'
 
 export default function App() {
@@ -143,9 +145,20 @@ export default function App() {
 
       <PageBoundary>
         <Routes>
-          {/* Корень — расписание: с него теперь и заходят в занятие, а
-              «как идут курсы» смотрят раз в неделю и на своём адресе */}
-          <Route path="/" element={<Navigate to="/schedule" replace />} />
+          {/*
+            Корень — шаги первого входа, пока есть что настраивать.
+
+            Стояли они прямо в «Моём расписании», потому что корень вёл
+            туда же. Но расписание открывают каждый день и ради сетки, а
+            карта первого входа отвечает на вопрос, который задают один
+            раз: полтора экрана поверх рабочей страницы читались как
+            реклама. Настраивать нечего — корень по-прежнему уводит на
+            расписание, и никакой лишней страницы не появляется.
+          */}
+          <Route
+            path="/"
+            element={guarded(StartPage, { status, onStatusChange: setStatus })}
+          />
           {/* работа с одним уроком: прошлым, сегодняшним или будущим —
               заходят сюда одинаково, разница лишь в том, какие действия
               имеют смысл */}
@@ -153,10 +166,7 @@ export default function App() {
           {/* раздела «Мои курсы» больше нет: числа в нём дублировали план,
               долги переехали в его таблицу, надзор методиста — в селектор
               курса, а шаги первого входа сюда, на корень */}
-          <Route
-            path="/schedule"
-            element={guarded(Agenda, { status, onStatusChange: setStatus })}
-          />
+          <Route path="/schedule" element={guarded(Agenda)} />
           <Route path="/plan" element={guarded(Plan)} />
           <Route path="/works" element={guarded(Works)} />
           <Route path="/works/:id" element={guarded(WorkTable)} />
@@ -192,6 +202,37 @@ export default function App() {
  * pages, and the bar and the main page have to tell the truth. The request is
  * small — a dedicated sync mechanism would cost more than it saves.
  */
+/**
+ * Корень: карта первого входа, пока она что-то говорит.
+ *
+ * Своей страницы у шагов не было — они стояли поверх расписания, — и это
+ * ровно то, за что их и невзлюбили: расписание открывают ради сетки, а не
+ * ради инструкции. Когда настраивать нечего, страницы не существует:
+ * корень уводит на расписание, как уводил всегда.
+ *
+ * Пока статус не приехал, не решаем ничего: редирект по недозагруженному
+ * ответу увёл бы с шагов того, кому они как раз нужны.
+ */
+function StartPage({ status, onStatusChange, onLoggedOut }) {
+  const { t } = useTranslation()
+
+  if (status === null) return null
+  if (!hasSteps(status)) return <Navigate to="/schedule" replace />
+
+  return (
+    <main className="page">
+      <header className="page-header">
+        <h1>{t('dashboard.startTitle')}</h1>
+      </header>
+      <StartHere
+        status={status}
+        onStatusChange={onStatusChange}
+        onLoggedOut={onLoggedOut}
+      />
+    </main>
+  )
+}
+
 function StatusWatcher({ onChange }) {
   const location = useLocation()
 
