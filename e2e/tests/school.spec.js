@@ -276,8 +276,8 @@ test('курс поручают приглашённому — до его пе�
   api,
 }) => {
   // Нагрузку раздают в тот же день, когда вписывают адреса, а первого входа
-  // ждут неделями. Учётки в этот момент ещё нет, значит и назначения быть не
-  // может: курс ждёт человека в самом приглашении.
+  // ждут неделями. Приглашение заводит учётку сразу, поэтому назначение —
+  // обычное: приглашённый стоит в том же списке, что и все, с пометкой.
   const admin = await api(PEOPLE.admin)
   await admin.post('/api/school/invitations/', {
     email: 'novichok@example.com',
@@ -300,21 +300,20 @@ test('курс поручают приглашённому — до его пе�
   const body = page.locator('.course-body')
   await expect(body).toBeVisible()
 
-  await body.locator('select').first().selectOption({ label: 'Новичок Новичков' })
+  // в списке он есть, и видно, что он ещё ни разу не входил
+  const picker = body.locator('select').first()
+  await expect(picker).toContainText('ещё не входил')
+  // подпись несёт ещё и пометку ожидания, поэтому выбираем по значению
+  const invited = await admin.get('/api/school/members/')
+  const newcomer = invited.body.find((item) => item.email === 'novichok@example.com')
+  await picker.selectOption(String(newcomer.id))
   await body.getByRole('button', { name: /Назначить ведущего/ }).click()
 
-  // место занято, но пока обещанием — и об этом сказано словами
-  const pending = page.locator('.tag.pending')
-  await expect(pending).toContainText('ждём первого входа')
-  // ведущий у курса один: пока место занято, выбирать больше не из чего
-  await expect(body.getByRole('button', { name: /Назначить ведущего/ })).toHaveCount(0)
+  // назначение настоящее, и пометка ожидания переезжает на плашку
+  const tag = body.locator('.tag.pending')
+  await expect(tag).toContainText('Новичок Новичков')
+  await expect(tag).toContainText('ещё не входил')
 
-  // и это настоящая запись, а не состояние экрана
   const after = await admin.get('/api/courses/?scope=school')
-  expect(after.body[0].pending_teachers[0].email).toBe('novichok@example.com')
-
-  // передумали — курс уходит из приглашения, форма возвращается
-  await pending.getByRole('button').click()
-  await expect(page.locator('.tag.pending')).toHaveCount(0)
-  await expect(body.getByRole('button', { name: /Назначить ведущего/ })).toBeVisible()
+  expect(after.body[0].teachers[0].arrived).toBe(false)
 })

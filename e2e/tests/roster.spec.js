@@ -27,10 +27,11 @@ test('в составе курса видно всех троих: учатся,
   await signIn(PEOPLE.admin)
   const dialog = await openRoster(page, 'Grade 6 Algebra')
 
-  // класс целиком: тринадцать учатся, одна снята, один приглашён и ни
-  // разу не входил
-  await expect(dialog.locator('.roster.enrolled li')).toHaveCount(13)
-  await expect(dialog.locator('.roster.waiting li')).toHaveCount(1)
+  // Класс целиком: четырнадцать учатся — из них один ни разу не входил, —
+  // одна снята. Отдельного списка ожидающих больше нет: приглашение
+  // заводит учётку сразу, и такой человек зачислен наравне со всеми.
+  await expect(dialog.locator('.roster.enrolled li')).toHaveCount(14)
+  await expect(dialog.locator('.roster.enrolled .tag.pending')).toHaveCount(1)
   await expect(dialog.locator('.roster.past li')).toHaveCount(1)
   await expect(dialog.locator('.roster.past')).toContainText('Ева Морозова')
   await expect(dialog).toContainText('sokolov@example.com')
@@ -47,7 +48,7 @@ test('вставка списка считает пятерых по-разно�
     [
       'stepanov@example.com', // уже учится
       'morozova@example.com', // снята — вернём
-      'Новиков Илья, novikov@example.com', // учётки нет — пригласим
+      'Новиков Илья, novikov@example.com', // человека ещё нет — заведём
       'petrov@example.com', // учитель — адрес занят
     ].join('\n'),
   )
@@ -56,14 +57,14 @@ test('вставка списка считает пятерых по-разно�
   const summary = dialog.locator('[data-roster-preview]')
   await expect(summary).toContainText('Зачислим: 0')
   await expect(summary).toContainText('вернём: 1')
-  await expect(summary).toContainText('пригласим: 1')
+  await expect(summary).toContainText('заведём: 1')
   await expect(summary).toContainText('уже в курсе: 1')
   // занятый адрес назван поимённо: «занят один адрес» само по себе загадка
   await expect(dialog).toContainText('petrov@example.com')
 
   await dialog.getByRole('button', { name: 'Зачислить' }).click()
 
-  // снятая вернулась той же строкой, приглашение уехало в ожидающие
+  // снятая вернулась той же строкой, а новый человек встал в общий список
   await expect(dialog.locator('.roster.past li')).toHaveCount(0)
   await expect(dialog.locator('.roster.enrolled')).toContainText('Ева Морозова')
   await expect(dialog).toContainText('Новиков Илья')
@@ -92,8 +93,10 @@ test('ученик виден в школе, и снятый курс помеч
 
   // все ученики школы, включая снятую с курса: она из списка не исчезает,
   // но её курс помечен как прошлый
+  // пятнадцатый — приглашённый: учётка у него теперь настоящая, и в
+  // списке школы он стоит наравне со всеми, с пометкой «ещё не входил»
   const rows = page.locator('.people-list li')
-  await expect(rows).toHaveCount(14)
+  await expect(rows).toHaveCount(15)
   await expect(rows.filter({ hasText: 'Ева Морозова' }).locator('.tag.past')).toHaveCount(1)
   await expect(rows.filter({ hasText: 'Артём Степанов' }).locator('.tag.past')).toHaveCount(0)
 

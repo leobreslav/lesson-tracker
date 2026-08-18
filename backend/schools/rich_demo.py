@@ -48,6 +48,7 @@ from schedule.models import (
 )
 from files.models import KIND_LINK, Attachment
 from schools.models import Invitation
+from schools import services
 from works.models import Criterion, StudentWork, Submission, Task, Work
 from schedule import services as schedule_services
 from works import services as work_services
@@ -426,6 +427,9 @@ def person(school, email, first, last, *, student=False):
             "school": school,
             "language": LANGUAGE,
             "kind": User.Kind.STUDENT if student else User.Kind.TEACHER,
+            # уже входили: «ещё не входил» в этом наборе принадлежит троим
+            # приглашённым, и на остальных пометка стоять не должна
+            "last_login": timezone.now(),
         },
     )
     EmailAddress.objects.get_or_create(
@@ -748,12 +752,14 @@ def record(courses, plans) -> None:
 
 def invite(school, courses, people) -> None:
     """
-    Несколько приглашённых, которые ещё ни разу не входили.
+    Несколько человек, которые ещё ни разу не входили.
 
-    У администратора это отдельный список, и пустым он выглядит так же, как
-    сломанным. Один из адресов приглашён сразу в два курса: приглашение
-    расходуется однажды и заносит человека всюду, куда его записали, — на
-    одном курсе этого не видно.
+    Учётки у них настоящие и с первой минуты — приглашение заводит их
+    сразу, — а отличает их только пустой `last_login`. Один записан на два
+    курса: на одном не видно, что человек бывает не в одном месте.
+
+    Состояние это нужно в наборе именно потому, что на ровном списке
+    вошедших экраны выглядят одинаково правильно.
     """
     admin = next(
         (person for person in people.values() if person.is_school_admin), None
@@ -765,13 +771,17 @@ def invite(school, courses, people) -> None:
     )
 
     for email, name, names in waiting:
-        invitation, created = Invitation.objects.get_or_create(
+        Invitation.objects.get_or_create(
             school=school,
             email=email,
             defaults={"kind": "student", "name": name, "created_by": admin},
         )
-        if created:
-            invitation.courses.set([courses[item] for item in names])
+        if User.objects.filter(email=email).exists():
+            continue
+
+        person = services.provision(school, email, kind="student", name=name)
+        for item in names:
+            services.enrol(person, courses[item], by=admin)
 
 
 def make_reviews(courses, people, plans) -> None:

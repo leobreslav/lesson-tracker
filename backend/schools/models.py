@@ -36,14 +36,12 @@ class Invitation(models.Model):
     Accepting stamps `accepted_at` and keeps the row: it is the record of who
     invited whom and when.
 
-    **Приглашение расходуется однажды.** Оно вдобавок называет курсы,
-    которые ждут человека к первому входу: ученика в них записывают,
-    учителю их поручают. Дальше и то и другое — прямое действие
-    администратора: если бы приглашение доносило курсы при каждом входе,
-    снятый с курса возвращался бы в него сам, стоило ему войти.
+    **Приглашение заводит учётку сразу** (`services.provision`), а не ждёт
+    первого входа. Поэтому курсов оно больше не носит: назначать и
+    зачислять есть кого с первой минуты, обычными таблицами.
 
-    Поэтому и правило вставки такое: есть учётка — записываем немедленно,
-    нет — записываем сюда и ждём.
+    Что остаётся здесь — билет и след: кто кого позвал, когда, и забрал ли
+    человек свою учётку (`accepted_at`). Расходуется билет однажды.
     """
 
     school = models.ForeignKey(
@@ -71,18 +69,6 @@ class Invitation(models.Model):
         help_text="Кем человек войдёт: учителем или учеником.",
     )
     is_school_admin = models.BooleanField("grants the admin role", default=False)
-    courses = models.ManyToManyField(
-        "schedule.Course",
-        related_name="pending_invitations",
-        blank=True,
-        verbose_name="courses to join on first sign-in",
-        help_text=(
-            "Курсы, которые ждут человека к первому входу. У ученика это "
-            "«куда записать», у учителя — «что вести»: назначить курс "
-            "приглашённому надо в тот же день, когда раздают нагрузку, а не "
-            "когда он соберётся войти."
-        ),
-    )
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         related_name="sent_invitations",

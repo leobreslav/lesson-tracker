@@ -193,10 +193,10 @@ def split_columns(line: str) -> list[str]:
 # --- что с этим сделает база ----------------------------------------------------
 
 # что будет с человеком: одно из пяти
-ENROL = "enrol"  # учётка есть — запишем сразу
+ENROL = "enrol"  # учётка есть — запишем
 RESTORE = "restore"  # снят с курса — вернём той же строкой
 ALREADY = "already"  # уже учится — ничего не делаем
-INVITE = "invite"  # учётки нет — приглашение, сработает при первом входе
+NEW = "new"  # человека ещё нет — заведём и запишем
 BLOCKED = "blocked"  # адрес занят: чужая школа или учительская учётка
 
 
@@ -274,7 +274,7 @@ def plan_roster(people: list[Person], course) -> list[Decision]:
             waiting = invited.get(person.email)
             if not person.name and waiting is not None:
                 person.name = waiting.name
-            decisions.append(Decision(person, INVITE, account=account))
+            decisions.append(Decision(person, NEW, account=account))
 
     return decisions
 
@@ -284,10 +284,10 @@ def full_name(user) -> str:
 
 
 def counts(decisions: list[Decision]) -> dict:
-    """Пять чисел предпросмотра — по одному на каждый исход."""
+    """Числа предпросмотра — по одному на каждый исход."""
     return {
         action: sum(1 for item in decisions if item.action == action)
-        for action in (ENROL, RESTORE, ALREADY, INVITE, BLOCKED)
+        for action in (ENROL, RESTORE, ALREADY, NEW, BLOCKED)
     }
 
 
@@ -329,22 +329,28 @@ def apply_roster(decisions: list[Decision], course, *, by) -> dict:
     непонятно, что имел в виду администратор, а здесь понятно совершенно.
     """
     for item in decisions:
-        if item.action in (ENROL, RESTORE):
+        if item.action == NEW:
+            item.account = welcome(item.person, course, by=by)
+        if item.action in (ENROL, RESTORE, NEW):
             services.enrol(item.account, course, by=by)
-        elif item.action == INVITE:
-            invite(item.person, course, by=by)
 
     return counts(decisions)
 
 
-def invite(person: Person, course, *, by) -> Invitation:
+def welcome(person: Person, course, *, by):
     """
-    Записать адрес в приглашение и дописать в него курс.
+    Завести человека, которого ещё нет, и выписать ему приглашение.
 
-    Приглашение на школу одно (`unique_together`), поэтому второй курс
-    дописывается в ту же строку, а не заводит вторую.
+    Раньше здесь писался только адрес, а зачисление ждало первого входа —
+    и «пригласим» было отдельным исходом вставки, отличным от «зачислим».
+    Теперь учётка появляется сразу, зачисление обычное, и различать эти два
+    случая на экране незачем: с точки зрения администратора он в обоих
+    записал человека на курс.
+
+    Приглашение при этом остаётся: оно билет и след в истории — кто кого
+    позвал и забрал ли тот свою учётку.
     """
-    invitation, created = Invitation.objects.get_or_create(
+    Invitation.objects.get_or_create(
         school=course.school,
         email=person.email,
         defaults={
@@ -354,19 +360,6 @@ def invite(person: Person, course, *, by) -> Invitation:
         },
     )
 
-    if not created:
-        fields = []
-        if person.name and not invitation.name:
-            invitation.name = person.name
-            fields.append("name")
-        if invitation.accepted_at is not None:
-            # приглашение принято, а учётки с этим адресом нет: принявшего
-            # удалили. Оставить как есть значило бы записать курс туда,
-            # откуда он уже никогда не применится
-            invitation.accepted_at = None
-            fields.append("accepted_at")
-        if fields:
-            invitation.save(update_fields=fields)
-
-    invitation.courses.add(course)
-    return invitation
+    return services.provision(
+        course.school, person.email, kind=Kind.STUDENT, name=person.name
+    )

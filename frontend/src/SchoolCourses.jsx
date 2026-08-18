@@ -13,12 +13,10 @@ import {
   fetchAssignments,
   fetchCourses,
   fetchGrades,
-  fetchInvitations,
   fetchMembers,
   fetchSchoolYears,
   fetchSubjects,
   renameCourse,
-  setInvitationCourses,
 } from './api'
 import { useSchoolSection } from './School'
 
@@ -41,14 +39,6 @@ export default function SchoolCourses() {
   const [subjects, setSubjects] = useState([])
   const [grades, setGrades] = useState([])
   const [members, setMembers] = useState([])
-  /*
-   * Приглашённые учителя — те, кому курс можно поручить до первого входа.
-   *
-   * Учётки у них ещё нет, значит и назначения быть не может: курс ждёт
-   * человека в самом приглашении. Список нужен целиком, а не по курсу:
-   * из него выбирают в каждой карточке.
-   */
-  const [invited, setInvited] = useState([])
   const [form, setForm] = useState({ name: '', subject: '', grade: '' })
   const [editing, setEditing] = useState(null) // {id, value}
   const [assigning, setAssigning] = useState({}) // course id -> teacher id
@@ -66,22 +56,8 @@ export default function SchoolCourses() {
     [onLoggedOut],
   )
 
-  const loadInvited = useCallback(
-    () =>
-      fetchInvitations({ kind: 'teacher' }).then((list) =>
-        setInvited(list.filter((item) => !item.accepted)),
-      ),
-    [],
-  )
-
   useEffect(() => {
-    Promise.all([
-      fetchSchoolYears(),
-      fetchSubjects(),
-      fetchGrades(),
-      fetchMembers(),
-      loadInvited(),
-    ])
+    Promise.all([fetchSchoolYears(), fetchSubjects(), fetchGrades(), fetchMembers()])
       .then(([yearList, subjectList, gradeList, people]) => {
         setYears(yearList)
         setYearId((current) => current ?? yearList[0]?.id ?? null)
@@ -90,7 +66,7 @@ export default function SchoolCourses() {
         setMembers(people)
       })
       .catch(handleError)
-  }, [handleError, loadInvited])
+  }, [handleError])
 
   const reload = useCallback(
     () =>
@@ -149,49 +125,20 @@ export default function SchoolCourses() {
   }
 
   /**
-   * Поручить курс — учителю школы или тому, кого только пригласили.
+   * Поручить курс — обычным назначением.
    *
-   * Ответ на один вопрос («кто ведёт»), а таблицы разные: у вошедшего это
-   * назначение, у приглашённого — курс в самом приглашении, потому что
-   * учётки, на которую встало бы назначение, ещё нет. Нагрузку раздают в
-   * тот же день, когда вписывают адреса, а первого входа ждут неделями, и
-   * до этой правки поручить курс приглашённому было нечем вовсе.
-   *
-   * Что выбрали, говорит сам value: `user:12` или `invite:5`. Голые id
-   * двух разных таблиц в одном селекте однажды совпали бы.
+   * Различать «учителя школы» и «приглашённого» здесь больше незачем:
+   * приглашение заводит учётку сразу, и в списке они стоят рядом. Отличает
+   * приглашённого только пометка «ещё не входил».
    */
   const assign = (course) => {
-    const picked = assigning[course.id]
-    if (!picked || busy) return
-
-    const [kind, id] = picked.split(':')
-    const done = () => setAssigning((current) => ({ ...current, [course.id]: '' }))
-
-    if (kind === 'invite') {
-      const invitation = invited.find((item) => item.id === Number(id))
-      if (!invitation) return
-
-      run(() =>
-        setInvitationCourses(invitation.id, [...invitation.courses, course.id])
-          .then(loadInvited)
-          .then(done),
-      )
-      return
-    }
-
-    run(() => createAssignment(course.id, Number(id)).then(done))
-  }
-
-  /** Передумали до первого входа: курс уходит из приглашения. */
-  const dropPending = (course, pending) => {
-    const invitation = invited.find((item) => item.id === pending.invitation)
-    if (!invitation || busy) return
+    const teacherId = assigning[course.id]
+    if (!teacherId || busy) return
 
     run(() =>
-      setInvitationCourses(
-        invitation.id,
-        invitation.courses.filter((id) => id !== course.id),
-      ).then(loadInvited),
+      createAssignment(course.id, Number(teacherId)).then(() =>
+        setAssigning((current) => ({ ...current, [course.id]: '' })),
+      ),
     )
   }
 
@@ -422,13 +369,21 @@ export default function SchoolCourses() {
                       <div className="course-role">
                         <span className="hint">{t('school.courses.teaches')}</span>
                         <div className="row courses">
-                          {course.teachers.length === 0 &&
-                          course.pending_teachers.length === 0 ? (
+                          {course.teachers.length === 0 ? (
                             <span className="hint">{t('school.courses.noTeacher')}</span>
                           ) : (
                             course.teachers.map((teacher) => (
-                              <span className="tag" key={teacher.id}>
+                              <span
+                                className={teacher.arrived ? 'tag' : 'tag pending'}
+                                key={teacher.id}
+                                title={
+                                  teacher.arrived
+                                    ? undefined
+                                    : t('school.people.waitingHint')
+                                }
+                              >
                                 {teacher.name}
+                                {teacher.arrived ? '' : ` — ${t('school.people.waiting')}`}
                                 <button
                                   type="button"
                                   className="link"
@@ -443,33 +398,8 @@ export default function SchoolCourses() {
                               </span>
                             ))
                           )}
-                          {/* приглашённый: место занято, но пока обещанием —
-                              плашка бледнее и подписана ожиданием */}
-                          {course.pending_teachers.map((pending) => (
-                            <span
-                              className="tag pending"
-                              key={pending.invitation}
-                              title={t('school.courses.pendingHint', {
-                                email: pending.email,
-                              })}
-                            >
-                              {t('school.courses.pendingName', { name: pending.name })}
-                              <button
-                                type="button"
-                                className="link"
-                                aria-label={t('school.courses.unassign', {
-                                  name: pending.name,
-                                })}
-                                disabled={busy}
-                                onClick={() => dropPending(course, pending)}
-                              >
-                                ✕
-                              </button>
-                            </span>
-                          ))}
                         </div>
-                        {course.teachers.length === 0 &&
-                          course.pending_teachers.length === 0 && (
+                        {course.teachers.length === 0 && (
                           <div className="row">
                             <select
                               value={assigning[course.id] ?? ''}
@@ -486,23 +416,11 @@ export default function SchoolCourses() {
                             >
                                 <option value="">{t('school.courses.pickTeacher')}</option>
                               {members.map((person) => (
-                                <option key={person.id} value={`user:${person.id}`}>
+                                <option key={person.id} value={person.id}>
                                   {fullName(person)}
+                                  {person.arrived ? '' : ` — ${t('school.people.waiting')}`}
                                 </option>
                               ))}
-                              {/* приглашённые — отдельной группой: это не
-                                  «ещё один учитель», а обещание, и человек
-                                  должен видеть, что курс достанется ему не
-                                  сейчас, а в первый его вход */}
-                              {invited.length > 0 && (
-                                <optgroup label={t('school.courses.invitedGroup')}>
-                                  {invited.map((item) => (
-                                    <option key={item.id} value={`invite:${item.id}`}>
-                                      {item.name || item.email}
-                                    </option>
-                                  ))}
-                                </optgroup>
-                              )}
                             </select>
                             {/* подпись у обеих ролей одна — «Назначить»:
                                 вопросы разные, а действие одно, и колонка

@@ -391,6 +391,9 @@ class Command(BaseCommand):
                     "school": school,
                     "kind": User.Kind.STUDENT,
                     "language": LANGUAGE,
+                    # эти уже входили: «ещё не входил» — отдельное
+                    # состояние набора, и оно принадлежит одному человеку
+                    "last_login": timezone.now(),
                 },
             )
             EmailAddress.objects.get_or_create(
@@ -403,12 +406,20 @@ class Command(BaseCommand):
                 school_services.remove_from_course(row)
             enrolled.append(student)
 
+        # Приглашённый, который ещё ни разу не входил, — третье состояние
+        # ученика. Учётка у него теперь настоящая и с первой минуты: её
+        # видно в списках, она записана на курс, и отличает её только
+        # пустой `last_login`.
         invitation, _ = Invitation.objects.get_or_create(
             school=school,
             email=INVITED_STUDENT,
             defaults={"kind": User.Kind.STUDENT},
         )
-        invitation.courses.set([course])
+        if not User.objects.filter(email=INVITED_STUDENT).exists():
+            newcomer = school_services.provision(
+                school, INVITED_STUDENT, kind=User.Kind.STUDENT, name="Новичок"
+            )
+            school_services.enrol(newcomer, course)
 
         return enrolled
 
@@ -615,6 +626,9 @@ class Command(BaseCommand):
                     "school": school,
                     "is_school_admin": admin,
                     "language": LANGUAGE,
+                    # сотрудники уже входили: без этого в списках у всех
+                    # стояла бы пометка «ещё не входил»
+                    "last_login": timezone.now(),
                 },
             )
             if not created and user.school_id != school.pk:

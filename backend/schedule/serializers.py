@@ -212,7 +212,6 @@ class CourseSerializer(serializers.ModelSerializer):
     grade_name = serializers.CharField(source="grade.name", read_only=True)
     grade_level = serializers.IntegerField(source="grade.level", read_only=True)
     teachers = serializers.SerializerMethodField()
-    pending_teachers = serializers.SerializerMethodField()
     methodists = serializers.SerializerMethodField()
     students = serializers.SerializerMethodField()
 
@@ -228,7 +227,6 @@ class CourseSerializer(serializers.ModelSerializer):
             "grade_name",
             "grade_level",
             "teachers",
-            "pending_teachers",
             "methodists",
             "students",
             "name",
@@ -277,32 +275,14 @@ class CourseSerializer(serializers.ModelSerializer):
         have to ask again per row.
         """
         return [
-            {"id": item.teacher_id, "name": full_name(item.teacher)}
-            for item in course.assignments.all()
-        ]
-
-    def get_pending_teachers(self, course) -> list:
-        """
-        Кому курс уже поручен, но кто ещё ни разу не входил.
-
-        Нагрузку раздают в тот же день, когда вписывают адреса, а первого
-        входа ждут неделями: до этой правки поручить курс приглашённому было
-        нечем — в списке его не было вовсе, потому что учётки ещё нет.
-        Теперь курс ждёт человека в самом приглашении, и карточка показывает
-        это отдельной плашкой: место занято, но пока обещанием.
-
-        Фильтруется в питоне, а не запросом: `prefetch_related` уже привёз
-        все приглашения курса, и `.filter()` поверх него сходил бы в базу
-        ещё раз на каждый курс.
-        """
-        return [
             {
-                "invitation": item.pk,
-                "name": item.name or item.email,
-                "email": item.email,
+                "id": item.teacher_id,
+                "name": full_name(item.teacher),
+                # приглашение заводит учётку сразу, поэтому ведущий у курса
+                # бывает и такой, который ещё ни разу не входил
+                "arrived": item.teacher.last_login is not None,
             }
-            for item in course.pending_invitations.all()
-            if item.kind == User.Kind.TEACHER and item.accepted_at is None
+            for item in course.assignments.all()
         ]
 
     def get_fields(self):
@@ -817,6 +797,9 @@ class CourseStudentSerializer(serializers.ModelSerializer):
     student_email = serializers.CharField(source="student.email", read_only=True)
     course_name = serializers.CharField(source="course.name", read_only=True)
     active = serializers.BooleanField(source="is_active", read_only=True)
+    # «ещё не входил» — не своё поле, а `last_login`: он пуст ровно до
+    # первого входа и ничего для этого не требует
+    arrived = serializers.SerializerMethodField()
 
     class Meta:
         model = CourseStudent
@@ -828,6 +811,7 @@ class CourseStudentSerializer(serializers.ModelSerializer):
             "student_email",
             "course_name",
             "active",
+            "arrived",
             "created_at",
             "removed_at",
         )
@@ -839,6 +823,9 @@ class CourseStudentSerializer(serializers.ModelSerializer):
 
     def get_student_name(self, row) -> str:
         return full_name(row.student)
+
+    def get_arrived(self, row) -> bool:
+        return row.student.last_login is not None
 
     def get_fields(self):
         fields = super().get_fields()

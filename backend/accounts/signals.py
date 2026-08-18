@@ -23,7 +23,17 @@ def join_invited_school(sender, request, user, sociallogin=None, **kwargs):
     verified = [
         address.email for address in sociallogin.email_addresses if address.verified
     ]
-    school_services.accept_for(user, verified)
+    # Имя отдаём туда же: до первого входа в полях лежит ярлык, которым
+    # администратор назвал человека при вводе, и вытеснить его должно
+    # настоящее имя. Решает это `accept`, потому что только он знает, что
+    # вход первый; соседний сигнал ниже дополняет лишь пустые поля, а
+    # порядок сигналов нам не подвластен.
+    data = sociallogin.account.extra_data
+    names = {
+        "first_name": data.get("given_name", ""),
+        "last_name": data.get("family_name", ""),
+    }
+    school_services.accept_for(user, verified, names)
 
 
 @receiver(user_logged_in)

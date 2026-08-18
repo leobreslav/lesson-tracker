@@ -90,11 +90,20 @@ class SeedTests(TestCase):
         from schools.management.commands.seed_demo import STUDENTS
 
         enrolments = CourseStudent.objects.all()
+        # приглашённый теперь тоже зачислен: учётка заводится сразу, и
+        # третье состояние отличается не отсутствием строки, а пустым
+        # `last_login`
         self.assertEqual(
-            enrolments.filter(removed_at__isnull=True).count(), len(STUDENTS) - 1
+            enrolments.filter(removed_at__isnull=True).count(), len(STUDENTS)
         )
         self.assertEqual(enrolments.filter(removed_at__isnull=False).count(), 1)
         self.assertGreater(len(STUDENTS), 10, "класс из пяти человек — не класс")
+        self.assertEqual(
+            enrolments.filter(
+                removed_at__isnull=True, student__last_login__isnull=True
+            ).count(),
+            1,
+        )
         self.assertEqual(
             Invitation.objects.filter(kind="student", accepted_at__isnull=True).count(),
             1,

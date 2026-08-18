@@ -141,7 +141,7 @@ class RosterTestCase(APITestCase):
 
 
 class PreviewTests(RosterTestCase):
-    def test_it_names_five_outcomes(self):
+    def test_it_names_every_outcome(self):
         known = self.student("known@school.ru")
         back = self.student("back@school.ru")
         already = self.student("already@school.ru")
@@ -162,8 +162,8 @@ class PreviewTests(RosterTestCase):
         ).json()
 
         self.assertEqual(
-            {key: answer[key] for key in ("enrol", "restore", "already", "invite", "blocked")},
-            {"enrol": 1, "restore": 1, "already": 1, "invite": 1, "blocked": 1},
+            {key: answer[key] for key in ("enrol", "restore", "already", "new", "blocked")},
+            {"enrol": 1, "restore": 1, "already": 1, "new": 1, "blocked": 1},
         )
         self.assertEqual(answer["rows"], 5)
 
@@ -197,7 +197,7 @@ class PreviewTests(RosterTestCase):
 
         self.assertEqual(answer.status_code, 200)
         self.assertEqual(answer.json()["errors"][0]["code"], "roster_no_email")
-        self.assertEqual(answer.json()["invite"], 1)
+        self.assertEqual(answer.json()["new"], 1)
 
     def test_the_name_of_an_existing_account_wins_over_the_pasted_one(self):
         person = self.student("known@school.ru")
@@ -230,7 +230,7 @@ class PreviewTests(RosterTestCase):
 
 
 class EnrolTests(RosterTestCase):
-    def test_it_enrols_restores_and_invites_in_one_go(self):
+    def test_it_enrols_restores_and_creates_in_one_go(self):
         known = self.student("known@school.ru")
         back = self.student("back@school.ru")
         remove_from_course(enrol(back, self.course))
@@ -240,31 +240,40 @@ class EnrolTests(RosterTestCase):
         ).json()
 
         self.assertEqual(
-            (answer["enrol"], answer["restore"], answer["invite"]), (1, 1, 1)
+            (answer["enrol"], answer["restore"], answer["new"]), (1, 1, 1)
         )
+        # новичок зачислен наравне с остальными: учётку ему завели тут же
         self.assertEqual(
             set(
                 CourseStudent.objects.filter(
                     course=self.course, removed_at__isnull=True
                 ).values_list("student__email", flat=True)
             ),
-            {known.email, back.email},
+            {known.email, back.email, "newcomer@school.ru"},
         )
 
+        person = User.objects.get(email="newcomer@school.ru")
+        self.assertTrue(person.is_student)
+        self.assertEqual(person.school, self.school)
+        self.assertIsNone(person.last_login, "он ещё ни разу не входил")
+        self.assertEqual(person.first_name, "Пётр Новый", "ярлык до первого входа")
+
+        # билет остался следом в истории
         invitation = Invitation.objects.get(email="newcomer@school.ru")
         self.assertEqual(invitation.kind, Kind.STUDENT)
         self.assertEqual(invitation.name, "Пётр Новый")
-        self.assertEqual(list(invitation.courses.all()), [self.course])
 
-    def test_a_second_course_lands_in_the_same_invitation(self):
+    def test_a_second_course_reuses_the_same_person(self):
+        """Второй курс — второе зачисление, а не второй человек."""
         other = make_course(self.school, year=self.course.year, name="9А")
 
         self.enrol_all("newcomer@school.ru")
         self.enrol_all("newcomer@school.ru", course=other)
 
-        invitation = Invitation.objects.get(email="newcomer@school.ru")
+        self.assertEqual(User.objects.filter(email="newcomer@school.ru").count(), 1)
+        person = User.objects.get(email="newcomer@school.ru")
         self.assertEqual(
-            set(invitation.courses.values_list("name", flat=True)),
+            set(person.enrolments.values_list("course__name", flat=True)),
             {self.course.name, other.name},
         )
 
@@ -274,8 +283,8 @@ class EnrolTests(RosterTestCase):
 
         answer = self.enrol_all("teacher@school.ru\nnewcomer@school.ru").json()
 
-        self.assertEqual((answer["blocked"], answer["invite"]), (1, 1))
-        self.assertTrue(Invitation.objects.filter(email="newcomer@school.ru").exists())
+        self.assertEqual((answer["blocked"], answer["new"]), (1, 1))
+        self.assertTrue(User.objects.filter(email="newcomer@school.ru").exists())
 
     def test_a_line_it_cannot_read_cancels_the_whole_paste(self):
         """Половина применённого списка хуже неприменённого."""
@@ -291,17 +300,27 @@ class EnrolTests(RosterTestCase):
         self.assertEqual(answer.status_code, 400)
         self.assertEqual(answer.json()["code"], "roster_empty")
 
-    def test_the_invitation_enrols_at_the_first_sign_in(self):
+    def test_the_first_sign_in_only_stamps_the_ticket(self):
+        """
+        Вход больше ничего не раздаёт: школа, вид и курс уже стоят.
+
+        Раньше здесь применялось всё сразу — и это была единственная точка,
+        где человек становился участником. Теперь она только помечает, что
+        учётку забрали.
+        """
         from .services import accept, pending_for
 
         self.enrol_all("newcomer@school.ru")
-        newcomer = User.objects.create_user(email="newcomer@school.ru")
+        newcomer = User.objects.get(email="newcomer@school.ru")
+        self.assertEqual(newcomer.school, self.school)
 
-        accept(newcomer, pending_for("newcomer@school.ru"))
+        invitation = pending_for("newcomer@school.ru")
+        self.assertTrue(accept(newcomer, invitation))
 
         newcomer.refresh_from_db()
+        invitation.refresh_from_db()
         self.assertEqual(newcomer.kind, Kind.STUDENT)
-        self.assertEqual(newcomer.school, self.school)
+        self.assertIsNotNone(invitation.accepted_at)
         self.assertTrue(
             CourseStudent.objects.filter(
                 course=self.course, student=newcomer, removed_at__isnull=True
@@ -318,139 +337,105 @@ class EnrolTests(RosterTestCase):
         self.assertEqual(Invitation.objects.count(), 0)
 
 
-class ConflictMarkTests(RosterTestCase):
+class OneSchoolPerAddressTests(RosterTestCase):
     """
-    Приглашение, которое уже никогда не сработает, помечается на чтении.
+    Случая «два приглашения в разные школы» больше не бывает.
 
-    Проверка на вводе всё, кроме одного случая, закрывает: два приглашения в
-    разные школы, написанные до первого входа. Побеждает первый вход.
+    Он был единственным, который нельзя было проверить на вводе: пока
+    приглашение было записанным адресом, вторая школа могла записать тот же
+    адрес, а побеждал первый вход. Приглашение висело вечно и молча,
+    поэтому его помечали на чтении полем `conflict`.
+
+    Теперь приглашение заводит учётку, адрес у неё уникален, и второй
+    записи просто не получится — отказ приходит там, где ошибку и делают.
     """
 
-    def test_an_address_that_went_to_another_school_is_marked(self):
+    def test_a_second_school_is_refused_at_the_door(self):
         self.enrol_all("newcomer@school.ru")
-        # тем временем человек вошёл и оказался в другой школе
         other = make_school("Другая")
-        make_user(other, "newcomer@school.ru", student=True)
+        outsider = make_user(other, "boss@other.ru", admin=True)
+        sign_in(self.client, outsider)
 
-        rows = self.client.get(reverse("invitation-list")).json()
+        answer = self.client.post(
+            reverse("invitation-list"),
+            {"email": "newcomer@school.ru", "kind": "student"},
+            format="json",
+        )
 
-        self.assertEqual(rows[0]["conflict"], "already_member")
-
-    def test_an_ordinary_invitation_is_not_marked(self):
-        self.enrol_all("newcomer@school.ru")
-
-        rows = self.client.get(reverse("invitation-list")).json()
-
-        self.assertIsNone(rows[0]["conflict"])
-
-    def test_the_list_can_be_narrowed_to_one_course(self):
-        other = make_course(self.school, year=self.course.year, name="9А")
-        self.enrol_all("here@school.ru")
-        self.enrol_all("there@school.ru", course=other)
-
-        rows = self.client.get(
-            reverse("invitation-list"), {"course": self.course.pk, "kind": "student"}
-        ).json()
-
-        self.assertEqual([row["email"] for row in rows], ["here@school.ru"])
+        self.assertEqual(answer.status_code, 400)
+        self.assertEqual(answer.json()["code"], "already_member")
+        self.assertEqual(User.objects.filter(email="newcomer@school.ru").count(), 1)
 
 
-class PendingTeacherApiTests(SchoolTestMixin, APITestCase):
+class InvitedTeacherApiTests(SchoolTestMixin, APITestCase):
     """
-    Приглашённому учителю курс поручают через само приглашение.
+    Приглашение заводит учителя целиком — до его первого входа.
 
-    Учётки ещё нет, назначению не на кого встать — а нагрузку раздают уже
-    сейчас. Поэтому у приглашения правятся курсы, и карточка курса
-    показывает такого человека отдельной плашкой: место занято, но пока
-    обещанием.
+    Раньше учётки не было, назначению не на кого было встать, и курс
+    приходилось нести в самом приглашении до первого входа. Теперь человек
+    появляется в момент ввода адреса: его видно в списках, ему можно
+    поручить курс обычной таблицей, и отличает его только пустой
+    `last_login`.
     """
 
     def setUp(self):
         super().setUp()
         self.year = make_year(self.school)
         self.course = make_course(self.school, self.year, "9Б Алгебра")
-        self.invitation = Invitation.objects.create(
-            school=self.school,
-            email="newcomer@example.com",
-            name="Новенький",
-            kind="teacher",
-            created_by=self.admin,
-        )
         self.client.force_authenticate(self.admin)
 
-    def attach(self, courses):
-        return self.client.patch(
-            reverse("invitation-detail", args=[self.invitation.pk]),
-            {"courses": courses},
+    def invite(self, email="newcomer@example.com", **extra):
+        return self.client.post(
+            reverse("invitation-list"),
+            {"email": email, "name": "Новенький", "kind": "teacher", **extra},
             format="json",
         )
 
-    def test_a_course_is_attached_to_an_invitation(self):
-        response = self.attach([self.course.pk])
+    def test_inviting_creates_the_account(self):
+        answer = self.invite()
 
-        self.assertEqual(response.status_code, 200, response.content)
-        self.assertEqual(
-            [course.pk for course in self.invitation.courses.all()], [self.course.pk]
+        self.assertEqual(answer.status_code, 201, answer.content)
+        person = User.objects.get(email="newcomer@example.com")
+        self.assertEqual(person.school, self.school)
+        self.assertFalse(person.is_student)
+        self.assertIsNone(person.last_login)
+        self.assertEqual(person.first_name, "Новенький", "ярлык до первого входа")
+        self.assertFalse(person.has_usable_password(), "войти можно только Google")
+
+    def test_the_account_shows_up_among_the_members_as_not_yet_arrived(self):
+        self.invite()
+
+        rows = self.client.get(reverse("member-list")).json()
+
+        row = next(item for item in rows if item["email"] == "newcomer@example.com")
+        self.assertFalse(row["arrived"])
+        self.assertTrue(
+            all(item["arrived"] for item in rows if item["email"] != row["email"]),
+            "у остальных пометки ожидания быть не должно",
         )
 
-    def test_the_course_card_names_who_is_expected(self):
-        self.attach([self.course.pk])
+    def test_the_course_is_handed_over_by_the_ordinary_assignment(self):
+        self.invite()
+        person = User.objects.get(email="newcomer@example.com")
 
-        response = self.client.get(reverse("course-detail", args=[self.course.pk]))
-
-        self.assertEqual(response.status_code, 200, response.content)
-        self.assertEqual(
-            response.json()["pending_teachers"],
-            [
-                {
-                    "invitation": self.invitation.pk,
-                    "name": "Новенький",
-                    "email": "newcomer@example.com",
-                }
-            ],
-        )
-
-    def test_an_accepted_invitation_stops_being_pending(self):
-        """Вошёл — плашка ожидания уходит, на её место встаёт назначение."""
-        self.attach([self.course.pk])
-        self.invitation.accepted_at = timezone.now()
-        self.invitation.save(update_fields=["accepted_at"])
-
-        response = self.client.get(reverse("course-detail", args=[self.course.pk]))
-
-        self.assertEqual(response.json()["pending_teachers"], [])
-
-    def test_a_student_invitation_is_not_a_pending_teacher(self):
-        self.invitation.kind = "student"
-        self.invitation.save(update_fields=["kind"])
-        self.attach([self.course.pk])
-
-        response = self.client.get(reverse("course-detail", args=[self.course.pk]))
-
-        self.assertEqual(response.json()["pending_teachers"], [])
-
-    def test_the_address_is_not_editable(self):
-        """Адрес — то, за что поручились: сменить его значит выписать другое."""
-        response = self.client.patch(
-            reverse("invitation-detail", args=[self.invitation.pk]),
-            {"email": "someone.else@example.com"},
+        answer = self.client.post(
+            reverse("courseassignment-list"),
+            {"course": self.course.pk, "teacher": person.pk},
             format="json",
         )
 
-        self.assertEqual(response.status_code, 200, response.content)
-        self.invitation.refresh_from_db()
-        self.assertEqual(self.invitation.email, "newcomer@example.com")
+        self.assertEqual(answer.status_code, 201, answer.content)
+        self.assertEqual(self.course.assignments.get().teacher, person)
 
-    def test_detaching_is_the_same_patch_with_the_course_left_out(self):
-        self.attach([self.course.pk])
+    def test_the_admin_role_comes_with_the_account(self):
+        self.invite(email="boss@example.com", is_school_admin=True)
 
-        self.attach([])
+        self.assertTrue(User.objects.get(email="boss@example.com").is_school_admin)
 
-        self.assertFalse(self.invitation.courses.exists())
-
-    def test_a_teacher_without_the_role_cannot_hand_out_load(self):
+    def test_a_teacher_without_the_role_cannot_invite(self):
         self.client.force_authenticate(self.user)
 
-        response = self.attach([self.course.pk])
+        answer = self.invite()
 
-        self.assertEqual(response.status_code, 403)
+        self.assertEqual(answer.status_code, 403)
+        self.assertFalse(User.objects.filter(email="newcomer@example.com").exists())

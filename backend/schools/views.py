@@ -195,6 +195,19 @@ class SchoolViewSet(viewsets.ModelViewSet):
             invitation.is_school_admin = True
             invitation.save(update_fields=["is_school_admin"])
 
+        # Учётка заводится сразу, как и у обычного приглашения: у новой школы
+        # иначе не существует никого, кем её можно было бы наполнить до
+        # первого входа администратора.
+        person = User.objects.filter(email__iexact=email).first()
+        if person is None:
+            services.provision(
+                school, email, kind=User.Kind.TEACHER, is_admin=True
+            )
+        elif person.school_id is None:
+            person.school = school
+            person.is_school_admin = True
+            person.save(update_fields=["school", "is_school_admin"])
+
         return Response(
             InvitationSerializer(invitation).data, status=201 if created else 200
         )
@@ -348,7 +361,6 @@ class MemberViewSet(
 class InvitationViewSet(
     mixins.ListModelMixin,
     mixins.CreateModelMixin,
-    mixins.UpdateModelMixin,
     mixins.DestroyModelMixin,
     viewsets.GenericViewSet,
 ):
@@ -362,9 +374,9 @@ class InvitationViewSet(
     Deleting one only withdraws an invitation nobody has used yet; it does not
     remove a member who already joined.
 
-    Правится в приглашении ровно одно — курсы: нагрузку раздают отдельно от
-    того, кого позвали, и чаще всего позже. Всё остальное read-only, см.
-    `InvitationSerializer.get_fields`.
+    Править в приглашении нечего: адрес, вид и роль — то, за что поручились,
+    когда его писали, а курсы теперь висят на самой учётке, которую оно
+    завело.
     """
 
     serializer_class = InvitationSerializer
@@ -372,9 +384,7 @@ class InvitationViewSet(
     permission_classes = [IsAuthenticated, IsSchoolMember, IsTeacher, IsSchoolAdmin]
 
     def get_queryset(self):
-        queryset = Invitation.objects.filter(
-            school_id=self.request.user.school_id
-        ).prefetch_related("courses")
+        queryset = Invitation.objects.filter(school_id=self.request.user.school_id)
 
         # два списка, а не один: во вкладке учителей ученикам делать нечего,
         # а в составе курса — учителям
@@ -382,25 +392,23 @@ class InvitationViewSet(
         if kind:
             queryset = queryset.filter(kind=kind)
 
-        course = self.request.query_params.get("course")
-        if course:
-            queryset = (
-                queryset.filter(courses=course)
-                if course.isdigit()
-                else queryset.none()
-            )
-
         return queryset
 
-    def get_serializer_context(self):
-        context = super().get_serializer_context()
-        if self.action == "list":
-            # пометка «этот адрес уже в другой школе» — одним запросом на
-            # весь список, а не по запросу на строку
-            context["conflicts"] = services.conflicting_addresses(self.get_queryset())
-        return context
-
     def perform_create(self, serializer):
-        serializer.save(
-            school=self.request.user.school, created_by=self.request.user
+        """
+        Приглашение заводит человека, а не только строку.
+
+        Учётка появляется сразу и целиком: школа, вид, роль. Дальше её
+        назначают на курсы и записывают в курсы обычными таблицами — то
+        есть подготовить всё можно до того, как человек впервые войдёт.
+        Войти в неё при этом нельзя ничем, кроме Google с этим же адресом.
+        """
+        school = self.request.user.school
+        invitation = serializer.save(school=school, created_by=self.request.user)
+        services.provision(
+            school,
+            invitation.email,
+            kind=invitation.kind,
+            name=invitation.name,
+            is_admin=invitation.is_school_admin,
         )

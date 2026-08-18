@@ -2,10 +2,8 @@ import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import Modal from './Modal'
 import {
-  deleteInvitation,
   enrolRoster,
   enrolStudent,
-  fetchInvitations,
   fetchStudents,
   previewRoster,
   removeStudent,
@@ -32,21 +30,21 @@ const PROBLEM_LIMIT = 5
 export default function RosterDialog({ course, onClose, onChanged }) {
   const { t } = useTranslation()
   const [rows, setRows] = useState(null)
-  const [waiting, setWaiting] = useState([])
   const [text, setText] = useState('')
   const [preview, setPreview] = useState(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
 
+  /*
+   * Список один, а не два.
+   *
+   * Ожидающие приглашения стояли отдельным списком, потому что учётки у
+   * них не было и зачислением это не являлось. Приглашение заводит учётку
+   * сразу, так что теперь это обычные ученики курса — отличает их только
+   * пометка «ещё не входил».
+   */
   const reload = useCallback(
-    () =>
-      Promise.all([
-        fetchStudents(course.id),
-        fetchInvitations({ kind: 'student', course: course.id }),
-      ]).then(([enrolled, invited]) => {
-        setRows(enrolled)
-        setWaiting(invited.filter((item) => !item.accepted))
-      }),
+    () => fetchStudents(course.id).then(setRows),
     [course.id],
   )
 
@@ -85,7 +83,7 @@ export default function RosterDialog({ course, onClose, onChanged }) {
   const past = rows?.filter((row) => !row.active) ?? []
   const problems = preview?.errors ?? []
   const nothingToDo =
-    preview && !preview.enrol && !preview.restore && !preview.invite
+    preview && !preview.enrol && !preview.restore && !preview.new
 
   return (
     <Modal onClose={onClose} className="roster-window" title={t('roster.title', { name: course.name })}>
@@ -110,7 +108,12 @@ export default function RosterDialog({ course, onClose, onChanged }) {
               <ul className="roster enrolled">
                 {active.map((row) => (
                   <li key={row.id}>
-                    <span className="name">{row.student_name}</span>
+                    <span className="name">
+                      {row.student_name}
+                      {row.arrived ? null : (
+                        <span className="tag pending">{t('school.people.waiting')}</span>
+                      )}
+                    </span>
                     <span className="hint">{row.student_email}</span>
                     <button
                       type="button"
@@ -126,43 +129,6 @@ export default function RosterDialog({ course, onClose, onChanged }) {
               </ul>
             )}
           </section>
-
-          {waiting.length > 0 && (
-            <section className="panel">
-              <span className="hint">
-                {t('roster.waiting', { count: waiting.length })}
-              </span>
-              <ul className="roster waiting">
-                {waiting.map((row) => (
-                  <li key={row.id}>
-                    <span className="name">{row.name || row.email}</span>
-                    <span className="hint">
-                      {row.name ? row.email : ''}
-                      {row.conflict && (
-                        <span className="warning">
-                          {' '}
-                          {t(`roster.conflict.${row.conflict}`, {
-                            defaultValue: t(`errors.${row.conflict}`, {
-                              email: row.email,
-                            }),
-                          })}
-                        </span>
-                      )}
-                    </span>
-                    <button
-                      type="button"
-                      className="link"
-                      disabled={busy}
-                      aria-label={t('roster.withdraw', { email: row.email })}
-                      onClick={() => run(() => deleteInvitation(row.id))}
-                    >
-                      ✕
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            </section>
-          )}
 
           {past.length > 0 && (
             <section className="panel">
@@ -229,7 +195,7 @@ export default function RosterDialog({ course, onClose, onChanged }) {
             {t('roster.willDo', {
               enrol: preview.enrol,
               restore: preview.restore,
-              invite: preview.invite,
+              added: preview.new,
               already: preview.already,
             })}
             {preview.blocked > 0 && ` ${t('roster.blocked', { count: preview.blocked })}`}

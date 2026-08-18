@@ -160,24 +160,55 @@ class StudentEnrolmentTests(TestCase):
         self.geometry = make_course(self.school, self.year, "9Б Геометрия")
 
     def invite_student(self, email="newcomer@example.com", courses=()):
+        """
+        Пригласить ученика — то есть завести его и записать на курсы.
+
+        Раньше приглашение было записанным адресом, а зачисление ждало
+        первого входа. Теперь учётка появляется сразу, и «записать на курс»
+        — обычное действие администратора, а не обещание на будущее.
+        """
         invitation = Invitation.objects.create(
             school=self.school, email=email, kind="student", created_by=self.admin
         )
-        invitation.courses.set(courses)
+        # ярлык, которым администратор назвал человека при вводе: имя
+        # учётки приезжает из Google и должно его вытеснить
+        person = services.provision(
+            self.school, email, kind="student", name="Как-то Записали"
+        )
+        for course in courses:
+            services.enrol(person, course, by=self.admin)
         return invitation
 
-    def test_a_student_joins_the_school_and_the_courses(self):
+    def test_a_student_is_enrolled_before_ever_signing_in(self):
+        """Учётка и зачисления есть до первого входа, а не появляются на нём."""
         self.invite_student(courses=[self.algebra, self.geometry])
-
-        google_login()
 
         user = User.objects.get(email="newcomer@example.com")
         self.assertTrue(user.is_student)
         self.assertEqual(user.school, self.school)
+        self.assertIsNone(user.last_login, "«ещё не входил» — это пустой last_login")
         self.assertEqual(
             sorted(row.course.name for row in user.enrolments.all()),
             ["9Б Алгебра", "9Б Геометрия"],
         )
+
+    def test_signing_in_claims_that_very_account(self):
+        """Вход не заводит вторую учётку, а забирает заготовленную."""
+        self.invite_student(courses=[self.algebra])
+        before = User.objects.get(email="newcomer@example.com")
+
+        response = google_login()
+
+        self.assertEqual(response.status_code, 200, response.content)
+        self.assertEqual(User.objects.filter(email="newcomer@example.com").count(), 1)
+        after = User.objects.get(pk=before.pk)
+        self.assertEqual(after.school, self.school)
+        self.assertIsNotNone(after.last_login)
+        # имя из Google вытесняет ярлык, которым администратор назвал
+        # человека: обычный сигнал дополняет только пустые поля, поэтому
+        # решение принимает `accept` — он один знает, что вход первый
+        self.assertEqual(after.first_name, "Мария")
+        self.assertEqual(after.last_name, "Иванова")
 
     def test_a_removed_student_does_not_come_back_by_signing_in(self):
         """
@@ -265,10 +296,10 @@ class TeacherLoadTests(TestCase):
     """
     Курс поручают приглашённому — до того, как он впервые вошёл.
 
-    Нагрузку раздают в тот же день, когда вписывают адреса, а первого входа
-    ждут неделями. Учётки в этот момент ещё нет, значит и назначения быть не
-    может: курс ждёт человека в самом приглашении, тем же полем, которым
-    ученика ждёт зачисление.
+    Раньше поручить было нечего: `CourseAssignment` некуда поставить, пока
+    нет учётки, и курс приходилось нести в самом приглашении до первого
+    входа. Теперь учётка появляется в момент ввода адреса, и назначение —
+    обычная строка обычной таблицы.
     """
 
     def setUp(self):
@@ -279,70 +310,53 @@ class TeacherLoadTests(TestCase):
         self.geometry = make_course(self.school, self.year, "9Б Геометрия")
 
     def invite_teacher(self, email="newcomer@example.com", courses=()):
-        invitation = Invitation.objects.create(
+        Invitation.objects.create(
             school=self.school, email=email, kind="teacher", created_by=self.admin
         )
-        invitation.courses.set(courses)
-        return invitation
+        person = services.provision(self.school, email, kind="teacher")
+        for course in courses:
+            CourseAssignment.objects.create(course=course, teacher=person)
+        return person
 
-    def test_a_teacher_gets_the_courses_on_the_first_sign_in(self):
-        self.invite_teacher(courses=[self.algebra, self.geometry])
+    def test_the_courses_are_led_before_the_first_sign_in(self):
+        person = self.invite_teacher(courses=[self.algebra, self.geometry])
 
-        google_login()
-
-        user = User.objects.get(email="newcomer@example.com")
-        self.assertFalse(user.is_student)
+        self.assertIsNone(person.last_login)
         self.assertEqual(
-            sorted(item.course.name for item in user.course_assignments.all()),
+            sorted(item.course.name for item in person.course_assignments.all()),
             ["9Б Алгебра", "9Б Геометрия"],
         )
 
-    def test_a_course_taken_meanwhile_stays_with_the_one_who_took_it(self):
-        """
-        Ведущий у курса один, а между приглашением и входом проходят дни.
-
-        Побеждает решение администратора, а не пожелтевшее приглашение — и
-        вход при этом не падает отказом.
-        """
-        colleague = make_user(self.school, "colleague@example.com")
-        CourseAssignment.objects.create(course=self.algebra, teacher=colleague)
-        self.invite_teacher(courses=[self.algebra, self.geometry])
+    def test_signing_in_claims_the_account_with_its_load(self):
+        person = self.invite_teacher(courses=[self.algebra])
 
         response = google_login()
 
         self.assertEqual(response.status_code, 200, response.content)
-        self.assertEqual(self.algebra.assignments.get().teacher, colleague)
-        user = User.objects.get(email="newcomer@example.com")
-        self.assertEqual(
-            [item.course.name for item in user.course_assignments.all()],
-            ["9Б Геометрия"],
-        )
+        self.assertEqual(User.objects.filter(email=person.email).count(), 1)
+        person.refresh_from_db()
+        self.assertIsNotNone(person.last_login)
+        self.assertEqual(person.course_assignments.count(), 1)
 
-    def test_the_invitation_is_spent_once(self):
-        """Сняли с курса — второй вход не возвращает его обратно."""
+    def test_a_teacher_invitation_does_not_make_a_student(self):
+        self.invite_teacher()
+
+        google_login()
+
+        self.assertFalse(User.objects.get(email="newcomer@example.com").is_student)
+
+    def test_the_invitation_is_stamped_once(self):
+        """Билет расходуется однажды: второй вход ничего не переигрывает."""
         self.invite_teacher(courses=[self.algebra])
         google_login()
-        user = User.objects.get(email="newcomer@example.com")
-        user.course_assignments.all().delete()
+        invitation = Invitation.objects.get(email="newcomer@example.com")
+        stamped = invitation.accepted_at
+        self.assertIsNotNone(stamped)
 
         google_login()
 
-        self.assertFalse(user.course_assignments.exists())
-
-    def test_a_student_invitation_does_not_hand_out_courses_to_lead(self):
-        invitation = Invitation.objects.create(
-            school=self.school,
-            email="pupil@example.com",
-            kind="student",
-            created_by=self.admin,
-        )
-        invitation.courses.set([self.algebra])
-
-        google_login({"email": "pupil@example.com"})
-
-        user = User.objects.get(email="pupil@example.com")
-        self.assertFalse(CourseAssignment.objects.filter(teacher=user).exists())
-        self.assertEqual(user.enrolments.count(), 1)
+        invitation.refresh_from_db()
+        self.assertEqual(invitation.accepted_at, stamped)
 
 
 class SchoolModelTests(TestCase):

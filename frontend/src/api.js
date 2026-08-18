@@ -225,15 +225,6 @@ export const fetchInvitations = (params = {}) =>
 export const createInvitation = (fields) =>
   request('/api/school/invitations/', { method: 'POST', body: fields })
 
-/**
- * Курсы, которые ждут приглашённого к первому входу.
- *
- * Правится в приглашении только это: адрес и вид — то, за что поручились,
- * когда его писали, а нагрузку раздают отдельно и позже.
- */
-export const setInvitationCourses = (id, courses) =>
-  request(`/api/school/invitations/${id}/`, { method: 'PATCH', body: { courses } })
-
 export const deleteInvitation = (id) =>
   request(`/api/school/invitations/${id}/`, { method: 'DELETE' })
 

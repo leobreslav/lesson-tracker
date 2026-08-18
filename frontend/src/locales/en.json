@@ -665,11 +665,8 @@
       "unassign": "Take {{name}} off this course",
       "assignLabel": "Teacher for {{name}}",
       "pickTeacher": "teacher…",
-    "invitedGroup": "Invited, has not signed in yet",
     "assignAction": "Assign the lead teacher of {{name}}",
     "methodistAction": "Assign the methodist of {{name}}",
-    "pendingName": "{{name}} — awaiting first sign-in",
-    "pendingHint": "The course is waiting for {{email}}: it becomes theirs the first time they sign in. If somebody else is put on it before that, they keep it.",
       "needGrades": "There are no year groups yet — add them in «Reference lists».",
       "methodist": "Approves the plan:",
       "noMethodist": "nobody approves the plan yet",
@@ -689,6 +686,8 @@
       "emailPlaceholder": "Email address",
       "inviteAsAdmin": "invite as an administrator",
       "invite": "Invite",
+    "waiting": "has not signed in yet",
+    "waitingHint": "The account is ready and waiting: it becomes theirs the first time they sign in through Google on this address.",
       "pending": "waiting for the first sign-in",
       "withdraw": "Withdraw the invitation"
     },
@@ -930,9 +929,6 @@
     "enrolled_other": "{{count}} students",
     "nobody": "Nobody is enrolled yet.",
     "remove": "Take {{name}} off the course",
-    "waiting_one": "{{count}} invitation waiting for a first sign-in",
-    "waiting_other": "{{count}} invitations waiting for a first sign-in",
-    "withdraw": "Withdraw the invitation for {{email}}",
     "past_one": "{{count}} person is no longer in the course",
     "past_other": "{{count}} people are no longer in the course",
     "restore": "Bring back",
@@ -942,15 +938,11 @@
     "check": "Check",
     "enrol": "Enrol",
     "refused": "The paste cannot be applied:",
-    "willDo": "Will enrol: {{enrol}} · bring back: {{restore}} · invite: {{invite}} · already enrolled: {{already}}.",
+    "willDo": "Will enrol: {{enrol}} · bring back: {{restore}} · add: {{added}} · already enrolled: {{already}}.",
     "blocked_one": "{{count}} address is taken.",
     "blocked_other": "{{count}} addresses are taken.",
     "duplicates_one": "{{count}} repeat collapsed.",
-    "duplicates_other": "{{count}} repeats collapsed.",
-    "conflict": {
-      "already_member": "this address is already in another school",
-      "email_other_kind": "this address belongs to a teacher"
-    }
+    "duplicates_other": "{{count}} repeats collapsed."
   },
   "works": {
     "title": "Assignments in this course",
@@ -1059,6 +1051,8 @@
     "openLesson": "Open the lesson"
   },
   "table": {
+    "waiting_one": "{{count}} answer waiting",
+    "waiting_other": "{{count}} answers waiting",
     "open": "Check",
     "student": "Student",
     "total": "correct",
@@ -1067,8 +1061,6 @@
     "questions": "The questions",
     "checking": "Checking the question",
     "noAnswers": "Nobody has answered this question yet.",
-    "waiting_one": "{{count}} answer waiting",
-    "waiting_other": "{{count}} answers waiting",
     "markCorrect": "Mark as correct (press again to clear)",
     "markWrong": "Mark as wrong (press again to clear)",
     "newAnswer": "The student has sent a new answer while you were reading.",

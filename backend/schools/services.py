@@ -1,15 +1,27 @@
 """
-Joining a school, and being enrolled into its courses.
+Приём в школу и зачисление на курсы.
 
-The only way in is an invitation an administrator wrote down in advance,
-matched against the address the provider itself verified.
+**Приглашение заводит учётку сразу.** Раньше оно было записанным адресом,
+который ждал первого входа, — и всё, что администратор хотел сделать с
+человеком до его появления, приходилось выражать в самом приглашении:
+курсы ученика оно уже носило, за курсами учителя пришлось бы носить и
+роли, и замены, и всё остальное. Это второй вид личности, протянутый через
+весь домен, — ровно то, от чего проект уходил, когда план был личным.
 
-**Приглашение расходуется однажды.** Оно отвечает на вопрос «кто этот
-человек и куда его записать», и отвечает при первом появлении. Дальше
-состав курса — прямое действие: если бы приглашение доносило курсы при
-каждом входе, снятый с курса ученик возвращался бы туда сам, стоило ему
-войти. Отсюда правило вставки: **есть учётка — зачисляем немедленно, нет —
-записываем в приглашение и ждём**.
+Поэтому теперь «пригласить» значит «завести человека»: строка `User`
+появляется в момент ввода адреса, со школой, видом и ролью, и с этой
+минуты её можно назначать, зачислять и ставить методистом обычными
+таблицами. Пароля у неё нет, войти в неё нельзя ничем, кроме Google с
+**этим** адресом: замок остался тот же — `SocialAccountAdapter` пускает
+только адреса, подтверждённые провайдером.
+
+Само приглашение остаётся билетом и следом в истории: кто кого позвал,
+когда и забрал ли человек учётку (`accepted_at`).
+
+Проверено разведкой на живом allauth: заготовку подхватывает вход и при
+отсутствии `EmailAddress`, и при неподтверждённой записи — учётка остаётся
+одна, школа цела. Поэтому подтверждённую запись адреса мы себе **не
+выписываем**: это было бы наше утверждение о проверке, которой не было.
 """
 
 from accounts.models import Kind
@@ -38,46 +50,97 @@ def pending_for(email: str):
     return (
         Invitation.objects.filter(email__iexact=email.strip(), accepted_at__isnull=True)
         .select_related("school")
-        .prefetch_related("courses")
         .order_by("created_at")
         .first()
     )
 
 
+def provision(school, email: str, *, kind: str, name: str = "", is_admin: bool = False):
+    """
+    Завести человека, которого ещё не было.
+
+    Учётка полноценная с первой минуты: её видно в списках, ей можно
+    поручить курс, записать на курс и назначить методистом — то есть
+    подготовить всё до того, как человек впервые войдёт.
+
+    Пароля нет и быть не может: `set_unusable_password` плюс отсутствие
+    формы входа по паролю в интерфейсе. Единственная дверь — Google с этим
+    же адресом, и открывает её `SocialAccountAdapter`, который принимает
+    только подтверждённые провайдером адреса. Заготовку заберёт тот, кто
+    действительно владеет почтой, и никто другой.
+
+    **`EmailAddress` мы не заводим.** Менеджер (`UserManager._create_user`)
+    делает такую запись подтверждённой, и оправдано это тем, что учётки из
+    командной строки вписывает человек с доступом к шеллу. Здесь адрес
+    вводит администратор в веб-форму, и подтверждать его нам нечем; вход
+    от этого не страдает — проверено.
+
+    Имя из ввода кладётся ярлыком в `first_name` целиком, а не разбирается
+    на имя и фамилию: порядок этой пары не определён ни в русском списке,
+    ни в английском. При первом входе Google его перезаписывает — см.
+    `accept`.
+    """
+    user = User(
+        email=email.strip().lower(),
+        school=school,
+        kind=kind,
+        is_school_admin=is_admin,
+        first_name=(name or "")[:150],
+    )
+    user.set_unusable_password()
+    user.save()
+    return user
+
+
 @transaction.atomic
-def accept(user, invitation) -> bool:
+def accept(user, invitation, names=None) -> bool:
     """
-    Attach the user to the school and stamp the invitation.
+    Отметить, что человек забрал свою учётку.
 
-    Someone who already belongs to a school is left alone: a second
-    invitation must not silently move a teacher, with their whole schedule,
-    into another building.
+    Раньше здесь делалась вся работа: приём в школу, вид, роль и курсы из
+    приглашения. Теперь всё это уже сделано — приглашение завело учётку в
+    момент ввода адреса, — и на первый вход остаётся пометка и имя.
 
-    Вид пользователя проставляется здесь и только здесь: адрес становится
-    учительским или ученическим в момент, когда за него поручились
-    приглашением, и больше не меняется.
+    Учётку, которая уже в **другой** школе, приглашение не трогает: второе
+    приглашение не должно молча переносить учителя со всем расписанием в
+    чужое здание. Это тот же запрет, что стоял тут всегда, только теперь
+    он сравнивает школы, а не проверяет, есть ли школа вообще.
+
+    Человека, у которого школы нет вовсе (вошёл сам, приглашения ему не
+    писали, а потом написали), приглашение принимает: это и есть случай
+    «администратор вписал адрес после того, как человек уже пытался войти».
+
+    `names` — то, что отдал Google. Имя перезаписывается **только здесь**,
+    в момент забирания: до него в полях лежит ярлык, которым администратор
+    назвал человека при вводе, и настоящее имя должно его вытеснить.
+    Обычный сигнал этого сделать не может — он дополняет только пустые
+    поля, — а порядок сигналов нам не подвластен, поэтому решение принято
+    там, где точно известно, что вход первый.
     """
-    if user.school_id is not None:
+    if user.school_id is not None and user.school_id != invitation.school_id:
         return False
 
-    user.school = invitation.school
-    user.kind = invitation.kind
-    user.is_school_admin = invitation.is_school_admin
-    user.save(update_fields=["school", "kind", "is_school_admin"])
+    changed = []
+    if user.school_id is None:
+        user.school = invitation.school
+        user.kind = invitation.kind
+        user.is_school_admin = invitation.is_school_admin
+        changed += ["school", "kind", "is_school_admin"]
 
-    # Курсы, названные в приглашении, достаются человеку в первый же вход:
-    # ученика записывают, учителю поручают вести.
-    if invitation.kind == Kind.STUDENT:
-        enrol_all(user, invitation.courses.all(), by=invitation.created_by)
-    else:
-        lead_all(user, invitation.courses.all())
+    for field, value in (names or {}).items():
+        if value:
+            setattr(user, field, value[:150])
+            changed.append(field)
+
+    if changed:
+        user.save(update_fields=changed)
 
     invitation.accepted_at = timezone.now()
     invitation.save(update_fields=["accepted_at"])
     return True
 
 
-def accept_for(user, verified_emails) -> bool:
+def accept_for(user, verified_emails, names=None) -> bool:
     """
     Try every address the provider vouched for.
 
@@ -87,7 +150,7 @@ def accept_for(user, verified_emails) -> bool:
     """
     for email in verified_emails:
         invitation = pending_for(email)
-        if invitation is not None and accept(user, invitation):
+        if invitation is not None and accept(user, invitation, names):
             return True
     return False
 
@@ -117,34 +180,6 @@ def enrol(student, course, *, by=None):
 
 def enrol_all(student, courses, *, by=None) -> int:
     return sum(1 for course in courses if enrol(student, course, by=by))
-
-
-# --- нагрузка учителя -----------------------------------------------------------
-
-
-def lead(teacher, course):
-    """
-    Поручить курс учителю — если его ещё никому не поручили.
-
-    Ведущий у курса один (`one_teacher_per_course`), а между приглашением и
-    первым входом проходят дни: за это время администратор мог поставить на
-    курс кого-то другого. Побеждает он, а не пожелтевшее приглашение —
-    поэтому занятый курс молча пропускается, а не отбирается и не роняет
-    вход отказом.
-
-    Кто назначил, здесь не записывается: у `CourseAssignment` такого поля
-    нет вовсе — строка отвечает на вопрос «кто ведёт», а не «кто поручил».
-    """
-    from schedule.models import CourseAssignment
-
-    if CourseAssignment.objects.filter(course=course).exists():
-        return None
-
-    return CourseAssignment.objects.create(course=course, teacher=teacher)
-
-
-def lead_all(teacher, courses) -> int:
-    return sum(1 for course in courses if lead(teacher, course) is not None)
 
 
 def remove_from_course(row) -> None:
@@ -212,34 +247,6 @@ def address_problem(email: str, kind: str, school=None):
     return member_problem(
         User.objects.filter(email__iexact=email).first(), kind, school
     )
-
-
-def conflicting_addresses(invitations) -> dict:
-    """
-    Приглашения, которые уже никогда не сработают: адрес → код причины.
-
-    Проверка на вводе закрывает всё, кроме одного случая: два приглашения в
-    разные школы, написанные до того, как человек впервые вошёл. Побеждает
-    первый вход, второе приглашение висит вечно — и молча. Поэтому оно
-    помечается на чтении, тем же правилом и в один запрос.
-    """
-    rows = list(invitations)
-    people = {
-        user.email.lower(): user
-        for user in User.objects.annotate(key=Lower("email")).filter(
-            key__in=[row.email.lower() for row in rows]
-        )
-    }
-
-    marks = {}
-    for row in rows:
-        if row.accepted_at is not None:
-            continue
-        problem = member_problem(people.get(row.email.lower()), row.kind)
-        if problem is not None:
-            marks[row.email] = problem[0]
-
-    return marks
 
 
 def check_address(email: str, kind: str) -> None:

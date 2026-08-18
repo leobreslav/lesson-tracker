@@ -36,8 +36,10 @@ test('таблица показывает состояние каждой яче
   await signIn(PEOPLE.ivanova)
   await openTable(page, 'Контрольная')
 
+  // пятнадцатый — приглашённый: приглашение заводит учётку сразу, и он
+  // такой же ученик курса, просто ещё ни разу не входивший
   const rows = page.locator('.work-table tbody tr')
-  await expect(rows).toHaveCount(14)
+  await expect(rows).toHaveCount(15)
   // снятая с курса остаётся строкой: её ответы никуда не делись
   await expect(rows.filter({ hasText: 'Ева Морозова' })).toHaveClass(/past/)
 
@@ -133,7 +135,9 @@ test('сводка над таблицей считает то, чего в не
   await expect(card('started')).toContainText('начали')
   await expect(card('started')).toContainText('прошли целиком')
   // знаменатель — один на обе строки и стоит внизу мелким
-  await expect(card('started')).toContainText('13 учеников в курсе')
+  // четырнадцать действующих: тринадцать вошедших плюс приглашённый,
+  // снятая с курса в это число не входит
+  await expect(card('started')).toContainText('14 учеников в курсе')
   await expect(card('unchecked')).not.toContainText('0')
 
   // «на проверку» кликабельна и ведёт в столбец, где эти ответы лежат

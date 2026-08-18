@@ -17,6 +17,7 @@ from datetime import date, timedelta
 
 from django.contrib.auth import get_user_model
 from django.core.files.uploadedfile import SimpleUploadedFile
+from django.utils import timezone
 from rest_framework.authtoken.models import Token
 
 from .models import School
@@ -76,6 +77,11 @@ def make_user(
         is_school_admin=admin,
         is_superuser=root,
         is_staff=root,
+        # человек, который уже входил: приглашение теперь заводит учётку
+        # сразу, и «ещё не входил» — отдельное состояние (`last_login` пуст).
+        # Фикстура по умолчанию изображает обычного участника, а не
+        # приглашённого, иначе пометка ожидания стояла бы у всех подряд
+        last_login=timezone.now(),
     )
 
 
