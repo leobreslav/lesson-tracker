@@ -94,6 +94,7 @@ class Codes:
     PLAN_BEFORE_TAUGHT = "plan_before_taught"
     PLAN_DELETE_TAUGHT = "plan_delete_taught"
     PLAN_BULK_SECTION = "plan_bulk_section"
+    PLAN_NOTHING_TO_UNDO = "plan_nothing_to_undo"
     ROWS_INVALID = "rows_invalid"
     SLOT_MOVE_BREAKS_ORDER = "slot_move_breaks_order"
     SLOT_DELETE_RECORDED = "slot_delete_recorded"

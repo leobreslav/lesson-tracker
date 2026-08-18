@@ -25,7 +25,7 @@ from rest_framework.viewsets import ReadOnlyModelViewSet
 from calendars.models import DayException
 from schedule.models import Course, Slot
 
-from . import approval, diff, progress, services, xlsx
+from . import approval, diff, history, progress, services, xlsx
 from .models import PlanBaseline, PlanNode
 from .serializers import (
     MoveSerializer,
@@ -748,6 +748,11 @@ class PlanNodeViewSet(CourseScopedViewSet):
             self.refuse(parsed.errors)
         mode = self.read_mode(parsed)
 
+        # Снимок до записи, и это самый ценный из всех: `replace` стирает
+        # план целиком, и отменяется он одним нажатием ровно потому, что
+        # снимок снят.
+        self.snapshot(course, f"import_{mode}")
+
         if mode == "sync":
             plan = services.plan_sync(course.pk, parsed.rows)
             if not plan.ok:
@@ -932,6 +937,22 @@ class PlanNodeViewSet(CourseScopedViewSet):
             )
         )
 
+    def snapshot(self, course, action, detail=""):
+        """
+        Снять снимок плана — перед тем, как его изменят.
+
+        Зовётся из каждого пишущего пути **до** самой правки: снимок
+        отвечает на вопрос «как было», а не «как стало». Полноту вызовов
+        сторожит `plans/test_history_wiring.py` — потестовый перечень тут
+        не годится, новый эндпоинт в него никто не обязан дописывать.
+        """
+        return history.take(course, self.request.user, action, detail)
+
+    def perform_update(self, serializer):
+        node = serializer.instance
+        self.snapshot(node.course, "edit", node.title)
+        serializer.save()
+
     def perform_create(self, serializer):
         """
         Новая строка тоже не встаёт перед проведённой.
@@ -945,6 +966,8 @@ class PlanNodeViewSet(CourseScopedViewSet):
         записей больше нет, новая строка приземляется сразу за последней —
         и это законно.
         """
+        self.snapshot(serializer.validated_data["course"], "create")
+
         with transaction.atomic():
             node = serializer.save()
             refuse_if_before_taught(node)
@@ -1015,6 +1038,11 @@ class PlanNodeViewSet(CourseScopedViewSet):
             refuse_if_deleting_taught(node)
 
         parents = {node.parent_id for node in nodes}
+        self.snapshot(
+            course,
+            "delete_batch" if len(nodes) > 1 else "delete",
+            nodes[0].title if len(nodes) == 1 else str(len(nodes)),
+        )
 
         with transaction.atomic():
             PlanNode.objects.filter(pk__in=[node.pk for node in nodes]).delete()
@@ -1022,6 +1050,83 @@ class PlanNodeViewSet(CourseScopedViewSet):
                 services.reindex(course.pk, parent_id)
 
         return Response({"deleted": len(nodes)})
+
+    @action(detail=False, methods=["get"], url_path="history")
+    def plan_history(self, request):
+        """
+        Чем можно отменить — список снимков курса, свежие первыми.
+
+        Отдаётся и то, что нужно кнопке: какое действие последовало за
+        снимком и чего оно коснулось, — иначе «отменить последнее» не
+        сможет назвать себя, а безымянная отмена страшнее, чем полезна.
+        """
+        course = self.requested_course()
+        rows = (
+            history.PlanSnapshot.objects.filter(course=course)
+            .select_related("made_by")
+            .order_by("-made_at", "-id")
+        )
+
+        return Response(
+            {
+                "steps": [
+                    {
+                        "id": item.pk,
+                        "action": item.action,
+                        "detail": item.detail,
+                        "made_at": item.made_at,
+                        "by_lead": item.by_lead,
+                        "who": person(item.made_by),
+                        "mine": item.made_by_id == request.user.pk,
+                    }
+                    for item in rows
+                ]
+            }
+        )
+
+    @action(detail=False, methods=["post"], url_path="undo")
+    def undo(self, request):
+        """
+        Вернуть план к состоянию снимка.
+
+        Без `snapshot` в теле берётся последний — это и есть «отменить
+        последнее действие». С номером — любой из списка, и это же
+        обслуживает откат чужих правок: снимок вмешательства живёт дольше
+        остальных, и восстановить надо тот, что снят **перед** ним.
+
+        Отменить можно и чужое: это не дыра, а смысл. Учитель, у которого в
+        плане поработал администратор, должен уметь вернуть как было —
+        поэтому кнопка называет автора, а не молчит.
+
+        Восстановление проходит те же проверки, что и любая правка плана:
+        очередь записей строгая, и если за это время урок провели, вернуть
+        строку на место иногда уже нельзя. Отказ приходит обычным кодом, а
+        не пятисоткой, и отменяет всё восстановление целиком.
+        """
+        course = self.requested_course(write=True)
+        wanted = request.data.get("snapshot")
+
+        rows = history.PlanSnapshot.objects.filter(course=course)
+        step = (
+            rows.filter(pk=wanted).first()
+            if wanted
+            else rows.order_by("-made_at", "-id").first()
+        )
+        if step is None:
+            api_error(
+                Codes.PLAN_NOTHING_TO_UNDO,
+                "There is nothing to undo: no snapshot of this plan was kept.",
+                field="snapshot",
+            )
+
+        with transaction.atomic():
+            # сам откат — тоже изменение плана, и его тоже надо уметь
+            # отменить: иначе «вернул не то» становится тупиком
+            self.snapshot(course, "undo", step.detail)
+            result = history.restore(step)
+            refuse_if_records_broken(course)
+
+        return Response(result)
 
     def destroy(self, request, *args, **kwargs):
         node = self.get_object()
@@ -1038,6 +1143,12 @@ class PlanNodeViewSet(CourseScopedViewSet):
         if not (node.is_section and keep_children):
             refuse_if_deleting_taught(node)
 
+        self.snapshot(
+            node.course,
+            "dissolve" if node.is_section and keep_children else "delete",
+            node.title,
+        )
+
         with transaction.atomic():
             if node.is_section and keep_children:
                 services.dissolve_section(node)
@@ -1052,7 +1163,9 @@ class PlanNodeViewSet(CourseScopedViewSet):
     @action(detail=True, methods=["post"])
     def move(self, request, pk=None):
         """One step up or down, entering sections and leaving them."""
-        return perform_move(self.get_object(), request.data)
+        node = self.get_object()
+        self.snapshot(node.course, "move", node.title)
+        return perform_move(node, request.data)
 
     @action(detail=True, methods=["post"])
     def move_to(self, request, pk=None):
@@ -1071,6 +1184,7 @@ class PlanNodeViewSet(CourseScopedViewSet):
             )
         check_structure(node, parent)
         refuse_if_taught(node)
+        self.snapshot(node.course, "move", node.title)
 
         with transaction.atomic():
             services.place(node, parent, form.validated_data["position"])
@@ -1092,6 +1206,7 @@ class PlanNodeViewSet(CourseScopedViewSet):
 
         form = SplitSerializer(data=request.data)
         form.is_valid(raise_exception=True)
+        self.snapshot(anchor.course, "split", form.validated_data["title"])
 
         with transaction.atomic():
             section, moved = services.split_at(anchor, form.validated_data["title"])
@@ -1108,12 +1223,16 @@ class SectionMoveView(APIView):
     permission_classes = [IsAuthenticated, IsSchoolMember, IsTeacher]
 
     def post(self, request, pk):
+        # право, а не принадлежность: администратор школы чинит её курсы.
+        # Раньше здесь стояло собственное условие по назначению, и оно
+        # разошлось бы с остальным планом при первой же правке прав
         section = get_object_or_404(
             PlanNode.objects.filter(
-                course__assignments__teacher=request.user, is_section=True
+                course__in=Course.objects.writable_by(request.user), is_section=True
             ),
             pk=pk,
         )
+        history.take(section.course, request.user, "move", section.title)
         return perform_move(section, request.data)
 
 

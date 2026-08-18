@@ -114,6 +114,8 @@ class MatrixTests(AccessTestCase):
                 {"name": "plannode-baseline-submit", "param": "course", "method": "post"},
                 {"name": "plannode-import", "param": "course", "method": "post"},
                 {"name": "plannode-delete-many", "param": "course", "method": "post"},
+                ("plannode-plan-history", "course"),
+                {"name": "plannode-undo", "param": "course", "method": "post"},
                 {"name": "plannode-import-xlsx", "param": "course", "method": "post"},
                 {"name": "plannode-import-preview", "param": "course", "method": "post"},
                 {"name": "plannode-import-rows", "param": "course", "method": "post"},

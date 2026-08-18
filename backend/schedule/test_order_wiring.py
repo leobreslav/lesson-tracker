@@ -42,6 +42,7 @@ EXCUSED = {
     "PlanNodeViewSet.import_preview_rows": "предпросмотр ничего не пишет",
     "PlanNodeViewSet.import_preview_xlsx": "предпросмотр ничего не пишет",
     "PlanNodeViewSet.baseline_submit": "снимок плана ничего в нём не меняет",
+    "PlanNodeViewSet.perform_update": "правит название, заметку и содержание — не место строки",
 }
 
 

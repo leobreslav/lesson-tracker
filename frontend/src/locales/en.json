@@ -241,6 +241,7 @@
     "plan_before_taught": "«{{title}}» has already been taught — a lesson not yet given cannot go before it",
     "slot_move_breaks_order": "The move would leave {{date}} unrecorded among closed lessons: records go one after another, without gaps",
     "plan_delete_taught": "«{{title}}» was taught on {{date}} — withdraw the record before deleting the row",
+    "plan_nothing_to_undo": "There is nothing to undo: no snapshot of this plan was kept",
     "plan_bulk_section": "«{{title}}» is a theme — delete it on its own row, where the question about its lessons is asked",
     "rows_invalid": "The paste could not be read: send the table rows.",
     "slot_delete_recorded": "«{{title}}» is recorded on {{date}} — withdraw the record before deleting the lesson",
@@ -352,6 +353,30 @@
     "addLesson": "Add a lesson",
     "addSection": "Add a theme",
     "select": "Select",
+    "undo": {
+      "label": "Undo: {{action}}",
+      "what": "Undo: {{action}} — «{{detail}}», by {{who}}",
+      "mine": "you",
+      "action": {
+        "create": "adding a row",
+        "edit": "an edit",
+        "move": "a move",
+        "split": "splitting a theme",
+        "delete": "a deletion",
+        "delete_batch": "deleting several rows",
+        "dissolve": "dissolving a theme",
+        "undo": "an undo",
+        "import_sync": "a file import",
+        "import_append": "a file import",
+        "import_replace": "replacing the plan from a file",
+        "template_replace": "taking a plan from the library",
+        "template_append": "taking a plan from the library"
+      }
+    },
+    "intervention": {
+      "mark": "Edited by somebody else: {{who}}, {{when}}",
+      "revert": "put it back"
+    },
     "picked": "{{lessons}} selected",
     "pickNothing": "Nothing selected — tick the rows you want to delete",
     "dropPicked": {

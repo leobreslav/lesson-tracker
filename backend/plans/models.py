@@ -223,3 +223,12 @@ class PlanBaselineRow(models.Model):
 
     def __str__(self):
         return self.title
+
+
+# Журнал состояний плана живёт своим модулем — там его объяснение и его
+# сервисы, — но Django ищет модели в `models.py`, поэтому импорт здесь.
+from .history import (  # noqa: E402,F401  (после определений: history знает про них)
+    PlanSnapshot,
+    PlanSnapshotFile,
+    PlanSnapshotRow,
+)

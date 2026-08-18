@@ -15,6 +15,13 @@ Two deliberate choices:
 * if R2 refuses, the `StoredFile` row is kept on purpose. A row without
   references is a to-do item the cleanup command can act on; a row deleted
   while its object survives is rubbish nobody can name any more.
+
+**Ссылок два вида, и держат объект обе.** Кроме вложений на него ссылается
+журнал состояний плана (`PlanSnapshotFile`): пока снимок жив, объект должен
+пережить удаление строки — иначе отмена вернула бы урок с вложением,
+которое отвечает 404. Снимок истекает, ссылка уходит, и объект сносится
+обычным порядком — либо тут же, если это была последняя, либо еженедельной
+сверкой бакета с базой.
 """
 
 import logging
@@ -38,9 +45,29 @@ def drop_file_without_references(sender, instance, **kwargs):
     transaction.on_commit(lambda: forget_file(file_id))
 
 
+@receiver(post_delete, sender="plans.PlanSnapshotFile")
+def drop_file_when_the_snapshot_expires(sender, instance, **kwargs):
+    """Снимок истёк — его ссылка тоже была ссылкой."""
+    file_id = instance.stored_file_id
+    if file_id is None:
+        return
+
+    transaction.on_commit(lambda: forget_file(file_id))
+
+
+def held_elsewhere(file_id: int) -> bool:
+    """Ссылается ли на объект хоть кто-нибудь — вложение или снимок."""
+    from plans.history import PlanSnapshotFile
+
+    return (
+        Attachment.objects.filter(stored_file_id=file_id).exists()
+        or PlanSnapshotFile.objects.filter(stored_file_id=file_id).exists()
+    )
+
+
 def forget_file(file_id: int) -> bool:
     """Remove the object and its row, unless something still points at it."""
-    if Attachment.objects.filter(stored_file_id=file_id).exists():
+    if held_elsewhere(file_id):
         return False
 
     stored = StoredFile.objects.filter(pk=file_id).first()

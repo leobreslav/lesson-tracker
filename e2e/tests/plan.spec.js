@@ -1174,3 +1174,75 @@ test('снос темы с содержанием требует галочки'
 
   throw new Error('в посеянном плане нет темы с содержанием — случай не проверен')
 })
+
+test('удалённый урок возвращается отменой — вместе с содержанием', async ({
+  page,
+  signIn,
+  api,
+}) => {
+  // Ради этого случая журнал и заведён: «удалил, а зря». Урок — прежде
+  // всего его текст, поэтому снимок хранит содержание целиком.
+  const teacher = await api(PEOPLE.ivanova)
+  const courses = await teacher.get('/api/courses/')
+  const course = courses.body.find((item) => item.name === 'Grade 6 Geometry')
+  const made = await teacher.post('/api/plan/', {
+    course: course.id,
+    title: 'Пропадёт и вернётся',
+  })
+  await teacher.patch(`/api/plan/${made.body.id}/`, { note: 'важная заметка' })
+
+  await signIn(PEOPLE.ivanova)
+  await page.goto('/plan')
+  await ready(page)
+  await page.getByLabel('Курс').selectOption(String(course.id))
+  await expect(page.locator('.plan-cards')).toBeVisible()
+
+  const row = page.locator('.plan-row', { hasText: 'Пропадёт и вернётся' })
+  await row.hover()
+  await row.getByTitle('Удалить').click()
+  await page
+    .locator('dialog[open]')
+    .getByRole('button', { name: 'Удалить', exact: true })
+    .click()
+  await expect(page.locator('.plan-row', { hasText: 'Пропадёт и вернётся' })).toHaveCount(0)
+
+  // кнопка называет, что отменит: безымянная отмена страшнее, чем полезна
+  const undo = page.getByRole('button', { name: /Отменить: удаление/ })
+  await expect(undo).toBeVisible()
+  await undo.click()
+
+  await expect(page.locator('.plan-row', { hasText: 'Пропадёт и вернётся' })).toBeVisible()
+  // строку воскресили, а не завели похожую: id и заметка те же
+  const back = await teacher.get(`/api/plan/${made.body.id}/`)
+  expect(back.status).toBe(200)
+  expect(back.body.note).toBe('важная заметка')
+})
+
+test('учитель видит чужую правку и возвращает как было', async ({
+  page,
+  signIn,
+  api,
+}) => {
+  // Администратор вправе чинить содержание курсов школы, и учитель узнаёт
+  // об этом, только открыв план: изменившиеся строки без объяснения
+  // читаются как поломка.
+  const admin = await api(PEOPLE.admin)
+  const all = await admin.get('/api/courses/?scope=school')
+  const course = all.body.find((item) => item.name === 'Grade 6 Algebra')
+  await admin.post('/api/plan/', { course: course.id, title: 'Дописано завучем' })
+
+  await signIn(PEOPLE.ivanova)
+  await page.goto('/plan')
+  await ready(page)
+  await page.getByLabel('Курс').selectOption(String(course.id))
+  await expect(page.locator('.plan-cards')).toBeVisible()
+  await expect(page.locator('.plan-row', { hasText: 'Дописано завучем' })).toBeVisible()
+
+  // метка называет, кто и когда, и рядом стоит возврат
+  const mark = page.locator('.plan-intervention')
+  await expect(mark).toContainText('Ольга Дирекова')
+  await mark.getByRole('button', { name: 'вернуть как было' }).click()
+
+  await expect(page.locator('.plan-row', { hasText: 'Дописано завучем' })).toHaveCount(0)
+  await expect(page.locator('.plan-intervention')).toHaveCount(0)
+})

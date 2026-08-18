@@ -51,12 +51,14 @@ import {
   updateTemplate,
   publishPlan,
   refreshTemplate,
+  undoPlan,
   deletePlanNode,
   deletePlanNodes,
   downloadPlan,
   fetchCourses,
   fetchReviews,
   fetchPlan,
+  fetchPlanHistory,
   fetchBaseline,
   fetchPlanSlots,
   submitBaseline,
@@ -122,6 +124,8 @@ export default function Plan({ user, onLoggedOut }) {
   // курсы школы: администратор вправе чинить их содержание, и дойти до них
   // ему надо из того же селектора
   const [schoolCourses, setSchoolCourses] = useState([])
+  // журнал состояний плана: чем можно отменить и кто правил последним
+  const [steps, setSteps] = useState([])
   const [years, setYears] = useState([])
   const [classId, setClassId] = useState(target.course)
   const scrolled = useRef(false)
@@ -297,8 +301,21 @@ export default function Plan({ user, onLoggedOut }) {
     }
   }, [handleError, user])
 
+  /*
+   * Дерево и журнал приезжают вместе.
+   *
+   * Кнопка отмены обязана называть, что именно отменит, — значит список
+   * снимков нужен до нажатия и обязан обновляться в такт с планом. Отдельно
+   * их перечитывать нельзя: разъедутся на первой же правке, и кнопка
+   * начнёт обещать не то.
+   */
   const load = useCallback(
-    (id) => fetchPlan(id).then(setData),
+    (id) =>
+      Promise.all([fetchPlan(id), fetchPlanHistory(id).catch(() => ({ steps: [] }))])
+        .then(([tree, journal]) => {
+          setData(tree)
+          setSteps(journal.steps)
+        }),
     [],
   )
 
@@ -486,6 +503,36 @@ export default function Plan({ user, onLoggedOut }) {
    * нём пуст. Окно называет цену по `dropping`, значит и удалять обязано
    * его же, иначе спрошено одно, а сделано другое.
    */
+  /**
+   * Отменить — вернуть план к снимку, снятому перед действием.
+   *
+   * Без номера отменяется последнее; с номером — конкретный шаг, и это же
+   * обслуживает откат чужой правки: снимок вмешательства живёт дольше
+   * обычных, и вернуть надо тот, что снят **перед** ним.
+   */
+  const undo = (snapshot = null) => run(() => undoPlan(classId, snapshot))
+
+  const lastStep = steps[0] ?? null
+
+  /*
+   * Чужая правка, с которой ещё ничего не сделали.
+   *
+   * Учитель узнаёт о ней, только открыв план, — поэтому она названа
+   * отдельной строкой, а не спрятана в списке шагов.
+   *
+   * Пропадает метка сама, и без всякого «прочитано»: ищется она **до
+   * первого своего шага**. Сделал что-нибудь — хоть вернул как было, хоть
+   * дописал строку рядом — значит план он открыл и правку увидел. Иначе
+   * строка висела бы все девяносто дней, что живёт снимок вмешательства, и
+   * читаться перестала бы на второй.
+   */
+  const fresh = []
+  for (const step of steps) {
+    if (step.mine) break
+    fresh.push(step)
+  }
+  const intervention = fresh.find((step) => !step.by_lead) ?? null
+
   const removePicked = async () => {
     const ids = dropping ?? []
     setDropping(null)
@@ -1365,6 +1412,41 @@ export default function Plan({ user, onLoggedOut }) {
               </button>
 
               {/*
+                «Отменить» появляется, только когда есть что отменять, и
+                **называет действие**: безымянная отмена страшнее, чем
+                полезна — по ней не поймёшь, вернёшь ты удалённый урок или
+                чужую правку получасовой давности. Что именно она тронет,
+                стоит в подсказке.
+              */}
+              {lastStep && (
+                <button
+                  type="button"
+                  className="secondary"
+                  disabled={busy}
+                  title={
+                    lastStep.detail
+                      ? t('plan.undo.what', {
+                          action: t(`plan.undo.action.${lastStep.action}`, {
+                            defaultValue: lastStep.action,
+                          }),
+                          detail: lastStep.detail,
+                          who: lastStep.mine
+                            ? t('plan.undo.mine')
+                            : (lastStep.who?.name ?? ''),
+                        })
+                      : undefined
+                  }
+                  onClick={() => undo()}
+                >
+                  {t('plan.undo.label', {
+                    action: t(`plan.undo.action.${lastStep.action}`, {
+                      defaultValue: lastStep.action,
+                    }),
+                  })}
+                </button>
+              )}
+
+              {/*
                 «Выбрать» стоит третьей и вполсилы: включают её реже, чем
                 добавляют строки, но чаще, чем лезут в импорт и на полку, —
                 а главное, это действие над таблицей целиком, как и обе
@@ -1478,6 +1560,34 @@ export default function Plan({ user, onLoggedOut }) {
             </div>
 
             {helpOpen && <PlanCsvHelp />}
+
+            {/*
+              Метка о чужой правке — маленькая, но своя строка.
+
+              Администратор вправе чинить содержание курсов школы, и учитель
+              узнаёт об этом, только открыв план: изменившиеся строки без
+              объяснения читаются как поломка. Поэтому здесь сказано, кто и
+              когда, и рядом стоит возврат — не «пожаловаться», а «вернуть
+              как было».
+            */}
+            {intervention && (
+              <p className="hint plan-intervention">
+                {t('plan.intervention.mark', {
+                  who: intervention.who?.name ?? '',
+                  // `shortDate` читает дату, а не момент: соседний
+                  // вызов у эталона режет так же
+                  when: shortDate(intervention.made_at.slice(0, 10)),
+                })}{' '}
+                <button
+                  type="button"
+                  className="link"
+                  disabled={busy}
+                  onClick={() => undo(intervention.id)}
+                >
+                  {t('plan.intervention.revert')}
+                </button>
+              </p>
+            )}
           </section>
 
           {error && (

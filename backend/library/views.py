@@ -4,6 +4,7 @@ from django.db import transaction
 from django.db.models import Prefetch
 from files.models import Attachment
 from files.serializers import with_sharing
+from plans import history as plan_history
 from plans import services as plan_services
 from plans.views import refuse_if_taught_lost
 from plans.content import CONTENT_FIELDS
@@ -300,6 +301,15 @@ class ImportFromTemplateView(APIView):
             refuse_if_taught_lost(
                 data["course"], plan_services.plan_nodes(data["course"].pk)
             )
+
+        # снимок до записи: полка сносит план так же, как импорт файлом, и
+        # отменяться это должно так же — одним нажатием
+        plan_history.take(
+            data["course"],
+            request.user,
+            f"template_{data['mode']}",
+            data["template"].title,
+        )
 
         result = services.import_into_course(
             template=data["template"],

@@ -370,6 +370,22 @@ export const deletePlanNodes = (courseId, ids) =>
     body: { ids },
   })
 
+/**
+ * Чем можно отменить: снимки плана, свежие первыми.
+ *
+ * Приезжают вместе с деревом, а не по кнопке: кнопка отмены обязана
+ * называть, что именно отменит, — значит знать это надо до нажатия.
+ */
+export const fetchPlanHistory = (courseId) =>
+  request(`/api/plan/history/?course=${courseId}`)
+
+/** Вернуть план к снимку; без номера — к последнему. */
+export const undoPlan = (courseId, snapshot = null) =>
+  request(`/api/plan/undo/?course=${courseId}`, {
+    method: 'POST',
+    body: snapshot ? { snapshot } : {},
+  })
+
 const csvForm = (file, mode) => {
   const form = new FormData()
   form.append('file', file)
