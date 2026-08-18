@@ -72,12 +72,17 @@ docker compose "${COMPOSE_FILES[@]}" up -d --remove-orphans
 # 443 не слушает никто. Сначала так и делали, каждую выкатку, и это тут же
 # поймал учитель на проде: `ERR_CONNECTION_REFUSED` посреди работы. Обычная
 # выкатка конфиг не трогает, а значит и трогать nginx незачем.
+# Сравниваются **все** файлы, смонтированные внутрь по отдельности: сайтовый
+# конфиг (его подменяет ssl-оверлей на том же mount point) и proxy_params.
+# Каталоги в этот список не входят — у них inode не подменяется, правка в
+# них видна контейнеру сразу.
 active_conf="nginx/default.conf"
 [ "$SCHEME" = "https" ] && active_conf="nginx/ssl.conf"
 
 inside="$(docker compose "${COMPOSE_FILES[@]}" exec -T nginx \
-    cat /etc/nginx/conf.d/default.conf 2>/dev/null | sha256sum | cut -d' ' -f1 || true)"
-outside="$(sha256sum "$active_conf" | cut -d' ' -f1)"
+    cat /etc/nginx/conf.d/default.conf /etc/nginx/proxy_params.conf 2>/dev/null |
+    sha256sum | cut -d' ' -f1 || true)"
+outside="$(cat "$active_conf" nginx/proxy_params.conf | sha256sum | cut -d' ' -f1)"
 
 if [ "$inside" != "$outside" ]; then
     log "Конфиг nginx изменился — пересоздаю контейнер"
