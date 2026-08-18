@@ -33,7 +33,13 @@ import Supervision from './Supervision'
 import Switch from './Switch'
 import { lastChoice, rememberChoice } from './remember'
 import { lazyChunk } from './lazyChunk'
-import { applyMove, countBlocks, planRows } from './planLogic'
+import {
+  afterClick,
+  applyMove,
+  countBlocks,
+  planRows,
+  selectableIds,
+} from './planLogic'
 import {
   createPlanNode,
   splitPlan,
@@ -46,6 +52,7 @@ import {
   publishPlan,
   refreshTemplate,
   deletePlanNode,
+  deletePlanNodes,
   downloadPlan,
   fetchCourses,
   fetchReviews,
@@ -139,6 +146,24 @@ export default function Plan({ onLoggedOut }) {
   const [baseline, setBaseline] = useState(null)
   const [adding, setAdding] = useState(null) // {parent, after, is_section, title}
   const [deleting, setDeleting] = useState(null) // the section being removed
+  /*
+   * Выбор строк пачкой.
+   *
+   * Десять уроков подряд удалялись десятью нажатиями, и каждое звало
+   * нативное окно подтверждения — то есть уводило курсор к верху экрана и
+   * обратно. Пачка отвечает на это не ускорением того же самого, а другой
+   * операцией: выбрали, спросили один раз, удалили одной транзакцией.
+   *
+   * `selecting` — режим, а не постоянная колонка флажков: таблицу читают
+   * куда чаще, чем правят, и сорок флажков в ней были бы шумом. `picked`
+   * лежит массивом в порядке ленты — по нему считают и «выбрано N», и
+   * цену, и порядок этот совпадает с тем, что на экране. `anchor` —
+   * прошлое нажатие, от него Shift тянет диапазон.
+   */
+  const [selecting, setSelecting] = useState(false)
+  const [picked, setPicked] = useState([])
+  const [anchor, setAnchor] = useState(null)
+  const [dropping, setDropping] = useState(null) // подтверждение удаления пачки
   const [importing, setImporting] = useState(false)
   // the library, only as far as this page needs it: what can be taken, and
   // whether this plan is already on the shelf under my name
@@ -261,6 +286,41 @@ export default function Plan({ onLoggedOut }) {
     }
   }, [classId, classes])
 
+  /*
+   * Escape выходит из режима выбора.
+   *
+   * Тот же жест, что закрывает форму добавления, и слушает он так же
+   * документ: курсор в это время ходит по строкам, а не по кнопкам, и
+   * целиться в «Отмена» ради отказа от начатого — лишнее движение.
+   *
+   * Пока открыт вопрос об удалении, Escape принадлежит ему: окно закроется
+   * само, а режим при этом уцелеет — иначе один жест делал бы два дела.
+   */
+  useEffect(() => {
+    if (!selecting || dropping) return undefined
+
+    const escape = (event) => {
+      if (event.key === 'Escape') stopSelecting()
+    }
+
+    document.addEventListener('keydown', escape)
+    return () => document.removeEventListener('keydown', escape)
+  }, [selecting, dropping])
+
+  /*
+   * Смена курса выключает выбор.
+   *
+   * Строки чужого плана среди выбранного — состояние, которого не бывает:
+   * `chosen` пересекается с лентой и вычистил бы их сам, но полоса
+   * «выбрано 0» над чужой таблицей всё равно осталась бы висеть, и
+   * человек не понял бы, что он там выбирал.
+   */
+  useEffect(() => {
+    setSelecting(false)
+    setPicked([])
+    setAnchor(null)
+  }, [classId])
+
   useEffect(() => {
     // то же, что с лентой: чужой план запрашивать нечем и незачем
     if (!classId || !(classes ?? []).some((item) => item.id === classId)) {
@@ -302,6 +362,67 @@ export default function Plan({ onLoggedOut }) {
     } finally {
       setBusy(false)
     }
+  }
+
+  /*
+   * Что сейчас можно выбрать, и что из выбранного ещё живо.
+   *
+   * Дерево перечитывается после каждой правки, и строка, выбранная до неё,
+   * могла уехать: её удалил импорт, её унесла тема. Поэтому выбранное
+   * пересекается с лентой на каждом рендере, а не чинится эффектом —
+   * состояние тогда одно, и разъезжаться нечему.
+   */
+  const order = useMemo(() => selectableIds(data?.nodes ?? []), [data])
+  const chosen = useMemo(() => {
+    const alive = new Set(order)
+    return picked.filter((id) => alive.has(id))
+  }, [picked, order])
+
+  const pickedSet = useMemo(() => new Set(chosen), [chosen])
+
+  /**
+   * Цена пачки — из уже загруженного дерева, без запроса.
+   *
+   * Дерево возит `has_content` и число вложений у каждой строки (само
+   * содержание едет отдельным запросом на урок), так что сказать «из них
+   * три с содержанием» можно до нажатия и не спрашивая сервер.
+   */
+  const price = useMemo(() => {
+    const wanted = new Set(chosen)
+    let content = 0
+    let attachments = 0
+
+    const look = (node) => {
+      if (!wanted.has(node.id)) return
+      if (node.has_content) content += 1
+      attachments += node.attachments ?? 0
+    }
+
+    for (const node of data?.nodes ?? []) {
+      look(node)
+      for (const child of node.children ?? []) look(child)
+    }
+
+    return { content, attachments }
+  }, [chosen, data])
+
+  /** Нажали на флажок: Shift тянет диапазон от прошлого нажатия. */
+  const pick = (id, { range = false } = {}) => {
+    setPicked(afterClick(chosen, order, id, { anchor, range }))
+    setAnchor(id)
+  }
+
+  const stopSelecting = () => {
+    setSelecting(false)
+    setPicked([])
+    setAnchor(null)
+  }
+
+  const removePicked = async () => {
+    const ids = chosen
+    setDropping(null)
+    await run(() => deletePlanNodes(classId, ids))
+    stopSelecting()
   }
 
   /** Block counters come from the tree already loaded, with no requests. */
@@ -1132,6 +1253,22 @@ export default function Plan({ onLoggedOut }) {
                 {t('plan.addSection')}
               </button>
 
+              {/*
+                «Выбрать» стоит третьей и вполсилы: включают её реже, чем
+                добавляют строки, но чаще, чем лезут в импорт и на полку, —
+                а главное, это действие над таблицей целиком, как и обе
+                кнопки слева от неё.
+              */}
+              <button
+                type="button"
+                className="secondary"
+                disabled={busy || !order.length}
+                aria-pressed={selecting}
+                onClick={() => (selecting ? stopSelecting() : setSelecting(true))}
+              >
+                {t('plan.select')}
+              </button>
+
               <div className="plan-menu" ref={menuRef}>
                 <button
                   type="button"
@@ -1247,6 +1384,8 @@ export default function Plan({ onLoggedOut }) {
                 spotlight={target.row}
               spotlightSlot={target.slot}
               debts={debtIds}
+              selecting={selecting}
+              selected={pickedSet}
                 // всё, что таблица умеет попросить у страницы, — одним
                 // списком: сама она в базу не ходит
                 actions={{
@@ -1261,8 +1400,42 @@ export default function Plan({ onLoggedOut }) {
                   removeSection: setDeleting,
                   move: handleMove,
                   moveTo: dropNode,
+                  pick,
                 }}
               />
+
+              {/*
+                Полоса выбранного стоит под таблицей и липнет к низу окна:
+                выбирают строки где угодно, чаще в середине и в конце, а
+                кнопка «Удалить» должна быть под рукой, а не в полутора
+                тысячах пикселей выше.
+              */}
+              {selecting && (
+                <div className="selection-bar plan-selection">
+                  <span>
+                    {chosen.length
+                      ? t('plan.picked', {
+                          lessons: t('common.lessonCount', { count: chosen.length }),
+                        })
+                      : t('plan.pickNothing')}
+                  </span>
+                  <button
+                    type="button"
+                    disabled={busy || !chosen.length}
+                    onClick={() => setDropping(chosen)}
+                  >
+                    {t('common.delete')}
+                  </button>
+                  <button
+                    type="button"
+                    className="secondary"
+                    disabled={busy}
+                    onClick={stopSelecting}
+                  >
+                    {t('common.cancel')}
+                  </button>
+                </div>
+              )}
 
             </>
           )}
@@ -1428,6 +1601,46 @@ export default function Plan({ onLoggedOut }) {
               {t('plan.removeSection.withChildren')}
             </button>
             <button type="button" className="secondary" onClick={() => setDeleting(null)}>
+              {t('common.cancel')}
+            </button>
+          </div>
+        </Modal>
+      )}
+
+      {/*
+        Один вопрос на всю пачку — и с ценой.
+
+        Прежнее нативное окно называло одно название и ничего больше;
+        десять таких окон подряд читать перестают со второго. Здесь
+        спрашивают один раз, и в вопросе стоит то, что нельзя вернуть:
+        сколько строк с содержанием и сколько с вложениями. Пустые строки
+        такой приписки не получают — терять в них нечего, кроме названия.
+      */}
+      {dropping && (
+        <Modal
+          onClose={() => setDropping(null)}
+          title={t('plan.dropPicked.title', {
+            lessons: t('common.lessonCount', { count: dropping.length }),
+          })}
+        >
+          {(price.content > 0 || price.attachments > 0) && (
+            <p className="hint">
+              {t('plan.dropPicked.cost', {
+                content: price.content,
+                attachments: price.attachments,
+              })}
+            </p>
+          )}
+          <div className="actions">
+            <button type="button" disabled={busy} onClick={removePicked}>
+              {t('common.delete')}
+            </button>
+            <button
+              type="button"
+              className="secondary"
+              disabled={busy}
+              onClick={() => setDropping(null)}
+            >
               {t('common.cancel')}
             </button>
           </div>

@@ -389,6 +389,21 @@ class TaughtRowsResistCreationAndDeletionTests(LayoutApiTestCase):
         self.assertEqual(response.json()["code"], "plan_delete_taught")
         self.assertTrue(PlanNode.objects.filter(pk=self.lessons[0].pk).exists())
 
+    def test_a_taught_row_is_not_deleted_in_a_batch_either(self):
+        """Пачка не мягче одиночного удаления, и отказ уносит её целиком."""
+        free = self.lessons[1]
+
+        response = self.client.post(
+            f"{reverse('plannode-delete-many')}?course={self.course.pk}",
+            {"ids": [free.pk, self.lessons[0].pk]},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json()["code"], "plan_delete_taught")
+        self.assertTrue(PlanNode.objects.filter(pk=free.pk).exists())
+        self.assertTrue(PlanNode.objects.filter(pk=self.lessons[0].pk).exists())
+
     def test_the_section_is_dissolved_even_with_a_taught_lesson(self):
         """Вынуть уроки — значит снять ярлык: порядок и связи целы."""
         response = self.client.delete(

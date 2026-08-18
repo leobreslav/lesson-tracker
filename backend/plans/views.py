@@ -11,7 +11,7 @@ from config.errors import Codes, api_error, error_payload
 from django.db import transaction
 from django.db.models import Q
 from files import services as file_services
-from django.http import HttpResponse
+from django.http import Http404, HttpResponse
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from django.utils.dateparse import parse_date
@@ -948,6 +948,80 @@ class PlanNodeViewSet(CourseScopedViewSet):
         with transaction.atomic():
             node = serializer.save()
             refuse_if_before_taught(node)
+
+    @action(detail=False, methods=["post"], url_path="delete", url_name="delete-many")
+    def delete_many(self, request):
+        """
+        Удалить пачку строк — одним вопросом и одной транзакцией.
+
+        Десять уроков подряд удалялись десятью нажатиями с десятью
+        подтверждениями, и каждое подтверждение стояло в другом месте
+        экрана. Пачка — это не ускорение того же самого, а другая
+        операция: у неё один вопрос, одна цена и один откат.
+
+        Транзакция здесь обязательна ровно по той же причине, по какой она
+        стоит у импорта: половина удалённой пачки хуже неудалённой, потому
+        что непонятно, какая половина. Отказ на любой строке отменяет всё.
+
+        Темы сюда не приходят: у темы спрашивают, вынуть уроки или снести
+        вместе, и ответ на этот вопрос в списке id не выражается. В таблице
+        флажка у темы нет вовсе, так что это защита от API, а не от
+        человека.
+        """
+        course = self.requested_course(write=True)
+
+        # тело бывает не словарём вовсе (строка, список) — спрашивать у
+        # такого `.get` значит отвечать пятисоткой на кривой запрос
+        body = request.data if isinstance(request.data, dict) else {}
+        raw = body.get("ids")
+        if not isinstance(raw, list):
+            api_error(
+                Codes.ROWS_INVALID,
+                "«ids» must be a list of plan row ids.",
+                field="ids",
+            )
+
+        # порядок не важен, а дубль в списке не должен требовать строки дважды
+        ids = {value for value in raw if isinstance(value, int)}
+        if len(ids) != len(set(raw)):
+            api_error(
+                Codes.ROWS_INVALID,
+                "«ids» must be a list of plan row ids.",
+                field="ids",
+            )
+
+        if not ids:
+            # выбрали и передумали: удалять нечего, но и отказывать не за что
+            return Response({"deleted": 0})
+
+        nodes = list(PlanNode.objects.filter(course=course, pk__in=ids))
+        if len(nodes) != len(ids):
+            # чужая строка неотличима от несуществующей — как и везде
+            raise Http404
+
+        for node in nodes:
+            if node.is_section:
+                api_error(
+                    Codes.PLAN_BULK_SECTION,
+                    f"«{node.title}» is a theme: delete it on its own row, "
+                    "where the question about its lessons is asked.",
+                    field="ids",
+                    title=node.title,
+                )
+
+        # Проведённая строка не удаляется ни поодиночке, ни пачкой: за ней
+        # записан час, и он остался бы незакрытым посреди закрытых.
+        for node in nodes:
+            refuse_if_deleting_taught(node)
+
+        parents = {node.parent_id for node in nodes}
+
+        with transaction.atomic():
+            PlanNode.objects.filter(pk__in=[node.pk for node in nodes]).delete()
+            for parent_id in parents:
+                services.reindex(course.pk, parent_id)
+
+        return Response({"deleted": len(nodes)})
 
     def destroy(self, request, *args, **kwargs):
         node = self.get_object()

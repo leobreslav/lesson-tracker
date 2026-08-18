@@ -90,6 +90,10 @@ export default function PlanTable({
   spotlight = null,
   spotlightSlot = null,
   debts = EMPTY_SET,
+  // выбор строк пачкой: сама таблица его только показывает и сообщает о
+  // нажатиях, а что выбрано и что с этим делать — знает страница
+  selecting = false,
+  selected = EMPTY_SET,
   actions,
 }) {
   const {
@@ -104,6 +108,7 @@ export default function PlanTable({
     removeSection,
     move,
     moveTo,
+    pick,
   } = actions
   const { t } = useTranslation()
   // the screen-reader script for dragging: dnd-kit reads it out on pick-up
@@ -694,7 +699,7 @@ export default function PlanTable({
         )}
 
         {open && (
-          <ul className="plan free">
+          <ul className={selecting ? 'plan free selecting' : 'plan free'}>
             {free.map(({ slot, labelled }) => (
               <li
                 key={slot.id}
@@ -706,6 +711,7 @@ export default function PlanTable({
                   (slot.id === spotlightSlot ? ' spotlight' : '')
                 }
               >
+                {selectCell()}
                 <span className="plan-weekmark">
                   {labelled && t('plan.week', { number: slot.week })}
                 </span>
@@ -736,6 +742,36 @@ export default function PlanTable({
           </ul>
         )}
       </>
+    )
+  }
+
+  /**
+   * Флажок выбора — первой колонкой, и только в режиме выбора.
+   *
+   * Ячейка эта есть у **каждой** строки, включая тему и свободный слот:
+   * сетка одна на все строки, и колонка, появившаяся не везде, сдвинула бы
+   * соседние относительно друг друга. У темы и свободного слота она пустая
+   * — выбирают уроки (см. `selectableIds`).
+   *
+   * Shift тянет диапазон от прошлого нажатия: десять строк подряд иначе
+   * это десять нажатий, а именно от них и уходим.
+   */
+  const selectCell = (node = null) => {
+    if (!selecting) return null
+    if (!node || node.is_section || node.taught) return <span className="plan-pick" />
+
+    return (
+      <span className="plan-pick">
+        <input
+          type="checkbox"
+          checked={selected.has(node.id)}
+          disabled={busy}
+          aria-label={node.title}
+          onClick={(event) => pick(node.id, { range: event.shiftKey })}
+          // выбор ведёт onClick: только он знает про Shift
+          onChange={() => {}}
+        />
+      </span>
     )
   }
 
@@ -820,6 +856,7 @@ export default function PlanTable({
         <>
           {/* левая колонка: неделя и дата. Взгляд идёт по левому краю и
               должен встречать данные, а не служебную ручку */}
+          {selectCell(node)}
           {weekCell(node)}
           {dateCells(node)}
           {handle}
@@ -904,6 +941,7 @@ export default function PlanTable({
         {(handle) => (
           <>
             <div className={`plan-row section-head${weekStripe(node)}`}>
+              {selectCell()}
               {weekCell(node)}
               {dateCells(node, true)}
               {handle}
@@ -1032,7 +1070,11 @@ export default function PlanTable({
           items={nodes.map((node) => dragId(node.id))}
           strategy={verticalListSortingStrategy}
         >
-          <ul className={dated ? 'plan' : 'plan no-dates'}>
+          <ul
+            className={
+              (dated ? 'plan' : 'plan no-dates') + (selecting ? ' selecting' : '')
+            }
+          >
             {nodes.map((node) => (
               <Fragment key={node.id}>
                 {/* черта, выпавшая на первый урок темы, встаёт над

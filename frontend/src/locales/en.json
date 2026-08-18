@@ -240,6 +240,7 @@
     "plan_before_taught": "«{{title}}» has already been taught — a lesson not yet given cannot go before it",
     "slot_move_breaks_order": "The move would leave {{date}} unrecorded among closed lessons: records go one after another, without gaps",
     "plan_delete_taught": "«{{title}}» was taught on {{date}} — withdraw the record before deleting the row",
+    "plan_bulk_section": "«{{title}}» is a theme — delete it on its own row, where the question about its lessons is asked",
     "rows_invalid": "The paste could not be read: send the table rows.",
     "slot_delete_recorded": "«{{title}}» is recorded on {{date}} — withdraw the record before deleting the lesson",
     "slot_cancel_recorded": "«{{title}}» is recorded here — withdraw the record before cancelling the lesson",
@@ -350,6 +351,13 @@
     "deleteConfirm": "Delete «{{title}}»?",
     "addLesson": "Add a lesson",
     "addSection": "Add a theme",
+    "select": "Select",
+    "picked": "{{lessons}} selected",
+    "pickNothing": "Nothing selected — tick the rows you want to delete",
+    "dropPicked": {
+      "title": "Delete {{lessons}}?",
+      "cost": "{{content}} of them have content and {{attachments}} have attachments."
+    },
     "imported": "Created {{rows}} rows ({{sections}} sections, {{lessons}} lessons).",
     "dndInstructions": "Press space to pick the item up. Choose a new place with the up and down arrows, press space to drop it, Escape cancels the move. The arrow buttons in the row do the same.",
     "needClass": {

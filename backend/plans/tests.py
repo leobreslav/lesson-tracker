@@ -846,3 +846,114 @@ class SplitTests(PlanTestCase):
         response = self.split(self.node("Повторение"), title="")
 
         self.assertEqual(response.status_code, 400)
+
+
+class DeleteManyTests(PlanTestCase):
+    """
+    Пачка строк удаляется одним вопросом и одной транзакцией.
+
+    Десять уроков подряд удалялись десятью нажатиями с десятью
+    подтверждениями, и каждое стояло в другом месте экрана. Пачка — не
+    ускорение того же самого, а другая операция: у неё один вопрос, одна
+    цена и один откат.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.trig, self.vectors, self.stereo = self.build_sample()
+
+    def delete_many(self, ids, course=None):
+        return self.client.post(
+            f"{reverse('plannode-delete-many')}?course={course or self.course.pk}",
+            {"ids": ids},
+            format="json",
+        )
+
+    def test_a_run_of_rows_goes_at_once(self):
+        doomed = [self.node("Повторение").pk, self.node("Контрольная работа").pk]
+
+        response = self.delete_many(doomed)
+
+        self.assertEqual(response.status_code, 200, response.content)
+        self.assertEqual(response.json(), {"deleted": 2})
+        self.assertFalse(PlanNode.objects.filter(pk__in=doomed).exists())
+
+    def test_positions_close_up_on_every_touched_level(self):
+        """Уровней в пачке бывает несколько, и перенумеровать надо каждый."""
+        self.delete_many([self.node("Синус суммы").pk, self.node("Повторение").pk])
+
+        self.assertEqual(
+            self.structure(),
+            [
+                "Тригонометрия",
+                "  Косинус суммы",
+                "Векторы",
+                "  Понятие вектора",
+                "  Сложение векторов",
+                "Контрольная работа",
+                "Стереометрия",
+                "  Аксиомы",
+            ],
+        )
+        self.assertEqual(self.positions(), [0, 1, 2, 3])
+        self.assertEqual(list(self.trig.children.values_list("position", flat=True)), [0])
+
+    def test_nothing_selected_is_not_an_error(self):
+        """Выбрали и передумали: удалять нечего, но и отказывать не за что."""
+        response = self.delete_many([])
+
+        self.assertEqual(response.status_code, 200, response.content)
+        self.assertEqual(response.json(), {"deleted": 0})
+
+    def test_a_theme_is_refused_and_named(self):
+        """У темы спрашивают, вынуть уроки или снести вместе."""
+        response = self.delete_many([self.node("Повторение").pk, self.vectors.pk])
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json()["code"], "plan_bulk_section")
+        self.assertEqual(response.json()["params"]["title"], "Векторы")
+        # отказ на одной строке отменяет всю пачку
+        self.assertTrue(PlanNode.objects.filter(title="Повторение").exists())
+
+    def test_a_foreign_row_is_indistinguishable_from_a_missing_one(self):
+        alien = self.add("Чужой", course=self.alien_class, teacher=self.stranger)
+        ours = self.node("Повторение").pk
+
+        response = self.delete_many([ours, alien.pk])
+
+        self.assertEqual(response.status_code, 404)
+        self.assertEqual(
+            response.status_code, self.delete_many([ours, 10**9]).status_code
+        )
+        # ни одна строка не ушла: отказ откатывает пачку целиком
+        self.assertTrue(PlanNode.objects.filter(pk=ours).exists())
+        self.assertTrue(PlanNode.objects.filter(pk=alien.pk).exists())
+
+    def test_ids_must_be_a_list(self):
+        response = self.client.post(
+            f"{reverse('plannode-delete-many')}?course={self.course.pk}",
+            {"ids": "все"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json()["code"], "rows_invalid")
+
+    def test_a_body_that_is_not_an_object_is_refused_not_crashed(self):
+        """Кривой запрос — отказ с кодом, а не пятисотка."""
+        response = self.client.post(
+            f"{reverse('plannode-delete-many')}?course={self.course.pk}",
+            "не словарь",
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json()["code"], "rows_invalid")
+
+    def test_a_duplicate_id_does_not_ask_for_the_row_twice(self):
+        row = self.node("Повторение").pk
+
+        response = self.delete_many([row, row])
+
+        self.assertEqual(response.status_code, 200, response.content)
+        self.assertEqual(response.json(), {"deleted": 1})

@@ -105,6 +105,64 @@ export function planRows(nodes) {
 }
 
 /**
+ * Уроки в порядке показа — лента, по которой тянется выделение.
+ *
+ * Тем в ней нет: у темы спрашивают, вынуть уроки или снести вместе, и в
+ * списке id этот ответ не выражается — тема удаляется своей кнопкой.
+ * Проведённых строк нет по той же причине, по какой у них нет крестика:
+ * за ними записан час, и сервер такую строку не отдаст (`plan_delete_taught`).
+ * Флажок, умеющий только привести к отказу, честнее не рисовать.
+ */
+export function selectableIds(nodes) {
+  const out = []
+
+  for (const node of nodes ?? []) {
+    if (node.is_section) {
+      for (const child of node.children ?? []) {
+        if (!child.taught) out.push(child.id)
+      }
+    } else if (!node.taught) {
+      out.push(node.id)
+    }
+  }
+
+  return out
+}
+
+/**
+ * Что выделено после нажатия на флажок.
+ *
+ * Обычный клик переключает одну строку. Shift тянет диапазон **от прошлого
+ * нажатия** и добавляет его к выделенному, а не заменяет: набирают обычно
+ * несколькими протяжками, и вторая не должна стирать первую. Shift без
+ * прошлого нажатия — просто клик: тянуть не от чего.
+ *
+ * Строки, которых нет в ленте (тема, проведённая), не выделяются вовсе:
+ * лента и есть определение того, что можно выбрать.
+ *
+ * Возвращается массив в порядке ленты — по нему считают «выбрано N» и
+ * показывают цену, и порядок этот должен совпадать с тем, что на экране.
+ */
+export function afterClick(selected, order, id, { anchor = null, range = false } = {}) {
+  const at = order.indexOf(id)
+  if (at === -1) return [...selected]
+
+  const chosen = new Set(selected)
+  const from = range && anchor !== null ? order.indexOf(anchor) : -1
+
+  if (from === -1) {
+    if (chosen.has(id)) chosen.delete(id)
+    else chosen.add(id)
+  } else {
+    for (let i = Math.min(from, at); i <= Math.max(from, at); i += 1) {
+      chosen.add(order[i])
+    }
+  }
+
+  return order.filter((value) => chosen.has(value))
+}
+
+/**
  * How many lessons each block holds, and how many sit outside every block.
  *
  * A header row opens a block. A lesson's block comes from its own

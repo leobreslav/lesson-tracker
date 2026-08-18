@@ -358,6 +358,18 @@ export const deletePlanNode = (id, keepChildren) =>
     method: 'DELETE',
   })
 
+/**
+ * Удалить пачку строк — одним запросом и одной транзакцией.
+ *
+ * Не десять запросов подряд: половина удалённой пачки хуже неудалённой,
+ * потому что непонятно, какая половина. Отказ на любой строке отменяет всё.
+ */
+export const deletePlanNodes = (courseId, ids) =>
+  request(`/api/plan/delete/?course=${courseId}`, {
+    method: 'POST',
+    body: { ids },
+  })
+
 const csvForm = (file, mode) => {
   const form = new FormData()
   form.append('file', file)

@@ -965,3 +965,89 @@ test('тема заводится в середине плана и режет �
   await expect(second).toContainText('2 урока')
   await expect(page.locator('.plan-section').first()).toContainText('1 урок')
 })
+
+test('десять строк удаляются одним выбором и одним вопросом', async ({
+  page,
+  signIn,
+}) => {
+  // Раньше это было десять крестиков и десять нативных окон подтверждения,
+  // каждое — у верхнего края экрана: курсор ехал туда и обратно десять раз.
+  // Пачка отвечает на это не ускорением того же самого, а другой операцией.
+  await signIn(PEOPLE.petrov)
+  await openPlan(page, EMPTY_COURSE)
+
+  // шесть уроков подряд: форма после вставки переезжает за созданную строку
+  await page.getByRole('button', { name: 'Добавить урок' }).click()
+  const form = page.locator('.plan-add-form')
+  for (const title of ['Первый', 'Второй', 'Третий', 'Четвёртый', 'Пятый', 'Шестой']) {
+    await form.getByLabel('Название').fill(title)
+    await form.getByRole('button', { name: 'Добавить' }).click()
+    await expect(page.locator('.plan-row', { hasText: title })).toBeVisible()
+  }
+  await page.keyboard.press('Escape')
+
+  // до включения режима флажков в таблице нет вовсе: её читают чаще, чем правят
+  await expect(page.locator('.plan-pick input')).toHaveCount(0)
+
+  await page.getByRole('button', { name: 'Выбрать' }).click()
+  const bar = page.locator('.plan-selection')
+  await expect(bar).toBeVisible()
+  await expect(bar.getByRole('button', { name: 'Удалить' })).toBeDisabled()
+
+  // Shift тянет диапазон от прошлого нажатия: второй–пятый одним движением
+  await page.locator('.plan-pick input').nth(1).click()
+  await page.locator('.plan-pick input').nth(4).click({ modifiers: ['Shift'] })
+  await expect(bar).toContainText('Выбрано: 4 урока')
+
+  await bar.getByRole('button', { name: 'Удалить' }).click()
+
+  // один вопрос на всю пачку, и он называет число
+  const ask = page.locator('dialog[open]')
+  await expect(ask).toContainText('Удалить 4 урока?')
+  await ask.getByRole('button', { name: 'Удалить' }).click()
+
+  // остались крайние, и нумерация сомкнулась
+  await expect(page.locator('.plan-row.lesson')).toHaveCount(2)
+  expect(await structure(page)).toEqual(['1 Первый', '2 Шестой'])
+
+  // режим выключился сам: пачку удалили, выбирать больше нечего
+  await expect(page.locator('.plan-pick input')).toHaveCount(0)
+})
+
+test('у темы флажка нет: у неё спрашивают про её уроки', async ({ page, signIn }) => {
+  await signIn(PEOPLE.petrov)
+  await openPlan(page, EMPTY_COURSE)
+
+  await page.getByRole('button', { name: 'Добавить тему' }).click()
+  const form = page.locator('.plan-add-form')
+  await form.getByLabel('Название').fill('Треугольники')
+  await form.getByRole('button', { name: 'Добавить' }).click()
+  await expect(page.getByText('Треугольники')).toBeVisible()
+  await page.keyboard.press('Escape')
+
+  const head = page.locator('.plan-section .section-head').first()
+  await head.hover()
+  await head.getByTitle('Добавить урок в тему').click()
+  const inner = page.locator('.plan-add-form')
+  await inner.getByLabel('Название').fill('Первый признак')
+  await inner.getByRole('button', { name: 'Добавить' }).click()
+  await expect(page.locator('.plan-row', { hasText: 'Первый признак' })).toBeVisible()
+  await page.keyboard.press('Escape')
+
+  await page.getByRole('button', { name: 'Выбрать' }).click()
+
+  // ячейка у темы есть — сетка одна на все строки, — а флажка в ней нет
+  await expect(page.locator('.section-head .plan-pick')).toHaveCount(1)
+  await expect(page.locator('.section-head .plan-pick input')).toHaveCount(0)
+  await expect(page.locator('.plan-row.lesson .plan-pick input')).toHaveCount(1)
+
+  // Escape выходит из режима: курсор в это время ходит по строкам
+  await page.keyboard.press('Escape')
+  await expect(page.locator('.plan-pick')).toHaveCount(0)
+
+  // «Отмена» убирает и полосу, и колонку
+  await page.getByRole('button', { name: 'Выбрать' }).click()
+  await expect(page.locator('.plan-selection')).toBeVisible()
+  await page.locator('.plan-selection').getByRole('button', { name: 'Отмена' }).click()
+  await expect(page.locator('.plan-pick')).toHaveCount(0)
+})

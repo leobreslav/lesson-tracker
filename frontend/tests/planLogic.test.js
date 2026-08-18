@@ -4,10 +4,12 @@ import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 
 import {
+  afterClick,
   applyMove,
   countBlocks,
   planRows,
   resolveDropTarget,
+  selectableIds,
 } from '../src/planLogic.js'
 
 const section = (id, title, children = []) => ({
@@ -332,5 +334,63 @@ describe('перетаскивание темы через блоки', () => {
 
     assert.equal(target.parent, trig.id)
     assert.equal(target.index, 2)
+  })
+})
+
+
+describe('выделение строк для удаления пачкой', () => {
+  const order = selectableIds(TREE)
+
+  it('лента идёт в порядке показа, а тем в ней нет', () => {
+    assert.deepEqual(order, [11, 12, 21, 3, 4])
+  })
+
+  it('проведённой строки в ленте нет: её всё равно не удалить', () => {
+    const taught = [
+      section(1, 'Тригонометрия', [
+        { ...lesson(11, 'Синус'), taught: true },
+        lesson(12, 'Косинус'),
+      ]),
+      { ...lesson(3, 'Повторение'), taught: true },
+      lesson(4, 'Контрольная'),
+    ]
+
+    assert.deepEqual(selectableIds(taught), [12, 4])
+  })
+
+  it('обычный клик выделяет, повторный снимает', () => {
+    assert.deepEqual(afterClick([], order, 12), [12])
+    assert.deepEqual(afterClick([12], order, 12), [])
+  })
+
+  it('Shift тянет диапазон от прошлого нажатия, через границу темы', () => {
+    assert.deepEqual(afterClick([11], order, 3, { anchor: 11, range: true }), [
+      11, 12, 21, 3,
+    ])
+  })
+
+  it('диапазон тянется и снизу вверх', () => {
+    assert.deepEqual(afterClick([3], order, 12, { anchor: 3, range: true }), [12, 21, 3])
+  })
+
+  it('вторая протяжка добавляется к первой, а не заменяет её', () => {
+    const first = afterClick([], order, 11)
+    const both = afterClick(first, order, 4, { anchor: 3, range: true })
+
+    assert.deepEqual(both, [11, 3, 4])
+  })
+
+  it('Shift без прошлого нажатия — это просто клик', () => {
+    assert.deepEqual(afterClick([], order, 21, { anchor: null, range: true }), [21])
+  })
+
+  it('выбранное идёт в порядке ленты, а не нажатий', () => {
+    const chosen = afterClick(afterClick([], order, 4), order, 11)
+
+    assert.deepEqual(chosen, [11, 4])
+  })
+
+  it('строки не из ленты не выделяются: тему так не подцепить', () => {
+    assert.deepEqual(afterClick([], order, 1), [])
   })
 })
