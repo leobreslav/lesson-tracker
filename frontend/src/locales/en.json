@@ -114,6 +114,7 @@
     "slot_not_study_day": "{{date}} is not a study day ({{statusLabel}}{{titleSuffix}}) — the lesson sits outside the school calendar."
   },
   "errors": {
+    "offline": "The server did not answer. Check the connection and try again — nothing has been lost.",
     "unknown": "The request failed",
     "downloadFailed": "The plan could not be downloaded",
     "year_dates_reversed": "The end of the year is earlier than its start.",

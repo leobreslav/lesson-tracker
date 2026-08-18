@@ -47,12 +47,30 @@ async function request(path, { method = 'GET', body, auth = true } = {}) {
   const token = getToken()
   if (auth && token) headers['Authorization'] = `Token ${token}`
 
-  // Vite proxies /api to backend:8000, so the path stays relative
-  const response = await fetch(path, {
-    method,
-    headers,
-    body: body ? (isForm ? body : JSON.stringify(body)) : undefined,
-  })
+  /*
+   * Сеть не ответила — это не «ошибка приложения», и звучать должна иначе.
+   *
+   * `fetch` в этом случае бросает `TypeError: Failed to fetch` — строку, в
+   * которой человеку нет ничего: ни что произошло, ни что делать. А
+   * происходит это буднично: пропал интернет, уснул ноутбук, или сервер
+   * перезапускают выкаткой — последнее поймано на проде, `Failed to fetch`
+   * посреди работы, в английском виде и в русском интерфейсе.
+   *
+   * Статуса у такого отказа нет по построению (ответа не было вовсе),
+   * поэтому 0: вызывающий код смотрит на 401 и на коды ошибок, и ни одно
+   * из его правил ноль не задевает.
+   */
+  let response
+  try {
+    // Vite proxies /api to backend:8000, so the path stays relative
+    response = await fetch(path, {
+      method,
+      headers,
+      body: body ? (isForm ? body : JSON.stringify(body)) : undefined,
+    })
+  } catch {
+    throw new ApiError(i18n.t('errors.offline'), 0, 'offline', null)
+  }
 
   const data = await response.json().catch(() => null)
 

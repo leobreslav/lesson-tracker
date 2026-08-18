@@ -157,3 +157,28 @@ test('вкладка, пережившая выкатку, чинит себя �
   await page.locator('.plan-row.lesson .title').first().click()
   await expect(page.locator('dialog.modal')).toBeVisible()
 })
+
+test('сервер не ответил — так и написано, по-человечески', async ({
+  page,
+  signIn,
+}) => {
+  // Выкатка перезапускает nginx, и на секунду 443 не слушает никто: браузер
+  // отвечает ERR_CONNECTION_REFUSED, а `fetch` бросает «Failed to fetch» —
+  // строку, в которой человеку нет ничего. Поймано на проде: английский
+  // «Failed to fetch» в русском интерфейсе посреди работы.
+  expectConsoleError(page, /Failed to load resource|net::ERR|api\/plan/)
+
+  await signIn(PEOPLE.ivanova)
+  await page.goto('/plan')
+  await ready(page)
+  await page.getByLabel('Курс').selectOption({ label: 'Grade 6 Algebra' })
+  await expect(page.locator('.plan-cards')).toBeVisible()
+
+  // роняем сеть под уже открытой страницей
+  await page.route('**/api/plan/**', (route) => route.abort('connectionrefused'))
+  await page.locator('.plan-row.lesson .title').first().click()
+
+  const panel = page.locator('dialog.modal.sheet')
+  await expect(panel).toContainText('Сервер не ответил')
+  await expect(panel).not.toContainText('Failed to fetch')
+})
