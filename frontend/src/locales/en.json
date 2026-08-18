@@ -154,6 +154,7 @@
     "email_not_verified": "Google has not verified this email address.",
     "no_school": "You do not belong to any school yet.",
     "school_admin_required": "Only a school administrator can change this.",
+    "course_teacher_busy": "{{teacher}} already teaches «{{course}}» at that hour — {{count}} hours of this course collide with their timetable. Sort the timetable out first.",
     "course_teacher_taken": "«{{course}}» is already taught by {{teacher}}. Remove that assignment first.",
     "other_school": "That object belongs to another school.",
     "course_in_use": "«{{name}}» is in use: it holds {{plan_rows}} curriculum rows, plus {{slots}} lessons and {{works}} assignments. Clear it first.",
@@ -405,7 +406,7 @@
       "confirmLoss": "I understand: {{content}} of them have content and {{attachments}} have attachments, and it all goes.",
       "taught": "Some lessons here have already been taught — the section cannot go together with them: withdraw the records first."
     },
-    "importLibrary": "Load from the library…",
+    "importLibrary": "Open the library",
     "publish": "Save to the library…",
     "visibility": "Who sees it",
     "toEveryone": "The whole school",
@@ -691,6 +692,9 @@
       "unassign": "Take {{name}} off this course",
       "assignLabel": "Teacher for {{name}}",
       "pickTeacher": "teacher…",
+    "newTeacher": "lead teacher, optional",
+    "newMethodist": "methodist, optional",
+    "renameLabel": "Rename {{name}}",
     "assignAction": "Assign the lead teacher of {{name}}",
     "methodistAction": "Assign the methodist of {{name}}",
       "needGrades": "There are no year groups yet — add them in «Reference lists».",
@@ -713,9 +717,7 @@
       "inviteAsAdmin": "invite as an administrator",
       "invite": "Invite",
     "waiting": "has not signed in yet",
-    "waitingHint": "The account is ready and waiting: it becomes theirs the first time they sign in through Google on this address.",
-      "pending": "waiting for the first sign-in",
-      "withdraw": "Withdraw the invitation"
+    "waitingHint": "The account is ready and waiting: it becomes theirs the first time they sign in through Google on this address."
     },
     "profile": {
       "title": "Name of the school",
@@ -750,7 +752,7 @@
     },
     "teachers": {
       "title": "Teachers",
-      "hint": "Everybody who has signed in at least once. A course handed to somebody appears in their lists — lessons, plan, layout.",
+      "hint": "Everybody in the school. Writing an address down creates the account at once: the person picks it up on their first Google sign-in, and until then carries a mark. A course handed to somebody appears in their lists — lessons, plan, layout.",
       "noCourses": "no courses yet",
       "assign": "Assign",
       "assignLabel": "Course for {{name}}",
@@ -759,11 +761,6 @@
       "detach": "Detach from the school",
       "keepsWork": "The lessons and the plan stay where they are — only the assignment goes.",
       "detachKeeps": "Their lessons and plans are kept; the assignments and the role are removed."
-    },
-    "invitations": {
-      "title": "Invited",
-      "hint": "Written down in advance: the person signs in through Google on that address and joins the school.",
-      "none": "Nobody is waiting for a first sign-in."
     },
     "reference": {
       "subjects": "Subjects",

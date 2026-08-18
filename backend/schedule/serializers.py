@@ -150,6 +150,63 @@ class TeacherBriefSerializer(serializers.ModelSerializer):
         fields = ("id", "email", "first_name", "last_name", "is_school_admin")
 
 
+def refuse_if_hours_collide(course, teacher) -> None:
+    """
+    Ведущего не ставят на курс, если этот час у него уже занят.
+
+    Физически человек не ведёт два урока разом, и приложение это правило
+    держит везде: `Slot.find_conflict` не даёт завести такой урок, а
+    `rich_demo.check_conflicts` считает такое состояние невозможным. Одна
+    дверь стояла открытой — **назначение**: курс, оставшийся без ведущего,
+    сохраняет своё расписание, и новый человек мог получить его поверх
+    собственных часов. Проходило это молча, а разбираться пришлось бы уже
+    по экранам, где один учитель стоит в двух местах.
+
+    Отказ жёсткий, без `?force=`: это не «дорого, но бывает», а состояние,
+    которого не бывает. Расписание правят и назначают снова — тем же
+    порядком, каким чинят любое столкновение часов.
+    """
+    if teacher is None:
+        return
+
+    hours = set(
+        Slot.objects.filter(course=course, is_cancelled=False).values_list(
+            "date", "lesson_number"
+        )
+    )
+    if not hours:
+        return
+
+    busy = (
+        Slot.objects.filter(
+            course__assignments__teacher=teacher,
+            is_cancelled=False,
+            date__in={day for day, _ in hours},
+        )
+        .exclude(course=course)
+        .select_related("course")
+        .order_by("date", "lesson_number")
+    )
+
+    clashes = [slot for slot in busy if (slot.date, slot.lesson_number) in hours]
+    if not clashes:
+        return
+
+    first = clashes[0]
+    api_error(
+        Codes.COURSE_TEACHER_BUSY,
+        f"{full_name(teacher)} already teaches «{first.course.name}» on "
+        f"{first.date}, lesson {first.lesson_number}: {len(clashes)} hours of "
+        "this course collide with their timetable.",
+        field="teacher",
+        teacher=full_name(teacher),
+        course=first.course.name,
+        date=str(first.date),
+        number=first.lesson_number,
+        count=len(clashes),
+    )
+
+
 class CourseAssignmentSerializer(serializers.ModelSerializer):
     """
     Кто ведёт курс. Пишется с обеих сторон, хранится в одном месте.
@@ -207,6 +264,7 @@ class CourseAssignmentSerializer(serializers.ModelSerializer):
                 teacher=full_name(taken.teacher),
             )
 
+        refuse_if_hours_collide(course, attrs.get("teacher"))
         return attrs
 
 

@@ -101,7 +101,9 @@ test('назначение видно и снимается со стороны 
   // то же самое отношение, показанное с другого конца
   await expect(card.locator('.tag').first()).toContainText('Grade 6 Algebra')
 
-  await card.getByLabel('Курс для Мария Иванова').selectOption({ label: 'Свободный курс' })
+  // поиск по мере ввода вместо выпадающего списка: учителей в школе
+  // бывает несколько десятков, и нужного в схлопнутом списке ищут глазами
+  await card.getByLabel('Курс для Мария Иванова').fill('Свободный курс')
   await card.getByRole('button', { name: 'Назначить', exact: true }).click()
 
   await expect(card.locator('.tag', { hasText: 'Свободный курс' })).toBeVisible()
@@ -355,4 +357,63 @@ test('администратор чинит чужой план — из тог�
   expect(
     tree.body.nodes.some((node) => node.title === 'Починено завучем'),
   ).toBe(true)
+})
+
+test('занятый курс не предлагают ни на одной из двух дверей', async ({
+  page,
+  signIn,
+  api,
+}) => {
+  // Назначение делается с двух сторон — из карточки учителя и из карточки
+  // курса, — и обе обязаны быть одинаково честными. Карточку курса
+  // починили, когда вводили правило «ведущий один», а вторую забыли: она
+  // предлагала занятый курс, а сервер отвечал `course_teacher_taken`.
+  const admin = await api(PEOPLE.admin)
+  const courses = await admin.get('/api/courses/?scope=school')
+  const busy = courses.body.find((item) => item.teachers.length > 0)
+  expect(busy, 'в школе должен быть курс с ведущим').toBeTruthy()
+
+  await signIn(PEOPLE.admin)
+
+  // дверь первая: карточка учителя — занятого курса в списке нет
+  await openSection(page, '/school/teachers')
+  const options = await page
+    .locator('.people-list datalist option')
+    .evaluateAll((items) => items.map((item) => item.value))
+  expect(options).not.toContain(busy.name)
+
+  // дверь вторая: карточка курса — пока ведущий есть, формы нет вовсе
+  await openSection(page, '/school/courses')
+  const row = page.locator('.course-row', { hasText: busy.name })
+  await row.locator('.course-open').click()
+  const body = page.locator('.course-body')
+  await expect(body).toBeVisible()
+  await expect(body.getByRole('button', { name: /Назначить ведущего/ })).toHaveCount(0)
+})
+
+test('строка курса раскрывается кликом, а имя правится карандашом', async ({
+  page,
+  signIn,
+}) => {
+  // По названию открывалось переименование — самый крупный элемент строки
+  // делал не то, чего от него ждут, и промах стоил открытого поля ввода.
+  await signIn(PEOPLE.admin)
+  await openSection(page, '/school/courses')
+
+  const row = page.locator('.course-row').first()
+  await row.locator('.course-open').click()
+  await expect(page.locator('.course-body')).toBeVisible()
+
+  // повторный клик сворачивает
+  await row.locator('.course-open').click()
+  await expect(page.locator('.course-body')).toHaveCount(0)
+
+  // переименование — под карандашом, и поле появляется вместо строки
+  await row.hover()
+  await row.getByTitle('Переименовать').click()
+  const field = row.locator('input.course-rename')
+  await expect(field).toBeVisible()
+  await field.fill('9Б Переименованный')
+  await field.press('Enter')
+  await expect(page.locator('.course-row', { hasText: '9Б Переименованный' })).toBeVisible()
 })

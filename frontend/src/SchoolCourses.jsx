@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 import EmptyState from './EmptyState'
+import PersonPicker, { describePerson, matchItem } from './PersonPicker'
 import RosterDialog from './RosterDialog'
 import {
   createAssignment,
@@ -39,7 +40,13 @@ export default function SchoolCourses() {
   const [subjects, setSubjects] = useState([])
   const [grades, setGrades] = useState([])
   const [members, setMembers] = useState([])
-  const [form, setForm] = useState({ name: '', subject: '', grade: '' })
+  const [form, setForm] = useState({
+    name: '',
+    subject: '',
+    grade: '',
+    teacher: '',
+    methodist: '',
+  })
   const [editing, setEditing] = useState(null) // {id, value}
   const [assigning, setAssigning] = useState({}) // course id -> teacher id
   const [naming, setNaming] = useState({}) // course id -> methodist id
@@ -93,19 +100,40 @@ export default function SchoolCourses() {
     }
   }
 
+  /**
+   * Завести курс — и сразу назвать людей, если они уже известны.
+   *
+   * Учитель и методист здесь необязательны, но стоят в той же форме: курс
+   * почти всегда заводят, уже зная, кто его поведёт, и отправлять человека
+   * потом искать только что созданную строку в списке — лишний заход.
+   *
+   * Пишутся они **после** курса и отдельными запросами: это разные
+   * таблицы, и у назначения свои отказы (занятый час, занятый курс).
+   * Курс при этом остаётся заведённым — половина сделанного тут лучше
+   * ничего, потому что видно, что именно не удалось, и поправить это
+   * можно на месте, в карточке.
+   */
   const add = (event) => {
     event.preventDefault()
     const name = form.name.trim()
     if (!name || !form.subject || !form.grade || busy) return
 
-    run(() =>
-      createCourse({
+    const teacher = matchItem(members, form.teacher, describePerson)
+    const methodist = matchItem(members, form.methodist, describePerson)
+
+    run(async () => {
+      const made = await createCourse({
         year: yearId,
         name,
         subject: Number(form.subject),
         grade: Number(form.grade),
-      }).then(() => setForm((current) => ({ ...current, name: '' }))),
-    )
+      })
+
+      if (teacher) await createAssignment(made.id, teacher.id)
+      if (methodist) await createMethodist(made.id, methodist.id)
+
+      setForm((current) => ({ ...current, name: '', teacher: '', methodist: '' }))
+    })
   }
 
   const commitRename = () => {
@@ -150,11 +178,11 @@ export default function SchoolCourses() {
    * них в одном месте — на карточке курса.
    */
   const nameMethodist = (course) => {
-    const personId = naming[course.id]
-    if (!personId || busy) return
+    const person = matchItem(members, naming[course.id], describePerson)
+    if (!person || busy) return
 
     run(() =>
-      createMethodist(course.id, Number(personId)).then(() =>
+      createMethodist(course.id, person.id).then(() =>
         setNaming((current) => ({ ...current, [course.id]: '' })),
       ),
     )
@@ -267,6 +295,26 @@ export default function SchoolCourses() {
               {t('school.courses.needGrades')}
             </Link>
           )}
+          {/* необязательные: курс почти всегда заводят, уже зная, кто его
+              поведёт, и второй заход в карточку ради этого — лишний */}
+          <PersonPicker
+            items={members}
+            value={form.teacher}
+            label={t('school.courses.newTeacher')}
+            placeholder={t('school.courses.newTeacher')}
+            disabled={busy}
+            describe={describePerson}
+            onChange={(text) => setForm((current) => ({ ...current, teacher: text }))}
+          />
+          <PersonPicker
+            items={members}
+            value={form.methodist}
+            label={t('school.courses.newMethodist')}
+            placeholder={t('school.courses.newMethodist')}
+            disabled={busy}
+            describe={describePerson}
+            onChange={(text) => setForm((current) => ({ ...current, methodist: text }))}
+          />
           <button
             type="submit"
             disabled={busy || !form.name.trim() || !form.subject || !form.grade}
@@ -286,20 +334,24 @@ export default function SchoolCourses() {
                 <li key={course.id} className={open ? 'course-row open' : 'course-row'}>
                   {/* свёрнутая строка: колонки фиксированной ширины, чтобы
                       семь курсов читались столбцами, а не лесенкой */}
-                  <div className="course-head">
-                    <button
-                      type="button"
-                      className="link toggle"
-                      aria-expanded={open}
-                      aria-label={t(open ? 'plan.collapse' : 'plan.expand')}
-                      onClick={() => setExpanded(open ? null : course.id)}
-                    >
-                      {open ? '▾' : '▸'}
-                    </button>
+                  {/*
+                    Строка раскрывается кликом по себе, а не по одной
+                    стрелке в углу. Раскрытие — то, чего от строки списка
+                    ждут, и целиться ради него в значок шириной в полтора
+                    десятка пикселей приходилось каждый раз. А по названию
+                    раньше открывалось переименование — то есть самый
+                    крупный и заметный элемент строки делал не то, чего от
+                    него ждут, и промах стоил открытого поля ввода.
 
+                    Переименование уехало под карандаш, который виден при
+                    наведении: правят название редко, а раскрывают строку
+                    постоянно.
+                  */}
+                  <div className="course-head">
                     {editing?.id === course.id ? (
                       <input
                         autoFocus
+                        className="course-rename"
                         value={editing.value}
                         maxLength={100}
                         aria-label={t('classes.newNameLabel')}
@@ -315,48 +367,62 @@ export default function SchoolCourses() {
                     ) : (
                       <button
                         type="button"
-                        className="link name"
+                        className="course-open"
+                        aria-expanded={open}
+                        onClick={() => setExpanded(open ? null : course.id)}
+                      >
+                        <span className="toggle" aria-hidden="true">
+                          {open ? '▾' : '▸'}
+                        </span>
+                        <span className="name">{course.name}</span>
+                        <span className="hint what">
+                          {[course.subject_name, course.grade_name]
+                            .filter(Boolean)
+                            .join(' · ')}
+                        </span>
+                        <span className="who">
+                          {course.teachers.length === 0 ? (
+                            <span className="hint warning">
+                              {t('school.courses.noTeacher')}
+                            </span>
+                          ) : (
+                            course.teachers.map((teacher) => teacher.name).join(', ')
+                          )}
+                          {course.methodists.length === 0 && (
+                            <span className="hint warning">
+                              {' · '}
+                              {t('school.courses.noMethodist')}
+                            </span>
+                          )}
+                        </span>
+                      </button>
+                    )}
+
+                    <span className="course-head-actions">
+                      <button
+                        type="button"
+                        className="link"
                         title={t('classes.rename')}
+                        aria-label={t('school.courses.renameLabel', {
+                          name: course.name,
+                        })}
                         disabled={busy}
                         onClick={() =>
                           setEditing({ id: course.id, value: course.name })
                         }
                       >
-                        {course.name}
+                        ✎
                       </button>
-                    )}
-
-                    <span className="hint what">
-                      {[course.subject_name, course.grade_name]
-                        .filter(Boolean)
-                        .join(' · ')}
+                      <button
+                        type="button"
+                        className="link"
+                        aria-label={t('classes.delete', { name: course.name })}
+                        disabled={busy}
+                        onClick={() => remove(course)}
+                      >
+                        ✕
+                      </button>
                     </span>
-
-                    <span className="who">
-                      {course.teachers.length === 0 ? (
-                        <span className="hint warning">
-                          {t('school.courses.noTeacher')}
-                        </span>
-                      ) : (
-                        course.teachers.map((teacher) => teacher.name).join(', ')
-                      )}
-                      {course.methodists.length === 0 && (
-                        <span className="hint warning">
-                          {' · '}
-                          {t('school.courses.noMethodist')}
-                        </span>
-                      )}
-                    </span>
-
-                    <button
-                      type="button"
-                      className="link"
-                      aria-label={t('classes.delete', { name: course.name })}
-                      disabled={busy}
-                      onClick={() => remove(course)}
-                    >
-                      ✕
-                    </button>
                   </div>
 
                   {open && (
@@ -468,35 +534,27 @@ export default function SchoolCourses() {
                           )}
                         </div>
                         <div className="row">
-                          <select
+                          <PersonPicker
+                            items={members.filter(
+                              (person) =>
+                                !course.methodists.some(
+                                  (item) => item.id === person.id,
+                                ),
+                            )}
                             value={naming[course.id] ?? ''}
-                            aria-label={t('school.courses.methodistLabel', {
+                            label={t('school.courses.methodistLabel', {
                               name: course.name,
                             })}
+                            placeholder={t('school.courses.pickMethodist')}
                             disabled={busy}
-                            onChange={(event) =>
+                            describe={describePerson}
+                            onChange={(text) =>
                               setNaming((current) => ({
                                 ...current,
-                                [course.id]: event.target.value,
+                                [course.id]: text,
                               }))
                             }
-                          >
-                            <option value="">
-                              {t('school.courses.pickMethodist')}
-                            </option>
-                            {members
-                              .filter(
-                                (person) =>
-                                  !course.methodists.some(
-                                    (item) => item.id === person.id,
-                                  ),
-                              )
-                              .map((person) => (
-                                <option key={person.id} value={person.id}>
-                                  {fullName(person)}
-                                </option>
-                              ))}
-                          </select>
+                          />
                           <button
                             type="button"
                             className="secondary"

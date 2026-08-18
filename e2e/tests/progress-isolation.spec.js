@@ -115,7 +115,7 @@ async function openShelf(page, course) {
   // учителя музыки с полутора десятками курсов
   await page.getByLabel('Курс').selectOption({ label: course })
   await expect(page.locator('.plan-cards')).toBeVisible()
-  await planMenu(page, 'Из библиотеки')
+  await planMenu(page, 'Открыть библиотеку')
   await expect(page.locator('dialog.modal')).toBeVisible()
   return page.locator('dialog.modal')
 }

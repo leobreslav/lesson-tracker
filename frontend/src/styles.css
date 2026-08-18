@@ -42,6 +42,10 @@
    */
   --plan-columns: 44px 14px 86px 24px 26px 1fr auto;
   --plan-pick-column: 28px;
+  /* колонки строки курса: стрелка · название · предмет и параллель · люди.
+     Одна переменная на строку и на раскрытую карточку — иначе зоны внутри
+     не совпадают с зонами заголовка, и это читается как кривая вёрстка */
+  --course-columns: 1.5rem minmax(8rem, 1fr) minmax(8rem, 1fr) minmax(10rem, 2fr);
   --plan-columns-bare: 24px 26px 1fr auto;
   /* приглушённая подложка: ею закрашена каждая вторая неделя */
   --surface-1: #f4f5f7;
@@ -185,6 +189,15 @@ body {
   & > :is(input:not([type='checkbox']):not([type='radio']), .field-with-hint) {
     flex: 1 1 8rem;
     min-width: 6rem;
+  }
+
+  /* Поле с поиском по списку — исключение: в нём одно имя, и растянутое
+     на всю карточку оно читается как ошибка вёрстки.
+     Селектор нарочно с классом и атрибутом: у общего правила выше
+     `:is(input:not([type=…]):not([type=…]))`, и весит оно больше одного
+     атрибута — порядком тут не обойтись. */
+  & > input.search[list] {
+    flex: 0 1 24rem;
   }
 
   /* Панель управления планом: восемь кнопок и три чекбокса в одном ряду.
@@ -2885,18 +2898,59 @@ button.chip.active:hover:not(:disabled) {
   background: var(--surface-1);
 }
 
-/* колонки постоянной ширины: семь строк должны читаться столбцами, а не
-   лесенкой из имён разной длины */
+/*
+ * Строка курса: раскрывается кликом по себе.
+ *
+ * Раскрытие — то, чего от строки списка ждут, и целиться ради него в
+ * стрелку шириной в полтора десятка пикселей приходилось каждый раз. А по
+ * названию открывалось переименование, то есть самый крупный элемент
+ * строки делал не то, чего от него ждут.
+ *
+ * Поэтому вся строка, кроме кнопок, — одна кнопка раскрытия; действия над
+ * курсом лежат рядом с ней, а не внутри (вложенные кнопки невозможны).
+ * Колонки при этом остались постоянной ширины: семь строк должны читаться
+ * столбцами, а не лесенкой из имён разной длины.
+ */
 .course-head {
   display: grid;
-  grid-template-columns: 1.5rem minmax(8rem, 1fr) minmax(8rem, 1fr) minmax(10rem, 2fr) auto;
-  gap: 0.5rem;
+  grid-template-columns: 1fr auto;
   align-items: center;
   padding: 0.3rem 0.6rem;
 }
 
+.course-open {
+  display: grid;
+  grid-template-columns: var(--course-columns);
+  gap: 0.5rem;
+  align-items: center;
+  width: 100%;
+  padding: 0.2rem 0;
+  color: inherit;
+  text-align: left;
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+
+/* цвет фона у кнопок задан правилом с `:hover:not(:disabled)`, а оно
+   специфичнее одного класса — поэтому прозрачность приходится назвать и
+   для наведения, иначе раскрытая строка загорается синим */
+.course-open:hover:not(:disabled),
+.course-open:disabled {
+  background: none;
+}
+
+.course-open:hover .name {
+  text-decoration: underline;
+}
+
+.course-open:disabled {
+  cursor: default;
+}
+
 .course-head .name {
   overflow: hidden;
+  font-weight: 500;
   text-align: left;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -2912,6 +2966,30 @@ button.chip.active:hover:not(:disabled) {
 
 .course-head .toggle {
   padding: 0;
+  color: #666;
+}
+
+.course-rename {
+  margin: 0.15rem 0;
+}
+
+/* правят название редко, а раскрывают строку постоянно: карандаш
+   появляется при наведении, как кнопки строки в учебном плане */
+.course-head-actions {
+  display: flex;
+  gap: 0.25rem;
+  align-items: center;
+}
+
+@media (hover: hover) {
+  .course-head-actions button[title] {
+    visibility: hidden;
+  }
+
+  .course-row:hover .course-head-actions button[title],
+  .course-head-actions:focus-within button[title] {
+    visibility: visible;
+  }
 }
 
 /*
@@ -3864,22 +3942,48 @@ button.compact,
  */
 .course-body {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
   grid-template-rows: auto auto auto;
-  gap: 0.5rem 1.5rem;
-  padding: 0.25rem 0.6rem 0.6rem 2.1rem;
+  gap: 0.5rem;
+  /* слева — ровно под названием курса: ширина стрелки плюс зазор строки.
+     Считается из той же переменной, что и колонки заголовка, иначе зоны
+     карточки не совпадают с зонами строки и это читается как кривая
+     вёрстка */
+  padding: 0.1rem 0.6rem 0.6rem 2.6rem;
 }
 
+/*
+ * Роль — плашка, а не кусок сплошного поля.
+ *
+ * Раскрытая карточка была одной заливкой того же цвета, что и строка
+ * заголовка: границы зон внутри ничем не обозначены, и три блока
+ * читались как один сплошной прямоугольник с текстом враздрай. Теперь у
+ * каждой роли своя белая плашка с рамкой — тот же приём, что у строк
+ * внутри карточки в остальном приложении.
+ */
 .course-role {
+  /* строки у трёх плашек общие: подписи на одной линии, состояния на
+     одной, кнопки на одной. Отступ у карточек одинаковый, поэтому общая
+     сетка строк переживает и его */
   display: grid;
   grid-template-rows: subgrid;
   grid-row: span 3;
   gap: 0.35rem;
-  /* содержимое ячейки — по центру своей полосы: полоса тянется по самой
-     высокой колонке (плашка с фамилией выше простой подписи рядом), и без
-     этого текст соседней колонки вставал бы выше, чем текст в плашке */
   align-items: center;
+  padding: 0.5rem 0.7rem;
+  background: #fff;
+  border-radius: var(--row-radius);
+  box-shadow: var(--row-shadow);
 }
+
+/* подпись роли — заголовок плашки, а не одна из строк в ней */
+.course-role > .hint:first-child {
+  margin: 0 0 0.35rem;
+  font-weight: 600;
+  color: #444;
+}
+
+
 
 .course-role .row.courses {
   min-height: 1.6rem;

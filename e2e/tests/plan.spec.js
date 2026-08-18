@@ -446,7 +446,7 @@ test('импорт из библиотеки наполняет пустой п�
   await signIn(PEOPLE.petrov)
   await openPlan(page, EMPTY_COURSE)
 
-  await planMenu(page, 'Из библиотеки')
+  await planMenu(page, 'Открыть библиотеку')
 
   // полка теперь список с поиском: шаблон выбирается нажатием на название
   const dialog = page.locator('dialog.modal')
@@ -527,7 +527,7 @@ test('черновик публикуется и снимается с публ�
 
   await signIn(PEOPLE.petrov)
   await openPlan(page, 'Grade 9 Algebra')
-  await planMenu(page, 'Из библиотеки')
+  await planMenu(page, 'Открыть библиотеку')
 
   const shelf = page.locator('dialog.modal')
   const row = shelf.locator('li', { hasText: 'Свежий черновик' })
@@ -546,7 +546,7 @@ test('просмотр шаблона показывает уроки до то�
 }) => {
   await signIn(PEOPLE.petrov)
   await openPlan(page, 'Grade 9 Algebra')
-  await planMenu(page, 'Из библиотеки')
+  await planMenu(page, 'Открыть библиотеку')
 
   const shelf = page.locator('dialog.modal').first()
   await shelf
@@ -574,7 +574,7 @@ test('поиск сужает полку, «только мои» прячет �
 }) => {
   await signIn(PEOPLE.petrov)
   await openPlan(page, 'Grade 9 Algebra')
-  await planMenu(page, 'Из библиотеки')
+  await planMenu(page, 'Открыть библиотеку')
 
   const shelf = page.locator('dialog.modal')
   const rows = shelf.locator('.template-list li')
@@ -1010,8 +1010,10 @@ test('десять строк удаляются одним выбором и о
   await expect(page.locator('.plan-row.lesson')).toHaveCount(2)
   expect(await structure(page)).toEqual(['1 Первый', '2 Шестой'])
 
-  // режим выключился сам: пачку удалили, выбирать больше нечего
-  await expect(page.locator('.plan-pick input')).toHaveCount(0)
+  // режим остаётся включённым: удалили три строки — часто следом идут ещё
+  // две, и выходить ради этого, чтобы тут же вернуться, незачем
+  await expect(page.locator('.plan-selection')).toBeVisible()
+  await expect(page.locator('.plan-selection')).toContainText('Ничего не выбрано')
 })
 
 test('у темы флажка нет: у неё спрашивают про её уроки', async ({ page, signIn }) => {

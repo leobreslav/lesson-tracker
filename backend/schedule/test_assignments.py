@@ -12,6 +12,8 @@ row, because that is the whole reason for having one table instead of two
 lists.
 """
 
+from datetime import date, timedelta
+
 from django.db import connection
 from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
@@ -682,3 +684,77 @@ class EnrolmentTests(SchoolTestMixin, APITestCase):
 
         self.assertEqual(response.status_code, 403)
         self.assertEqual(response.json()["code"], "students_only")
+
+
+class BusyHoursTests(SchoolTestMixin, APITestCase):
+    """
+    Ведущего не ставят на курс, чей час у него уже занят.
+
+    Физически человек не ведёт два урока разом, и приложение держит это
+    везде — `Slot.find_conflict` не даёт завести такой урок, а крупный
+    посевной набор считает такое состояние невозможным. Одна дверь стояла
+    открытой: курс, оставшийся без ведущего, сохраняет расписание, и новый
+    человек мог получить его **поверх собственных часов**, молча.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.year = make_year(self.school)
+        self.free = make_course(self.school, self.year, "9Б Алгебра")
+        self.taken = make_course(self.school, self.year, "9В Алгебра")
+        self.day = date.today() + timedelta(days=3)
+        self.client.force_authenticate(self.admin)
+
+    def occupy(self, course, teacher, number=3):
+        make_slot(teacher, course, self.day, number)
+
+    def hand_over(self, course, teacher):
+        return self.client.post(
+            reverse("courseassignment-list"),
+            {"course": course.pk, "teacher": teacher.pk},
+            format="json",
+        )
+
+    def test_a_collision_is_refused_and_named(self):
+        self.occupy(self.taken, self.colleague)
+        self.occupy(self.free, self.user)
+        CourseAssignment.objects.filter(course=self.free).delete()
+
+        answer = self.hand_over(self.free, self.colleague)
+
+        self.assertEqual(answer.status_code, 400)
+        body = answer.json()
+        self.assertEqual(body["code"], "course_teacher_busy")
+        # называет, где именно столкнулись: «занято» без места отправляет
+        # искать его руками
+        self.assertEqual(body["params"]["course"], "9В Алгебра")
+        self.assertEqual(body["params"]["date"], str(self.day))
+        self.assertEqual(body["params"]["count"], 1)
+        self.assertFalse(CourseAssignment.objects.filter(course=self.free).exists())
+
+    def test_a_free_hour_is_handed_over_as_before(self):
+        self.occupy(self.taken, self.colleague, number=3)
+        self.occupy(self.free, self.user, number=4)
+        CourseAssignment.objects.filter(course=self.free).delete()
+
+        answer = self.hand_over(self.free, self.colleague)
+
+        self.assertEqual(answer.status_code, 201, answer.content)
+
+    def test_a_cancelled_hour_frees_the_place(self):
+        """Отменённый урок место освобождает — то же правило, что у слотов."""
+        self.occupy(self.taken, self.colleague)
+        Slot.objects.filter(course=self.taken).update(is_cancelled=True)
+        self.occupy(self.free, self.user)
+        CourseAssignment.objects.filter(course=self.free).delete()
+
+        answer = self.hand_over(self.free, self.colleague)
+
+        self.assertEqual(answer.status_code, 201, answer.content)
+
+    def test_a_course_without_a_timetable_is_handed_over_freely(self):
+        self.occupy(self.taken, self.colleague)
+
+        answer = self.hand_over(self.free, self.colleague)
+
+        self.assertEqual(answer.status_code, 201, answer.content)

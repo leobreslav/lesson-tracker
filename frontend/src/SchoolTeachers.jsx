@@ -4,35 +4,39 @@ import {
   createAssignment,
   createInvitation,
   deleteAssignment,
-  deleteInvitation,
   detachMember,
   fetchCourses,
-  fetchInvitations,
   fetchMembers,
   setMemberRole,
 } from './api'
+import PersonPicker, { matchItem } from './PersonPicker'
 import { useSchoolSection } from './School'
 
 const fullName = (person) =>
   [person.first_name, person.last_name].filter(Boolean).join(' ') || person.email
 
 /**
- * The people of the school, and what each of them teaches.
+ * Люди школы и то, что каждый из них ведёт.
  *
- * Two lists, not one: somebody who has signed in is a member with a role and
- * a load, somebody who has only been written down is an invitation that can
- * be withdrawn. They used to share a section and reading it meant working
- * out which was which.
+ * **Список один.** Их было два — участники и приглашения, — и это было
+ * верно ровно до тех пор, пока приглашение оставалось записанным адресом.
+ * Теперь оно заводит учётку, и приглашённый стоит в общем списке с
+ * пометкой «ещё не входил»: вторая панель показывала тех же самых людей
+ * второй раз, а её крестик «отозвать приглашение» удалял билет и оставлял
+ * человека в школе — то есть делал не то, что обещал.
  *
- * Assigning a course is offered here **and** on the course card. Same table,
- * two ways in: which one somebody reaches for depends on whether they are
- * thinking about a person or about a course.
+ * Отвязка теперь одна на всех, в строке человека, и означает ровно то, что
+ * написано.
+ *
+ * Назначение курса предлагается здесь **и** на карточке курса. Таблица
+ * одна, дверей две: к какой потянутся, зависит от того, о чём человек
+ * думает — о людях или о курсах. Обе двери при этом обязаны быть одинаково
+ * честными: занятый курс не предлагается ни там, ни там.
  */
 export default function SchoolTeachers() {
   const { t } = useTranslation()
   const { onLoggedOut } = useSchoolSection()
   const [members, setMembers] = useState(null)
-  const [invitations, setInvitations] = useState([])
   const [courses, setCourses] = useState([])
   const [email, setEmail] = useState('')
   const [inviteAdmin, setInviteAdmin] = useState(false)
@@ -52,14 +56,10 @@ export default function SchoolTeachers() {
     () =>
       Promise.all([
         fetchMembers(),
-        // только учительские: ученики приглашаются составом курса, и в
-        // разделе про сотрудников им делать нечего
-        fetchInvitations({ kind: 'teacher' }),
         fetchCourses(null, { scope: 'school' }),
       ])
-        .then(([people, invited, all]) => {
+        .then(([people, all]) => {
           setMembers(people)
-          setInvitations(invited)
           setCourses(all)
         })
         .catch(handleError),
@@ -97,7 +97,8 @@ export default function SchoolTeachers() {
   }
 
   const assign = (member) => {
-    const courseId = assigning[member.id]
+    const picked = matchItem(free, assigning[member.id], (course) => course.name)
+    const courseId = picked?.id
     if (!courseId || busy) return
 
     run(() =>
@@ -132,6 +133,14 @@ export default function SchoolTeachers() {
       }),
     )
 
+  /*
+   * Свободные курсы — те, у которых ведущего нет.
+   *
+   * Считается по самому списку курсов: у школьного ответа есть `teachers`,
+   * и второй запрос ради этого не нужен.
+   */
+  const free = courses.filter((course) => (course.teachers ?? []).length === 0)
+
   if (members === null) {
     return <p>{error ? <span className="error">{error}</span> : t('common.loading')}</p>
   }
@@ -147,6 +156,39 @@ export default function SchoolTeachers() {
       <section className="panel">
         <h3>{t('school.teachers.title')}</h3>
         <p className="hint">{t('school.teachers.hint')}</p>
+
+        {/*
+          Форма стоит здесь, а не в своей панели.
+
+          Панель «Приглашены» была отдельной, потому что приглашение было
+          отдельной сущностью: адрес, который ждёт. Оно перестало ею быть —
+          теперь это человек, который появляется в списке ниже сразу же, —
+          и держать ради одной формы вторую панель с собственным
+          заголовком значит спрашивать «а чем те люди отличаются от этих».
+          Ничем.
+        */}
+        <form className="add-form" onSubmit={invite}>
+          <input
+            type="email"
+            value={email}
+            placeholder={t('school.people.emailPlaceholder')}
+            aria-label={t('school.people.emailPlaceholder')}
+            disabled={busy}
+            onChange={(event) => setEmail(event.target.value)}
+          />
+          <label className="checkbox">
+            <input
+              type="checkbox"
+              checked={inviteAdmin}
+              disabled={busy}
+              onChange={(event) => setInviteAdmin(event.target.checked)}
+            />
+            {t('school.people.inviteAsAdmin')}
+          </label>
+          <button type="submit" disabled={busy || !email.trim()}>
+            {t('school.people.invite')}
+          </button>
+        </form>
 
         <ul className="people-list">
           {members.map((member) => (
@@ -197,31 +239,33 @@ export default function SchoolTeachers() {
               </div>
 
               <div className="row">
-                <select
+                {/*
+                  Предлагаются только **свободные** курсы.
+
+                  Ведущий у курса один, и раньше отсюда можно было выбрать
+                  занятый: сервер отвечал `course_teacher_taken`, то есть
+                  форма предлагала действие, которого не сделает. На
+                  карточке курса это починили, когда правило вводили, а
+                  здесь забыли — две двери в одну комнату разошлись молча.
+
+                  Передать курс от одного другому отсюда теперь нельзя, и
+                  это правильно: отобрать у человека год работы мимоходом
+                  из выпадающего списка не стоит. Снимают крестиком, потом
+                  назначают.
+                */}
+                <PersonPicker
+                  items={free}
                   value={assigning[member.id] ?? ''}
-                  aria-label={t('school.teachers.assignLabel', {
+                  label={t('school.teachers.assignLabel', {
                     name: fullName(member),
                   })}
-                  disabled={busy}
-                  onChange={(event) =>
-                    setAssigning((current) => ({
-                      ...current,
-                      [member.id]: event.target.value,
-                    }))
+                  placeholder={t('school.teachers.pickCourse')}
+                  disabled={busy || free.length === 0}
+                  describe={(course) => course.name}
+                  onChange={(text) =>
+                    setAssigning((current) => ({ ...current, [member.id]: text }))
                   }
-                >
-                  <option value="">{t('school.teachers.pickCourse')}</option>
-                  {courses
-                    .filter(
-                      (course) =>
-                        !member.courses.some((mine) => mine.id === course.id),
-                    )
-                    .map((course) => (
-                      <option key={course.id} value={course.id}>
-                        {course.name}
-                      </option>
-                    ))}
-                </select>
+                />
                 <button
                   type="button"
                   className="secondary"
@@ -236,72 +280,6 @@ export default function SchoolTeachers() {
         </ul>
       </section>
 
-      <section className="panel">
-        <h3>{t('school.invitations.title')}</h3>
-        <p className="hint">{t('school.invitations.hint')}</p>
-
-        <form className="add-form" onSubmit={invite}>
-          <input
-            type="email"
-            value={email}
-            placeholder={t('school.people.emailPlaceholder')}
-            aria-label={t('school.people.emailPlaceholder')}
-            disabled={busy}
-            onChange={(event) => setEmail(event.target.value)}
-          />
-          <label className="checkbox">
-            <input
-              type="checkbox"
-              checked={inviteAdmin}
-              disabled={busy}
-              onChange={(event) => setInviteAdmin(event.target.checked)}
-            />
-            {t('school.people.inviteAsAdmin')}
-          </label>
-          <button type="submit" disabled={busy || !email.trim()}>
-            {t('school.people.invite')}
-          </button>
-        </form>
-
-        {invitations.filter((item) => !item.accepted).length === 0 ? (
-          <p className="hint">{t('school.invitations.none')}</p>
-        ) : (
-          <ul className="class-list">
-            {invitations
-              .filter((item) => !item.accepted)
-              .map((invitation) => (
-                <li key={invitation.id}>
-                  <span className="name">{invitation.email}</span>
-                  <span className="hint">
-                    {t('school.people.pending')}
-                    {invitation.is_school_admin && ` · ${t('school.people.admin')}`}
-                    {/* приглашение, которое уже не сработает: человек успел
-                        войти и оказаться в другой школе */}
-                    {invitation.conflict && (
-                      <span className="warning">
-                        {' · '}
-                        {t(`roster.conflict.${invitation.conflict}`, {
-                          defaultValue: t(`errors.${invitation.conflict}`, {
-                            email: invitation.email,
-                          }),
-                        })}
-                      </span>
-                    )}
-                  </span>
-                  <button
-                    type="button"
-                    className="link"
-                    aria-label={t('school.people.withdraw')}
-                    disabled={busy}
-                    onClick={() => run(() => deleteInvitation(invitation.id))}
-                  >
-                    ✕
-                  </button>
-                </li>
-              ))}
-          </ul>
-        )}
-      </section>
     </>
   )
 }

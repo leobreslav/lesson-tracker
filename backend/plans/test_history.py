@@ -323,3 +323,64 @@ class FilesSurviveTests(SnapshotTestCase):
             history.PlanSnapshot.objects.filter(course=self.course).delete()
 
         self.assertFalse(StoredFile.objects.filter(pk=self.stored.pk).exists())
+
+
+class BulkDeleteKeepsTheQueueTests(SnapshotTestCase):
+    """
+    Пачечное удаление очередь записей не ломает — и вот почему.
+
+    Проверено вопросом, а не рассуждением: удаляется строка, стоящая
+    **между двумя записанными**, и очередь после этого спрашивается прямо.
+    Дыра — это незакрытый прошедший час, а часы удаление плана не трогает;
+    обгон — это две записи, у которых даты идут вперёд, а строки плана
+    назад, и удаление непроведённой строки взаимного порядка записанных не
+    меняет.
+
+    Проведённую строку в пачке отклоняет `plan_delete_taught` — это
+    проверено в `test_recorded`, а здесь важно обратное: законное удаление
+    не оставляет за собой сломанной очереди.
+    """
+
+    def setUp(self):
+        super().setUp()
+        from datetime import timedelta
+
+        from schedule.models import Slot
+        from schools.testing import make_slot
+
+        self.Slot = Slot
+        self.rows = [
+            self.lesson(f"Урок {index}", position=index) for index in range(4)
+        ]
+        first = timezone.now().date() - timedelta(days=5)
+        self.slots = [
+            make_slot(self.user, self.course, first + timedelta(days=index), 1)
+            for index in range(4)
+        ]
+        for slot, row in zip(self.slots[:2], self.rows[:2]):
+            slot.lesson = row
+            slot.save(update_fields=["lesson"])
+
+    def delete_many(self, ids):
+        return self.client.post(
+            f"{reverse('plannode-delete-many')}?course={self.course.pk}",
+            {"ids": ids},
+            format="json",
+        )
+
+    def test_a_row_between_two_records_goes_without_breaking_the_queue(self):
+        answer = self.delete_many([self.rows[2].pk])
+
+        self.assertEqual(answer.status_code, 200, answer.content)
+        self.assertIsNone(
+            self.Slot.broken_record(self.course, timezone.now().date()),
+            "очередь записей должна остаться очередью",
+        )
+
+    def test_the_records_keep_their_hours(self):
+        """Удаление плана часов не касается: связь остаётся на своём дне."""
+        self.delete_many([self.rows[2].pk, self.rows[3].pk])
+
+        for slot, row in zip(self.slots[:2], self.rows[:2]):
+            slot.refresh_from_db()
+            self.assertEqual(slot.lesson_id, row.pk)

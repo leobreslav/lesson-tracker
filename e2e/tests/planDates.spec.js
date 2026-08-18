@@ -97,7 +97,7 @@ test('над таблицей одна панель управления, а п�
   ).toHaveCount(0)
 
   await tools.getByRole('button', { name: 'Библиотека', exact: true }).click()
-  for (const name of [/Загрузить из библиотеки/, /в библиотек/]) {
+  for (const name of [/Открыть библиотеку/, /в библиотек/]) {
     await expect(
       tools.locator('.dropdown').getByRole('button', { name }),
     ).toBeVisible()

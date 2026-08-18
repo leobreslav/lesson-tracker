@@ -537,7 +537,11 @@ export default function Plan({ user, onLoggedOut }) {
     const ids = dropping ?? []
     setDropping(null)
     await run(() => deletePlanNodes(classId, ids))
-    stopSelecting()
+    // Режим остаётся включённым: удалили три строки — часто следом идут
+    // ещё две, и выходить ради этого, чтобы тут же вернуться, незачем.
+    // Выбор при этом сбрасывается: он уже применён.
+    setPicked([])
+    setAnchor(null)
   }
 
   /** Block counters come from the tree already loaded, with no requests. */
