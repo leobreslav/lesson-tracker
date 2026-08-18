@@ -62,9 +62,11 @@ def readable_attachments(user):
         return Attachment.objects.filter(student_work__student=user)
 
     return Attachment.objects.filter(
-        Q(plan_row__course__in=Course.objects.for_teacher(user))
+        # вложения строки плана и сканы работ — часть содержания курса,
+        # значит и право на них то же: ведущий или администратор школы
+        Q(plan_row__course__in=Course.objects.writable_by(user))
         | Q(template_row__template__in=visible_templates(user))
-        | Q(student_work__work__course__in=Course.objects.for_teacher(user))
+        | Q(student_work__work__course__in=Course.objects.writable_by(user))
     )
 
 
@@ -77,11 +79,13 @@ def can_read(user, attachment) -> bool:
         row = attachment.student_work
         if row.student_id == user.pk:
             return True
-        return Course.objects.for_teacher(user).filter(pk=row.work.course_id).exists()
+        return (
+            Course.objects.writable_by(user).filter(pk=row.work.course_id).exists()
+        )
 
     if attachment.plan_row_id is not None:
         return (
-            Course.objects.for_teacher(user)
+            Course.objects.writable_by(user)
             .filter(pk=attachment.plan_row.course_id)
             .exists()
         )
@@ -126,7 +130,7 @@ def writable_student_works(user):
         return StudentWork.objects.none()
 
     return StudentWork.objects.filter(
-        work__course__in=Course.objects.for_teacher(user)
+        work__course__in=Course.objects.writable_by(user)
     )
 
 

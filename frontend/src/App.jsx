@@ -167,7 +167,9 @@ export default function App() {
               долги переехали в его таблицу, надзор методиста — в селектор
               курса, а шаги первого входа сюда, на корень */}
           <Route path="/schedule" element={guarded(Agenda)} />
-          <Route path="/plan" element={guarded(Plan)} />
+          {/* роль нужна самой странице: администратору она показывает
+              курсы школы отдельной группой селектора */}
+          <Route path="/plan" element={guarded(Plan, { user })} />
           <Route path="/works" element={guarded(Works)} />
           <Route path="/works/:id" element={guarded(WorkTable)} />
           {/* «Школа» — не одна страница, а четыре: рамка с подменю и

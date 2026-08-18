@@ -401,11 +401,18 @@ class PersonalObjectTests(AccessTestCase):
 
         self.assertEqual(self.client.get(reverse("slot-list")).json(), [])
 
-    def test_an_administrator_governs_the_schedule_and_nothing_else(self):
+    def test_an_administrator_repairs_the_whole_course(self):
         """
-        Расписание — общий артефакт школы, и составляет его администратор:
-        он его читает и правит. А содержимое курса — план, работы — его
-        роль не касается, там он посторонний.
+        Администратор чинит и расписание, и содержание курса.
+
+        Расписание он правил всегда — это общий артефакт школы, — а план и
+        работы оставались закрытыми, хотя помогать учителю, который не смог
+        или не стал, приходится в жизни. Разделение было не принципом, а
+        незакрытой непоследовательностью: две трети курса он чинил, а треть
+        нет.
+
+        Коллега при этом закрыт по-прежнему: право даёт роль, а не членство
+        в школе, — и это проверяет матрица.
         """
         self.sign_in(self.admin)
 
@@ -414,8 +421,8 @@ class PersonalObjectTests(AccessTestCase):
         self.assertEqual(self.client.delete(slot).status_code, 204)
 
         plan = reverse("plannode-detail", args=[self.node.pk])
-        self.assertEqual(self.client.get(plan).status_code, 404)
-        self.assertEqual(self.client.delete(plan).status_code, 404)
+        self.assertEqual(self.client.get(plan).status_code, 200)
+        self.assertEqual(self.client.delete(plan).status_code, 204)
 
     def test_moving_somebody_elses_lesson_tells_nothing(self):
         """

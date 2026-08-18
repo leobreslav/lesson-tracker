@@ -31,7 +31,8 @@ def own_nodes(serializer):
     user = requester(serializer)
     if user is None or not user.is_authenticated:
         return PlanNode.objects.none()
-    return PlanNode.objects.filter(course__in=Course.objects.for_teacher(user))
+    # право, а не принадлежность: администратор школы правит её курсы
+    return PlanNode.objects.filter(course__in=Course.objects.writable_by(user))
 
 
 def node_payload(node, number=None, *, taught=()) -> dict:

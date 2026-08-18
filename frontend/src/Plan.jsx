@@ -81,7 +81,7 @@ const LessonPanel = lazyChunk(() => import('./LessonPanel'))
 // xlsx первым: он и по умолчанию
 const FORMATS = ['xlsx', 'csv']
 
-export default function Plan({ onLoggedOut }) {
+export default function Plan({ user, onLoggedOut }) {
   const { t } = useTranslation()
   const navigate = useNavigate()
   /**
@@ -119,6 +119,9 @@ export default function Plan({ onLoggedOut }) {
   // чужие планы под надзором: у методиста они лежат в том же селекте, в
   // своих группах. Не методист — пустой список, и групп в селекте нет
   const [supervised, setSupervised] = useState([])
+  // курсы школы: администратор вправе чинить их содержание, и дойти до них
+  // ему надо из того же селектора
+  const [schoolCourses, setSchoolCourses] = useState([])
   const [years, setYears] = useState([])
   const [classId, setClassId] = useState(target.course)
   const scrolled = useRef(false)
@@ -191,6 +194,20 @@ export default function Plan({ onLoggedOut }) {
   // nodes whose move the server has not confirmed: a repeat drop is ignored
   const pending = useRef(new Set())
 
+  /**
+   * Курс, содержимое которого нам отдадут.
+   *
+   * Свои и — у администратора — курсы школы. Поднадзорные сюда не входят:
+   * методисту чужой план виден только присланным, через очередь запросов,
+   * и спрашивать его напрямую значит ловить 404 в консоль.
+   */
+  const mayEdit = useCallback(
+    (id) =>
+      Boolean(id) &&
+      [...(classes ?? []), ...schoolCourses].some((item) => item.id === id),
+    [classes, schoolCourses],
+  )
+
   const handleError = useCallback(
     (err) => {
       if (err.status === 401) onLoggedOut()
@@ -250,6 +267,21 @@ export default function Plan({ onLoggedOut }) {
       .then((answer) => !cancelled && setSupervised(answer.plans))
       .catch(() => !cancelled && setSupervised([]))
 
+    /*
+     * Курсы школы — только администратору, и гейт именно по роли.
+     *
+     * Спрашивать «а вдруг отдадут» тут нельзя: `?scope=school` читают все
+     * участники школы (на нём стоит раздел «Школа»), так что запрос
+     * ответил бы всем — и группа «Курсы школы» появилась бы у рядового
+     * учителя, а при выборе чужого курса он получал бы 404 в консоль.
+     * Читать список и вправе его править — разные вопросы.
+     */
+    if (user?.is_school_admin) {
+      fetchCourses(null, { scope: 'school' })
+        .then((list) => !cancelled && setSchoolCourses(list))
+        .catch(() => !cancelled && setSchoolCourses([]))
+    }
+
     Promise.all([fetchCourses(), fetchSchoolYears()])
       .then(([classList, yearList]) => {
         if (cancelled) return
@@ -263,7 +295,7 @@ export default function Plan({ onLoggedOut }) {
     return () => {
       cancelled = true
     }
-  }, [handleError])
+  }, [handleError, user])
 
   const load = useCallback(
     (id) => fetchPlan(id).then(setData),
@@ -278,8 +310,9 @@ export default function Plan({ onLoggedOut }) {
    */
   useEffect(() => {
     // чужой курс под надзором своего плана нам не отдаст — и правильно: у
-    // методиста прав на него нет, спрашивать значило бы ловить 404 в консоль
-    if (!classId || !(classes ?? []).some((item) => item.id === classId)) {
+    // методиста прав на него нет, спрашивать значило бы ловить 404 в консоль.
+    // А вот курс школы администратору отдаст: там право есть
+    if (!mayEdit(classId)) {
       setRibbon([])
       setBaseline(null)
       return undefined
@@ -296,7 +329,7 @@ export default function Plan({ onLoggedOut }) {
     return () => {
       cancelled = true
     }
-  }, [classId, classes])
+  }, [classId, mayEdit])
 
   /*
    * Escape выходит из режима выбора.
@@ -334,8 +367,8 @@ export default function Plan({ onLoggedOut }) {
   }, [classId])
 
   useEffect(() => {
-    // то же, что с лентой: чужой план запрашивать нечем и незачем
-    if (!classId || !(classes ?? []).some((item) => item.id === classId)) {
+    // то же, что с лентой: поднадзорный план запрашивать нечем и незачем
+    if (!mayEdit(classId)) {
       setData(null)
       return undefined
     }
@@ -351,7 +384,7 @@ export default function Plan({ onLoggedOut }) {
     return () => {
       cancelled = true
     }
-  }, [classId, classes, load, handleError])
+  }, [classId, mayEdit, load, handleError])
 
   /**
    * Any structural edit: do it and re-read the whole tree.
@@ -638,18 +671,36 @@ export default function Plan({ onLoggedOut }) {
   const otherWaiting = others.filter((row) => row.review?.status === 'pending')
   const otherWatched = others.filter((row) => row.review?.status !== 'pending')
 
+  /**
+   * Курсы школы — четвёртая группа, и только у администратора.
+   *
+   * Он вправе править содержание любого курса своей школы (чинит чужую
+   * неделю в расписании ровно так же), но «мои курсы» от этого не должны
+   * распухать: у завуча, ведущего два курса, селектор показал бы
+   * девятнадцать. Поэтому право и принадлежность разведены и на клиенте —
+   * свои курсы приходят обычным запросом, школьные отдельным.
+   */
+  const knownIds = new Set([
+    ...mineIds,
+    ...others.map((row) => row.id),
+  ])
+  const schoolOnly = schoolCourses.filter((item) => !knownIds.has(item.id))
+
   const pickable = [
     ...(classes ?? []),
     ...others.map(asCourse),
+    ...schoolOnly,
   ]
 
-  const groups = others.length
-    ? [
-        { key: 'mine', items: classes ?? [] },
-        { key: 'waiting', items: otherWaiting.map(asCourse) },
-        { key: 'supervised', items: otherWatched.map(asCourse) },
-      ].filter((group) => group.items.length)
-    : []
+  const groups =
+    others.length || schoolOnly.length
+      ? [
+          { key: 'mine', items: classes ?? [] },
+          { key: 'waiting', items: otherWaiting.map(asCourse) },
+          { key: 'supervised', items: otherWatched.map(asCourse) },
+          { key: 'school', items: schoolOnly },
+        ].filter((group) => group.items.length)
+      : []
 
   /**
    * Курс по умолчанию — из всего, что человеку доступно, а не только из своего.
@@ -677,7 +728,7 @@ export default function Plan({ onLoggedOut }) {
     })
     // намеренно по спискам, а не по их содержимому: пересобирать выбор на
     // каждое перечитывание дерева незачем
-  }, [classes, supervised])
+  }, [classes, supervised, schoolCourses])
 
   const supervisedRow = supervised.find((row) => row.id === classId) ?? null
 

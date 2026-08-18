@@ -449,7 +449,8 @@
     "groups": {
       "mine": "My courses",
       "waiting": "Waiting for a reply",
-      "supervised": "Supervised"
+      "supervised": "Supervised",
+      "school": "Courses of the school"
     },
     "recordedHint": "The lesson is taught and recorded",
     "beforeTaught": "There is no room before a lesson already taught",

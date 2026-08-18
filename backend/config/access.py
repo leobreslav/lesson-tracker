@@ -242,9 +242,21 @@ class CourseScopedViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated, IsSchoolMember, IsTeacher]
 
     def my_courses(self):
+        """
+        Курсы, в которых этому человеку можно работать.
+
+        Ведущему — свои, администратору школы — все её: он чинит чужую
+        неделю в расписании и правит журнал занятия с тех пор, как эти
+        экраны появились, и держать план с работами закрытыми было
+        непоследовательностью, а не принципом.
+
+        Имя метода осталось прежним, а вот значение сузилось до «право»:
+        «какие курсы показывать по умолчанию» отвечает `for_teacher`, и
+        путать их нельзя — у завуча это разные списки.
+        """
         from schedule.models import Course
 
-        return Course.objects.for_teacher(self.request.user)
+        return Course.objects.writable_by(self.request.user)
 
     def get_queryset(self):
         return (

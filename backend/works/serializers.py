@@ -14,9 +14,14 @@ User = get_user_model()
 
 
 def teacher_courses(serializer):
-    """Курсы, в которых спрашивающий вообще может что-то заводить."""
+    """
+    Курсы, в которых спрашивающий вообще может что-то заводить.
+
+    Именно право, а не «мои»: администратор школы чинит её курсы, а
+    показывать по умолчанию ему всё равно надо свои (`for_teacher`).
+    """
     user = getattr(serializer.context.get("request"), "user", None)
-    return Course.objects.for_teacher(user)
+    return Course.objects.writable_by(user)
 
 
 class TaskSerializer(serializers.ModelSerializer):

@@ -192,9 +192,10 @@ test('методист без своих курсов видит прислан�
   await ready(page)
 
   // экрана «заведите курс» тут быть не должно, а присланный план — должен.
-  // Курс тут один, поэтому в шапке не селект, а имя: выбирать не из чего
+  // Выбор по умолчанию идёт по всему доступному: своих курсов у него нет,
+  // и ждущий подписи встаёт впереди курсов школы, которые он вправе чинить
   await expect(page.locator('.empty-state')).toHaveCount(0)
-  await expect(page.locator('.course-picked')).toContainText('Grade 6 Algebra')
+  await expect(page.getByLabel('Курс')).toHaveValue(String(course.id))
   await expect(page.locator('.review-plan li').first()).toBeVisible()
   await expect(page.getByRole('button', { name: 'Утвердить' })).toBeVisible()
 })

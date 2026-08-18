@@ -57,14 +57,19 @@ def school_courses(serializer):
 
 def teacher_courses(serializer):
     """
-    Courses this teacher works in — the choices for anything personal.
+    Курсы, в которых спрашивающий вправе что-то заводить.
 
-    A lesson of mine, a plan of mine and a template taken into my course all
-    belong to a course I actually teach. Being a member of the school is not
-    enough: the school's list holds every course in it.
+    Урок, строка плана и шаблон, взятый в курс, принадлежат курсу, и
+    заводить их может тот, кто вправе его править: назначенный ведущий —
+    свои, администратор школы — любые её (`writable_by`). Членства в школе
+    при этом мало: у рядового учителя чужой курс закрыт по-прежнему.
+
+    Имя осталось прежним, а вот вопрос это **про право**, не про «мои
+    курсы»: второе отвечает `for_teacher`, и путать их нельзя — у завуча
+    это разные списки.
     """
     user = getattr(serializer.context.get("request"), "user", None)
-    return Course.objects.for_teacher(user)
+    return Course.objects.writable_by(user)
 
 
 class SubjectSerializer(serializers.ModelSerializer):

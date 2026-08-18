@@ -122,6 +122,31 @@ class CourseQuerySet(models.QuerySet):
 
         return self.filter(assignments__teacher=user, school_id=user.school_id)
 
+    def writable_by(self, user):
+        """
+        Курсы, содержимое которых человек вправе править.
+
+        Ведущему — его собственные, администратору школы — все её курсы.
+        Расписание и журнал занятия так работали всегда
+        (`IsCourseTeacherOrSchoolAdmin`, `may_write`), а план и работы
+        оставались закрытыми, и это была не принципиальная разница, а
+        незакрытая непоследовательность: две трети курса администратор уже
+        чинил, а треть — нет.
+
+        **Это не то же самое, что «мои курсы».** `for_teacher` отвечает на
+        вопрос «что показывать по умолчанию», и расширять его нельзя: у
+        завуча, который сам ведёт два курса, селектор в учебном плане
+        показал бы девятнадцать. Право и принадлежность — разные вопросы, и
+        разъезжаются они сразу же, стоит их слить.
+        """
+        if user is None or not user.is_authenticated or user.school_id is None:
+            return self.none()
+
+        if user.is_school_admin and not user.is_student:
+            return self.filter(school_id=user.school_id)
+
+        return self.for_teacher(user)
+
     def for_student(self, user, *, active_only=True):
         """
         Курсы ученика. Два вопроса одной функцией — и это не удобство.

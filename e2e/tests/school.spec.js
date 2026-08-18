@@ -317,3 +317,42 @@ test('курс поручают приглашённому — до его пе�
   const after = await admin.get('/api/courses/?scope=school')
   expect(after.body[0].teachers[0].arrived).toBe(false)
 })
+
+test('администратор чинит чужой план — из того же селектора', async ({
+  page,
+  signIn,
+  api,
+}) => {
+  // Расписание и журнал занятия администратор правил всегда, а план и
+  // работы оставались закрытыми — две трети курса он чинил, а треть нет.
+  // Помогать учителю, который не смог или не стал, приходится в жизни.
+  const admin = await api(PEOPLE.admin)
+  const mine = await admin.get('/api/courses/')
+  const all = await admin.get('/api/courses/?scope=school')
+  const alien = all.body.find(
+    (item) => !mine.body.some((own) => own.id === item.id),
+  )
+  expect(alien, 'в школе должен быть курс, который администратор не ведёт').toBeTruthy()
+
+  await signIn(PEOPLE.admin)
+  await page.goto('/plan')
+  await ready(page)
+
+  // чужой курс лежит в своей группе, а не вперемешку со «своими»
+  const picker = page.getByLabel('Курс')
+  await expect(picker.locator('optgroup[label="Курсы школы"]')).toHaveCount(1)
+  await picker.selectOption(String(alien.id))
+  await expect(page.locator('.plan-cards')).toBeVisible()
+
+  // и правка проходит: строка появляется в чужом плане
+  await page.getByRole('button', { name: 'Добавить урок' }).click()
+  const form = page.locator('.plan-add-form')
+  await form.getByLabel('Название').fill('Починено завучем')
+  await form.getByRole('button', { name: 'Добавить' }).click()
+  await expect(page.locator('.plan-row', { hasText: 'Починено завучем' })).toBeVisible()
+
+  const tree = await admin.get(`/api/plan/?course=${alien.id}`)
+  expect(
+    tree.body.nodes.some((node) => node.title === 'Починено завучем'),
+  ).toBe(true)
+})
