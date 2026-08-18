@@ -559,7 +559,20 @@ export default function Plan({ onLoggedOut }) {
 
   const openAdd = (options) => {
     setEditing(null)
-    setAdding({ title: '', parent: null, after: null, is_section: false, ...options })
+    setAdding({
+      title: '',
+      parent: null,
+      after: null,
+      // «первым уроком темы»: строка встаёт перед нынешним первым, а не в
+      // конец блока. У пустой темы вставать не перед чем — тогда просто в неё
+      before: null,
+      is_section: false,
+      // вид строки задан открывшей кнопкой, и спрашивать его незачем: так у
+      // «Добавить урок» и «Добавить тему» в панели, у «+» в шапке темы (тема
+      // в тему не кладётся) и у клика по свободному слоту
+      fixedKind: false,
+      ...options,
+    })
   }
 
   /**
@@ -577,7 +590,7 @@ export default function Plan({ onLoggedOut }) {
    */
   const submitAdd = async (event, { close = false } = {}) => {
     event.preventDefault()
-    const { title, parent, after, is_section } = adding
+    const { title, parent, after, before, is_section } = adding
     if (!title.trim()) return
 
     // разрез темы «после этой строки» — дело разовое: продолжать в нём
@@ -602,6 +615,7 @@ export default function Plan({ onLoggedOut }) {
             course: classId,
             parent,
             after,
+            before,
             is_section,
             title: title.trim(),
           }),
@@ -620,8 +634,14 @@ export default function Plan({ onLoggedOut }) {
     // Форма могла закрыться, пока летел запрос, — тогда и не открываем:
     // функциональная правка видит настоящее состояние, а не снимок.
     if (once) setAdding(null)
-    else if (after && created.id)
-      setAdding((current) => (current ? { ...current, after: created.id } : current))
+    else if (created.id)
+      // Форма переезжает **за** созданную строку — всегда, кем бы её ни
+      // открыли. Так место формы совпадает с местом, куда встанет следующая
+      // строка: первый урок темы вставлялся «перед», а второй должен встать
+      // под ним, а не над ним.
+      setAdding((current) =>
+        current ? { ...current, after: created.id, before: null } : current,
+      )
   }
 
   // --- CSV ---
@@ -1099,7 +1119,7 @@ export default function Plan({ onLoggedOut }) {
               <button
                 type="button"
                 disabled={busy}
-                onClick={() => openAdd({ parent: null })}
+                onClick={() => openAdd({ parent: null, fixedKind: true })}
               >
                 {t('plan.addLesson')}
               </button>
@@ -1107,7 +1127,7 @@ export default function Plan({ onLoggedOut }) {
                 type="button"
                 className="secondary"
                 disabled={busy}
-                onClick={() => openAdd({ parent: null, is_section: true })}
+                onClick={() => openAdd({ parent: null, is_section: true, fixedKind: true })}
               >
                 {t('plan.addSection')}
               </button>

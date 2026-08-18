@@ -50,17 +50,19 @@ test('блок и уроки добавляются, нумерация скво
   await form.getByRole('button', { name: 'Добавить' }).click()
   await expect(page.getByText('Треугольники')).toBeVisible()
 
-  // two lessons inside the block, through its own «+»
+  // два урока внутри блока, через её «+»: он заводит первый урок темы, а
+  // форма после него переезжает за созданную строку — дальше вводим подряд
+  const head = page.locator('.plan-section .section-head').first()
+  // кнопки строки видны при наведении: сначала подводим мышь, как человек
+  await head.hover()
+  await head.getByTitle('Добавить урок в тему').click()
+  const inner = page.locator('.plan-add-form')
   for (const title of ['Первый признак', 'Второй признак']) {
-    // кнопки строки видны при наведении: сначала подводим мышь, как человек
-    const head = page.locator('.plan-section .section-head').first()
-    await head.hover()
-    await head.getByTitle('Добавить урок в тему').click()
-    const inner = page.locator('.plan-add-form')
     await inner.getByLabel('Название').fill(title)
     await inner.getByRole('button', { name: 'Добавить' }).click()
     await expect(page.getByText(title)).toBeVisible()
   }
+  await page.keyboard.press('Escape')
 
   // and one at the top level, after the block
   await page.getByRole('button', { name: 'Добавить урок' }).click()
@@ -161,6 +163,39 @@ test('тумблер переключается нажатием в любое �
   const box = await form.locator('.switch').boundingBox()
   await page.mouse.click(box.x + box.width / 2, box.y + 1)
   await expect(section).toBeChecked()
+})
+
+test('пустая форма закрывается кликом мимо, а набранная — нет', async ({
+  page,
+  signIn,
+}) => {
+  // Форма остаётся открытой после добавления — ради ввода подряд. Но
+  // человек уходит к другому делу, и пустая форма продолжает висеть посреди
+  // плана, ожидая нажатия, о котором он уже не помнит. Ждать ей нечего.
+  // Набранное при этом кликом мимо не выбрасывается: это незаконченная
+  // работа, и уносить её молча нельзя.
+  await signIn(PEOPLE.petrov)
+  await openPlan(page, EMPTY_COURSE)
+
+  await page.getByRole('button', { name: 'Добавить урок' }).click()
+  const form = page.locator('.plan-add-form')
+  await form.getByLabel('Название').fill('Первый')
+  await form.getByRole('button', { name: 'Добавить' }).click()
+  await expect(page.locator('.plan-row', { hasText: 'Первый' })).toBeVisible()
+
+  // форма пуста и ждёт — клик по таблице её убирает
+  await expect(form).toBeVisible()
+  await page.locator('h1').click()
+  await expect(page.locator('.plan-add-form')).toHaveCount(0)
+
+  // а с набранным названием остаётся: текст дороже порядка на экране
+  await page.getByRole('button', { name: 'Добавить урок' }).click()
+  await page.locator('.plan-add-form').getByLabel('Название').fill('Черновик')
+  await page.locator('h1').click()
+  await expect(page.locator('.plan-add-form')).toBeVisible()
+  await expect(page.locator('.plan-add-form').getByLabel('Название')).toHaveValue(
+    'Черновик',
+  )
 })
 
 test('Escape закрывает форму, где бы в ней ни стоял фокус', async ({
@@ -821,6 +856,64 @@ test('длинная вставка: сетка едет за выделение
   await expect(add).toBeInViewport()
 })
 
+test('«+» в шапке темы заводит её первый урок, а не последний', async ({
+  page,
+  signIn,
+}) => {
+  // «+» везде значит одно: вставить сразу под этой строкой. У шапки темы это
+  // первый урок — а до правки строка уезжала в конец блока, и вставить урок
+  // в начало непустой темы было нельзя вовсе, только перетаскиванием через
+  // весь блок.
+  await signIn(PEOPLE.petrov)
+  await openPlan(page, EMPTY_COURSE)
+
+  await page.getByRole('button', { name: 'Добавить тему' }).click()
+  const start = page.locator('.plan-add-form')
+  await start.getByLabel('Название').fill('Треугольники')
+  await start.getByRole('button', { name: 'Добавить' }).click()
+  await expect(page.getByText('Треугольники')).toBeVisible()
+  await page.keyboard.press('Escape')
+
+  const head = page.locator('.plan-section .section-head').first()
+  for (const title of ['Второй признак', 'Третий признак']) {
+    await head.hover()
+    await head.getByTitle('Добавить урок в тему').click()
+    const form = page.locator('.plan-add-form')
+    await form.getByLabel('Название').fill(title)
+    await form.getByRole('button', { name: 'Добавить' }).click()
+    await expect(page.locator('.plan-row', { hasText: title })).toBeVisible()
+    await page.keyboard.press('Escape')
+  }
+
+  // каждый следующий вставал первым: порядок обратный вводу
+  const rows = await structure(page)
+  expect(rows.join(' | ')).toContain('1 Третий признак')
+  expect(rows.join(' | ')).toContain('2 Второй признак')
+
+  // а ввод подряд идёт по порядку: форма после первой строки переезжает за неё
+  await head.hover()
+  await head.getByTitle('Добавить урок в тему').click()
+  const form = page.locator('.plan-add-form')
+  for (const title of ['Первый признак', 'Признак равенства']) {
+    await form.getByLabel('Название').fill(title)
+    await form.getByRole('button', { name: 'Добавить' }).click()
+    await expect(page.locator('.plan-row', { hasText: title })).toBeVisible()
+  }
+  await page.keyboard.press('Escape')
+
+  const after = await structure(page)
+  expect(after.join(' | ')).toContain('1 Первый признак')
+  expect(after.join(' | ')).toContain('2 Признак равенства')
+  expect(after.join(' | ')).toContain('3 Третий признак')
+
+  // переключателя «Урок · Тема» тут нет: тема в тему не кладётся
+  await head.hover()
+  await head.getByTitle('Добавить урок в тему').click()
+  await expect(
+    page.locator('.plan-add-form').getByRole('radio', { name: 'Тема', exact: true }),
+  ).toHaveCount(0)
+})
+
 test('тема заводится в середине плана и режет блок надвое', async ({
   page,
   signIn,
@@ -837,15 +930,16 @@ test('тема заводится в середине плана и режет �
   await form.getByRole('button', { name: 'Добавить' }).click()
   await expect(page.getByText('Треугольники')).toBeVisible()
 
+  const head = page.locator('.plan-section .section-head').first()
+  await head.hover()
+  await head.getByTitle('Добавить урок в тему').click()
+  const inner = page.locator('.plan-add-form')
   for (const title of ['Первый признак', 'Второй признак', 'Третий признак']) {
-    const head = page.locator('.plan-section .section-head').first()
-    await head.hover()
-    await head.getByTitle('Добавить урок в тему').click()
-    const inner = page.locator('.plan-add-form')
     await inner.getByLabel('Название').fill(title)
     await inner.getByRole('button', { name: 'Добавить' }).click()
     await expect(page.locator('.plan-row', { hasText: title })).toBeVisible()
   }
+  await page.keyboard.press('Escape')
 
   // режем после первого признака: два последних урока должны уехать
   const anchor = page.locator('.plan-row', { hasText: 'Первый признак' })

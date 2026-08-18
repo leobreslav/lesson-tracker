@@ -127,6 +127,7 @@ export default function PlanTable({
   const [held, setHeld] = useState(null) // {id, isSection, up, down}
   const [drop, setDrop] = useState(null) // {overId, side, parent, index}
   const titleRef = useRef(null) // поле названия открытой формы добавления
+  const formRef = useRef(null) // сама форма: по ней решается «клик мимо»
 
   /**
    * Escape закрывает форму добавления — откуда угодно.
@@ -148,6 +149,33 @@ export default function PlanTable({
     document.addEventListener('keydown', escape)
     return () => document.removeEventListener('keydown', escape)
   }, [open, changeAdding])
+
+  /**
+   * Клик мимо закрывает **пустую** форму.
+   *
+   * Форма остаётся открытой после добавления — это то, ради чего её и
+   * оставили: уроки заводят подряд. Но человек уходит к другому делу, и
+   * пустая форма продолжает висеть посреди плана, ожидая нажатия, о котором
+   * он уже не помнит. Ждать ей при этом нечего: в ней ничего не набрано.
+   *
+   * Набранное закрытием не выбрасывается никогда: текст в поле — это
+   * незаконченная работа, и уносить её кликом мимо нельзя. Такая форма
+   * держится до Escape или «Закрыть».
+   *
+   * Слушаем `pointerdown`, а не `click`: он приходит раньше, поэтому «+» у
+   * другой строки успевает открыть свою форму после того, как закрылась эта.
+   */
+  const draft = adding?.title?.trim() ?? ''
+  useEffect(() => {
+    if (!open || draft) return undefined
+
+    const away = (event) => {
+      if (!formRef.current?.contains(event.target)) changeAdding(null)
+    }
+
+    document.addEventListener('pointerdown', away)
+    return () => document.removeEventListener('pointerdown', away)
+  }, [open, draft, changeAdding])
 
   // --- dragging ---
 
@@ -319,11 +347,11 @@ export default function PlanTable({
   }
 
   const addForm = () => (
-    <form className="plan-add-form" onSubmit={finishAdd}>
+    <form className="plan-add-form" onSubmit={finishAdd} ref={formRef}>
       {/* Что заводим — урок или тему. Спрашивается только у «вставить
           после»: две кнопки над таблицей и «+» в шапке темы отвечают на
           этот вопрос сами, а тема внутри темы не кладётся вовсе. */}
-      {adding.after && (
+      {!adding.fixedKind && (
         <Switch
           label={t('plan.addKind')}
           value={adding.is_section}
@@ -371,6 +399,14 @@ export default function PlanTable({
     </form>
   )
 
+  /**
+   * Форма стоит там, где появится строка.
+   *
+   * Ключ — пара «родитель и якорь»: `before` в него не входит намеренно. Он
+   * живёт ровно до первой вставки (нужен, чтобы строка встала первой в
+   * теме), а место формы обязано пережить её: после вставки форма
+   * переезжает за созданную строку, и якорем становится она.
+   */
   const addFormFor = (parent, after) =>
     adding && adding.parent === parent && adding.after === after ? addForm() : null
 
@@ -431,6 +467,25 @@ export default function PlanTable({
     }
 
     return (node.number ?? 0) >= boundary
+  }
+
+  /**
+   * Можно ли вставить строку **первой в тему**.
+   *
+   * Строка займёт место нынешнего первого урока, а всё, что ниже, съедет на
+   * единицу. Значит непроведённая строка окажется перед проведёнными, если
+   * граница проходит по этой теме или ниже её начала: сервер такое
+   * отклоняет (`plan_before_taught`), а кнопка, умеющая только отказать,
+   * обещает то, чего не будет.
+   *
+   * У пустой темы номеров нет, мерить нечего — там спросит сервер, как и
+   * спрашивал.
+   */
+  const mayInsertFirst = (section) => {
+    if (!boundary) return true
+
+    const numbers = (section.children ?? []).map((child) => child.number).filter(Boolean)
+    return numbers.length === 0 || Math.min(...numbers) > boundary
   }
 
   /** Выше подниматься некуда: там уже проведённые уроки. */
@@ -671,7 +726,7 @@ export default function PlanTable({
                     type="button"
                     className="link title free-slot"
                     disabled={busy}
-                    onClick={() => add({ parent: null })}
+                    onClick={() => add({ parent: null, fixedKind: true })}
                   >
                     {t('plan.freeSlot')}
                   </button>
@@ -888,13 +943,33 @@ export default function PlanTable({
 
                   <span className="row-actions">
                     {moveButtons(node, true)}
-                    {mayInsertAfter(node) && (
+                    {/*
+                      «+» везде значит одно: вставить **сразу под этой
+                      строкой**. У шапки темы это её первый урок, а не
+                      последний, — и до правки вставить урок в начало
+                      непустой темы было нельзя вовсе, только перетаскиванием
+                      через весь блок. Дописать в конец по-прежнему можно, и
+                      тем же жестом: «+» у последнего урока темы.
+
+                      Переключателя «Урок · Тема» здесь нет, и это не
+                      недосмотр: тема в тему не кладётся. Разрезать блок
+                      новой темой можно там, где разрез имеет смысл, — у
+                      строки урока внутри него.
+                    */}
+                    {mayInsertFirst(node) && (
                       <button
                         type="button"
                         className="link"
                         title={t('plan.addToSection')}
                         disabled={busy}
-                        onClick={() => add({ parent: node.id })}
+                        onClick={() =>
+                          add({
+                            parent: node.id,
+                            before: node.children?.[0]?.id ?? null,
+                            // тема в тему не кладётся — спрашивать нечего
+                            fixedKind: true,
+                          })
+                        }
                       >
                         +
                       </button>
@@ -916,6 +991,9 @@ export default function PlanTable({
             {!hidden && (
               <SortableContext items={childIds} strategy={verticalListSortingStrategy}>
                 <ul className="plan-children">
+                  {/* форма «первым уроком темы» стоит там, где строка и
+                      появится, — над нынешним первым уроком */}
+                  {addFormFor(node.id, null)}
                   {node.children.map((child, index) => (
                     <Fragment key={child.id}>
                       {/* у первого урока черта уже нарисована над полосой темы */}
@@ -924,7 +1002,6 @@ export default function PlanTable({
                       {addFormFor(node.id, child.id)}
                     </Fragment>
                   ))}
-                  {addFormFor(node.id, null)}
                   {!node.children.length && (
                     <EmptyDropZone
                       sectionId={node.id}

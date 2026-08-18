@@ -1096,10 +1096,17 @@ test('в тему, где всё проведено, урок не встави�
   await page.getByLabel('Курс').selectOption(String(course.id))
   await expect(page.locator('.plan-cards')).toBeVisible()
 
-  // тема кончается последней записью — дописать в неё можно
+  // «+» в шапке заводит **первый** урок темы, а первый урок тут записан —
+  // новая строка встала бы перед записью, и кнопки нет
   const head = page.locator('.plan-section .section-head', { hasText: 'Тема с записью' })
   await head.hover()
-  await expect(head.getByTitle('Добавить урок в тему')).toBeVisible()
+  await expect(head.getByTitle('Добавить урок в тему')).toHaveCount(0)
+
+  // дописать в конец темы при этом можно, и тем же жестом: «+» у её
+  // последнего урока — он же последняя запись
+  const recorded = page.locator('.plan-row.lesson', { hasText: 'Единственный урок темы' })
+  await recorded.hover()
+  await expect(recorded.getByTitle('Вставить после')).toBeVisible()
 
   // а вот у первой строки, за которой стоит ещё одна запись, «+» нет
   const first = page
