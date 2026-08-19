@@ -21,6 +21,41 @@ async function openWeek(page, date) {
   await expect(page.locator(`[data-day-head="${date}"]`)).toBeVisible()
 }
 
+test('урок ставится рядом и в своём расписании', async ({ page, signIn, api }) => {
+  // Ряд заводится с обоих экранов: сетку рядами строит и администратор, и
+  // учитель у себя. Диалоги разные, а повтор в них один и тот же блок —
+  // проверяем, что учительский путь не остался без него.
+  await signIn(PEOPLE.ivanova)
+  await openWeek(page, MONDAY)
+
+  await page.locator(`[data-add="${MONDAY}:7"]`).click()
+  const add = page.locator('dialog.modal')
+  await add.getByRole('combobox').first().selectOption({ label: 'Grade 6 Algebra' })
+  await add.getByRole('radio', { name: 'через неделю' }).check()
+  // «до» подстрокой попадает и в «дополнительный урок» — берём точное
+  await add.getByLabel('до', { exact: true }).fill('2026-10-05')
+  await add.getByRole('button', { name: 'Добавить', exact: true }).click()
+
+  await expect(add).toBeHidden()
+  // отчёт тот же, что у копирования периода: создано, пропущено, помехи
+  await expect(page.getByText(/Создано уроков/)).toBeVisible()
+  await expect(page.locator(`[data-lesson="${MONDAY}:7"]`)).toBeVisible()
+
+  const teacher = await api(PEOPLE.ivanova)
+  const slots = await teacher.get('/api/slots/?start=2026-09-01&end=2027-05-31')
+  // именно наш ряд: седьмой час в демо-данных занят и дополнительным
+  // уроком соседнего курса — он про другое
+  const row = slots.body
+    .filter(
+      (slot) => slot.lesson_number === 7 && slot.course_name === 'Grade 6 Algebra',
+    )
+    .map((slot) => slot.date)
+    .sort()
+
+  // «через неделю» — каждый второй понедельник, и ни одного за границей
+  expect(row).toEqual(['2026-09-07', '2026-09-21', '2026-10-05'])
+})
+
 test('урок добавляется, отменяется с причиной и возвращается', async ({
   page,
   signIn,

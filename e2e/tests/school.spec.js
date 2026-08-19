@@ -297,7 +297,7 @@ test('урок ставится рядом на каждую неделю, а н
   // граница спрашивается, а не подразумевается: конец года подставлен, но
   // «до конца четверти» встречается не реже
   await dialog.getByRole('radio', { name: 'каждую неделю' }).check()
-  await dialog.getByLabel('до').fill('2026-09-28')
+  await dialog.getByLabel('до', { exact: true }).fill('2026-09-28')
   await dialog.getByRole('button', { name: 'Добавить', exact: true }).click()
   await expect(dialog).toBeHidden()
 
