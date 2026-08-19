@@ -55,7 +55,8 @@ test('отмена урока сдвигает даты в плане', async ({
 
   const lesson = page.locator(`[data-lesson="${first.date}:${first.lesson_number}"]`)
   await expect(lesson).toBeVisible()
-  await lesson.click()
+  // меню урока — правой кнопкой: левая ведёт в само занятие
+  await lesson.click({ button: 'right' })
 
   const menu = page.locator('dialog.modal')
   await menu.getByRole('button', { name: 'Отменить', exact: true }).click()

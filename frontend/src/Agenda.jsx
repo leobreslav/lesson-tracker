@@ -543,7 +543,17 @@ export default function Agenda({ onLoggedOut }) {
     )
   }
 
-  const openLesson = (date, lesson) => setDialog({ type: 'lesson', date, lesson })
+  /*
+   * Левое нажатие ведёт в занятие, правое открывает меню.
+   *
+   * Разделено по частоте: в занятие ходят каждый день — журнал, тема,
+   * работы, — а сетку правят реже. Раньше левое открывало меню, и попасть
+   * в урок можно было только его первым пунктом: два нажатия там, где
+   * достаточно одного.
+   */
+  const openLesson = (date, lesson) => navigate(`/lesson/${lesson.id}`)
+
+  const openMenu = (date, lesson) => setDialog({ type: 'lesson', date, lesson })
 
   const openFreeCell = (date, number) => {
     if (!data.days[date]?.is_study) return
@@ -587,6 +597,7 @@ export default function Agenda({ onLoggedOut }) {
       isFree={(inCell) => !inCell.some((item) => !item.is_cancelled)}
       onPickDay={pickDay}
       onOpen={openLesson}
+      onMenu={openMenu}
       onAdd={openFreeCell}
     />
   )
@@ -742,6 +753,9 @@ export default function Agenda({ onLoggedOut }) {
       {loaded ? (
         <div className={loading ? 'refreshing' : undefined} aria-busy={loading}>
           {renderWeek()}
+          {/* оба нажатия названы словами: правая кнопка и долгое нажатие
+              беззвучны — ниоткуда не видно, что они есть */}
+          <p className="hint grid-hint">{t('agenda.gridHint')}</p>
         </div>
       ) : (
         <p>{t('common.loading')}</p>

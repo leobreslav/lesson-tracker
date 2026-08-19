@@ -1,4 +1,4 @@
-import { Fragment } from 'react'
+import { Fragment, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { parseDate, today } from './calendarLogic'
 import { shortWeekday } from './dates'
@@ -14,7 +14,16 @@ import { shortWeekday } from './dates'
  * * `renderLesson(lesson)` — the label inside the button;
  * * `isFree(cell)` — whether the «+» is offered on top of what is there
  *   (a cancelled lesson frees the hour without leaving the screen);
- * * `onPickDay` / `onOpen` / `onAdd` — the three things a click can mean.
+ * * `onPickDay` / `onOpen` / `onAdd` / `onMenu` — что значит нажатие.
+ *
+ * Нажатий по уроку два, и разделены они по частоте: **левое ведёт в само
+ * занятие** — туда ходят каждый день, — а меню (отменить, перенести,
+ * удалить ряд) висит на **правой кнопке**, потому что сетку правят реже,
+ * чем по ней живут. Раньше левое открывало меню, и в занятие приходилось
+ * заходить через его первый пункт: два нажатия там, где нужно ноль.
+ *
+ * На сенсорном экране правой кнопки нет, поэтому меню открывает **долгое
+ * нажатие**: без него телефон потерял бы отмену и перенос целиком.
  *
  * Keeping one grid means a fix to the day header or the stacked-cell layout
  * lands on both pages at once, which is the whole reason it is here.
@@ -33,8 +42,45 @@ export default function WeekGrid({
   onPickDay,
   onOpen,
   onAdd,
+  onMenu,
 }) {
   const { t } = useTranslation()
+
+  /*
+   * Долгое нажатие — то же меню, что и правая кнопка.
+   *
+   * На сенсорном экране правой кнопки нет, и без этого пути телефон
+   * потерял бы отмену, перенос и удаление ряда целиком.
+   *
+   * Флаг «меню уже открыто долгим нажатием» снимается на **начале
+   * следующего нажатия**, а не на клике, который его погасил. Разница
+   * поймана тестом: после `touchend` браузер шлёт обычный `click`, и его
+   * глушить надо; но если клика не случилось — меню закрыли с клавиатуры,
+   * палец ушёл в сторону, — флаг оставался поднятым и съедал первое
+   * честное нажатие. `pointerdown` приходит и от мыши, и от пальца, то
+   * есть чинит оба случая разом.
+   */
+  const timer = useRef(null)
+  const held = useRef(false)
+
+  const press = (event, date, lesson) => {
+    held.current = false
+    if (event.pointerType !== 'touch') return
+
+    clearTimeout(timer.current)
+    timer.current = setTimeout(() => {
+      held.current = true
+      onMenu?.(date, lesson)
+    }, 500)
+  }
+
+  const release = () => clearTimeout(timer.current)
+
+  const open = (date, lesson) => {
+    // клик, рождённый отпусканием долгого нажатия: меню уже открыто
+    if (held.current) return
+    onOpen?.(date, lesson)
+  }
 
   const dayHeadClass = (date) => {
     const day = days[date] || {}
@@ -113,7 +159,17 @@ export default function WeekGrid({
                     className={lessonClassName(lesson)}
                     title={lessonTitle(lesson)}
                     disabled={busy}
-                    onClick={() => onOpen?.(date, lesson)}
+                    onClick={() => open(date, lesson)}
+                    onContextMenu={(event) => {
+                      // своё меню вместо браузерного: правая кнопка тут
+                      // значит «что сделать с этим часом»
+                      event.preventDefault()
+                      onMenu?.(date, lesson)
+                    }}
+                    onPointerDown={(event) => press(event, date, lesson)}
+                    onPointerUp={release}
+                    onPointerLeave={release}
+                    onPointerCancel={release}
                   >
                     {renderLesson(lesson)}
                   </button>

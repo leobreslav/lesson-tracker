@@ -56,6 +56,39 @@ test('урок ставится рядом и в своём расписании
   expect(row).toEqual(['2026-09-07', '2026-09-21', '2026-10-05'])
 })
 
+test('левое нажатие ведёт в занятие, правое открывает меню', async ({
+  page,
+  signIn,
+}) => {
+  // Разделено по частоте: в занятие ходят каждый день — журнал, тема,
+  // работы, — а сетку правят реже. Раньше левое открывало меню, и попасть
+  // в урок можно было только его первым пунктом.
+  await signIn(PEOPLE.ivanova)
+  await openWeek(page, MONDAY)
+
+  const lesson = page.locator(`[data-lesson="${MONDAY}:1"]`)
+
+  // правое — меню, и браузерного контекстного меню при этом не появляется
+  await lesson.click({ button: 'right' })
+  const menu = page.locator('dialog.modal')
+  await expect(menu).toBeVisible()
+  await page.keyboard.press('Escape')
+  await expect(menu).toBeHidden()
+
+  // долгое нажатие — то же меню: на телефоне правой кнопки нет, и без
+  // него отмена с переносом потерялись бы целиком
+  await lesson.dispatchEvent('pointerdown', { pointerType: 'touch' })
+  await page.waitForTimeout(600)
+  await lesson.dispatchEvent('pointerup', { pointerType: 'touch' })
+  await expect(menu).toBeVisible()
+  await page.keyboard.press('Escape')
+
+  // левое — сразу занятие
+  await lesson.click()
+  await ready(page)
+  await expect(page).toHaveURL(/\/lesson\/\d+$/)
+})
+
 test('ряд убирается рядом, а не периодом', async ({ page, signIn, api }) => {
   // Кнопки «очистить период» больше нет: она сносила всё подряд, включая
   // чужие часы, стоящие в тех же неделях. Сетку строят рядами, разбирать
@@ -82,7 +115,8 @@ test('ряд убирается рядом, а не периодом', async ({ 
 
   // и убираем его из второй недели: этот час и все такие же дальше
   await openWeek(page, '2026-09-14')
-  await page.locator('[data-lesson="2026-09-14:7"]').click()
+  // меню — правой кнопкой: левая теперь ведёт в само занятие
+  await page.locator('[data-lesson="2026-09-14:7"]').click({ button: 'right' })
   const menu = page.locator('dialog.modal')
   await menu.getByRole('button', { name: 'Удалить весь ряд…' }).click()
   await menu.getByRole('button', { name: 'Удалить ряд', exact: true }).click()
@@ -120,8 +154,8 @@ test('урок добавляется, отменяется с причиной 
   await expect(lesson).toBeVisible()
   await expect(lesson).toContainText('Grade 6 Algebra')
 
-  // cancel it, with a reason
-  await lesson.click()
+  // cancel it, with a reason — меню открывает правая кнопка
+  await lesson.click({ button: 'right' })
   const menu = page.locator('dialog.modal')
   await menu.getByRole('button', { name: 'Отменить', exact: true }).click()
   await menu.getByPlaceholder('Причина отмены').fill('Болезнь')
@@ -131,7 +165,7 @@ test('урок добавляется, отменяется с причиной 
   await expect(lesson).toHaveClass(/cancelled/)
 
   // and put it back
-  await lesson.click()
+  await lesson.click({ button: 'right' })
   await page.locator('dialog.modal').getByRole('button', { name: 'Вернуть' }).click()
 
   await expect(lesson).not.toHaveClass(/cancelled/)
@@ -155,7 +189,7 @@ test('из расписания открывается сам урок, а не 
 
   const lesson = page.locator(`[data-lesson="${MONDAY}:1"]`)
   await expect(lesson).toContainText('Grade 6 Algebra')
-  await lesson.click()
+  await lesson.click({ button: 'right' })
 
   await page.locator('dialog.modal').getByRole('button', { name: 'Открыть урок' }).click()
   await ready(page)
@@ -177,7 +211,7 @@ test('из клетки расписания есть путь в план, на
   await signIn(PEOPLE.ivanova)
   await openWeek(page, MONDAY)
 
-  await page.locator(`[data-lesson="${MONDAY}:1"]`).click()
+  await page.locator(`[data-lesson="${MONDAY}:1"]`).click({ button: 'right' })
   const menu = page.locator('dialog.modal')
   // тема названа до нажатия: видно, куда приведут. Своим классом, а не
   // «последней подсказкой»: их в окне несколько, и приезжает она позже
@@ -203,7 +237,7 @@ test('окно закрывается крестиком, а отдельной 
   await signIn(PEOPLE.ivanova)
   await openWeek(page, MONDAY)
 
-  await page.locator(`[data-lesson="${MONDAY}:1"]`).click()
+  await page.locator(`[data-lesson="${MONDAY}:1"]`).click({ button: 'right' })
   const menu = page.locator('dialog.modal')
   await expect(menu.getByRole('button', { name: 'Открыть урок' })).toBeVisible()
   await expect(menu.getByRole('button', { name: 'Закрыть', exact: true })).toHaveCount(0)
@@ -364,7 +398,7 @@ test('перенос оставляет отмену на прежнем мес�
   const source = page.locator(`[data-lesson="${MONDAY}:7"]`)
   await expect(source).toBeVisible()
 
-  await source.click()
+  await source.click({ button: 'right' })
   const menu = page.locator('dialog.modal')
   await menu.getByRole('button', { name: 'Перенести…' }).click()
   await menu.getByLabel('Новая дата').fill(FRIDAY)
@@ -538,7 +572,7 @@ test('урок листается по своему курсу и показыв
  */
 async function openLesson(page, cell = `${MONDAY}:1`) {
   await openWeek(page, MONDAY)
-  await page.locator(`[data-lesson="${cell}"]`).click()
+  await page.locator(`[data-lesson="${cell}"]`).click({ button: 'right' })
   await page.locator('dialog.modal').getByRole('button', { name: 'Открыть урок' }).click()
   await ready(page)
   // `ready` ждёт бар и тишину в сети, а не смену страницы: заголовок
@@ -969,7 +1003,7 @@ test('у записанного часа в меню нет ни отмены, �
 
   await page
     .locator(`[data-lesson="${recorded.date}:${recorded.lesson_number}"]`)
-    .click()
+    .click({ button: 'right' })
 
   const menu = page.locator('dialog.modal')
   await expect(menu.getByRole('button', { name: 'Открыть урок' })).toBeVisible()

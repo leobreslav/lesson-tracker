@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { useNavigate } from 'react-router-dom'
 import { RepeatChoice } from './AgendaDialogs'
 import CopyDialog from './CopyDialog'
 import EmptyState from './EmptyState'
@@ -40,6 +41,7 @@ const NUMBERS = Array.from({ length: MAX_LESSON_NUMBER }, (_, index) => index + 
  */
 export default function SchoolSchedule({ onLoggedOut }) {
   const { t } = useTranslation()
+  const navigate = useNavigate()
   const [years, setYears] = useState(null)
   const [yearId, setYearId] = useState(null)
   const [courses, setCourses] = useState([])
@@ -342,9 +344,16 @@ export default function SchoolSchedule({ onLoggedOut }) {
         lessonTitle={(slot) =>
           [slot.course_name, slot.teacher_name].filter(Boolean).join(' — ')
         }
-        onOpen={(date, slot) => setDialog({ type: 'remove', date, slot })}
+        /* левое нажатие ведёт в занятие, правое — в меню: по сетке живут
+           каждый день, а правят её реже */
+        onOpen={(date, slot) => navigate(`/lesson/${slot.id}`)}
+        onMenu={(date, slot) => setDialog({ type: 'remove', date, slot })}
         onAdd={(date, number) => setDialog({ type: 'add', date, number })}
       />
+
+      {/* оба нажатия названы словами: правая кнопка и долгое нажатие
+          беззвучны — ниоткуда не видно, что они есть */}
+      <p className="hint grid-hint">{t('agenda.gridHint')}</p>
 
       {dialog?.type === 'remove' && (
         <RemoveSchoolSlot
