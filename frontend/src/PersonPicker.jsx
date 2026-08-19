@@ -1,4 +1,5 @@
 import { useId } from 'react'
+import { useTranslation } from 'react-i18next'
 
 /**
  * Выбор человека или курса с поиском по мере ввода.
@@ -22,6 +23,14 @@ import { useId } from 'react'
  * копию состояния и следить, чтобы она не спорила с внешней. Такая пара
  * («печатаю» против «выбрано») расходится на первом же наборе, когда
  * человек стёр строку, а выбор остался.
+ *
+ * Отсюда же и подпись под полем. Строка, набранная руками и ни во что не
+ * разрешившаяся («Maths» вместо «Maths 6, Anna»), для вызывающего значит
+ * «никого не выбрали» — то есть кнопка рядом не сделает ничего. Молчать об
+ * этом нельзя: снаружи это выглядит как выключенная кнопка без причины, а
+ * то и как нажатие, которое ничего не дало. Разрешение тут не второе
+ * состояние, а чистая функция пропсов — та же `matchItem`, которую позовёт
+ * вызывающий.
  */
 export default function PersonPicker({
   items,
@@ -32,7 +41,10 @@ export default function PersonPicker({
   disabled = false,
   describe,
 }) {
+  const { t } = useTranslation()
   const listId = useId()
+  const typed = (value ?? '').trim()
+  const unresolved = typed !== '' && matchItem(items, typed, describe) === null
 
   return (
     <>
@@ -50,6 +62,7 @@ export default function PersonPicker({
           <option key={item.id} value={describe(item)} />
         ))}
       </datalist>
+      {unresolved && <span className="hint">{t('common.pickFromList')}</span>}
     </>
   )
 }

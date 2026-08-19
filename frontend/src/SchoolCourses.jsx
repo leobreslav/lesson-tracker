@@ -116,7 +116,7 @@ export default function SchoolCourses() {
   const add = (event) => {
     event.preventDefault()
     const name = form.name.trim()
-    if (!name || !form.subject || !form.grade || busy) return
+    if (!name || !form.subject || !form.grade || busy || !namesReady) return
 
     const teacher = matchItem(members, form.teacher, describePerson)
     const methodist = matchItem(members, form.methodist, describePerson)
@@ -135,6 +135,19 @@ export default function SchoolCourses() {
       setForm((current) => ({ ...current, name: '', teacher: '', methodist: '' }))
     })
   }
+
+  /*
+   * Набранное имя разрешилось в человека — или поле пусто.
+   *
+   * Учитель и методист тут необязательны, и молчаливый пропуск выглядел
+   * так: набрал «Иванова» вместо «Мария Иванова · ivanova@…», нажал
+   * «Добавить» — курс завёлся **без** ведущего, и ни слова о том, что
+   * введённое выбросили. Пустое поле по-прежнему значит «не называем».
+   */
+  const resolved = (text) =>
+    !(text ?? '').trim() || matchItem(members, text, describePerson) !== null
+
+  const namesReady = resolved(form.teacher) && resolved(form.methodist)
 
   const commitRename = () => {
     if (!editing) return
@@ -170,6 +183,12 @@ export default function SchoolCourses() {
     )
   }
 
+  /* кого выбрали в методисты — этим же ответом живёт и кнопка рядом:
+     пока она смотрела на набранный текст, а действие на найденного
+     человека, «Иванов» зажигал кнопку, которая ничего не делала */
+  const namedMethodist = (course) =>
+    matchItem(members, naming[course.id], describePerson)
+
   /**
    * Назначить методиста — того, кто утверждает план этого курса.
    *
@@ -178,7 +197,7 @@ export default function SchoolCourses() {
    * них в одном месте — на карточке курса.
    */
   const nameMethodist = (course) => {
-    const person = matchItem(members, naming[course.id], describePerson)
+    const person = namedMethodist(course)
     if (!person || busy) return
 
     run(() =>
@@ -317,7 +336,9 @@ export default function SchoolCourses() {
           />
           <button
             type="submit"
-            disabled={busy || !form.name.trim() || !form.subject || !form.grade}
+            disabled={
+              busy || !form.name.trim() || !form.subject || !form.grade || !namesReady
+            }
           >
             {t('common.add')}
           </button>
@@ -561,7 +582,7 @@ export default function SchoolCourses() {
                             aria-label={t('school.courses.methodistAction', {
                               name: course.name,
                             })}
-                            disabled={busy || !naming[course.id]}
+                            disabled={busy || !namedMethodist(course)}
                             onClick={() => nameMethodist(course)}
                           >
                             {t('school.courses.nameMethodist')}

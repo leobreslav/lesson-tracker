@@ -96,13 +96,31 @@ export default function SchoolTeachers() {
     )
   }
 
+  /*
+   * Свободные курсы — те, у которых ведущего нет.
+   *
+   * Считается по самому списку курсов: у школьного ответа есть `teachers`,
+   * и второй запрос ради этого не нужен.
+   */
+  const free = courses.filter((course) => (course.teachers ?? []).length === 0)
+
+  /*
+   * Какой курс выбран у этого человека.
+   *
+   * Считается тут, а не внутри `assign`, потому что этот же ответ нужен
+   * кнопке: пока она смотрела на **набранный текст**, а действие — на
+   * найденный курс, они расходились. Набрал «Maths» вместо «Maths 6,
+   * Anna» — кнопка загоралась и не делала ничего, молча.
+   */
+  const picked = (member) =>
+    matchItem(free, assigning[member.id], (course) => course.name)
+
   const assign = (member) => {
-    const picked = matchItem(free, assigning[member.id], (course) => course.name)
-    const courseId = picked?.id
-    if (!courseId || busy) return
+    const course = picked(member)
+    if (!course || busy) return
 
     run(() =>
-      createAssignment(Number(courseId), member.id).then(() =>
+      createAssignment(course.id, member.id).then(() =>
         setAssigning((current) => ({ ...current, [member.id]: '' })),
       ),
     )
@@ -132,14 +150,6 @@ export default function SchoolTeachers() {
         return detachMember(member.id, { force: true })
       }),
     )
-
-  /*
-   * Свободные курсы — те, у которых ведущего нет.
-   *
-   * Считается по самому списку курсов: у школьного ответа есть `teachers`,
-   * и второй запрос ради этого не нужен.
-   */
-  const free = courses.filter((course) => (course.teachers ?? []).length === 0)
 
   if (members === null) {
     return <p>{error ? <span className="error">{error}</span> : t('common.loading')}</p>
@@ -195,7 +205,26 @@ export default function SchoolTeachers() {
             <li key={member.id}>
               <div className="row">
                 <span className="name">{fullName(member)}</span>
-                <span className="hint">{member.email}</span>
+                {/* адрес — подпись к имени, а не второе имя: у человека без
+                    имени `fullName` и есть его адрес, и печатать его второй
+                    раз значит показывать одну строку дважды */}
+                {fullName(member) === member.email ? null : (
+                  <span className="hint">{member.email}</span>
+                )}
+                {/*
+                  Пометка «ещё не входил».
+
+                  Панель обещает её собственной подсказкой сверху, сервер
+                  шлёт `arrived`, карточка курса и состав курса её рисуют —
+                  а здесь она пропала, когда два списка (участники и
+                  приглашения) слили в один: список остался, пометка
+                  осталась во втором, которого больше нет.
+                */}
+                {member.arrived ? null : (
+                  <span className="tag pending" title={t('school.people.waitingHint')}>
+                    {t('school.people.waiting')}
+                  </span>
+                )}
                 <label className="checkbox">
                   <input
                     type="checkbox"
@@ -238,43 +267,55 @@ export default function SchoolTeachers() {
                 )}
               </div>
 
-              <div className="row">
-                {/*
-                  Предлагаются только **свободные** курсы.
+              {/*
+                Предлагаются только **свободные** курсы, а когда их нет —
+                формы нет вовсе.
 
-                  Ведущий у курса один, и раньше отсюда можно было выбрать
-                  занятый: сервер отвечал `course_teacher_taken`, то есть
-                  форма предлагала действие, которого не сделает. На
-                  карточке курса это починили, когда правило вводили, а
-                  здесь забыли — две двери в одну комнату разошлись молча.
+                Ведущий у курса один, и раньше отсюда можно было выбрать
+                занятый: сервер отвечал `course_teacher_taken`, то есть
+                форма предлагала действие, которого не сделает. Передать
+                курс от одного другому отсюда нельзя и теперь, и это
+                правильно: отобрать у человека год работы мимоходом из
+                выпадающего списка не стоит. Снимают крестиком, потом
+                назначают.
 
-                  Передать курс от одного другому отсюда теперь нельзя, и
-                  это правильно: отобрать у человека год работы мимоходом
-                  из выпадающего списка не стоит. Снимают крестиком, потом
-                  назначают.
-                */}
-                <PersonPicker
-                  items={free}
-                  value={assigning[member.id] ?? ''}
-                  label={t('school.teachers.assignLabel', {
-                    name: fullName(member),
-                  })}
-                  placeholder={t('school.teachers.pickCourse')}
-                  disabled={busy || free.length === 0}
-                  describe={(course) => course.name}
-                  onChange={(text) =>
-                    setAssigning((current) => ({ ...current, [member.id]: text }))
-                  }
-                />
-                <button
-                  type="button"
-                  className="secondary"
-                  disabled={busy || !assigning[member.id]}
-                  onClick={() => assign(member)}
-                >
-                  {t('school.teachers.assign')}
-                </button>
-              </div>
+                Отсюда и второе: когда свободных курсов не осталось,
+                выбирать не из чего. Выключенное поле выглядит ровно как
+                работающее, и снаружи это читается как поломка — набираешь,
+                а оно не набирается. Карточка курса в такой ситуации формы
+                не рисует вовсе, и вторая дверь в ту же комнату обязана
+                отвечать так же: словами, а не мёртвым полем.
+              */}
+              {free.length === 0 ? (
+                <p className="hint">{t('school.teachers.allTaken')}</p>
+              ) : (
+                <div className="row">
+                  <PersonPicker
+                    items={free}
+                    value={assigning[member.id] ?? ''}
+                    label={t('school.teachers.assignLabel', {
+                      name: fullName(member),
+                    })}
+                    placeholder={t('school.teachers.pickCourse')}
+                    disabled={busy}
+                    describe={(course) => course.name}
+                    onChange={(text) =>
+                      setAssigning((current) => ({ ...current, [member.id]: text }))
+                    }
+                  />
+                  {/* кнопка живёт найденным курсом, а не набранным текстом:
+                      порознь они расходятся, и загоревшаяся кнопка не делает
+                      ничего */}
+                  <button
+                    type="button"
+                    className="secondary"
+                    disabled={busy || !picked(member)}
+                    onClick={() => assign(member)}
+                  >
+                    {t('school.teachers.assign')}
+                  </button>
+                </div>
+              )}
             </li>
           ))}
         </ul>

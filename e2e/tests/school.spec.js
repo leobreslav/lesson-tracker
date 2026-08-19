@@ -320,6 +320,64 @@ test('курс поручают приглашённому — до его пе�
   expect(after.body[0].teachers[0].arrived).toBe(false)
 })
 
+test('карточка учителя не обещает того, чего не сделает', async ({
+  page,
+  signIn,
+  api,
+}) => {
+  // Три немые поломки одной панели. Пометка «ещё не входил» пропала из
+  // списка, когда участников и приглашения слили в один; поле выбора курса
+  // выключалось без единого слова, когда свободных курсов не осталось —
+  // а выключенное поле выглядит ровно как рабочее; кнопка же смотрела на
+  // набранный текст, а действие — на найденный курс, и на «Своб» она
+  // загоралась и не делала ничего.
+  const admin = await api(PEOPLE.admin)
+  await admin.post('/api/school/invitations/', {
+    email: 'tihiy@example.com',
+    kind: 'teacher',
+  })
+
+  await signIn(PEOPLE.admin)
+  await openSection(page, '/school/teachers')
+
+  const invited = page.locator('.people-list > li', { hasText: 'tihiy@example.com' })
+
+  // имени у приглашённого нет, и его адрес — это его имя: печатать адрес
+  // второй раз подписью значит показывать одну строку дважды
+  const shown = await invited.locator('.row').first().innerText()
+  expect(shown.match(/tihiy@example\.com/g)).toHaveLength(1)
+  await expect(invited.locator('.tag.pending')).toContainText('ещё не входил')
+
+  // демонстрационные курсы уже кем-то заняты, то есть выбирать не из чего:
+  // формы нет вовсе, и вместо неё сказано, почему
+  await expect(invited.getByLabel(/Курс для/)).toHaveCount(0)
+  await expect(invited).toContainText('Все курсы уже кому-то поручены')
+
+  const years = await admin.get('/api/calendar/years/')
+  const subjects = await admin.get('/api/school/subjects/')
+  const grades = await admin.get('/api/school/grades/')
+  await admin.post('/api/courses/', {
+    year: years.body[0].id,
+    subject: subjects.body[0].id,
+    grade: grades.body[0].id,
+    name: 'Свободный курс',
+  })
+
+  await openSection(page, '/school/teachers')
+  const field = invited.getByLabel(/Курс для/)
+  const assign = invited.getByRole('button', { name: 'Назначить', exact: true })
+
+  // набранное, но не разрешившееся: кнопка молчит, и подпись говорит почему
+  await field.fill('Своб')
+  await expect(invited).toContainText('выберите из списка')
+  await expect(assign).toBeDisabled()
+
+  await field.fill('Свободный курс')
+  await expect(assign).toBeEnabled()
+  await assign.click()
+  await expect(invited.locator('.tag', { hasText: 'Свободный курс' })).toBeVisible()
+})
+
 test('администратор чинит чужой план — из того же селектора', async ({
   page,
   signIn,

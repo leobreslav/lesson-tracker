@@ -103,7 +103,18 @@ export default function SchoolStudents() {
             <li key={student.id}>
               <div className="row">
                 <span className="name">{fullName(student)}</span>
-                <span className="hint">{student.email}</span>
+                {/* адрес — подпись к имени: у человека без имени `fullName`
+                    и есть его адрес, и второй раз печатать его незачем */}
+                {fullName(student) === student.email ? null : (
+                  <span className="hint">{student.email}</span>
+                )}
+                {/* та же пометка, что в списке учителей и в составе курса:
+                    учётка заведена и ждёт первого входа через Google */}
+                {student.arrived ? null : (
+                  <span className="tag pending" title={t('school.people.waitingHint')}>
+                    {t('school.people.waiting')}
+                  </span>
+                )}
                 <button
                   type="button"
                   className="link detach"
