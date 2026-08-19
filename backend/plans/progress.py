@@ -25,7 +25,7 @@
 
 from __future__ import annotations
 
-from collections import Counter, defaultdict
+from collections import defaultdict
 
 from django.contrib.auth import get_user_model
 from schedule.models import Course, CourseAssignment, CourseMethodist, Slot
@@ -94,14 +94,10 @@ def rows_for(courses, today, ahead: int = 2) -> list[dict]:
     teachers = teachers_of(courses)
 
     slots_by_course = defaultdict(list)
-    cancelled_by_course = Counter()
-    for slot in Slot.objects.filter(course_id__in=course_ids).order_by(
-        "date", "lesson_number"
-    ):
-        if slot.is_cancelled:
-            cancelled_by_course[slot.course_id] += 1
-        else:
-            slots_by_course[slot.course_id].append(slot)
+    for slot in Slot.objects.filter(
+        course_id__in=course_ids, is_cancelled=False
+    ).order_by("date", "lesson_number"):
+        slots_by_course[slot.course_id].append(slot)
 
     rows = []
     for course in courses:
@@ -147,9 +143,7 @@ def rows_for(courses, today, ahead: int = 2) -> list[dict]:
                 # долги по записи: сколько занятий закрыто и сколько ждёт.
                 # Считаются по тем же слотам, из которых собрана раскладка
                 "records": services.record_state(slots_by_course[key], today),
-                **services.course_progress(
-                    entries, today, cancelled_by_course[key], ahead=ahead
-                ),
+                **services.course_progress(entries, today, ahead=ahead),
             }
         )
 

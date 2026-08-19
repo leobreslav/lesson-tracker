@@ -144,19 +144,6 @@ export default function CourseRow({
           )}
         </section>
 
-        {/* насколько расписание разошлось с исходным: добавили минус
-            отменили. С резервом не путать — тот про план, этот про дни */}
-        <section className="panel card-stat" data-card="changes">
-          <h2>{signed(course.extra - course.cancelled)}</h2>
-          <p className="hint">{t('status.changes')}</p>
-          <p className="hint">
-            {t('status.changesDetail', {
-              cancelled: course.cancelled,
-              extra: course.extra,
-            })}
-          </p>
-        </section>
-
         {/* два числа, а не сальдо: рост съедает резерв, удаление означает
             выкинутый материал, и «плюс три минус три» тут не ноль */}
         <section className="panel card-stat" data-card="growth">

@@ -532,8 +532,6 @@
       "noPlan": "no plan yet",
       "finished": "the plan is finished: {{count}} lessons"
     },
-    "changes": "change in lessons",
-    "changesDetail": "{{cancelled}} cancelled · {{extra}} added",
     "addedToPlan": "added to the plan",
     "droppedFromPlan": "dropped from the plan",
     "sendForApproval": "send for approval",

@@ -898,7 +898,15 @@ class ProgressTests(LayoutApiTestCase):
         self.assertIsNone(row["last_lesson_date"])
         self.assertEqual(row["missing"], 4)
 
-    def test_counters_the_plan_page_does_not_have(self):
+    def test_the_row_says_nothing_about_cancellations(self):
+        """
+        Отменённых и дополнительных в строке нет — ни числом, ни причиной.
+
+        Числа эти жили ради одной плашки («изменение числа уроков»), и она
+        ушла: методист приходит смотреть программу, а срывы и замены видны
+        там, где их ставят. Резерв при этом считается по-прежнему без
+        отменённых — они место в году не занимают.
+        """
         self.fill_slots(9)
         self.add_slot(MONDAY + timedelta(days=20), is_extra=True)
         self.add_slot(MONDAY + timedelta(days=21), is_cancelled=True, reason="Болезнь")
@@ -907,10 +915,8 @@ class ProgressTests(LayoutApiTestCase):
 
         row = self.courses()[self.course.name]
 
-        self.assertEqual(row["extra"], 1)
-        self.assertEqual(row["cancelled"], 3)
-        # причин здесь нет: их место в расписании, где отмену и ставили
-        self.assertNotIn("cancelled_by_reason", row)
+        for gone in ("extra", "cancelled", "cancelled_by_reason"):
+            self.assertNotIn(gone, row)
         self.assertEqual(row["reserve"], 3)
 
     def test_a_plan_can_end_past_the_end_of_the_year(self):
