@@ -474,7 +474,8 @@ body {
 .context-menu {
   position: fixed;
   min-width: 12rem;
-  max-width: 18rem;
+  /* с формой внутри меню шире: в переносе дата, номер и причина */
+  max-width: 22rem;
 }
 
 /* шапка меню: чей это час и какая в нём тема — не пункт, а подпись */
@@ -493,6 +494,71 @@ body {
   color: #444;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/*
+ * Форма внутри меню: причина отмены и перенос спрашиваются там же, где
+ * нажали, — окном они были, и на один разговор приходилось две поверхности.
+ *
+ * Поэтому у контролов внутри формы свои правила: пункты меню растянуты во
+ * всю ширину и без рамок, а поле ввода и кнопки в форме должны выглядеть
+ * полем ввода и кнопками. Правило про ряд контролов («СТРОКА ФОРМЫ») их
+ * догоняет само — `.row` и `.actions` в этом списке есть.
+ */
+.context-menu .context-form {
+  padding: 0.5rem 0.6rem 0.6rem;
+}
+
+.context-menu .context-form > * + *,
+.context-menu .context-form form > * + * {
+  margin-top: 0.5rem;
+}
+
+.context-menu .context-form :is(input, button) {
+  display: inline-block;
+  width: auto;
+}
+
+.context-menu .context-form input:not([type='checkbox']):not([type='radio']) {
+  width: 100%;
+  color: inherit;
+  background: #fff;
+  border: 1px solid #c6c6c6;
+  border-radius: 4px;
+}
+
+/* кнопка в форме — обычная кнопка проекта, а не пункт списка */
+.context-menu .context-form button {
+  padding: 0.5rem 1rem;
+  color: #fff;
+  text-align: center;
+  background: #1a73e8;
+  border: 1px solid transparent;
+  border-radius: 4px;
+}
+
+.context-menu .context-form button.secondary {
+  color: #1a73e8;
+  background: #fff;
+  border-color: #c6c6c6;
+}
+
+.context-menu .context-form button:hover:not(:disabled) {
+  background: #1765cc;
+}
+
+.context-menu .context-form button.secondary:hover:not(:disabled) {
+  background: #f1f5fd;
+}
+
+.context-menu .context-form button:disabled {
+  background: #a8c7f5;
+}
+
+.context-menu .context-form button.secondary:disabled {
+  color: #999;
+  background: #fff;
+  border-color: #e0e0e0;
 }
 
 /* черта между группами пунктов: файл, полка, утверждение — три разговора,

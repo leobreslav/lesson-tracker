@@ -454,9 +454,9 @@ function RemoveSchoolSlot({ slot, date, at, busy, onDelete, onDeleteRow, onClose
   const navigate = useNavigate()
   const [asking, setAsking] = useState(false)
 
-  /* список действий — меню у курсора, как у учителя; подтверждение ряда —
-     окном: удаление тридцати часов не должно случаться промахом мимо
-     соседнего пункта */
+  /* всё в одном меню: список действий и подтверждение ряда. Подтверждение
+     отдельным шагом — удаление тридцати часов не должно случаться промахом
+     мимо соседнего пункта, — но поверхность та же */
   if (!asking) {
     return (
       <ContextMenu at={at} onClose={onClose}>
@@ -486,24 +486,29 @@ function RemoveSchoolSlot({ slot, date, at, busy, onDelete, onDeleteRow, onClose
   }
 
   return (
-    <Modal
-      onClose={onClose}
-      title={t('agenda.menu.title', {
-        className: slot.course_name,
-        number: slot.lesson_number,
-      })}
-    >
-      <p className="hint">{weekdayWithDate(date)}</p>
-      <p className="hint">{t('agenda.menu.rowHint')}</p>
-      <div className="actions">
-        <button type="button" disabled={busy} onClick={onDeleteRow}>
-          {t('agenda.menu.rowSubmit')}
-        </button>
-        <button type="button" className="secondary" onClick={() => setAsking(false)}>
-          {t('agenda.menu.cancelAbort')}
-        </button>
-      </div>
-    </Modal>
+    <ContextMenu at={at} onClose={onClose}>
+      <li className="context-head">
+        {/* чей это час и какой: то же, что стояло заголовком окна */}
+        <span className="hint">
+          {t('agenda.menu.title', {
+            className: slot.course_name,
+            number: slot.lesson_number,
+          })}
+        </span>
+        <span className="hint">{weekdayWithDate(date)}</span>
+      </li>
+      <li className="context-form">
+        <p className="hint">{t('agenda.menu.rowHint')}</p>
+        <div className="actions">
+          <button type="button" disabled={busy} onClick={onDeleteRow}>
+            {t('agenda.menu.rowSubmit')}
+          </button>
+          <button type="button" className="secondary" onClick={() => setAsking(false)}>
+            {t('agenda.menu.cancelAbort')}
+          </button>
+        </div>
+      </li>
+    </ContextMenu>
   )
 }
 

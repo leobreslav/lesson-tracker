@@ -58,11 +58,11 @@ test('отмена урока сдвигает даты в плане', async ({
   // меню урока — правой кнопкой: левая ведёт в само занятие
   await lesson.click({ button: 'right' })
 
-  await page.locator('.context-menu').getByRole('button', { name: 'Отменить' }).click()
-  const menu = page.locator('dialog.modal')
+  const menu = page.locator('.context-menu')
+  await menu.getByRole('button', { name: 'Отменить' }).click()
   await menu.getByPlaceholder('Причина отмены').fill('Болезнь')
   await menu.getByRole('button', { name: 'Отменить урок' }).click()
-  await expect(menu).toBeHidden()
+  await expect(menu).toHaveCount(0)
 
   // отменённый урок уходит из раскладки целиком, и вся лента съезжает на
   // одну дату назад: первый урок плана встаёт на вторую дату

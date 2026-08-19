@@ -308,9 +308,18 @@ export function LessonMenu({
     })
   }
 
-  /* Список действий — выпадающим меню у курсора; форма отмены, переноса и
-     подтверждение ряда — окном: в списке, который закрывается кликом мимо,
-     печатать причину было бы больно */
+  /*
+   * Всё в одном меню: и список действий, и форма, которую действие
+   * открывает.
+   *
+   * Окном форма была — то есть на один разговор приходилось два вида
+   * поверхностей: меню у курсора и модальный диалог поверх него. Причина
+   * отмены это две строки ввода, а не отдельный экран, и место у них там
+   * же, где нажали.
+   *
+   * Меню при этом остаётся меню: Escape и клик мимо закрывают его целиком,
+   * а «Не надо» возвращает к списку.
+   */
   if (mode === null) {
     const item = (key, label, onClick, extra = {}) => (
       <li key={key}>
@@ -377,91 +386,96 @@ export function LessonMenu({
   }
 
   return (
-    <Modal
-      onClose={onClose}
-      title={t('agenda.menu.title', {
-        className: lesson.course_name,
-        number: lesson.lesson_number,
-      })}
-    >
-      <p className="hint">{weekdayWithDate(date)}</p>
+    <ContextMenu at={at} onClose={onClose}>
+      <li className="context-head">
+        {/* чей это час и какой: то же, что стояло заголовком окна */}
+        <span className="hint">
+          {t('agenda.menu.title', {
+            className: lesson.course_name,
+            number: lesson.lesson_number,
+          })}
+        </span>
+        <span className="hint">{weekdayWithDate(date)}</span>
+      </li>
 
-      {mode === 'cancel' && (
-        <form onSubmit={handleCancel}>
-          <input
-            autoFocus
-            value={reason}
-            maxLength={200}
-            placeholder={t('agenda.menu.cancelReason')}
-            aria-label={t('agenda.menu.cancelReason')}
-            onChange={(event) => setReason(event.target.value)}
-          />
-          <div className="actions">
-            <button type="submit" disabled={busy}>
-              {t('agenda.menu.cancelSubmit')}
-            </button>
-            <button type="button" className="secondary" onClick={() => setMode(null)}>
-              {t('agenda.menu.cancelAbort')}
-            </button>
-          </div>
-        </form>
-      )}
-
-      {mode === 'move' && (
-        <form onSubmit={handleMove}>
-          <p className="hint">{t('agenda.menu.moveHint')}</p>
-          <div className="row">
+      <li className="context-form">
+        {mode === 'cancel' && (
+          <form onSubmit={handleCancel}>
             <input
               autoFocus
-              type="date"
-              value={target.date}
-              aria-label={t('agenda.menu.moveDate')}
-              onChange={(event) =>
-                setTarget((current) => ({ ...current, date: event.target.value }))
-              }
+              value={reason}
+              maxLength={200}
+              placeholder={t('agenda.menu.cancelReason')}
+              aria-label={t('agenda.menu.cancelReason')}
+              onChange={(event) => setReason(event.target.value)}
             />
-            <input
-              type="number"
-              min={1}
-              max={10}
-              value={target.number}
-              aria-label={t('agenda.menu.moveNumber')}
-              onChange={(event) =>
-                setTarget((current) => ({ ...current, number: event.target.value }))
-              }
-            />
-          </div>
-          <input
-            value={reason}
-            maxLength={200}
-            placeholder={t('agenda.menu.moveReason')}
-            aria-label={t('agenda.menu.moveReason')}
-            onChange={(event) => setReason(event.target.value)}
-          />
-          <div className="actions">
-            <button type="submit" disabled={busy || !target.date}>
-              {t('agenda.menu.moveSubmit')}
-            </button>
-            <button type="button" className="secondary" onClick={() => setMode(null)}>
-              {t('agenda.menu.cancelAbort')}
-            </button>
-          </div>
-        </form>
-      )}
+            <div className="actions">
+              <button type="submit" disabled={busy}>
+                {t('agenda.menu.cancelSubmit')}
+              </button>
+              <button type="button" className="secondary" onClick={() => setMode(null)}>
+                {t('agenda.menu.cancelAbort')}
+              </button>
+            </div>
+          </form>
+        )}
 
-      {mode === 'row' && (
-        <>
-          <p className="hint">{t('agenda.menu.rowHint')}</p>
-          <div className="actions">
-            <button type="button" disabled={busy} onClick={onDeleteRow}>
-              {t('agenda.menu.rowSubmit')}
-            </button>
-            <button type="button" className="secondary" onClick={() => setMode(null)}>
-              {t('agenda.menu.cancelAbort')}
-            </button>
-          </div>
-        </>
-      )}
-    </Modal>
+        {mode === 'move' && (
+          <form onSubmit={handleMove}>
+            <p className="hint">{t('agenda.menu.moveHint')}</p>
+            <div className="row">
+              <input
+                autoFocus
+                type="date"
+                value={target.date}
+                aria-label={t('agenda.menu.moveDate')}
+                onChange={(event) =>
+                  setTarget((current) => ({ ...current, date: event.target.value }))
+                }
+              />
+              <input
+                type="number"
+                min={1}
+                max={10}
+                value={target.number}
+                aria-label={t('agenda.menu.moveNumber')}
+                onChange={(event) =>
+                  setTarget((current) => ({ ...current, number: event.target.value }))
+                }
+              />
+            </div>
+            <input
+              value={reason}
+              maxLength={200}
+              placeholder={t('agenda.menu.moveReason')}
+              aria-label={t('agenda.menu.moveReason')}
+              onChange={(event) => setReason(event.target.value)}
+            />
+            <div className="actions">
+              <button type="submit" disabled={busy || !target.date}>
+                {t('agenda.menu.moveSubmit')}
+              </button>
+              <button type="button" className="secondary" onClick={() => setMode(null)}>
+                {t('agenda.menu.cancelAbort')}
+              </button>
+            </div>
+          </form>
+        )}
+
+        {mode === 'row' && (
+          <>
+            <p className="hint">{t('agenda.menu.rowHint')}</p>
+            <div className="actions">
+              <button type="button" disabled={busy} onClick={onDeleteRow}>
+                {t('agenda.menu.rowSubmit')}
+              </button>
+              <button type="button" className="secondary" onClick={() => setMode(null)}>
+                {t('agenda.menu.cancelAbort')}
+              </button>
+            </div>
+          </>
+        )}
+      </li>
+    </ContextMenu>
   )
 }

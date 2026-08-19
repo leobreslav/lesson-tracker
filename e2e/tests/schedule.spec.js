@@ -127,12 +127,12 @@ test('ряд убирается рядом, а не периодом', async ({ 
   await openWeek(page, '2026-09-14')
   // меню — правой кнопкой: левая теперь ведёт в само занятие
   await page.locator('[data-lesson="2026-09-14:7"]').click({ button: 'right' })
-  await page.locator('.context-menu').getByRole('button', { name: 'Удалить весь ряд…' }).click()
-  // подтверждение — окном: тридцать часов не должны уходить промахом
-  const menu = page.locator('dialog.modal')
+  const menu = page.locator('.context-menu')
+  await menu.getByRole('button', { name: 'Удалить весь ряд…' }).click()
+  // подтверждение — отдельным шагом, но в том же меню
   await menu.getByRole('button', { name: 'Удалить ряд', exact: true }).click()
 
-  await expect(menu).toBeHidden()
+  await expect(menu).toHaveCount(0)
   await expect(page.getByText(/Удалено уроков ряда/)).toBeVisible()
 
   const after = await teacher.get('/api/slots/?start=2026-09-01&end=2027-05-31')
@@ -167,12 +167,13 @@ test('урок добавляется, отменяется с причиной 
 
   // cancel it, with a reason — меню открывает правая кнопка
   await lesson.click({ button: 'right' })
-  await page.locator('.context-menu').getByRole('button', { name: 'Отменить' }).click()
-  const menu = page.locator('dialog.modal')
+  const menu = page.locator('.context-menu')
+  await menu.getByRole('button', { name: 'Отменить' }).click()
+  // причину спрашивают там же, в меню: окна ради двух строк ввода нет
   await menu.getByPlaceholder('Причина отмены').fill('Болезнь')
   await menu.getByRole('button', { name: 'Отменить урок' }).click()
 
-  await expect(menu).toBeHidden()
+  await expect(menu).toHaveCount(0)
   await expect(lesson).toHaveClass(/cancelled/)
 
   // and put it back
@@ -413,13 +414,13 @@ test('перенос оставляет отмену на прежнем мес�
   await expect(source).toBeVisible()
 
   await source.click({ button: 'right' })
-  await page.locator('.context-menu').getByRole('button', { name: 'Перенести…' }).click()
-  const menu = page.locator('dialog.modal')
+  const menu = page.locator('.context-menu')
+  await menu.getByRole('button', { name: 'Перенести…' }).click()
   await menu.getByLabel('Новая дата').fill(FRIDAY)
   await menu.getByLabel('Номер урока').fill('7')
   await menu.getByRole('button', { name: 'Перенести', exact: true }).click()
 
-  await expect(menu).toBeHidden()
+  await expect(menu).toHaveCount(0)
   await expect(source).toHaveClass(/cancelled/)
   await expect(page.locator(`[data-lesson="${FRIDAY}:7"]`)).toBeVisible()
 
