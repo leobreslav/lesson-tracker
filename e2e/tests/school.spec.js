@@ -330,6 +330,41 @@ test('урок ставится рядом на каждую неделю, а н
   expect(row).toEqual(['2026-09-07', '2026-09-14', '2026-09-21', '2026-09-28'])
 })
 
+test('администратор отменяет час прямо в школьной сетке', async ({
+  page,
+  signIn,
+}) => {
+  // Меню у администратора было куцым — открыть, удалить, удалить ряд, — и
+  // пометить час отменённым он не мог вовсе, хотя чужую неделю чинит
+  // именно он: занятие сорвалось, а сказать об этом было нечем. Меню
+  // теперь одно на оба расписания.
+  await signIn(PEOPLE.admin)
+  await openSection(page, '/school/schedule')
+
+  const monday = page.locator('[data-day-head="2026-09-07"]')
+  for (let step = 0; step < 8 && !(await monday.count()); step += 1) {
+    await page.getByRole('button', { name: '→' }).click()
+    await page.waitForTimeout(250)
+  }
+  await expect(monday).toBeVisible()
+
+  const lesson = page.locator('[data-lesson="2026-09-07:1"]').first()
+  await lesson.click({ button: 'right' })
+
+  const menu = page.locator('.context-menu')
+  await menu.getByRole('button', { name: 'Отменить' }).click()
+  await menu.getByPlaceholder('Причина отмены').fill('Карантин')
+  await menu.getByRole('button', { name: 'Отменить урок' }).click()
+
+  await expect(menu).toHaveCount(0)
+  await expect(lesson).toHaveClass(/cancelled/)
+
+  // и возвращается оттуда же
+  await lesson.click({ button: 'right' })
+  await page.locator('.context-menu').getByRole('button', { name: 'Вернуть' }).click()
+  await expect(lesson).not.toHaveClass(/cancelled/)
+})
+
 test('курс поручают приглашённому — до его первого входа', async ({
   page,
   signIn,

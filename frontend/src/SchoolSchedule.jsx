@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
-import { ContextMenu, RepeatChoice } from './AgendaDialogs'
+import { LessonMenu, RepeatChoice } from './AgendaDialogs'
 import CopyDialog from './CopyDialog'
 import EmptyState from './EmptyState'
 import Modal from './Modal'
@@ -17,7 +17,9 @@ import {
   fetchMembers,
   fetchSchoolYears,
   fetchYearDays,
+  moveSlot,
   repeatSlot,
+  updateSlot,
 } from './api'
 import {
   addDays,
@@ -26,7 +28,7 @@ import {
   startOfWeek,
   today,
 } from './calendarLogic'
-import { dateRange, firstWeekday, weekdayWithDate } from './dates'
+import { dateRange, firstWeekday } from './dates'
 import { weekdayIndex } from './weekStart'
 import { MAX_LESSON_NUMBER } from './scheduleLogic'
 
@@ -335,6 +337,13 @@ export default function SchoolSchedule({ onLoggedOut }) {
         )}
         lessonClassName={(slot) =>
           (slot.teacher ? 'cell lesson' : 'cell lesson unassigned') +
+          // отменённый и дополнительный час выглядят тут так же, как у
+          // учителя. Не выглядели вовсе: отменить из этой сетки было
+          // нечем, и никто не замечал, что перечёркнутых часов она не
+          // рисует — то есть администратор видел сорванное занятие как
+          // обычное
+          (slot.is_cancelled ? ' cancelled' : '') +
+          (slot.is_extra ? ' extra' : '') +
           // те же метки, что у учителя: записанный час — галочка,
           // прошедший без записи — красная точка. Администратор смотрит
           // на то же расписание, и метки на нём должны значить то же
@@ -347,7 +356,7 @@ export default function SchoolSchedule({ onLoggedOut }) {
         /* левое нажатие ведёт в занятие, правое — в меню: по сетке живут
            каждый день, а правят её реже */
         onOpen={(date, slot) => navigate(`/lesson/${slot.id}`)}
-        onMenu={(date, slot, at) => setDialog({ type: 'remove', date, slot, at })}
+        onMenu={(date, slot, at) => setDialog({ type: 'menu', date, slot, at })}
         onAdd={(date, number) => setDialog({ type: 'add', date, number })}
       />
 
@@ -355,12 +364,38 @@ export default function SchoolSchedule({ onLoggedOut }) {
           беззвучны — ниоткуда не видно, что они есть */}
       <p className="hint grid-hint">{t('agenda.gridHint')}</p>
 
-      {dialog?.type === 'remove' && (
-        <RemoveSchoolSlot
-          slot={dialog.slot}
+      {/*
+        Меню то же самое, что у учителя, и это главное здесь.
+        Своё у администратора было куцым — открыть, удалить, удалить ряд, —
+        и пометить час отменённым он не мог вовсе, хотя чужую неделю чинит
+        именно он: сорвалось занятие, а сказать об этом нечем.
+
+        Слот школьного ответа приводится к форме учительского: там `course`
+        и `lesson`, тут ждут `course_id` и `recorded`. Одно поле переложить
+        дешевле, чем держать второй компонент, который отстанет.
+      */}
+      {dialog?.type === 'menu' && (
+        <LessonMenu
+          lesson={{
+            ...dialog.slot,
+            course_id: dialog.slot.course,
+            recorded: Boolean(dialog.slot.lesson),
+          }}
           date={dialog.date}
           at={dialog.at}
           busy={busy}
+          onCancel={(reason) => {
+            setDialog(null)
+            run(() => updateSlot(dialog.slot.id, { is_cancelled: true, reason }))
+          }}
+          onRestore={() => {
+            setDialog(null)
+            run(() => updateSlot(dialog.slot.id, { is_cancelled: false, reason: '' }))
+          }}
+          onMove={(fields) => {
+            setDialog(null)
+            run(() => moveSlot(dialog.slot.id, fields))
+          }}
           onDelete={() => {
             setDialog(null)
             removeSlot(dialog.slot)
@@ -441,77 +476,6 @@ function clampToYear(day, year) {
  * собственное поле учителя, эти два ответа могли разойтись: сетку рисовали
  * на одного, курс вёл другой.
  */
-/**
- * Что сделать с уроком школьной сетки: убрать его или весь ряд.
- *
- * Нативным `confirm` это было, и выбора в нём не бывает — только «да» и
- * «нет». А выбора тут два, и второй разрушительнее первого, поэтому он
- * спрашивает ещё раз: удаление тридцати часов не должно случаться промахом
- * мимо соседней кнопки.
- */
-function RemoveSchoolSlot({ slot, date, at, busy, onDelete, onDeleteRow, onClose }) {
-  const { t } = useTranslation()
-  const navigate = useNavigate()
-  const [asking, setAsking] = useState(false)
-
-  /* всё в одном меню: список действий и подтверждение ряда. Подтверждение
-     отдельным шагом — удаление тридцати часов не должно случаться промахом
-     мимо соседнего пункта, — но поверхность та же */
-  if (!asking) {
-    return (
-      <ContextMenu at={at} onClose={onClose}>
-        <li className="context-head">
-          <span className="hint">
-            {slot.course_name} · {weekdayWithDate(date)}
-          </span>
-        </li>
-        <li>
-          <button type="button" onClick={() => navigate(`/lesson/${slot.id}`)}>
-            {t('today.openLesson')}
-          </button>
-        </li>
-        <li className="dropdown-sep" />
-        <li>
-          <button type="button" disabled={busy} onClick={onDelete}>
-            {t('common.delete')}
-          </button>
-        </li>
-        <li>
-          <button type="button" disabled={busy} onClick={() => setAsking(true)}>
-            {t('agenda.menu.deleteRow')}
-          </button>
-        </li>
-      </ContextMenu>
-    )
-  }
-
-  return (
-    <ContextMenu at={at} onClose={onClose}>
-      <li className="context-head">
-        {/* чей это час и какой: то же, что стояло заголовком окна */}
-        <span className="hint">
-          {t('agenda.menu.title', {
-            className: slot.course_name,
-            number: slot.lesson_number,
-          })}
-        </span>
-        <span className="hint">{weekdayWithDate(date)}</span>
-      </li>
-      <li className="context-form">
-        <p className="hint">{t('agenda.menu.rowHint')}</p>
-        <div className="actions">
-          <button type="button" disabled={busy} onClick={onDeleteRow}>
-            {t('agenda.menu.rowSubmit')}
-          </button>
-          <button type="button" className="secondary" onClick={() => setAsking(false)}>
-            {t('agenda.menu.cancelAbort')}
-          </button>
-        </div>
-      </li>
-    </ContextMenu>
-  )
-}
-
 function AddSchoolSlot({ date, number, courses, yearEnd, busy, onSubmit, onClose }) {
   const { t } = useTranslation()
   const [courseId, setCourseId] = useState(courses[0]?.id ?? null)

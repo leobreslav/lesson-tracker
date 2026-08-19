@@ -332,9 +332,15 @@ export function LessonMenu({
     return (
       <ContextMenu at={at} onClose={onClose}>
         <li className="context-head">
+          {/* шапка одна на оба состояния меню — список и форму: курс с
+              номером, а под ним день */}
           <span className="hint">
-            {lesson.course_name} · {weekdayWithDate(date)}
+            {t('agenda.menu.title', {
+              className: lesson.course_name,
+              number: lesson.lesson_number,
+            })}
           </span>
+          <span className="hint">{weekdayWithDate(date)}</span>
           {/* какая строка плана стоит в этом часе: по ней и ведёт пункт
               «Открыть в учебном плане» */}
           {row && (
