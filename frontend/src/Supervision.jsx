@@ -13,12 +13,19 @@ import { approveReview, fetchReview, fetchReviewDiff, returnReview } from './api
  * себя, и считает их тот же `plans/progress.py` — два ответа на один вопрос
  * означали бы, что разговор про «отстаёшь» начинается со спора о цифрах.
  *
- * План показывается **только когда его прислали**: читать чужую программу без
- * запроса методист и раньше не мог, и новых прав переезд не даёт. У курса без
- * запроса видно ровно то же, что видно было в списке, — как он идёт.
+ * План виден **всегда**, а не только по присланному запросу. Границей права
+ * это никогда и не было: право читать даёт назначение методистом, а очередь
+ * на подпись была просто единственным входом — и потому решала заодно, что
+ * методисту видно. Спрашивают же с него ровно про то, чего в очереди нет:
+ * кто отстаёт, у кого план не помещается в год, что вообще написано в курсе,
+ * который никто не присылал.
  *
- * Утвердить или вернуть — здесь же. Возврат без замечания не принимается:
- * учителю нечего исправлять, а «верните как было» — не разговор.
+ * Поэтому ключ здесь — курс, а не запрос: запрос стал пометкой в строке и
+ * подписью над планом («на утверждение не присылали»).
+ *
+ * Утвердить или вернуть — здесь же, и только когда есть что решать. Возврат
+ * без замечания не принимается: учителю нечего исправлять, а «верните как
+ * было» — не разговор.
  */
 export default function Supervision({ row, busy, onError, onDone }) {
   const { t } = useTranslation()
@@ -41,18 +48,15 @@ export default function Supervision({ row, busy, onError, onDone }) {
     setChosen(null)
     setReturning(false)
     setComment('')
-    if (!request) return
 
-    fetchReview(request.id).then(setPlan).catch(onError)
-  }, [request?.id])
+    fetchReview(row.id).then(setPlan).catch(onError)
+  }, [row.id])
 
   useEffect(() => {
     // прежнее сравнение остаётся на экране, пока едет новая версия: иначе
     // смена версии на миг возвращала бы к списку плана
-    if (!request) return
-
-    fetchReviewDiff(request.id, chosen).then(setDiff).catch(onError)
-  }, [request?.id, chosen])
+    fetchReviewDiff(row.id, chosen).then(setDiff).catch(onError)
+  }, [row.id, chosen])
 
   const decide = async (action) => {
     try {
@@ -88,7 +92,18 @@ export default function Supervision({ row, busy, onError, onDone }) {
       {plan && (
         <section className="panel">
           <div className="panel-head spread">
-            <h3>{t(comparing ? 'plan.diff.title' : 'reviews.sentPlan')}</h3>
+            {/* «Присланный план» и «План курса» — разные вещи, и путать
+                их нельзя: во втором случае методист смотрит рабочий
+                черновик, за который автор ещё не отвечал */}
+            <h3>
+              {t(
+                comparing
+                  ? 'plan.diff.title'
+                  : request
+                    ? 'reviews.sentPlan'
+                    : 'reviews.coursePlan',
+              )}
+            </h3>
             <span className="row">
               {/* сравнивать не с чем, пока план не утверждали ни разу:
                   первый запрос и есть точка отсчёта. Тумблер тот же, что у
@@ -128,7 +143,10 @@ export default function Supervision({ row, busy, onError, onDone }) {
             </ul>
           )}
 
-          {returning ? (
+          {/* решают только то, что прислали: у курса без запроса кнопки
+              обещали бы действие, которого сервер не сделает */}
+          {request &&
+            (returning ? (
             <>
               <label className="field-with-hint">
                 <span>{t('reviews.comment')}</span>
@@ -143,7 +161,7 @@ export default function Supervision({ row, busy, onError, onDone }) {
                 <button
                   type="button"
                   disabled={busy || !comment.trim()}
-                  onClick={() => decide(() => returnReview(plan.id, comment.trim()))}
+                  onClick={() => decide(() => returnReview(row.id, comment.trim()))}
                 >
                   {t('reviews.sendBack')}
                 </button>
@@ -161,7 +179,7 @@ export default function Supervision({ row, busy, onError, onDone }) {
               <button
                 type="button"
                 disabled={busy}
-                onClick={() => decide(() => approveReview(plan.id))}
+                onClick={() => decide(() => approveReview(row.id))}
               >
                 {t('reviews.approve')}
               </button>
@@ -174,7 +192,7 @@ export default function Supervision({ row, busy, onError, onDone }) {
                 {t('reviews.return')}
               </button>
             </div>
-          )}
+            ))}
         </section>
       )}
     </>

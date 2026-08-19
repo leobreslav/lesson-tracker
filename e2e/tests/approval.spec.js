@@ -64,7 +64,10 @@ test('учитель отправляет план, методист утвер�
   await openSupervised(page, 'Grade 6 Algebra')
   await expect(page.locator('.review-plan li').first()).toBeVisible()
   await page.getByRole('button', { name: 'Утвердить' }).click()
-  await expect(page.locator('.review-plan')).toHaveCount(0)
+  // план с экрана не уходит — он виден и без запроса; уходит то, что было
+  // про запрос: кнопки решения и заголовок «Присланный план»
+  await expect(page.getByRole('button', { name: 'Утвердить' })).toHaveCount(0)
+  await expect(page.getByRole('heading', { name: 'План курса' })).toBeVisible()
 
   // и учитель видит, что план утверждён
   await signIn(PEOPLE.ivanova)
@@ -88,7 +91,8 @@ test('методист возвращает план с замечанием', a
   await expect(page.getByRole('button', { name: 'Вернуть', exact: true })).toBeDisabled()
   await page.getByLabel('Что поправить').fill('Мало часов на повторение')
   await page.getByRole('button', { name: 'Вернуть', exact: true }).click()
-  await expect(page.locator('.review-plan')).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Утвердить' })).toHaveCount(0)
+  await expect(page.getByRole('heading', { name: 'План курса' })).toBeVisible()
 
   await signIn(PEOPLE.ivanova)
   await openPlan(page, 'Grade 6 Algebra')
@@ -148,9 +152,7 @@ test('утверждение целиком живёт в шапке, рядом
 
   const teacher = await api(PEOPLE.ivanova)
   await teacher.post(`/api/plan/baseline/submit/?course=${course.id}`, {})
-  const reviews = await teacher.get('/api/plan/reviews/')
-  const row = reviews.body.plans.find((item) => item.id === course.id)
-  await teacher.post(`/api/plan/reviews/${row.review.id}/approve/`, {})
+  await teacher.post(`/api/plan/reviews/${course.id}/approve/`, {})
 
   await signIn(PEOPLE.ivanova)
   await openPlan(page, 'Grade 6 Algebra')
@@ -232,10 +234,18 @@ test('методист видит курс, план которого никто
   await expect(row.locator('.whose')).toContainText('Мария Иванова')
   await expect(page.getByText(/План на утверждение пока не присылали/)).toBeVisible()
 
-  // читать чужую программу без запроса методист не может, и переезд новых
-  // прав ему не дал
-  await expect(page.locator('.review-plan')).toHaveCount(0)
+  // и план тоже виден: право читать даёт назначение методистом, а очередь
+  // на подпись была просто единственным входом. Заголовок при этом другой —
+  // это рабочий черновик, за который автор ещё не отвечал
+  await expect(page.getByRole('heading', { name: 'План курса' })).toBeVisible()
+  await expect(page.locator('.review-plan .lesson').first()).not.toBeEmpty()
+
+  // решать при этом нечего, и кнопок нет: они обещали бы то, чего сервер
+  // не сделает
   await expect(page.getByRole('button', { name: 'Утвердить' })).toHaveCount(0)
+  await expect(
+    page.getByRole('button', { name: 'Вернуть с замечанием' }),
+  ).toHaveCount(0)
 })
 
 test('ожидающий и просто поднадзорный лежат в разных группах селектора', async ({
@@ -321,9 +331,7 @@ test('сравнение с эталоном показывает строки, 
 
   const teacher = await api(PEOPLE.ivanova)
   await teacher.post(`/api/plan/baseline/submit/?course=${course.id}`, {})
-  const reviews = await teacher.get('/api/plan/reviews/')
-  const row = reviews.body.plans.find((item) => item.id === course.id)
-  await teacher.post(`/api/plan/reviews/${row.review.id}/approve/`, {})
+  await teacher.post(`/api/plan/reviews/${course.id}/approve/`, {})
 
   // правим план: переименовали, удалили, добавили
   const tree = await teacher.get(`/api/plan/?course=${course.id}`)
@@ -371,9 +379,7 @@ test('методист смотрит на то же сравнение, что 
   await teacher.post(`/api/plan/baseline/submit/?course=${course.id}`, {})
 
   const methodist = await api(PEOPLE.petrov)
-  const reviews = await methodist.get('/api/plan/reviews/')
-  const row = reviews.body.plans.find((item) => item.id === course.id)
-  await methodist.post(`/api/plan/reviews/${row.review.id}/approve/`, {})
+  await methodist.post(`/api/plan/reviews/${course.id}/approve/`, {})
 
   // после утверждения учитель дописывает урок и снова шлёт на подпись
   await teacher.post('/api/plan/', { course: course.id, title: 'Дополнительный урок' })
@@ -407,9 +413,7 @@ test('сравнивают с любым утверждением, а не то�
 
   const sign = async () => {
     await teacher.post(`/api/plan/baseline/submit/?course=${course.id}`, {})
-    const reviews = await teacher.get('/api/plan/reviews/')
-    const row = reviews.body.plans.find((item) => item.id === course.id)
-    await teacher.post(`/api/plan/reviews/${row.review.id}/approve/`, {})
+    await teacher.post(`/api/plan/reviews/${course.id}/approve/`, {})
   }
 
   await sign()

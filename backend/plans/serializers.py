@@ -344,34 +344,3 @@ def baseline_payload(approved, pending, methodists, subject=None) -> dict:
         # спрашивая сервер: список методистов у страницы уже есть
         "subject": subject,
     }
-
-
-def review_payload(baseline, rows=None) -> dict:
-    """
-    Запрос глазами методиста: чей план, какой курс и что в нём.
-
-    Строки передаёт вызывающий код, и это не мелочь: у поданного запроса
-    своих строк ещё нет — снимок снимается при утверждении, — поэтому
-    методист смотрит **живой** план. Читает он при этом ровно то, что ему
-    прислали: любая правка отзывает запрос.
-    """
-    payload = {
-        **request_payload(baseline),
-        "teacher": person(baseline.submitted_by),
-        "course": {
-            "id": baseline.course_id,
-            "name": baseline.course.name,
-            "subject": (
-                baseline.course.subject.name if baseline.course.subject else None
-            ),
-        },
-    }
-
-    if rows is not None:
-        payload["rows"] = [
-            {"position": position, "is_section": row.is_section, "title": row.title}
-            for position, row in enumerate(rows)
-        ]
-        payload["lessons"] = sum(1 for row in rows if not row.is_section)
-
-    return payload

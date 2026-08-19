@@ -65,12 +65,22 @@ class ApprovalTestCase(PlanTestCase):
         course = course or self.course
         return next(row for row in self.supervised() if row["id"] == course.pk)
 
-    def approve(self, pk):
-        return self.client.post(reverse("planreview-approve", args=[pk]))
+    def review(self, course=None):
+        """План под надзором: адресуется курсом, а не присланным запросом."""
+        return self.client.get(
+            reverse("planreview-detail", args=[(course or self.course).pk])
+        )
 
-    def send_back(self, pk, comment=""):
+    def approve(self, course=None):
         return self.client.post(
-            reverse("planreview-return", args=[pk]), {"comment": comment}, format="json"
+            reverse("planreview-approve", args=[(course or self.course).pk])
+        )
+
+    def send_back(self, comment="", course=None):
+        return self.client.post(
+            reverse("planreview-return", args=[(course or self.course).pk]),
+            {"comment": comment},
+            format="json",
         )
 
     def progress(self, course=None):
@@ -174,9 +184,7 @@ class ReviewTests(ApprovalTestCase):
         """Методист смотрит живой план: правка отозвала бы запрос."""
         self.client.force_authenticate(self.methodist)
 
-        body = self.client.get(
-            reverse("planreview-detail", args=[self.baseline.pk])
-        ).json()
+        body = self.review().json()
 
         self.assertEqual(len(body["rows"]), 10)
         self.assertEqual(body["rows"][0]["title"], "Тригонометрия")
@@ -187,7 +195,7 @@ class ReviewTests(ApprovalTestCase):
     def test_approving_puts_the_baseline_in_force(self):
         self.client.force_authenticate(self.methodist)
 
-        response = self.approve(self.baseline.pk)
+        response = self.approve()
 
         self.assertEqual(response.status_code, 200, response.content)
         self.client.force_authenticate(self.user)
@@ -199,7 +207,7 @@ class ReviewTests(ApprovalTestCase):
     def test_returning_needs_a_comment(self):
         self.client.force_authenticate(self.methodist)
 
-        refused = self.send_back(self.baseline.pk)
+        refused = self.send_back()
 
         self.assertEqual(refused.status_code, 400)
         self.assertEqual(refused.json()["code"], "comment_required")
@@ -208,7 +216,7 @@ class ReviewTests(ApprovalTestCase):
 
     def test_returning_with_a_comment_reaches_the_teacher(self):
         self.client.force_authenticate(self.methodist)
-        self.send_back(self.baseline.pk, "Мало часов на повторение")
+        self.send_back("Мало часов на повторение")
 
         self.client.force_authenticate(self.user)
         state = self.state()
@@ -225,14 +233,12 @@ class ReviewTests(ApprovalTestCase):
         self.add("Дописанный после отправки", parent=self.trig, position=9)
 
         self.client.force_authenticate(self.methodist)
-        body = self.client.get(
-            reverse("planreview-detail", args=[self.baseline.pk])
-        ).json()
+        body = self.review().json()
 
         self.assertEqual(self.supervised_row()["review"]["status"], "pending")
         self.assertIn("Дописанный после отправки", [row["title"] for row in body["rows"]])
 
-        self.approve(self.baseline.pk)
+        self.approve()
 
         titles = [row.title for row in self.baseline.rows.all()]
         self.assertIn("Дописанный после отправки", titles)
@@ -240,7 +246,7 @@ class ReviewTests(ApprovalTestCase):
     def test_approval_takes_the_snapshot(self):
         self.client.force_authenticate(self.methodist)
 
-        self.approve(self.baseline.pk)
+        self.approve()
 
         rows = self.baseline.rows.all()
         self.assertEqual(sum(1 for row in rows if not row.is_section), 7)
@@ -257,9 +263,7 @@ class ReviewTests(ApprovalTestCase):
         # свой курс он видит, наш — нет
         self.assertNotIn(self.course.pk, [row["id"] for row in self.supervised()])
         self.assertEqual(
-            self.client.get(
-                reverse("planreview-detail", args=[self.baseline.pk])
-            ).status_code,
+            self.review().status_code,
             404,
         )
 
@@ -294,7 +298,7 @@ class ReviewTests(ApprovalTestCase):
         self.client.force_authenticate(self.admin)
 
         self.assertEqual(self.supervised(), [])
-        self.assertEqual(self.approve(self.baseline.pk).status_code, 404)
+        self.assertEqual(self.approve().status_code, 404)
 
 
 class SupervisionTests(ApprovalTestCase):
@@ -317,6 +321,54 @@ class SupervisionTests(ApprovalTestCase):
 
         self.assertIsNone(row["review"])
         self.assertEqual(row["lessons_total"], 7)
+
+    def test_the_plan_opens_without_any_request(self):
+        """
+        Право читать даёт назначение методистом, а не присланный запрос.
+
+        Очередь на подпись была единственным входом и потому решала заодно,
+        что методисту видно: список стал полным, а план по-прежнему
+        открывался только присланный. Спрашивают же с него ровно про
+        остальных — про тех, кто ничего не отправлял.
+        """
+        body = self.review().json()
+
+        self.assertEqual(len(body["rows"]), 10)
+        self.assertEqual(body["rows"][0]["title"], "Тригонометрия")
+        self.assertEqual(body["lessons"], 7)
+        # запрос — состояние плана, а не пропуск к нему
+        self.assertIsNone(body["review"])
+        self.assertEqual(body["course"]["id"], self.course.pk)
+
+    def test_the_comparison_opens_without_any_request_too(self):
+        """Сравнение — другой взгляд на то же самое, а не второе право."""
+        body = self.client.get(
+            reverse("planreview-diff", args=[self.course.pk])
+        ).json()
+
+        self.assertEqual(body["baseline"], None)
+
+    def test_there_is_nothing_to_decide_until_the_plan_is_sent(self):
+        """
+        План виден всегда, а решают только присланное.
+
+        Кнопки живут рядом с планом, поэтому «открыт, но утверждать нечего»
+        — обычное состояние, и отказ на него внятный, а не 404.
+        """
+        for answer in (self.approve(), self.send_back("нет")):
+            self.assertEqual(answer.status_code, 400, answer.content)
+            self.assertEqual(answer.json()["code"], "review_not_pending")
+
+        self.assertFalse(PlanBaseline.objects.exists())
+
+    def test_a_returned_request_is_not_waiting_for_a_decision(self):
+        """Вернули — ход за учителем: решать снова нечего, пока не прислал."""
+        self.client.force_authenticate(self.user)
+        self.submit(self.methodist)
+        self.client.force_authenticate(self.methodist)
+        self.send_back("Мало часов")
+
+        self.assertEqual(self.approve().json()["code"], "review_not_pending")
 
     def test_the_numbers_are_the_ones_the_teacher_sees(self):
         """
@@ -384,7 +436,7 @@ class SelfApprovalTests(ApprovalTestCase):
 
         self.submit()
         baseline = PlanBaseline.objects.get()
-        self.approve(baseline.pk)
+        self.approve()
 
         state = self.state()
         self.assertEqual(state["approved"]["status"], "approved")
@@ -398,7 +450,7 @@ class MetricsTests(ApprovalTestCase):
 
     def approved_plan(self):
         self.submit()
-        self.approve(PlanBaseline.objects.get(status="pending").pk)
+        self.approve()
 
     def test_without_an_approved_baseline_there_are_no_metrics(self):
         self.submit()
@@ -490,7 +542,7 @@ class DiffVersionTests(ApprovalTestCase):
         """Отправить и утвердить — одно утверждение целиком."""
         request = self.submit(self.methodist).json()["request"]
         self.client.force_authenticate(self.methodist)
-        self.approve(request["id"])
+        self.approve()
         self.client.force_authenticate(self.user)
         return request["id"]
 
@@ -550,7 +602,7 @@ class DiffVersionTests(ApprovalTestCase):
 
         self.client.force_authenticate(self.methodist)
         body = self.client.get(
-            reverse("planreview-diff", args=[request["id"]]), {"baseline": first}
+            reverse("planreview-diff", args=[self.course.pk]), {"baseline": first}
         ).json()
 
         self.assertEqual(body["baseline"]["id"], first)

@@ -39,7 +39,6 @@ from .serializers import (
     layout_payload,
     person,
     request_payload,
-    review_payload,
     tree_payload,
 )
 
@@ -1240,14 +1239,19 @@ class PlanReviewViewSet(ReadOnlyModelViewSet):
     """
     Экран методиста: **все** планы, которые он ведёт.
 
-    Очередью на утверждение это было, и очередь оказалась слишком узкой:
-    методист видел только тех, кто прислал план, и ровно ничего — про
-    остальных. А спрашивают с него как раз про остальных: кто отстаёт, у
-    кого план не помещается в год, кто переписал половину после
-    утверждения. Поэтому список теперь полный, а ожидающий запрос — просто
-    пометка в строке.
+    Ключ здесь — **курс**, а не запрос на утверждение, и это второй шаг
+    одного и того же исправления. Сперва очередь на подпись перестала быть
+    списком: методист видел только приславших и ровно ничего про остальных,
+    а спрашивают с него как раз про остальных. Открыть же план по-прежнему
+    можно было только по запросу — то есть список стал полным, а вход в него
+    остался прежним, через очередь.
 
-    Числа те же, что учитель видит у себя на главной, и считает их тот же
+    Границей права это никогда не было: право читать даёт назначение
+    методистом, и оно есть у него всё время, а не в те дни, когда учитель
+    решил отправить план. Ожидающий запрос — состояние плана, а не пропуск к
+    нему, и в списке он ровно этим и стал: пометкой в строке.
+
+    Числа те же, что учитель видит у себя, и считает их тот же
     `progress.rows_for`: методист и учитель должны смотреть на одно и то же,
     иначе разговор про «отстаёшь» начинается со спора о цифрах.
 
@@ -1260,11 +1264,29 @@ class PlanReviewViewSet(ReadOnlyModelViewSet):
     serializer_class = None
 
     def get_queryset(self):
-        """Для `retrieve`, `approve` и `return` — только поданные запросы."""
-        return approval.review_queue(self.request.user)
+        """Курсы под надзором: чужой курс отсюда неотличим от несуществующего."""
+        return approval.supervised(self.request.user)
 
     def get_object(self):
         return get_object_or_404(self.get_queryset(), pk=self.kwargs["pk"])
+
+    def waiting_request(self, course):
+        """
+        Запрос, который решают. Нет такого — решать нечего, и так и сказано.
+
+        Отдельный отказ нужен потому, что кнопки живут рядом с планом,
+        который теперь виден всегда: план открыт, а утверждать нечего — это
+        обычное состояние, а не ошибка вызывающего.
+        """
+        pending = approval.pending_request(course.pk)
+        if pending is None:
+            api_error(
+                Codes.REVIEW_NOT_PENDING,
+                f"«{course.name}» has not been sent for approval.",
+                course=course.name,
+            )
+
+        return pending
 
     def list(self, request):
         """
@@ -1285,43 +1307,61 @@ class PlanReviewViewSet(ReadOnlyModelViewSet):
         return Response({"plans": rows})
 
     def retrieve(self, request, pk=None):
-        baseline = self.get_object()
-        course = baseline.course
+        """
+        План курса целиком — тот, что в нём сейчас.
+
+        Живой, а не снимок: правки после отправки ничего не отзывают, и
+        методист утверждает то, что видит. У курса без запроса это тем более
+        так — снимать там нечего.
+        """
+        return Response(self.course_payload(self.get_object()))
+
+    def course_payload(self, course, rows=None):
+        """Ответ на весь экран: чей курс, что в плане и ждёт ли он решения."""
+        if rows is None:
+            rows = services.plan_snapshot(course.pk)
         slots = Slot.objects.filter(course=course, is_cancelled=False).count()
-        rows = services.plan_snapshot(course.pk)
         lessons = sum(1 for row in rows if not row.is_section)
 
-        return Response(
-            {
-                **review_payload(baseline, rows=rows),
-                # ключевые числа рядом с планом: методист смотрит не только
-                # «что написано», но и «помещается ли это в год»
-                "slots_total": slots,
-                "reserve": slots - lessons,
-            }
-        )
+        return {
+            "course": {
+                "id": course.pk,
+                "name": course.name,
+                "subject": course.subject.name if course.subject else None,
+            },
+            "teacher": person(progress.teachers_of([course]).get(course.pk)),
+            # запрос — состояние плана, а не причина его показывать
+            "review": request_payload(approval.open_request(course.pk)),
+            "rows": [
+                {"position": position, "is_section": row.is_section, "title": row.title}
+                for position, row in enumerate(rows)
+            ],
+            "lessons": lessons,
+            # ключевые числа рядом с планом: методист смотрит не только
+            # «что написано», но и «помещается ли это в год»
+            "slots_total": slots,
+            "reserve": slots - lessons,
+        }
 
     @action(detail=True, methods=["get"])
     def diff(self, request, pk=None):
         """
-        То же сравнение, что видит автор, — присланный план против эталона.
+        То же сравнение, что видит автор плана, — глазами методиста.
 
-        Граница доступа та же, что у `retrieve`: план показывается, когда
-        его прислали. Читать чужую программу без запроса методист не может
-        и здесь — сравнение не новое право, а другой взгляд на то же самое.
+        Граница доступа та же, что у `retrieve`, и теперь это значит «курс
+        под надзором», а не «план прислали». Сравнение не новое право, а
+        другой взгляд на то же самое.
         """
         return Response(
-            diff_payload(
-                self.get_object().course, request.query_params.get("baseline")
-            )
+            diff_payload(self.get_object(), request.query_params.get("baseline"))
         )
 
     @action(detail=True, methods=["post"])
     def approve(self, request, pk=None):
-        baseline = self.get_object()
+        baseline = self.waiting_request(self.get_object())
         approval.approve(baseline, request.user)
 
-        return Response(review_payload(baseline, rows=list(baseline.rows.all())))
+        return Response(self.course_payload(baseline.course))
 
     @action(detail=True, methods=["post"], url_path="return", url_name="return")
     def send_back(self, request, pk=None):
@@ -1334,10 +1374,10 @@ class PlanReviewViewSet(ReadOnlyModelViewSet):
                 field="comment",
             )
 
-        baseline = self.get_object()
+        baseline = self.waiting_request(self.get_object())
         approval.send_back(baseline, request.user, comment)
 
-        return Response(review_payload(baseline))
+        return Response(self.course_payload(baseline.course))
 
 
 class StudentCourseView(APIView):

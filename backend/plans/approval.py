@@ -21,7 +21,7 @@ import logging
 
 from django.db import transaction
 from django.utils import timezone
-from schedule.models import CourseMethodist, Slot
+from schedule.models import Course, CourseMethodist, Slot
 
 from . import services
 from .models import PlanBaseline, PlanBaselineRow
@@ -243,25 +243,37 @@ def send_back(baseline: PlanBaseline, reviewer, comment: str) -> PlanBaseline:
     return baseline
 
 
-def review_queue(user):
+def supervised(user):
     """
-    Что видит методист: запросы по **его** курсам.
+    Курсы, планы которых ведёт методист. Единственное место, где это спрошено.
 
-    Не «присланные лично ему»: методистов у курса может быть несколько, и
-    запрос, отправленный коллеге, всё равно про этот курс — прятать его
+    Ключ надзора — **курс**, а не запрос на утверждение. Списком он был
+    таким всегда, а вот открыть план можно было только по присланному
+    запросу, и это оказалось не границей права, а следом от прежнего
+    устройства: очередь на подпись была единственным входом, поэтому она же
+    и решала, что методисту видно.
+
+    Спрашивают же с него ровно про то, чего в очереди нет: кто отстаёт, у
+    кого план не помещается в год, что вообще написано в курсе, который
+    никто не присылал. Право читать даёт назначение методистом; ожидающий
+    запрос — состояние плана, а не пропуск к нему.
+
+    Не «присланное лично ему»: методистов у курса может быть несколько, и
+    план, отправленный коллеге, всё равно про этот курс — прятать его
     значило бы делать вид, что курс поделён между людьми.
     """
-    courses = CourseMethodist.objects.filter(user=user).values_list(
-        "course_id", flat=True
-    )
-    if not courses:
-        return PlanBaseline.objects.none()
+    return Course.objects.filter(
+        methodists__user=user, school_id=user.school_id
+    ).select_related("year", "subject")
 
+
+def pending_request(course_id: int):
+    """Запрос, который ждёт решения. Возвращённый и утверждённый — не ждут."""
     return (
         PlanBaseline.objects.filter(
-            status=PlanBaseline.Status.PENDING,
-            course_id__in=list(courses),
+            course_id=course_id, status=PlanBaseline.Status.PENDING
         )
-        .select_related("course", "submitted_by", "course__subject")
-        .order_by("submitted_at")
+        .select_related("course", "submitted_by")
+        .order_by("-submitted_at", "-id")
+        .first()
     )

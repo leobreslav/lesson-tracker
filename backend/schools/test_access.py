@@ -1059,7 +1059,9 @@ class ActionDoorTests(AccessTestCase):
                     "body": {"comment": "нет"},
                 },
             ),
-            obj=baseline,
+            # надзор адресуется курсом: право даёт назначение методистом,
+            # а не присланный запрос — он лишь состояние плана
+            obj=self.course,
             # ни коллега, ни администратор школы методистом не назначены:
             # роль висит на паре «курс и человек», а не на должности
             people=(self.colleague, self.admin, self.stranger, self.alien_admin),

@@ -55,8 +55,7 @@ def supervised_courses(user) -> list:
     нужно видеть, как и «назначили, но план не начат».
     """
     return list(
-        Course.objects.filter(methodists__user=user, school_id=user.school_id)
-        .select_related("year")
+        approval.supervised(user)
         .prefetch_related("year__terms")
         .order_by("year__start_date", "name")
     )

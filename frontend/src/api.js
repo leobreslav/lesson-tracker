@@ -341,9 +341,9 @@ export const createPlanNode = (fields) =>
 
 // тема сразу за этой строкой; внутри темы это разрез — хвост уезжает в новую
 // то же сравнение глазами методиста: границу доступа держит сам запрос
-export const fetchReviewDiff = (id, baseline) =>
+export const fetchReviewDiff = (courseId, baseline) =>
   request(
-    `/api/plan/reviews/${id}/diff/` +
+    `/api/plan/reviews/${courseId}/diff/` +
       (baseline ? `?baseline=${encodeURIComponent(baseline)}` : ''),
   )
 
@@ -660,13 +660,20 @@ export const sendAnswer = (task, answer) =>
 /** Очередь методиста: планы по его предметам, присланные на утверждение. */
 export const fetchReviews = () => request('/api/plan/reviews/')
 
-export const fetchReview = (id) => request(`/api/plan/reviews/${id}/`)
+/*
+ * Надзор адресуется **курсом**, а не запросом на утверждение.
+ *
+ * Запросом это было, и потому план был виден только присланный: очередь на
+ * подпись служила и правом, и адресом. Право даёт назначение методистом,
+ * поэтому адрес теперь — курс, а запрос стал состоянием плана.
+ */
+export const fetchReview = (courseId) => request(`/api/plan/reviews/${courseId}/`)
 
-export const approveReview = (id) =>
-  request(`/api/plan/reviews/${id}/approve/`, { method: 'POST' })
+export const approveReview = (courseId) =>
+  request(`/api/plan/reviews/${courseId}/approve/`, { method: 'POST' })
 
-export const returnReview = (id, comment) =>
-  request(`/api/plan/reviews/${id}/return/`, {
+export const returnReview = (courseId, comment) =>
+  request(`/api/plan/reviews/${courseId}/return/`, {
     method: 'POST',
     body: { comment },
   })

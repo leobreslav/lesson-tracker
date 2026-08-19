@@ -203,6 +203,7 @@
     "not_a_methodist": "That person does not approve the plan of this course.",
     "comment_required": "Say what to fix — a plan returned without a word is a riddle.",
     "review_closed": "This request is no longer waiting for a decision.",
+    "review_not_pending": "«{{course}}» has not been sent for approval — there is nothing to decide on yet.",
     "year_in_use": "The year is in use: its courses hold {{plan_rows}} curriculum rows and {{slots}} lessons. Clear them first.",
     "teachers_only": "This section is for teachers.",
     "students_only": "This section is for students.",
@@ -906,6 +907,7 @@
     "comment": "What to fix",
     "nothingSent": "No plan has been sent for approval yet.",
     "sentPlan": "The plan as sent",
+    "coursePlan": "The course plan",
     "noTeacher": "nobody teaches this course",
     "mark": "waiting"
   },

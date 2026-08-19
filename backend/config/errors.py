@@ -159,6 +159,7 @@ class Codes:
     NOT_A_METHODIST = "not_a_methodist"
     COMMENT_REQUIRED = "comment_required"
     REVIEW_CLOSED = "review_closed"
+    REVIEW_NOT_PENDING = "review_not_pending"
     BASELINE_UNKNOWN = "baseline_unknown"
 
     # lesson content and attachments
