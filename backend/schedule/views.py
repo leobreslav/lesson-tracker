@@ -650,27 +650,6 @@ class SlotViewSet(SchoolScopedViewSet):
 
         instance.delete()
 
-    def perform_destroy(self, instance):
-        """
-        Занятие с записью не удаляют: сначала снимают запись.
-
-        Одиночное удаление было свободным, пока клетка ничего не значила.
-        Теперь за ней бывает записан урок, и удаление уносило запись молча:
-        строка плана возвращалась в общую очередь и получала **другую**
-        дату, а с ней уезжало и всё, что за ней.
-        """
-        if instance.lesson_id:
-            api_error(
-                Codes.SLOT_DELETE_RECORDED,
-                f"«{instance.lesson.title}» is recorded on {instance.date}: "
-                "withdraw the record before deleting the lesson.",
-                field="id",
-                title=instance.lesson.title,
-                date=str(instance.date),
-            )
-
-        instance.delete()
-
     def get_queryset(self):
         queryset = super().get_queryset().select_related("course", "year")
         # year.periods() нужен каждому слоту для предупреждения о неучебном
