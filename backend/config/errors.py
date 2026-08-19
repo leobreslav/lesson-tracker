@@ -190,6 +190,14 @@ class Codes:
     CRITERION_UNKNOWN = "criterion_unknown"
     MARK_OUT_OF_RANGE = "mark_out_of_range"
 
+    # чтение сканов моделью и потолок расхода
+    AI_KEY_MISSING = "ai_key_missing"
+    AI_BUDGET_EXCEEDED = "ai_budget_exceeded"
+    AI_UNAVAILABLE = "ai_unavailable"
+    AI_LIMIT_NEGATIVE = "ai_limit_negative"
+    SCAN_PAGE_UNKNOWN = "scan_page_unknown"
+    SCAN_NOTHING_READ = "scan_nothing_read"
+
     # sign-in
     TOKEN_REQUIRED = "token_required"
     TOKEN_INVALID = "token_invalid"

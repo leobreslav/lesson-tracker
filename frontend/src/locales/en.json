@@ -28,7 +28,8 @@
     "studyDayCount_other": "{{count}} study days",
     "termCount_one": "{{count}} term",
     "termCount_other": "{{count}} terms",
-    "to": "to"
+    "to": "to",
+    "back": "Back"
   },
   "language": {
     "label": "Language"
@@ -252,7 +253,15 @@
     "slot_order_broken": "After this change {{date}} would sit unrecorded among closed lessons: records go one after another, without gaps",
     "plan_import_taught": "The import would delete {{count}} rows that have already been taught, and their records with them. Withdraw the records first, or import as «Append»",
     "year_shrink_cuts_terms": "The new boundaries cut off «{{name}}» ({{start}} — {{end}}) — move the term first",
-    "year_shrink_cuts_records": "The new boundaries leave {{slots}} lessons outside the year, {{recorded}} of them recorded. A recorded hour outside the year still holds the queue but disappears from the plan — withdraw the records first"
+    "year_shrink_cuts_records": "The new boundaries leave {{slots}} lessons outside the year, {{recorded}} of them recorded. A recorded hour outside the year still holds the queue but disappears from the plan — withdraw the records first",
+    "ai_key_missing": "Reading scans is not set up: the service has no API key.",
+    "ai_budget_exceeded": "The school has spent its monthly limit for reading scans.",
+    "ai_unavailable": "Reading scans is unavailable right now.",
+    "ai_limit_negative": "The limit is a whole number of cents, zero or more.",
+    "scan_page_unknown": "That page is not part of this batch.",
+    "scan_nothing_read": "Nothing has been read yet: upload the scans first.",
+    "slot_not_mine": "That lesson belongs to a course you do not teach.",
+    "baseline_unknown": "There is no approved baseline with that date for this course."
   },
   "classPicker": {
     "label": "Classes:",
@@ -693,11 +702,11 @@
       "unassign": "Take {{name}} off this course",
       "assignLabel": "Teacher for {{name}}",
       "pickTeacher": "teacher…",
-    "newTeacher": "lead teacher, optional",
-    "newMethodist": "methodist, optional",
-    "renameLabel": "Rename {{name}}",
-    "assignAction": "Assign the lead teacher of {{name}}",
-    "methodistAction": "Assign the methodist of {{name}}",
+      "newTeacher": "lead teacher, optional",
+      "newMethodist": "methodist, optional",
+      "renameLabel": "Rename {{name}}",
+      "assignAction": "Assign the lead teacher of {{name}}",
+      "methodistAction": "Assign the methodist of {{name}}",
       "needGrades": "There are no year groups yet — add them in «Reference lists».",
       "methodist": "Approves the plan:",
       "noMethodist": "nobody approves the plan yet",
@@ -717,8 +726,8 @@
       "emailPlaceholder": "Email address",
       "inviteAsAdmin": "invite as an administrator",
       "invite": "Invite",
-    "waiting": "has not signed in yet",
-    "waitingHint": "The account is ready and waiting: it becomes theirs the first time they sign in through Google on this address."
+      "waiting": "has not signed in yet",
+      "waitingHint": "The account is ready and waiting: it becomes theirs the first time they sign in through Google on this address."
     },
     "profile": {
       "title": "Name of the school",
@@ -1149,5 +1158,57 @@
     "recordAfterHint": "Records go in order: mark the previous lesson first",
     "needsRow": "The plan has no row left for this hour, and a lesson is recorded as a plan row. Add one, and there will be something to mark.",
     "addRow": "add it to the plan"
+  },
+  "scan": {
+    "open": "Scans",
+    "title": "Scans: {{name}}",
+    "pick": "Choose a PDF or drop it here",
+    "pickHint": "One file with every sheet the class handed in. Pages may be in any order.",
+    "reading": "Read {{done}} of {{total}}",
+    "readingHint": "The browser straightens each header and sends only that strip — not the whole sheet.",
+    "stop": "Stop",
+    "lost_one": "{{count}} page did not look like our blank; it is left for you to place.",
+    "lost_other": "{{count}} pages did not look like our blank; they are left for you to place.",
+    "noDoubts": "Nothing is in doubt: every page found its owner.",
+    "pageNumber": "Page {{number}}",
+    "readAs": "Read as: {{name}}",
+    "nobody": "Nobody",
+    "toCheck": "Next",
+    "stillStuck_one": "{{count}} page still has no owner.",
+    "stillStuck_other": "{{count}} pages still have no owner.",
+    "checkHint": "Everything below is what will be written. Look it over, or trust it and write.",
+    "student": "Student",
+    "pagesColumn": "Pages",
+    "total": "Total",
+    "conflict": "the same question twice: {{list}}",
+    "apply": "Write it all down",
+    "trouble": {
+      "no_owner": "no owner",
+      "no_name": "no name written",
+      "mark_too_big": "a mark above the maximum",
+      "sum_mismatch": "the page total does not add up",
+      "beyond_questions": "a mark in a cell this work does not use",
+      "first_name_only": "signed with a first name only"
+    },
+    "questionsHint": "How many questions were in this work, and what is the top mark for one? The blank always has fifteen cells; the extra ones must stay empty — that is how a shifted reading gets caught.",
+    "questionCount": "Questions",
+    "maxMark": "Top mark for one",
+    "perQuestion": "Different for some questions",
+    "questionsSet_one": "{{count}} question",
+    "questionsSet_other": "{{count}} questions",
+    "spent": "Spent so far: {{spent}} of {{limit}} this month",
+    "printBlank": "Print the blank",
+    "alreadyRead_one": "{{count}} page from an earlier upload is still here.",
+    "alreadyRead_other": "{{count}} pages from an earlier upload are still here.",
+    "startOver": "start over"
+  },
+  "ai": {
+    "title": "Reading scans",
+    "hint": "Scanned blanks are read by a model, and that costs money. The school sets a monthly ceiling; every call is written down.",
+    "spent": "Spent this month: {{spent}} of {{limit}}",
+    "limit": "Monthly limit, cents",
+    "limitHint": "Zero means reading is off.",
+    "none": "Nothing spent yet.",
+    "noWork": "a work that is gone"
   }
 }

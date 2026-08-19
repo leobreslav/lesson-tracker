@@ -6220,3 +6220,93 @@ button.dropzone:hover:not(:disabled) {
   line-height: 1;
   opacity: 0.75;
 }
+
+/* --- РАЗБОР ПАЧКИ СКАНОВ ---------------------------------------------------
+   Окно во всю ширину: внутри таблица на тридцать учеников и полоски шапок,
+   которые читают глазами. Полоска — главный элемент экрана: по ней человек
+   решает, чья это работа, и ужимать её нельзя. */
+.scan-strip {
+  display: block;
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: var(--row-radius);
+  background: #fff;
+}
+
+.scan-progress progress {
+  width: 100%;
+  height: 0.75rem;
+}
+
+.scan-cards {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--modal-gap);
+}
+
+/* Таблица шире окна не растягивает страницу, а прокручивается внутри себя:
+   пятнадцать колонок задач на узком экране иначе выносят вёрстку. */
+.scan-table-wrap {
+  overflow-x: auto;
+}
+
+.scan-table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 0.9rem;
+}
+
+.scan-table th,
+.scan-table td {
+  border: 1px solid var(--border);
+  padding: 0.2rem 0.4rem;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.scan-table th:first-child,
+.scan-table td:first-child {
+  text-align: left;
+}
+
+/* Ученик, которому не досталось ни одной страницы, приглушён: он не ошибка,
+   но и не результат — на контрольной его просто не было. */
+.scan-table tr.empty td {
+  color: var(--muted);
+}
+
+.scan-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.15rem;
+  font-size: 0.8rem;
+}
+
+.scan-cell input {
+  width: 3rem;
+  text-align: center;
+}
+
+/* Журнал трат: дата, за что, кто и сколько — четыре колонки, выровненные по
+   сетке, чтобы суммы читались столбиком, а не искались глазами. */
+.ai-log {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: auto 1fr auto auto;
+  gap: 0.15rem 0.75rem;
+  font-size: 0.9rem;
+}
+
+.ai-log li {
+  display: contents;
+}
+
+.ai-log b {
+  text-align: right;
+}

@@ -366,3 +366,74 @@ class ReassignSerializer(serializers.Serializer):
                 field="attachment",
             )
         return found
+
+
+class ScanReadSerializer(serializers.Serializer):
+    """
+    Полоска шапки одной страницы.
+
+    Картинку режет и выпрямляет браузер: страницы у него уже отрисованы, а
+    сервер, взявшись за то же самое, потребовал бы растеризатор и целую книгу
+    по сети вместо полоски в сотню килобайт.
+    """
+
+    index = serializers.IntegerField(min_value=0)
+    # FileField, а не ImageField: тот требует Pillow, которого в образе нет и
+    # незачем — картинку мы не разбираем, а передаём байтами дальше
+    strip = serializers.FileField()
+    # Отпечаток полоски: та же страница, загруженная снова, не перечитывается.
+    fingerprint = serializers.CharField(max_length=64, required=False, allow_blank=True)
+
+    def validate_strip(self, upload):
+        if upload.size > 4 * 1024 * 1024:
+            api_error(
+                Codes.FILE_TOO_LARGE,
+                "The header strip is larger than 4 MB.",
+                field="strip",
+                limit_mb=4,
+            )
+        return upload
+
+
+class ScanPageSerializer(serializers.Serializer):
+    """Ручная правка страницы: чья она и что в клетках."""
+
+    index = serializers.IntegerField(min_value=0)
+    student = serializers.IntegerField(required=False, allow_null=True)
+    cells = serializers.ListField(
+        child=serializers.IntegerField(allow_null=True, min_value=0, max_value=99),
+        required=False,
+        allow_empty=True,
+        max_length=16,
+    )
+
+    def validate_student(self, value):
+        if value is None:
+            return None
+        work = self.context["work"]
+        known = work.course.students.filter(
+            student_id=value, removed_at__isnull=True
+        ).exists()
+        if not known:
+            api_error(
+                Codes.SPLIT_NOT_IN_COURSE,
+                "That student does not study in this course.",
+                field="student",
+            )
+        return value
+
+
+class ScanApplySerializer(serializers.Serializer):
+    """Тот же файл ещё раз — чтобы было что резать."""
+
+    file = serializers.FileField()
+
+    def validate_file(self, upload):
+        if upload.size > MAX_SCAN_BYTES:
+            api_error(
+                Codes.FILE_TOO_LARGE,
+                f"The scan is larger than {MAX_SCAN_BYTES // 1024 // 1024} MB.",
+                field="file",
+                limit_mb=MAX_SCAN_BYTES // 1024 // 1024,
+            )
+        return upload

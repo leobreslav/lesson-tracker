@@ -124,15 +124,26 @@ def check_plan(pieces, *, pages: int, students) -> None:
             )
 
 
-def cut(data: bytes, piece: Piece) -> bytes:
-    """Один кусок книги отдельным PDF. Чистая функция: байты в байты."""
+def cut_pages(data: bytes, numbers) -> bytes:
+    """
+    Названные страницы отдельным PDF. Чистая функция: байты в байты.
+
+    Номера идут списком, а не отрезком, и это не общность ради общности:
+    разметку руками делают отрезками, а разбор пачки по именам раскладывает
+    страницы как попало — один ученик мог взять первый лист и последний.
+    """
     from pypdf import PdfReader, PdfWriter
 
     reader = PdfReader(BytesIO(data))
     writer = PdfWriter()
-    for number in piece.pages:
+    for number in numbers:
         writer.add_page(reader.pages[number - 1])
 
     out = BytesIO()
     writer.write(out)
     return out.getvalue()
+
+
+def cut(data: bytes, piece: Piece) -> bytes:
+    """Один кусок книги отдельным PDF."""
+    return cut_pages(data, piece.pages)

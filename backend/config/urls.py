@@ -15,6 +15,7 @@ urlpatterns = [
     path('api/plan/', include('plans.urls')),
     path('api/onboarding/', include('onboarding.urls')),
     path('api/school/', include('schools.urls')),
+    path('api/school/', include('vision.urls')),
     # разделы ученика: у него другой интерфейс целиком, и адреса тоже свои
     path('api/student/', include('schedule.student_urls')),
     path('api/student/', include('works.student_urls')),

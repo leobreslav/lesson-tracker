@@ -259,6 +259,12 @@ class MatrixTests(AccessTestCase):
                     "method": "post",
                     "body": {"attachment": 0, "student": 0},
                 },
+                # разбор пачки сканов: состояние работы читать чужому нельзя
+                # так же, как её саму, а писать — тем более
+                "work-scan-state",
+                {"name": "work-scan-read", "method": "post", "body": {"index": 0}},
+                {"name": "work-scan-page", "method": "post", "body": {"index": 0}},
+                {"name": "work-scan-apply", "method": "post", "body": {}},
             ),
         )
 

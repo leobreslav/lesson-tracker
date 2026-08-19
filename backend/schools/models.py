@@ -13,6 +13,13 @@ class School(models.Model):
     """
 
     name = models.CharField("name", max_length=200)
+    # Потолок расхода на чтение сканов, центы в календарный месяц. Ставит
+    # администратор школы: платит она, и решать, сколько не жалко, ей.
+    # Ноль значит «нельзя»: школа без выставленного лимита не должна тратить,
+    # а «без ограничений» — не то умолчание, которое ставят молча.
+    ai_month_limit_cents = models.PositiveIntegerField(
+        "monthly limit for reading scans, cents", default=1000
+    )
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

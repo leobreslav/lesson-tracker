@@ -23,12 +23,16 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from . import services
+from vision import services as vision_services
 from .models import Submission, Task, Work
 from .models import Mark
 from .serializers import (
     CriteriaSerializer,
     GradeSerializer,
     ReassignSerializer,
+    ScanApplySerializer,
+    ScanPageSerializer,
+    ScanReadSerializer,
     SplitSerializer,
     StudentSubmissionSerializer,
     SubmissionSerializer,
@@ -184,6 +188,99 @@ class WorkViewSet(CourseScopedViewSet):
                 by=request.user,
             )
         )
+
+    @action(detail=True, methods=["post"], url_path="scan/read")
+    def scan_read(self, request, pk=None):
+        """
+        Прочитать шапку одной страницы. Одна страница — один запрос.
+
+        Цикл ведёт браузер, и это не мелочь оформления: у него уже отрисованы
+        страницы, каждый запрос живёт секунду-другую, воркер между ними
+        свободен, прогресс виден сам собой, а неудачная страница повторяется
+        по одной. Пачка целиком, отданная серверу, заняла бы половину прода на
+        минуты — при двух воркерах это отказ в обслуживании себе самому.
+
+        Прочитанное ложится в базу: чтение стоит денег, и вторая попытка за ту
+        же страницу не должна платить снова.
+        """
+        work = self.get_object()
+        self.refuse_unless_paper(work)
+
+        form = ScanReadSerializer(data=request.data)
+        form.is_valid(raise_exception=True)
+        index = form.validated_data["index"]
+        fingerprint = form.validated_data.get("fingerprint") or ""
+
+        known = work.scan_pages.filter(index=index).first()
+        if known and fingerprint and known.fingerprint == fingerprint:
+            return Response(services.scan_state(work) | {"cached": True})
+
+        data = vision_services.read_and_charge(
+            school=work.course.school,
+            user=request.user,
+            work=work,
+            image=form.validated_data["strip"].read(),
+            candidates=[person.full for person in services.scan_roster(work)],
+            max_mark=services.max_mark_of(work),
+        )
+
+        services.save_scan_reading(
+            work, index=index, fingerprint=fingerprint, data=data
+        )
+        return Response(services.scan_state(work) | {"cached": False})
+
+    @action(detail=True, methods=["get", "delete"], url_path="scan/state")
+    def scan_state(self, request, pk=None):
+        """Что уже прочитано и как оно разложилось. DELETE — начать пачку заново."""
+        work = self.get_object()
+        self.refuse_unless_paper(work)
+        if request.method == "DELETE":
+            work.scan_pages.all().delete()
+        return Response(services.scan_state(work))
+
+    @action(detail=True, methods=["post"], url_path="scan/page")
+    def scan_page(self, request, pk=None):
+        """
+        Поправить страницу руками: чья она и что в клетках.
+
+        Решение человека помечается и автоматической раскладкой больше не
+        пересматривается — она предлагает, он решает.
+        """
+        work = self.get_object()
+        self.refuse_unless_paper(work)
+
+        form = ScanPageSerializer(data=request.data, context={"work": work})
+        form.is_valid(raise_exception=True)
+        services.edit_scan_page(work, **form.validated_data)
+        return Response(services.scan_state(work))
+
+    @action(detail=True, methods=["post"], url_path="scan/apply")
+    def scan_apply(self, request, pk=None):
+        """
+        Применить разобранную пачку: страницы ученикам, баллы в оценки.
+
+        Файл присылается второй раз — резать-то нечего: исходник мы не храним,
+        и это решение, а не забывчивость. У браузера он всё ещё в руках, так
+        что второй отправки это стоит ровно ничего.
+        """
+        work = self.get_object()
+        self.refuse_unless_paper(work)
+
+        form = ScanApplySerializer(data=request.data)
+        form.is_valid(raise_exception=True)
+        return Response(
+            services.scan_apply(
+                work, data=form.validated_data["file"].read(), by=request.user
+            )
+        )
+
+    def refuse_unless_paper(self, work):
+        if not work.on_paper:
+            api_error(
+                Codes.NOT_ON_PAPER,
+                "This work is not written on paper: there is nothing to scan.",
+                field="work",
+            )
 
     @action(detail=True, methods=["post"])
     def reassign(self, request, pk=None):

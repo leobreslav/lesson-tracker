@@ -62,6 +62,7 @@ INSTALLED_APPS = [
     'files',
     'works',
     'onboarding',
+    'vision',
 ]
 
 AUTH_USER_MODEL = "accounts.User"
@@ -194,6 +195,10 @@ R2_BACKUP_SECRET_ACCESS_KEY = env("R2_BACKUP_SECRET_ACCESS_KEY", default="")
 # сколько живёт ссылка на скачивание
 FILE_URL_TTL = env.int("FILE_URL_TTL", default=300)
 # 20 МБ на файл; nginx пропускает 25m, запас на оболочку multipart
+# Ключ Anthropic: им читаются шапки отсканированных бланков. Нет ключа —
+# чтение честно отказывается (`ai_key_missing`), остальное приложение работает.
+ANTHROPIC_API_KEY = env("ANTHROPIC_API_KEY", default="")
+
 FILE_MAX_BYTES = env.int("FILE_MAX_BYTES", default=20 * 1024 * 1024)
 # квота школы: сумма размеров её уникальных файлов
 SCHOOL_FILE_QUOTA_BYTES = env.int(

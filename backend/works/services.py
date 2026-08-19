@@ -21,6 +21,7 @@ from .models import (
     Mark,
     MarkChange,
     StudentWork,
+    ScanPage,
     Submission,
     Task,
     Work,
@@ -711,6 +712,44 @@ def papers_of(student_work) -> list:
     ]
 
 
+def attach_pages(work, student_id, *, data: bytes, numbers, by=None):
+    """
+    Нарезать названные страницы и приложить их ученику.
+
+    Одна дверь для обоих путей — ручной разметки и разбора пачки по именам:
+    файл каждого ученика проходит обычную загрузку (дедупликация, квота,
+    проверка типа), а не свою дорогу в бакет. Своя однажды разойдётся с общей.
+    """
+    from files import services as file_services
+    from files.models import Attachment
+
+    from . import splitting
+
+    row, _ = StudentWork.objects.get_or_create(work=work, student_id=student_id)
+    surname = (
+        work.course.students.filter(student_id=student_id)
+        .values_list("student__last_name", flat=True)
+        .first()
+        or str(student_id)
+    )
+    stored, _ = file_services.store_upload(
+        upload=SimpleUploadedFile(
+            f"{surname}.pdf",
+            splitting.cut_pages(data, numbers),
+            content_type="application/pdf",
+        ),
+        school=work.course.school,
+        user=by,
+    )
+    return Attachment.objects.create(
+        student_work=row,
+        kind="file",
+        stored_file=stored,
+        title=f"{surname}.pdf",
+        position=file_services.next_position(student_work=row),
+    )
+
+
 def split_scan(work, *, data: bytes, pieces, by=None) -> dict:
     """
     Разрезать скан и разложить по ученикам. Одной транзакцией.
@@ -725,42 +764,12 @@ def split_scan(work, *, data: bytes, pieces, by=None) -> dict:
     разойдётся с общей.
     """
     from django.db import transaction
-    from files import services as file_services
-    from files.models import Attachment
 
-    from . import splitting
-
-    names = dict(
-        work.course.students.values_list("student_id", "student__last_name")
-    )
-
-    created = []
     with transaction.atomic():
         for piece in pieces:
-            row, _ = StudentWork.objects.get_or_create(
-                work=work, student_id=piece.student_id
-            )
-            surname = names.get(piece.student_id) or str(piece.student_id)
-            stored, _ = file_services.store_upload(
-                upload=SimpleUploadedFile(
-                    f"{surname}.pdf",
-                    splitting.cut(data, piece),
-                    content_type="application/pdf",
-                ),
-                school=work.course.school,
-                user=by,
-            )
-            created.append(
-                Attachment.objects.create(
-                    student_work=row,
-                    kind="file",
-                    stored_file=stored,
-                    title=f"{surname}.pdf",
-                    position=file_services.next_position(student_work=row),
-                )
-            )
+            attach_pages(work, piece.student_id, data=data, numbers=piece.pages, by=by)
 
-    return {"created": len(created), "students": len({p.student_id for p in pieces})}
+    return {"created": len(pieces), "students": len({p.student_id for p in pieces})}
 
 
 def reassign_paper(work, *, attachment, student) -> dict:
@@ -776,3 +785,244 @@ def reassign_paper(work, *, attachment, student) -> dict:
     attachment.save(update_fields=["student_work"])
 
     return {"attachment": attachment.pk, "student": student.pk}
+
+
+# ---------------------------------------------------------------------------
+# Разбор пачки сканов
+# ---------------------------------------------------------------------------
+def scan_roster(work) -> list:
+    """Действующий состав курса глазами разбора."""
+    from .scanning import Person
+
+    rows = work.course.students.filter(removed_at__isnull=True).select_related("student")
+    return [
+        Person(id=row.student_id, first=row.student.first_name, last=row.student.last_name)
+        for row in rows
+    ]
+
+
+def scan_pages(work) -> list:
+    """Строки страниц из базы в объекты разбора."""
+    from .scanning import CELLS, Page
+
+    return [
+        Page(
+            index=row.index,
+            first=row.first_name,
+            surname=row.surname,
+            cells=(list(row.cells) + [None] * CELLS)[:CELLS],
+            guess=row.guess,
+            student_id=row.student_id,
+            decided_by_human=row.decided_by_human,
+        )
+        for row in work.scan_pages.all()
+    ]
+
+
+def max_mark_of(work) -> int | None:
+    """Наибольший максимум среди задач работы — им проверяются прочитанные клетки."""
+    values = [c.maximum for c in work.criteria.all()]
+    return max(values) if values else None
+
+
+def scan_state(work) -> dict:
+    """
+    Всё, что экран должен знать о пачке: страницы, раскладка, сомнения.
+
+    Считается на каждый запрос и нигде не хранится: раскладка зависит от того,
+    что прочитано и что человек уже решил, а два источника правды об одном и
+    том же разъезжаются молча.
+    """
+    from . import scanning
+
+    pages = scan_pages(work)
+    roster = scan_roster(work)
+    assigned, doubts = scanning.group(pages, roster)
+    limit = max_mark_of(work)
+    questions = work.criteria.count() or scanning.QUESTIONS
+
+    doubt_by_page = dict(doubts)
+    rows = []
+    for page in pages:
+        owner = assigned.get(page.index)
+        rows.append(
+            {
+                "index": page.index,
+                "first_name": page.first,
+                "surname": page.surname,
+                "cells": page.cells,
+                "student": owner,
+                "decided_by_human": page.decided_by_human,
+                "candidates": doubt_by_page.get(page.index, []),
+                "trouble": scanning.troubles(page, owner, limit, questions),
+            }
+        )
+
+    by_student: dict = {}
+    for page in pages:
+        owner = assigned.get(page.index)
+        if owner is None:
+            continue
+        by_student.setdefault(owner, []).append(page)
+
+    students = []
+    for person in roster:
+        mine = by_student.get(person.id, [])
+        marks, conflicts = scanning.merge_marks(mine)
+        students.append(
+            {
+                "id": person.id,
+                "name": person.full,
+                "pages": sorted(page.index for page in mine),
+                "marks": {q + 1: value for q, value in marks.items()},
+                "total": sum(marks.values()) if marks else 0,
+                "conflicts": conflicts,
+            }
+        )
+
+    from vision import services as vision_services
+
+    return {
+        "pages": rows,
+        "students": students,
+        "questions": questions,
+        "max_mark": limit,
+        "doubts": [index for index, _ in doubts],
+        # цена показывается там же, где идёт чтение: узнавать её в другом
+        # разделе, уже потратив, — не то же самое, что видеть по ходу
+        "budget": vision_services.budget(work.course.school),
+    }
+
+
+def scan_apply(work, *, data: bytes, by=None) -> dict:
+    """
+    Применить разобранную пачку: страницы ученикам, баллы в оценки.
+
+    Одной транзакцией, и вот почему именно тут это важнее обычного: половина
+    применённой пачки — это часть класса с работами и оценками, а часть без, и
+    какая именно, снаружи не видно. Строки страниц после успеха удаляются:
+    работа сделана, дальше про неё отвечают вложения и оценки.
+    """
+    from django.db import transaction
+
+    from . import scanning, splitting
+
+    pages = scan_pages(work)
+    if not pages:
+        api_error(
+            Codes.SCAN_NOTHING_READ,
+            "Nothing has been read yet: upload the scans first.",
+            field="file",
+        )
+
+    total = splitting.read_pages(data)
+    roster = {person.id: person for person in scan_roster(work)}
+    assigned, _ = scanning.group(pages, roster.values())
+
+    mine: dict = {}
+    for page in pages:
+        owner = assigned.get(page.index)
+        if owner is None:
+            continue
+        if owner not in roster:
+            api_error(
+                Codes.SPLIT_NOT_IN_COURSE,
+                "That student does not study in this course.",
+                field="plan",
+            )
+        if page.index >= total:
+            api_error(
+                Codes.SPLIT_OUT_OF_RANGE,
+                f"Page {page.index + 1} is outside the file, which has {total}.",
+                field="file",
+                pages=total,
+            )
+        mine.setdefault(owner, []).append(page)
+
+    if not mine:
+        api_error(
+            Codes.SPLIT_EMPTY,
+            "No page has an owner: say whose pages these are.",
+            field="plan",
+        )
+
+    criteria = list(work.criteria.all())
+    from accounts.models import User
+
+    people = User.objects.in_bulk(mine.keys())
+    graded = 0
+    with transaction.atomic():
+        for student_id, student_pages in mine.items():
+            attach_pages(
+                work,
+                student_id,
+                data=data,
+                numbers=sorted(page.index + 1 for page in student_pages),
+                by=by,
+            )
+            marks, _ = scanning.merge_marks(student_pages)
+            if marks and criteria:
+                grade(
+                    work,
+                    people[student_id],
+                    marks={
+                        criterion.pk: marks.get(number)
+                        for number, criterion in enumerate(criteria)
+                        if marks.get(number) is not None
+                    },
+                    by=by,
+                )
+                graded += 1
+
+        work.scan_pages.all().delete()
+
+    return {"students": len(mine), "graded": graded, "pages": len(pages)}
+
+
+def save_scan_reading(work, *, index: int, fingerprint: str, data: dict):
+    """
+    Положить прочитанное. Решение человека при этом не трогается.
+
+    Перечитывание — обычное дело: страницу перезагрузили, модель позвали
+    заново. А вот «эту страницу писал Петров» человек сказал руками, и новое
+    чтение имени не повод это отменять.
+    """
+    row, _ = ScanPage.objects.get_or_create(work=work, index=index)
+    row.fingerprint = fingerprint
+    row.first_name = data.get("first_name", "")
+    row.surname = data.get("surname", "")
+    row.date_text = data.get("date", "")
+    row.guess = data.get("guess", "")
+    row.cells = data.get("values") or []
+    row.model = data.get("model", "")
+    row.save()
+    return row
+
+
+UNSET = object()
+
+
+def edit_scan_page(work, *, index: int, student=UNSET, cells=None):
+    """
+    Правка страницы человеком: чья она и что в клетках.
+
+    Владельца и клетки правят порознь, поэтому «не прислали» и «прислали
+    пусто» — разные вещи: первое значит «не трогай», второе — «сними
+    владельца». Отобрать страницу у не того ученика надо уметь, и отдельного
+    действия под это заводить незачем; различает их сентинел, потому что
+    `None` тут занят настоящим значением.
+    """
+    from .scanning import CELLS
+
+    row, _ = ScanPage.objects.get_or_create(work=work, index=index)
+    fields = []
+    if student is not UNSET:
+        row.student_id = student
+        row.decided_by_human = True
+        fields += ["student", "decided_by_human"]
+    if cells is not None:
+        row.cells = (list(cells) + [None] * CELLS)[:CELLS]
+        fields.append("cells")
+    if fields:
+        row.save(update_fields=fields)
+    return row

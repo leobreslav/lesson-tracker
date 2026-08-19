@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import AiSpendPanel from './AiSpendPanel'
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 import { fetchSchoolOverview, renameMySchool } from './api'
@@ -156,6 +157,8 @@ export default function SchoolOverview() {
           <Link to="/year">{t('school.year.action')}</Link>
         </p>
       </section>
+
+      <AiSpendPanel />
 
       <section className="panel">
         <h3>{t('schoolSchedule.title')}</h3>

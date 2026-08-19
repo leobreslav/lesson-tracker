@@ -583,6 +583,38 @@ export const fetchScaleImpact = (work) =>
  * Разметка едет строкой JSON рядом с файлом: форма multipart вложенных
  * структур не выражает, и это единственная причина.
  */
+/* --- разбор пачки сканов ------------------------------------------------- */
+
+export const fetchScanState = (work) => request(`/api/works/${work}/scan/state/`)
+
+export const resetScan = (work) =>
+  request(`/api/works/${work}/scan/state/`, { method: 'DELETE' })
+
+export const readScanPage = (work, { index, blob, mark }) => {
+  const form = new FormData()
+  form.append('index', index)
+  form.append('strip', blob, `strip-${index}.jpg`)
+  form.append('fingerprint', mark)
+  return request(`/api/works/${work}/scan/read/`, { method: 'POST', body: form })
+}
+
+export const editScanPage = (work, fields) =>
+  request(`/api/works/${work}/scan/page/`, { method: 'POST', body: fields })
+
+export const applyScan = (work, file) => {
+  const form = new FormData()
+  form.append('file', file)
+  return request(`/api/works/${work}/scan/apply/`, { method: 'POST', body: form })
+}
+
+export const fetchAiBudget = () => request('/api/school/ai-budget/')
+
+export const saveAiBudget = (cents) =>
+  request('/api/school/ai-budget/', { method: 'PATCH', body: { limit_cents: cents } })
+
+export const fetchAiSpend = (mine) =>
+  request(`/api/school/ai-spend/${mine ? '?mine=true' : ''}`)
+
 export const splitScan = (work, { file, plan }) => {
   const form = new FormData()
   form.append('file', file)

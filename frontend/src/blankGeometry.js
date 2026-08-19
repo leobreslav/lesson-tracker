@@ -1,0 +1,71 @@
+/**
+ * Геометрия бланка в миллиметрах.
+ *
+ * Числа здесь и числа в `blank/blank_form.tex` — одно и то же, записанное
+ * дважды: печать рисует лист по одним, чтение кропает по другим. Сдвинули
+ * метку в шаблоне, забыли тут — кроп уедет мимо, и выглядеть это будет как
+ * «модель стала хуже читать», а не как ошибка вёрстки. Сторожит совпадение
+ * `tests/blankGeometry.test.js`, который читает сам .tex.
+ *
+ * Начало координат — левый верхний угол листа A4.
+ */
+
+export const PAGE = { width: 210, height: 297 }
+
+/** Метки по углам листа: центры. Ими выпрямляется страница целиком. */
+export const CORNERS = {
+  topLeft: { x: 8, y: 8 },
+  topRight: { x: 202, y: 8 },
+  bottomLeft: { x: 8, y: 289 },
+  bottomRight: { x: 202, y: 289 },
+}
+
+/**
+ * Полоска, которая уезжает на чтение: строка имени и сетка баллов.
+ *
+ * Берётся с запасом в пару миллиметров с каждой стороны — печать и резка
+ * бумаги гуляют, а обрезанная по краю клетка читается хуже, чем клетка с
+ * полем вокруг.
+ */
+export const HEADER = { x: 10, y: 8, width: 190, height: 30 }
+
+/** Сетка баллов: шестнадцать клеток, пятнадцать задач и сумма за страницу. */
+export const GRID = {
+  x: 12.5,
+  y: 19.3,
+  cellWidth: 11.5625,
+  cells: 16,
+  height: 16.5,
+  /** Полоса с подписями Q1…Σ pg сверху клетки. */
+  labelHeight: 5,
+}
+
+/** Поле записи: тетрадная сетка в жирной рамке. */
+export const FIELD = { x: 12.5, y: 45, width: 185, height: 230 }
+
+/**
+ * Полоска отдаётся картинкой шириной 1568 точек — ровно столько, сколько
+ * оставляет от неё Anthropic. Больше платить смысла нет: он ужмёт сам.
+ */
+export const STRIP_WIDTH = 1568
+
+export function stripHeight() {
+  return Math.round((STRIP_WIDTH * HEADER.height) / HEADER.width)
+}
+
+/** Углы полоски в миллиметрах листа — по часовой от левого верхнего. */
+export function headerCorners() {
+  const { x, y, width, height } = HEADER
+  return [
+    { x, y },
+    { x: x + width, y },
+    { x: x + width, y: y + height },
+    { x, y: y + height },
+  ]
+}
+
+/** Углы листа по меткам — по часовой от левого верхнего. */
+export function sheetCorners() {
+  const { topLeft, topRight, bottomRight, bottomLeft } = CORNERS
+  return [topLeft, topRight, bottomRight, bottomLeft]
+}

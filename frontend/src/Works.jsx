@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom'
 import EmptyState from './EmptyState'
 import CoursePicker from './CoursePicker'
 import Markdown from './Markdown'
+import ScanWizard from './ScanWizard'
 import TaskDialog from './TaskDialog'
 import WorkDialog from './WorkDialog'
 import {
@@ -44,7 +45,8 @@ export default function Works({ onLoggedOut }) {
   const [works, setWorks] = useState(null)
   const [expanded, setExpanded] = useState(null)
   const [tasks, setTasks] = useState([])
-  const [editing, setEditing] = useState(null) // {work} | {work: null}
+  const [editing, setEditing] = useState(null)
+  const [scanning, setScanning] = useState(null)
   const [editingTask, setEditingTask] = useState(null) // {task} | {task: null}
   const [showAnswers, setShowAnswers] = useState(() => remembered(ANSWERS_KEY, false))
   const [busy, setBusy] = useState(false)
@@ -238,6 +240,19 @@ export default function Works({ onLoggedOut }) {
                       {t('works.settings')}
                     </button>
 
+                    {/* сканы — только у бумажной: у онлайновой резать нечего,
+                        и кнопка, умеющая только отказать, честнее не рисуется */}
+                    {work.on_paper && (
+                      <button
+                        type="button"
+                        className="secondary compact"
+                        disabled={busy}
+                        onClick={() => setScanning(work)}
+                      >
+                        {t('scan.open')}
+                      </button>
+                    )}
+
                     {/* проверка — своя страница: таблица на тридцать человек
                         в раскрытой строке не помещается */}
                     <button
@@ -361,6 +376,14 @@ export default function Works({ onLoggedOut }) {
         )}
       </section>
         </>
+      )}
+
+      {scanning && (
+        <ScanWizard
+          work={scanning}
+          onClose={() => setScanning(null)}
+          onDone={() => reload()}
+        />
       )}
 
       {editing && (

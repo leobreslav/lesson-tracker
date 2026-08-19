@@ -111,6 +111,9 @@ services:
       CI: "1"
     volumes:
       - ./e2e:/e2e
+      # бланк лежит в репозитории один, и тест берёт именно его: копия в
+      # фикстурах разошлась бы с печатью в первую же правку геометрии
+      - ./blank:/blank:ro
     depends_on:
       nginx:
         condition: service_healthy

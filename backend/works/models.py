@@ -466,3 +466,68 @@ class MarkChange(models.Model):
 
     def __str__(self):
         return f"{self.criterion}: {self.value}"
+
+
+class ScanPage(models.Model):
+    """
+    Одна страница загруженного скана: что на ней прочитано и чья она.
+
+    Строка живёт ровно между загрузкой пачки и её применением, и живёт в базе,
+    а не в памяти вкладки, по одной причине: чтение стоит денег. Закрыли
+    вкладку, потеряли связь, пришли завтра — прочитанное на месте, и второй раз
+    за него никто не платит. По той же причине ключ у страницы — отпечаток
+    самой полоски: та же страница, загруженная снова, узнаётся и не
+    перечитывается.
+
+    Применение пачки строки уносит: работа сделана, дальше про неё отвечают
+    вложения и оценки. Хранить их дольше значило бы держать вторую летопись
+    того же самого.
+    """
+
+    work = models.ForeignKey(
+        Work,
+        on_delete=models.CASCADE,
+        related_name="scan_pages",
+        verbose_name="work",
+    )
+    index = models.PositiveIntegerField("page number in the upload, from zero")
+    fingerprint = models.CharField("sha256 of the strip", max_length=64, blank=True)
+
+    first_name = models.CharField("first name as read", max_length=200, blank=True)
+    surname = models.CharField("surname as read", max_length=200, blank=True)
+    date_text = models.CharField("date as written", max_length=64, blank=True)
+    # Кого модель тут видит из состава курса. Это мнение, а не решение:
+    # назначает по нему только человек, и видит он его первым кандидатом.
+    guess = models.CharField("model's guess from the roster", max_length=200, blank=True)
+    # Шестнадцать значений: Q1..Q15 и сумма за страницу. null — пустая клетка.
+    cells = models.JSONField("cells as read", default=list, blank=True)
+    model = models.CharField("model that read it", max_length=64, blank=True)
+
+    # Кому страница отнесена. Пусто — ещё никому: либо не разобрались, либо
+    # разбор до неё не дошёл.
+    student = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="scan_pages",
+        verbose_name="whose page",
+    )
+    # Человек сказал сам. Такое решение не пересматривается автоматической
+    # раскладкой: она предлагает, он решает.
+    decided_by_human = models.BooleanField("assigned by a human", default=False)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = "scanned page"
+        verbose_name_plural = "scanned pages"
+        ordering = ("work", "index")
+        constraints = [
+            models.UniqueConstraint(
+                fields=("work", "index"), name="one_row_per_scanned_page"
+            )
+        ]
+
+    def __str__(self):
+        return f"{self.work_id}#{self.index}: {self.first_name} {self.surname}"

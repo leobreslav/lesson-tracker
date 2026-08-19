@@ -45,6 +45,9 @@ services:
       - ./backend/config/errors.py:/backend/config/errors.py:ro
       # и те же случаи для второй половины зеркал — путь тот же самый
       - ./mirrors:/mirrors:ro
+      # бланк: его .tex читает сторож геометрии — числа на бумаге и числа в
+      # коде чтения обязаны совпадать, а живут они в разных файлах
+      - ./blank:/blank:ro
     ports:
       - "5173:5173"
     depends_on:
