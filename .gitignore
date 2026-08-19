@@ -20,3 +20,4 @@ blank/*.aux
 blank/*.log
 blank/*.synctex.gz
 blank/preview*.png
+blank/decode_src.png
