@@ -468,6 +468,16 @@ test('строка курса раскрывается кликом, а имя �
 
   // переименование — под карандашом, и поле появляется вместо строки
   await row.hover()
+
+  // карандаш стоит при названии, а не в хвосте строки: рядом с крестиком,
+  // у которого область действия — весь курс, он и читался как «править
+  // курс», хотя правит одно название
+  const name = await row.locator('.course-head .name').boundingBox()
+  const pencil = await row.locator('.course-pencil').boundingBox()
+  const remove = await row.locator('.course-head-actions button').boundingBox()
+  expect(pencil.x).toBeGreaterThan(name.x + name.width - 1)
+  expect(pencil.x - (name.x + name.width)).toBeLessThan(remove.x - pencil.x)
+
   await row.getByTitle('Переименовать').click()
   const field = row.locator('input.course-rename')
   await expect(field).toBeVisible()

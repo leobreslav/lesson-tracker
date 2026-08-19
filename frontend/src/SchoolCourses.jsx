@@ -419,10 +419,16 @@ export default function SchoolCourses() {
                       </button>
                     )}
 
-                    <span className="course-head-actions">
+                    {/* Карандаш — у названия, а не в хвосте строки: рядом с
+                        крестиком он читался как «править курс», хотя правит
+                        одно название. Лежит он в собственной колонке сетки
+                        снаружи кнопки раскрытия — вложенных кнопок не
+                        бывает, — и при переименовании его нет вовсе: поле
+                        ввода занимает те же колонки. */}
+                    {editing?.id === course.id ? null : (
                       <button
                         type="button"
-                        className="link"
+                        className="link course-pencil"
                         title={t('classes.rename')}
                         aria-label={t('school.courses.renameLabel', {
                           name: course.name,
@@ -434,6 +440,9 @@ export default function SchoolCourses() {
                       >
                         ✎
                       </button>
+                    )}
+
+                    <span className="course-head-actions">
                       <button
                         type="button"
                         className="link"
