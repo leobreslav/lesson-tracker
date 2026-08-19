@@ -353,7 +353,6 @@
     "collapse": "Collapse",
     "addLesson": "Add a lesson",
     "addSection": "Add a theme",
-    "select": "Select",
     "undo": {
       "label": "Undo: {{action}}",
       "what": "Undo: {{action}} — «{{detail}}», by {{who}}",
@@ -379,7 +378,6 @@
       "revert": "put it back"
     },
     "picked": "{{lessons}} selected",
-    "pickNothing": "Nothing selected — tick the rows you want to delete",
     "dropPicked": {
       "title": "Delete {{lessons}}?",
       "one": "Delete «{{title}}»?",

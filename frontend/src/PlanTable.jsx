@@ -92,7 +92,6 @@ export default function PlanTable({
   debts = EMPTY_SET,
   // выбор строк пачкой: сама таблица его только показывает и сообщает о
   // нажатиях, а что выбрано и что с этим делать — знает страница
-  selecting = false,
   selected = EMPTY_SET,
   actions,
 }) {
@@ -699,7 +698,7 @@ export default function PlanTable({
         )}
 
         {open && (
-          <ul className={selecting ? 'plan free selecting' : 'plan free'}>
+          <ul className="plan free">
             {free.map(({ slot, labelled }) => (
               <li
                 key={slot.id}
@@ -711,7 +710,6 @@ export default function PlanTable({
                   (slot.id === spotlightSlot ? ' spotlight' : '')
                 }
               >
-                {selectCell()}
                 <span className="plan-weekmark">
                   {labelled && t('plan.week', { number: slot.week })}
                 </span>
@@ -723,6 +721,7 @@ export default function PlanTable({
                 >
                   {dayMonth(slot.date)} <em>{shortWeekday(slot.date)}</em>
                 </Link>
+                {selectCell()}
                 {/* ни ручки, ни номера: это не строка плана, а пустое место
                     в расписании */}
                 <span />
@@ -746,22 +745,35 @@ export default function PlanTable({
   }
 
   /**
-   * Флажок выбора — первой колонкой, и только в режиме выбора.
+   * Флажок выбора — в правой зоне, рядом с ручкой, и виден при наведении.
    *
-   * Ячейка эта есть у **каждой** строки, включая тему и свободный слот:
-   * сетка одна на все строки, и колонка, появившаяся не везде, сдвинула бы
-   * соседние относительно друг друга. У темы и свободного слота она пустая
-   * — выбирают уроки (см. `selectableIds`).
+   * Режима «Выбрать» больше нет. Кнопка на панели была контринтуитивной:
+   * чтобы отметить строку, надо было сперва догадаться, что где-то вверху
+   * есть слово, включающее флажки. Теперь флажок ведёт себя как остальные
+   * кнопки строки — появляется под курсором, — а полоса действий
+   * возникает от первого отмеченного.
+   *
+   * **Колонка стоит справа от дат, а не слева от них.** По левому краю
+   * взгляд должен встречать данные, а не служебный контрол: по этому же
+   * правилу и ручка перетаскивания стоит после дат.
+   *
+   * Место под флажок занято всегда (`visibility`, не `display`): убранный
+   * из потока, он сдвигал бы строку под курсором. Отмеченный остаётся
+   * видимым, иначе набранное выделение исчезало бы, стоит увести мышь. А
+   * на сенсорном экране наведения не бывает, и там колонка видна всегда —
+   * то же исключение, что у кнопок строки.
+   *
+   * Ячейка есть у **каждой** строки, включая тему и свободный слот: сетка
+   * одна на все строки. У них она пустая — выбирают уроки (`selectableIds`).
    *
    * Shift тянет диапазон от прошлого нажатия: десять строк подряд иначе
    * это десять нажатий, а именно от них и уходим.
    */
   const selectCell = (node = null) => {
-    if (!selecting) return null
     if (!node || node.is_section || node.taught) return <span className="plan-pick" />
 
     return (
-      <span className="plan-pick">
+      <span className={selected.has(node.id) ? 'plan-pick picked' : 'plan-pick'}>
         <input
           type="checkbox"
           checked={selected.has(node.id)}
@@ -856,9 +868,9 @@ export default function PlanTable({
         <>
           {/* левая колонка: неделя и дата. Взгляд идёт по левому краю и
               должен встречать данные, а не служебную ручку */}
-          {selectCell(node)}
           {weekCell(node)}
           {dateCells(node)}
+          {selectCell(node)}
           {handle}
           <span className="plan-number">{node.number}</span>
           <span className={parent ? 'plan-title-cell nested' : 'plan-title-cell'}>
@@ -941,9 +953,9 @@ export default function PlanTable({
         {(handle) => (
           <>
             <div className={`plan-row section-head${weekStripe(node)}`}>
-              {selectCell()}
               {weekCell(node)}
               {dateCells(node, true)}
+              {selectCell()}
               {handle}
               {/* треугольник стоит в колонке номера: у главы номера нет, а
                   место есть — и свёртка оказывается ровно под номерами */}
@@ -1071,9 +1083,7 @@ export default function PlanTable({
           strategy={verticalListSortingStrategy}
         >
           <ul
-            className={
-              (dated ? 'plan' : 'plan no-dates') + (selecting ? ' selecting' : '')
-            }
+            className={dated ? 'plan' : 'plan no-dates'}
           >
             {nodes.map((node) => (
               <Fragment key={node.id}>

@@ -986,17 +986,22 @@ test('десять строк удаляются одним выбором и о
   }
   await page.keyboard.press('Escape')
 
-  // до включения режима флажков в таблице нет вовсе: её читают чаще, чем правят
-  await expect(page.locator('.plan-pick input')).toHaveCount(0)
+  // полосы действий нет, пока ничего не выбрано: таблицу читают чаще, чем правят
+  await expect(page.locator('.plan-selection')).toHaveCount(0)
 
-  await page.getByRole('button', { name: 'Выбрать' }).click()
+  // флажок живёт в самой строке и появляется под курсором, как остальные её
+  // кнопки: отдельного режима «Выбрать» нет — он был лишним знанием,
+  // которое надо было сперва добыть
+  const rows = page.locator('.plan-row.lesson')
+  await rows.nth(1).hover()
+  await rows.nth(1).locator('.plan-pick input').check()
+
   const bar = page.locator('.plan-selection')
   await expect(bar).toBeVisible()
-  await expect(bar.getByRole('button', { name: 'Удалить' })).toBeDisabled()
 
   // Shift тянет диапазон от прошлого нажатия: второй–пятый одним движением
-  await page.locator('.plan-pick input').nth(1).click()
-  await page.locator('.plan-pick input').nth(4).click({ modifiers: ['Shift'] })
+  await rows.nth(4).hover()
+  await rows.nth(4).locator('.plan-pick input').click({ modifiers: ['Shift'] })
   await expect(bar).toContainText('Выбрано: 4 урока')
 
   await bar.getByRole('button', { name: 'Удалить' }).click()
@@ -1010,10 +1015,8 @@ test('десять строк удаляются одним выбором и о
   await expect(page.locator('.plan-row.lesson')).toHaveCount(2)
   expect(await structure(page)).toEqual(['1 Первый', '2 Шестой'])
 
-  // режим остаётся включённым: удалили три строки — часто следом идут ещё
-  // две, и выходить ради этого, чтобы тут же вернуться, незачем
-  await expect(page.locator('.plan-selection')).toBeVisible()
-  await expect(page.locator('.plan-selection')).toContainText('Ничего не выбрано')
+  // выбор применён и сброшен, полоса ушла
+  await expect(page.locator('.plan-selection')).toHaveCount(0)
 })
 
 test('у темы флажка нет: у неё спрашивают про её уроки', async ({ page, signIn }) => {
@@ -1036,22 +1039,25 @@ test('у темы флажка нет: у неё спрашивают про е�
   await expect(page.locator('.plan-row', { hasText: 'Первый признак' })).toBeVisible()
   await page.keyboard.press('Escape')
 
-  await page.getByRole('button', { name: 'Выбрать' }).click()
-
   // ячейка у темы есть — сетка одна на все строки, — а флажка в ней нет
   await expect(page.locator('.section-head .plan-pick')).toHaveCount(1)
   await expect(page.locator('.section-head .plan-pick input')).toHaveCount(0)
   await expect(page.locator('.plan-row.lesson .plan-pick input')).toHaveCount(1)
 
-  // Escape выходит из режима: курсор в это время ходит по строкам
-  await page.keyboard.press('Escape')
-  await expect(page.locator('.plan-pick')).toHaveCount(0)
+  const row = page.locator('.plan-row.lesson').first()
+  await row.hover()
+  await row.locator('.plan-pick input').check()
 
-  // «Отмена» убирает и полосу, и колонку
-  await page.getByRole('button', { name: 'Выбрать' }).click()
+  // Escape снимает выделение: курсор в это время ходит по строкам
+  await page.keyboard.press('Escape')
+  await expect(page.locator('.plan-selection')).toHaveCount(0)
+
+  // «Отмена» делает то же самое
+  await row.hover()
+  await row.locator('.plan-pick input').check()
   await expect(page.locator('.plan-selection')).toBeVisible()
   await page.locator('.plan-selection').getByRole('button', { name: 'Отмена' }).click()
-  await expect(page.locator('.plan-pick')).toHaveCount(0)
+  await expect(page.locator('.plan-selection')).toHaveCount(0)
 })
 
 test('в библиотеку кладут сразу с ответом «кому видно»', async ({

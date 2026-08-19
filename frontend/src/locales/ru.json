@@ -363,7 +363,6 @@
     "collapse": "Свернуть",
     "addLesson": "Добавить урок",
     "addSection": "Добавить тему",
-    "select": "Выбрать",
     "undo": {
       "label": "Отменить: {{action}}",
       "what": "Отменить: {{action}} — «{{detail}}», правил {{who}}",
@@ -389,7 +388,6 @@
       "revert": "вернуть как было"
     },
     "picked": "Выбрано: {{lessons}}",
-    "pickNothing": "Ничего не выбрано — отметьте строки, которые надо удалить",
     "dropPicked": {
       "title": "Удалить {{lessons}}?",
       "one": "Удалить «{{title}}»?",

@@ -170,13 +170,13 @@ export default function Plan({ user, onLoggedOut }) {
    * обратно. Пачка отвечает на это не ускорением того же самого, а другой
    * операцией: выбрали, спросили один раз, удалили одной транзакцией.
    *
-   * `selecting` — режим, а не постоянная колонка флажков: таблицу читают
-   * куда чаще, чем правят, и сорок флажков в ней были бы шумом. `picked`
-   * лежит массивом в порядке ленты — по нему считают и «выбрано N», и
-   * цену, и порядок этот совпадает с тем, что на экране. `anchor` —
-   * прошлое нажатие, от него Shift тянет диапазон.
+   * Режима «Выбрать» нет: флажок живёт в самой строке и появляется под
+   * курсором, как остальные её кнопки, — кнопка на панели была лишним
+   * знанием, которое надо было сперва добыть. `picked` лежит массивом в
+   * порядке ленты: по нему считают и «выбрано N», и цену, и порядок этот
+   * совпадает с тем, что на экране. `anchor` — прошлое нажатие, от него
+   * Shift тянет диапазон.
    */
-  const [selecting, setSelecting] = useState(false)
   const [picked, setPicked] = useState([])
   const [anchor, setAnchor] = useState(null)
   const [dropping, setDropping] = useState(null) // подтверждение удаления пачки
@@ -359,7 +359,7 @@ export default function Plan({ user, onLoggedOut }) {
    * само, а режим при этом уцелеет — иначе один жест делал бы два дела.
    */
   useEffect(() => {
-    if (!selecting || dropping) return undefined
+    if (!picked.length || dropping) return undefined
 
     const escape = (event) => {
       if (event.key === 'Escape') stopSelecting()
@@ -367,7 +367,7 @@ export default function Plan({ user, onLoggedOut }) {
 
     document.addEventListener('keydown', escape)
     return () => document.removeEventListener('keydown', escape)
-  }, [selecting, dropping])
+  }, [picked, dropping])
 
   /*
    * Смена курса выключает выбор.
@@ -378,7 +378,6 @@ export default function Plan({ user, onLoggedOut }) {
    * человек не понял бы, что он там выбирал.
    */
   useEffect(() => {
-    setSelecting(false)
     setPicked([])
     setAnchor(null)
   }, [classId])
@@ -490,7 +489,6 @@ export default function Plan({ user, onLoggedOut }) {
   }
 
   const stopSelecting = () => {
-    setSelecting(false)
     setPicked([])
     setAnchor(null)
   }
@@ -1450,22 +1448,6 @@ export default function Plan({ user, onLoggedOut }) {
                 </button>
               )}
 
-              {/*
-                «Выбрать» стоит третьей и вполсилы: включают её реже, чем
-                добавляют строки, но чаще, чем лезут в импорт и на полку, —
-                а главное, это действие над таблицей целиком, как и обе
-                кнопки слева от неё.
-              */}
-              <button
-                type="button"
-                className="secondary"
-                disabled={busy || !order.length}
-                aria-pressed={selecting}
-                onClick={() => (selecting ? stopSelecting() : setSelecting(true))}
-              >
-                {t('plan.select')}
-              </button>
-
               {/* два меню в одной обёртке: клик мимо закрывает открытое,
                   каким бы из двух оно ни было */}
               <span className="plan-menus" ref={menuRef}>
@@ -1630,7 +1612,6 @@ export default function Plan({ user, onLoggedOut }) {
                 spotlight={target.row}
               spotlightSlot={target.slot}
               debts={debtIds}
-              selecting={selecting}
               selected={pickedSet}
                 // всё, что таблица умеет попросить у страницы, — одним
                 // списком: сама она в базу не ходит
@@ -1656,14 +1637,12 @@ export default function Plan({ user, onLoggedOut }) {
                 кнопка «Удалить» должна быть под рукой, а не в полутора
                 тысячах пикселей выше.
               */}
-              {selecting && (
+              {chosen.length > 0 && (
                 <div className="selection-bar plan-selection">
                   <span>
-                    {chosen.length
-                      ? t('plan.picked', {
-                          lessons: t('common.lessonCount', { count: chosen.length }),
-                        })
-                      : t('plan.pickNothing')}
+                    {t('plan.picked', {
+                      lessons: t('common.lessonCount', { count: chosen.length }),
+                    })}
                   </span>
                   <button
                     type="button"
