@@ -70,10 +70,12 @@ test('левое нажатие ведёт в занятие, правое от�
 
   // правое — меню, и браузерного контекстного меню при этом не появляется
   await lesson.click({ button: 'right' })
-  const menu = page.locator('dialog.modal')
+  // выпадающее меню у курсора, а не окно посреди экрана
+  const menu = page.locator('.context-menu')
   await expect(menu).toBeVisible()
+  await expect(page.locator('dialog.modal')).toHaveCount(0)
   await page.keyboard.press('Escape')
-  await expect(menu).toBeHidden()
+  await expect(menu).toHaveCount(0)
 
   // долгое нажатие — то же меню: на телефоне правой кнопки нет, и без
   // него отмена с переносом потерялись бы целиком
@@ -82,6 +84,14 @@ test('левое нажатие ведёт в занятие, правое от�
   await lesson.dispatchEvent('pointerup', { pointerType: 'touch' })
   await expect(menu).toBeVisible()
   await page.keyboard.press('Escape')
+  await expect(menu).toHaveCount(0)
+
+  // левое — сразу занятие
+  // клик мимо тоже закрывает — меню не окно, затемнения у него нет
+  await lesson.click({ button: 'right' })
+  await expect(menu).toBeVisible()
+  await page.locator('h1').click()
+  await expect(menu).toHaveCount(0)
 
   // левое — сразу занятие
   await lesson.click()
@@ -117,8 +127,9 @@ test('ряд убирается рядом, а не периодом', async ({ 
   await openWeek(page, '2026-09-14')
   // меню — правой кнопкой: левая теперь ведёт в само занятие
   await page.locator('[data-lesson="2026-09-14:7"]').click({ button: 'right' })
+  await page.locator('.context-menu').getByRole('button', { name: 'Удалить весь ряд…' }).click()
+  // подтверждение — окном: тридцать часов не должны уходить промахом
   const menu = page.locator('dialog.modal')
-  await menu.getByRole('button', { name: 'Удалить весь ряд…' }).click()
   await menu.getByRole('button', { name: 'Удалить ряд', exact: true }).click()
 
   await expect(menu).toBeHidden()
@@ -156,8 +167,8 @@ test('урок добавляется, отменяется с причиной 
 
   // cancel it, with a reason — меню открывает правая кнопка
   await lesson.click({ button: 'right' })
+  await page.locator('.context-menu').getByRole('button', { name: 'Отменить' }).click()
   const menu = page.locator('dialog.modal')
-  await menu.getByRole('button', { name: 'Отменить', exact: true }).click()
   await menu.getByPlaceholder('Причина отмены').fill('Болезнь')
   await menu.getByRole('button', { name: 'Отменить урок' }).click()
 
@@ -166,7 +177,7 @@ test('урок добавляется, отменяется с причиной 
 
   // and put it back
   await lesson.click({ button: 'right' })
-  await page.locator('dialog.modal').getByRole('button', { name: 'Вернуть' }).click()
+  await page.locator('.context-menu').getByRole('button', { name: 'Вернуть' }).click()
 
   await expect(lesson).not.toHaveClass(/cancelled/)
 
@@ -191,7 +202,7 @@ test('из расписания открывается сам урок, а не 
   await expect(lesson).toContainText('Grade 6 Algebra')
   await lesson.click({ button: 'right' })
 
-  await page.locator('dialog.modal').getByRole('button', { name: 'Открыть урок' }).click()
+  await page.locator('.context-menu').getByRole('button', { name: 'Открыть урок' }).click()
   await ready(page)
 
   await expect(page).toHaveURL(/\/lesson\/\d+$/)
@@ -212,9 +223,9 @@ test('из клетки расписания есть путь в план, на
   await openWeek(page, MONDAY)
 
   await page.locator(`[data-lesson="${MONDAY}:1"]`).click({ button: 'right' })
-  const menu = page.locator('dialog.modal')
+  const menu = page.locator('.context-menu')
   // тема названа до нажатия: видно, куда приведут. Своим классом, а не
-  // «последней подсказкой»: их в окне несколько, и приезжает она позже
+  // «последней подсказкой»: их в меню несколько, и приезжает она позже
   // остальных — строку плана спрашивают отдельным запросом
   const topic = await menu.locator('.menu-topic').textContent()
   await menu.getByRole('button', { name: 'Открыть в учебном плане' }).click()
@@ -232,18 +243,21 @@ test('окно закрывается крестиком, а отдельной 
   signIn,
 }) => {
   // «Закрыть» ничего не решала, только уводила, — и занимала место в ряду
-  // рядом с четырьмя настоящими действиями. Уйти можно было и до неё, но
-  // Escape с кликом по фону беззвучны: ниоткуда не видно, что они есть.
+  // рядом с настоящими действиями. Уйти можно было и до неё, но Escape с
+  // кликом по фону беззвучны: ниоткуда не видно, что они есть.
+  //
+  // Спрашивается это у окна добавления: меню урока окном быть перестало,
+  // а правило про крестик — про окна.
   await signIn(PEOPLE.ivanova)
   await openWeek(page, MONDAY)
 
-  await page.locator(`[data-lesson="${MONDAY}:1"]`).click({ button: 'right' })
-  const menu = page.locator('dialog.modal')
-  await expect(menu.getByRole('button', { name: 'Открыть урок' })).toBeVisible()
-  await expect(menu.getByRole('button', { name: 'Закрыть', exact: true })).toHaveCount(0)
+  await page.locator(`[data-add="${MONDAY}:6"]`).click()
+  const dialog = page.locator('dialog.modal')
+  await expect(dialog.getByRole('button', { name: 'Добавить', exact: true })).toBeVisible()
+  await expect(dialog.getByRole('button', { name: 'Закрыть', exact: true })).toHaveCount(0)
 
-  await menu.getByRole('button', { name: 'Закрыть окно' }).click()
-  await expect(menu).toBeHidden()
+  await dialog.getByRole('button', { name: 'Закрыть окно' }).click()
+  await expect(dialog).toBeHidden()
 })
 
 test('копирование недели на месяц не ставит уроки в каникулы', async ({
@@ -399,8 +413,8 @@ test('перенос оставляет отмену на прежнем мес�
   await expect(source).toBeVisible()
 
   await source.click({ button: 'right' })
+  await page.locator('.context-menu').getByRole('button', { name: 'Перенести…' }).click()
   const menu = page.locator('dialog.modal')
-  await menu.getByRole('button', { name: 'Перенести…' }).click()
   await menu.getByLabel('Новая дата').fill(FRIDAY)
   await menu.getByLabel('Номер урока').fill('7')
   await menu.getByRole('button', { name: 'Перенести', exact: true }).click()
@@ -573,7 +587,7 @@ test('урок листается по своему курсу и показыв
 async function openLesson(page, cell = `${MONDAY}:1`) {
   await openWeek(page, MONDAY)
   await page.locator(`[data-lesson="${cell}"]`).click({ button: 'right' })
-  await page.locator('dialog.modal').getByRole('button', { name: 'Открыть урок' }).click()
+  await page.locator('.context-menu').getByRole('button', { name: 'Открыть урок' }).click()
   await ready(page)
   // `ready` ждёт бар и тишину в сети, а не смену страницы: заголовок
   // расписания успевает пожить на экране ещё кадр, и тест, читающий `h1`
@@ -1005,7 +1019,7 @@ test('у записанного часа в меню нет ни отмены, �
     .locator(`[data-lesson="${recorded.date}:${recorded.lesson_number}"]`)
     .click({ button: 'right' })
 
-  const menu = page.locator('dialog.modal')
+  const menu = page.locator('.context-menu')
   await expect(menu.getByRole('button', { name: 'Открыть урок' })).toBeVisible()
   await expect(menu.getByRole('button', { name: 'Отменить' })).toHaveCount(0)
   await expect(

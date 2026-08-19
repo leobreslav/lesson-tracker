@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useLayoutEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
 import Modal from './Modal'
+import { useDismissable } from './UserMenu'
 import { fetchLayoutAgenda } from './api'
 import { weekdayWithDate } from './dates'
 
@@ -168,6 +169,66 @@ export function AddLessonDialog({
 }
 
 /**
+ * Меню у курсора: список действий там, где нажали.
+ *
+ * Окном это было — тем же `Modal`, что у форм, — и по правой кнопке
+ * посреди экрана всплывал модальный диалог с затемнением. Контекстное меню
+ * так себя не ведёт: оно появляется у клетки, по которой щёлкнули, и
+ * закрывается, стоит нажать мимо.
+ *
+ * Форма остаётся окном, и это не непоследовательность: список действий и
+ * ввод причины переноса — разные вещи. Меню выбирают, а в форме печатают,
+ * и печатать в списке, который закрывается кликом мимо, было бы больно.
+ *
+ * Положение считается после отрисовки: у края экрана меню сдвигается
+ * внутрь, а не уезжает за него. До замера оно спрятано `visibility` —
+ * иначе первый кадр показывал бы его не на месте.
+ */
+export function ContextMenu({ at, onClose, children }) {
+  const [box, setBox] = useState(null)
+  const ref = useDismissable(true, onClose)
+
+  /*
+   * Замер — после **каждой** отрисовки, а не один раз при открытии.
+   *
+   * Меню растёт по дороге: тема урока приезжает отдельным запросом и
+   * добавляет строку. Померенное один раз, оно уползало за нижний край —
+   * и нижние пункты становились недостижимы. Поймано тестом: «элемент вне
+   * области просмотра».
+   *
+   * Зацикливания нет: то же положение не пишется в состояние.
+   */
+  useLayoutEffect(() => {
+    const menu = ref.current?.getBoundingClientRect()
+    if (!menu) return
+
+    const next = {
+      top: Math.max(8, Math.min(at.y, window.innerHeight - menu.height - 8)),
+      left: Math.max(8, Math.min(at.x, window.innerWidth - menu.width - 8)),
+    }
+    setBox((current) =>
+      current && current.top === next.top && current.left === next.left
+        ? current
+        : next,
+    )
+  })
+
+  return (
+    <ul
+      ref={ref}
+      className="dropdown context-menu"
+      style={{
+        top: box ? box.top : at.y,
+        left: box ? box.left : at.x,
+        visibility: box ? 'visible' : 'hidden',
+      }}
+    >
+      {children}
+    </ul>
+  )
+}
+
+/**
  * What can be done with a lesson that is already there.
  *
  * Перенос стоит здесь же, рядом с отменой, и это не случайно: для человека
@@ -187,6 +248,7 @@ export function AddLessonDialog({
 export function LessonMenu({
   lesson,
   date,
+  at,
   busy,
   onCancel,
   onRestore,
@@ -198,7 +260,7 @@ export function LessonMenu({
   const { t } = useTranslation()
   const navigate = useNavigate()
   const [reason, setReason] = useState('')
-  const [mode, setMode] = useState(null) // null | 'cancel' | 'move'
+  const [mode, setMode] = useState(null) // null | 'cancel' | 'move' | 'row'
   const [target, setTarget] = useState({ date: '', number: lesson.lesson_number })
   // строка плана, попавшая в этот час: {plan_row_id, title, section_title}
   const [row, setRow] = useState(null)
@@ -246,6 +308,74 @@ export function LessonMenu({
     })
   }
 
+  /* Список действий — выпадающим меню у курсора; форма отмены, переноса и
+     подтверждение ряда — окном: в списке, который закрывается кликом мимо,
+     печатать причину было бы больно */
+  if (mode === null) {
+    const item = (key, label, onClick, extra = {}) => (
+      <li key={key}>
+        <button type="button" disabled={busy} onClick={onClick} {...extra}>
+          {label}
+        </button>
+      </li>
+    )
+
+    return (
+      <ContextMenu at={at} onClose={onClose}>
+        <li className="context-head">
+          <span className="hint">
+            {lesson.course_name} · {weekdayWithDate(date)}
+          </span>
+          {/* какая строка плана стоит в этом часе: по ней и ведёт пункт
+              «Открыть в учебном плане» */}
+          {row && (
+            <span className="hint menu-topic">
+              {row.section_title ? `${row.section_title} · ` : ''}
+              {row.title}
+            </span>
+          )}
+          {/* «дополнительный» — свойство самого часа, и в шапке меню ему
+              место рядом с курсом и датой */}
+          {lesson.is_extra && <span className="hint">{t('agenda.menu.extra')}</span>}
+          {lesson.is_cancelled && (
+            <span className="hint">
+              {t('agenda.menu.cancelled', {
+                reason: lesson.reason ? `: ${lesson.reason}` : '',
+              })}
+            </span>
+          )}
+          {!lesson.is_cancelled && lesson.reason && (
+            <span className="hint">{lesson.reason}</span>
+          )}
+        </li>
+
+        {item('open', t('today.openLesson'), () => navigate(`/lesson/${lesson.id}`))}
+        {row &&
+          item('plan', t('agenda.menu.openPlan'), () =>
+            navigate(`/plan?course=${lesson.course_id}&row=${row.plan_row_id}`),
+          )}
+
+        <li className="dropdown-sep" />
+
+        {lesson.is_cancelled
+          ? item('restore', t('agenda.menu.restore'), onRestore)
+          : [
+              /* За записанным часом стоит урок: и отмена, и удаление стирают
+                 запись, а сервер их отклоняет. Пункт, умеющий только
+                 отказать, честнее не рисоваться */
+              !lesson.recorded &&
+                item('cancel', t('agenda.menu.cancel'), () => setMode('cancel')),
+              item('move', t('agenda.menu.move'), () => setMode('move')),
+            ].filter(Boolean)}
+
+        {!lesson.recorded && item('delete', t('common.delete'), onDelete)}
+        {/* час с записью ряд переживёт: массовая операция его пропустит и
+            скажет, сколько уцелело, — поэтому пункт тут всегда */}
+        {item('row', t('agenda.menu.deleteRow'), () => setMode('row'))}
+      </ContextMenu>
+    )
+  }
+
   return (
     <Modal
       onClose={onClose}
@@ -255,18 +385,6 @@ export function LessonMenu({
       })}
     >
       <p className="hint">{weekdayWithDate(date)}</p>
-
-      {lesson.is_extra && <p className="hint">{t('agenda.menu.extra')}</p>}
-      {lesson.is_cancelled && (
-        <p className="hint">
-          {t('agenda.menu.cancelled', {
-            reason: lesson.reason ? `: ${lesson.reason}` : '',
-          })}
-        </p>
-      )}
-      {!lesson.is_cancelled && lesson.reason && (
-        <p className="hint">{lesson.reason}</p>
-      )}
 
       {mode === 'cancel' && (
         <form onSubmit={handleCancel}>
@@ -331,25 +449,6 @@ export function LessonMenu({
         </form>
       )}
 
-      {/* какая строка плана стоит в этом часе: по ней и ведёт кнопка ниже */}
-      {mode === null && row && (
-        <p className="hint menu-topic">
-          {row.section_title ? `${row.section_title} · ` : ''}
-          {row.title}
-        </p>
-      )}
-
-      {/*
-        Ряд убирается рядом же.
-
-        Раскатали час на год и промахнулись номером — выбор был между
-        тридцатью четырьмя нажатиями и «очистить период», который сносит и
-        десяток чужих часов заодно. Сетку строят рядами, разбирать её надо
-        так же, и спрашивается это там, где на ряд смотрят: в клетке.
-
-        Вопрос отдельным шагом, а не сразу: удаление тридцати часов — не то
-        действие, которое делают промахом мимо «Удалить».
-      */}
       {mode === 'row' && (
         <>
           <p className="hint">{t('agenda.menu.rowHint')}</p>
@@ -362,86 +461,6 @@ export function LessonMenu({
             </button>
           </div>
         </>
-      )}
-
-      {mode === null && (
-        <div className="actions">
-          <button type="button" onClick={() => navigate(`/lesson/${lesson.id}`)}>
-            {t('today.openLesson')}
-          </button>
-          {/* Второй путь из клетки — в программу: «что мы вообще проходим и
-              где мы в ней сейчас». Из занятия он есть давно, а из сетки
-              приходилось идти через занятие. Ведёт на **эту** строку: на
-              сотне уроков искать её глазами — минута */}
-          {row && (
-            <button
-              type="button"
-              className="secondary"
-              onClick={() =>
-                navigate(
-                  `/plan?course=${lesson.course_id}&row=${row.plan_row_id}`,
-                )
-              }
-            >
-              {t('agenda.menu.openPlan')}
-            </button>
-          )}
-          {lesson.is_cancelled ? (
-            <button
-              type="button"
-              className="secondary"
-              disabled={busy}
-              onClick={onRestore}
-            >
-              {t('agenda.menu.restore')}
-            </button>
-          ) : (
-            <>
-              {/* За записанным часом стоит урок: и отмена, и удаление
-                  стирают запись, а сервер их отклоняет. Кнопка, которая
-                  умеет только отказать, честнее не рисоваться — снимают
-                  запись на самой странице занятия, оттуда и продолжают */}
-              {!lesson.recorded && (
-                <button
-                  type="button"
-                  className="secondary"
-                  disabled={busy}
-                  onClick={() => setMode('cancel')}
-                >
-                  {t('agenda.menu.cancel')}
-                </button>
-              )}
-              <button
-                type="button"
-                className="secondary"
-                disabled={busy}
-                onClick={() => setMode('move')}
-              >
-                {t('agenda.menu.move')}
-              </button>
-            </>
-          )}
-          {!lesson.recorded && (
-            <button
-              type="button"
-              className="secondary"
-              disabled={busy}
-              onClick={onDelete}
-            >
-              {t('common.delete')}
-            </button>
-          )}
-          {/* час с записью ряд не ломает: массовая операция его пропустит
-              и скажет, сколько уцелело, — поэтому кнопка тут всегда */}
-          <button
-            type="button"
-            className="secondary"
-            disabled={busy}
-            onClick={() => setMode('row')}
-          >
-            {t('agenda.menu.deleteRow')}
-          </button>
-        </div>
       )}
     </Modal>
   )

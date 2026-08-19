@@ -68,9 +68,11 @@ export default function WeekGrid({
     if (event.pointerType !== 'touch') return
 
     clearTimeout(timer.current)
+    // палец: меню встаёт там, где держали
+    const at = { x: event.clientX, y: event.clientY }
     timer.current = setTimeout(() => {
       held.current = true
-      onMenu?.(date, lesson)
+      onMenu?.(date, lesson, at)
     }, 500)
   }
 
@@ -162,9 +164,14 @@ export default function WeekGrid({
                     onClick={() => open(date, lesson)}
                     onContextMenu={(event) => {
                       // своё меню вместо браузерного: правая кнопка тут
-                      // значит «что сделать с этим часом»
+                      // значит «что сделать с этим часом». Координаты едут
+                      // с событием — меню открывается у курсора, а не
+                      // посреди экрана
                       event.preventDefault()
-                      onMenu?.(date, lesson)
+                      onMenu?.(date, lesson, {
+                        x: event.clientX,
+                        y: event.clientY,
+                      })
                     }}
                     onPointerDown={(event) => press(event, date, lesson)}
                     onPointerUp={release}

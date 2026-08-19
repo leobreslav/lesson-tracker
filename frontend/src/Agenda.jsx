@@ -553,7 +553,8 @@ export default function Agenda({ onLoggedOut }) {
    */
   const openLesson = (date, lesson) => navigate(`/lesson/${lesson.id}`)
 
-  const openMenu = (date, lesson) => setDialog({ type: 'lesson', date, lesson })
+  const openMenu = (date, lesson, at) =>
+    setDialog({ type: 'lesson', date, lesson, at })
 
   const openFreeCell = (date, number) => {
     if (!data.days[date]?.is_study) return
@@ -799,6 +800,7 @@ export default function Agenda({ onLoggedOut }) {
         <LessonMenu
           lesson={dialog.lesson}
           date={dialog.date}
+          at={dialog.at}
           busy={busy}
           onCancel={(reason) =>
             patchLesson(dialog.date, dialog.lesson, { is_cancelled: true, reason })

@@ -466,6 +466,35 @@ body {
   background: #f1f5fd;
 }
 
+/*
+ * Меню у курсора: тот же выпадающий список, только стоящий не под кнопкой,
+ * а там, где нажали. Поэтому `fixed` и координаты из события — `absolute`
+ * считался бы от ближайшего позиционированного предка, то есть от клетки.
+ */
+.context-menu {
+  position: fixed;
+  min-width: 12rem;
+  max-width: 18rem;
+}
+
+/* шапка меню: чей это час и какая в нём тема — не пункт, а подпись */
+.context-menu .context-head {
+  padding: 0.35rem 0.6rem 0.45rem;
+  border-bottom: 1px solid #eee;
+}
+
+.context-menu .context-head .hint {
+  display: block;
+  margin: 0;
+}
+
+.context-menu .context-head .menu-topic {
+  overflow: hidden;
+  color: #444;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* черта между группами пунктов: файл, полка, утверждение — три разговора,
    и подряд идущими строками они читаются как один список из шести дел */
 .dropdown-sep {

@@ -301,6 +301,14 @@ test('урок ставится рядом на каждую неделю, а н
   await dialog.getByRole('button', { name: 'Добавить', exact: true }).click()
   await expect(dialog).toBeHidden()
 
+  // и меню у администратора — тоже выпадающее, у курсора
+  await page.locator('[data-lesson="2026-09-07:7"]').click({ button: 'right' })
+  const menu = page.locator('.context-menu')
+  await expect(menu.getByRole('button', { name: 'Открыть урок' })).toBeVisible()
+  await expect(menu.getByRole('button', { name: 'Удалить весь ряд…' })).toBeVisible()
+  await page.keyboard.press('Escape')
+  await expect(menu).toHaveCount(0)
+
   // первая клетка — на экране, остальные три недели живут за краем сетки:
   // она показывает одну неделю, и листать её ради проверки незачем
   await expect(page.locator('[data-lesson="2026-09-07:7"]')).toHaveCount(1)

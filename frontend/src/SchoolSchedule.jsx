@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
-import { RepeatChoice } from './AgendaDialogs'
+import { ContextMenu, RepeatChoice } from './AgendaDialogs'
 import CopyDialog from './CopyDialog'
 import EmptyState from './EmptyState'
 import Modal from './Modal'
@@ -347,7 +347,7 @@ export default function SchoolSchedule({ onLoggedOut }) {
         /* левое нажатие ведёт в занятие, правое — в меню: по сетке живут
            каждый день, а правят её реже */
         onOpen={(date, slot) => navigate(`/lesson/${slot.id}`)}
-        onMenu={(date, slot) => setDialog({ type: 'remove', date, slot })}
+        onMenu={(date, slot, at) => setDialog({ type: 'remove', date, slot, at })}
         onAdd={(date, number) => setDialog({ type: 'add', date, number })}
       />
 
@@ -359,6 +359,7 @@ export default function SchoolSchedule({ onLoggedOut }) {
         <RemoveSchoolSlot
           slot={dialog.slot}
           date={dialog.date}
+          at={dialog.at}
           busy={busy}
           onDelete={() => {
             setDialog(null)
@@ -448,9 +449,41 @@ function clampToYear(day, year) {
  * спрашивает ещё раз: удаление тридцати часов не должно случаться промахом
  * мимо соседней кнопки.
  */
-function RemoveSchoolSlot({ slot, date, busy, onDelete, onDeleteRow, onClose }) {
+function RemoveSchoolSlot({ slot, date, at, busy, onDelete, onDeleteRow, onClose }) {
   const { t } = useTranslation()
+  const navigate = useNavigate()
   const [asking, setAsking] = useState(false)
+
+  /* список действий — меню у курсора, как у учителя; подтверждение ряда —
+     окном: удаление тридцати часов не должно случаться промахом мимо
+     соседнего пункта */
+  if (!asking) {
+    return (
+      <ContextMenu at={at} onClose={onClose}>
+        <li className="context-head">
+          <span className="hint">
+            {slot.course_name} · {weekdayWithDate(date)}
+          </span>
+        </li>
+        <li>
+          <button type="button" onClick={() => navigate(`/lesson/${slot.id}`)}>
+            {t('today.openLesson')}
+          </button>
+        </li>
+        <li className="dropdown-sep" />
+        <li>
+          <button type="button" disabled={busy} onClick={onDelete}>
+            {t('common.delete')}
+          </button>
+        </li>
+        <li>
+          <button type="button" disabled={busy} onClick={() => setAsking(true)}>
+            {t('agenda.menu.deleteRow')}
+          </button>
+        </li>
+      </ContextMenu>
+    )
+  }
 
   return (
     <Modal
@@ -461,34 +494,15 @@ function RemoveSchoolSlot({ slot, date, busy, onDelete, onDeleteRow, onClose }) 
       })}
     >
       <p className="hint">{weekdayWithDate(date)}</p>
-
-      {asking ? (
-        <>
-          <p className="hint">{t('agenda.menu.rowHint')}</p>
-          <div className="actions">
-            <button type="button" disabled={busy} onClick={onDeleteRow}>
-              {t('agenda.menu.rowSubmit')}
-            </button>
-            <button type="button" className="secondary" onClick={() => setAsking(false)}>
-              {t('agenda.menu.cancelAbort')}
-            </button>
-          </div>
-        </>
-      ) : (
-        <div className="actions">
-          <button type="button" disabled={busy} onClick={onDelete}>
-            {t('common.delete')}
-          </button>
-          <button
-            type="button"
-            className="secondary"
-            disabled={busy}
-            onClick={() => setAsking(true)}
-          >
-            {t('agenda.menu.deleteRow')}
-          </button>
-        </div>
-      )}
+      <p className="hint">{t('agenda.menu.rowHint')}</p>
+      <div className="actions">
+        <button type="button" disabled={busy} onClick={onDeleteRow}>
+          {t('agenda.menu.rowSubmit')}
+        </button>
+        <button type="button" className="secondary" onClick={() => setAsking(false)}>
+          {t('agenda.menu.cancelAbort')}
+        </button>
+      </div>
     </Modal>
   )
 }
