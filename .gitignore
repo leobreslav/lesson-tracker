@@ -14,3 +14,9 @@ dist/
 # root'овы — `git add -A` утаскивал их в коммит вместе с работой
 e2e/test-results/
 e2e/tmp-*.png
+# следы компиляции бланка: pdflatex пишет их рядом с исходником, а в репозиторий
+# едут только сам .tex и собранный .pdf
+blank/*.aux
+blank/*.log
+blank/*.synctex.gz
+blank/preview*.png

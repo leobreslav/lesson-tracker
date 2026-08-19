@@ -1,0 +1,120 @@
+% Универсальный бланк для распознавания.
+%
+% Печатается пачкой на весь год и лежит в кабинете: ученик берёт чистый лист.
+% Ничего индивидуального на нём нет — ни имени, ни номера работы, ни QR, — а
+% значит всё, что система про лист знает, она берёт из шапки: рукописного
+% имени и клеток с баллами, которые ставит учитель.
+%
+% Геометрия (миллиметры от края A4) — единственное, что связывает этот файл с
+% кодом чтения: сдвинули метку здесь, кроп на сервере уедет мимо. Поэтому
+% числа ниже обязаны совпадать с модулем геометрии в приложении, и правятся
+% они вместе.
+%
+% Компиляция: pdflatex blank_form.tex  (xelatex тоже подойдёт)
+%
+% Взято из соседнего проекта ScanAnalize и изменено в трёх местах:
+%   * реперы вокруг ШАПКИ, а не только по углам листа — см. ниже;
+%   * жирная рамка вокруг поля тетрадных клеток;
+%   * жирная внешняя рамка у сетки баллов.
+\documentclass[11pt]{article}
+\usepackage[a4paper,margin=12mm]{geometry}
+% helvet вместо fontspec+Arial: бланк целиком английский, а pdflatex стоит
+% всюду и не требует системного шрифта.
+\usepackage{helvet}
+\renewcommand{\familydefault}{\sfdefault}
+\usepackage{tikz}
+\usetikzlibrary{calc}
+\pagestyle{empty}
+\setlength{\parindent}{0pt}
+
+% ---- реперы ----------------------------------------------------------------
+% Их два набора, и это не избыточность: они отвечают на разные вопросы.
+%
+% ПО УГЛАМ ЛИСТА (4мм, нижний правый 2.5мм) — «лист целиком попал в кадр».
+% Выпрямлять по ним всю страницу мы не будем: PDF приходит и из телефонных
+% фотографий, а лист в руке не плоский, и одна гомография на весь лист
+% размазывает ошибку по странице.
+%
+% ВОКРУГ ШАПКИ (3мм, нижний правый 1.8мм) — по ним и считается выпрямление.
+% Область маленькая (182 x 31.5 мм), кривизна остального листа на неё не
+% влияет, а фотография с обрезанным низом остаётся годной: низ нам не нужен.
+% Наборы различаются не размером, а пропорцией прямоугольника, который они
+% образуют: у листа это портрет (0.69), у шапки — широкая полоса (5.8).
+% Нижний правый в каждом наборе меньше остальных — по нему определяется
+% ориентация, без перебора четырёх поворотов.
+\newcommand{\fiducials}{%
+\begin{tikzpicture}[remember picture,overlay]
+ % углы листа
+ \fill[black] ([shift={( 6mm,-6mm)}]current page.north west) rectangle ++( 4mm,-4mm);
+ \fill[black] ([shift={(-6mm,-6mm)}]current page.north east) rectangle ++(-4mm,-4mm);
+ \fill[black] ([shift={( 6mm, 6mm)}]current page.south west) rectangle ++( 4mm, 4mm);
+ \fill[black] ([shift={(-6mm, 6mm)}]current page.south east) rectangle ++(-2.5mm, 2.5mm);
+ % шапка: центры (20, 7), (190, 7), (20, 38.5), (190, 38.5) мм от левого верха.
+ % По горизонтали они уведены внутрь от угловых: вверху те стоят на 8 мм, и
+ % два тёмных пятна в паре миллиметров друг от друга слиплись бы на плохом
+ % фото в одно. Кроп при этом выходит за их рамку на 7 мм с каждой стороны —
+ % экстраполяция на базе в 170 мм, ошибка которой меньше толщины линии.
+ \fill[black] ([shift={( 18.5mm, -5.5mm)}]current page.north west) rectangle ++( 3mm,-3mm);
+ \fill[black] ([shift={(-18.5mm, -5.5mm)}]current page.north east) rectangle ++(-3mm,-3mm);
+ \fill[black] ([shift={( 18.5mm,-37.0mm)}]current page.north west) rectangle ++( 3mm,-3mm);
+ \fill[black] ([shift={(-19.1mm,-37.6mm)}]current page.north east) rectangle ++(-1.8mm,-1.8mm);
+\end{tikzpicture}}
+
+% ---- сетка баллов: 15 клеток Q1..Q15 + клетка суммы страницы ----------------
+% Ширина = ширине поля тетрадных клеток: 16 равных ячеек по 11.5625мм = 185мм.
+% Левый край сдвинут на 0.5мм, чтобы совпасть с началом сетки (12.5мм).
+% Внешняя рамка жирнее внутренних линий: по ней чтение уточняет выпрямление
+% уже после реперов — линии напечатаны и так, чернил это не стоит, а точность
+% даёт в доли миллиметра.
+\newcommand{\markgrid}{%
+\hspace*{0.5mm}%
+\begin{tikzpicture}[x=1mm,y=1mm,line width=0.4pt]
+ \def\w{11.5625}\def\hh{16.5}\def\lab{5}
+ \foreach \q in {1,...,15}{%
+   \pgfmathsetmacro\xx{(\q-1)*\w}%
+   \fill[black!7] (\xx,\hh-\lab) rectangle (\xx+\w,\hh);
+   \draw (\xx,0) rectangle (\xx+\w,\hh);
+   \draw (\xx,\hh-\lab) -- (\xx+\w,\hh-\lab);
+   \node[font=\scriptsize\bfseries,text depth=0pt,inner sep=0pt] at (\xx+\w/2,\hh-\lab/2) {Q\q};
+ }
+ \pgfmathsetmacro\sx{15*\w}
+ \fill[black!7] (\sx,\hh-\lab) rectangle (\sx+\w,\hh);
+ \draw (\sx,0) rectangle (\sx+\w,\hh);
+ \draw (\sx,\hh-\lab) -- (\sx+\w,\hh-\lab);
+ \node[font=\scriptsize\bfseries,text depth=0pt,inner sep=0pt] at (\sx+\w/2,\hh-\lab/2) {$\Sigma$ pg};
+ \draw[line width=0.8pt] (0,0) rectangle (16*\w,\hh);
+\end{tikzpicture}}
+
+% ---- фон: тетрадная сетка 5x5 мм -------------------------------------------
+% Сетка ровно из целых клеток: 37 x 47 по 5 мм (185 x 235 мм), привязана к
+% началу области (12.5мм / 45мм) — на всех краях полноценные клетки.
+% Рамка вокруг неё жирная и почти чёрная: она и отделяет поле записи от полей
+% листа, и служит третьим ориентиром, если фотография обрезала угол.
+\newcommand{\notebookgrid}{%
+\begin{tikzpicture}[remember picture,overlay]
+ \coordinate (gtl) at ([shift={(12.5mm,-45mm)}]current page.north west);
+ \begin{scope}[shift={(gtl)}]
+   \clip (0,0) rectangle (185mm,-230mm);
+   \draw[step=5mm,black!40,line width=0.3pt] (0,0) grid (185mm,-230mm);
+ \end{scope}
+ % рамка рисуется вне clip: иначе её внешняя половина срезалась бы
+ \begin{scope}[shift={(gtl)}]
+   \draw[black!85,line width=0.9pt] (0,0) rectangle (185mm,-230mm);
+ \end{scope}
+\end{tikzpicture}}
+
+% ---- единый макет страницы (все страницы идентичны: лицо = оборот) ----------
+\newcommand{\formpage}{%
+\fiducials
+{\footnotesize First name:}~\hrulefill\quad{\footnotesize Surname:}~\hrulefill\quad{\footnotesize Grade:}~\rule{12mm}{0.4pt}\quad{\footnotesize Date:}~\rule{22mm}{0.4pt}\\[3mm]
+\markgrid
+\notebookgrid
+\vfill
+\hfill{\footnotesize page~\rule{16mm}{0.4pt}}%
+}
+
+\begin{document}
+\formpage
+\newpage
+\formpage
+\end{document}
