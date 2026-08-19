@@ -865,11 +865,28 @@ class PeriodSerializer(serializers.Serializer):
 
 
 class BulkDeleteSerializer(serializers.Serializer):
-    """Input for DELETE /api/lessons/bulk/ — it arrives as query parameters."""
+    """
+    Массовое удаление: приходит query-параметрами.
+
+    Сверх периода — два необязательных сужения, и вместе они и есть «ряд»:
+    день недели и номер урока. Сетку строят рядами («вторник, третий час,
+    до конца года»), и разбирают её так же: ошиблись рядом — убрали ряд, а
+    не весь период, в котором стоит ещё десяток чужих часов.
+
+    Второго эндпоинта ради этого не завели: путь массового удаления один, и
+    два разных счёта того, что уходит, разошлись бы молча.
+    """
 
     course = serializers.PrimaryKeyRelatedField(queryset=Course.objects.none())
     start = serializers.DateField()
     end = serializers.DateField()
+    # 0 — понедельник, как в `date.weekday()` и во всём остальном проекте
+    weekday = serializers.IntegerField(
+        min_value=0, max_value=6, required=False, allow_null=True
+    )
+    lesson_number = serializers.IntegerField(
+        min_value=1, max_value=MAX_LESSON_NUMBER, required=False, allow_null=True
+    )
     only_regular = serializers.BooleanField(default=False)
 
     def get_fields(self):

@@ -23,3 +23,14 @@ export function firstWeekday() {
 export function weekOrder() {
   return [0, 1, 2, 3, 4, 5, 6]
 }
+
+/**
+ * Номер дня недели у даты, в нашей нумерации: понедельник — 0.
+ *
+ * `Date.getDay()` считает от воскресенья, и это ровно та мелочь, на
+ * которой ряды разъезжаются на день: сервер думает `date.weekday()`, то
+ * есть от понедельника. Перевод живёт здесь, рядом с самим правилом.
+ */
+export function weekdayIndex(iso) {
+  return (new Date(`${iso}T12:00:00`).getDay() + 6) % 7
+}

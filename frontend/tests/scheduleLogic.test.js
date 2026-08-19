@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 
 import { buildDays, STATUS_STUDY } from '../src/calendarLogic.js'
-import { cycleDays, planCopy, planClear, sourceDateFor } from '../src/scheduleLogic.js'
+import { cycleDays, planCopy, sourceDateFor } from '../src/scheduleLogic.js'
 
 /**
  * Клиентская половина общих случаев копирования.
@@ -92,20 +92,3 @@ test('целевая дата смотрит в источник по остат
   assert.equal(sourceDateFor('2026-08-31', '2026-09-07', 7), '2026-09-07')
 })
 
-test('очистка периода считает то же, что удалит сервер', () => {
-  const slots = [
-    { date: '2026-09-07', course_id: 1, is_cancelled: false, is_extra: false },
-    { date: '2026-09-08', course_id: 1, is_cancelled: true, is_extra: false },
-    { date: '2026-09-09', course_id: 2, is_cancelled: false, is_extra: true },
-    { date: '2026-09-21', course_id: 1, is_cancelled: false, is_extra: false },
-  ]
-  const period = { slots, start: '2026-09-07', end: '2026-09-13' }
-
-  assert.equal(planClear({ ...period, onlyRegular: false }), 3)
-  // ручная разметка переживает массовую очистку — и на сервере, и здесь
-  assert.equal(planClear({ ...period, onlyRegular: true }), 1)
-  assert.equal(
-    planClear({ ...period, onlyRegular: false, classIds: new Set([1]) }),
-    2,
-  )
-})

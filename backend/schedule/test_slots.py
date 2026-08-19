@@ -13,6 +13,7 @@ from schools.testing import (
     YEAR_START,
     SchoolTestMixin,
     make_course,
+    make_node,
     make_slot,
     make_year,
 )
@@ -486,13 +487,15 @@ class BulkDeleteTests(SlotTestCase):
     def test_deletes_everything_in_the_period(self):
         response = self.bulk()
 
-        self.assertEqual(response.json(), {"deleted": 3})
+        self.assertEqual(response.json(), {"deleted": 3, "kept": 0})
         self.assertEqual(list(Slot.objects.all()), [self.outside])
 
     def test_only_regular_keeps_extra_and_cancelled(self):
         response = self.bulk(only_regular="true")
 
-        self.assertEqual(response.json(), {"deleted": 1})
+        # уцелевшие названы числом: ряд, из которого убрали половину,
+        # иначе выглядит как неудавшееся удаление
+        self.assertEqual(response.json(), {"deleted": 1, "kept": 2})
         self.assertFalse(Slot.objects.filter(pk=self.regular.pk).exists())
         self.assertTrue(Slot.objects.filter(pk=self.extra.pk).exists())
         self.assertTrue(Slot.objects.filter(pk=self.cancelled.pk).exists())
@@ -653,6 +656,67 @@ class CopyEveryOtherWeekTests(SchoolTestMixin, APITestCase):
         )
 
         self.assertEqual(response.status_code, 400)
+
+
+class RowDeleteTests(SlotTestCase):
+    """
+    Ряд убирается рядом же, а не периодом.
+
+    Раскатали час на год и промахнулись номером — раньше выбор был между
+    тридцатью четырьмя нажатиями и «очистить период», который сносит и
+    десяток чужих часов заодно. Сетку строят рядами, разбирать её надо так
+    же.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.client.force_authenticate(self.user)
+        # два ряда одного курса: вторничный третий час и он же в среду
+        for shift in (0, 7, 14, 21):
+            self.make_slot(MONDAY + days(shift + 1), 3)
+            self.make_slot(MONDAY + days(shift + 2), 3)
+        # и сосед по тому же дню недели, но другим номером
+        self.make_slot(MONDAY + days(1), 5)
+
+    def delete_row(self, **extra):
+        query = {
+            "course": self.course.pk,
+            "start": (MONDAY + days(8)).isoformat(),
+            "end": YEAR_END.isoformat(),
+            "weekday": 1,
+            "lesson_number": 3,
+            "only_regular": "true",
+            **extra,
+        }
+        return self.client.delete(f"{reverse('slot-bulk')}?{urlencode(query)}")
+
+    def test_only_the_same_weekday_and_number_go(self):
+        answer = self.delete_row().json()
+
+        self.assertEqual(answer["deleted"], 3)
+        left = sorted(
+            (slot.date, slot.lesson_number) for slot in Slot.objects.all()
+        )
+        # первый вторник (до границы), все среды и сосед по номеру
+        self.assertEqual(
+            left,
+            sorted(
+                [(MONDAY + days(1), 3), (MONDAY + days(1), 5)]
+                + [(MONDAY + days(shift + 2), 3) for shift in (0, 7, 14, 21)]
+            ),
+        )
+
+    def test_a_recorded_hour_survives_and_is_counted(self):
+        """Запись переживает массовую операцию — и говорит об этом числом."""
+        node = make_node(self.user, self.course, "Синус суммы")
+        recorded = Slot.objects.get(date=MONDAY + days(8), lesson_number=3)
+        recorded.lesson = node
+        recorded.save(update_fields=["lesson"])
+
+        answer = self.delete_row().json()
+
+        self.assertEqual((answer["deleted"], answer["kept"]), (2, 1))
+        self.assertTrue(Slot.objects.filter(pk=recorded.pk).exists())
 
 
 class RepeatTests(SlotTestCase):

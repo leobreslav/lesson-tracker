@@ -56,6 +56,51 @@ test('урок ставится рядом и в своём расписании
   expect(row).toEqual(['2026-09-07', '2026-09-21', '2026-10-05'])
 })
 
+test('ряд убирается рядом, а не периодом', async ({ page, signIn, api }) => {
+  // Кнопки «очистить период» больше нет: она сносила всё подряд, включая
+  // чужие часы, стоящие в тех же неделях. Сетку строят рядами, разбирать
+  // её надо так же — из той клетки, на которую смотрят.
+  await signIn(PEOPLE.ivanova)
+  await openWeek(page, MONDAY)
+
+  // ряд на четыре недели, чтобы было что убирать
+  await page.locator(`[data-add="${MONDAY}:7"]`).click()
+  const add = page.locator('dialog.modal')
+  await add.getByRole('combobox').first().selectOption({ label: 'Grade 6 Algebra' })
+  await add.getByRole('radio', { name: 'каждую неделю' }).check()
+  await add.getByLabel('до', { exact: true }).fill('2026-09-28')
+  await add.getByRole('button', { name: 'Добавить', exact: true }).click()
+  await expect(add).toBeHidden()
+
+  const teacher = await api(PEOPLE.ivanova)
+  const before = await teacher.get('/api/slots/?start=2026-09-01&end=2027-05-31')
+  expect(
+    before.body.filter(
+      (slot) => slot.lesson_number === 7 && slot.course_name === 'Grade 6 Algebra',
+    ),
+  ).toHaveLength(4)
+
+  // и убираем его из второй недели: этот час и все такие же дальше
+  await openWeek(page, '2026-09-14')
+  await page.locator('[data-lesson="2026-09-14:7"]').click()
+  const menu = page.locator('dialog.modal')
+  await menu.getByRole('button', { name: 'Удалить весь ряд…' }).click()
+  await menu.getByRole('button', { name: 'Удалить ряд', exact: true }).click()
+
+  await expect(menu).toBeHidden()
+  await expect(page.getByText(/Удалено уроков ряда/)).toBeVisible()
+
+  const after = await teacher.get('/api/slots/?start=2026-09-01&end=2027-05-31')
+  const left = after.body
+    .filter(
+      (slot) => slot.lesson_number === 7 && slot.course_name === 'Grade 6 Algebra',
+    )
+    .map((slot) => slot.date)
+
+  // первая неделя не тронута: убирали «этот и дальше», а не весь ряд
+  expect(left).toEqual([MONDAY])
+})
+
 test('урок добавляется, отменяется с причиной и возвращается', async ({
   page,
   signIn,
@@ -929,9 +974,14 @@ test('у записанного часа в меню нет ни отмены, �
   const menu = page.locator('dialog.modal')
   await expect(menu.getByRole('button', { name: 'Открыть урок' })).toBeVisible()
   await expect(menu.getByRole('button', { name: 'Отменить' })).toHaveCount(0)
-  await expect(menu.getByRole('button', { name: 'Удалить' })).toHaveCount(0)
+  await expect(
+    menu.getByRole('button', { name: 'Удалить', exact: true }),
+  ).toHaveCount(0)
   // перенос остаётся: он не стирает запись, а везёт её с собой
   await expect(menu.getByRole('button', { name: 'Перенести' })).toBeVisible()
+  // и удаление ряда остаётся: оно ничего не стирает у этого часа — он
+  // переживёт операцию, и в ответе будет сказано, что уцелел
+  await expect(menu.getByRole('button', { name: 'Удалить весь ряд…' })).toBeVisible()
 })
 
 test('шагов первого входа на расписании нет — они на корне', async ({

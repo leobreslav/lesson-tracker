@@ -1021,7 +1021,14 @@ class SlotViewSet(SchoolScopedViewSet):
 
     @action(detail=False, methods=["delete"])
     def bulk(self, request):
-        """Убрать уроки курса за период. Правит тот, кому курс дозволен."""
+        """
+        Убрать уроки курса за период. Правит тот, кому курс дозволен.
+
+        Сужается это до **ряда** — день недели и номер, — и тем же
+        эндпоинтом: ряд и есть период с двумя условиями. Сетку строят
+        рядами, разбирают её так же, и второго пути удаления заводить
+        незачем — два счёта уходящего разошлись бы молча.
+        """
         params = request.query_params
         form = BulkDeleteSerializer(
             data={
@@ -1029,6 +1036,8 @@ class SlotViewSet(SchoolScopedViewSet):
                 "start": params.get("start"),
                 "end": params.get("end"),
                 "only_regular": params.get("only_regular", False),
+                "weekday": params.get("weekday") or None,
+                "lesson_number": params.get("lesson_number") or None,
             },
             context=self.get_serializer_context(),
         )
@@ -1040,12 +1049,24 @@ class SlotViewSet(SchoolScopedViewSet):
             course=data["course"],
             date__range=(data["start"], data["end"]),
         )
+        if data.get("weekday") is not None:
+            # `date.weekday()` в Postgres — это `ISO` минус единица; фильтр
+            # берёт готовое поле, чтобы не тащить даты в питон
+            queryset = queryset.filter(date__iso_week_day=data["weekday"] + 1)
+        if data.get("lesson_number") is not None:
+            queryset = queryset.filter(lesson_number=data["lesson_number"])
+
+        kept = 0
         if data["only_regular"]:
             # всё, что человек отметил руками, переживает массовую чистку
+            total = queryset.count()
             queryset = sweepable(queryset)
+            kept = total - queryset.count()
 
         deleted, _ = queryset.delete()
-        return Response({"deleted": deleted})
+        # сколько уцелело — не мелочь: ряд, из которого убрали половину,
+        # иначе выглядит как неудавшееся удаление
+        return Response({"deleted": deleted, "kept": kept})
 
     @action(detail=False, methods=["get"])
     def agenda(self, request):

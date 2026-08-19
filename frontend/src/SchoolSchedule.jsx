@@ -1,13 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import ClearDialog from './ClearDialog'
 import { RepeatChoice } from './AgendaDialogs'
 import CopyDialog from './CopyDialog'
 import EmptyState from './EmptyState'
 import Modal from './Modal'
 import WeekGrid from './WeekGrid'
 import {
-  clearSlots,
+  deleteSlots,
   copySlots,
   createSlot,
   deleteSlot,
@@ -26,7 +25,8 @@ import {
   startOfWeek,
   today,
 } from './calendarLogic'
-import { dateRange, firstWeekday } from './dates'
+import { dateRange, firstWeekday, weekdayWithDate } from './dates'
+import { weekdayIndex } from './weekStart'
 import { MAX_LESSON_NUMBER } from './scheduleLogic'
 
 const NUMBERS = Array.from({ length: MAX_LESSON_NUMBER }, (_, index) => index + 1)
@@ -164,11 +164,30 @@ export default function SchoolSchedule({ onLoggedOut }) {
           }),
     )
 
-  const removeSlot = (slot) => {
-    if (!window.confirm(t('schoolSchedule.deleteConfirm', { name: slot.course_name })))
-      return
-    run(() => deleteSlot(slot.id))
-  }
+  const removeSlot = (slot) => run(() => deleteSlot(slot.id))
+
+  /**
+   * Удаление ряда: этот час и все такие же до конца года.
+   *
+   * «Очистить период» тут было, и администратору оно годилось меньше всех:
+   * он раскатывает сетку на год, а промахнувшись рядом, сносил бы период
+   * целиком — вместе с чужими часами, которые в нём стоят.
+   */
+  const removeRow = (date, slot) =>
+    run(
+      () =>
+        deleteSlots({
+          classId: slot.course,
+          start: date,
+          end: (years ?? []).find((year) => year.id === yearId)?.end_date ?? date,
+          weekday: weekdayIndex(date),
+          number: slot.lesson_number,
+          onlyRegular: true,
+        }),
+      (result) =>
+        t('agenda.deletedRow', { count: result.deleted }) +
+        (result.kept ? ' ' + t('agenda.keptRecorded', { count: result.kept }) : ''),
+    )
 
   if (years === null) {
     return (
@@ -252,14 +271,6 @@ export default function SchoolSchedule({ onLoggedOut }) {
         >
           {t('agenda.copyWeek')}
         </button>
-        <button
-          type="button"
-          className="secondary"
-          disabled={busy}
-          onClick={() => setDialog({ type: 'clear' })}
-        >
-          {t('agenda.clearPeriod')}
-        </button>
       </div>
 
       <div className="class-filter">
@@ -331,9 +342,26 @@ export default function SchoolSchedule({ onLoggedOut }) {
         lessonTitle={(slot) =>
           [slot.course_name, slot.teacher_name].filter(Boolean).join(' — ')
         }
-        onOpen={(date, slot) => removeSlot(slot)}
+        onOpen={(date, slot) => setDialog({ type: 'remove', date, slot })}
         onAdd={(date, number) => setDialog({ type: 'add', date, number })}
       />
+
+      {dialog?.type === 'remove' && (
+        <RemoveSchoolSlot
+          slot={dialog.slot}
+          date={dialog.date}
+          busy={busy}
+          onDelete={() => {
+            setDialog(null)
+            removeSlot(dialog.slot)
+          }}
+          onDeleteRow={() => {
+            setDialog(null)
+            removeRow(dialog.date, dialog.slot)
+          }}
+          onClose={() => setDialog(null)}
+        />
+      )}
 
       {dialog?.type === 'add' && (
         <AddSchoolSlot
@@ -383,32 +411,6 @@ export default function SchoolSchedule({ onLoggedOut }) {
         />
       )}
 
-      {dialog?.type === 'clear' && (
-        <ClearDialog
-          range={period}
-          slots={slots.map((slot) => ({ ...slot, course_id: slot.course }))}
-          classes={courses}
-          busy={busy}
-          onSubmit={({ classIds }) =>
-            run(
-              async () => {
-                let deleted = 0
-                for (const courseId of classIds) {
-                  const part = await clearSlots({
-                    classId: courseId,
-                    ...period,
-                    onlyRegular: true,
-                  })
-                  deleted += part.deleted
-                }
-                return { deleted }
-              },
-              (result) => t('agenda.cleared', { count: result.deleted }),
-            )
-          }
-          onClose={() => setDialog(null)}
-        />
-      )}
     </main>
   )
 }
@@ -429,6 +431,59 @@ function clampToYear(day, year) {
  * собственное поле учителя, эти два ответа могли разойтись: сетку рисовали
  * на одного, курс вёл другой.
  */
+/**
+ * Что сделать с уроком школьной сетки: убрать его или весь ряд.
+ *
+ * Нативным `confirm` это было, и выбора в нём не бывает — только «да» и
+ * «нет». А выбора тут два, и второй разрушительнее первого, поэтому он
+ * спрашивает ещё раз: удаление тридцати часов не должно случаться промахом
+ * мимо соседней кнопки.
+ */
+function RemoveSchoolSlot({ slot, date, busy, onDelete, onDeleteRow, onClose }) {
+  const { t } = useTranslation()
+  const [asking, setAsking] = useState(false)
+
+  return (
+    <Modal
+      onClose={onClose}
+      title={t('agenda.menu.title', {
+        className: slot.course_name,
+        number: slot.lesson_number,
+      })}
+    >
+      <p className="hint">{weekdayWithDate(date)}</p>
+
+      {asking ? (
+        <>
+          <p className="hint">{t('agenda.menu.rowHint')}</p>
+          <div className="actions">
+            <button type="button" disabled={busy} onClick={onDeleteRow}>
+              {t('agenda.menu.rowSubmit')}
+            </button>
+            <button type="button" className="secondary" onClick={() => setAsking(false)}>
+              {t('agenda.menu.cancelAbort')}
+            </button>
+          </div>
+        </>
+      ) : (
+        <div className="actions">
+          <button type="button" disabled={busy} onClick={onDelete}>
+            {t('common.delete')}
+          </button>
+          <button
+            type="button"
+            className="secondary"
+            disabled={busy}
+            onClick={() => setAsking(true)}
+          >
+            {t('agenda.menu.deleteRow')}
+          </button>
+        </div>
+      )}
+    </Modal>
+  )
+}
+
 function AddSchoolSlot({ date, number, courses, yearEnd, busy, onSubmit, onClose }) {
   const { t } = useTranslation()
   const [courseId, setCourseId] = useState(courses[0]?.id ?? null)

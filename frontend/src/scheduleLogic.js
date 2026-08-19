@@ -159,13 +159,3 @@ export function describeCopyResult(result, t) {
   )
 }
 
-/** How many lessons clearing the period would remove. */
-export function planClear({ slots, start, end, onlyRegular, classIds = null }) {
-  return slots.filter(
-    (slot) =>
-      slot.date >= start &&
-      slot.date <= end &&
-      (!classIds || classIds.has(slot.course_id)) &&
-      (!onlyRegular || isRegular(slot)),
-  ).length
-}

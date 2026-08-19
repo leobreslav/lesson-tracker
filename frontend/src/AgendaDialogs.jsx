@@ -191,6 +191,7 @@ export function LessonMenu({
   onCancel,
   onRestore,
   onDelete,
+  onDeleteRow,
   onMove,
   onClose,
 }) {
@@ -338,6 +339,31 @@ export function LessonMenu({
         </p>
       )}
 
+      {/*
+        Ряд убирается рядом же.
+
+        Раскатали час на год и промахнулись номером — выбор был между
+        тридцатью четырьмя нажатиями и «очистить период», который сносит и
+        десяток чужих часов заодно. Сетку строят рядами, разбирать её надо
+        так же, и спрашивается это там, где на ряд смотрят: в клетке.
+
+        Вопрос отдельным шагом, а не сразу: удаление тридцати часов — не то
+        действие, которое делают промахом мимо «Удалить».
+      */}
+      {mode === 'row' && (
+        <>
+          <p className="hint">{t('agenda.menu.rowHint')}</p>
+          <div className="actions">
+            <button type="button" disabled={busy} onClick={onDeleteRow}>
+              {t('agenda.menu.rowSubmit')}
+            </button>
+            <button type="button" className="secondary" onClick={() => setMode(null)}>
+              {t('agenda.menu.cancelAbort')}
+            </button>
+          </div>
+        </>
+      )}
+
       {mode === null && (
         <div className="actions">
           <button type="button" onClick={() => navigate(`/lesson/${lesson.id}`)}>
@@ -405,6 +431,16 @@ export function LessonMenu({
               {t('common.delete')}
             </button>
           )}
+          {/* час с записью ряд не ломает: массовая операция его пропустит
+              и скажет, сколько уцелело, — поэтому кнопка тут всегда */}
+          <button
+            type="button"
+            className="secondary"
+            disabled={busy}
+            onClick={() => setMode('row')}
+          >
+            {t('agenda.menu.deleteRow')}
+          </button>
         </div>
       )}
     </Modal>

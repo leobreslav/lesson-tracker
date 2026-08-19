@@ -265,12 +265,6 @@
     "noTeacher": "nobody teaches it",
     "noGrade": "no year group"
   },
-  "clear": {
-    "title": "Clear the period",
-    "keepSpecial": "leave extra and cancelled lessons alone",
-    "willDelete_one": "{{count}} lesson will be deleted.",
-    "willDelete_other": "{{count}} lessons will be deleted."
-  },
   "copy": {
     "title": "Copy the schedule",
     "source": "Source: {{range}} — {{days}}. Weekdays line up: Mondays land on Mondays.",
@@ -625,8 +619,8 @@
     "clearSelectionFirst": "Clear the day selection",
     "selected": "Selected {{days}}: {{range}}",
     "copyToPeriod": "Copy onto a period",
-    "clearPeriod": "Clear the period",
-    "cleared": "{{count}} lessons deleted.",
+    "deletedRow": "{{count}} lessons of the row are gone.",
+    "keptRecorded": "{{count}} kept — they carry a record.",
     "show": "Show:",
     "topics": "Lesson topics",
     "noTopic": "(no topic assigned)",
@@ -668,6 +662,9 @@
       "movedReason": "Moved to {{date}}",
       "moveSubmit": "Move",
       "restore": "Restore",
+      "deleteRow": "Delete the whole row…",
+      "rowHint": "This lesson and every one like it — same weekday, same number — up to the end of the year. Hours with a record stay: the answer says how many.",
+      "rowSubmit": "Delete the row",
       "cancel": "Cancel the lesson"
     }
   },
@@ -832,7 +829,6 @@
     "nobody": "not assigned",
     "leadIs": "Taught by {{name}}",
     "addTitle": "Lesson {{number}}",
-    "deleteConfirm": "Remove «{{name}}» from the timetable?",
     "copyTitle": "Copy the timetable week",
     "copyNote": "Cancellations and substitutions are neither copied nor wiped when a period is replaced: bulk edits leave hand-made markup alone.",
     "copied": "Created {{created}}, skipped {{skipped}}."

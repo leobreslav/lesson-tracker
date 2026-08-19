@@ -2,13 +2,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
 import { AddLessonDialog, LessonMenu } from './AgendaDialogs'
-import ClearDialog from './ClearDialog'
 import EmptyState from './EmptyState'
 import CopyDialog from './CopyDialog'
 import { remember, remembered } from './remember'
+import { weekdayIndex } from './weekStart'
 import WeekGrid from './WeekGrid'
 import {
-  clearSlots,
+  deleteSlots,
   copySlots,
   fetchLayoutAgenda,
   createSlot,
@@ -461,25 +461,33 @@ export default function Agenda({ onLoggedOut }) {
     }, (result) => describeCopyResult(result, t))
   }
 
-  /** Clearing: the endpoint takes one class, so one request per class. */
-  const handleClear = ({ only_regular, classIds }) => {
-    const range = selection
+  /**
+   * Удаление ряда: этот час и все такие же до конца года.
+   *
+   * «Очистить период» тут было, и выбор стоял неудобный: либо тридцать
+   * четыре нажатия по клеткам, либо снос всего периода вместе с чужими
+   * часами. Ряд — то, чем сетку строят, им же её и разбирают.
+   *
+   * Границу ставит год курса: дальше него урока не бывает.
+   */
+  const deleteRow = (date, lesson) => {
+    const year = yearById.get(
+      classes.find((item) => item.id === lesson.course_id)?.year,
+    )
 
     return runBulk(
-      async () => {
-        let deleted = 0
-        for (const classId of classIds) {
-          const part = await clearSlots({
-            classId,
-            start: range.start,
-            end: range.end,
-            onlyRegular: only_regular,
-          })
-          deleted += part.deleted
-        }
-        return { deleted }
-      },
-      (result) => t('agenda.cleared', { count: result.deleted }),
+      () =>
+        deleteSlots({
+          classId: lesson.course_id,
+          start: date,
+          end: year?.end_date ?? date,
+          weekday: weekdayIndex(date),
+          number: lesson.lesson_number,
+          onlyRegular: true,
+        }),
+      (result) =>
+        t('agenda.deletedRow', { count: result.deleted }) +
+        (result.kept ? ' ' + t('agenda.keptRecorded', { count: result.kept }) : ''),
     )
   }
 
@@ -656,14 +664,6 @@ export default function Agenda({ onLoggedOut }) {
           </button>
           <button
             type="button"
-            className="secondary"
-            disabled={busy}
-            onClick={() => setDialog({ type: 'clear' })}
-          >
-            {t('agenda.clearPeriod')}
-          </button>
-          <button
-            type="button"
             className="link"
             aria-label={t('common.cancel')}
             onClick={() => setSelection(null)}
@@ -781,17 +781,6 @@ export default function Agenda({ onLoggedOut }) {
         />
       )}
 
-      {dialog?.type === 'clear' && (
-        <ClearDialog
-          range={selection}
-          slots={copySource.slots}
-          classes={visibleClasses}
-          busy={busy}
-          onSubmit={handleClear}
-          onClose={() => setDialog(null)}
-        />
-      )}
-
       {dialog?.type === 'lesson' && (
         <LessonMenu
           lesson={dialog.lesson}
@@ -804,6 +793,7 @@ export default function Agenda({ onLoggedOut }) {
             patchLesson(dialog.date, dialog.lesson, { is_cancelled: false, reason: '' })
           }
           onDelete={() => removeLesson(dialog.date, dialog.lesson)}
+          onDeleteRow={() => deleteRow(dialog.date, dialog.lesson)}
           onMove={(fields) => moveLesson(dialog.date, dialog.lesson, fields)}
           onClose={() => setDialog(null)}
         />

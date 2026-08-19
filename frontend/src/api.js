@@ -798,14 +798,24 @@ export const repeatSlot = (fields) =>
 export const copySlots = (payload) =>
   request('/api/slots/copy/', { method: 'POST', body: payload })
 
-export const clearSlots = ({ classId, start, end, onlyRegular }) => {
-  // bulk delete takes its parameters in the query string; DELETE has no body
+/*
+ * Массовое удаление: период курса, при желании суженный до ряда.
+ *
+ * Ряд — это день недели и номер: «все вторники, третий час, до конца
+ * года». Отдельного эндпоинта под него нет намеренно — путь удаления один,
+ * и два счёта того, что уходит, разошлись бы молча.
+ */
+export const deleteSlots = ({ classId, start, end, onlyRegular, weekday, number }) => {
+  // параметры уезжают строкой запроса: у DELETE тела нет
   const query = new URLSearchParams({
     course: classId,
     start,
     end,
     only_regular: onlyRegular,
   })
+  if (weekday !== undefined) query.set('weekday', weekday)
+  if (number !== undefined) query.set('lesson_number', number)
+
   return request(`/api/slots/bulk/?${query}`, { method: 'DELETE' })
 }
 
