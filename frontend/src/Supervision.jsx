@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import CourseRow from './CourseRow'
 import { DiffBody } from './PlanDiff'
 import Switch from './Switch'
+import { shortDate } from './dates'
 import { approveReview, fetchReview, fetchReviewDiff, returnReview } from './api'
 
 /**
@@ -58,6 +59,47 @@ export default function Supervision({ row, busy, onError, onDone }) {
     fetchReviewDiff(row.id, chosen).then(setDiff).catch(onError)
   }, [row.id, chosen])
 
+  /**
+   * Что сказать про утверждение — ровно то же, что видит учитель.
+   *
+   * Ветки и фразы взяты у страницы плана (`plan.baseline.*`): один факт
+   * должен читаться одинаково на обоих экранах, иначе разговор про план
+   * начинается со сверки формулировок.
+   */
+  const approved = row.baseline
+  const waiting = row.review
+  const state = (() => {
+    if (waiting?.status === 'pending') {
+      return {
+        kind: 'pending',
+        text: t('plan.baseline.pending', { name: waiting.reviewer?.name ?? '' }),
+      }
+    }
+    if (waiting?.status === 'returned') {
+      return {
+        kind: 'returned',
+        text: `${t('plan.baseline.returned', {
+          name: waiting.reviewer?.name ?? '',
+        })} ${waiting.comment}`,
+      }
+    }
+    if (approved) {
+      return {
+        kind: 'approved',
+        text: t(
+          approved.self_approved
+            ? 'plan.baseline.approvedSelf'
+            : 'plan.baseline.approved',
+          {
+            date: shortDate(approved.approved_at.slice(0, 10)),
+            name: approved.reviewer?.name ?? '',
+          },
+        ),
+      }
+    }
+    return null
+  })()
+
   const decide = async (action) => {
     try {
       await action()
@@ -87,7 +129,25 @@ export default function Supervision({ row, busy, onError, onDone }) {
         />
       </ul>
 
-      {!request && <p className="hint">{t('reviews.nothingSent')}</p>}
+      {/*
+        Состояние утверждения — теми же словами, что у автора плана.
+
+        Плашкой оно было («эталон не утверждён», «+3 добавлено в план»), и
+        это был второй способ сказать то, что учитель у себя читает строкой
+        в шапке, а разбирает — в сравнении. Два вида одного факта
+        расходятся молча: плашка считала переименование ничем, сравнение
+        считает его правкой, и спорить об этом методист с учителем стали бы
+        глядя каждый в свой экран. Поэтому строка тут одна и ключи у неё те
+        же, что на странице плана, а «чем разошлось» отвечает тумблер
+        «Сравнение» ниже — общий для обоих.
+
+        Порядок веток тот же: запрос в работе важнее прошлой подписи.
+      */}
+      {state && <p className={`hint approval ${state.kind}`}>{state.text}</p>}
+
+      {!row.review && !row.baseline && (
+        <p className="hint">{t('reviews.nothingSent')}</p>
+      )}
 
       {plan && (
         <section className="panel">
@@ -119,10 +179,6 @@ export default function Supervision({ row, busy, onError, onDone }) {
                   ]}
                 />
               )}
-              <span className="hint">
-                {t('reviews.reserve')}: {plan.reserve > 0 ? '+' : ''}
-                {plan.reserve}
-              </span>
             </span>
           </div>
 

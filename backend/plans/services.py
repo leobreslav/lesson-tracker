@@ -533,49 +533,6 @@ def reserve_since(
     }
 
 
-def baseline_diff(rows: Iterable, lessons: Sequence[Lesson]) -> dict:
-    """
-    Насколько план разошёлся с зафиксированным эталоном.
-
-    Две категории, а не сальдо: **добавлено** и **удалено**. Обе плохие, но
-    по-разному — рост съедает резерв, удаление означает выкинутый материал,
-    и «плюс три минус три» тут не ноль, а шесть событий.
-
-    Считается по id узлов, а не по названиям: переименованный урок остаётся
-    тем же уроком, а два «Контрольная работа» в разных темах — разными.
-    Удалённый и заново заведённый урок честно считается и удалённым, и
-    добавленным: это и есть две правки.
-
-    По темам показывается только рост: дефицита по теме не бывает — тема,
-    из которой убрали урок, просто стала короче, а не «должна» его.
-    """
-    known = {row.node_id for row in rows if row.node_id}
-    alive = {lesson.node.pk for lesson in lessons}
-
-    added = [lesson for lesson in lessons if lesson.node.pk not in known]
-    removed = sum(
-        1
-        for row in rows
-        if not row.is_section and row.node_id and row.node_id not in alive
-    )
-
-    grown: dict[str | None, int] = {}
-    for lesson in added:
-        title = lesson.section.title if lesson.section else None
-        grown[title] = grown.get(title, 0) + 1
-
-    return {
-        "added": len(added),
-        "removed": removed,
-        "themes": [
-            {"title": title, "added": count}
-            for title, count in sorted(
-                grown.items(), key=lambda item: (-item[1], item[0] or "")
-            )
-        ],
-    }
-
-
 def lesson_position(entry: LayoutEntry) -> dict:
     """Урок плана вместе с датой, на которую он попал."""
     return {

@@ -69,7 +69,12 @@ test('учитель отправляет план, методист утвер�
   await expect(page.getByRole('button', { name: 'Утвердить' })).toHaveCount(0)
   await expect(page.getByRole('heading', { name: 'План курса' })).toBeVisible()
 
-  // и учитель видит, что план утверждён
+  // состояние утверждения методист читает теми же словами, что и автор:
+  // плашкой «эталон не утверждён» это было сказано иначе, и два вида
+  // одного факта разошлись бы молча
+  await expect(page.locator('.hint.approval')).toContainText('Утверждён')
+
+  // и учитель видит ровно ту же строку
   await signIn(PEOPLE.ivanova)
   await openPlan(page, 'Grade 6 Algebra')
   await expect(page.locator('.hint.approval')).toContainText('Утверждён')

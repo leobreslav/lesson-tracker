@@ -443,7 +443,22 @@ class SelfApprovalTests(ApprovalTestCase):
         self.assertTrue(state["approved"]["self_approved"])
 
 
-class MetricsTests(ApprovalTestCase):
+class BaselineStateTests(ApprovalTestCase):
+    """
+    Утверждённый эталон в строке надзора — состояние, а не разбор.
+
+    Разбор тут был: «+3 добавлено в план, 1 удалено, к эталону от 15 авг.»
+    отдельной плашкой. Считал его свой расчёт (`baseline_diff`), и это был
+    **второй** ответ на вопрос, на который уже отвечает сравнение
+    (`plans/diff.py`): у того сопоставление точное и построчное, а
+    переименование он честно зовёт правкой — старый счёт видел в нём ноль.
+    Два ответа на один вопрос расходятся молча, поэтому остался тот, что
+    подробнее и общий с автором плана.
+
+    В строке от эталона осталось то, что и правда состояние: когда
+    подписали, кто подписал и как с тех пор изменился резерв.
+    """
+
     def setUp(self):
         super().setUp()
         self.make_methodist(self.user)
@@ -452,54 +467,30 @@ class MetricsTests(ApprovalTestCase):
         self.submit()
         self.approve()
 
-    def test_without_an_approved_baseline_there_are_no_metrics(self):
+    def test_without_an_approval_there_is_no_baseline_in_the_row(self):
         self.submit()
 
         self.assertIsNone(self.progress()["baseline"])
         self.assertEqual(self.progress()["review"]["status"], "pending")
 
-    def test_a_freshly_approved_plan_differs_from_itself_in_nothing(self):
+    def test_the_row_says_when_it_was_approved_and_by_whom(self):
         self.approved_plan()
 
         baseline = self.progress()["baseline"]
 
-        self.assertEqual((baseline["added"], baseline["removed"]), (0, 0))
-        self.assertEqual(baseline["themes"], [])
+        self.assertIsNotNone(baseline["approved_at"])
+        self.assertEqual(baseline["reviewer"]["email"], self.user.email)
+        self.assertTrue(baseline["self_approved"])
 
-    def test_added_and_removed_are_two_numbers_not_one(self):
-        """Плюс три минус три — это не ноль, а шесть правок."""
+    def test_the_row_no_longer_counts_the_difference(self):
+        """Чем план разошёлся, отвечает сравнение — и только оно."""
         self.approved_plan()
-        for index in range(3):
-            self.add(f"Новый {index}", parent=self.trig, position=10 + index)
-        PlanNode.objects.filter(
-            title__in=("Понятие вектора", "Сложение векторов")
-        ).delete()
+        self.add("Новый урок", parent=self.trig, position=10)
 
         baseline = self.progress()["baseline"]
 
-        self.assertEqual(baseline["added"], 3)
-        self.assertEqual(baseline["removed"], 2)
-
-    def test_growth_is_counted_per_theme(self):
-        self.approved_plan()
-        self.add("Ещё один", parent=self.trig, position=10)
-        self.add("И ещё", parent=self.trig, position=11)
-        self.add("Сам по себе", position=12)
-
-        themes = self.progress()["baseline"]["themes"]
-
-        self.assertEqual(themes[0], {"title": "Тригонометрия", "added": 2})
-        self.assertEqual(themes[1], {"title": None, "added": 1})
-
-    def test_renaming_is_not_a_change_of_size(self):
-        self.approved_plan()
-        lesson = PlanNode.objects.get(course=self.course, title="Синус суммы")
-        lesson.title = "Синус суммы двух углов"
-        lesson.save(update_fields=["title"])
-
-        baseline = self.progress()["baseline"]
-
-        self.assertEqual((baseline["added"], baseline["removed"]), (0, 0))
+        for gone in ("added", "removed", "themes"):
+            self.assertNotIn(gone, baseline)
 
     def test_the_approved_baseline_survives_a_new_submission(self):
         """
@@ -509,19 +500,14 @@ class MetricsTests(ApprovalTestCase):
         она нужнее всего.
         """
         self.approved_plan()
+        approved_at = self.progress()["baseline"]["approved_at"]
         self.add("Новый урок", parent=self.trig, position=10)
         self.submit()
 
         row = self.progress()
 
-        self.assertEqual(row["baseline"]["added"], 1)
+        self.assertEqual(row["baseline"]["approved_at"], approved_at)
         self.assertEqual(row["review"]["status"], "pending")
-
-    def test_the_snapshot_outlives_the_lessons_it_names(self):
-        self.approved_plan()
-        PlanNode.objects.filter(course=self.course, title="Аксиомы").delete()
-
-        self.assertEqual(self.progress()["baseline"]["removed"], 1)
 
 
 class DiffVersionTests(ApprovalTestCase):

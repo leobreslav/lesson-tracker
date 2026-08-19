@@ -108,6 +108,7 @@ def approved_baselines(course_ids) -> dict:
         for baseline in PlanBaseline.objects.filter(
             course_id__in=course_ids, status=PlanBaseline.Status.APPROVED
         )
+        .select_related("reviewer")
         .order_by("approved_at", "id")
         .prefetch_related("rows")
     }

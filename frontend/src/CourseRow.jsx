@@ -1,6 +1,6 @@
 import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
-import { longDate, shortDate, shortWeekday } from './dates'
+import { shortDate, shortWeekday } from './dates'
 
 /**
  * Строка состояния плана: свёрнутая шапка и подробности под ней.
@@ -143,39 +143,6 @@ export default function CourseRow({
             </p>
           )}
         </section>
-
-        {/* два числа, а не сальдо: рост съедает резерв, удаление означает
-            выкинутый материал, и «плюс три минус три» тут не ноль */}
-        <section className="panel card-stat" data-card="growth">
-          {course.baseline ? (
-            <>
-              <p className="pair">
-                <b>{signed(course.baseline.added)}</b> {t('status.addedToPlan')}
-              </p>
-              <p className="pair">
-                <b>{course.baseline.removed}</b> {t('status.droppedFromPlan')}
-              </p>
-              <p className="hint">
-                {t('status.grown', {
-                  date: shortDate(course.baseline.approved_at.slice(0, 10)),
-                })}
-              </p>
-            </>
-          ) : (
-            <>
-              <p className="hint">{t('status.noBaseline')}</p>
-              {own && (
-                <button
-                  type="button"
-                  className="link"
-                  onClick={() => navigate('/plan')}
-                >
-                  {t('status.sendForApproval')}
-                </button>
-              )}
-            </>
-          )}
-        </section>
       </div>
 
       {/* Долги по записи — хозяйство учителя, и только его: у методиста
@@ -211,20 +178,6 @@ export default function CourseRow({
             year: shortDate(course.year_end),
           })}
         </p>
-      )}
-
-      {course.baseline?.themes.length > 0 && (
-        <section className="panel">
-          <h3>{t('status.grownThemes')}</h3>
-          <ul className="progress-themes">
-            {course.baseline.themes.map((theme) => (
-              <li key={theme.title ?? 'loose'}>
-                <span>{theme.title ?? t('status.looseTheme')}</span>
-                <b>{signed(theme.added)}</b>
-              </li>
-        ))}
-          </ul>
-        </section>
       )}
 
       {course.next.length > 0 && (

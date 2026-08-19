@@ -516,10 +516,6 @@
     "fillPlan": "Fill the plan",
     "reserveSpare": "spare lessons in the year",
     "reserveShort": "lessons over the year",
-    "grown": "against the baseline of {{date}} — a stretched topic shows up here too",
-    "noBaseline": "no approved baseline",
-    "grownThemes": "Which themes grew",
-    "looseTheme": "outside the themes",
     "pastYear": "the plan ends on {{date}}, past the end of the year ({{year}})",
     "next": "Coming up",
     "status": {
@@ -532,9 +528,6 @@
       "noPlan": "no plan yet",
       "finished": "the plan is finished: {{count}} lessons"
     },
-    "addedToPlan": "added to the plan",
-    "droppedFromPlan": "dropped from the plan",
-    "sendForApproval": "send for approval",
     "unclosed_one": "{{count}} lesson has nothing recorded.",
     "unclosed_other": "{{count}} lessons have nothing recorded.",
     "closeDebts": "close them",
@@ -898,7 +891,6 @@
     "resourceLabel": "A link or a note"
   },
   "reviews": {
-    "reserve": "reserve",
     "approve": "Approve",
     "return": "Return with a comment",
     "sendBack": "Return",

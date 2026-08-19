@@ -118,11 +118,18 @@ def rows_for(courses, today, ahead: int = 2) -> list[dict]:
                 "teacher": person(teacher) if teacher else None,
                 # метрики считаются только от **утверждённого** эталона:
                 # пока план не приняли, сравнивать не с чем
+                # Утверждённый эталон — состояние, а не разбор: когда
+                # подписали и кто. Чем план с тех пор разошёлся, отвечает
+                # сравнение (`plans/diff.py`) — точное, построчное и общее
+                # с автором плана. Второй ответ на тот же вопрос жил тут
+                # («+3 добавлено, 1 удалено») и разошёлся бы с первым молча:
+                # тот считает переименование правкой, этот — ничем
                 "baseline": (
                     {
                         "created_at": baseline.created_at,
                         "approved_at": baseline.approved_at,
                         "self_approved": baseline.self_approved,
+                        "reviewer": person(baseline.reviewer),
                         # почему резерв стал таким: часы против программы
                         "reserve": services.reserve_since(
                             baseline.slots_total,
@@ -134,7 +141,6 @@ def rows_for(courses, today, ahead: int = 2) -> list[dict]:
                             len(slots_by_course[key]),
                             len(lessons),
                         ),
-                        **services.baseline_diff(baseline.rows.all(), lessons),
                     }
                     if baseline
                     else None
