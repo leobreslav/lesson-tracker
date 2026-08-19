@@ -785,6 +785,16 @@ export const fetchUnclosed = () => request('/api/slots/unclosed/')
 export const closeSlots = (closed) =>
   request('/api/slots/close/', { method: 'POST', body: { closed } })
 
+/*
+ * Ряд уроков: один час, повторённый через неделю или через две.
+ *
+ * Считает его сервер целиком — сколько дат попадёт под каникулы и сколько
+ * мест занято, знает только он. Ответ той же формы, что у копирования
+ * периода: создано, пропущено, чем помешали.
+ */
+export const repeatSlot = (fields) =>
+  request('/api/slots/repeat/', { method: 'POST', body: fields })
+
 export const copySlots = (payload) =>
   request('/api/slots/copy/', { method: 'POST', body: payload })
 

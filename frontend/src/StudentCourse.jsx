@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import MathText from './MathText'
 import { Link, useParams } from 'react-router-dom'
 import { fetchStudentCourse, fetchStudentWorks } from './api'
 import { dateTime, weekdayWithDate } from './dates'
@@ -93,11 +94,18 @@ export default function StudentCourse({ onLoggedOut }) {
                 data-lesson={row.is_section ? undefined : row.number}
               >
                 {row.is_section ? (
-                  <span className="theme">{row.title}</span>
+                  <span className="theme">
+                    <MathText text={row.title} />
+                  </span>
                 ) : (
                   <>
                     <span className="number">{row.number}</span>
-                    <span className="title">{row.title}</span>
+                    {/* та же отрисовка, что у учителя и методиста: доллары
+                        вместо формулы — это план, показанный хуже, чем он
+                        написан */}
+                    <span className="title">
+                      <MathText text={row.title} />
+                    </span>
                     {/* урока без даты не бывает «неправильного»: плану
                         просто не хватило дней, и это разговор учителя с
                         методистом, а не с учеником */}

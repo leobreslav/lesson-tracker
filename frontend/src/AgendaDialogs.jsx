@@ -5,12 +5,74 @@ import Modal from './Modal'
 import { fetchLayoutAgenda } from './api'
 import { weekdayWithDate } from './dates'
 
+/**
+ * Повтор нового урока: не повторять, каждую неделю или через неделю.
+ *
+ * Граница спрашивается, а не подразумевается — конец года подставлен, но
+ * четверть, полугодие и «до Нового года» встречаются не реже. Считает ряд
+ * сервер: сколько дат попадёт под каникулы и сколько мест занято, знает
+ * только он, а обещать число, которое потом разойдётся, хуже, чем не
+ * обещать ничего.
+ */
+export function RepeatChoice({ step, until, date, yearEnd, busy, onStep, onUntil }) {
+  const { t } = useTranslation()
+
+  return (
+    <>
+      <div className="row">
+        <span className="hint">{t('agenda.add.repeat')}</span>
+        {[
+          [0, 'agenda.add.repeatNo'],
+          [1, 'agenda.add.repeatWeekly'],
+          [2, 'agenda.add.repeatBiweekly'],
+        ].map(([value, key]) => (
+          <label className="checkbox" key={value}>
+            <input
+              type="radio"
+              name="repeat"
+              checked={step === value}
+              disabled={busy}
+              onChange={() => onStep(value)}
+            />
+            {t(key)}
+          </label>
+        ))}
+      </div>
+
+      {step > 0 && (
+        <label className="field-with-hint">
+          <span>{t('agenda.add.repeatUntil')}</span>
+          <input
+            type="date"
+            value={until}
+            min={date}
+            max={yearEnd}
+            disabled={busy}
+            onChange={(event) => onUntil(event.target.value)}
+          />
+        </label>
+      )}
+    </>
+  )
+}
+
 /** A new lesson in a free window. */
-export function AddLessonDialog({ date, number, classes, busy, onSubmit, onClose }) {
+export function AddLessonDialog({
+  date,
+  number,
+  classes,
+  yearEnd,
+  busy,
+  onSubmit,
+  onClose,
+}) {
   const { t } = useTranslation()
   const [classId, setClassId] = useState(classes[0]?.id ?? null)
   const [isExtra, setIsExtra] = useState(false)
   const [reason, setReason] = useState('')
+  // 0 — не повторять, 1 — каждую неделю, 2 — через неделю
+  const [step, setStep] = useState(0)
+  const [until, setUntil] = useState(yearEnd ?? '')
 
   const handleSubmit = (event) => {
     event.preventDefault()
@@ -20,6 +82,9 @@ export function AddLessonDialog({ date, number, classes, busy, onSubmit, onClose
       course: classId,
       is_extra: isExtra,
       reason: isExtra ? reason.trim() : '',
+      // повтор — свойство ряда, а не клетки: у дополнительного урока его
+      // не бывает по смыслу, он разовый
+      ...(step && !isExtra ? { step, until } : {}),
     })
   }
 
@@ -67,6 +132,25 @@ export function AddLessonDialog({ date, number, classes, busy, onSubmit, onClose
                 onChange={(event) => setReason(event.target.value)}
               />
             )}
+
+            {/*
+              Повтор прямо здесь, а не «нарисуй клетку, потом копируй
+              неделю»: сетку строят рядами — «вторник, третий час, до конца
+              года», — и ради одного часа раскатывать всю неделю значило
+              задевать всё, что в ней уже стоит.
+
+              Дополнительному уроку повтора не предлагаем: он разовый по
+              определению — замена, отработка, кружок.
+            */}
+            {!isExtra && <RepeatChoice
+              step={step}
+              until={until}
+              date={date}
+              yearEnd={yearEnd}
+              busy={busy}
+              onStep={setStep}
+              onUntil={setUntil}
+            />}
           </>
         )}
 

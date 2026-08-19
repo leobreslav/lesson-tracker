@@ -17,6 +17,7 @@ import {
   fetchCourses,
   fetchSchoolYears,
   moveSlot,
+  repeatSlot,
   updateSlot,
 } from './api'
 import {
@@ -288,9 +289,26 @@ export default function Agenda({ onLoggedOut }) {
     [data, load, handleError],
   )
 
-  const handleAdd = ({ course, is_extra, reason }) => {
+  const handleAdd = ({ course, is_extra, reason, step, until }) => {
     const { date, number } = dialog
     setDialog(null)
+
+    /*
+     * Ряд уроков создаёт сервер, и оптимистично его не показать: сколько
+     * дат попадёт под каникулы и сколько мест занято, знает только он.
+     * Поэтому тут обычный запрос с перечитыванием, а мгновенная отрисовка
+     * остаётся у одиночной клетки — той, по которой щёлкнули.
+     */
+    if (step) {
+      runBulk(
+        () => repeatSlot({ course, date, lesson_number: number, step, until }),
+        // отчёт тот же, что у копирования периода: сколько создано, сколько
+        // пропущено и что именно помешало
+        (result) => describeCopyResult(result, t),
+      )
+      return
+    }
+
     tempId.current -= 1
 
     const optimistic = {
@@ -734,6 +752,12 @@ export default function Agenda({ onLoggedOut }) {
           date={dialog.date}
           number={dialog.number}
           classes={freeClassesFor(dialog.date, dialog.number)}
+          /* докуда предлагать повтор: дальше года урока не бывает */
+          yearEnd={
+            yearById.get(
+              freeClassesFor(dialog.date, dialog.number)[0]?.year,
+            )?.end_date
+          }
           busy={busy}
           onSubmit={handleAdd}
           onClose={() => setDialog(null)}

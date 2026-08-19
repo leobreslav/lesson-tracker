@@ -51,6 +51,7 @@ from .serializers import (
     CourseStudentSerializer,
     SubjectSerializer,
     CopySerializer,
+    RepeatSerializer,
     CourseAssignmentSerializer,
     CourseSerializer,
     GradeLevelSerializer,
@@ -796,6 +797,90 @@ class SlotViewSet(SchoolScopedViewSet):
             "deleted": deleted,
             "conflicts": result["conflicts"],
         }
+
+    @action(detail=False, methods=["post"])
+    def repeat(self, request):
+        """
+        Урок и его повторы — одним движением и одной транзакцией.
+
+        Сетку строят рядами: «вторник, третий час, до конца года» — одно
+        решение, а не тридцать четыре. Раньше на это был только один путь —
+        нарисовать неделю и скопировать её на период, — и ради одного
+        добавленного часа приходилось раскатывать всю неделю, натыкаясь на
+        уже занятые места.
+
+        Занятое место пропускается, а не отменяет всю операцию: ряд длиной
+        в год почти всегда где-нибудь во что-нибудь упрётся, и «ничего не
+        создано, потому что 14 октября занято» — худший из возможных
+        ответов. Считается это тем же `place_copies`, что и копирование
+        периода: два разных счёта одного и того же разошлись бы молча.
+        """
+        form = RepeatSerializer(data=request.data, context=self.get_serializer_context())
+        form.is_valid(raise_exception=True)
+        data = form.validated_data
+
+        course = data["course"]
+        self.require_write(course)
+        year = course.year
+        number = data["lesson_number"]
+        # за границы года ряд не выходит: там урока не бывает вовсе
+        until = min(data["until"], year.end_date)
+
+        study = {day.date for day in year.build_days() if day.is_study}
+        dates, skipped = services.repeat_dates(
+            data["date"], until, data["step"], study
+        )
+
+        with transaction.atomic():
+            occupied = set(
+                Slot.objects.filter(course=course, date__in=dates).values_list(
+                    "date", "lesson_number"
+                )
+            )
+            # чужой час того же учителя: двух уроков разом не бывает.
+            # Учитель — ведущий этого курса, а не тот, кто нажал: сетку
+            # раскатывает и администратор
+            lead = (
+                CourseAssignment.objects.filter(course=course)
+                .values_list("teacher_id", flat=True)
+                .first()
+            )
+            busy = {}
+            if lead is not None:
+                busy = {
+                    (slot.date, slot.lesson_number): slot.course.name
+                    for slot in Slot.objects.filter(
+                        course__assignments__teacher_id=lead,
+                        year=year,
+                        date__in=dates,
+                        is_cancelled=False,
+                    )
+                    .exclude(course=course)
+                    .select_related("course")
+                }
+
+            result = services.place_copies(
+                plan=[(day, number) for day in dates],
+                skipped=skipped,
+                occupied=occupied,
+                busy=busy,
+                make=lambda day, at: Slot(
+                    year=year, course=course, date=day, lesson_number=at
+                ),
+            )
+            Slot.objects.bulk_create(result["created"])
+
+            # ряд, попавший в закрытое прошлое, дырявит очередь записей
+            # ровно так же, как копирование
+            self.guard_order(course)
+
+        return Response(
+            {
+                "created": len(result["created"]),
+                "skipped": result["skipped"],
+                "conflicts": result["conflicts"],
+            }
+        )
 
     @action(detail=False, methods=["post"])
     def copy(self, request):

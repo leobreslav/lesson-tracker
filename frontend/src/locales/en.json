@@ -256,7 +256,14 @@
   },
   "classPicker": {
     "label": "Classes:",
-    "all": "select all"
+    "all": "select all",
+    "none": "clear",
+    "chosen": "{{count}} of {{total}} chosen",
+    "groupBy": "Group by",
+    "byTeacher": "by teacher",
+    "byGrade": "by year group",
+    "noTeacher": "nobody teaches it",
+    "noGrade": "no year group"
   },
   "clear": {
     "title": "Clear the period",
@@ -637,6 +644,11 @@
       "nobody": "Nobody can take this lesson: every suitable class already has that number taken, the date is outside the school year, or no classes exist yet.",
       "classLabel": "Class",
       "extra": "an extra lesson",
+      "repeat": "Repeat:",
+      "repeatNo": "no",
+      "repeatWeekly": "every week",
+      "repeatBiweekly": "every other week",
+      "repeatUntil": "until",
       "reasonPlaceholder": "Why: a substitution, a club…",
       "reasonLabel": "Explanation"
     },

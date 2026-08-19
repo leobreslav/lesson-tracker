@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import ClearDialog from './ClearDialog'
+import { RepeatChoice } from './AgendaDialogs'
 import CopyDialog from './CopyDialog'
 import EmptyState from './EmptyState'
 import Modal from './Modal'
@@ -16,6 +17,7 @@ import {
   fetchMembers,
   fetchSchoolYears,
   fetchYearDays,
+  repeatSlot,
 } from './api'
 import {
   addDays,
@@ -142,14 +144,24 @@ export default function SchoolSchedule({ onLoggedOut }) {
     }
   }
 
-  const addSlot = (fields) =>
+  const addSlot = ({ step, until, ...fields }) =>
     run(() =>
-      createSlot({
-        year: yearId,
-        date: dialog.date,
-        lesson_number: dialog.number,
-        ...fields,
-      }),
+      /* ряд уроков считает сервер: сколько дат съедят каникулы и сколько
+         мест занято, знает только он */
+      step
+        ? repeatSlot({
+            date: dialog.date,
+            lesson_number: dialog.number,
+            step,
+            until,
+            ...fields,
+          })
+        : createSlot({
+            year: yearId,
+            date: dialog.date,
+            lesson_number: dialog.number,
+            ...fields,
+          }),
     )
 
   const removeSlot = (slot) => {
@@ -328,6 +340,7 @@ export default function SchoolSchedule({ onLoggedOut }) {
           date={dialog.date}
           number={dialog.number}
           courses={courses}
+          yearEnd={(years ?? []).find((year) => year.id === yearId)?.end_date}
           busy={busy}
           onSubmit={addSlot}
           onClose={() => setDialog(null)}
@@ -416,14 +429,17 @@ function clampToYear(day, year) {
  * собственное поле учителя, эти два ответа могли разойтись: сетку рисовали
  * на одного, курс вёл другой.
  */
-function AddSchoolSlot({ date, number, courses, busy, onSubmit, onClose }) {
+function AddSchoolSlot({ date, number, courses, yearEnd, busy, onSubmit, onClose }) {
   const { t } = useTranslation()
   const [courseId, setCourseId] = useState(courses[0]?.id ?? null)
+  // 0 — не повторять, 1 — каждую неделю, 2 — через неделю
+  const [step, setStep] = useState(0)
+  const [until, setUntil] = useState(yearEnd ?? '')
 
   const submit = (event) => {
     event.preventDefault()
     if (!courseId) return
-    onSubmit({ course: courseId })
+    onSubmit({ course: courseId, ...(step ? { step, until } : {}) })
   }
 
   const chosen = courses.find((course) => course.id === courseId)
@@ -455,6 +471,19 @@ function AddSchoolSlot({ date, number, courses, busy, onSubmit, onClose }) {
             name: leads || t('schoolSchedule.nobody'),
           })}
         </p>
+
+        {/* сетку школы раскатывают рядами, и администратору это нужнее
+            всех: ставить час на каждую неделю года по клетке — тридцать
+            четыре нажатия вместо одного */}
+        <RepeatChoice
+          step={step}
+          until={until}
+          date={date}
+          yearEnd={yearEnd}
+          busy={busy}
+          onStep={setStep}
+          onUntil={setUntil}
+        />
 
         <div className="actions">
           <button type="submit" disabled={busy || !courseId}>

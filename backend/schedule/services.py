@@ -11,7 +11,7 @@
 from __future__ import annotations
 
 from datetime import date, timedelta
-from typing import Iterable, Mapping, Sequence
+from typing import Collection, Iterable, Mapping, Sequence
 
 # форматирование дат общее для приложений и живёт в календаре
 from calendars.services import format_day, iter_dates
@@ -181,6 +181,34 @@ def cycle_days(start_date: date, end_date: date, step: int = 1) -> int:
     span = (end_date - start_date).days + 1
     weeks = -(-span // 7)  # деление с округлением вверх
     return weeks * 7 * step
+
+
+def repeat_dates(
+    start: date, until: date, step: int, study_dates: Collection[date]
+) -> tuple[list[date], int]:
+    """
+    Один час, повторённый через `step` недель: даты для сетки.
+
+    Сдвиг всегда кратен семи, поэтому день недели не меняется — то же
+    правило, на котором держится копирование периода. «Через неделю» — это
+    тот же шаг, только вдвое длиннее.
+
+    **Первая дата берётся как есть, остальные — только учебные.** Разница
+    не в аккуратности: по первой клетке человек щёлкнул сам, и урок в
+    неучебный день бывает законным (отработка, суббота); а повторы он
+    задал правилом, и правило не знает, что 3 января каникулы. Пропущенные
+    возвращаются числом — молчаливая потеря дат хуже названной.
+    """
+    dates, skipped = [], 0
+    day = start
+    while day <= until:
+        if day == start or day in study_dates:
+            dates.append(day)
+        else:
+            skipped += 1
+        day += timedelta(days=7 * step)
+
+    return dates, skipped
 
 
 def source_date_for(target: date, source_start: date, cycle: int) -> date:

@@ -189,11 +189,12 @@ test('«через неделю» копирует в каждую вторую'
   // заберёт соседей, живой курс упрётся в занятые номера, и «уроков 0»
   // объяснить будет нечем
   await expect(picker.getByText(course.name, { exact: true })).toBeVisible()
-  for (const box of await picker.locator('input[type="checkbox"]').all()) {
-    const label = await box.evaluate((node) => node.parentElement.textContent)
-    if (label.trim() !== course.name && (await box.isChecked())) await box.uncheck()
-  }
-  await expect(picker.locator('input[type="checkbox"]:checked')).toHaveCount(1)
+
+  // «снять все», а потом отметить один: набирать нужное с пустого набора
+  // дешевле, чем снимать лишнее с полного — ровно ради этого кнопки и есть
+  await picker.getByRole('button', { name: 'снять все' }).click()
+  await picker.getByRole('checkbox', { name: course.name, exact: true }).check()
+  await expect(picker.locator('.class-items input:checked')).toHaveCount(1)
 
   const shift = (days) => {
     const at = new Date(`${monday}T12:00:00`)

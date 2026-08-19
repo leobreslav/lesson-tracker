@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import CourseRow from './CourseRow'
+import MathText from './MathText'
 import { DiffBody } from './PlanDiff'
 import Switch from './Switch'
 import { shortDate } from './dates'
@@ -193,7 +194,11 @@ export default function Supervision({ row, busy, onError, onDone }) {
                   key={item.position}
                   className={item.is_section ? 'section' : 'lesson'}
                 >
-                  {item.title}
+                  {/* формулы рисуются формулами, как в таблице плана и в
+                      сравнении: `$\sin(a+b)$` в списке из сорока строк
+                      читается хуже, чем сама математика, — и методисту
+                      незачем видеть план хуже, чем его видит автор */}
+                  <MathText text={item.title} />
                 </li>
               ))}
             </ul>

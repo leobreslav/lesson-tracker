@@ -808,6 +808,46 @@ class CopySerializer(serializers.Serializer):
         return attrs
 
 
+class RepeatSerializer(serializers.Serializer):
+    """
+    Урок и его повторы: вход для /api/slots/repeat/.
+
+    Сетку строят рядами, а не клетками: «вторник, третий час, до конца
+    года» — одно решение, а не тридцать четыре. Раньше это делалось
+    копированием недели, то есть сначала нарисуй неделю, потом раскатай, —
+    и ради одного добавленного часа приходилось копировать всё подряд,
+    натыкаясь на уже занятые места.
+
+    Граница спрашивается, а не подразумевается: конец года подставлен по
+    умолчанию, но четверть, полугодие и «до Нового года» встречаются не
+    реже.
+    """
+
+    course = serializers.PrimaryKeyRelatedField(queryset=Course.objects.none())
+    date = serializers.DateField()
+    lesson_number = serializers.IntegerField(
+        min_value=1, max_value=MAX_LESSON_NUMBER
+    )
+    # «через неделю» — то же деление, что у копирования периода: курс,
+    # который идёт раз в две недели, иначе рисуется вдвое чаще, чем бывает
+    step = serializers.ChoiceField(choices=(1, 2), default=1)
+    until = serializers.DateField()
+
+    def get_fields(self):
+        fields = super().get_fields()
+        fields["course"].queryset = school_courses(self)
+        return fields
+
+    def validate(self, attrs):
+        if attrs["until"] < attrs["date"]:
+            api_error(
+                Codes.PERIOD_REVERSED,
+                "The end date is earlier than the start date.",
+                field="until",
+            )
+        return attrs
+
+
 class PeriodSerializer(serializers.Serializer):
     """Period boundaries for /api/lessons/agenda/."""
 

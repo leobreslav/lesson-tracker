@@ -653,3 +653,118 @@ class CopyEveryOtherWeekTests(SchoolTestMixin, APITestCase):
         )
 
         self.assertEqual(response.status_code, 400)
+
+
+class RepeatTests(SlotTestCase):
+    """
+    Ряд уроков: «вторник, третий час, до конца года» одним движением.
+
+    Путь к этому был один — нарисуй неделю, потом скопируй её на период, —
+    и ради одного добавленного часа приходилось раскатывать всю неделю,
+    натыкаясь на уже занятые места. Сетку же строят рядами, и решение тут
+    одно, а не тридцать четыре.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.client.force_authenticate(self.user)
+
+    def repeat(self, **extra):
+        body = {
+            "course": self.course.pk,
+            "date": MONDAY.isoformat(),
+            "lesson_number": 3,
+            "until": (MONDAY + days(21)).isoformat(),
+            **extra,
+        }
+        return self.client.post(reverse("slot-repeat"), body, format="json")
+
+    def test_the_row_lands_on_the_same_weekday(self):
+        answer = self.repeat().json()
+
+        self.assertEqual(answer["created"], 4)
+        placed = list(
+            Slot.objects.filter(course=self.course).order_by("date").values_list("date", flat=True)
+        )
+        self.assertEqual(placed, [MONDAY + days(shift) for shift in (0, 7, 14, 21)])
+        self.assertEqual({slot.lesson_number for slot in Slot.objects.all()}, {3})
+
+    def test_every_other_week_puts_half(self):
+        """Тот же шаг, что у копирования периода, только вдвое длиннее."""
+        answer = self.repeat(step=2).json()
+
+        self.assertEqual(answer["created"], 2)
+        placed = list(
+            Slot.objects.filter(course=self.course)
+            .order_by("date")
+            .values_list("date", flat=True)
+        )
+        self.assertEqual(placed, [MONDAY, MONDAY + days(14)])
+
+    def test_a_break_is_skipped_and_counted(self):
+        """Правило не знает, что там каникулы, — поэтому знает сервер."""
+        DayException.objects.create(
+            year=self.year,
+            kind=DayException.Kind.VACATION,
+            title="Осенние",
+            start_date=MONDAY + days(7),
+            end_date=MONDAY + days(11),
+        )
+
+        answer = self.repeat().json()
+
+        self.assertEqual(answer["created"], 3)
+        self.assertEqual(answer["skipped"], 1)
+        self.assertNotIn(
+            MONDAY + days(7),
+            list(Slot.objects.values_list("date", flat=True)),
+        )
+
+    def test_the_first_date_is_taken_as_it_is(self):
+        """
+        По первой клетке щёлкнули сами, и урок в неучебный день бывает
+        законным — отработка, суббота. Повторы человек задал правилом.
+        """
+        saturday = MONDAY + days(5)
+
+        answer = self.repeat(date=saturday.isoformat(), until=(saturday + days(7)).isoformat())
+
+        self.assertEqual(answer.json()["created"], 1)
+        self.assertEqual(answer.json()["skipped"], 1)
+        self.assertEqual(Slot.objects.get().date, saturday)
+
+    def test_a_taken_hour_is_skipped_and_named(self):
+        other = make_course(self.school, self.year, "9В")
+        assign(self.user, other)
+        Slot.objects.create(
+            year=self.year, course=other, date=MONDAY + days(7), lesson_number=3
+        )
+
+        answer = self.repeat().json()
+
+        self.assertEqual(answer["created"], 3)
+        self.assertEqual(answer["skipped"], 1)
+        self.assertEqual(answer["conflicts"][0]["class_name"], "9В")
+        # ряд не отменяется целиком: за год он почти всегда во что-нибудь
+        # упрётся, и «не создано ничего» было бы худшим ответом
+        self.assertEqual(Slot.objects.filter(course=self.course).count(), 3)
+
+    def test_the_row_stops_at_the_end_of_the_year(self):
+        answer = self.repeat(until=(YEAR_END + days(60)).isoformat()).json()
+
+        self.assertTrue(answer["created"] > 30, answer)
+        self.assertLessEqual(
+            max(Slot.objects.values_list("date", flat=True)), YEAR_END
+        )
+
+    def test_a_backwards_boundary_is_refused(self):
+        answer = self.repeat(until=(MONDAY - days(7)).isoformat())
+
+        self.assertEqual(answer.status_code, 400)
+        self.assertEqual(answer.json()["code"], "period_reversed")
+
+    def test_a_course_of_another_school_is_invisible(self):
+        answer = self.repeat(course=self.alien_class.pk)
+
+        self.assertEqual(answer.status_code, 400)
+        self.assertFalse(Slot.objects.filter(course=self.alien_class).exists())

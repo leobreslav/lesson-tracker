@@ -272,6 +272,56 @@ test('в школьном расписании урок ставится в об
   await expect(page.locator('[data-lesson="2026-09-07:6"]')).toHaveCount(1)
 })
 
+test('урок ставится рядом на каждую неделю, а не по клетке', async ({
+  page,
+  signIn,
+  api,
+}) => {
+  // Сетку строят рядами: «вторник, третий час, до конца года» — одно
+  // решение, а не тридцать четыре. Раньше путь был один: нарисуй неделю и
+  // скопируй её на период, задевая всё, что в ней уже стоит.
+  await signIn(PEOPLE.admin)
+  await openSection(page, '/school/schedule')
+
+  const monday = page.locator('[data-day-head="2026-09-07"]')
+  for (let step = 0; step < 8 && !(await monday.count()); step += 1) {
+    await page.getByRole('button', { name: '→' }).click()
+    await page.waitForTimeout(250)
+  }
+  await expect(monday).toBeVisible()
+
+  await page.locator('[data-add="2026-09-07:7"]').click()
+  const dialog = page.locator('dialog.modal')
+  await dialog.getByLabel('Курсы').selectOption({ label: 'Grade 6 Algebra' })
+
+  // граница спрашивается, а не подразумевается: конец года подставлен, но
+  // «до конца четверти» встречается не реже
+  await dialog.getByRole('radio', { name: 'каждую неделю' }).check()
+  await dialog.getByLabel('до').fill('2026-09-28')
+  await dialog.getByRole('button', { name: 'Добавить', exact: true }).click()
+  await expect(dialog).toBeHidden()
+
+  // первая клетка — на экране, остальные три недели живут за краем сетки:
+  // она показывает одну неделю, и листать её ради проверки незачем
+  await expect(page.locator('[data-lesson="2026-09-07:7"]')).toHaveCount(1)
+
+  const admin = await api(PEOPLE.admin)
+  const slots = await admin.get(
+    '/api/slots/?scope=school&start=2026-09-01&end=2027-05-31',
+  )
+  // именно наш ряд: седьмой час в демо-данных занят и дополнительным
+  // уроком другого курса — он про другое
+  const row = slots.body
+    .filter(
+      (slot) => slot.lesson_number === 7 && slot.course_name === 'Grade 6 Algebra',
+    )
+    .map((slot) => slot.date)
+    .sort()
+
+  // тот же день недели, четыре недели подряд — и ни одного за границей
+  expect(row).toEqual(['2026-09-07', '2026-09-14', '2026-09-21', '2026-09-28'])
+})
+
 test('курс поручают приглашённому — до его первого входа', async ({
   page,
   signIn,
