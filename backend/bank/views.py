@@ -14,7 +14,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from . import search, services
+from . import expressions, search, services
 from .models import (
     NEGATABLE,
     ON_PROBLEM,
@@ -25,6 +25,7 @@ from .models import (
     Section,
     Solution,
     SolutionTag,
+    SavedSearch,
     Source,
     Tag,
 )
@@ -322,3 +323,95 @@ class SearchView(BankView):
 
     def get(self, request):
         return Response(search.payload(request.user, request.query_params))
+
+    def post(self, request):
+        """
+        Поиск выражением. Телом, а не строкой запроса: дерево в query-строке
+        пришлось бы кодировать, и адрес перестал бы читаться глазами — а
+        читают его как раз тогда, когда разбираются, почему нашлось не то.
+        """
+        node = request.data.get("expression") or {}
+        found = expressions.find(request.user, node)
+        named = expressions.mentioned(node)
+        return Response(
+            search.shape(
+                found,
+                chosen_tags=named[""],
+                chosen_uses=named["uses"],
+                chosen_avoids=named["avoids"],
+            )
+        )
+
+
+class SavedSearchesView(BankView):
+    """Сохранённые запросы: свои, школьные и системные."""
+
+    def get(self, request):
+        return Response(
+            {
+                "searches": [
+                    _saved(saved, request.user)
+                    for saved in SavedSearch.objects.visible_to(request.user)
+                ]
+            }
+        )
+
+    def post(self, request):
+        name = (request.data.get("name") or "").strip()
+        if not name:
+            raise api_error(
+                Codes.SEARCH_NAME_REQUIRED,
+                "У сохранённого поиска должно быть имя — по нему его и найдут.",
+            )
+        node = request.data.get("expression") or {}
+        # Кривое выражение отклоняется здесь, а не при первом открытии:
+        # сохранённый поиск, который не ищет, — худший вид мусора.
+        expressions.compile_(node)
+
+        saved = SavedSearch.objects.create(
+            name=name,
+            expression=node,
+            school=None if request.data.get("level") == "system" else request.user.school,
+            owner=None if request.data.get("level") in ("system", "school") else request.user,
+            created_by=request.user,
+        )
+        if not SavedSearch.objects.writable_by(request.user).filter(pk=saved.pk).exists():
+            # Заявленный уровень человеку не по чину — не заводим молча на
+            # уровень ниже: он назвал место, и место должно быть тем.
+            saved.delete()
+            raise api_error(
+                Codes.BANK_READ_ONLY, "Сохранять сюда может не всякий."
+            )
+        return Response(_saved(saved, request.user), status=201)
+
+
+class SavedSearchView(BankView):
+    """Один сохранённый запрос: переименовать, уточнить, убрать."""
+
+    def get_object(self, request, pk, *, writing=False):
+        source = SavedSearch.objects.writable_by(request.user) if writing else SavedSearch.objects.visible_to(request.user)
+        return get_object_or_404(source, pk=pk)
+
+    def patch(self, request, pk):
+        saved = self.get_object(request, pk, writing=True)
+        if "name" in request.data:
+            saved.name = (request.data["name"] or "").strip()
+        if "expression" in request.data:
+            expressions.compile_(request.data["expression"] or {})
+            saved.expression = request.data["expression"]
+        saved.save(update_fields=["name", "expression"])
+        return Response(_saved(saved, request.user))
+
+    def delete(self, request, pk):
+        self.get_object(request, pk, writing=True).delete()
+        return Response(status=204)
+
+
+def _saved(saved, user):
+    return {
+        "id": saved.pk,
+        "name": saved.name,
+        "level": saved.level,
+        "expression": saved.expression,
+        "may_edit": SavedSearch.objects.writable_by(user).filter(pk=saved.pk).exists(),
+    }

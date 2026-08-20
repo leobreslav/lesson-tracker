@@ -102,3 +102,36 @@ test('поиск сужается словом и гранью, и грань г
   await page.getByLabel('Слова из условия').fill('уравнение')
   await expect(page.locator('.problem-list li')).toHaveCount(2)
 })
+
+test('выражение отвечает на «или», и его можно сохранить под именем', async ({
+  page,
+  signIn,
+}) => {
+  await signIn(PEOPLE.ivanova)
+  await page.goto('/bank/search')
+  await ready(page)
+
+  await page.getByRole('radio', { name: 'Выражением' }).click()
+
+  // «алгебра или геометрия» — гранями такого не спросить: они складываются «и»
+  await page.getByRole('radio', { name: 'любое' }).click()
+  await page.getByRole('button', { name: '+ условие' }).click()
+  await page.getByRole('button', { name: '+ условие' }).click()
+
+  const tag = page.getByLabel('Тег')
+  await tag.nth(0).selectOption({ label: 'алгебра' })
+  await tag.nth(1).selectOption({ label: 'геометрия' })
+  await expect(page.locator('.problem-list li')).toHaveCount(4)
+
+  // «и» тех же двух — ни одной: задача не бывает сразу той и другой
+  await page.getByRole('radio', { name: 'все' }).click()
+  await expect(page.locator('.problem-list li')).toHaveCount(0)
+
+  await page.getByRole('button', { name: 'Сохранить поиск' }).click()
+  await page.getByLabel('Название').fill('Ни то ни это')
+  await page.locator('.panel').getByRole('button', { name: 'Сохранить', exact: true }).click()
+
+  await page.reload()
+  await ready(page)
+  await expect(page.getByLabel('Сохранённые')).toContainText('Ни то ни это')
+})

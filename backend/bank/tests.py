@@ -361,3 +361,115 @@ class PayloadTests(SchoolTestMixin, APITestCase):
             [one["name"] for one in response.data["solutions"][0]["tags"]],
             ["замена переменной"],
         )
+
+
+class ExpressionTests(SchoolTestMixin, APITestCase):
+    """
+    Выражение из граней. Проверяется главное: «или» действительно шире «и», а
+    отрицание отрицает **задачу**, а не связь.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.algebra = Tag.objects.create(name="алгебра", kind="subject")
+        self.geometry = Tag.objects.create(name="геометрия", kind="subject")
+        self.circle = Tag.objects.create(name="окружность", kind=OBJECT)
+        self.derivative = Tag.objects.create(name="производная", kind=METHOD)
+
+        self.equation = self.problem("Решите уравнение", [self.algebra])
+        self.circle_task = self.problem("Окружность", [self.geometry, self.circle])
+
+    def problem(self, text, tags):
+        made = Problem.objects.create(
+            text=text, school=self.school, owner=self.user, created_by=self.user
+        )
+        for tag in tags:
+            made.links.create(tag=tag)
+        return made
+
+    def search(self, node):
+        self.client.force_authenticate(self.user)
+        response = self.client.post(
+            reverse("bank-search"), {"expression": node}, format="json"
+        )
+        self.assertEqual(response.status_code, 200, response.data)
+        return {row["id"] for row in response.data["problems"]}
+
+    def test_any_is_wider_than_all(self):
+        both = [{"tag": self.algebra.pk}, {"tag": self.geometry.pk}]
+        self.assertEqual(self.search({"all": both}), set())
+        self.assertEqual(
+            self.search({"any": both}), {self.equation.pk, self.circle_task.pk}
+        )
+
+    def test_not_means_the_problem_has_no_such_tag(self):
+        # у задачи два тега; «не окружность» не должно ловить её вторым тегом
+        found = self.search({"not": {"tag": self.circle.pk}})
+        self.assertEqual(found, {self.equation.pk})
+
+    def test_a_side_asks_the_solutions(self):
+        solution = Solution.objects.create(
+            problem=self.equation,
+            title="в лоб",
+            text="…",
+            school=self.school,
+            owner=self.user,
+            created_by=self.user,
+        )
+        solution.links.create(tag=self.derivative, side=SolutionTag.AVOIDS)
+
+        self.assertEqual(
+            self.search({"tag": self.derivative.pk, "side": "avoids"}),
+            {self.equation.pk},
+        )
+        self.assertEqual(
+            self.search({"tag": self.derivative.pk, "side": "uses"}), set()
+        )
+
+    def test_a_node_we_do_not_understand_is_refused_with_its_address(self):
+        self.client.force_authenticate(self.user)
+        response = self.client.post(
+            reverse("bank-search"),
+            {"expression": {"all": [{"tag": self.algebra.pk}, {"колдовство": 1}]}},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.data["code"], "bank_expression_bad")
+        self.assertIn("2", response.data["detail"])
+
+
+class SavedSearchTests(SchoolTestMixin, APITestCase):
+    def setUp(self):
+        super().setUp()
+        self.tag = Tag.objects.create(name="алгебра", kind="subject")
+
+    def save(self, user, **fields):
+        self.client.force_authenticate(user)
+        body = {"name": "Мой поиск", "expression": {"tag": self.tag.pk}, **fields}
+        return self.client.post(reverse("bank-searches"), body, format="json")
+
+    def test_a_saved_search_keeps_the_tree_and_comes_back(self):
+        made = self.save(self.user)
+        self.assertEqual(made.status_code, 201)
+        self.assertEqual(made.data["level"], "personal")
+
+        listed = self.client.get(reverse("bank-searches"))
+        self.assertEqual(
+            [one["expression"] for one in listed.data["searches"]],
+            [{"tag": self.tag.pk}],
+        )
+
+    def test_a_broken_tree_is_refused_at_saving_time(self):
+        answer = self.save(self.user, expression={"колдовство": 1})
+        self.assertEqual(answer.status_code, 400)
+        self.assertEqual(answer.data["code"], "bank_expression_bad")
+
+    def test_a_teacher_cannot_save_for_the_whole_school(self):
+        self.assertEqual(self.save(self.user, level="school").status_code, 400)
+        self.assertEqual(self.save(self.admin, level="school").status_code, 201)
+
+    def test_a_colleague_does_not_see_a_personal_search(self):
+        self.save(self.user)
+        self.client.force_authenticate(self.colleague)
+        listed = self.client.get(reverse("bank-searches"))
+        self.assertEqual(listed.data["searches"], [])

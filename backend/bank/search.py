@@ -110,8 +110,9 @@ def facets(found, *, chosen_tags=(), chosen_uses=(), chosen_avoids=()):
         }
         for (tag_id, side), count in counted.items()
     ]
-    # сначала то, что сужает сильнее всего: грань, оставляющая одну задачу,
-    # полезнее грани, оставляющей все
+    # Сначала самые населённые: по ним набор и делится. Грань, оставляющая
+    # одну задачу из четырёхсот, — не путь к ней, а случайность; искать её
+    # надо словом.
     rows.sort(key=lambda row: (-row["count"], row["name"]))
     return rows
 
@@ -121,16 +122,25 @@ def payload(user, params):
     tags = _numbers(params.getlist("tag"))
     uses = _numbers(params.getlist("uses"))
     avoids = _numbers(params.getlist("avoids"))
-    text = params.get("text", "").strip()
 
     found = find(
         user,
-        text=text,
+        text=params.get("text", "").strip(),
         tags=tags,
         uses=uses,
         avoids=avoids,
         level=params.get("level") or None,
     )
+    return shape(found, chosen_tags=tags, chosen_uses=uses, chosen_avoids=avoids)
+
+
+def shape(found, *, chosen_tags=(), chosen_uses=(), chosen_avoids=()):
+    """
+    Найденное в вид, годный для экрана.
+
+    Общая для обоих входов — граней и выражения, — потому что показывается
+    одним и тем же списком: два способа спросить, один способ ответить.
+    """
     total = found.count()
     problems = found.select_related("family").order_by("pk")[:LIMIT]
 
@@ -147,7 +157,10 @@ def payload(user, params):
             for problem in problems
         ],
         "facets": facets(
-            found, chosen_tags=tags, chosen_uses=uses, chosen_avoids=avoids
+            found,
+            chosen_tags=chosen_tags,
+            chosen_uses=chosen_uses,
+            chosen_avoids=chosen_avoids,
         ),
     }
 
@@ -157,4 +170,4 @@ def _numbers(values):
     return [int(value) for value in values if value.isdigit()]
 
 
-__all__ = ["find", "facets", "payload", "LIMIT", "ON_PROBLEM", "ON_SOLUTION"]
+__all__ = ["find", "facets", "payload", "shape", "LIMIT"]

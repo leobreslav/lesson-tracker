@@ -6481,3 +6481,24 @@ button.dropzone:hover:not(:disabled) {
   flex-wrap: wrap;
   gap: 0.35rem;
 }
+
+/* Дерево выражения: вложенность видно отступом и левой чертой — без неё на
+   третьем уровне непонятно, к какой группе относится строка. */
+.expression-group {
+  padding: 0.35rem 0;
+}
+
+.expression-group:not(.top) {
+  border-left: 2px solid var(--border);
+  padding-left: 0.6rem;
+}
+
+.expression-parts {
+  list-style: none;
+  margin: 0;
+  padding: 0 0 0 0.6rem;
+}
+
+.expression-leaf select {
+  max-width: 14rem;
+}

@@ -272,7 +272,9 @@
     "problem_text_required": "Line {{line}} has a number but no statement.",
     "tag_kind_mismatch": "A tag of that kind does not belong here.",
     "tag_not_negatable": "Only a method or a theorem can be deliberately avoided.",
-    "superuser_only_tags": "Only a superuser adds tags: the vocabulary is shared by everyone."
+    "superuser_only_tags": "Only a superuser adds tags: the vocabulary is shared by everyone.",
+    "bank_expression_bad": "The search condition does not parse — fix it in the tree.",
+    "search_name_required": "A saved search needs a name — that is how it is found again."
   },
   "classPicker": {
     "label": "Classes:",
@@ -1312,6 +1314,28 @@
       "more_other": "and {{count}} more — narrow the search",
       "open": "Search"
     },
-    "without": "without"
+    "without": "without",
+    "expression": {
+      "byFacets": "By facets",
+      "byExpression": "By expression",
+      "all": "all",
+      "any": "any",
+      "not": "not",
+      "addLeaf": "+ condition",
+      "addGroup": "+ group",
+      "tag": "Tag",
+      "side": "Where to look",
+      "onProblem": "on the statement",
+      "uses": "a solution uses it",
+      "avoids": "a solution avoids it",
+      "byWord": "by word",
+      "byTag": "by tag",
+      "what": "What turned up"
+    },
+    "saved": {
+      "title": "Saved",
+      "save": "Save this search",
+      "name": "Name"
+    }
   }
 }

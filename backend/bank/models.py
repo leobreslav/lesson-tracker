@@ -373,3 +373,28 @@ class Entry(models.Model):
 
     def __str__(self):
         return f"{self.source_id} №{self.label}"
+
+
+class SavedSearch(Owned):
+    """
+    Названный запрос: выражение, которое сохранили, чтобы вернуться.
+
+    Хранится **дерево**, а не список найденных задач: банк пополняется, и
+    смысл сохранённого поиска ровно в том, что завтра он найдёт больше. Список
+    задач — это папка, и она в системе есть отдельно.
+
+    Уровни владения те же, что у книг: системный запрос — тот, что предлагают
+    всем; школьный собирает завуч; личный человек правит сам. Никакого нового
+    правила видимости тут нет, и это главное, ради чего `Owned` заведён.
+    """
+
+    name = models.CharField("name", max_length=200)
+    expression = models.JSONField("expression tree", default=dict)
+
+    class Meta:
+        verbose_name = "saved search"
+        verbose_name_plural = "saved searches"
+        ordering = ("name", "id")
+
+    def __str__(self):
+        return self.name

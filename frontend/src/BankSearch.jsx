@@ -2,8 +2,18 @@ import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 
+import ExpressionEditor from './ExpressionEditor'
 import MathText from './MathText'
-import { searchProblems } from './api'
+import Switch from './Switch'
+import { prune } from './expressionTree'
+import {
+  deleteSavedSearch,
+  fetchSavedSearches,
+  fetchTags,
+  saveSearch,
+  searchByExpression,
+  searchProblems,
+} from './api'
 
 /**
  * Поиск задачи по граням и по тексту.
@@ -25,6 +35,24 @@ export default function BankSearch() {
   const [chosen, setChosen] = useState([])
   const [found, setFound] = useState(null)
   const [error, setError] = useState(null)
+  // Второй вход в тот же набор: грани отвечают только на «и», выражение — на
+  // «или» и на отрицание. Вид один за раз: два списка результатов рядом
+  // означали бы два ответа на вопрос «что нашлось».
+  const [byTree, setByTree] = useState(false)
+  const [tree, setTree] = useState({ all: [] })
+  // Словарь целиком — им наполняются селекты в выражении.
+  const [vocabulary, setVocabulary] = useState([])
+  const [saved, setSaved] = useState([])
+  const [naming, setNaming] = useState(null)
+
+  useEffect(() => {
+    fetchTags()
+      .then((answer) => setVocabulary(answer.tags))
+      .catch(() => setVocabulary([]))
+    fetchSavedSearches()
+      .then((answer) => setSaved(answer.searches))
+      .catch(() => setSaved([]))
+  }, [])
 
   const picked = (side) =>
     chosen.filter((one) => one.side === side).map((one) => one.tag)
@@ -37,8 +65,19 @@ export default function BankSearch() {
     let alive = true
     // Слово набирают по букве, и запрос на каждую — это запрос на каждую.
     const timer = setTimeout(() => {
-      searchProblems({ text, tags, uses, avoids })
-        .then((answer) => alive && setFound(answer))
+      // Недописанное выражение — это ещё не запрос: пустое дерево значит
+      // «без условий», и отвечать на него должен обычный поиск, а не отказ.
+      const trimmed = byTree ? prune(tree) : null
+      const asked =
+        byTree && trimmed
+          ? searchByExpression(trimmed)
+          : searchProblems(byTree ? {} : { text, tags, uses, avoids })
+      asked
+        .then((answer) => {
+          if (!alive) return
+          setFound(answer)
+          setError(null)
+        })
         .catch((problem) => alive && setError(problem.message))
     }, 250)
     return () => {
@@ -46,7 +85,7 @@ export default function BankSearch() {
       clearTimeout(timer)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [text, key])
+  }, [text, key, byTree, JSON.stringify(tree)])
 
   const drop = (facet) =>
     setChosen(chosen.filter((one) => !(one.tag === facet.tag && one.side === facet.side)))
@@ -64,13 +103,83 @@ export default function BankSearch() {
 
       <section className="panel">
         <div className="row">
-          <label className="field">
-            <span>{t('bank.search.text')}</span>
-            <input value={text} onChange={(event) => setText(event.target.value)} />
-          </label>
+          <Switch
+            value={byTree ? 'tree' : 'facets'}
+            options={[
+              { value: 'facets', label: t('bank.expression.byFacets') },
+              { value: 'tree', label: t('bank.expression.byExpression') },
+            ]}
+            onChange={(value) => setByTree(value === 'tree')}
+          />
+          {saved.length > 0 && (
+            <label className="field">
+              <span>{t('bank.saved.title')}</span>
+              <select
+                value=""
+                onChange={(event) => {
+                  const one = saved.find((row) => String(row.id) === event.target.value)
+                  if (!one) return
+                  setTree(one.expression)
+                  setByTree(true)
+                }}
+              >
+                <option value="">—</option>
+                {saved.map((one) => (
+                  <option key={one.id} value={one.id}>
+                    {one.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
         </div>
 
-        {chosen.length > 0 && (
+        {byTree ? (
+          <>
+            <ExpressionEditor node={tree} tags={vocabulary} onChange={(next) => setTree(next || { all: [] })} />
+            <div className="row">
+              {naming === null ? (
+                <button type="button" className="secondary compact" onClick={() => setNaming('')}>
+                  {t('bank.saved.save')}
+                </button>
+              ) : (
+                <>
+                  <label className="field">
+                    <span>{t('bank.saved.name')}</span>
+                    <input value={naming} onChange={(event) => setNaming(event.target.value)} />
+                  </label>
+                  <button
+                    type="button"
+                    disabled={!naming.trim()}
+                    onClick={async () => {
+                      try {
+                        await saveSearch({ name: naming, expression: prune(tree) || { all: [] } })
+                        setNaming(null)
+                        setSaved((await fetchSavedSearches()).searches)
+                      } catch (problem) {
+                        setError(problem.message)
+                      }
+                    }}
+                  >
+                    {t('common.save')}
+                  </button>
+                  <button type="button" className="link" onClick={() => setNaming(null)}>
+                    {t('common.cancel')}
+                  </button>
+                </>
+              )}
+            </div>
+          </>
+        ) : (
+          <div className="row">
+            <label className="field">
+              <span>{t('bank.search.text')}</span>
+              <input value={text} onChange={(event) => setText(event.target.value)} />
+            </label>
+          </div>
+        )}
+
+        {!byTree && chosen.length > 0 && (
           <p className="chosen-facets">
             {chosen.map((facet) => (
               <button
@@ -89,14 +198,19 @@ export default function BankSearch() {
 
       <div className="bank-columns">
         <section className="panel">
-          <h2>{t('bank.search.facets')}</h2>
+          <h2>{byTree ? t('bank.expression.what') : t('bank.search.facets')}</h2>
           {found && found.facets.length === 0 && (
             <p className="hint">{t('bank.search.noFacets')}</p>
           )}
           <ul className="facet-list">
             {(found ? found.facets : []).map((facet) => (
               <li key={`${facet.tag}-${facet.side}`}>
-                <button type="button" className="link" onClick={() => take(facet)}>
+                <button
+                  type="button"
+                  className="link"
+                  disabled={byTree}
+                  onClick={() => take(facet)}
+                >
                   {facet.side === 'avoids' ? `${t('bank.without')} ` : ''}
                   {facet.name}
                 </button>

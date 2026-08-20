@@ -959,3 +959,18 @@ export const searchProblems = (query) => {
   ;(query.avoids || []).forEach((id) => params.append('avoids', id))
   return request(`/api/bank/search/?${params}`)
 }
+
+/** Поиск выражением: дерево уходит телом, ответ той же формы, что у граней. */
+export const searchByExpression = (expression) =>
+  request('/api/bank/search/', { method: 'POST', body: { expression } })
+
+export const fetchSavedSearches = () => request('/api/bank/searches/')
+
+export const saveSearch = (fields) =>
+  request('/api/bank/searches/', { method: 'POST', body: fields })
+
+export const updateSavedSearch = (id, fields) =>
+  request(`/api/bank/searches/${id}/`, { method: 'PATCH', body: fields })
+
+export const deleteSavedSearch = (id) =>
+  request(`/api/bank/searches/${id}/`, { method: 'DELETE' })
