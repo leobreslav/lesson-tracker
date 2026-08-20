@@ -63,6 +63,7 @@ class Page:
     surname: str = ""
     guess: str = ""
     headerless: bool = False
+    ours: bool = False
     cells: list = field(default_factory=lambda: [None] * CELLS)
     student_id: int | None = None
     decided_by_human: bool = False
@@ -143,6 +144,9 @@ class Packet:
     student_id: int | None = None
     candidates: list = field(default_factory=list)
     decided_by_human: bool = False
+    # страницы, положенные сюда **не по своему имени**, а по свободным задачам
+    # или по соседу. Догадка законная, но это догадка, и человек о ней узнаёт
+    by_fit: list = field(default_factory=list)
 
     @property
     def all_pages(self) -> list:
@@ -150,44 +154,87 @@ class Packet:
         return sorted(self.conditions + self.pages, key=lambda page: page.index)
 
 
-def split_by_conditions(pages: list[Page]) -> list[Packet] | None:
-    """
-    Разрезать пачку по рядам листов без шапки.
+READ = "read"
+CONDITIONS = "conditions"
+UNREADABLE = "unreadable"
 
-    Условия раздают перед работой, и непрерывный ряд безшапочных листов значит
-    «дальше следующий ученик». Это свидетельство надёжнее любого почерка: оно
-    не зависит ни от чтения, ни от того, вписал ли ученик фамилию.
 
-    Возвращает `None`, если рисунка нет: условий не раздавали (безшапочных
-    листов нет вовсе) или их слишком мало, чтобы делить пачку. Тогда работает
-    обычная раскладка по именам — обе ситуации законны, и вторая не хуже.
+def classify(pages: list[Page]) -> dict:
     """
-    runs = 0
+    Что это за страница: лист решения, лист условий или наш лист, который не
+    прочитался.
+
+    Решается **по всей пачке**, а не по странице отдельно, и вот почему. Метка
+    в углу говорит «это наш бланк», и по ней «условия» отличаются от «плохого
+    фото нашего листа» наверняка. Но метки может не оказаться ни на одном
+    листе — печатали со старого бланка, принтер съел угол, скан обрезал низ, —
+    и тогда доверять ей значит объявить условиями всю пачку. Поэтому: **нет
+    метки ни у кого — сигнала нет**, и работает прежнее правило «шапка
+    прочиталась или нет».
+    """
+    trusted = any(page.ours for page in pages)
+
+    kinds = {}
+    for page in pages:
+        if not page.headerless:
+            kinds[page.index] = READ
+        elif trusted and page.ours:
+            kinds[page.index] = UNREADABLE
+        else:
+            kinds[page.index] = CONDITIONS
+    return kinds
+
+
+def condition_runs(pages: list[Page], kinds: dict) -> list[list[Page]]:
+    """Непрерывные ряды листов условий, в порядке следования."""
+    runs: list[list[Page]] = []
+    previous = False
+    for page in sorted(pages, key=lambda one: one.index):
+        if kinds[page.index] == CONDITIONS:
+            if not previous:
+                runs.append([])
+            runs[-1].append(page)
+            previous = True
+        else:
+            previous = False
+    return runs
+
+
+def split_by_conditions(pages: list[Page], kinds: dict) -> list[Packet] | None:
+    """
+    Разрезать пачку по рядам листов условий.
+
+    Условия раздают перед работой, и непрерывный ряд таких листов значит
+    «дальше следующий ученик». Свидетельство надёжнее любого почерка: оно не
+    зависит ни от чтения, ни от того, вписал ли ученик фамилию.
+
+    Возвращает `None`, если рядов меньше двух: делить нечем. Один ряд — это не
+    разметка, а общие условия на всю пачку, и с ними разбирается `arrange`.
+    """
+    runs = condition_runs(pages, kinds)
+    if len(runs) < 2:
+        return None
+
     packets: list[Packet] = []
     current: Packet | None = None
-    previous_headerless = False
+    previous_conditions = False
 
     for page in sorted(pages, key=lambda one: one.index):
-        if page.headerless:
-            # ряд условий начинается — значит начался новый ученик
-            if not previous_headerless:
+        conditions = kinds[page.index] == CONDITIONS
+        if conditions:
+            if not previous_conditions:
                 current = Packet()
                 packets.append(current)
-                runs += 1
             current.conditions.append(page)
         else:
             if current is None:
                 # пачка начинается с листов решения: у первого ученика условий
-                # не оказалось. Это не повод отказываться от разметки
+                # не оказалось — не повод отказываться от разметки
                 current = Packet()
                 packets.append(current)
             current.pages.append(page)
-        previous_headerless = page.headerless
+        previous_conditions = conditions
 
-    # один ряд условий на всю пачку — это не разметка, а обложка: делить
-    # нечего, и решать надо по именам
-    if runs < 2:
-        return None
     return packets
 
 
@@ -234,12 +281,18 @@ def vote(packet: Packet, roster: list[Person]) -> list[tuple[Person, float]]:
     return out
 
 
-def group(pages: list[Page], roster: list[Person]) -> tuple[dict, list]:
+def group(pages: list[Page], roster: list[Person]) -> tuple[dict, list, set]:
     """
     Разложить страницы по ученикам.
 
-    Возвращает `({index: student_id}, [(index, [кандидаты])])`: раскладку и
-    список того, что человек должен решить сам.
+    Возвращает `({index: student_id}, [(index, [кандидаты])], {положенные по
+    догадке})`: раскладку, список того, что человек должен решить сам, и
+    третьим — страницы, попавшие к ученику **не по своему имени**.
+
+    Третье не мелочь. Измерено на живой пачке: раскладка по свободным задачам и
+    соседству ошиблась четыре раза из пятнадцати, и ошиблась молча — безымянный
+    лист достался тому, у кого нашлось место. Догадка тут законна (иначе всякий
+    неподписанный лист шёл бы к человеку), но выдавать её за прочитанное нельзя.
 
     Решения человека уважаются: страница, у которой уже стоит `decided_by_human`,
     в раскладку входит как есть и в сомнения не попадает.
@@ -266,6 +319,7 @@ def group(pages: list[Page], roster: list[Person]) -> tuple[dict, list]:
         return out
 
     doubts = []
+    by_fit = set()
     for page in left:
         mine = page.answered
         # Пустая страница ни к кому не «подходит» по покрытию: подходит она ко
@@ -294,6 +348,7 @@ def group(pages: list[Page], roster: list[Person]) -> tuple[dict, list]:
 
         if len(fits) == 1:
             assigned[page.index] = fits[0]
+            by_fit.add(page.index)
         else:
             suggest = [person.id for person, score in scored[page.index][:3]]
             offered = fits or suggest
@@ -304,31 +359,47 @@ def group(pages: list[Page], roster: list[Person]) -> tuple[dict, list]:
                 offered = [opinion.id] + [one for one in offered if one != opinion.id]
             doubts.append((page.index, offered))
 
-    return assigned, doubts
+    return assigned, doubts, by_fit
 
 
 def arrange(pages: list[Page], roster: list[Person]) -> list[Packet]:
     """
     Разложить пачку по ученикам — пакетами, откуда бы границы ни взялись.
 
-    Единица решения одна и та же в обоих случаях, и это главное здесь: экран,
-    тесты и запись не должны знать, раздавали в этот раз условия или нет.
+    Единица решения одна и та же во всех случаях, и это главное здесь: экран,
+    тесты и запись не должны знать, как в этот раз лежали условия. Случаев
+    ровно три, и все три встречаются в жизни:
 
-    * **условия раздавали** — границы известны точно, а имя пакета решается
-      голосованием по всем его листам;
-    * **не раздавали** — работает прежняя раскладка по имени и покрытию задач,
-      и каждая её группа становится пакетом задним числом.
+    * **условия перед каждой работой** — границы известны точно, а имя пакета
+      решается голосованием по всем его листам;
+    * **условия один раз в начале пачки** — общие для всех: границ они не
+      дают, но в работу каждого ученика попадают. Иначе он открывает свои
+      ответы без вопросов;
+    * **условий нет вовсе** — работает раскладка по имени и покрытию задач.
 
-    Решения человека уважаются в обоих случаях: сказанное им не пересматривается.
+    Решения человека уважаются в любом из трёх: сказанное им не пересматривается.
     """
-    by_conditions = split_by_conditions(pages)
+    kinds = classify(pages)
+    by_conditions = split_by_conditions(pages, kinds)
 
     if by_conditions is None:
-        assigned, doubts = group(pages, roster)
+        runs = condition_runs(pages, kinds)
+        # ряд в самом начале — общие условия на всю пачку; всё остальное
+        # заблудилось и достанется тому пакету, перед которым лежит
+        common: list[Page] = []
+        stray: list[Page] = []
+        for number, run in enumerate(runs):
+            if number == 0 and run[0].index == 0:
+                common = run
+            else:
+                stray += run
+
+        answers = [page for page in pages if kinds[page.index] != CONDITIONS]
+        assigned, doubts, by_fit = group(answers, roster)
         doubted = dict(doubts)
         mine: dict = {}
         packets = []
-        for page in sorted(pages, key=lambda one: one.index):
+        for page in sorted(answers, key=lambda one: one.index):
             owner = assigned.get(page.index)
             if owner is None:
                 packets.append(
@@ -344,6 +415,25 @@ def arrange(pages: list[Page], roster: list[Person]) -> list[Packet]:
                 packets.append(mine[owner])
             mine[owner].pages.append(page)
             mine[owner].decided_by_human |= page.decided_by_human
+            if page.index in by_fit:
+                mine[owner].by_fit.append(page.index)
+
+        # общие условия едут в работу каждого ученика; заблудившийся ряд
+        # посреди пачки — тому пакету, перед которым он лежит
+        for packet in packets:
+            if packet.student_id is not None or common:
+                packet.conditions = list(common)
+        for page in stray:
+            following = next(
+                (
+                    packet
+                    for packet in packets
+                    if packet.pages and packet.pages[0].index > page.index
+                ),
+                None,
+            )
+            if following is not None:
+                following.conditions.append(page)
         return packets
 
     for packet in by_conditions:

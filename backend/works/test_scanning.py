@@ -20,13 +20,14 @@ from .scanning import (
     arrange,
     group,
     merge_marks,
+    classify,
     split_by_conditions,
     troubles,
     vote,
 )
 
 
-def page(index, first="", surname="", marks=None, headerless=False):
+def page(index, first="", surname="", marks=None, headerless=False, ours=None):
     cells = [None] * CELLS
     for question, value in (marks or {}).items():
         cells[question] = value
@@ -36,6 +37,9 @@ def page(index, first="", surname="", marks=None, headerless=False):
         surname=surname,
         cells=cells,
         headerless=headerless,
+        # прочитанная страница по определению наша: метку смотрят там же, где
+        # выпрямляют шапку
+        ours=(not headerless) if ours is None else ours,
     )
 
 
@@ -48,14 +52,14 @@ ROSTER = [
 
 class GroupingTests(SimpleTestCase):
     def test_a_clear_name_takes_its_page(self):
-        assigned, doubts = group([page(0, "Shahar", "Jerbi")], ROSTER)
+        assigned, doubts, _ = group([page(0, "Shahar", "Jerbi")], ROSTER)
 
         self.assertEqual(assigned, {0: 1})
         self.assertEqual(doubts, [])
 
     def test_a_misspelt_name_still_matches(self):
         """Почерк читается с ошибками — на то и нечёткое сравнение."""
-        assigned, _ = group([page(0, "Shahaar", "Jerbi")], ROSTER)
+        assigned, _, _ = group([page(0, "Shahaar", "Jerbi")], ROSTER)
 
         self.assertEqual(assigned, {0: 1})
 
@@ -65,7 +69,7 @@ class GroupingTests(SimpleTestCase):
             page(0, "Fil", "Burmov", {0: 1, 1: 2}),
             page(1, marks={4: 3, 5: 1}),
         ]
-        assigned, doubts = group(pages, ROSTER)
+        assigned, doubts, _ = group(pages, ROSTER)
 
         self.assertEqual(assigned, {0: 2, 1: 2})
         self.assertEqual(doubts, [])
@@ -76,7 +80,7 @@ class GroupingTests(SimpleTestCase):
             page(0, marks={4: 3}),
             page(1, "Fil", "Burmov", {0: 1}),
         ]
-        assigned, _ = group(pages, ROSTER)
+        assigned, _, _ = group(pages, ROSTER)
 
         self.assertEqual(assigned, {0: 2, 1: 2})
 
@@ -86,7 +90,7 @@ class GroupingTests(SimpleTestCase):
             page(0, "Fil", "Burmov", {0: 1, 1: 2}),
             page(1, marks={0: 3}),
         ]
-        assigned, doubts = group(pages, ROSTER)
+        assigned, doubts, _ = group(pages, ROSTER)
 
         self.assertNotIn(1, assigned)
         self.assertEqual([index for index, _ in doubts], [1])
@@ -94,7 +98,7 @@ class GroupingTests(SimpleTestCase):
     def test_an_empty_page_goes_to_a_human(self):
         """Ни имени, ни баллов: подходит ко всем, а значит ни к кому."""
         pages = [page(0, "Fil", "Burmov", {0: 1}), page(1)]
-        _, doubts = group(pages, ROSTER)
+        _, doubts, _ = group(pages, ROSTER)
 
         self.assertEqual([index for index, _ in doubts], [1])
 
@@ -104,7 +108,7 @@ class GroupingTests(SimpleTestCase):
         decided.student_id = 3
         decided.decided_by_human = True
 
-        assigned, doubts = group([decided], ROSTER)
+        assigned, doubts, _ = group([decided], ROSTER)
 
         self.assertEqual(assigned, {0: 3})
         self.assertEqual(doubts, [])
@@ -114,7 +118,7 @@ class GroupingTests(SimpleTestCase):
         one = page(0, "Shalene", "Dorah")
         one.guess = "Shahar Jerbi"
 
-        assigned, doubts = group([one], ROSTER)
+        assigned, doubts, _ = group([one], ROSTER)
 
         self.assertEqual(assigned, {})
         self.assertEqual(doubts[0][1][0], 1)
@@ -124,14 +128,14 @@ class GroupingTests(SimpleTestCase):
         one = page(0, "Anna", "Kowalski")
         one.guess = "Somebody Else"
 
-        _, doubts = group([one], ROSTER)
+        _, doubts, _ = group([one], ROSTER)
 
         self.assertNotEqual(doubts[0][1][0], None)
         self.assertTrue(all(isinstance(x, int) for x in doubts[0][1]))
 
     def test_an_unknown_name_is_a_doubt_with_candidates(self):
         """Имени нет в курсе — предлагаем ближайших, но не выбираем сами."""
-        _, doubts = group([page(0, "Anna", "Kowalski")], ROSTER)
+        _, doubts, _ = group([page(0, "Anna", "Kowalski")], ROSTER)
 
         self.assertEqual(len(doubts), 1)
         index, candidates = doubts[0]
@@ -226,14 +230,14 @@ class PacketTests(SimpleTestCase):
         self.assertEqual(packets[1].student_id, 3)
 
     def test_one_run_of_conditions_is_a_cover_page_not_a_boundary(self):
-        """Один ряд на всю пачку ничего не делит — решаем по именам."""
+        """Один ряд на всю пачку ничего не делит — это общие условия."""
         pages = [
             page(0, headerless=True),
             page(1, "Fil", "Burmov", {0: 1}),
             page(2, "Peter", "Tibora", {0: 3}),
         ]
 
-        self.assertIsNone(split_by_conditions(pages))
+        self.assertIsNone(split_by_conditions(pages, classify(pages)))
 
     def test_without_conditions_the_old_way_still_works(self):
         """Короткая работа: условий не раздавали, а пакеты всё равно есть."""
@@ -355,3 +359,111 @@ class PacketTests(SimpleTestCase):
         packets = arrange(pages, ROSTER)
 
         self.assertIsNone(packets[0].student_id)
+
+
+class GuessTests(SimpleTestCase):
+    """
+    Догадка законна, но она не выдаётся за прочитанное.
+
+    Измерено на живой пачке: раскладка по свободным задачам и соседству
+    ошиблась четыре раза из пятнадцати — и ошиблась молча. Запрещать её нельзя
+    (иначе всякий неподписанный лист шёл бы к человеку), а молчать о ней —
+    можно только один раз, до первой чужой контрольной у одноклассника.
+    """
+
+    def test_a_page_placed_without_its_own_name_is_marked(self):
+        pages = [
+            page(0, "Fil", "Burmov", {0: 1}),
+            page(1, marks={4: 3}),
+        ]
+
+        _, _, by_fit = group(pages, ROSTER)
+
+        self.assertEqual(by_fit, {1})
+
+    def test_a_page_placed_by_its_own_name_is_not_marked(self):
+        pages = [page(0, "Fil", "Burmov", {0: 1}), page(1, "Peter", "Tibora", {0: 3})]
+
+        _, _, by_fit = group(pages, ROSTER)
+
+        self.assertEqual(by_fit, set())
+
+    def test_the_packet_remembers_which_pages_were_guessed(self):
+        pages = [
+            page(0, "Fil", "Burmov", {0: 1}),
+            page(1, marks={4: 3}),
+        ]
+
+        packets = arrange(pages, ROSTER)
+
+        self.assertEqual(packets[0].by_fit, [1])
+
+
+class KindTests(SimpleTestCase):
+    """
+    Что это за страница: решение, условия или наш лист, который не прочитался.
+
+    Отвечает на это метка в углу поля записи — единственный твёрдый факт в
+    этой части: лист условий печатают из своих материалов, и метки на нём нет.
+    Но её может не оказаться и на наших листах — печатали со старого бланка,
+    принтер съел угол, — и тогда доверять ей нельзя вовсе.
+    """
+
+    def test_a_sheet_without_our_mark_is_conditions(self):
+        pages = [
+            page(0, headerless=True, ours=False),
+            page(1, "Fil", "Burmov", {0: 1}),
+        ]
+
+        self.assertEqual(classify(pages)[0], "conditions")
+
+    def test_our_sheet_that_did_not_read_is_not_conditions(self):
+        """Смазанное фото нашего листа — потерянная работа, а не условие."""
+        pages = [
+            page(0, headerless=True, ours=True),
+            page(1, "Fil", "Burmov", {0: 1}),
+        ]
+
+        self.assertEqual(classify(pages)[0], "unreadable")
+
+    def test_without_the_mark_anywhere_the_signal_is_ignored(self):
+        """
+        Ни на одном листе метки нет — печатали со старого бланка.
+
+        Доверять ей тут значит объявить условиями всю пачку, поэтому работает
+        прежнее правило: прочиталась шапка или нет.
+        """
+        pages = [
+            page(0, headerless=True, ours=False),
+            page(1, "Fil", "Burmov", {0: 1}, ours=False),
+        ]
+
+        self.assertEqual(classify(pages)[1], "read")
+        self.assertEqual(classify(pages)[0], "conditions")
+
+
+class CommonConditionsTests(SimpleTestCase):
+    """Условия отсканированы один раз, в начале пачки: они общие для всех."""
+
+    def test_they_go_into_every_students_file(self):
+        pages = [
+            page(0, headerless=True, ours=False),
+            page(1, headerless=True, ours=False),
+            page(2, "Fil", "Burmov", {0: 1}),
+            page(3, "Peter", "Tibora", {0: 3}),
+        ]
+
+        packets = arrange(pages, ROSTER)
+
+        self.assertEqual(len(packets), 2)
+        for packet in packets:
+            self.assertEqual([p.index for p in packet.conditions], [0, 1])
+
+    def test_they_do_not_cut_the_pile(self):
+        """Один ряд — не граница: иначе пачка из пятнадцати работ станет двумя."""
+        pages = [page(0, headerless=True, ours=False)]
+        pages += [page(1 + n, f"Name{n}", "", {0: 1}) for n in range(3)]
+
+        packets = arrange(pages, ROSTER)
+
+        self.assertGreater(len(packets), 2)

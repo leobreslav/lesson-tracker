@@ -254,8 +254,9 @@ class WorkViewSet(CourseScopedViewSet):
         form = ScanPageSerializer(data=request.data, context={"work": work})
         form.is_valid(raise_exception=True)
         fields = dict(form.validated_data)
+        ours = fields.pop("ours", False)
         if fields.pop("headerless", False):
-            services.mark_headerless(work, index=fields["index"])
+            services.mark_headerless(work, index=fields["index"], ours=ours)
         else:
             services.edit_scan_page(work, **fields)
         return Response(services.scan_state(work))

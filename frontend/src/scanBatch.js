@@ -132,6 +132,9 @@ export async function walk(file, { onPage, send, blank, stop } = {}) {
       index: number - 1,
       score: found?.score ?? 0,
       enough,
+      // метка в углу: наш лист или чужой. У листа без меток гомографии нет
+      // вовсе, а значит и смотреть негде — такой лист не наш по определению
+      ours: Boolean(found?.ours),
       preview: canvas.toDataURL('image/jpeg', 0.5),
       strip: found ? toCanvas(found.strip).toDataURL('image/jpeg', 0.8) : null,
     }
@@ -147,7 +150,7 @@ export async function walk(file, { onPage, send, blank, stop } = {}) {
       // Шапки нет — читать нечего и платить не за что, но сказать серверу
       // надо: ряд таких листов размечает пачку, и без них он не увидит, где
       // кончается работа одного ученика и начинается другого.
-      await blank(page.index)
+      await blank(page.index, page.ours)
     }
 
     pages.push(page)

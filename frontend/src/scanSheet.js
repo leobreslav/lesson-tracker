@@ -22,7 +22,7 @@
  * `ImageData`), поэтому проверяются в node без браузера.
  */
 
-import { GRID, HEADER, PAGE, STRIP_WIDTH, headerCorners, sheetCorners, stripHeight } from './blankGeometry.js'
+import { GRID, HEADER, PAGE, QR, STRIP_WIDTH, headerCorners, sheetCorners, stripHeight } from './blankGeometry.js'
 
 /** Оттенки серого одной плоскостью: дальше всё считается по ней. */
 export function toGray(image) {
@@ -421,6 +421,60 @@ export function gridScore(strip) {
 }
 
 /**
+ * Наш ли это лист — по QR в углу поля записи.
+ *
+ * Код **не декодируется**: содержимое у него постоянное, и читать его незачем.
+ * Проверяется узор — три «глаза» по углам, те самые концентрические квадраты,
+ * по которым QR узнают все декодеры. Каждый из них семь модулей на семь:
+ * тёмная рамка, светлое кольцо, тёмная сердцевина. Три совпавших глаза значит
+ * «наш лист», и никакой библиотеки для этого не нужно.
+ *
+ * Работает это только после выпрямления: без гомографии мы не знаем, где у
+ * листа угол. Так и надо — лист без меток и не наш по определению.
+ */
+export function hasBlankMark(image, h) {
+  const step = QR.size / QR.modules
+  const dark = (mx, my) => {
+    const at = project(h, QR.x + (mx + 0.5) * step, QR.y + (my + 0.5) * step)
+    const x = Math.round(at.x)
+    const y = Math.round(at.y)
+    if (x < 1 || y < 1 || x >= image.width - 1 || y >= image.height - 1) return null
+    const p = (y * image.width + x) * 4
+    return (image.data[p] * 299 + image.data[p + 1] * 587 + image.data[p + 2] * 114) / 1000
+  }
+
+  // яркость бумаги рядом с кодом: порог считаем от неё, а не от абсолютного
+  const around = []
+  for (let mx = 0; mx < QR.modules; mx += 1) {
+    const value = dark(mx, -2)
+    if (value !== null) around.push(value)
+  }
+  if (!around.length) return false
+  const paper = around.sort((a, b) => a - b)[Math.floor(around.length / 2)]
+  const level = paper * 0.6
+
+  const eye = (left, top) => {
+    let right = 0
+    let wrong = 0
+    for (let my = 0; my < 7; my += 1) {
+      for (let mx = 0; mx < 7; mx += 1) {
+        const value = dark(left + mx, top + my)
+        if (value === null) return false
+        const ring = mx === 0 || my === 0 || mx === 6 || my === 6
+        const middle = mx >= 2 && mx <= 4 && my >= 2 && my <= 4
+        const shouldBeDark = ring || middle
+        if ((value < level) === shouldBeDark) right += 1
+        else wrong += 1
+      }
+    }
+    return right / (right + wrong) > 0.8
+  }
+
+  const eyes = [eye(0, 0), eye(QR.modules - 7, 0), eye(0, QR.modules - 7)]
+  return eyes.filter(Boolean).length >= 2
+}
+
+/**
  * Полоска шапки с фотографии страницы.
  *
  * Возвращает `{strip, score, corners}` или `null`, если ни одна четвёрка меток
@@ -462,6 +516,7 @@ export function extractHeader(image) {
   if (!best) return null
   return {
     ...best,
+    ours: hasBlankMark(image, best.h),
     strip: warp(image, best.h, HEADER, STRIP_WIDTH, stripHeight()),
   }
 }

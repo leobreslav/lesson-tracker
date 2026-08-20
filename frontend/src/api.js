@@ -598,10 +598,10 @@ export const readScanPage = (work, { index, blob, mark }) => {
   return request(`/api/works/${work}/scan/read/`, { method: 'POST', body: form })
 }
 
-export const markHeaderless = (work, index) =>
+export const markHeaderless = (work, index, ours) =>
   request(`/api/works/${work}/scan/page/`, {
     method: 'POST',
-    body: { index, headerless: true },
+    body: { index, headerless: true, ours },
   })
 
 export const editScanPage = (work, fields) =>

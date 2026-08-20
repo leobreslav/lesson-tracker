@@ -505,6 +505,12 @@ class ScanPage(models.Model):
     # настоящего листа, и тогда это потерянная работа, а не условие; развести
     # их помогает рисунок пачки, а не сама страница.
     headerless = models.BooleanField("no header found on the page", default=False)
+    # Наш ли это лист — по коду в углу поля записи. Лист условий печатают из
+    # своих материалов, и кода на нём нет; лист решения наш, и код на месте,
+    # даже если шапка смазана. Без этого «не наш бланк» и «плохое фото нашего
+    # листа» неразличимы, а это очень разные события: первое — норма, второе —
+    # потерянная работа ученика.
+    ours = models.BooleanField("our blank, by the mark in the corner", default=False)
     # Шестнадцать значений: Q1..Q15 и сумма за страницу. null — пустая клетка.
     cells = models.JSONField("cells as read", default=list, blank=True)
     model = models.CharField("model that read it", max_length=64, blank=True)

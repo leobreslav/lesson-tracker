@@ -113,7 +113,8 @@ export default function ScanWizard({ work, onClose, onDone }) {
           setState(answer)
           return true
         },
-        blank: async (index) => setState(await markHeaderless(work.id, index)),
+        blank: async (index, ours) =>
+          setState(await markHeaderless(work.id, index, ours)),
       })
       setPages(collected)
       setState(await fetchScanState(work.id))

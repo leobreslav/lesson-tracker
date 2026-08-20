@@ -813,6 +813,7 @@ def scan_pages(work) -> list:
             cells=(list(row.cells) + [None] * CELLS)[:CELLS],
             guess=row.guess,
             headerless=row.headerless,
+            ours=row.ours,
             student_id=row.student_id,
             decided_by_human=row.decided_by_human,
         )
@@ -876,6 +877,13 @@ def scan_state(work) -> dict:
         trouble = sorted(
             {code for page in packet.pages for code in by_index[page.index]["trouble"]}
         )
+        # положенное по свободным задачам или по соседу — догадка, и человек
+        # о ней узнаёт: на живой пачке такая раскладка ошиблась четырежды из
+        # пятнадцати, и ошиблась молча
+        if packet.by_fit:
+            trouble.append("placed_by_guess")
+            for index in packet.by_fit:
+                by_index[index]["trouble"].append("placed_by_guess")
         if packet.student_id is None:
             trouble = ["no_owner"] + [c for c in trouble if c != "no_owner"]
             for page in packet.pages:
@@ -1035,6 +1043,7 @@ def save_scan_reading(work, *, index: int, fingerprint: str, data: dict):
     row.date_text = data.get("date", "")
     row.guess = data.get("guess", "")
     row.cells = data.get("values") or []
+    row.ours = True
     row.model = data.get("model", "")
     row.save()
     return row
@@ -1043,17 +1052,19 @@ def save_scan_reading(work, *, index: int, fingerprint: str, data: dict):
 UNSET = object()
 
 
-def mark_headerless(work, *, index: int):
+def mark_headerless(work, *, index: int, ours: bool = False):
     """
-    Записать, что на странице шапки не нашлось.
+    Записать, что на странице шапки не нашлось, и наш ли это лист.
 
     Сервер обязан знать о таких страницах, хотя читать их незачем: без них
-    рисунок пачки неполон — а именно по нему видно, где кончается работа
-    одного ученика и начинается другого.
+    рисунок пачки неполон — по нему видно, где кончается работа одного ученика
+    и начинается другого. А метка в углу отвечает, лист это условий или наш,
+    смазанный: первое — норма, второе — потерянная работа.
     """
     row, _ = ScanPage.objects.get_or_create(work=work, index=index)
     row.headerless = True
-    row.save(update_fields=["headerless"])
+    row.ours = ours
+    row.save(update_fields=["headerless", "ours"])
     return row
 
 

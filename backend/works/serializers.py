@@ -402,6 +402,8 @@ class ScanPageSerializer(serializers.Serializer):
     # шапки на странице не нашлось — обычно это лист условий; читать его
     # незачем, а знать о нём надо: по нему видно границу между работами
     headerless = serializers.BooleanField(required=False)
+    # метка в углу нашлась: значит лист наш, даже если шапку не прочитать
+    ours = serializers.BooleanField(required=False)
     student = serializers.IntegerField(required=False, allow_null=True)
     cells = serializers.ListField(
         child=serializers.IntegerField(allow_null=True, min_value=0, max_value=99),

@@ -1186,7 +1186,8 @@
       "mark_too_big": "a mark above the maximum",
       "sum_mismatch": "the page total does not add up",
       "beyond_questions": "a mark in a cell this work does not use",
-      "first_name_only": "signed with a first name only"
+      "first_name_only": "signed with a first name only",
+      "placed_by_guess": "placed by a guess, not by a name"
     },
     "questionsHint": "How many questions were in this work, and what is the top mark for one? The blank always has fifteen cells; the extra ones must stay empty — that is how a shifted reading gets caught.",
     "questionCount": "Questions",
