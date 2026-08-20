@@ -44,7 +44,8 @@
     "needClass": "add a class first",
     "school": "School",
     "schools": "Schools",
-    "works": "Assignments"
+    "works": "Assignments",
+    "bank": "Problem bank"
   },
   "auth": {
     "prompt": "Sign in to continue.",
@@ -264,7 +265,14 @@
     "baseline_unknown": "There is no approved baseline with that date for this course.",
     "message_empty": "There is nothing to send.",
     "grading_name_required": "A grading system needs a name.",
-    "grading_name_taken": "The school already has a grading system with that name."
+    "grading_name_taken": "The school already has a grading system with that name.",
+    "bank_read_only": "This entry is read-only for you: make your own copy to change it.",
+    "outline_jump": "Line {{line}} is indented more than one level deeper than the one above it.",
+    "outline_empty": "There is nothing to read.",
+    "problem_text_required": "Line {{line}} has a number but no statement.",
+    "tag_kind_mismatch": "A tag of that kind does not belong here.",
+    "tag_not_negatable": "Only a method or a theorem can be deliberately avoided.",
+    "superuser_only_tags": "Only a superuser adds tags: the vocabulary is shared by everyone."
   },
   "classPicker": {
     "label": "Classes:",
@@ -1255,5 +1263,43 @@
     "send": "Send",
     "somebody": "somebody",
     "ask": "Ask about this question"
+  },
+  "bank": {
+    "title": "Problem bank",
+    "addSource": "Add a source",
+    "sourceTitle": "Title",
+    "sourceAuthor": "Author",
+    "level": "Where it lives",
+    "levels": {
+      "system": "System library",
+      "school": "School library",
+      "personal": "Mine"
+    },
+    "problemCount_one": "{{count}} problem",
+    "problemCount_other": "{{count}} problems",
+    "solutionCount_one": "{{count}} solution",
+    "solutionCount_other": "{{count}} solutions",
+    "empty": {
+      "title": "The bank is empty",
+      "hint": "A source is usually a book: its contents become sections, and its exercises become problems. One problem may sit in several books at once."
+    },
+    "number": "Number",
+    "outline": "Contents",
+    "noOutline": "No contents yet.",
+    "outsideSections": "Outside sections",
+    "noProblems": "Nothing here yet.",
+    "pasteOutline": "Paste the contents",
+    "pasteProblems": "Paste problems",
+    "outlineHint": "One line per section; indent by two spaces to nest. The old contents are replaced.",
+    "problemsHint": "One line per problem: the number, a tab, then the statement. A line without a number is a statement.",
+    "problem": "Problem",
+    "answer": "Answer: {{answer}}",
+    "foundIn": "Found in",
+    "solutions": "Solutions",
+    "solution": "Solution",
+    "noSolutions": "No solution has been written yet.",
+    "addSolution": "Add a solution",
+    "solutionTitle": "Method, in a few words",
+    "analogues": "Analogues"
   }
 }

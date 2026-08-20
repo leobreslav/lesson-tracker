@@ -585,6 +585,46 @@ export const fetchScaleImpact = (work) =>
  */
 /* --- разбор пачки сканов ------------------------------------------------- */
 
+/* --- банк задач ------------------------------------------------------------ */
+
+export const fetchSources = () => request('/api/bank/sources/')
+
+export const createSource = (fields) =>
+  request('/api/bank/sources/', { method: 'POST', body: fields })
+
+export const fetchSource = (id, params = {}) => {
+  const query = new URLSearchParams(
+    Object.entries(params).filter(([, value]) => value !== null && value !== ''),
+  ).toString()
+  return request(`/api/bank/sources/${id}/${query ? `?${query}` : ''}`)
+}
+
+export const fillSource = (id, body) =>
+  request(`/api/bank/sources/${id}/`, { method: 'POST', body })
+
+export const fetchProblem = (id) => request(`/api/bank/problems/${id}/`)
+
+export const saveProblem = (id, fields) =>
+  request(`/api/bank/problems/${id}/`, { method: 'PATCH', body: fields })
+
+export const createSolution = (fields) =>
+  request('/api/bank/solutions/', { method: 'POST', body: fields })
+
+export const saveSolution = (fields) =>
+  request('/api/bank/solutions/', { method: 'PATCH', body: fields })
+
+export const fetchTags = (kind) =>
+  request(`/api/bank/tags/${kind ? `?kind=${kind}` : ''}`)
+
+export const createTag = (fields) =>
+  request('/api/bank/tags/', { method: 'POST', body: fields })
+
+export const linkTag = (body) =>
+  request('/api/bank/tag-links/', { method: 'POST', body })
+
+export const unlinkTag = (body) =>
+  request('/api/bank/tag-links/', { method: 'DELETE', body })
+
 /* --- системы оценивания и разговор о задаче ------------------------------- */
 
 export const fetchGradingSystems = () => request('/api/works/grading/')

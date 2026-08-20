@@ -6372,3 +6372,86 @@ button.dropzone:hover:not(:disabled) {
 .thread-list li.mine .said {
   color: var(--accent, inherit);
 }
+
+/* --- ЗАДАЧНИК --------------------------------------------------------------
+   Две колонки: оглавление узкое и фиксированное, задачи занимают остальное.
+   На узком экране колонки схлопываются — оглавление становится строкой сверху,
+   как и всюду в проекте, где две колонки не помещаются. */
+.bank-columns {
+  display: grid;
+  grid-template-columns: 18rem 1fr;
+  gap: var(--card-gap);
+  align-items: start;
+}
+
+@media (max-width: 60rem) {
+  .bank-columns {
+    grid-template-columns: 1fr;
+  }
+}
+
+.bank-columns .outline ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.bank-columns .outline .active {
+  font-weight: 600;
+}
+
+.source-list,
+.problem-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.source-list li {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  padding: 0.15rem 0;
+}
+
+.source-list .count {
+  margin-left: auto;
+}
+
+/* Задача строкой: номер узкой колонкой слева, условие рядом. Номер — это
+   адрес, и он должен стоять столбиком, а не теряться в тексте. */
+.problem-list li {
+  display: grid;
+  grid-template-columns: 3.5rem 1fr auto;
+  gap: 0.5rem;
+  align-items: baseline;
+  padding: 0.25rem 0;
+  border-top: 1px solid var(--border);
+}
+
+.problem-list li:first-child {
+  border-top: none;
+}
+
+.problem-list .label {
+  font-weight: 600;
+}
+
+.problem-list .text p:first-child {
+  margin-top: 0;
+}
+
+/* Тег решения: отрицание видно знаком, а не только цветом — цвет читается
+   не всеми. */
+.tag {
+  display: inline-block;
+  margin-right: 0.4rem;
+  padding: 0 0.35rem;
+  border: 1px solid var(--border);
+  border-radius: var(--row-radius);
+}
+
+.tag.avoids {
+  border-style: dashed;
+  color: var(--muted);
+}

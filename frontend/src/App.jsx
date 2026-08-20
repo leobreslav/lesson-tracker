@@ -1,4 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
+import Bank from './Bank'
+import BankProblem from './BankProblem'
+import BankSource from './BankSource'
 import {
   BrowserRouter,
   Navigate,
@@ -172,6 +175,9 @@ export default function App() {
           <Route path="/plan" element={guarded(Plan, { user })} />
           <Route path="/works" element={guarded(Works)} />
           <Route path="/works/:id" element={guarded(WorkTable)} />
+          <Route path="/bank" element={guarded(Bank)} />
+          <Route path="/bank/source/:id" element={guarded(BankSource)} />
+          <Route path="/bank/problem/:id" element={guarded(BankProblem)} />
           {/* «Школа» — не одна страница, а четыре: рамка с подменю и
               вложенные маршруты под ней */}
           <Route

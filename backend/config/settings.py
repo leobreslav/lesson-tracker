@@ -63,6 +63,7 @@ INSTALLED_APPS = [
     'works',
     'onboarding',
     'vision',
+    'bank',
 ]
 
 AUTH_USER_MODEL = "accounts.User"

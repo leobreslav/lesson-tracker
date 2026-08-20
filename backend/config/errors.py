@@ -198,6 +198,15 @@ class Codes:
     SCAN_PAGE_UNKNOWN = "scan_page_unknown"
     SCAN_NOTHING_READ = "scan_nothing_read"
 
+    # банк задач
+    BANK_READ_ONLY = "bank_read_only"
+    OUTLINE_JUMP = "outline_jump"
+    OUTLINE_EMPTY = "outline_empty"
+    PROBLEM_TEXT_REQUIRED = "problem_text_required"
+    TAG_KIND_MISMATCH = "tag_kind_mismatch"
+    TAG_NOT_NEGATABLE = "tag_not_negatable"
+    SUPERUSER_ONLY_TAGS = "superuser_only_tags"
+
     # разговор о задаче
     MESSAGE_EMPTY = "message_empty"
 
