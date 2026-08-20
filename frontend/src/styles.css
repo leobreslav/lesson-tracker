@@ -6554,3 +6554,31 @@ button.dropzone:hover:not(:disabled) {
 .tag-strip .tag button {
   margin-left: 0.25rem;
 }
+
+/* Отобранное: полоса под шапкой банка. Заливка тут не украшение — набор
+   переживает переход между экранами, и его должно быть видно сразу. */
+.basket {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.4rem 0.75rem;
+  background: var(--surface-1);
+  border-radius: var(--row-radius);
+}
+
+/* Кнопка отбора: место под неё занято всегда, иначе строки списка съезжают
+   друг относительно друга, стоит отметить одну. */
+.pick {
+  min-width: 1.6rem;
+  padding: 0 0.35rem;
+}
+
+.pick.taken {
+  font-weight: 700;
+}
+
+/* «Условие в банке изменилось» — пометка под условием, а не отдельная
+   карточка: она про эту строку и читается вместе с ней. */
+.task-question .stale {
+  margin-top: 0.2rem;
+}

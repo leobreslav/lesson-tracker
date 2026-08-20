@@ -22,7 +22,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from . import services, threads
+from . import assembling, services, threads
 from .models import Thread
 from vision import services as vision_services
 from .models import Submission, Task, Work
@@ -118,6 +118,53 @@ class WorkViewSet(CourseScopedViewSet):
         интерфейс спрашивает подтверждение.
         """
         instance.delete()
+
+    @action(detail=False, methods=["post"], url_path="from-bank")
+    def from_bank(self, request):
+        """
+        Собрать работу из задач банка.
+
+        Курс называется в теле, а не берётся из объекта: объекта ещё нет.
+        Поэтому и проверка своя — `my_courses()`, как у импорта плана: без неё
+        любой учитель школы завёл бы работу в чужом курсе.
+        """
+        course = get_object_or_404(
+            self.my_courses(), pk=request.data.get("course") or 0
+        )
+        slot = None
+        if request.data.get("slot"):
+            from schedule.models import Slot
+
+            slot = get_object_or_404(
+                Slot.objects.filter(course=course), pk=request.data["slot"]
+            )
+
+        work = assembling.assemble(
+            course,
+            problems=request.data.get("problems") or [],
+            title=request.data.get("title") or "",
+            slot=slot,
+            is_homework=bool(request.data.get("is_homework")),
+            user=request.user,
+        )
+        return Response(
+            WorkSerializer(work, context=self.get_serializer_context()).data,
+            status=status.HTTP_201_CREATED,
+        )
+
+    @action(detail=True, methods=["post"], url_path="add-from-bank")
+    def add_from_bank(self, request, pk=None):
+        """Дописать задачи банка в конец готовой работы."""
+        work = self.get_object()
+        made = assembling.add(
+            work, problems=request.data.get("problems") or [], user=request.user
+        )
+        return Response({"added": len(made)}, status=status.HTTP_201_CREATED)
+
+    @action(detail=True, methods=["get"])
+    def stale(self, request, pk=None):
+        """Где условие в банке ушло вперёд снимка, лежащего в работе."""
+        return Response({"stale": assembling.stale(self.get_object())})
 
     @action(detail=True, methods=["get"])
     def impact(self, request, pk=None):
@@ -471,6 +518,17 @@ class TaskViewSet(CourseScopedViewSet):
             )
 
         return Response({"moved": services.move(task, direction)})
+
+    @action(detail=True, methods=["post"])
+    def refresh(self, request, pk=None):
+        """
+        Взять условие из банка заново.
+
+        Только по прямой просьбе: задача работы — снимок, и обновлять его за
+        учителя значит переписывать то, по чему уже писали.
+        """
+        task = assembling.refresh(self.get_object())
+        return Response(TaskSerializer(task).data)
 
     @action(detail=True, methods=["get"])
     def impact(self, request, pk=None):

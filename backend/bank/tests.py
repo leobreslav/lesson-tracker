@@ -835,3 +835,45 @@ class ListQueryTests(SchoolTestMixin, APITestCase):
         return Source.objects.create(
             title=title, school=self.school, owner=self.user, created_by=self.user
         )
+
+
+class BookListingTests(SchoolTestMixin, APITestCase):
+    """
+    С чего открывается книга. Ошибка тут выглядит как пустая книга при
+    четырёх задачах в ней — и читается как поломка, а не как фильтр.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.book = Source.objects.create(
+            title="Листочки", school=self.school, owner=self.user, created_by=self.user
+        )
+        self.chapter = Section.objects.create(source=self.book, title="Глава")
+        self.inside = self.entry("1", self.chapter)
+        self.outside = self.entry("2", None)
+
+    def entry(self, label, section):
+        problem = Problem.objects.create(
+            text=f"Задача {label}",
+            school=self.school,
+            owner=self.user,
+            created_by=self.user,
+        )
+        return Entry.objects.create(
+            source=self.book, section=section, problem=problem, label=label
+        )
+
+    def open(self, **params):
+        self.client.force_authenticate(self.user)
+        answer = self.client.get(reverse("bank-source", args=[self.book.pk]), params)
+        self.assertEqual(answer.status_code, 200)
+        return [row["label"] for row in answer.data["entries"]]
+
+    def test_a_book_opens_whole(self):
+        self.assertEqual(sorted(self.open()), ["1", "2"])
+
+    def test_a_chapter_narrows_it(self):
+        self.assertEqual(self.open(section=self.chapter.pk), ["1"])
+
+    def test_outside_the_chapters_is_a_choice_of_its_own(self):
+        self.assertEqual(self.open(section="none"), ["2"])

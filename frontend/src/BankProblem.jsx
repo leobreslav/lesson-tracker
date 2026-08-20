@@ -7,6 +7,7 @@ import Collapsible from './Collapsible'
 import CopyToShelf from './CopyToShelf'
 import Markdown from './Markdown'
 import TagStrip from './TagStrip'
+import { shortDate } from './dates'
 import { createSolution, fetchProblem, fetchTags, leaveFamily, saveProblem } from './api'
 
 /**
@@ -145,6 +146,22 @@ export default function BankProblem() {
           </>
         )}
       </section>
+
+      {/* где её уже спрашивали: список коротких строк, а не таблица —
+          отвечает он на один вопрос, «не задавал ли я это уже» */}
+      {data.asked_in.length > 0 && (
+        <section className="panel">
+          <h3>{t('bank.askedIn')}</h3>
+          <ul className="hint">
+            {data.asked_in.map((row) => (
+              <li key={row.work}>
+                <Link to={`/works/${row.work}`}>{row.title}</Link> · {row.course} ·{' '}
+                {shortDate(row.date)}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       {/* где встречается: задача одна, книг несколько — копий у неё нет */}
       {data.sources.length > 0 && (

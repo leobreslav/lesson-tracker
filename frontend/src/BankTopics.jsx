@@ -2,10 +2,13 @@ import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 
+import Basket from './Basket'
 import CoursePicker from './CoursePicker'
 import MathText from './MathText'
+import Pick from './Pick'
 import { fetchChronology, fetchCourses, fetchTopic, fetchTopics } from './api'
 import { lastChoice } from './remember'
+import { taken } from './basket'
 
 /**
  * Тематический каталог: папки, заданные условием.
@@ -28,6 +31,7 @@ export default function BankTopics() {
   const [lessons, setLessons] = useState([])
   const [upto, setUpto] = useState('')
   const [error, setError] = useState(null)
+  const [picked, setPicked] = useState(taken())
 
   useEffect(() => {
     fetchTopics()
@@ -66,6 +70,8 @@ export default function BankTopics() {
       </header>
 
       {error && <p className="error">{error}</p>}
+
+      <Basket picked={picked} onChange={setPicked} />
 
       {topics.length === 0 ? (
         <p className="hint">{t('bank.topics.none')}</p>
@@ -121,7 +127,7 @@ export default function BankTopics() {
             <ul className="problem-list">
               {(found ? found.problems : []).map((problem) => (
                 <li key={problem.id}>
-                  <span className="label" />
+                  <Pick id={problem.id} picked={picked} onChange={setPicked} />
                   <span className="text">
                     <Link to={`/bank/problem/${problem.id}`}>
                       <MathText text={problem.text} />

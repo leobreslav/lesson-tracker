@@ -275,7 +275,9 @@
     "superuser_only_tags": "Only a superuser adds tags: the vocabulary is shared by everyone.",
     "bank_expression_bad": "The search condition does not parse — fix it in the tree.",
     "search_name_required": "A saved search needs a name — that is how it is found again.",
-    "bank_same_problem": "A problem is not its own analogue."
+    "bank_same_problem": "A problem is not its own analogue.",
+    "work_nothing_to_assemble": "No problems picked: there is nothing to assemble.",
+    "task_not_from_bank": "This question was typed by hand — there is nothing to refresh it from."
   },
   "classPicker": {
     "label": "Classes:",
@@ -1032,7 +1034,9 @@
       "deleteConfirm": "Delete this question? The answers to it go with it.",
       "impact": "{{answers}} answers already, {{checked}} of them checked.",
       "recheck_one": "Clear {{count}} verdict",
-      "recheck_other": "Clear {{count}} verdicts"
+      "recheck_other": "Clear {{count}} verdicts",
+      "stale": "the statement in the bank has changed · ",
+      "refresh": "Refresh from the bank"
     },
     "answers": "Answers",
     "description": "What to do",
@@ -1379,6 +1383,33 @@
       "add": "Attach",
       "remove": "Remove the tag “{{name}}”",
       "side": "Sign"
-    }
+    },
+    "basket": {
+      "count_one": "{{count}} problem picked",
+      "count_other": "{{count}} problems picked",
+      "assemble": "Assemble an assignment",
+      "clear": "Clear the picks",
+      "take": "Pick this problem",
+      "drop": "Remove from the picks"
+    },
+    "assemble": {
+      "title_one": "An assignment out of {{count}} problem",
+      "title_other": "An assignment out of {{count}} problems",
+      "course": "Course",
+      "where": "Where",
+      "newWork": "A new assignment",
+      "existing": "Add to an existing one",
+      "which": "Which assignment",
+      "noWorks": "This course has no assignments yet — assemble a new one.",
+      "name": "Title",
+      "namePlaceholder": "may be left empty — we will put the date in",
+      "lesson": "Set at the lesson",
+      "noLesson": "not tied to a lesson",
+      "number": "lesson {{number}}",
+      "homework": "this is homework",
+      "do": "Assemble"
+    },
+    "wholeBook": "The whole book",
+    "askedIn": "Where it has been asked"
   }
 }

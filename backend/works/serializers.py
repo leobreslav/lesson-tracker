@@ -50,8 +50,20 @@ class TaskSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Task
-        fields = ("id", "work", "position", "question", "answers", "created_at")
-        read_only_fields = ("id", "position", "created_at")
+        # `problem` только на чтение: происхождение ставит сборка из банка, а
+        # не присланное тело. Иначе задачу можно было бы объявить взятой из
+        # чужого условия — и «где её спрашивали» начало бы врать.
+        fields = (
+            "id",
+            "work",
+            "position",
+            "question",
+            "answers",
+            "maximum",
+            "problem",
+            "created_at",
+        )
+        read_only_fields = ("id", "position", "problem", "created_at")
 
     def validate_question(self, value):
         if not value.strip():

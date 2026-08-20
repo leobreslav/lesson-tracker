@@ -205,6 +205,7 @@ ACTIONS_WITHOUT_ID = {
     "plannode-layout-agenda": "то же самое, темы уроков за период",
     "gradelevel-preset": "«завести 1..N», на вход одно число",
     "gradelevel-delete-unused": "убрать все параллели без курсов",
+    "work-from-bank": "сборка из банка: курс в теле, работы ещё нет",
 }
 
 

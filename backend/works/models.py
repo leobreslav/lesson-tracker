@@ -232,6 +232,19 @@ class Task(models.Model):
     )
     position = models.PositiveIntegerField("position", default=0)
     question = models.TextField("question")
+    # Откуда взято, если взято из банка. Условие при этом лежит **своё**:
+    # работа — запись о том, что ученики решали, и правка условия в банке
+    # не должна переписывать её задним числом. Ссылка отвечает на другой
+    # вопрос — «где эта задача уже спрашивалась» — и позволяет назвать
+    # расхождение, когда банк ушёл вперёд.
+    problem = models.ForeignKey(
+        "bank.Problem",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="asked_in",
+        verbose_name="problem it was taken from",
+    )
     # Сколько баллов стоит этот вопрос **в этой работе**. Свойство ячейки, а
     # не задачи: «2+2» стоит два балла в пятом классе и полбалла в девятом.
     maximum = models.PositiveSmallIntegerField("top mark for this question", default=1)

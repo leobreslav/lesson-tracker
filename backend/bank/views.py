@@ -109,12 +109,17 @@ class SourceView(BankView):
         if label:
             # номер — это адрес, а не текст: «14а» ищется точным совпадением
             entries = entries.filter(label__iexact=label)
+        elif section == "none":
+            # «вне разделов» — это выбор, а не отсутствие выбора: задачи,
+            # которые в оглавление не разложили, надо уметь увидеть отдельно
+            entries = entries.filter(section__isnull=True)
         elif section:
             entries = entries.filter(section_id=section)
-        elif source.sections.exists():
-            # книга с оглавлением: без выбранного раздела показываем то, что
-            # лежит вне разделов, а не всё подряд
-            entries = entries.filter(section__isnull=True)
+
+        # Без выбора показывается книга целиком. Раньше показывалось «вне
+        # разделов», и книга, у которой всё разложено по главам — то есть
+        # обычная, — открывалась пустой страницей со словами «здесь пока
+        # пусто». Оглавление сужает, а не решает, с чего начать.
 
         return Response(
             {

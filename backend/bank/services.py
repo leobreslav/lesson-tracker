@@ -197,6 +197,13 @@ def tag_tree(kind: str | None = None) -> list[dict]:
     return out
 
 
+def asked_in(problem, user):
+    """Мост в работы: считает его `works.assembling`, который знает про них."""
+    from works import assembling
+
+    return assembling.asked_in(problem, user)
+
+
 def problem_payload(problem, *, user) -> dict:
     """Условие целиком: решения, где встречается, аналоги."""
     from .models import Family
@@ -259,4 +266,7 @@ def problem_payload(problem, *, user) -> dict:
             .select_related("created_by")
         ],
         "analogues": analogues,
+        # Где эту задачу уже спрашивали — среди своих курсов. Ради этого
+        # ссылка на банк в работе и стоит: не задать одно и то же дважды.
+        "asked_in": asked_in(problem, user),
     }

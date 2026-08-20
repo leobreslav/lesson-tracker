@@ -267,6 +267,10 @@ class MatrixTests(AccessTestCase):
                 {"name": "work-scan-page", "method": "post", "body": {"index": 0}},
                 {"name": "work-scan-apply", "method": "post", "body": {}},
                 {"name": "work-scan-questions", "method": "post", "body": {}},
+                # сборка из банка: дописать задачи в чужую работу нельзя, и
+                # расхождение с банком у чужой работы читать тоже
+                {"name": "work-add-from-bank", "method": "post", "body": {}},
+                "work-stale",
             ),
         )
 
@@ -282,6 +286,7 @@ class MatrixTests(AccessTestCase):
                 {"name": "task-move", "method": "post", "body": {"direction": "up"}},
                 "task-impact",
                 {"name": "task-recheck", "method": "post"},
+                {"name": "task-refresh", "method": "post"},
             ),
         )
 

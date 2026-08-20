@@ -2,10 +2,13 @@ import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 
+import Basket from './Basket'
 import ExpressionEditor from './ExpressionEditor'
 import MathText from './MathText'
+import Pick from './Pick'
 import Switch from './Switch'
 import { prune } from './expressionTree'
+import { taken } from './basket'
 import {
   deleteSavedSearch,
   fetchSavedSearches,
@@ -35,6 +38,7 @@ export default function BankSearch() {
   const [chosen, setChosen] = useState([])
   const [found, setFound] = useState(null)
   const [error, setError] = useState(null)
+  const [picked, setPicked] = useState(taken())
   // Второй вход в тот же набор: грани отвечают только на «и», выражение — на
   // «или» и на отрицание. Вид один за раз: два списка результатов рядом
   // означали бы два ответа на вопрос «что нашлось».
@@ -54,11 +58,12 @@ export default function BankSearch() {
       .catch(() => setSaved([]))
   }, [])
 
-  const picked = (side) =>
+  // грани, выбранные с этой стороны: у тега на условии стороны нет вовсе
+  const facetsOf = (side) =>
     chosen.filter((one) => one.side === side).map((one) => one.tag)
-  const tags = picked('')
-  const uses = picked('uses')
-  const avoids = picked('avoids')
+  const tags = facetsOf('')
+  const uses = facetsOf('uses')
+  const avoids = facetsOf('avoids')
   const key = chosen.map((one) => `${one.tag}${one.side}`).join(',')
 
   useEffect(() => {
@@ -100,6 +105,8 @@ export default function BankSearch() {
       </header>
 
       {error && <p className="error">{error}</p>}
+
+      <Basket picked={picked} onChange={setPicked} />
 
       <section className="panel">
         <div className="row">
@@ -227,7 +234,7 @@ export default function BankSearch() {
           <ul className="problem-list">
             {(found ? found.problems : []).map((problem) => (
               <li key={problem.id}>
-                <span className="label" />
+                <Pick id={problem.id} picked={picked} onChange={setPicked} />
                 <span className="text">
                   <Link to={`/bank/problem/${problem.id}`}>
                     <MathText text={problem.text} />

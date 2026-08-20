@@ -1011,3 +1011,23 @@ export const fetchTopic = (id, { course, upto } = {}) => {
   const query = params.toString()
   return request(`/api/bank/topics/${id}/${query ? `?${query}` : ''}`)
 }
+
+/**
+ * Собрать работу из набора задач банка. Порядок в списке — это решение
+ * учителя, поэтому уезжает он как есть, а не множеством.
+ */
+export const assembleWork = (body) =>
+  request('/api/works/from-bank/', { method: 'POST', body })
+
+export const addFromBank = (work, problems) =>
+  request(`/api/works/${work}/add-from-bank/`, { method: 'POST', body: { problems } })
+
+/** Где условие в банке ушло вперёд снимка, лежащего в работе. */
+export const fetchStale = (work) => request(`/api/works/${work}/stale/`)
+
+export const refreshTask = (task) =>
+  request(`/api/works/tasks/${task}/refresh/`, { method: 'POST' })
+
+/** Часы курса за период — ими называют занятие, на котором задали работу. */
+export const fetchCourseSlots = (course, { start, end }) =>
+  request(`/api/slots/?${new URLSearchParams({ course, start, end })}`)

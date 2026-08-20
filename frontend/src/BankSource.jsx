@@ -2,9 +2,12 @@ import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link, useParams } from 'react-router-dom'
 
+import Basket from './Basket'
 import Markdown from './Markdown'
 import Modal from './Modal'
+import Pick from './Pick'
 import { fetchSource, fillSource } from './api'
+import { taken } from './basket'
 
 /**
  * Одна книга: оглавление и задачи раздела.
@@ -20,8 +23,10 @@ export default function BankSource() {
   const { id } = useParams()
   const { t } = useTranslation()
   const [data, setData] = useState(null)
-  const [section, setSection] = useState(null)
+  // '' — вся книга, 'none' — вне разделов, число — раздел.
+  const [section, setSection] = useState('')
   const [label, setLabel] = useState('')
+  const [picked, setPicked] = useState(taken())
   const [error, setError] = useState(null)
   const [filling, setFilling] = useState(null) // {kind: 'outline'|'problems', text}
   const [busy, setBusy] = useState(false)
@@ -45,7 +50,12 @@ export default function BankSource() {
       await fillSource(id,
         filling.kind === 'outline'
           ? { outline: filling.text }
-          : { problems: filling.text, section },
+          : {
+              problems: filling.text,
+              // «вся книга» и «вне разделов» — это не раздел, и класть
+              // вписанное некуда, кроме как вне глав
+              section: typeof section === 'number' ? section : null,
+            },
       )
       setFilling(null)
       await load({ section, label })
@@ -102,6 +112,8 @@ export default function BankSource() {
 
       {error && <p className="error">{error}</p>}
 
+      <Basket picked={picked} onChange={setPicked} />
+
       <div className="bank-columns">
         <section className="panel outline">
           <h3>{t('bank.outline')}</h3>
@@ -112,8 +124,17 @@ export default function BankSource() {
               <li>
                 <button
                   type="button"
-                  className={section ? 'link' : 'link active'}
-                  onClick={() => setSection(null)}
+                  className={section === '' ? 'link active' : 'link'}
+                  onClick={() => setSection('')}
+                >
+                  {t('bank.wholeBook')}
+                </button>
+              </li>
+              <li>
+                <button
+                  type="button"
+                  className={section === 'none' ? 'link active' : 'link'}
+                  onClick={() => setSection('none')}
                 >
                   {t('bank.outsideSections')}
                 </button>
@@ -144,9 +165,12 @@ export default function BankSource() {
             <ul className="problem-list">
               {data.entries.map((entry) => (
                 <li key={entry.id}>
-                  <Link className="label" to={`/bank/problem/${entry.problem}`}>
-                    {entry.label || '—'}
-                  </Link>
+                  <span className="label">
+                    <Pick id={entry.problem} picked={picked} onChange={setPicked} />
+                    <Link to={`/bank/problem/${entry.problem}`}>
+                      {entry.label || '—'}
+                    </Link>
+                  </span>
                   <span className="text">
                     <Markdown text={entry.text} />
                   </span>
