@@ -453,6 +453,76 @@ def build_table(work) -> dict:
         ],
         "students": students,
         "summary": summarise(students, columns),
+        "marks_summary": mark_stats(students, criteria),
+    }
+
+
+def mark_stats(students, criteria) -> dict:
+    """
+    Сводка по оценкам: кто оценён, сколько в среднем и что далось труднее всего.
+
+    Считается **из тех же строк, которыми нарисована таблица**, а не вторым
+    проходом по журналу оценок: два расчёта над одними данными расходятся
+    молча, и однажды сводка уже обещала одно, а строки показывали другое.
+
+    Трудность задачи — доля набранного от возможного среди тех, кому её вообще
+    оценили. Не считаем по классу целиком: у отсутствовавшего оценок нет, и
+    приписывать ему ноль значило бы объявить задачу тем труднее, чем больше
+    народу болело.
+
+    Пустая шкала даёт пустую сводку: работа может не оцениваться вовсе, и это
+    не «ноль», а «нечего показывать».
+    """
+    if not criteria:
+        return None
+
+    working = [student for student in students if student["active"]]
+    graded = [student for student in students if student["marks"]]
+    totals = sorted(sum(student["marks"].values()) for student in graded)
+    top = sum(item.maximum for item in criteria)
+
+    columns = []
+    for item in criteria:
+        values = [
+            student["marks"][item.pk]
+            for student in students
+            if item.pk in student["marks"]
+        ]
+        earned = sum(values)
+        columns.append(
+            {
+                "id": item.pk,
+                "name": item.name or f"Q{item.position + 1}",
+                "maximum": item.maximum,
+                "graded": len(values),
+                "earned": earned,
+                # доля набранного от возможного, в процентах
+                "facility": round(earned / (item.maximum * len(values)) * 100)
+                if values
+                else None,
+                "full": sum(1 for value in values if value >= item.maximum),
+                "partial": sum(1 for value in values if 0 < value < item.maximum),
+                "zero": sum(1 for value in values if value == 0),
+            }
+        )
+
+    answered = [column for column in columns if column["facility"] is not None]
+    hardest = min(answered, key=lambda column: column["facility"]) if answered else None
+    easiest = max(answered, key=lambda column: column["facility"]) if answered else None
+
+    return {
+        "graded": len(graded),
+        "students": len(working),
+        "max_total": top,
+        "mean": round(sum(totals) / len(totals), 1) if totals else None,
+        # медиана честнее среднего на маленьком классе: одна двойка среди
+        # двадцати пятёрок среднее заметно тянет, а медиану — нет
+        "median": totals[len(totals) // 2] if totals else None,
+        "best": totals[-1] if totals else None,
+        "worst": totals[0] if totals else None,
+        "columns": columns,
+        "hardest": hardest and hardest["id"],
+        "easiest": easiest and easiest["id"],
     }
 
 

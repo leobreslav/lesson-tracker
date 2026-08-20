@@ -1046,7 +1046,14 @@
       "none": "Only a comment. Works too: there is something to say about a work even when it carries no mark.",
       "simple": "One number out of the maximum — the usual mark.",
       "rubric": "Several criteria, each with its own maximum — the way MYP and other rubrics grade."
-    }
+    },
+    "gradedLabel": "works graded",
+    "meanLabel": "mean of {{max}}",
+    "medianLabel": "middle mark",
+    "spreadLabel": "lowest and highest",
+    "hardestLabel": "the hardest question: {{percent}}% of the marks earned",
+    "hardestBreakdown": "in full: {{full}} · partly: {{partial}} · nothing: {{zero}}",
+    "facility": "{{percent}}% of the marks earned"
   },
   "paper": {
     "scans": "Scanned work",

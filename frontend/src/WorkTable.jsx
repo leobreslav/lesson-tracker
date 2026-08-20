@@ -98,6 +98,11 @@ export default function WorkTable() {
   // лежит скан, и это единственное место, где он есть
   const onPaper = Boolean(table.work.on_paper)
   const showRow = scale.graded || onPaper
+  /* У бумажной работы задач нет по определению, а вопросы есть — они и есть
+     критерии шкалы. Столбцы по ним отвечают на то, ради чего таблицу и
+     открывают: кто что решил и с чем не справился класс. */
+  const marks = table.marks_summary
+  const byMark = onPaper && marks && marks.columns.length > 0
 
   return (
     <main className="page wide">
@@ -119,11 +124,15 @@ export default function WorkTable() {
         </p>
       )}
 
-      <Summary
-        summary={table.summary}
-        tasks={table.tasks}
-        onOpen={(task) => setColumn({ task })}
-      />
+      {byMark ? (
+        <MarkSummary summary={marks} />
+      ) : (
+        <Summary
+          summary={table.summary}
+          tasks={table.tasks}
+          onOpen={(task) => setColumn({ task })}
+        />
+      )}
 
       {/* шкала стоит здесь, а не в настройках работы: настраивают её тогда
           же, когда садятся проверять, и это то же самое место */}
@@ -178,11 +187,22 @@ export default function WorkTable() {
                     </button>
                   </th>
                 ))}
+                {byMark &&
+                  marks.columns.map((column) => (
+                    <th
+                      key={column.id}
+                      className={column.id === marks.hardest ? 'hardest' : ''}
+                      title={t('grading.facility', { percent: column.facility ?? 0 })}
+                    >
+                      {column.name}
+                    </th>
+                  ))}
                 {showRow && (
                   <th className="mark">
                     {t(scale.graded ? 'grading.mark' : 'paper.column')}
                   </th>
                 )}
+                {byMark && <th className="total">{t('table.total')}</th>}
                 {table.tasks.length > 0 && (
                   <th className="total">{t('table.total')}</th>
                 )}
@@ -215,6 +235,22 @@ export default function WorkTable() {
                       </button>
                     </td>
                   ))}
+                  {byMark &&
+                    marks.columns.map((column) => {
+                      const value = student.marks[column.id]
+                      return (
+                        <td key={column.id} className={markClass(value, column.maximum)}>
+                          {value ?? ''}
+                        </td>
+                      )
+                    })}
+                  {byMark && (
+                    <td className="total">
+                      {Object.keys(student.marks).length
+                        ? Object.values(student.marks).reduce((sum, one) => sum + one, 0)
+                        : ''}
+                    </td>
+                  )}
                   {showRow && (
                     <td className="mark">
                       <button
@@ -340,6 +376,73 @@ function describeScale(scale, t) {
 }
 
 /** Состояние ячейки одним словом — из него и складывается вид таблицы. */
+/**
+ * Цвет ячейки по доле балла: полный, частичный, ноль.
+ *
+ * Те же три состояния, что у проверки онлайн, и те же классы — один факт
+ * должен выглядеть одинаково везде, где его показывают.
+ */
+function markClass(value, maximum) {
+  if (value === undefined || value === null) return 'empty'
+  if (value >= maximum) return 'correct'
+  if (value === 0) return 'wrong'
+  return 'sent'
+}
+
+/**
+ * Сводка по оценкам бумажной работы.
+ *
+ * Отвечает на то, чего таблица одним взглядом не говорит: сколько работ
+ * разобрано, как класс написал в целом и что далось труднее всего. Остальное
+ * — кто что решил — стоит в самой таблице, и повторять это плашками значит
+ * заставлять читать одно и то же дважды.
+ */
+function MarkSummary({ summary }) {
+  const { t } = useTranslation()
+  const hardest = summary.columns.find((column) => column.id === summary.hardest)
+
+  return (
+    <div className="cards work-summary">
+      <section className="panel card-stat stat-rows" data-card="graded">
+        <b>{summary.graded}</b>
+        <span className="hint">{t('grading.gradedLabel')}</span>
+        <b>{summary.mean ?? '—'}</b>
+        <span className="hint">{t('grading.meanLabel', { max: summary.max_total })}</span>
+        <span className="hint total">
+          {t('table.studentsTotal', { count: summary.students })}
+        </span>
+      </section>
+
+      {/* медиана рядом со средним: одна двойка среди отличников тянет
+          среднее, а медиану — нет, и вместе они говорят про класс больше */}
+      <section className="panel card-stat stat-rows" data-card="spread">
+        <b>{summary.median ?? '—'}</b>
+        <span className="hint">{t('grading.medianLabel')}</span>
+        <b>
+          {summary.worst ?? '—'}–{summary.best ?? '—'}
+        </b>
+        <span className="hint">{t('grading.spreadLabel')}</span>
+      </section>
+
+      {hardest && (
+        <section className="panel card-stat" data-card="hardest">
+          <h2>{hardest.name}</h2>
+          <p className="hint">
+            {t('grading.hardestLabel', { percent: hardest.facility })}
+          </p>
+          <p className="hint">
+            {t('grading.hardestBreakdown', {
+              full: hardest.full,
+              partial: hardest.partial,
+              zero: hardest.zero,
+            })}
+          </p>
+        </section>
+      )}
+    </div>
+  )
+}
+
 function cellClass(item) {
   if (!item.submission) return 'empty'
   if (item.redone) return 'redone'

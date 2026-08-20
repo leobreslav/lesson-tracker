@@ -128,3 +128,45 @@ test('пачку можно разобрать руками и записать 
   expect(after.body.students.find((one) => one.id === mine.id).total).toBe(6)
   expect(after.body.doubts).toEqual([])
 })
+
+
+test('после разбора видно, кто что решил и что далось труднее всего', async ({
+  page,
+  signIn,
+  api,
+}) => {
+  const teacher = await api(PEOPLE.ivanova)
+  const work = await paperWork(teacher, { questions: 3, maximum: 3 })
+
+  // оценки ставим тем же путём, каким их пишет разбор пачки
+  const state = await teacher.get(`/api/works/${work.id}/scan/state/`)
+  const [first, second] = state.body.students
+  const scale = await teacher.get(`/api/works/${work.id}/criteria/`)
+  const marks = (values) =>
+    Object.fromEntries(scale.body.criteria.map((one, n) => [one.id, values[n]]))
+
+  await teacher.post(`/api/works/${work.id}/grade/`, {
+    student: first.id,
+    marks: marks([3, 1, 0]),
+  })
+  await teacher.post(`/api/works/${work.id}/grade/`, {
+    student: second.id,
+    marks: marks([3, 2, 0]),
+  })
+
+  await signIn(PEOPLE.ivanova)
+  await page.goto(`/works/${work.id}`)
+  await ready(page)
+
+  // таблица: столбец на задачу, а в ячейке балл
+  await expect(page.locator('.work-table th', { hasText: 'Q1' })).toBeVisible()
+  await expect(page.locator('.work-table td.correct').first()).toHaveText('3')
+
+  // сводка называет самую трудную задачу и разброс
+  await expect(page.locator('[data-card="hardest"] h2')).toHaveText('Q3')
+  await expect(page.locator('[data-card="graded"]')).toContainText('2')
+  await expect(page.locator('[data-card="spread"]')).toBeVisible()
+
+  // и подсвечивает её столбец
+  await expect(page.locator('.work-table th.hardest')).toHaveText('Q3')
+})
