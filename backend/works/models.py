@@ -499,6 +499,12 @@ class ScanPage(models.Model):
     # Кого модель тут видит из состава курса. Это мнение, а не решение:
     # назначает по нему только человек, и видит он его первым кандидатом.
     guess = models.CharField("model's guess from the roster", max_length=200, blank=True)
+    # Шапки на странице нет вовсе. Обычно это лист условий — их раздают перед
+    # работой, и они размечают пачку лучше любого почерка: непрерывный ряд
+    # таких листов значит «начался следующий ученик». Реже это плохое фото
+    # настоящего листа, и тогда это потерянная работа, а не условие; развести
+    # их помогает рисунок пачки, а не сама страница.
+    headerless = models.BooleanField("no header found on the page", default=False)
     # Шестнадцать значений: Q1..Q15 и сумма за страницу. null — пустая клетка.
     cells = models.JSONField("cells as read", default=list, blank=True)
     model = models.CharField("model that read it", max_length=64, blank=True)

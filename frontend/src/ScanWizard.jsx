@@ -7,6 +7,7 @@ import {
   editScanPage,
   fetchScale,
   fetchScanState,
+  markHeaderless,
   readScanPage,
   resetScan,
   saveScale,
@@ -112,6 +113,7 @@ export default function ScanWizard({ work, onClose, onDone }) {
           setState(answer)
           return true
         },
+        blank: async (index) => setState(await markHeaderless(work.id, index)),
       })
       setPages(collected)
       setState(await fetchScanState(work.id))
@@ -138,11 +140,12 @@ export default function ScanWizard({ work, onClose, onDone }) {
       onClose()
     })
 
-  const doubts = (state?.pages ?? []).filter((page) => page.trouble.length)
-  const lost = pages.filter((page) => !page.enough)
+  const packets = state?.packets ?? []
+  const doubts = packets.filter((packet) => packet.trouble.length)
   const byIndex = Object.fromEntries(pages.map((page) => [page.index, page]))
   const nameOf = (id) =>
     state?.students.find((one) => one.id === id)?.name ?? t('scan.nobody')
+  const readOf = (index) => state?.pages?.find((page) => page.index === index)
 
   return (
     <Modal onClose={onClose} title={t('scan.title', { name: work.title })}>
@@ -195,8 +198,10 @@ export default function ScanWizard({ work, onClose, onDone }) {
       {stage === 'doubts' && state && (
         <DoubtStep
           doubts={doubts}
-          lost={lost}
+          conditions={state.conditions}
+          packets={packets.length}
           pages={byIndex}
+          readOf={readOf}
           students={state.students}
           nameOf={nameOf}
           busy={busy}
@@ -359,60 +364,87 @@ function FileStep({ onPick, busy, questions, read, onReset }) {
  * «сомнений нет» и это тоже ответ. Пропустить его нельзя, пока хоть у одной
  * страницы нет владельца.
  */
-function DoubtStep({ doubts, lost, pages, students, nameOf, busy, onDecide, onNext }) {
+function DoubtStep({
+  doubts,
+  conditions,
+  packets,
+  pages,
+  readOf,
+  students,
+  nameOf,
+  busy,
+  onDecide,
+  onNext,
+}) {
   const { t } = useTranslation()
-  const stuck = doubts.filter((page) => page.trouble.includes('no_owner'))
+  const stuck = doubts.filter((packet) => packet.trouble.includes('no_owner'))
 
   return (
     <section className="scan-doubts">
-      {lost.length > 0 && (
-        <p className="hint warning">{t('scan.lost', { count: lost.length })}</p>
+      {/* сколько листов условий нашлось — по ним и разрезана пачка */}
+      {conditions > 0 && (
+        <p className="hint">{t('scan.conditions', { count: conditions, packets })}</p>
       )}
 
       {doubts.length === 0 ? (
         <p className="hint">{t('scan.noDoubts')}</p>
       ) : (
         <ul className="scan-cards">
-          {doubts.map((page) => (
-            <li key={page.index} className="panel">
-              <p className="hint">
-                {t('scan.pageNumber', { number: page.index + 1 })} ·{' '}
-                {page.trouble.map((code) => t(`scan.trouble.${code}`)).join(' · ')}
-              </p>
-              {pages[page.index]?.strip && (
-                <img className="scan-strip" src={pages[page.index].strip} alt="" />
-              )}
-              <p className="hint">
-                {t('scan.readAs', {
-                  name: `${page.first_name} ${page.surname}`.trim() || '—',
-                })}
-                {page.student ? ` → ${nameOf(page.student)}` : ''}
-              </p>
-              <div className="row">
-                {(page.candidates.length ? page.candidates : students.map((one) => one.id))
-                  .slice(0, 6)
-                  .map((id) => (
-                    <button
-                      key={id}
-                      type="button"
-                      className="secondary compact"
-                      disabled={busy}
-                      onClick={() => onDecide(page.index, id)}
-                    >
-                      {nameOf(id)}
-                    </button>
-                  ))}
-                <button
-                  type="button"
-                  className="link"
-                  disabled={busy}
-                  onClick={() => onDecide(page.index, null)}
-                >
-                  {t('scan.nobody')}
-                </button>
-              </div>
-            </li>
-          ))}
+          {doubts.map((packet) => {
+            const first = readOf(packet.pages[0])
+            return (
+              <li key={packet.number} className="panel">
+                <p className="hint">
+                  {t('scan.packetPages', {
+                    list: packet.pages.map((index) => index + 1).join(', '),
+                  })}{' '}
+                  · {packet.trouble.map((code) => t(`scan.trouble.${code}`)).join(' · ')}
+                </p>
+
+                {/* полоски всех листов пакета: чьи они, видно по любой из них */}
+                {packet.pages.slice(0, 3).map(
+                  (index) =>
+                    pages[index]?.strip && (
+                      <img key={index} className="scan-strip" src={pages[index].strip} alt="" />
+                    ),
+                )}
+
+                <p className="hint">
+                  {t('scan.readAs', {
+                    name: `${first?.first_name ?? ''} ${first?.surname ?? ''}`.trim() || '—',
+                  })}
+                  {packet.student ? ` → ${nameOf(packet.student)}` : ''}
+                </p>
+
+                <div className="row">
+                  {(packet.candidates.length
+                    ? packet.candidates
+                    : students.map((one) => one.id)
+                  )
+                    .slice(0, 6)
+                    .map((id) => (
+                      <button
+                        key={id}
+                        type="button"
+                        className="secondary compact"
+                        disabled={busy}
+                        onClick={() => onDecide(packet.pages[0], id)}
+                      >
+                        {nameOf(id)}
+                      </button>
+                    ))}
+                  <button
+                    type="button"
+                    className="link"
+                    disabled={busy}
+                    onClick={() => onDecide(packet.pages[0], null)}
+                  >
+                    {t('scan.nobody')}
+                  </button>
+                </div>
+              </li>
+            )
+          })}
         </ul>
       )}
 

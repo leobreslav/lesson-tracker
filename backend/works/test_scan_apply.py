@@ -91,6 +91,31 @@ class ScanApplyTests(SchoolTestMixin, APITestCase):
             [2, 3],
         )
 
+    def test_conditions_go_into_the_students_file(self):
+        """
+        Листы условий едут в PDF вместе с решением.
+
+        Иначе ученик открывает свои ответы без вопросов — половину документа,
+        — а ради того, чтобы он видел работу целиком, скан ему и отдают.
+        """
+        services.mark_headerless(self.work, index=0)
+        self.read(1, "Fil", "Burmov", {0: 3})
+        services.mark_headerless(self.work, index=2)
+        self.read(3, "Peter", "Tibora", {0: 2})
+
+        response = self.apply(pages=4)
+
+        self.assertEqual(response.status_code, 200)
+        mine = StudentWork.objects.get(work=self.work, student=self.student)
+        paper = Attachment.objects.get(student_work=mine)
+        from io import BytesIO
+
+        from files import storage
+        from pypdf import PdfReader
+
+        with storage.backend().open(paper.stored_file.key) as fp:
+            self.assertEqual(len(PdfReader(BytesIO(fp.read())).pages), 2)
+
     def test_the_rows_are_gone_once_it_is_applied(self):
         """Работа сделана: дальше про неё отвечают вложения и оценки."""
         self.read(0, "Fil", "Burmov", {0: 3})

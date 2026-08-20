@@ -113,10 +113,11 @@ export async function fingerprint(blob) {
  * Пройти пачку целиком.
  *
  * `onPage` зовётся после каждой страницы — им и рисуется прогресс. Страница,
- * на которой не нашлось шапки, не прерывает работу: она уходит человеку с
- * пометкой, а остальные читаются дальше. Прерывает только `stop`.
+ * на которой не нашлось шапки, не прерывает работу и не стоит денег: про неё
+ * сообщается отдельно (`blank`), потому что обычно это лист условий, а ряд
+ * таких листов размечает пачку. Прерывает только `stop`.
  */
-export async function walk(file, { onPage, send, stop } = {}) {
+export async function walk(file, { onPage, send, blank, stop } = {}) {
   const book = await openBook(file)
   const pages = []
 
@@ -142,6 +143,11 @@ export async function walk(file, { onPage, send, stop } = {}) {
         blob,
         mark: await fingerprint(blob),
       })
+    } else if (!enough && blank) {
+      // Шапки нет — читать нечего и платить не за что, но сказать серверу
+      // надо: ряд таких листов размечает пачку, и без них он не увидит, где
+      // кончается работа одного ученика и начинается другого.
+      await blank(page.index)
     }
 
     pages.push(page)

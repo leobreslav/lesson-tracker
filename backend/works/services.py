@@ -812,6 +812,7 @@ def scan_pages(work) -> list:
             surname=row.surname,
             cells=(list(row.cells) + [None] * CELLS)[:CELLS],
             guess=row.guess,
+            headerless=row.headerless,
             student_id=row.student_id,
             decided_by_human=row.decided_by_human,
         )
@@ -827,53 +828,85 @@ def max_mark_of(work) -> int | None:
 
 def scan_state(work) -> dict:
     """
-    Всё, что экран должен знать о пачке: страницы, раскладка, сомнения.
+    Всё, что экран должен знать о пачке: страницы, пакеты, сомнения.
 
     Считается на каждый запрос и нигде не хранится: раскладка зависит от того,
     что прочитано и что человек уже решил, а два источника правды об одном и
     том же разъезжаются молча.
+
+    Единица решения — **пакет**, работа одного ученика: спросить «чей это»
+    надо один раз, а не по разу на каждый из восьми листов.
     """
     from . import scanning
 
     pages = scan_pages(work)
     roster = scan_roster(work)
-    assigned, doubts = scanning.group(pages, roster)
+    packets = scanning.arrange(pages, roster)
     limit = max_mark_of(work)
     questions = work.criteria.count() or scanning.QUESTIONS
 
-    doubt_by_page = dict(doubts)
+    owner_of = {}
+    for packet in packets:
+        for page in packet.pages:
+            owner_of[page.index] = packet.student_id
+
     rows = []
     for page in pages:
-        owner = assigned.get(page.index)
+        owner = owner_of.get(page.index)
         rows.append(
             {
                 "index": page.index,
                 "first_name": page.first,
                 "surname": page.surname,
                 "cells": page.cells,
+                "headerless": page.headerless,
                 "student": owner,
                 "decided_by_human": page.decided_by_human,
-                "candidates": doubt_by_page.get(page.index, []),
-                "trouble": scanning.troubles(page, owner, limit, questions),
+                "candidates": [],
+                "trouble": []
+                if page.headerless
+                else scanning.troubles(page, owner, limit, questions),
+            }
+        )
+    by_index = {row["index"]: row for row in rows}
+
+    out_packets = []
+    for number, packet in enumerate(packets):
+        marks, conflicts = scanning.merge_marks(packet.pages)
+        trouble = sorted(
+            {code for page in packet.pages for code in by_index[page.index]["trouble"]}
+        )
+        if packet.student_id is None:
+            trouble = ["no_owner"] + [c for c in trouble if c != "no_owner"]
+            for page in packet.pages:
+                if "no_owner" not in by_index[page.index]["trouble"]:
+                    by_index[page.index]["trouble"].append("no_owner")
+        for page in packet.pages:
+            by_index[page.index]["candidates"] = packet.candidates
+        out_packets.append(
+            {
+                "number": number,
+                "pages": [page.index for page in packet.pages],
+                "conditions": [page.index for page in packet.conditions],
+                "student": packet.student_id,
+                "candidates": packet.candidates,
+                "conflicts": conflicts,
+                "marks": {q + 1: value for q, value in marks.items()},
+                "total": sum(marks.values()) if marks else 0,
+                "trouble": trouble,
             }
         )
 
-    by_student: dict = {}
-    for page in pages:
-        owner = assigned.get(page.index)
-        if owner is None:
-            continue
-        by_student.setdefault(owner, []).append(page)
-
     students = []
+    mine = {packet.student_id: packet for packet in packets if packet.student_id}
     for person in roster:
-        mine = by_student.get(person.id, [])
-        marks, conflicts = scanning.merge_marks(mine)
+        packet = mine.get(person.id)
+        marks, conflicts = scanning.merge_marks(packet.pages if packet else [])
         students.append(
             {
                 "id": person.id,
                 "name": person.full,
-                "pages": sorted(page.index for page in mine),
+                "pages": sorted(page.index for page in (packet.all_pages if packet else [])),
                 "marks": {q + 1: value for q, value in marks.items()},
                 "total": sum(marks.values()) if marks else 0,
                 "conflicts": conflicts,
@@ -884,10 +917,14 @@ def scan_state(work) -> dict:
 
     return {
         "pages": rows,
+        "packets": out_packets,
         "students": students,
         "questions": questions,
         "max_mark": limit,
-        "doubts": [index for index, _ in doubts],
+        "conditions": sum(len(packet.conditions) for packet in packets),
+        "doubts": [
+            packet["number"] for packet in out_packets if "no_owner" in packet["trouble"]
+        ],
         # цена показывается там же, где идёт чтение: узнавать её в другом
         # разделе, уже потратив, — не то же самое, что видеть по ходу
         "budget": vision_services.budget(work.course.school),
@@ -902,6 +939,10 @@ def scan_apply(work, *, data: bytes, by=None) -> dict:
     применённой пачки — это часть класса с работами и оценками, а часть без, и
     какая именно, снаружи не видно. Строки страниц после успеха удаляются:
     работа сделана, дальше про неё отвечают вложения и оценки.
+
+    **Листы условий уезжают в PDF ученика вместе с его решением.** Иначе он
+    открывает свои ответы без вопросов — половину документа, — а ради того,
+    чтобы он видел работу целиком, скан ему и отдают.
     """
     from django.db import transaction
 
@@ -917,29 +958,29 @@ def scan_apply(work, *, data: bytes, by=None) -> dict:
 
     total = splitting.read_pages(data)
     roster = {person.id: person for person in scan_roster(work)}
-    assigned, _ = scanning.group(pages, roster.values())
+    packets = [
+        packet
+        for packet in scanning.arrange(pages, list(roster.values()))
+        if packet.student_id is not None
+    ]
 
-    mine: dict = {}
-    for page in pages:
-        owner = assigned.get(page.index)
-        if owner is None:
-            continue
-        if owner not in roster:
+    for packet in packets:
+        if packet.student_id not in roster:
             api_error(
                 Codes.SPLIT_NOT_IN_COURSE,
                 "That student does not study in this course.",
                 field="plan",
             )
-        if page.index >= total:
-            api_error(
-                Codes.SPLIT_OUT_OF_RANGE,
-                f"Page {page.index + 1} is outside the file, which has {total}.",
-                field="file",
-                pages=total,
-            )
-        mine.setdefault(owner, []).append(page)
+        for page in packet.all_pages:
+            if page.index >= total:
+                api_error(
+                    Codes.SPLIT_OUT_OF_RANGE,
+                    f"Page {page.index + 1} is outside the file, which has {total}.",
+                    field="file",
+                    pages=total,
+                )
 
-    if not mine:
+    if not packets:
         api_error(
             Codes.SPLIT_EMPTY,
             "No page has an owner: say whose pages these are.",
@@ -949,22 +990,22 @@ def scan_apply(work, *, data: bytes, by=None) -> dict:
     criteria = list(work.criteria.all())
     from accounts.models import User
 
-    people = User.objects.in_bulk(mine.keys())
+    people = User.objects.in_bulk([packet.student_id for packet in packets])
     graded = 0
     with transaction.atomic():
-        for student_id, student_pages in mine.items():
+        for packet in packets:
             attach_pages(
                 work,
-                student_id,
+                packet.student_id,
                 data=data,
-                numbers=sorted(page.index + 1 for page in student_pages),
+                numbers=[page.index + 1 for page in packet.all_pages],
                 by=by,
             )
-            marks, _ = scanning.merge_marks(student_pages)
+            marks, _ = scanning.merge_marks(packet.pages)
             if marks and criteria:
                 grade(
                     work,
-                    people[student_id],
+                    people[packet.student_id],
                     marks={
                         criterion.pk: marks.get(number)
                         for number, criterion in enumerate(criteria)
@@ -976,7 +1017,7 @@ def scan_apply(work, *, data: bytes, by=None) -> dict:
 
         work.scan_pages.all().delete()
 
-    return {"students": len(mine), "graded": graded, "pages": len(pages)}
+    return {"students": len(packets), "graded": graded, "pages": len(pages)}
 
 
 def save_scan_reading(work, *, index: int, fingerprint: str, data: dict):
@@ -1000,6 +1041,20 @@ def save_scan_reading(work, *, index: int, fingerprint: str, data: dict):
 
 
 UNSET = object()
+
+
+def mark_headerless(work, *, index: int):
+    """
+    Записать, что на странице шапки не нашлось.
+
+    Сервер обязан знать о таких страницах, хотя читать их незачем: без них
+    рисунок пачки неполон — а именно по нему видно, где кончается работа
+    одного ученика и начинается другого.
+    """
+    row, _ = ScanPage.objects.get_or_create(work=work, index=index)
+    row.headerless = True
+    row.save(update_fields=["headerless"])
+    return row
 
 
 def edit_scan_page(work, *, index: int, student=UNSET, cells=None):

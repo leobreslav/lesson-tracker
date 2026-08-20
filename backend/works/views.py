@@ -244,14 +244,20 @@ class WorkViewSet(CourseScopedViewSet):
         Поправить страницу руками: чья она и что в клетках.
 
         Решение человека помечается и автоматической раскладкой больше не
-        пересматривается — она предлагает, он решает.
+        пересматривается — она предлагает, он решает. Тем же путём приходит и
+        «шапки тут нет»: читать такую страницу незачем, а знать о ней надо —
+        ряд безшапочных листов размечает пачку.
         """
         work = self.get_object()
         self.refuse_unless_paper(work)
 
         form = ScanPageSerializer(data=request.data, context={"work": work})
         form.is_valid(raise_exception=True)
-        services.edit_scan_page(work, **form.validated_data)
+        fields = dict(form.validated_data)
+        if fields.pop("headerless", False):
+            services.mark_headerless(work, index=fields["index"])
+        else:
+            services.edit_scan_page(work, **fields)
         return Response(services.scan_state(work))
 
     @action(detail=True, methods=["post"], url_path="scan/apply")

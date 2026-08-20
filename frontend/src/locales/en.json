@@ -1167,8 +1167,6 @@
     "reading": "Read {{done}} of {{total}}",
     "readingHint": "The browser straightens each header and sends only that strip — not the whole sheet.",
     "stop": "Stop",
-    "lost_one": "{{count}} page did not look like our blank; it is left for you to place.",
-    "lost_other": "{{count}} pages did not look like our blank; they are left for you to place.",
     "noDoubts": "Nothing is in doubt: every page found its owner.",
     "pageNumber": "Page {{number}}",
     "readAs": "Read as: {{name}}",
@@ -1200,7 +1198,10 @@
     "printBlank": "Print the blank",
     "alreadyRead_one": "{{count}} page from an earlier upload is still here.",
     "alreadyRead_other": "{{count}} pages from an earlier upload are still here.",
-    "startOver": "start over"
+    "startOver": "start over",
+    "conditions_one": "{{count}} sheet without a header — the question paper. It cuts the pile into {{packets}} packets.",
+    "conditions_other": "{{count}} sheets without a header — question papers. They cut the pile into {{packets}} packets.",
+    "packetPages": "Pages {{list}}"
   },
   "ai": {
     "title": "Reading scans",
