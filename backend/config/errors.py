@@ -198,6 +198,13 @@ class Codes:
     SCAN_PAGE_UNKNOWN = "scan_page_unknown"
     SCAN_NOTHING_READ = "scan_nothing_read"
 
+    # разговор о задаче
+    MESSAGE_EMPTY = "message_empty"
+
+    # системы оценивания
+    GRADING_NAME_REQUIRED = "grading_name_required"
+    GRADING_NAME_TAKEN = "grading_name_taken"
+
     # sign-in
     TOKEN_REQUIRED = "token_required"
     TOKEN_INVALID = "token_invalid"

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import Modal from './Modal'
-import { fetchWorkImpact } from './api'
+import { fetchGradingSystems, fetchWorkImpact } from './api'
 import { fromLocalInput, toLocalInput } from './dates'
 
 /**
@@ -33,12 +33,25 @@ export default function WorkDialog({
   // форме: классификация — наше слово, а человек знает, что он сейчас
   // задаёт. Тот же довод, по которому «дополнительный урок» в своё время
   // оказался плохим вопросом
+  const [systems, setSystems] = useState([])
   const [form, setForm] = useState(() => ({
     ...initial(work),
     ...(slot ? { slot } : {}),
     ...(homework ? { is_homework: true } : {}),
   }))
   const [impact, setImpact] = useState(null)
+
+  /* Список систем школы: показываются только разрешённые — сервер их и не
+     отдаёт другими, а форма не должна предлагать то, чего он не примет. */
+  useEffect(() => {
+    let alive = true
+    fetchGradingSystems()
+      .then((answer) => alive && setSystems(answer.systems.filter((one) => one.is_allowed)))
+      .catch(() => {})
+    return () => {
+      alive = false
+    }
+  }, [])
 
   useEffect(() => {
     if (!work) return undefined
@@ -74,6 +87,8 @@ export default function WorkDialog({
       show_result: form.show_result,
       on_paper: form.on_paper,
       is_homework: form.is_homework ?? false,
+      is_summative: form.is_summative ?? false,
+      grading_system: form.grading_system ?? null,
     })
   }
 
@@ -127,6 +142,40 @@ export default function WorkDialog({
           </label>
         </div>
         <p className="hint">{t('works.windowHint')}</p>
+
+        {/* Система оценивания — решение учителя, на каждой работе своё:
+            маленькая проверочная по пятибалльной рядом с контрольной по MYP
+            это обычное дело. Администратор только ограничивает список. */}
+        <label className="field">
+          <span>{t('grading.system')}</span>
+          <select
+            value={form.grading_system ?? ''}
+            onChange={(event) =>
+              setForm({
+                ...form,
+                grading_system: event.target.value ? Number(event.target.value) : null,
+              })
+            }
+          >
+            <option value="">{t('grading.noSystem')}</option>
+            {systems.map((system) => (
+              <option key={system.id} value={system.id}>
+                {system.name}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        {/* формативную оценивают как придётся, и в итог она не идёт */}
+        <label className="checkbox">
+          <input
+            type="checkbox"
+            checked={form.is_summative}
+            onChange={change('is_summative')}
+          />
+          {t('works.summative')}
+        </label>
+        <p className="hint">{t('works.summativeHint')}</p>
 
         {/* бумажная работа не решается онлайн, и попытки для неё значат
             ровно ничего — поэтому строка с ними прячется целиком */}
@@ -197,6 +246,8 @@ function initial(work) {
       attempts: work.attempts ?? 1,
       show_result: work.show_result,
       on_paper: work.on_paper,
+      is_summative: work.is_summative ?? false,
+      grading_system: work.grading_system ?? null,
       description: work.description ?? '',
       slot: work.slot ?? null,
       is_homework: work.is_homework ?? false,
@@ -214,6 +265,8 @@ function initial(work) {
     attempts: 1,
     show_result: true,
     on_paper: false,
+    is_summative: false,
+    grading_system: null,
     description: '',
     slot: null,
   }

@@ -5,13 +5,13 @@ import Modal from './Modal'
 import {
   applyScan,
   editScanPage,
-  fetchScale,
+  fetchQuestions,
   fetchScanState,
   markHeaderless,
   readScanPage,
   readScanQuestions,
   resetScan,
-  saveScale,
+  saveQuestions,
 } from './api'
 
 /**
@@ -57,12 +57,12 @@ export default function ScanWizard({ work, onClose, onDone }) {
      второй раз спрашивать незачем. */
   useEffect(() => {
     let alive = true
-    Promise.all([fetchScale(work.id), fetchScanState(work.id)])
+    Promise.all([fetchQuestions(work.id), fetchScanState(work.id)])
       .then(([answer, known]) => {
         if (!alive) return
-        setScale(answer.criteria ?? [])
+        setScale(answer.questions ?? [])
         setState(known)
-        setStage((answer.criteria ?? []).length ? 'file' : 'questions')
+        setStage((answer.questions ?? []).length ? 'file' : 'questions')
       })
       .catch((problem) => alive && setError(problem.message))
     return () => { alive = false }
@@ -173,10 +173,10 @@ export default function ScanWizard({ work, onClose, onDone }) {
       {stage === 'questions' && (
         <QuestionsStep
           busy={busy}
-          onSave={(criteria) =>
+          onSave={(questions) =>
             run(async () => {
-              const answer = await saveScale(work.id, criteria)
-              setScale(answer.criteria ?? criteria)
+              const answer = await saveQuestions(work.id, questions)
+              setScale(answer.questions ?? questions)
               setStage('file')
             })
           }
@@ -246,6 +246,10 @@ export default function ScanWizard({ work, onClose, onDone }) {
 
 /**
  * Сколько было задач и по сколько баллов.
+ *
+ * Заводятся именно **вопросы работы**, а не критерии оценивания: балл за
+ * задачу и уровень по критерию — разные оси. Критерии (A, B, C, D в MYP)
+ * отвечают на «как работа оценена», и задачами не являются.
  *
  * Клеток на бланке всегда пятнадцать, а задач бывает меньше — и тогда лишние
  * клетки обязаны остаться пустыми. Это не формальность: балл, прочитанный в
@@ -318,7 +322,7 @@ function QuestionsStep({ onSave, busy }) {
           type="button"
           disabled={busy}
           onClick={() =>
-            onSave(numbers.map((number) => ({ name: `Q${number}`, maximum: maxOf(number) })))
+            onSave(numbers.map((number) => ({ maximum: maxOf(number) })))
           }
         >
           {t('common.save')}

@@ -144,6 +144,23 @@ class Work(models.Model):
             "урока: пустая домашняя и пустая классная в данных неразличимы."
         ),
     )
+    # Как из этой работы получается отметка. Выбирает учитель, на каждой
+    # работе свою; пусто — законное состояние: баллы есть, отметки нет.
+    grading_system = models.ForeignKey(
+        "works.GradingSystem",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="works",
+        verbose_name="grading system",
+    )
+    # Считается ли работа в итог за период. Формативную оценивают как придётся
+    # — и в итог она не идёт; это не то же самое, что «домашняя».
+    is_summative = models.BooleanField(
+        "counts towards the term result",
+        default=False,
+        help_text="Формативную оценивают как придётся, и в итог она не идёт.",
+    )
     on_paper = models.BooleanField(
         "written on paper",
         default=False,
@@ -215,6 +232,9 @@ class Task(models.Model):
     )
     position = models.PositiveIntegerField("position", default=0)
     question = models.TextField("question")
+    # Сколько баллов стоит этот вопрос **в этой работе**. Свойство ячейки, а
+    # не задачи: «2+2» стоит два балла в пятом классе и полбалла в девятом.
+    maximum = models.PositiveSmallIntegerField("top mark for this question", default=1)
     answers = ArrayField(
         models.TextField(),
         default=list,
@@ -395,12 +415,18 @@ class StudentWork(models.Model):
 
 class Mark(models.Model):
     """
-    Оценка по одному критерию. Текущее значение, и только оно.
+    Оценка по одной оси: за вопрос работы или за критерий оценивания.
 
-    История лежит рядом (`MarkChange`) и пишется с первого дня: исправленная
-    отметка в журнале — это событие, а не новое значение поля, и
-    восстановить её задним числом было бы неоткуда. Дублирование намеренное:
-    читают все текущее, а историю спрашивают редко и по одной работе.
+    **Осей две, и они разные.** Вопросы (Q1…Qn) отвечают на «что он решил» —
+    у каждого свой максимум, и складываются они в сумму. Критерии (A, B, C, D
+    в MYP) отвечают на «как работа оценена» — там уровень 0–8 и выбор по
+    лучшему соответствию, а не сумма. Работа может иметь обе оси разом:
+    пятнадцать задач с баллами и оценку по критериям A и D.
+
+    Хранятся они одной таблицей с **ровно одним** владельцем — тем же приёмом,
+    что у вложения, у которого владельцев три. Причина та же: значение,
+    журнал правок и права у них общие, а разошлись бы две таблицы в первой же
+    правке.
     """
 
     student_work = models.ForeignKey(
@@ -409,47 +435,78 @@ class Mark(models.Model):
         on_delete=models.CASCADE,
         verbose_name="student's work",
     )
+    task = models.ForeignKey(
+        Task,
+        related_name="marks",
+        null=True,
+        blank=True,
+        on_delete=models.CASCADE,
+        verbose_name="question",
+    )
     criterion = models.ForeignKey(
         Criterion,
         related_name="marks",
+        null=True,
+        blank=True,
         on_delete=models.CASCADE,
         verbose_name="criterion",
     )
-    value = models.PositiveSmallIntegerField(
-        "value", validators=[MaxValueValidator(MAX_MARK)]
-    )
+    value = models.PositiveSmallIntegerField("value")
 
     class Meta:
         verbose_name = "mark"
         verbose_name_plural = "marks"
-        ordering = ("criterion__position", "id")
+        ordering = ("criterion__position", "task__position", "id")
         constraints = [
             models.UniqueConstraint(
+                fields=("student_work", "task"), name="one_mark_per_question"
+            ),
+            models.UniqueConstraint(
                 fields=("student_work", "criterion"), name="one_mark_per_criterion"
+            ),
+            models.CheckConstraint(
+                condition=models.Q(task__isnull=False, criterion__isnull=True)
+                | models.Q(task__isnull=True, criterion__isnull=False),
+                name="mark_belongs_to_one_axis",
             ),
         ]
 
     def __str__(self):
-        return f"{self.value}/{self.criterion.maximum}"
+        return f"{self.axis}: {self.value}"
+
+    @property
+    def axis(self):
+        """Ось, по которой поставлена оценка: вопрос или критерий."""
+        return self.task or self.criterion
 
 
 class MarkChange(models.Model):
     """
-    Кто и когда поменял оценку. Дописывается, не правится.
+    Событие правки оценки: кто, когда и на что поменял.
 
-    `value` пустое значит «снял отметку». Кто поменял — `SET_NULL`: человек
-    может уйти из школы, а запись в журнале остаётся его записью.
+    Оси те же две, что у самой оценки, и по той же причине: исправленная
+    отметка — событие, а не новое значение поля, и журнал у обеих осей общий.
     """
 
     student_work = models.ForeignKey(
         StudentWork,
-        related_name="changes",
+        related_name="mark_changes",
         on_delete=models.CASCADE,
         verbose_name="student's work",
     )
+    task = models.ForeignKey(
+        Task,
+        related_name="mark_changes",
+        null=True,
+        blank=True,
+        on_delete=models.CASCADE,
+        verbose_name="question",
+    )
     criterion = models.ForeignKey(
         Criterion,
-        related_name="changes",
+        related_name="mark_changes",
+        null=True,
+        blank=True,
         on_delete=models.CASCADE,
         verbose_name="criterion",
     )
@@ -469,9 +526,7 @@ class MarkChange(models.Model):
         ordering = ("changed_at", "id")
 
     def __str__(self):
-        return f"{self.criterion}: {self.value}"
-
-
+        return f"{self.task or self.criterion}: {self.value}"
 class ScanPage(models.Model):
     """
     Одна страница загруженного скана: что на ней прочитано и чья она.
@@ -547,3 +602,185 @@ class ScanPage(models.Model):
 
     def __str__(self):
         return f"{self.work_id}#{self.index}: {self.first_name} {self.surname}"
+
+
+class GradingSystem(models.Model):
+    """
+    Система оценивания: как из работы получается отметка.
+
+    Модель, а не поле, по трём признакам, и все три налицо: у неё есть
+    собственное содержимое (полосы), её переиспользуют многие работы, и
+    настраивают её один раз.
+
+    **Выбирает её учитель, на каждой работе свою.** Администратор школы не
+    выбирает за него: он объявляет, какие системы в школе разрешены, какая
+    рекомендована и какая идёт в итог за год. Маленькая проверочная по
+    пятибалльной рядом с контрольной по MYP — обычное дело, и это решение
+    того, кто ведёт курс.
+
+    Видов несколько, потому что формы у них разные:
+
+    * `points` — сумма баллов за вопросы, полосы в процентах;
+    * `levels` — уровни по критериям (MYP): каждый 0–8, отметка получается из
+      суммы уровней по опубликованным границам;
+    * `passfail` — две полосы;
+    * работа **без системы** — законное состояние: баллы есть, отметки нет.
+    """
+
+    POINTS = "points"
+    LEVELS = "levels"
+    PASSFAIL = "passfail"
+    KINDS = [
+        (POINTS, "sum of question marks, bands in percent"),
+        (LEVELS, "levels per criterion, bands on the sum"),
+        (PASSFAIL, "pass or fail"),
+    ]
+
+    school = models.ForeignKey(
+        "schools.School",
+        on_delete=models.CASCADE,
+        related_name="grading_systems",
+        verbose_name="school",
+    )
+    name = models.CharField("name", max_length=100)
+    kind = models.CharField("kind", max_length=16, choices=KINDS, default=POINTS)
+    # Наибольший уровень по одному критерию: у MYP это 8. Для `points` не
+    # значит ничего.
+    top_level = models.PositiveSmallIntegerField("top level per criterion", default=8)
+    # Разрешена ли она учителям. Запрет — единственный рычаг администратора
+    # над выбором, и он честнее, чем выбирать за учителя.
+    is_allowed = models.BooleanField("teachers may choose it", default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = "grading system"
+        verbose_name_plural = "grading systems"
+        ordering = ("name",)
+        constraints = [
+            models.UniqueConstraint(
+                fields=("school", "name"), name="one_grading_system_name_per_school"
+            )
+        ]
+
+    def __str__(self):
+        return self.name
+
+
+class GradeBand(models.Model):
+    """
+    Полоса системы: от какого порога какая отметка.
+
+    Пороги у `points` — **в процентах**, а не в баллах: у работ разные
+    максимумы, и система, привязанная к абсолютным числам, годится ровно для
+    одной работы. У `levels` порог — сумма уровней (у MYP 0–32), и там он
+    абсолютный, потому что сумма фиксирована.
+
+    Хранится всегда **балл**, а отметка выводится. Хранить букву значит
+    соврать при первой же правке порогов: две работы с одинаковыми баллами
+    получили бы разные отметки, и объяснить это было бы некому.
+    """
+
+    system = models.ForeignKey(
+        GradingSystem,
+        on_delete=models.CASCADE,
+        related_name="bands",
+        verbose_name="system",
+    )
+    position = models.PositiveIntegerField("position", default=0)
+    label = models.CharField("what is shown", max_length=32)
+    # Нижняя граница полосы: проценты у `points`, сумма уровней у `levels`.
+    threshold = models.PositiveSmallIntegerField("from this value up", default=0)
+
+    class Meta:
+        verbose_name = "grade band"
+        verbose_name_plural = "grade bands"
+        ordering = ("-threshold", "position")
+
+    def __str__(self):
+        return f"{self.label} от {self.threshold}"
+
+
+class Thread(models.Model):
+    """
+    Разговор о задаче: ученик спрашивает, учитель отвечает.
+
+    **Предмет треда — пара «вопрос работы и ученик».** Тогда он один и тот же и
+    на экране задачи, и в будущем чате: чат — просто другой способ читать те же
+    треды, сгруппированные по собеседнику, а не вторая переписка о том же.
+
+    Заводится по требованию, как строка журнала: пока никто ничего не спросил,
+    треда нет, и «нет вопросов» отличается от «спросили и не ответили» именно
+    этим.
+    """
+
+    task = models.ForeignKey(
+        Task,
+        on_delete=models.CASCADE,
+        related_name="threads",
+        verbose_name="question",
+    )
+    student = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="question_threads",
+        verbose_name="student",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "thread"
+        verbose_name_plural = "threads"
+        ordering = ("-updated_at",)
+        constraints = [
+            models.UniqueConstraint(
+                fields=("task", "student"), name="one_thread_per_question_and_student"
+            )
+        ]
+
+    def __str__(self):
+        return f"{self.task_id} × {self.student_id}"
+
+
+class Message(models.Model):
+    """
+    Одно сообщение в треде.
+
+    У сообщения **автор и адресат**, а не «от ученика / от учителя». Разница
+    вылезет в первый же день, когда в разговор войдёт третий — второй учитель,
+    методист, родитель, — и схема «две стороны» потребует переделки. Адресат
+    может быть пуст: сказанное в тред обращено ко всем, кто его читает.
+    """
+
+    thread = models.ForeignKey(
+        Thread,
+        on_delete=models.CASCADE,
+        related_name="messages",
+        verbose_name="thread",
+    )
+    author = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name="messages_written",
+        verbose_name="author",
+    )
+    to = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="messages_received",
+        verbose_name="addressed to",
+    )
+    text = models.TextField("text")
+    created_at = models.DateTimeField(auto_now_add=True)
+    read_at = models.DateTimeField("read at", null=True, blank=True)
+
+    class Meta:
+        verbose_name = "message"
+        verbose_name_plural = "messages"
+        ordering = ("created_at", "id")
+
+    def __str__(self):
+        return f"{self.author_id}: {self.text[:40]}"

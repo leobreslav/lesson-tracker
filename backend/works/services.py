@@ -15,6 +15,7 @@ from django.utils import timezone
 
 from .models import (
     CLOSED,
+    GradingSystem,
     OPEN,
     PLANNED,
     Criterion,
@@ -415,6 +416,7 @@ def build_table(work) -> dict:
                 # то же самое, что «ещё не проверен»
                 "row": mine.pk if mine else None,
                 "marks": marks_of(mine),
+                "scores": scores_of(mine),
                 "comment": mine.comment if mine else "",
                 "papers": papers_of(mine),
             }
@@ -426,6 +428,7 @@ def build_table(work) -> dict:
             "position": task.position,
             "question": task.question,
             "answers": task.answers,
+            "maximum": task.maximum,
             **per_task[task.pk],
         }
         for task in tasks
@@ -455,11 +458,43 @@ def build_table(work) -> dict:
         ],
         "students": students,
         "summary": summarise(students, columns),
-        "marks_summary": mark_stats(students, criteria),
+        "marks_summary": mark_stats(students, tasks),
     }
 
 
-def mark_stats(students, criteria) -> dict:
+def grade_for(system, *, earned: int, top: int) -> dict | None:
+    """
+    Отметка по набранному. Считается, а не хранится.
+
+    Хранить букву значит соврать при первой же правке порогов: две работы с
+    одинаковыми баллами получили бы разные отметки, и объяснить это было бы
+    некому. Поэтому в базе баллы, а отметка выводится — и меняется вместе с
+    порогами, чего школа обычно и хочет.
+
+    Возвращает `None`, когда сказать нечего: системы нет, полос нет или
+    набирать было не из чего.
+    """
+    if system is None or not top:
+        return None
+
+    bands = list(system.bands.all())
+    if not bands:
+        return None
+
+    # у баллов порог в процентах, у уровней — в самой сумме
+    value = round(earned / top * 100) if system.kind == GradingSystem.POINTS else earned
+    for band in bands:  # отсортированы по убыванию порога
+        if value >= band.threshold:
+            return {
+                "label": band.label,
+                "system": system.name,
+                "kind": system.kind,
+                "value": value,
+            }
+    return None
+
+
+def mark_stats(students, questions) -> dict:
     """
     Сводка по оценкам: кто оценён, сколько в среднем и что далось труднее всего.
 
@@ -475,26 +510,26 @@ def mark_stats(students, criteria) -> dict:
     Пустая шкала даёт пустую сводку: работа может не оцениваться вовсе, и это
     не «ноль», а «нечего показывать».
     """
-    if not criteria:
+    if not questions:
         return None
 
     working = [student for student in students if student["active"]]
-    graded = [student for student in students if student["marks"]]
-    totals = sorted(sum(student["marks"].values()) for student in graded)
-    top = sum(item.maximum for item in criteria)
+    graded = [student for student in students if student["scores"]]
+    totals = sorted(sum(student["scores"].values()) for student in graded)
+    top = sum(item.maximum for item in questions)
 
     columns = []
-    for item in criteria:
+    for item in questions:
         values = [
-            student["marks"][item.pk]
+            student["scores"][item.pk]
             for student in students
-            if item.pk in student["marks"]
+            if item.pk in student["scores"]
         ]
         earned = sum(values)
         columns.append(
             {
                 "id": item.pk,
-                "name": item.name or f"Q{item.position + 1}",
+                "name": f"Q{item.position + 1}",
                 "maximum": item.maximum,
                 "question": item.question,
                 "graded": len(values),
@@ -529,15 +564,30 @@ def mark_stats(students, criteria) -> dict:
     }
 
 
+def scores_of(student_work) -> dict:
+    """`{id вопроса: балл}` — вторая ось, «что он решил»."""
+    if not student_work:
+        return {}
+    return {
+        mark.task_id: mark.value
+        for mark in student_work.marks.all()
+        if mark.task_id is not None
+    }
+
+
 def marks_of(student_work) -> dict:
     """`{id критерия: значение}` — то, что показывает и правит интерфейс."""
     if student_work is None:
         return {}
 
-    return {mark.criterion_id: mark.value for mark in student_work.marks.all()}
+    return {
+        mark.criterion_id: mark.value
+        for mark in student_work.marks.all()
+        if mark.criterion_id is not None
+    }
 
 
-def grade(work, student, *, marks=None, comment=None, by=None):
+def grade(work, student, *, marks=None, scores=None, comment=None, by=None):
     """
     Поставить оценку и написать слова. Одним вызовом на ученика.
 
@@ -546,9 +596,13 @@ def grade(work, student, *, marks=None, comment=None, by=None):
     же снимает вопрос «а что с теми, которые не прислали» — они остаются
     как были.
 
-    `marks` — `{критерий: значение}`; `None` в значении снимает отметку.
-    Каждое изменение дописывается в журнал (`MarkChange`) — исправленная
-    оценка это событие, а не новое значение поля.
+    Осей две, и они разные: `marks` — `{критерий: значение}`, `scores` —
+    `{вопрос: балл}`. Критерии отвечают на «как работа оценена» (уровень по
+    лучшему соответствию), вопросы — на «что он решил» (балл, который
+    складывается в сумму). Работа может иметь обе разом.
+
+    `None` в значении снимает отметку. Каждое изменение дописывается в журнал
+    (`MarkChange`) — исправленная оценка это событие, а не новое значение поля.
     """
     from django.db import transaction
 
@@ -558,35 +612,42 @@ def grade(work, student, *, marks=None, comment=None, by=None):
             row.comment = comment
             row.save(update_fields=["comment", "updated_at"])
 
-        if not marks:
+        if not marks and not scores:
             return row
 
-        current = {mark.criterion_id: mark for mark in row.marks.all()}
         moved = False
-        for criterion in work.criteria.all():
-            if criterion.pk not in marks:
-                continue
+        for axis, wanted in (("criterion", marks or {}), ("task", scores or {})):
+            rows = work.criteria.all() if axis == "criterion" else work.tasks.all()
+            current = {
+                getattr(mark, f"{axis}_id"): mark
+                for mark in row.marks.all()
+                if getattr(mark, f"{axis}_id") is not None
+            }
 
-            value = marks[criterion.pk]
-            was = current.get(criterion.pk)
-            if (was.value if was else None) == value:
-                continue
+            for item in rows:
+                if item.pk not in wanted:
+                    continue
 
-            if value is None:
-                if was:
-                    was.delete()
-            elif was:
-                was.value = value
-                was.save(update_fields=["value"])
-            else:
-                Mark.objects.create(
-                    student_work=row, criterion=criterion, value=value
+                value = wanted[item.pk]
+                was = current.get(item.pk)
+                if (was.value if was else None) == value:
+                    continue
+
+                if value is None:
+                    if was:
+                        was.delete()
+                elif was:
+                    was.value = value
+                    was.save(update_fields=["value"])
+                else:
+                    Mark.objects.create(
+                        student_work=row, value=value, **{axis: item}
+                    )
+
+                MarkChange.objects.create(
+                    student_work=row, value=value, changed_by=by, **{axis: item}
                 )
-
-            MarkChange.objects.create(
-                student_work=row, criterion=criterion, value=value, changed_by=by
-            )
-            moved = True
+                moved = True
 
         if moved:
             # оценки лежат отдельными строками, и `auto_now` их правку не
@@ -692,6 +753,45 @@ def scale_payload(work) -> dict:
         "graded": bool(criteria),
         "simple": len(criteria) == 1 and not criteria[0].name,
     }
+
+
+def set_questions(work, items):
+    """
+    Заменить вопросы работы целиком. Позиция — индекс в присланном списке.
+
+    Тот же приём, что у шкалы и у строк шаблона, и по той же причине:
+    построчный CRUD потребовал бы своей перенумерации ради формы, у которой
+    вложенности нет. Вопрос, которого в списке не стало, уносит свои баллы и
+    отправки каскадом: они были ответами **на него**.
+    """
+    from django.db import transaction
+
+    with transaction.atomic():
+        existing = list(work.tasks.all())
+
+        for position, item in enumerate(items):
+            if position < len(existing):
+                row = existing[position]
+                row.position = position
+                row.maximum = item.get("maximum", row.maximum)
+                if item.get("question"):
+                    row.question = item["question"]
+                if item.get("answers") is not None:
+                    row.answers = item["answers"]
+                row.save(update_fields=["position", "maximum", "question", "answers"])
+            else:
+                Task.objects.create(
+                    work=work,
+                    position=position,
+                    question=item.get("question", ""),
+                    maximum=item.get("maximum", 1),
+                    answers=item.get("answers") or [],
+                )
+
+        for row in existing[len(items):]:
+            row.delete()
+
+    return list(work.tasks.all())
 
 
 def set_scale(work, criteria):
@@ -902,8 +1002,8 @@ def scan_pages(work) -> list:
 
 
 def max_mark_of(work) -> int | None:
-    """Наибольший максимум среди задач работы — им проверяются прочитанные клетки."""
-    values = [c.maximum for c in work.criteria.all()]
+    """Наибольший максимум среди вопросов работы — им проверяются прочитанные клетки."""
+    values = [task.maximum for task in work.tasks.all()]
     return max(values) if values else None
 
 
@@ -924,7 +1024,7 @@ def scan_state(work) -> dict:
     roster = scan_roster(work)
     packets = scanning.arrange(pages, roster)
     limit = max_mark_of(work)
-    questions = work.criteria.count() or scanning.QUESTIONS
+    questions = work.tasks.count() or scanning.QUESTIONS
 
     owner_of = {}
     for packet in packets:
@@ -1075,7 +1175,7 @@ def scan_apply(work, *, data: bytes, by=None) -> dict:
             field="plan",
         )
 
-    criteria = list(work.criteria.all())
+    questions = list(work.tasks.all())
     from accounts.models import User
 
     people = User.objects.in_bulk([packet.student_id for packet in packets])
@@ -1090,13 +1190,13 @@ def scan_apply(work, *, data: bytes, by=None) -> dict:
                 by=by,
             )
             marks, _ = scanning.merge_marks(packet.pages)
-            if marks and criteria:
+            if marks and questions:
                 grade(
                     work,
                     people[packet.student_id],
-                    marks={
-                        criterion.pk: marks.get(number)
-                        for number, criterion in enumerate(criteria)
+                    scores={
+                        task.pk: marks.get(number)
+                        for number, task in enumerate(questions)
                         if marks.get(number) is not None
                     },
                     by=by,
@@ -1178,9 +1278,10 @@ def apply_questions(work, found: list) -> dict:
     """
     Записать прочитанные условия в шкалу работы.
 
-    У бумажной работы **задача — это критерий**: отдельных `Task` у неё нет по
-    определению, они про онлайн-ответы. Номер задачи с листа ложится на
-    критерий по порядку — `Q1` на первый, и так далее.
+    Номер задачи с листа ложится на вопрос работы по порядку — `Q1` на первый,
+    и так далее. Вопрос и есть то место, где условию положено лежать: критерий
+    отвечает на другой вопрос — «как работа оценена», — и в MYP это A, B, C, D
+    со своими уровнями, а не задачи.
 
     Расхождение не подгоняется, а называется. Задач на листе оказалось больше,
     чем в шкале, — значит человек ошибся, объявляя шкалу, либо мы прочитали
@@ -1190,32 +1291,32 @@ def apply_questions(work, found: list) -> dict:
     Максимальный балл с листа («2 marks») тоже только сообщается: менять его у
     критерия, за который уже стоят оценки, — переписывать чужую проверку.
     """
-    criteria = list(work.criteria.all())
+    questions = list(work.tasks.all())
     by_number = {item["number"]: item for item in found}
 
     written = 0
-    for position, criterion in enumerate(criteria, start=1):
+    for position, task in enumerate(questions, start=1):
         item = by_number.get(position)
         if not item:
             continue
-        criterion.question = item["text"]
-        criterion.save(update_fields=["question"])
+        task.question = item["text"]
+        task.save(update_fields=["question"])
         written += 1
 
     mismatched = [
         {"number": item["number"], "marks": item["marks"]}
         for item in found
         if item["marks"] is not None
-        and item["number"] <= len(criteria)
-        and criteria[item["number"] - 1].maximum != item["marks"]
+        and item["number"] <= len(questions)
+        and questions[item["number"] - 1].maximum != item["marks"]
     ]
 
     return {
         "found": len(found),
         "written": written,
-        "criteria": len(criteria),
+        "criteria": len(questions),
         # номера, для которых критерия не нашлось: шкала короче листа
-        "extra": sorted(number for number in by_number if number > len(criteria)),
+        "extra": sorted(number for number in by_number if number > len(questions)),
         # лист говорит про максимум не то, что стоит в шкале
         "marks_differ": mismatched,
     }

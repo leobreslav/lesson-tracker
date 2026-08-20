@@ -36,11 +36,8 @@ async function paperWork(teacher, { title = 'Контрольная на бум�
   expect(work.status, `работа не завелась: ${JSON.stringify(work.body)}`).toBe(201)
 
   if (questions) {
-    await teacher.put(`/api/works/${work.body.id}/criteria/`, {
-      criteria: Array.from({ length: questions }, (_, i) => ({
-        name: `Q${i + 1}`,
-        maximum,
-      })),
+    await teacher.put(`/api/works/${work.body.id}/questions/`, {
+      questions: Array.from({ length: questions }, () => ({ maximum })),
     })
   }
 
@@ -141,17 +138,17 @@ test('после разбора видно, кто что решил и что �
   // оценки ставим тем же путём, каким их пишет разбор пачки
   const state = await teacher.get(`/api/works/${work.id}/scan/state/`)
   const [first, second] = state.body.students
-  const scale = await teacher.get(`/api/works/${work.id}/criteria/`)
-  const marks = (values) =>
-    Object.fromEntries(scale.body.criteria.map((one, n) => [one.id, values[n]]))
+  const scale = await teacher.get(`/api/works/${work.id}/questions/`)
+  const scores = (values) =>
+    Object.fromEntries(scale.body.questions.map((one, n) => [one.id, values[n]]))
 
   await teacher.post(`/api/works/${work.id}/grade/`, {
     student: first.id,
-    marks: marks([3, 1, 0]),
+    scores: scores([3, 1, 0]),
   })
   await teacher.post(`/api/works/${work.id}/grade/`, {
     student: second.id,
-    marks: marks([3, 2, 0]),
+    scores: scores([3, 2, 0]),
   })
 
   await signIn(PEOPLE.ivanova)
@@ -159,7 +156,7 @@ test('после разбора видно, кто что решил и что �
   await ready(page)
 
   // таблица: столбец на задачу, а в ячейке балл
-  await expect(page.locator('.work-table th', { hasText: 'Q1' })).toBeVisible()
+  await expect(page.locator('.work-table th.hardest')).toBeVisible()
   await expect(page.locator('.work-table td.correct').first()).toHaveText('3')
 
   // сводка называет самую трудную задачу и разброс
@@ -167,8 +164,8 @@ test('после разбора видно, кто что решил и что �
   await expect(page.locator('[data-card="graded"]')).toContainText('2')
   await expect(page.locator('[data-card="spread"]')).toBeVisible()
 
-  // и подсвечивает её столбец
-  await expect(page.locator('.work-table th.hardest')).toHaveText('Q3')
+  // и подсвечивает её столбец — третий по счёту
+  await expect(page.locator('.work-table th.hardest button')).toHaveText('3')
 })
 
 
@@ -177,10 +174,9 @@ test('условие с листа открывается из шапки кол
   const work = await paperWork(teacher, { questions: 2, maximum: 3 })
 
   // условия записываем тем же путём, каким их пишет чтение листа
-  const scale = await teacher.get(`/api/works/${work.id}/criteria/`)
-  await teacher.put(`/api/works/${work.id}/criteria/`, {
-    criteria: scale.body.criteria.map((one, n) => ({
-      name: one.name,
+  const scale = await teacher.get(`/api/works/${work.id}/questions/`)
+  await teacher.put(`/api/works/${work.id}/questions/`, {
+    questions: scale.body.questions.map((one, n) => ({
       maximum: one.maximum,
       question: n === 0 ? 'Сколько будет $2+2$?' : 'Второе условие',
     })),
@@ -190,7 +186,7 @@ test('условие с листа открывается из шапки кол
   await page.goto(`/works/${work.id}`)
   await ready(page)
 
-  await page.locator('.work-table th', { hasText: 'Q1' }).getByRole('button').click()
+  await page.locator('.work-table thead th').nth(1).getByRole('button').click()
 
   await expect(page.locator('.modal')).toContainText('Сколько будет')
 })

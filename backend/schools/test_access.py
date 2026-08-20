@@ -247,6 +247,7 @@ class MatrixTests(AccessTestCase):
                 "work-impact",
                 "work-table",
                 "work-criteria",
+                "work-questions",
                 "work-scale-impact",
                 {
                     "name": "work-grade",

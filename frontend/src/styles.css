@@ -6317,3 +6317,58 @@ button.dropzone:hover:not(:disabled) {
   background: var(--surface-1);
   box-shadow: inset 0 -2px 0 var(--danger);
 }
+
+/* Справочник систем оценивания: строка на систему, полосы мелким. */
+.grading-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.grading-list li {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.grading-list .name {
+  font-weight: 600;
+  min-width: 8rem;
+}
+
+.grading-list .bands {
+  font-family: var(--mono, monospace);
+}
+
+/* Разговор о задаче: реплики строками, своя выделена. */
+.task-thread {
+  margin-top: var(--panel-gap);
+}
+
+.thread-list {
+  list-style: none;
+  margin: 0 0 var(--panel-gap);
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.9rem;
+}
+
+.thread-list li {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 0.5rem;
+}
+
+.thread-list .who {
+  font-weight: 600;
+}
+
+.thread-list li.mine .said {
+  color: var(--accent, inherit);
+}

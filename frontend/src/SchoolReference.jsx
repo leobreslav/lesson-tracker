@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import GradingPanel from './GradingPanel'
 import { useTranslation } from 'react-i18next'
 import {
   addGradePreset,
@@ -367,6 +368,8 @@ export default function SchoolReference() {
           )}
         </div>
       </section>
+
+      <GradingPanel />
     </>
   )
 }

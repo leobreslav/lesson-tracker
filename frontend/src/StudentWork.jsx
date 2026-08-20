@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import TaskThread from './TaskThread'
 import { useTranslation } from 'react-i18next'
 import { Link, useParams } from 'react-router-dom'
 import Markdown from './Markdown'
@@ -252,6 +253,10 @@ function TaskCard({ task, number, canAnswer, onSent, onError }) {
       {canAnswer && out && (
         <p className="hint warning">{t('student.work.noAttempts')}</p>
       )}
+
+      {/* спросить учителя можно прямо тут: вопрос про эту задачу, а не про
+          работу вообще, и тред у них с учителем один и тот же */}
+      <TaskThread task={task.id} student={null} me={null} />
     </li>
   )
 }

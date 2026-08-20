@@ -27,10 +27,10 @@ class MarkStatsTests(SchoolTestMixin, APITestCase):
         self.year = make_year(self.school)
         self.course = make_course(self.school, self.year)
         self.work = make_work(self.user, self.course, on_paper=True)
-        services.set_scale(
-            self.work, [{"name": f"Q{n}", "maximum": 3} for n in (1, 2, 3)]
+        services.set_questions(
+            self.work, [{"question": f"Задача {n}", "maximum": 3} for n in (1, 2, 3)]
         )
-        self.criteria = list(self.work.criteria.all())
+        self.questions = list(self.work.tasks.all())
 
         self.second = make_user(self.school, "second@example.com", student=True)
         enrol(self.student, self.course, by=self.admin)
@@ -41,7 +41,7 @@ class MarkStatsTests(SchoolTestMixin, APITestCase):
         services.grade(
             self.work,
             student,
-            marks={self.criteria[n].pk: value for n, value in enumerate(values)},
+            scores={self.questions[n].pk: value for n, value in enumerate(values)},
             by=self.user,
         )
 
@@ -54,8 +54,8 @@ class MarkStatsTests(SchoolTestMixin, APITestCase):
 
         got = self.stats()
 
-        self.assertEqual(got["hardest"], self.criteria[2].pk)
-        self.assertEqual(got["easiest"], self.criteria[0].pk)
+        self.assertEqual(got["hardest"], self.questions[2].pk)
+        self.assertEqual(got["easiest"], self.questions[0].pk)
 
     def test_difficulty_counts_the_graded_only(self):
         """
@@ -90,9 +90,9 @@ class MarkStatsTests(SchoolTestMixin, APITestCase):
         self.assertEqual((columns[0]["full"], columns[0]["partial"], columns[0]["zero"]), (2, 0, 0))
         self.assertEqual((columns[1]["full"], columns[1]["partial"], columns[1]["zero"]), (0, 1, 1))
 
-    def test_a_work_without_a_scale_says_nothing(self):
-        """Работа может не оцениваться вовсе, и это не «ноль»."""
-        plain = make_work(self.user, self.course, title="Без шкалы", on_paper=True)
+    def test_a_work_without_questions_says_nothing(self):
+        """Работа может не иметь вопросов вовсе, и это не «ноль»."""
+        plain = make_work(self.user, self.course, title="Без вопросов", on_paper=True)
 
         self.assertIsNone(services.build_table(plain)["marks_summary"])
 

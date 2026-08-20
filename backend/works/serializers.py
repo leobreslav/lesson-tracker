@@ -8,7 +8,15 @@ import json
 
 from django.contrib.auth import get_user_model
 
-from .models import MAX_CRITERIA, MAX_MARK, MAX_SCAN_BYTES, Submission, Task, Work
+from .models import (
+    MAX_CRITERIA,
+    MAX_MARK,
+    MAX_SCAN_BYTES,
+    GradingSystem,
+    Submission,
+    Task,
+    Work,
+)
 
 User = get_user_model()
 
@@ -79,6 +87,7 @@ class WorkSerializer(serializers.ModelSerializer):
     created_by = serializers.HiddenField(default=serializers.CurrentUserDefault())
     course_name = serializers.CharField(source="course.name", read_only=True)
     state = serializers.SerializerMethodField()
+    grade = serializers.SerializerMethodField()
     tasks_count = serializers.SerializerMethodField()
 
     class Meta:
@@ -96,6 +105,9 @@ class WorkSerializer(serializers.ModelSerializer):
             "show_result",
             "on_paper",
             "is_homework",
+            "is_summative",
+            "grading_system",
+            "grade",
             "slot",
             "state",
             "tasks_count",
@@ -105,6 +117,15 @@ class WorkSerializer(serializers.ModelSerializer):
 
     def get_state(self, work) -> str:
         return work.state()
+
+    def get_grade(self, work) -> dict | None:
+        """Как называется система, если она выбрана. Сама отметка — у ученика."""
+        system = work.grading_system
+        return (
+            {"id": system.pk, "name": system.name, "kind": system.kind}
+            if system
+            else None
+        )
 
     def get_tasks_count(self, work) -> int:
         # аннотация вьюсета; у только что созданной работы задач ноль, и это
@@ -132,6 +153,13 @@ class WorkSerializer(serializers.ModelSerializer):
 
         fields["slot"].queryset = Slot.objects.filter(
             course__in=fields["course"].queryset
+        )
+        # системы оценивания — только своей школы и только разрешённые: запрет
+        # это единственный рычаг администратора над выбором, и обходить его
+        # значением в теле запроса нельзя
+        school = getattr(self.context["request"].user, "school", None)
+        fields["grading_system"].queryset = GradingSystem.objects.filter(
+            school=school, is_allowed=True
         )
         return fields
 
@@ -203,6 +231,31 @@ class CriterionSerializer(serializers.Serializer):
     )
 
 
+class QuestionSerializer(serializers.Serializer):
+    """Один вопрос работы: условие, максимум и эталонные ответы."""
+
+    question = serializers.CharField(
+        required=False, allow_blank=True, trim_whitespace=False, default=""
+    )
+    maximum = serializers.IntegerField(min_value=1, max_value=MAX_MARK, default=1)
+    answers = serializers.ListField(
+        child=serializers.CharField(trim_whitespace=False),
+        required=False,
+        allow_empty=True,
+    )
+
+
+class QuestionsSerializer(serializers.Serializer):
+    """
+    Вопросы работы целиком. Позиция — индекс в списке, как у шкалы.
+
+    Пустой список законен: у работы может не быть вопросов вовсе — так
+    устроено исследование, которое оценивают только по критериям.
+    """
+
+    questions = QuestionSerializer(many=True)
+
+
 class CriteriaSerializer(serializers.Serializer):
     """
     Шкала целиком. Пустой список законен: работа не оценивается.
@@ -228,15 +281,20 @@ class CriteriaSerializer(serializers.Serializer):
 
 class GradeSerializer(serializers.Serializer):
     """
-    Оценка одного ученика: набор «критерий → значение» плюс комментарий.
+    Оценка одного ученика: наборы по обеим осям плюс комментарий.
 
-    Значение `null` снимает отметку — тем же движением, что и вердикт у
-    отправки. Критерий чужой работы не примем: перепутать их легко, а
-    последствие — оценка, поставленная не туда.
+    Осей две: `marks` — уровни по критериям оценивания, `scores` — баллы за
+    вопросы работы. Значение `null` снимает отметку — тем же движением, что и
+    вердикт у отправки. Чужой критерий и чужой вопрос не примем: перепутать их
+    легко, а последствие — оценка, поставленная не туда.
     """
 
     student = serializers.PrimaryKeyRelatedField(queryset=User.objects.none())
     marks = serializers.DictField(
+        child=serializers.IntegerField(min_value=0, max_value=MAX_MARK, allow_null=True),
+        required=False,
+    )
+    scores = serializers.DictField(
         child=serializers.IntegerField(min_value=0, max_value=MAX_MARK, allow_null=True),
         required=False,
     )
@@ -254,29 +312,31 @@ class GradeSerializer(serializers.Serializer):
 
     def validate(self, attrs):
         work = self.context["work"]
-        scale = {item.pk: item for item in work.criteria.all()}
 
-        raw = attrs.get("marks") or {}
-        marks = {}
-        for key, value in raw.items():
-            criterion = scale.get(int(key)) if str(key).isdigit() else None
-            if criterion is None:
-                api_error(
-                    Codes.CRITERION_UNKNOWN,
-                    "That criterion does not belong to this work.",
-                    field="marks",
-                )
-            if value is not None and value > criterion.maximum:
-                api_error(
-                    Codes.MARK_OUT_OF_RANGE,
-                    f"«{criterion.name or criterion.maximum}»: the mark is above "
-                    f"the maximum of {criterion.maximum}.",
-                    field="marks",
-                    maximum=criterion.maximum,
-                )
-            marks[criterion.pk] = value
+        for field, rows in (
+            ("marks", work.criteria.all()),
+            ("scores", work.tasks.all()),
+        ):
+            known = {item.pk: item for item in rows}
+            checked = {}
+            for key, value in (attrs.get(field) or {}).items():
+                item = known.get(int(key)) if str(key).isdigit() else None
+                if item is None:
+                    api_error(
+                        Codes.CRITERION_UNKNOWN,
+                        "That row does not belong to this work.",
+                        field=field,
+                    )
+                if value is not None and value > item.maximum:
+                    api_error(
+                        Codes.MARK_OUT_OF_RANGE,
+                        f"The mark is above the maximum of {item.maximum}.",
+                        field=field,
+                        maximum=item.maximum,
+                    )
+                checked[item.pk] = value
+            attrs[field] = checked
 
-        attrs["marks"] = marks
         return attrs
 
 

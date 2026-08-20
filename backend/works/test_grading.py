@@ -1,265 +1,151 @@
 """
-Оценки: шкала настраивается у работы, значение лежит по критериям.
+Система оценивания: как из работы получается отметка.
 
-Три состояния оценивания — не оценивается, обычная отметка, по критериям —
-выражены одними данными: **оценивание есть тогда, когда есть критерии**.
-Ноль критериев, один безымянный, несколько именованных. Отдельного флага
-нет намеренно: он был бы вторым источником правды о том же самом.
-
-Отсюда и форма хранения: значение — строка «критерий → число», и обычная
-отметка это один критерий без имени. Добавить потом буквы или «зачёт»
-значит добавить вид критерия, а не переливать уже поставленные оценки.
+Проверяются три решения, каждое из которых легко откатить назад по недосмотру:
+**выбирает учитель** (администратор только ограничивает), **хранятся баллы, а
+отметка выводится**, и **работа без системы законна** — баллы есть, отметки нет.
 """
 
 from django.urls import reverse
 from rest_framework.test import APITestCase
-from schools.services import enrol
-from schools.testing import (
-    SchoolTestMixin,
-    make_course,
-    make_task,
-    make_work,
-    make_year,
-)
+from schools.testing import SchoolTestMixin, make_course, make_work, make_year
 
-from .models import Criterion, Mark, MarkChange, StudentWork
+from . import grading, services
+from .models import GradeBand, GradingSystem
 
 
-class GradingTestCase(SchoolTestMixin, APITestCase):
+class BandTests(SchoolTestMixin, APITestCase):
     def setUp(self):
         super().setUp()
         self.year = make_year(self.school)
         self.course = make_course(self.school, self.year)
         self.work = make_work(self.user, self.course)
-        self.enrolment = enrol(self.student, self.course, by=self.admin)
+        grading.add_typical(self.school, "ru")
+        self.five = self.school.grading_systems.get(name="5-балльная")
+        self.myp = self.school.grading_systems.get(name="MYP 1–7")
 
-    def set_scale(self, criteria):
-        return self.client.put(
-            reverse("work-criteria", args=[self.work.pk]),
-            {"criteria": criteria},
+    def test_points_are_bands_in_percent(self):
+        """У баллов порог в процентах: у работ разные максимумы."""
+        self.assertEqual(
+            services.grade_for(self.five, earned=9, top=10)["label"], "5"
+        )
+        # 30 из 40 — это 75%, то есть четвёрка: у другой работы другой
+        # максимум, а полоса та же
+        self.assertEqual(
+            services.grade_for(self.five, earned=30, top=40)["label"], "4"
+        )
+        self.assertEqual(
+            services.grade_for(self.five, earned=1, top=10)["label"], "2"
+        )
+
+    def test_levels_are_bands_on_the_sum(self):
+        """У MYP сумма уровней фиксирована, и порог — сама сумма."""
+        self.assertEqual(services.grade_for(self.myp, earned=32, top=32)["label"], "7")
+        self.assertEqual(services.grade_for(self.myp, earned=15, top=32)["label"], "4")
+        self.assertEqual(services.grade_for(self.myp, earned=3, top=32)["label"], "1")
+
+    def test_no_system_means_no_grade(self):
+        """Работа без системы законна: баллы есть, отметки нет."""
+        self.assertIsNone(services.grade_for(None, earned=5, top=10))
+
+    def test_nothing_earned_from_nothing(self):
+        self.assertIsNone(services.grade_for(self.five, earned=0, top=0))
+
+    def test_the_grade_follows_the_bands(self):
+        """
+        Отметка выводится, а не хранится.
+
+        Поправили порог — прошлые работы читаются по новому, и это то, чего
+        школа обычно и хочет. Хранить букву значило бы соврать при первой же
+        правке.
+        """
+        band = self.five.bands.get(label="5")
+        band.threshold = 95
+        band.save()
+
+        self.assertEqual(services.grade_for(self.five, earned=9, top=10)["label"], "4")
+
+
+class TypicalTests(SchoolTestMixin, APITestCase):
+    def test_a_new_school_gets_nothing_by_itself(self):
+        """Угаданный набор хуже пустого списка: школа удаляла бы ненужное."""
+        self.assertEqual(self.school.grading_systems.count(), 0)
+
+    def test_pressing_twice_is_harmless(self):
+        grading.add_typical(self.school, "ru")
+        added = grading.add_typical(self.school, "ru")
+
+        self.assertEqual(added, 0)
+        self.assertEqual(self.school.grading_systems.count(), 3)
+
+    def test_edited_bands_are_not_reset(self):
+        """«Обновить до типовых» — худшее прочтение этой кнопки."""
+        grading.add_typical(self.school, "ru")
+        system = self.school.grading_systems.get(name="5-балльная")
+        system.bands.filter(label="5").update(threshold=95)
+
+        grading.add_typical(self.school, "ru")
+
+        self.assertEqual(system.bands.get(label="5").threshold, 95)
+
+
+class ChoiceTests(SchoolTestMixin, APITestCase):
+    """Выбирает учитель, администратор только ограничивает поле выбора."""
+
+    def setUp(self):
+        super().setUp()
+        self.year = make_year(self.school)
+        self.course = make_course(self.school, self.year)
+        grading.add_typical(self.school, "ru")
+        self.five = self.school.grading_systems.get(name="5-балльная")
+
+    def test_a_teacher_picks_the_system_on_the_work(self):
+        self.client.force_authenticate(self.user)
+        work = make_work(self.user, self.course)
+
+        response = self.client.patch(
+            reverse("work-detail", args=[work.pk]),
+            {"grading_system": self.five.pk},
             format="json",
         )
 
-    def grade(self, marks=None, comment=None, student=None):
-        body = {"student": (student or self.student).pk}
-        if marks is not None:
-            body["marks"] = marks
-        if comment is not None:
-            body["comment"] = comment
-        return self.client.post(
-            reverse("work-grade", args=[self.work.pk]), body, format="json"
+        self.assertEqual(response.status_code, 200)
+        work.refresh_from_db()
+        self.assertEqual(work.grading_system_id, self.five.pk)
+
+    def test_a_teacher_does_not_edit_the_catalogue(self):
+        self.client.force_authenticate(self.user)
+
+        response = self.client.patch(
+            reverse("grading-system", args=[self.five.pk]),
+            {"is_allowed": False},
+            format="json",
         )
 
-    def scale(self):
-        return self.client.get(reverse("work-criteria", args=[self.work.pk])).json()
+        self.assertEqual(response.status_code, 403)
 
+    def test_the_administrator_restricts_the_choice(self):
+        self.client.force_authenticate(self.admin)
 
-class ScaleTests(GradingTestCase):
-    def test_a_work_starts_ungraded(self):
-        body = self.scale()
-
-        self.assertEqual(body["criteria"], [])
-        self.assertFalse(body["graded"])
-
-    def test_one_nameless_criterion_is_an_ordinary_mark(self):
-        self.set_scale([{"name": "", "maximum": 5}])
-
-        body = self.scale()
-
-        self.assertTrue(body["graded"])
-        self.assertTrue(body["simple"], "интерфейс должен показать одно поле")
-
-    def test_several_named_criteria_are_a_rubric(self):
-        self.set_scale(
-            [{"name": f"Критерий {letter}", "maximum": 8} for letter in "ABCD"]
+        response = self.client.patch(
+            reverse("grading-system", args=[self.five.pk]),
+            {"is_allowed": False, "as_default": True},
+            format="json",
         )
 
-        body = self.scale()
+        self.assertEqual(response.status_code, 200)
+        self.five.refresh_from_db()
+        self.school.refresh_from_db()
+        self.assertFalse(self.five.is_allowed)
+        self.assertEqual(self.school.default_grading_system_id, self.five.pk)
 
-        self.assertEqual(len(body["criteria"]), 4)
-        self.assertFalse(body["simple"])
-        self.assertEqual([item["position"] for item in body["criteria"]], [0, 1, 2, 3])
+    def test_another_schools_system_does_not_exist(self):
+        self.client.force_authenticate(self.alien_admin)
 
-    def test_one_named_criterion_is_still_a_rubric(self):
-        """Правило однозначное: имя есть — значит критерий, а не отметка."""
-        self.set_scale([{"name": "Понимание", "maximum": 8}])
-
-        self.assertFalse(self.scale()["simple"])
-
-    def test_the_scale_is_replaced_whole_and_keeps_its_order(self):
-        self.set_scale([{"name": "A", "maximum": 8}, {"name": "B", "maximum": 8}])
-
-        self.set_scale([{"name": "B", "maximum": 6}])
-
-        body = self.scale()
-        self.assertEqual(len(body["criteria"]), 1)
-        self.assertEqual((body["criteria"][0]["name"], body["criteria"][0]["maximum"]), ("B", 6))
-
-    def test_an_empty_list_turns_grading_off(self):
-        self.set_scale([{"name": "", "maximum": 5}])
-
-        self.set_scale([])
-
-        self.assertFalse(self.scale()["graded"])
-
-    def test_dropping_a_criterion_takes_its_marks_and_says_so_first(self):
-        """Цена называется до нажатия — тот же разговор, что при импорте плана."""
-        self.set_scale([{"name": "A", "maximum": 8}])
-        criterion = Criterion.objects.get()
-        self.grade(marks={criterion.pk: 6})
-
-        before = self.client.get(
-            reverse("work-scale-impact", args=[self.work.pk])
-        ).json()
-        self.set_scale([])
-
-        self.assertEqual((before["marks"], before["students"]), (1, 1))
-        self.assertFalse(Mark.objects.exists())
-
-
-class MarkTests(GradingTestCase):
-    def setUp(self):
-        super().setUp()
-        self.set_scale([{"name": "A", "maximum": 8}, {"name": "B", "maximum": 8}])
-        self.a, self.b = Criterion.objects.order_by("position")
-
-    def test_a_whole_set_is_written_at_once(self):
-        response = self.grade(marks={self.a.pk: 6, self.b.pk: 7})
-
-        self.assertEqual(response.status_code, 200, response.content)
-        self.assertEqual(
-            response.json()["marks"], {str(self.a.pk): 6, str(self.b.pk): 7}
+        response = self.client.patch(
+            reverse("grading-system", args=[self.five.pk]),
+            {"name": "Чужая"},
+            format="json",
         )
 
-    def test_a_mark_above_the_maximum_is_refused(self):
-        response = self.grade(marks={self.a.pk: 9})
-
-        self.assertEqual(response.status_code, 400)
-        self.assertEqual(response.json()["code"], "mark_out_of_range")
-        self.assertFalse(Mark.objects.exists())
-
-    def test_a_criterion_of_another_work_is_refused(self):
-        other = make_work(self.user, self.course, title="Другая")
-        alien = Criterion.objects.create(work=other, position=0, name="X", maximum=5)
-
-        response = self.grade(marks={alien.pk: 3})
-
-        self.assertEqual(response.status_code, 400)
-        self.assertEqual(response.json()["code"], "criterion_unknown")
-
-    def test_null_removes_the_mark(self):
-        self.grade(marks={self.a.pk: 6})
-
-        self.grade(marks={self.a.pk: None})
-
-        self.assertFalse(Mark.objects.filter(criterion=self.a).exists())
-
-    def test_a_comment_lives_without_any_mark(self):
-        """Работа может не оцениваться вовсе, а сказать о ней есть что."""
-        self.set_scale([])
-
-        response = self.grade(comment="Аккуратно, но не дописал")
-
-        self.assertEqual(response.status_code, 200, response.content)
-        self.assertEqual(StudentWork.objects.get().comment, "Аккуратно, но не дописал")
-
-    def test_the_row_appears_only_when_something_is_written(self):
-        """«Ещё не проверен» и «строки нет» — одно состояние, и хранить его незачем."""
-        self.assertFalse(StudentWork.objects.exists())
-
-        self.grade(marks={self.a.pk: 5})
-
-        self.assertEqual(StudentWork.objects.count(), 1)
-
-    def test_a_student_of_another_course_cannot_be_graded(self):
-        outsider = make_course(self.school, self.year, "10А")
-        stranger = self.colleague  # не ученик этого курса
-
-        response = self.grade(marks={self.a.pk: 5}, student=stranger)
-
-        self.assertEqual(response.status_code, 400, response.content)
-        self.assertEqual(outsider.name, "10А")
-
-
-class HistoryTests(GradingTestCase):
-    """
-    Исправленная оценка — событие, а не новое значение поля.
-
-    Пишется с первого дня: восстановить задним числом её будет неоткуда, а
-    «почему у него было три, а стало четыре» — обычный вопрос к журналу.
-    """
-
-    def setUp(self):
-        super().setUp()
-        self.set_scale([{"name": "", "maximum": 5}])
-        self.criterion = Criterion.objects.get()
-
-    def test_every_change_is_written_down_with_its_author(self):
-        self.grade(marks={self.criterion.pk: 3})
-        self.grade(marks={self.criterion.pk: 4})
-
-        log = list(MarkChange.objects.values_list("value", "changed_by"))
-
-        self.assertEqual(log, [(3, self.user.pk), (4, self.user.pk)])
-
-    def test_setting_the_same_value_again_writes_nothing(self):
-        self.grade(marks={self.criterion.pk: 3})
-
-        self.grade(marks={self.criterion.pk: 3})
-
-        self.assertEqual(MarkChange.objects.count(), 1)
-
-    def test_removing_the_mark_is_an_event_too(self):
-        self.grade(marks={self.criterion.pk: 3})
-
-        self.grade(marks={self.criterion.pk: None})
-
-        self.assertEqual(
-            list(MarkChange.objects.values_list("value", flat=True)), [3, None]
-        )
-
-
-class StudentSideTests(GradingTestCase):
-    def setUp(self):
-        super().setUp()
-        make_task(self.work)
-        self.set_scale([{"name": "", "maximum": 5}])
-        self.criterion = Criterion.objects.get()
-        self.grade(marks={self.criterion.pk: 4}, comment="Хорошо")
-
-    def mine(self):
-        self.sign_in(self.student)
-        return self.client.get(reverse("student-work", args=[self.work.pk])).json()
-
-    def test_the_student_sees_their_own_mark(self):
-        body = self.mine()
-
-        self.assertEqual(body["marks"], {str(self.criterion.pk): 4})
-        self.assertEqual(body["comment"], "Хорошо")
-
-    def test_with_results_hidden_the_mark_waits_for_the_window_to_close(self):
-        self.work.show_result = False
-        self.work.save(update_fields=["show_result"])
-
-        body = self.mine()
-
-        self.assertEqual(body["marks"], {})
-        self.assertEqual(body["comment"], "")
-        # шкалу при этом видно: «из пяти» — это про работу, а не про него
-        self.assertTrue(body["graded"])
-
-    def test_a_mark_moves_the_polling_version(self):
-        before = self.mine()["version"]
-
-        self.sign_in(self.user)
-        self.grade(marks={self.criterion.pk: 5})
-
-        self.assertNotEqual(self.mine()["version"], before)
-
-    def test_the_table_carries_the_marks_the_teacher_gave(self):
-        body = self.client.get(reverse("work-table", args=[self.work.pk])).json()
-
-        row = next(item for item in body["students"] if item["id"] == self.student.pk)
-        self.assertEqual(row["marks"], {str(self.criterion.pk): 4})
-        self.assertEqual(row["comment"], "Хорошо")
-        self.assertEqual(len(body["criteria"]), 1)
+        self.assertEqual(response.json()["code"], "other_school")

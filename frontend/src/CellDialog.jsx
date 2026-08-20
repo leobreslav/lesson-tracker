@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import TaskThread from './TaskThread'
 import { useTranslation } from 'react-i18next'
 import Modal from './Modal'
 import TaskBrief from './TaskBrief'
@@ -82,6 +83,9 @@ export default function CellDialog({ student, task, onChanged, onClose }) {
           ))}
         </ul>
       )}
+
+      {/* разговор о задаче — там же, где её разбирают */}
+      <TaskThread task={task.id} student={student.id} me={null} />
     </Modal>
   )
 }

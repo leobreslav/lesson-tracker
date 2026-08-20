@@ -20,6 +20,24 @@ class School(models.Model):
     ai_month_limit_cents = models.PositiveIntegerField(
         "monthly limit for reading scans, cents", default=1000
     )
+    # Что школа советует по умолчанию и по чему считает итог за год. Выбор на
+    # конкретной работе это не отменяет: рекомендация — не приказ.
+    default_grading_system = models.ForeignKey(
+        "works.GradingSystem",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="recommended_by",
+        verbose_name="recommended grading system",
+    )
+    year_grading_system = models.ForeignKey(
+        "works.GradingSystem",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="year_of",
+        verbose_name="grading system for the year result",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

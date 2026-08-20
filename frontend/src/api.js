@@ -585,6 +585,36 @@ export const fetchScaleImpact = (work) =>
  */
 /* --- разбор пачки сканов ------------------------------------------------- */
 
+/* --- системы оценивания и разговор о задаче ------------------------------- */
+
+export const fetchGradingSystems = () => request('/api/works/grading/')
+
+export const addTypicalGrading = () =>
+  request('/api/works/grading/', { method: 'POST', body: { typical: true } })
+
+export const createGradingSystem = (fields) =>
+  request('/api/works/grading/', { method: 'POST', body: fields })
+
+export const saveGradingSystem = (id, fields) =>
+  request(`/api/works/grading/${id}/`, { method: 'PATCH', body: fields })
+
+export const deleteGradingSystem = (id) =>
+  request(`/api/works/grading/${id}/`, { method: 'DELETE' })
+
+export const fetchThread = (task, student) =>
+  request(`/api/works/thread/?task=${task}${student ? `&student=${student}` : ''}`)
+
+export const sendToThread = (task, student, text) =>
+  request(`/api/works/thread/?task=${task}${student ? `&student=${student}` : ''}`, {
+    method: 'POST',
+    body: { text },
+  })
+
+export const fetchQuestions = (work) => request(`/api/works/${work}/questions/`)
+
+export const saveQuestions = (work, questions) =>
+  request(`/api/works/${work}/questions/`, { method: 'PUT', body: { questions } })
+
 export const fetchScanState = (work) => request(`/api/works/${work}/scan/state/`)
 
 export const resetScan = (work) =>

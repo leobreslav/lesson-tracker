@@ -22,13 +22,15 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from . import services
+from . import services, threads
+from .models import Thread
 from vision import services as vision_services
 from .models import Submission, Task, Work
 from .models import Mark
 from .serializers import (
     CriteriaSerializer,
     GradeSerializer,
+    QuestionsSerializer,
     ReassignSerializer,
     ScanApplySerializer,
     ScanPageSerializer,
@@ -40,6 +42,43 @@ from .serializers import (
     TaskSerializer,
     WorkSerializer,
 )
+
+
+class TaskThreadView(APIView):
+    """
+    Разговор о задаче: `?task=&student=`.
+
+    Живёт отдельным адресом, а не действием работы, потому что смотрят на него
+    с двух сторон: учитель — из проверки, ученик — со своей страницы задачи. И
+    тот и другой спрашивают одно и то же.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def find(self, request):
+        from .models import Task
+
+        task = get_object_or_404(Task, pk=request.query_params.get("task"))
+        student_id = int(request.query_params.get("student") or request.user.pk)
+        threads.refuse_unless_allowed(request.user, task, student_id)
+        return task, student_id
+
+    def get(self, request):
+        task, student_id = self.find(request)
+        thread = Thread.objects.filter(task=task, student_id=student_id).first()
+        if thread is None:
+            return Response({"messages": [], "task": task.pk, "student": student_id})
+        return Response(threads.payload(thread))
+
+    def post(self, request):
+        task, student_id = self.find(request)
+        threads.say(
+            task,
+            student_id=student_id,
+            author=request.user,
+            text=request.data.get("text", ""),
+        )
+        return Response(threads.payload(Thread.objects.get(task=task, student_id=student_id)))
 
 
 class WorkViewSet(CourseScopedViewSet):
@@ -144,6 +183,7 @@ class WorkViewSet(CourseScopedViewSet):
             work,
             data["student"],
             marks=data.get("marks"),
+            scores=data.get("scores"),
             comment=data.get("comment"),
             by=request.user,
         )
@@ -154,6 +194,7 @@ class WorkViewSet(CourseScopedViewSet):
                 "student": row.student_id,
                 "comment": row.comment,
                 "marks": services.marks_of(row),
+                "scores": services.scores_of(row),
             }
         )
 
@@ -188,6 +229,36 @@ class WorkViewSet(CourseScopedViewSet):
                 pieces=form.validated_data["plan"],
                 by=request.user,
             )
+        )
+
+    @action(detail=True, methods=["get", "put"])
+    def questions(self, request, pk=None):
+        """
+        Вопросы работы целиком: условия, максимумы и эталоны.
+
+        Списком, а не по одному, и по той же причине, что у шкалы: позиция —
+        индекс в присланном, и ни дыры, ни дубля возникнуть не может.
+        """
+        work = self.get_object()
+
+        if request.method == "PUT":
+            form = QuestionsSerializer(data=request.data)
+            form.is_valid(raise_exception=True)
+            services.set_questions(work, form.validated_data["questions"])
+
+        return Response(
+            {
+                "questions": [
+                    {
+                        "id": task.pk,
+                        "position": task.position,
+                        "question": task.question,
+                        "maximum": task.maximum,
+                        "answers": task.answers,
+                    }
+                    for task in work.tasks.all()
+                ]
+            }
         )
 
     @action(detail=True, methods=["post"], url_path="scan/read")

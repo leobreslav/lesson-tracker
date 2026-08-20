@@ -30,8 +30,8 @@ class ScanApplyTests(SchoolTestMixin, APITestCase):
         self.year = make_year(self.school)
         self.course = make_course(self.school, self.year)
         self.work = make_work(self.user, self.course, on_paper=True)
-        services.set_scale(
-            self.work, [{"name": f"Q{n}", "maximum": 3} for n in range(1, 4)]
+        services.set_questions(
+            self.work, [{"question": f"Задача {n}", "maximum": 3} for n in range(1, 4)]
         )
 
         self.student.first_name, self.student.last_name = "Fil", "Burmov"

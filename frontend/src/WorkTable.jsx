@@ -104,7 +104,10 @@ export default function WorkTable() {
      критерии шкалы. Столбцы по ним отвечают на то, ради чего таблицу и
      открывают: кто что решил и с чем не справился класс. */
   const marks = table.marks_summary
+  /* У бумажной работы вопросы те же, что у онлайновой, — колонки общие. В
+     ячейке только другое: там балл, а не состояние отправки. */
   const byMark = onPaper && marks && marks.columns.length > 0
+  const statsOf = (id) => marks?.columns.find((column) => column.id === id)
 
   return (
     <main className="page wide">
@@ -178,46 +181,34 @@ export default function WorkTable() {
                     шумной. Кто справился — видно по самой колонке, а
                     подробности живут в окне проверки и в сводке */}
                 {table.tasks.map((task, index) => (
-                  <th key={task.id}>
+                  <th
+                    key={task.id}
+                    className={byMark && task.id === marks.hardest ? 'hardest' : ''}
+                    title={
+                      task.question ||
+                      (byMark
+                        ? t('grading.facility', {
+                            percent: statsOf(task.id)?.facility ?? 0,
+                          })
+                        : '')
+                    }
+                  >
                     <button
                       type="button"
                       className="link"
-                      title={task.question}
-                      onClick={() => setColumn({ task })}
+                      onClick={() =>
+                        byMark ? setQuestion(statsOf(task.id)) : setColumn({ task })
+                      }
                     >
                       {index + 1}
                     </button>
                   </th>
                 ))}
-                {byMark &&
-                  marks.columns.map((column) => (
-                    <th
-                      key={column.id}
-                      className={column.id === marks.hardest ? 'hardest' : ''}
-                      title={
-                        column.question ||
-                        t('grading.facility', { percent: column.facility ?? 0 })
-                      }
-                    >
-                      {column.question ? (
-                        <button
-                          type="button"
-                          className="link"
-                          onClick={() => setQuestion(column)}
-                        >
-                          {column.name}
-                        </button>
-                      ) : (
-                        column.name
-                      )}
-                    </th>
-                  ))}
                 {showRow && (
                   <th className="mark">
                     {t(scale.graded ? 'grading.mark' : 'paper.column')}
                   </th>
                 )}
-                {byMark && <th className="total">{t('table.total')}</th>}
                 {table.tasks.length > 0 && (
                   <th className="total">{t('table.total')}</th>
                 )}
@@ -232,40 +223,40 @@ export default function WorkTable() {
                       <span className="hint"> {t('table.removed')}</span>
                     )}
                   </th>
-                  {student.cells.map((item) => (
-                    <td key={item.task} className={cellClass(item)}>
-                      <button
-                        type="button"
-                        className="cell"
-                        title={item.answer ?? t('table.empty')}
-                        disabled={!item.submission}
-                        onClick={() =>
-                          setCell({
-                            student,
-                            task: table.tasks.find((row) => row.id === item.task),
-                          })
-                        }
-                      >
-                        {cellMark(item)}
-                      </button>
-                    </td>
-                  ))}
-                  {byMark &&
-                    marks.columns.map((column) => {
-                      const value = student.marks[column.id]
-                      return (
-                        <td key={column.id} className={markClass(value, column.maximum)}>
-                          {value ?? ''}
+                  {/* в ячейке балл у бумажной работы и состояние отправки
+                      у онлайновой: колонки те же, ответ на них разный */}
+                  {byMark
+                    ? table.tasks.map((task) => {
+                        const value = student.scores[task.id]
+                        return (
+                          <td
+                            key={task.id}
+                            className={markClass(value, task.maximum)}
+                          >
+                            {value ?? ''}
+                          </td>
+                        )
+                      })
+                    : student.cells.map((item) => (
+                        <td key={item.task} className={cellClass(item)}>
+                          <button
+                            type="button"
+                            className="cell"
+                            title={item.answer ?? t('table.empty')}
+                            disabled={!item.submission}
+                            onClick={() =>
+                              setCell({
+                                student,
+                                task: table.tasks.find(
+                                  (row) => row.id === item.task,
+                                ),
+                              })
+                            }
+                          >
+                            {cellMark(item)}
+                          </button>
                         </td>
-                      )
-                    })}
-                  {byMark && (
-                    <td className="total">
-                      {Object.keys(student.marks).length
-                        ? Object.values(student.marks).reduce((sum, one) => sum + one, 0)
-                        : ''}
-                    </td>
-                  )}
+                      ))}
                   {showRow && (
                     <td className="mark">
                       <button
@@ -281,7 +272,12 @@ export default function WorkTable() {
                   )}
                   {table.tasks.length > 0 && (
                     <td className="total">
-                      {student.correct}/{table.tasks.length}
+                      {byMark
+                        ? Object.values(student.scores).reduce(
+                            (sum, one) => sum + one,
+                            0,
+                          ) || ''
+                        : `${student.correct}/${table.tasks.length}`}
                     </td>
                   )}
                 </tr>

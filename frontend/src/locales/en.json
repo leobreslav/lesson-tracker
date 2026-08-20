@@ -261,7 +261,10 @@
     "scan_page_unknown": "That page is not part of this batch.",
     "scan_nothing_read": "Nothing has been read yet: upload the scans first.",
     "slot_not_mine": "That lesson belongs to a course you do not teach.",
-    "baseline_unknown": "There is no approved baseline with that date for this course."
+    "baseline_unknown": "There is no approved baseline with that date for this course.",
+    "message_empty": "There is nothing to send.",
+    "grading_name_required": "A grading system needs a name.",
+    "grading_name_taken": "The school already has a grading system with that name."
   },
   "classPicker": {
     "label": "Classes:",
@@ -1021,7 +1024,9 @@
       "recheck_other": "Clear {{count}} verdicts"
     },
     "answers": "Answers",
-    "description": "What to do"
+    "description": "What to do",
+    "summative": "Counts towards the term result",
+    "summativeHint": "A formative work is graded however you like and does not count."
   },
   "grading": {
     "title": "Grading",
@@ -1054,7 +1059,24 @@
     "hardestLabel": "the hardest question: {{percent}}% of the marks earned",
     "hardestBreakdown": "in full: {{full}} · partly: {{partial}} · nothing: {{zero}}",
     "facility": "{{percent}}% of the marks earned",
-    "questionTitle": "Question {{name}}"
+    "questionTitle": "Question {{name}}",
+    "system": "Grading system",
+    "noSystem": "Marks only, no grade",
+    "catalogue": "Grading systems",
+    "catalogueHint": "A teacher picks one on each work. Here you say which ones the school allows and which is recommended.",
+    "none": "None yet. Add the usual set or write your own.",
+    "recommended": "recommended",
+    "recommend": "recommend",
+    "allow": "allow",
+    "forbid": "forbid",
+    "delete": "Delete {{name}}",
+    "newName": "New system",
+    "addTypical": "Add the usual set",
+    "kind": {
+      "points": "sum of marks, bands in percent",
+      "levels": "levels per criterion, bands on the sum",
+      "passfail": "pass or fail"
+    }
   },
   "paper": {
     "scans": "Scanned work",
@@ -1225,5 +1247,13 @@
     "limitHint": "Zero means reading is off.",
     "none": "Nothing spent yet.",
     "noWork": "a work that is gone"
+  },
+  "thread": {
+    "title": "Ask about this question",
+    "none": "Nothing asked yet.",
+    "placeholder": "Ask the teacher about this question",
+    "send": "Send",
+    "somebody": "somebody",
+    "ask": "Ask about this question"
   }
 }
