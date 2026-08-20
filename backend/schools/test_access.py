@@ -265,6 +265,7 @@ class MatrixTests(AccessTestCase):
                 {"name": "work-scan-read", "method": "post", "body": {"index": 0}},
                 {"name": "work-scan-page", "method": "post", "body": {"index": 0}},
                 {"name": "work-scan-apply", "method": "post", "body": {}},
+                {"name": "work-scan-questions", "method": "post", "body": {}},
             ),
         )
 

@@ -607,6 +607,12 @@ export const markHeaderless = (work, index, ours) =>
 export const editScanPage = (work, fields) =>
   request(`/api/works/${work}/scan/page/`, { method: 'POST', body: fields })
 
+export const readScanQuestions = (work, blob) => {
+  const form = new FormData()
+  form.append('sheet', blob, 'sheet.jpg')
+  return request(`/api/works/${work}/scan/questions/`, { method: 'POST', body: form })
+}
+
 export const applyScan = (work, file) => {
   const form = new FormData()
   form.append('file', file)

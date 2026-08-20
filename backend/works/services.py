@@ -448,6 +448,8 @@ def build_table(work) -> dict:
                 "position": item.position,
                 "name": item.name,
                 "maximum": item.maximum,
+                # условие с листа: у бумажной работы критерий и есть задача
+                "question": item.question,
             }
             for item in criteria
         ],
@@ -494,6 +496,7 @@ def mark_stats(students, criteria) -> dict:
                 "id": item.pk,
                 "name": item.name or f"Q{item.position + 1}",
                 "maximum": item.maximum,
+                "question": item.question,
                 "graded": len(values),
                 "earned": earned,
                 # доля набранного от возможного, в процентах
@@ -714,13 +717,20 @@ def set_scale(work, criteria):
                 row.position = position
                 row.name = item["name"]
                 row.maximum = item["maximum"]
-                row.save(update_fields=["position", "name", "maximum"])
+                # пустое условие в списке не стирает прочитанное: экран шкалы
+                # его не показывает, и присылать ему нечего
+                if item.get("question"):
+                    row.question = item["question"]
+                row.save(
+                    update_fields=["position", "name", "maximum", "question"]
+                )
             else:
                 Criterion.objects.create(
                     work=work,
                     position=position,
                     name=item["name"],
                     maximum=item["maximum"],
+                    question=item.get("question", ""),
                 )
 
         for row in existing[len(criteria):]:
@@ -1162,3 +1172,50 @@ def edit_scan_page(work, *, index: int, student=UNSET, cells=None):
     if fields:
         row.save(update_fields=fields)
     return row
+
+
+def apply_questions(work, found: list) -> dict:
+    """
+    Записать прочитанные условия в шкалу работы.
+
+    У бумажной работы **задача — это критерий**: отдельных `Task` у неё нет по
+    определению, они про онлайн-ответы. Номер задачи с листа ложится на
+    критерий по порядку — `Q1` на первый, и так далее.
+
+    Расхождение не подгоняется, а называется. Задач на листе оказалось больше,
+    чем в шкале, — значит человек ошибся, объявляя шкалу, либо мы прочитали
+    лишнее; и то и другое решает он, а не мы. Молча дописать критерии значит
+    задним числом переписать то, по чему уже, может быть, выставлены оценки.
+
+    Максимальный балл с листа («2 marks») тоже только сообщается: менять его у
+    критерия, за который уже стоят оценки, — переписывать чужую проверку.
+    """
+    criteria = list(work.criteria.all())
+    by_number = {item["number"]: item for item in found}
+
+    written = 0
+    for position, criterion in enumerate(criteria, start=1):
+        item = by_number.get(position)
+        if not item:
+            continue
+        criterion.question = item["text"]
+        criterion.save(update_fields=["question"])
+        written += 1
+
+    mismatched = [
+        {"number": item["number"], "marks": item["marks"]}
+        for item in found
+        if item["marks"] is not None
+        and item["number"] <= len(criteria)
+        and criteria[item["number"] - 1].maximum != item["marks"]
+    ]
+
+    return {
+        "found": len(found),
+        "written": written,
+        "criteria": len(criteria),
+        # номера, для которых критерия не нашлось: шкала короче листа
+        "extra": sorted(number for number in by_number if number > len(criteria)),
+        # лист говорит про максимум не то, что стоит в шкале
+        "marks_differ": mismatched,
+    }

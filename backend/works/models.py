@@ -319,6 +319,10 @@ class Criterion(models.Model):
         verbose_name="work",
     )
     position = models.PositiveIntegerField("position", default=0)
+    # Условие задачи — то, что напечатано на листе условий. У бумажной работы
+    # критерий и есть задача: отдельных `Task` у неё нет по определению, они
+    # про онлайн-ответы. Заполняется чтением листа условий и правится руками.
+    question = models.TextField("question as printed on the paper", blank=True)
     name = models.CharField(
         "name",
         max_length=100,

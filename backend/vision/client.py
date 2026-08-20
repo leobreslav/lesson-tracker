@@ -62,6 +62,127 @@ _HEADER_TOOL = {
 }
 
 
+_QUESTIONS_TOOL = {
+    "name": "record_questions",
+    "description": "Record every numbered question printed on this sheet.",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "questions": {
+                "type": "array",
+                "description": "one entry per numbered question, in the order printed",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "number": {
+                            "type": "integer",
+                            "description": "the number printed next to the question",
+                        },
+                        "text": {
+                            "type": "string",
+                            "description": (
+                                "the question itself, as printed. Write mathematics "
+                                "in LaTeX between single dollar signs, e.g. "
+                                "$\\frac{2}{5}\\times\\frac{5}{6}$. Keep the "
+                                "wording; do not solve anything and do not explain."
+                            ),
+                        },
+                        "marks": {
+                            "type": ["integer", "null"],
+                            "description": (
+                                "the top mark printed for this question ('1 mark', "
+                                "'2 marks'); null if the sheet does not say"
+                            ),
+                        },
+                    },
+                    "required": ["number", "text"],
+                },
+            }
+        },
+        "required": ["questions"],
+    },
+}
+
+QUESTIONS_PROMPT = (
+    "You are given a scanned sheet with the questions of a school test. Copy "
+    "every numbered question as printed, keeping its number. Write mathematics "
+    "in LaTeX between single dollar signs. Do NOT solve anything, do not add "
+    "explanations, and do not invent questions that are not on the sheet: a "
+    "sheet with none is an empty list. Ignore anything a student wrote by hand."
+)
+
+
+def read_questions(
+    image: bytes,
+    *,
+    media_type: str = "image/jpeg",
+    model: str = prices.SONNET,
+) -> tuple[list, int, int]:
+    """
+    Лист условий -> список задач с номерами.
+
+    Модель тут дороже, чем при чтении шапок, и это не расточительность:
+    страниц условий две-три на всю пачку, а работа у них другая —
+    транскрипция формул, а не цифра в клетке. Ошибка в условии переезжает в
+    работу и остаётся там навсегда, ошибка в клетке видна человеку на шаге
+    проверки.
+    """
+    message = _client().messages.create(
+        model=model,
+        max_tokens=4000,
+        system=[
+            {
+                "type": "text",
+                "text": QUESTIONS_PROMPT,
+                "cache_control": {"type": "ephemeral"},
+            }
+        ],
+        tools=[_QUESTIONS_TOOL],
+        tool_choice={"type": "tool", "name": _QUESTIONS_TOOL["name"]},
+        messages=[
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": "Copy the questions from this sheet."},
+                    {
+                        "type": "image",
+                        "source": {
+                            "type": "base64",
+                            "media_type": media_type,
+                            "data": base64.standard_b64encode(image).decode(),
+                        },
+                    },
+                ],
+            }
+        ],
+    )
+
+    data: dict = {}
+    for block in message.content:
+        if block.type == "tool_use":
+            data = block.input
+
+    out = []
+    for item in data.get("questions") or []:
+        try:
+            number = int(item["number"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        text = (item.get("text") or "").strip()
+        if not text:
+            continue
+        marks = item.get("marks")
+        out.append(
+            {
+                "number": number,
+                "text": text,
+                "marks": marks if isinstance(marks, int) else None,
+            }
+        )
+
+    return out, message.usage.input_tokens, message.usage.output_tokens
+
+
 def _system_prompt(max_mark: int | None) -> str:
     limit = (
         f" A mark for a question is between 0 and {max_mark}; a larger number is "

@@ -170,3 +170,27 @@ test('после разбора видно, кто что решил и что �
   // и подсвечивает её столбец
   await expect(page.locator('.work-table th.hardest')).toHaveText('Q3')
 })
+
+
+test('условие с листа открывается из шапки колонки', async ({ page, signIn, api }) => {
+  const teacher = await api(PEOPLE.ivanova)
+  const work = await paperWork(teacher, { questions: 2, maximum: 3 })
+
+  // условия записываем тем же путём, каким их пишет чтение листа
+  const scale = await teacher.get(`/api/works/${work.id}/criteria/`)
+  await teacher.put(`/api/works/${work.id}/criteria/`, {
+    criteria: scale.body.criteria.map((one, n) => ({
+      name: one.name,
+      maximum: one.maximum,
+      question: n === 0 ? 'Сколько будет $2+2$?' : 'Второе условие',
+    })),
+  })
+
+  await signIn(PEOPLE.ivanova)
+  await page.goto(`/works/${work.id}`)
+  await ready(page)
+
+  await page.locator('.work-table th', { hasText: 'Q1' }).getByRole('button').click()
+
+  await expect(page.locator('.modal')).toContainText('Сколько будет')
+})

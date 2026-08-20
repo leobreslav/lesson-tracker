@@ -1053,7 +1053,8 @@
     "spreadLabel": "lowest and highest",
     "hardestLabel": "the hardest question: {{percent}}% of the marks earned",
     "hardestBreakdown": "in full: {{full}} · partly: {{partial}} · nothing: {{zero}}",
-    "facility": "{{percent}}% of the marks earned"
+    "facility": "{{percent}}% of the marks earned",
+    "questionTitle": "Question {{name}}"
   },
   "paper": {
     "scans": "Scanned work",
@@ -1209,7 +1210,12 @@
     "startOver": "start over",
     "conditions_one": "{{count}} sheet without a header — the question paper. It cuts the pile into {{packets}} packets.",
     "conditions_other": "{{count}} sheets without a header — question papers. They cut the pile into {{packets}} packets.",
-    "packetPages": "Pages {{list}}"
+    "packetPages": "Pages {{list}}",
+    "readQuestions": "Also copy the questions off the question paper",
+    "readQuestionsHint": "The first run of question sheets is read once for the whole pile and written into the scale. A full page costs a few cents — a header strip costs a fraction of one.",
+    "questionsRead": "Questions written into the scale: {{count}} of {{found}} found.",
+    "questionsExtra": "no room in the scale for: {{list}}",
+    "questionsMarks": "the paper says a different top mark: {{list}}"
   },
   "ai": {
     "title": "Reading scans",

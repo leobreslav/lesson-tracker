@@ -21,7 +21,7 @@ from django.db.models import Sum
 from config.errors import Codes, api_error
 
 from . import prices
-from .client import read_header
+from .client import read_header, read_questions
 from .models import AiSpend
 
 
@@ -88,6 +88,11 @@ def read_and_charge(
         max_mark=max_mark,
         model=model,
     )
+    _charge(school, user, work, purpose, model, input_tokens, output_tokens)
+    return data
+
+
+def _charge(school, user, work, purpose, model, input_tokens, output_tokens):
     AiSpend.objects.create(
         school=school,
         user=user,
@@ -98,4 +103,23 @@ def read_and_charge(
         output_tokens=output_tokens,
         cost_micros=prices.cost_micros(model, input_tokens, output_tokens),
     )
-    return data
+
+
+def questions_and_charge(
+    *,
+    school,
+    user,
+    work,
+    image: bytes,
+    media_type: str = "image/jpeg",
+    model: str = prices.SONNET,
+) -> list:
+    """Прочитать лист условий и записать трату. Та же дверь, что у шапок."""
+    check_budget(school)
+    found, input_tokens, output_tokens = read_questions(
+        image, media_type=media_type, model=model
+    )
+    _charge(
+        school, user, work, AiSpend.SCAN_QUESTIONS, model, input_tokens, output_tokens
+    )
+    return found

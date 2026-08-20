@@ -9,6 +9,7 @@ import {
   fetchScanState,
   markHeaderless,
   readScanPage,
+  readScanQuestions,
   resetScan,
   saveScale,
 } from './api'
@@ -45,6 +46,8 @@ export default function ScanWizard({ work, onClose, onDone }) {
   const [total, setTotal] = useState(0)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
+  const [readQuestions, setReadQuestions] = useState(false)
+  const [questions, setQuestions] = useState(null)
   const stop = useRef(false)
 
   useEffect(() => () => { stop.current = true }, [])
@@ -78,9 +81,10 @@ export default function ScanWizard({ work, onClose, onDone }) {
     }
   }
 
-  const start = async (chosen) => {
+  const start = async (chosen, alsoQuestions) => {
     if (!chosen) return
     setFile(chosen)
+    setQuestions(null)
     setStage('reading')
     setError(null)
     stop.current = false
@@ -115,6 +119,18 @@ export default function ScanWizard({ work, onClose, onDone }) {
         },
         blank: async (index, ours) =>
           setState(await markHeaderless(work.id, index, ours)),
+        questions: alsoQuestions
+          ? async (sheet) => {
+              const answer = await readScanQuestions(work.id, sheet)
+              setQuestions((was) => ({
+                found: (was?.found ?? 0) + answer.found,
+                written: (was?.written ?? 0) + answer.written,
+                extra: [...(was?.extra ?? []), ...answer.extra],
+                marks_differ: [...(was?.marks_differ ?? []), ...answer.marks_differ],
+              }))
+              return answer
+            }
+          : null,
       })
       setPages(collected)
       setState(await fetchScanState(work.id))
@@ -169,8 +185,10 @@ export default function ScanWizard({ work, onClose, onDone }) {
 
       {stage === 'file' && (
         <FileStep
-          onPick={start}
+          onPick={(chosen) => start(chosen, readQuestions)}
           busy={busy}
+          readQuestions={readQuestions}
+          onReadQuestions={setReadQuestions}
           questions={scale.length}
           read={state?.pages?.length ?? 0}
           onReset={() => run(async () => setState(await resetScan(work.id)))}
@@ -199,6 +217,7 @@ export default function ScanWizard({ work, onClose, onDone }) {
       {stage === 'doubts' && state && (
         <DoubtStep
           doubts={doubts}
+          questions={questions}
           conditions={state.conditions}
           packets={packets.length}
           pages={byIndex}
@@ -310,7 +329,7 @@ function QuestionsStep({ onSave, busy }) {
 }
 
 /** Шаг: выбрать файл. Всегда PDF — так его отдаёт и сканер, и телефон. */
-function FileStep({ onPick, busy, questions, read, onReset }) {
+function FileStep({ onPick, busy, questions, read, onReset, readQuestions, onReadQuestions }) {
   const { t } = useTranslation()
   const [over, setOver] = useState(false)
 
@@ -327,6 +346,21 @@ function FileStep({ onPick, busy, questions, read, onReset }) {
           {t('scan.printBlank')}
         </a>
       </p>
+
+      {/* условия читаются по просьбе: страница целиком дороже полоски шапки,
+          а нужна она один раз на пачку */}
+      {questions > 0 && (
+        <label className="checkbox">
+          <input
+            type="checkbox"
+            checked={readQuestions}
+            disabled={busy}
+            onChange={(event) => onReadQuestions(event.target.checked)}
+          />
+          {t('scan.readQuestions')}
+        </label>
+      )}
+      {readQuestions && <p className="hint">{t('scan.readQuestionsHint')}</p>}
 
       {read > 0 && (
         <p className="hint">
@@ -367,6 +401,7 @@ function FileStep({ onPick, busy, questions, read, onReset }) {
  */
 function DoubtStep({
   doubts,
+  questions,
   conditions,
   packets,
   pages,
@@ -385,6 +420,15 @@ function DoubtStep({
       {/* сколько листов условий нашлось — по ним и разрезана пачка */}
       {conditions > 0 && (
         <p className="hint">{t('scan.conditions', { count: conditions, packets })}</p>
+      )}
+
+      {questions && (
+        <p className="hint">
+          {t('scan.questionsRead', { count: questions.written, found: questions.found })}
+          {questions.extra.length > 0 && ` · ${t('scan.questionsExtra', { list: questions.extra.join(', ') })}`}
+          {questions.marks_differ.length > 0 &&
+            ` · ${t('scan.questionsMarks', { list: questions.marks_differ.map((one) => `Q${one.number}=${one.marks}`).join(', ') })}`}
+        </p>
       )}
 
       {doubts.length === 0 ? (

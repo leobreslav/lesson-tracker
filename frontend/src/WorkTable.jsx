@@ -5,6 +5,7 @@ import CellDialog from './CellDialog'
 import ColumnDialog from './ColumnDialog'
 import GradeDialog from './GradeDialog'
 import Markdown from './Markdown'
+import Modal from './Modal'
 import ScaleDialog from './ScaleDialog'
 import SplitDialog from './SplitDialog'
 import { fetchWorkTable, gradeStudent, saveScale, splitScan } from './api'
@@ -32,6 +33,7 @@ export default function WorkTable() {
   const [column, setColumn] = useState(null) // {task}
   const [grading, setGrading] = useState(null) // {student}
   const [scaling, setScaling] = useState(false)
+  const [question, setQuestion] = useState(null) // условие задачи с листа
   const [splitting, setSplitting] = useState(false)
   const [notice, setNotice] = useState(null)
   const [busy, setBusy] = useState(false)
@@ -192,9 +194,22 @@ export default function WorkTable() {
                     <th
                       key={column.id}
                       className={column.id === marks.hardest ? 'hardest' : ''}
-                      title={t('grading.facility', { percent: column.facility ?? 0 })}
+                      title={
+                        column.question ||
+                        t('grading.facility', { percent: column.facility ?? 0 })
+                      }
                     >
-                      {column.name}
+                      {column.question ? (
+                        <button
+                          type="button"
+                          className="link"
+                          onClick={() => setQuestion(column)}
+                        >
+                          {column.name}
+                        </button>
+                      ) : (
+                        column.name
+                      )}
                     </th>
                   ))}
                 {showRow && (
@@ -294,6 +309,23 @@ export default function WorkTable() {
       <p>
         <Link to="/works">{t('nav.works')}</Link>
       </p>
+
+      {question && (
+        <Modal
+          onClose={() => setQuestion(null)}
+          title={t('grading.questionTitle', { name: question.name })}
+        >
+          <Markdown text={question.question} />
+          <p className="hint">
+            {t('grading.facility', { percent: question.facility ?? 0 })} ·{' '}
+            {t('grading.hardestBreakdown', {
+              full: question.full,
+              partial: question.partial,
+              zero: question.zero,
+            })}
+          </p>
+        </Modal>
+      )}
 
       {cell && (
         <CellDialog

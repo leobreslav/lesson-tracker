@@ -84,6 +84,22 @@ export function toCanvas(image) {
   return canvas
 }
 
+/**
+ * JPEG из холста, ужатый до длинной стороны.
+ *
+ * Больше 1568 точек посылать некуда: Anthropic ужмёт сам, а трафик и время
+ * загрузки мы заплатим. Полоска в этот предел укладывается по построению, а
+ * страница условий — нет.
+ */
+export function scaledJpeg(canvas, maxSide = STRIP_WIDTH, quality = 0.8) {
+  const scale = Math.min(1, maxSide / Math.max(canvas.width, canvas.height))
+  const small = document.createElement('canvas')
+  small.width = Math.round(canvas.width * scale)
+  small.height = Math.round(canvas.height * scale)
+  small.getContext('2d').drawImage(canvas, 0, 0, small.width, small.height)
+  return new Promise((resolve) => small.toBlob(resolve, 'image/jpeg', quality))
+}
+
 /** JPEG из картинки: полоска уезжает на сервер именно так. */
 export function toJpeg(image, quality = 0.88) {
   return new Promise((resolve) =>
@@ -117,9 +133,11 @@ export async function fingerprint(blob) {
  * сообщается отдельно (`blank`), потому что обычно это лист условий, а ряд
  * таких листов размечает пачку. Прерывает только `stop`.
  */
-export async function walk(file, { onPage, send, blank, stop } = {}) {
+export async function walk(file, { onPage, send, blank, questions, stop } = {}) {
   const book = await openBook(file)
   const pages = []
+  // первый ряд условий — тот, что встретился до первого листа решения
+  let seenAnswer = false
 
   for (let number = 1; number <= book.numPages; number += 1) {
     if (stop?.()) break
@@ -151,7 +169,18 @@ export async function walk(file, { onPage, send, blank, stop } = {}) {
       // надо: ряд таких листов размечает пачку, и без них он не увидит, где
       // кончается работа одного ученика и начинается другого.
       await blank(page.index, page.ours)
+
+      /* Условия читаются **один раз на пачку**, и только по просьбе. Их
+         раздают одинаковыми, поэтому второй экземпляр ничего нового не
+         скажет, а стоит страница условий заметно дороже полоски шапки:
+         читается целиком и моделью посерьёзнее. Первый ряд — тот, что идёт
+         до первого прочитанного листа. */
+      if (questions && !seenAnswer) {
+        page.questions = await questions(await scaledJpeg(canvas))
+      }
     }
+
+    if (enough) seenAnswer = true
 
     pages.push(page)
     onPage?.(page, book.numPages)

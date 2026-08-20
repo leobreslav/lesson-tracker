@@ -32,6 +32,7 @@ from .serializers import (
     ReassignSerializer,
     ScanApplySerializer,
     ScanPageSerializer,
+    ScanQuestionsSerializer,
     ScanReadSerializer,
     SplitSerializer,
     StudentSubmissionSerializer,
@@ -260,6 +261,30 @@ class WorkViewSet(CourseScopedViewSet):
         else:
             services.edit_scan_page(work, **fields)
         return Response(services.scan_state(work))
+
+    @action(detail=True, methods=["post"], url_path="scan/questions")
+    def scan_questions(self, request, pk=None):
+        """
+        Прочитать лист условий и записать задачи в шкалу.
+
+        По флагу, а не всегда: страница условий стоит заметно дороже полоски
+        шапки — она читается целиком и моделью посерьёзнее, потому что это
+        транскрипция формул. Зато и читается она **один раз на пачку**: условия
+        раздают одинаковые, и второй экземпляр ничего нового не скажет.
+        """
+        work = self.get_object()
+        self.refuse_unless_paper(work)
+
+        form = ScanQuestionsSerializer(data=request.data)
+        form.is_valid(raise_exception=True)
+
+        found = vision_services.questions_and_charge(
+            school=work.course.school,
+            user=request.user,
+            work=work,
+            image=form.validated_data["sheet"].read(),
+        )
+        return Response(services.apply_questions(work, found))
 
     @action(detail=True, methods=["post"], url_path="scan/apply")
     def scan_apply(self, request, pk=None):

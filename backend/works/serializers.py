@@ -196,6 +196,11 @@ class CriterionSerializer(serializers.Serializer):
 
     name = serializers.CharField(max_length=100, allow_blank=True, default="")
     maximum = serializers.IntegerField(min_value=1, max_value=MAX_MARK)
+    # условие задачи: у бумажной работы критерий и есть задача. Приходит либо
+    # чтением листа условий, либо руками
+    question = serializers.CharField(
+        required=False, allow_blank=True, trim_whitespace=False, default=""
+    )
 
 
 class CriteriaSerializer(serializers.Serializer):
@@ -426,6 +431,27 @@ class ScanPageSerializer(serializers.Serializer):
                 field="student",
             )
         return value
+
+
+class ScanQuestionsSerializer(serializers.Serializer):
+    """
+    Лист условий картинкой.
+
+    Страницу целиком, а не полоску: условия напечатаны по всему листу, и
+    вырезать из них нечего.
+    """
+
+    sheet = serializers.FileField()
+
+    def validate_sheet(self, upload):
+        if upload.size > 4 * 1024 * 1024:
+            api_error(
+                Codes.FILE_TOO_LARGE,
+                "The question sheet is larger than 4 MB.",
+                field="sheet",
+                limit_mb=4,
+            )
+        return upload
 
 
 class ScanApplySerializer(serializers.Serializer):

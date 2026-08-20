@@ -20,9 +20,11 @@ class AiSpend(models.Model):
 
     SCAN_HEADER = "scan_header"
     SCAN_REREAD = "scan_reread"
+    SCAN_QUESTIONS = "scan_questions"
     PURPOSES = [
         (SCAN_HEADER, "reading a scanned blank header"),
         (SCAN_REREAD, "re-reading a header that did not add up"),
+        (SCAN_QUESTIONS, "copying the questions off the question paper"),
     ]
 
     school = models.ForeignKey(
