@@ -14,7 +14,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from . import services
+from . import search, services
 from .models import (
     NEGATABLE,
     ON_PROBLEM,
@@ -309,3 +309,16 @@ class TagLinkView(BankView):
                 problem_id=request.data.get("problem"), tag_id=request.data.get("tag")
             ).delete()
         return Response(status=204)
+
+
+class SearchView(BankView):
+    """
+    Поиск по граням и по тексту.
+
+    Один эндпоинт на оба, потому что это один вопрос: набор задач сужается и
+    словом, и тегом, вперемешку. Два эндпоинта означали бы, что где-то на
+    экране их результаты придётся склеивать руками.
+    """
+
+    def get(self, request):
+        return Response(search.payload(request.user, request.query_params))

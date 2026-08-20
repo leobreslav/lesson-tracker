@@ -1300,6 +1300,18 @@
     "noSolutions": "No solution has been written yet.",
     "addSolution": "Add a solution",
     "solutionTitle": "Method, in a few words",
-    "analogues": "Analogues"
+    "analogues": "Analogues",
+    "search": {
+      "title": "Find a problem",
+      "text": "Words from the statement",
+      "facets": "Narrow it down",
+      "noFacets": "Nothing left to narrow by.",
+      "found_one": "{{count}} problem",
+      "found_other": "{{count}} problems",
+      "more_one": "and {{count}} more — narrow the search",
+      "more_other": "and {{count}} more — narrow the search",
+      "open": "Search"
+    },
+    "without": "without"
   }
 }

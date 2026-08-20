@@ -16,6 +16,7 @@ uniform dataset hides exactly the states that break layouts.
 from datetime import date, timedelta
 
 from allauth.account.models import EmailAddress
+from bank.models import Entry, Problem, Section, Source, Tag
 from calendars.models import DayException, SchoolYear, Term
 from calendars.services import KIND_HOLIDAY, KIND_VACATION
 from django.conf import settings
@@ -302,6 +303,35 @@ PAST_TASKS = (
 )
 
 
+# Словарь: по паре тегов каждого вида, чтобы в поиске были видны все грани —
+# в том числе те, что живут на решении и умеют отрицание.
+DEMO_TAGS = [
+    ("алгебра", "subject"),
+    ("геометрия", "subject"),
+    ("многочлен", "object"),
+    ("окружность", "object"),
+    ("доказательство", "task"),
+    ("уравнение", "task"),
+    ("теорема Виета", "theorem"),
+    ("замена переменной", "method"),
+]
+
+DEMO_PROBLEMS = [
+    ("1", r"Решите уравнение $x^2 - 5x + 6 = 0$.", ["алгебра", "многочлен", "уравнение"]),
+    ("2", r"Решите уравнение $x^4 - 5x^2 + 4 = 0$.", ["алгебра", "уравнение"]),
+    (
+        "3",
+        r"Докажите, что $x^2 + y^2 \geqslant 2xy$ при любых $x$ и $y$.",
+        ["алгебра", "доказательство"],
+    ),
+    (
+        "4",
+        "Окружность вписана в прямоугольный треугольник. Найдите её радиус.",
+        ["геометрия", "окружность"],
+    ),
+]
+
+
 class Command(BaseCommand):
     help = "Заполнить базу правдоподобными данными для разработки"
 
@@ -357,6 +387,7 @@ class Command(BaseCommand):
                 self.schedule(year, courses, people)
                 self.plans(courses, people)
                 self.library(school, subjects, people, courses)
+                self.bank(school, people)
 
             if rich and not options["minimal"]:
                 rich_demo.build(
@@ -922,6 +953,45 @@ class Command(BaseCommand):
                     position += 1
 
             PlanTemplateRow.objects.bulk_create(rows)
+
+    def bank(self, school, people):
+        """
+        Задачник: словарь тегов и книга с задачами.
+
+        Словарь тут не украшение — без него поиск по граням показывает пустую
+        колонку, и непонятно, сломан он или просто нечем сужать. Теги
+        системные (их и в жизни заводит суперпользователь), поэтому при
+        повторном посеве они не дублируются, а находятся по имени и виду.
+        """
+        tags = {}
+        for name, kind in DEMO_TAGS:
+            tags[name] = Tag.objects.get_or_create(name=name, kind=kind)[0]
+
+        teacher = people["ivanova@example.com"]
+        source, _ = Source.objects.get_or_create(
+            title="Листочки по алгебре",
+            school=school,
+            owner=teacher,
+            defaults={"created_by": teacher},
+        )
+        if source.entries.exists():
+            return
+
+        section = Section.objects.create(source=source, title="Квадратные уравнения")
+        for position, (label, text, on_it) in enumerate(DEMO_PROBLEMS):
+            problem = Problem.objects.create(
+                text=text, school=school, owner=teacher, created_by=teacher
+            )
+            for name in on_it:
+                problem.links.create(tag=tags[name])
+            Entry.objects.create(
+                source=source,
+                section=section,
+                problem=problem,
+                label=label,
+                position=position,
+            )
+        self.stdout.write("  задачник:  4 задачи, словарь из 8 тегов")
 
     def write_plan(self, course, teacher, blocks):
         if PlanNode.objects.filter(course=course).exists():

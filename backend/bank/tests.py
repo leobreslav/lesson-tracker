@@ -233,3 +233,131 @@ class SolutionTests(SchoolTestMixin, APITestCase):
         solution = Solution.objects.get(pk=answer.json()["id"])
         self.assertEqual(solution.level, "personal")
         self.assertEqual(solution.problem, problem)
+
+
+class SearchTests(SchoolTestMixin, APITestCase):
+    """
+    Поиск по граням. Проверяется не «нашлось что-то», а два правила, на
+    которых он стоит: грани складываются **и**, а грани решения спрашиваются
+    у **одного** решения.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.root = self.make_root()
+        self.circle = Tag.objects.create(name="окружность", kind=OBJECT)
+        self.vieta = Tag.objects.create(name="теорема Виета", kind="theorem")
+        self.derivative = Tag.objects.create(name="производная", kind=METHOD)
+
+        self.square = self.problem("Решите $x^2-5x+6=0$")
+        self.circle_task = self.problem("Окружность вписана в треугольник")
+        self.tag_problem(self.circle_task, self.circle)
+
+    def problem(self, text):
+        return Problem.objects.create(
+            text=text, school=self.school, owner=self.user, created_by=self.user
+        )
+
+    def tag_problem(self, problem, tag):
+        problem.links.create(tag=tag)
+
+    def solution(self, problem, title, uses=(), avoids=()):
+        made = Solution.objects.create(
+            problem=problem,
+            title=title,
+            text="…",
+            school=self.school,
+            owner=self.user,
+            created_by=self.user,
+        )
+        for tag in uses:
+            made.links.create(tag=tag, side=SolutionTag.USES)
+        for tag in avoids:
+            made.links.create(tag=tag, side=SolutionTag.AVOIDS)
+        return made
+
+    def find(self, **params):
+        self.client.force_authenticate(self.user)
+        response = self.client.get(reverse("bank-search"), params)
+        self.assertEqual(response.status_code, 200)
+        return response.data
+
+    def test_words_narrow_the_set_together(self):
+        found = self.find(text="окружность треугольник")
+        self.assertEqual([row["id"] for row in found["problems"]], [self.circle_task.pk])
+
+        # оба слова обязательны: иначе поиск из двух слов шире, чем из одного
+        self.assertEqual(self.find(text="окружность парабола")["total"], 0)
+
+    def test_the_facets_of_a_solution_are_asked_of_one_solution(self):
+        # у задачи два разных разбора: один через Виета, другой без производной
+        self.solution(self.square, "через Виета", uses=[self.vieta])
+        self.solution(self.square, "без производной", avoids=[self.derivative])
+
+        self.assertEqual(self.find(uses=self.vieta.pk)["total"], 1)
+        self.assertEqual(self.find(avoids=self.derivative.pk)["total"], 1)
+
+        # а вместе — ни одного: такого разбора у задачи нет
+        found = self.find(uses=self.vieta.pk, avoids=self.derivative.pk)
+        self.assertEqual(found["total"], 0)
+
+        self.solution(self.square, "оба", uses=[self.vieta], avoids=[self.derivative])
+        self.assertEqual(
+            self.find(uses=self.vieta.pk, avoids=self.derivative.pk)["total"], 1
+        )
+
+    def test_the_facets_say_how_much_is_left(self):
+        found = self.find()
+        rows = {row["tag"]: row["count"] for row in found["facets"]}
+        self.assertEqual(rows[self.circle.pk], 1)
+
+        # выбранная грань из списка уходит: «сужает на всё» — не подсказка
+        found = self.find(tag=self.circle.pk)
+        self.assertNotIn(self.circle.pk, [row["tag"] for row in found["facets"]])
+
+    def test_a_retired_problem_leaves_the_search_but_not_the_works(self):
+        self.circle_task.retired = True
+        self.circle_task.save(update_fields=["retired"])
+        self.assertEqual(self.find(text="окружность")["total"], 0)
+
+    def test_another_school_is_not_searched(self):
+        self.client.force_authenticate(self.stranger)
+        response = self.client.get(reverse("bank-search"), {"text": "окружность"})
+        self.assertEqual(response.data["total"], 0)
+
+
+class PayloadTests(SchoolTestMixin, APITestCase):
+    """
+    Ответ про задачу собирается с тегами и решениями, и это стоит проверять
+    отдельно: связь через промежуточную модель зовётся по имени, а имя однажды
+    поменяли — питон при этом молчит до первого запроса.
+    """
+
+    def test_a_problem_comes_with_its_tags_and_solutions(self):
+        tag = Tag.objects.create(name="многочлен", kind=OBJECT)
+        method = Tag.objects.create(name="замена переменной", kind=METHOD)
+        problem = Problem.objects.create(
+            text="$x^4-5x^2+4=0$",
+            school=self.school,
+            owner=self.user,
+            created_by=self.user,
+        )
+        problem.links.create(tag=tag)
+        solution = Solution.objects.create(
+            problem=problem,
+            title="через замену",
+            text="…",
+            school=self.school,
+            owner=self.user,
+            created_by=self.user,
+        )
+        solution.links.create(tag=method, side=SolutionTag.USES)
+
+        self.client.force_authenticate(self.user)
+        response = self.client.get(reverse("bank-problem", args=[problem.pk]))
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual([one["name"] for one in response.data["tags"]], ["многочлен"])
+        self.assertEqual(
+            [one["name"] for one in response.data["solutions"][0]["tags"]],
+            ["замена переменной"],
+        )

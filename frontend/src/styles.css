@@ -6455,3 +6455,29 @@ button.dropzone:hover:not(:disabled) {
   border-style: dashed;
   color: var(--muted);
 }
+
+/* Грани поиска: подпись слева, число справа — по числу и выбирают, поэтому
+   оно выключено вправо и стоит столбиком. */
+.facet-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.facet-list li {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  padding: 0.1rem 0;
+}
+
+.facet-list .count {
+  margin-left: auto;
+  color: var(--muted);
+}
+
+.chosen-facets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}

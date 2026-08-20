@@ -77,3 +77,28 @@ test('ученику задачника нет вовсе', async ({ page, signI
 
   await expect(page.getByRole('link', { name: 'Задачник' })).toHaveCount(0)
 })
+
+test('поиск сужается словом и гранью, и грань говорит, сколько останется', async ({
+  page,
+  signIn,
+}) => {
+  await signIn(PEOPLE.ivanova)
+  await page.goto('/bank/search')
+  await ready(page)
+
+  // посеянный словарь: грани видно сразу, до всякого ввода
+  const facets = page.locator('.facet-list li')
+  await expect(facets.filter({ hasText: 'алгебра' })).toContainText('3')
+
+  await page.getByRole('button', { name: 'геометрия' }).click()
+  await expect(page.locator('.problem-list li')).toHaveCount(1)
+  await expect(page.locator('.problem-list')).toContainText('Окружность')
+
+  // снимается там же, где выбрана
+  await page.locator('.chosen-facets .tag').click()
+  await expect(page.locator('.problem-list li')).toHaveCount(4)
+
+  // слово сужает так же, как грань
+  await page.getByLabel('Слова из условия').fill('уравнение')
+  await expect(page.locator('.problem-list li')).toHaveCount(2)
+})

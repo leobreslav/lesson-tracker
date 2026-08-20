@@ -224,8 +224,8 @@ class ProblemTag(models.Model):
     Отрицания тут нет вовсе: у условия нет метода, значит и отрицать нечего.
     """
 
-    problem = models.ForeignKey(Problem, on_delete=models.CASCADE)
-    tag = models.ForeignKey(Tag, on_delete=models.PROTECT)
+    problem = models.ForeignKey(Problem, on_delete=models.CASCADE, related_name="links")
+    tag = models.ForeignKey(Tag, on_delete=models.PROTECT, related_name="+")
 
     class Meta:
         verbose_name = "tag on a problem"
@@ -255,8 +255,8 @@ class SolutionTag(models.Model):
     AVOIDS = "avoids"
     SIDES = [(USES, "использует"), (AVOIDS, "намеренно обходится")]
 
-    solution = models.ForeignKey(Solution, on_delete=models.CASCADE)
-    tag = models.ForeignKey(Tag, on_delete=models.PROTECT)
+    solution = models.ForeignKey(Solution, on_delete=models.CASCADE, related_name="links")
+    tag = models.ForeignKey(Tag, on_delete=models.PROTECT, related_name="+")
     side = models.CharField("side", max_length=8, choices=SIDES, default=USES)
 
     class Meta:

@@ -57,9 +57,14 @@ export default function Bank() {
     <main className="page wide">
       <header className="page-header spread">
         <h1>{t('bank.title')}</h1>
+        <div className="row">
+          <Link className="link-button" to="/bank/search">
+            {t('bank.search.open')}
+          </Link>
         <button type="button" onClick={() => setAdding({ title: '', author: '', level: 'personal' })}>
           {t('bank.addSource')}
         </button>
+        </div>
       </header>
 
       {error && <p className="error">{error}</p>}

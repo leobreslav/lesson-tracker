@@ -944,3 +944,18 @@ export const fetchTestPeople = () => request('/api/test/people/')
 
 export const loginAsTestUser = (email) =>
   request('/api/test/login/', { method: 'POST', body: { email } })
+
+/**
+ * Поиск задач: слова и грани идут одним запросом, потому что сужают один и тот
+ * же набор. Грани повторяются в строке запроса (`tag=1&tag=2`) — это «и», а не
+ * список.
+ */
+export const searchProblems = (query) => {
+  const params = new URLSearchParams()
+  if (query.text) params.set('text', query.text)
+  if (query.level) params.set('level', query.level)
+  ;(query.tags || []).forEach((id) => params.append('tag', id))
+  ;(query.uses || []).forEach((id) => params.append('uses', id))
+  ;(query.avoids || []).forEach((id) => params.append('avoids', id))
+  return request(`/api/bank/search/?${params}`)
+}

@@ -220,7 +220,7 @@ def problem_payload(problem, *, user) -> dict:
         "copied_from": problem.copied_from_id,
         "tags": [
             {"id": link.tag_id, "name": link.tag.name, "kind": link.tag.kind}
-            for link in problem.problemtag_set.select_related("tag")
+            for link in problem.links.select_related("tag")
         ],
         "sources": [
             {
@@ -250,12 +250,12 @@ def problem_payload(problem, *, user) -> dict:
                         "kind": link.tag.kind,
                         "side": link.side,
                     }
-                    for link in solution.solutiontag_set.select_related("tag")
+                    for link in solution.links.select_related("tag")
                 ],
             }
             for solution in Solution.objects.visible_to(user)
             .filter(problem=problem, retired=False)
-            .prefetch_related("solutiontag_set__tag")
+            .prefetch_related("links__tag")
             .select_related("created_by")
         ],
         "analogues": analogues,

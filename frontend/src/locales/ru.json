@@ -1347,6 +1347,20 @@
     "noSolutions": "Разбора пока никто не написал.",
     "addSolution": "Добавить решение",
     "solutionTitle": "Метод, в двух словах",
-    "analogues": "Аналоги"
+    "analogues": "Аналоги",
+    "search": {
+      "title": "Поиск задачи",
+      "text": "Слова из условия",
+      "facets": "Чем сузить",
+      "noFacets": "Сужать больше нечем.",
+      "found_one": "{{count}} задача",
+      "found_few": "{{count}} задачи",
+      "found_many": "{{count}} задач",
+      "more_one": "и ещё {{count}} — сузьте поиск",
+      "more_few": "и ещё {{count}} — сузьте поиск",
+      "more_many": "и ещё {{count}} — сузьте поиск",
+      "open": "Поиск"
+    },
+    "without": "без"
   }
 }
