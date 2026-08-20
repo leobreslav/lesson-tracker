@@ -974,3 +974,16 @@ export const updateSavedSearch = (id, fields) =>
 
 export const deleteSavedSearch = (id) =>
   request(`/api/bank/searches/${id}/`, { method: 'DELETE' })
+
+/**
+ * Взять задачу или раздел к себе. `mode` — «ссылка» или «своя копия», и это
+ * разные вещи: ссылка оставляет одну задачу на всех, копия заводит свою.
+ */
+export const copyIntoSource = (body) =>
+  request('/api/bank/copy/', { method: 'POST', body })
+
+export const declareAnalogue = (problem, other) =>
+  request('/api/bank/analogues/', { method: 'POST', body: { problem, other } })
+
+export const leaveFamily = (problem) =>
+  request('/api/bank/analogues/', { method: 'DELETE', body: { problem } })

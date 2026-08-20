@@ -14,7 +14,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from . import expressions, search, services
+from . import copying, expressions, search, services
 from .models import (
     NEGATABLE,
     ON_PROBLEM,
@@ -415,3 +415,74 @@ def _saved(saved, user):
         "expression": saved.expression,
         "may_edit": SavedSearch.objects.writable_by(user).filter(pk=saved.pk).exists(),
     }
+
+
+class CopyView(BankView):
+    """
+    Взять чужое к себе: задачу или раздел целиком.
+
+    Куда — спрашивается всегда, потому что «своя книга» у человека не одна и
+    молчаливое «в первую попавшуюся» означало бы искать потом руками.
+    """
+
+    def post(self, request):
+        into = get_object_or_404(
+            Source.objects.writable_by(request.user), pk=request.data.get("into")
+        )
+        mode = request.data.get("mode") or copying.LINK
+
+        if request.data.get("section"):
+            section = get_object_or_404(
+                Section.objects.filter(
+                    source__in=Source.objects.visible_to(request.user)
+                ),
+                pk=request.data["section"],
+            )
+            made = copying.copy_section(
+                section, into=into, mode=mode, user=request.user
+            )
+            return Response({"section": made.pk}, status=201)
+
+        problem = get_object_or_404(
+            Problem.objects.visible_to(request.user), pk=request.data.get("problem")
+        )
+        section = None
+        if request.data.get("into_section"):
+            section = get_object_or_404(
+                Section.objects.filter(source=into), pk=request.data["into_section"]
+            )
+        entry = copying.copy_problem(
+            problem,
+            into=into,
+            mode=mode,
+            label=request.data.get("label") or "",
+            section=section,
+            user=request.user,
+        )
+        return Response({"entry": entry.pk, "problem": entry.problem_id}, status=201)
+
+
+class AnalogueView(BankView):
+    """
+    Аналоги: те же задачи с другими числами.
+
+    Объявляет их человек, и это утверждение о **условиях**, а не о том, откуда
+    взялась копия: происхождение живёт отдельным полем и в семью не идёт.
+    """
+
+    def post(self, request):
+        mine = Problem.objects.visible_to(request.user)
+        problem = get_object_or_404(mine, pk=request.data.get("problem"))
+        other = get_object_or_404(mine, pk=request.data.get("other"))
+        services.refuse_unless_writable(request.user, problem)
+
+        family = copying.join_family(problem, other, user=request.user)
+        return Response({"family": family.pk}, status=201)
+
+    def delete(self, request):
+        problem = get_object_or_404(
+            Problem.objects.visible_to(request.user), pk=request.data.get("problem")
+        )
+        services.refuse_unless_writable(request.user, problem)
+        copying.leave_family(problem)
+        return Response(status=204)

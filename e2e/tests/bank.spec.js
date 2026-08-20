@@ -135,3 +135,68 @@ test('выражение отвечает на «или», и его можно 
   await ready(page)
   await expect(page.getByLabel('Сохранённые')).toContainText('Ни то ни это')
 })
+
+test('чужая задача берётся к себе — ссылкой или своей копией', async ({
+  page,
+  signIn,
+  api,
+}) => {
+  const teacher = await api(PEOPLE.ivanova)
+  const shelf = await teacher.post('/api/bank/sources/', {
+    title: 'Полка учителя',
+    level: 'personal',
+  })
+
+  // задача из посеянной книги: она личная, но берём её как чужую — путь тот же
+  const found = await teacher.get('/api/bank/search/?text=Окружность')
+  const problem = found.body.problems[0].id
+
+  await signIn(PEOPLE.ivanova)
+  await page.goto(`/bank/problem/${problem}`)
+  await ready(page)
+
+  await page.getByRole('button', { name: 'Взять к себе' }).click()
+  await page.getByLabel('В какую книгу').selectOption({ label: 'Полка учителя' })
+  await page.locator('.modal').getByRole('button', { name: 'Взять' }).click()
+
+  // ссылкой: задача осталась одна, просто встречается теперь в двух книгах
+  await expect(page.locator('.panel', { hasText: 'Встречается в' })).toContainText(
+    'Полка учителя',
+  )
+
+  const shelved = await teacher.get(`/api/bank/sources/${shelf.body.id}/`)
+  expect(shelved.body.entries[0].problem).toBe(problem)
+})
+
+test('аналог объявляется поиском, и семья видна с обеих сторон', async ({
+  page,
+  signIn,
+  api,
+}) => {
+  const teacher = await api(PEOPLE.ivanova)
+  const found = await teacher.get('/api/bank/search/?text=уравнение')
+  const [first, second] = found.body.problems
+
+  await signIn(PEOPLE.ivanova)
+  await page.goto(`/bank/problem/${first.id}`)
+  await ready(page)
+
+  await expect(page.getByText('Аналогов не отмечено')).toBeVisible()
+  await page.getByRole('button', { name: 'Добавить аналог' }).click()
+  await page.locator('.modal').getByLabel('Слова из условия').fill('уравнение')
+  await page
+    .locator('.modal .problem-list li', { hasText: `#${second.id}` })
+    .getByRole('button', { name: 'Это аналог' })
+    .click()
+
+  await expect(page.locator('.panel', { hasText: 'Аналоги' })).toContainText(
+    `#${second.id}`,
+  )
+
+  // с другой стороны — то же самое: отношение общее, а не «у кого записано»
+  await page.goto(`/bank/problem/${second.id}`)
+  await ready(page)
+  await expect(page.locator('.panel', { hasText: 'Аналоги' })).toContainText(
+    `#${first.id}`,
+  )
+})

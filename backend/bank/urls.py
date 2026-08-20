@@ -1,6 +1,8 @@
 from django.urls import path
 
 from .views import (
+    AnalogueView,
+    CopyView,
     ProblemView,
     SavedSearchView,
     SavedSearchesView,
@@ -20,6 +22,8 @@ urlpatterns = [
     path("search/", SearchView.as_view(), name="bank-search"),
     path("searches/", SavedSearchesView.as_view(), name="bank-searches"),
     path("searches/<int:pk>/", SavedSearchView.as_view(), name="bank-saved-search"),
+    path("copy/", CopyView.as_view(), name="bank-copy"),
+    path("analogues/", AnalogueView.as_view(), name="bank-analogues"),
     path("tags/", TagsView.as_view(), name="bank-tags"),
     path("tag-links/", TagLinkView.as_view(), name="bank-tag-links"),
 ]

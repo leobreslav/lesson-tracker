@@ -274,7 +274,8 @@
     "tag_not_negatable": "Only a method or a theorem can be deliberately avoided.",
     "superuser_only_tags": "Only a superuser adds tags: the vocabulary is shared by everyone.",
     "bank_expression_bad": "The search condition does not parse — fix it in the tree.",
-    "search_name_required": "A saved search needs a name — that is how it is found again."
+    "search_name_required": "A saved search needs a name — that is how it is found again.",
+    "bank_same_problem": "A problem is not its own analogue."
   },
   "classPicker": {
     "label": "Classes:",
@@ -1336,6 +1337,25 @@
       "title": "Saved",
       "save": "Save this search",
       "name": "Name"
+    },
+    "copy": {
+      "title": "Take it",
+      "into": "Into which book",
+      "mode": "How",
+      "link": "As a link",
+      "fork": "As my own copy",
+      "linkHint": "One problem for everybody: the author's corrections show up in your book too.",
+      "forkHint": "A statement of your own, marked with where it came from — edit it freely.",
+      "do": "Take",
+      "noShelf": "You have no book of your own yet. Start one in the bank — that is where taken problems land."
+    },
+    "analogue": {
+      "title": "Mark an analogue",
+      "add": "Add an analogue",
+      "leave": "Leave the family",
+      "none": "No analogues marked.",
+      "pick": "This one",
+      "hint": "An analogue is the same problem with different numbers. The relation is shared by the whole family, and none of them is the original."
     }
   }
 }

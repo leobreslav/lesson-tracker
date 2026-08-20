@@ -13,7 +13,17 @@ from rest_framework.test import APITestCase
 from schools.testing import SchoolTestMixin
 
 from . import services
-from .models import METHOD, OBJECT, Entry, Problem, Solution, SolutionTag, Source, Tag
+from .models import (
+    METHOD,
+    OBJECT,
+    Entry,
+    Problem,
+    Section,
+    Solution,
+    SolutionTag,
+    Source,
+    Tag,
+)
 
 
 class OwningTests(SchoolTestMixin, APITestCase):
@@ -473,3 +483,124 @@ class SavedSearchTests(SchoolTestMixin, APITestCase):
         self.client.force_authenticate(self.colleague)
         listed = self.client.get(reverse("bank-searches"))
         self.assertEqual(listed.data["searches"], [])
+
+
+class CopyingTests(SchoolTestMixin, APITestCase):
+    """
+    Взять чужое к себе. Проверяются обе стороны разницы между ссылкой и своей
+    копией: ссылка не заводит второй задачи, а копия достаётся правящему.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.root = self.make_root()
+        self.common = Source.objects.create(title="Мордкович", created_by=self.root)
+        self.chapter = Section.objects.create(
+            source=self.common, title="Квадратные уравнения"
+        )
+        self.problem = Problem.objects.create(text="$x^2=4$", created_by=self.root)
+        Entry.objects.create(
+            source=self.common, section=self.chapter, problem=self.problem, label="12"
+        )
+        self.mine = Source.objects.create(
+            title="Мои листочки",
+            school=self.school,
+            owner=self.user,
+            created_by=self.user,
+        )
+
+    def copy(self, **body):
+        self.client.force_authenticate(self.user)
+        return self.client.post(reverse("bank-copy"), body, format="json")
+
+    def test_a_link_keeps_one_problem_and_carries_its_number(self):
+        answer = self.copy(problem=self.problem.pk, into=self.mine.pk)
+        self.assertEqual(answer.status_code, 201)
+        self.assertEqual(answer.data["problem"], self.problem.pk)
+        self.assertEqual(Problem.objects.count(), 1)
+        self.assertEqual(self.mine.entries.get().label, "12")
+
+    def test_a_fork_belongs_to_the_book_it_landed_in(self):
+        answer = self.copy(problem=self.problem.pk, into=self.mine.pk, mode="fork")
+        made = Problem.objects.get(pk=answer.data["problem"])
+
+        # копия системной задачи в личной книге обязана быть личной, иначе
+        # правит её по-прежнему один суперпользователь — то есть копировали зря
+        self.assertEqual(made.level, "personal")
+        self.assertEqual(made.copied_from_id, self.problem.pk)
+        self.assertEqual(made.text, self.problem.text)
+
+    def test_a_whole_chapter_comes_with_its_problems(self):
+        Entry.objects.create(
+            source=self.common,
+            section=self.chapter,
+            problem=Problem.objects.create(text="$x^2=9$", created_by=self.root),
+            label="13",
+        )
+        answer = self.copy(section=self.chapter.pk, into=self.mine.pk)
+        self.assertEqual(answer.status_code, 201)
+        self.assertEqual(self.mine.sections.count(), 1)
+        self.assertEqual(
+            [entry.label for entry in self.mine.entries.order_by("position")],
+            ["12", "13"],
+        )
+
+    def test_copying_into_a_book_that_is_not_mine_is_refused(self):
+        alien = Source.objects.create(
+            title="Чужое",
+            school=self.school,
+            owner=self.colleague,
+            created_by=self.colleague,
+        )
+        self.assertEqual(
+            self.copy(problem=self.problem.pk, into=alien.pk).status_code, 404
+        )
+
+
+class AnalogueTests(SchoolTestMixin, APITestCase):
+    def setUp(self):
+        super().setUp()
+        self.problems = [
+            Problem.objects.create(
+                text=f"$x^2={number}$",
+                school=self.school,
+                owner=self.user,
+                created_by=self.user,
+            )
+            for number in (4, 9, 16)
+        ]
+
+    def declare(self, one, other):
+        self.client.force_authenticate(self.user)
+        return self.client.post(
+            reverse("bank-analogues"),
+            {"problem": one.pk, "other": other.pk},
+            format="json",
+        )
+
+    def test_families_merge_rather_than_nest(self):
+        first, second, third = self.problems
+        self.declare(first, second)
+        self.declare(third, second)
+
+        families = {
+            Problem.objects.get(pk=one.pk).family_id for one in self.problems
+        }
+        self.assertEqual(len(families), 1)
+        self.assertNotIn(None, families)
+
+    def test_leaving_a_pair_dissolves_the_family(self):
+        first, second, _ = self.problems
+        self.declare(first, second)
+
+        self.client.delete(
+            reverse("bank-analogues"), {"problem": first.pk}, format="json"
+        )
+        # оставшийся один — это не семья: «без аналогов» и «аналог был, да сплыл»
+        # для читающего одно и то же
+        self.assertIsNone(Problem.objects.get(pk=second.pk).family_id)
+
+    def test_a_problem_is_not_its_own_analogue(self):
+        answer = self.declare(self.problems[0], self.problems[0])
+        self.assertEqual(answer.status_code, 400)
+        self.assertEqual(answer.data["code"], "bank_same_problem")

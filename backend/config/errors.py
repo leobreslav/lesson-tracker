@@ -207,6 +207,7 @@ class Codes:
     TAG_NOT_NEGATABLE = "tag_not_negatable"
     SUPERUSER_ONLY_TAGS = "superuser_only_tags"
     BANK_EXPRESSION_BAD = "bank_expression_bad"
+    BANK_SAME_PROBLEM = "bank_same_problem"
     SEARCH_NAME_REQUIRED = "search_name_required"
 
     # разговор о задаче

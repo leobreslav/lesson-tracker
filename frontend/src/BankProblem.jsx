@@ -2,9 +2,11 @@ import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link, useParams } from 'react-router-dom'
 
+import AnalogueDialog from './AnalogueDialog'
 import Collapsible from './Collapsible'
+import CopyToShelf from './CopyToShelf'
 import Markdown from './Markdown'
-import { createSolution, fetchProblem, saveProblem } from './api'
+import { createSolution, fetchProblem, leaveFamily, saveProblem } from './api'
 
 /**
  * Условие целиком: разборы, где встречается, аналоги.
@@ -18,6 +20,8 @@ export default function BankProblem() {
   const { t } = useTranslation()
   const [data, setData] = useState(null)
   const [error, setError] = useState(null)
+  const [copying, setCopying] = useState(false)
+  const [analogue, setAnalogue] = useState(false)
   const [busy, setBusy] = useState(false)
   const [editing, setEditing] = useState(null) // текст условия
   const [adding, setAdding] = useState(null) // {title, text}
@@ -57,9 +61,34 @@ export default function BankProblem() {
           <Link to="/bank">{t('bank.title')}</Link> · {t(`bank.levels.${data.level}`)}
           {data.created_by && ` · ${data.created_by}`}
         </p>
+        <button type="button" className="secondary" onClick={() => setCopying(true)}>
+          {t('bank.copy.title')}
+        </button>
       </header>
 
       {error && <p className="error">{error}</p>}
+
+      {copying && (
+        <CopyToShelf
+          problem={data.id}
+          onClose={() => setCopying(false)}
+          onDone={() => {
+            setCopying(false)
+            load()
+          }}
+        />
+      )}
+
+      {analogue && (
+        <AnalogueDialog
+          problem={data.id}
+          onClose={() => setAnalogue(false)}
+          onDone={() => {
+            setAnalogue(false)
+            load()
+          }}
+        />
+      )}
 
       <section className="panel">
         {editing === null ? (
@@ -188,9 +217,31 @@ export default function BankProblem() {
         )}
       </section>
 
-      {data.analogues.length > 0 && (
-        <section className="panel">
+      <section className="panel">
+        <div className="panel-head spread">
           <h3>{t('bank.analogues')}</h3>
+          <div className="row">
+            <button type="button" className="secondary compact" onClick={() => setAnalogue(true)}>
+              {t('bank.analogue.add')}
+            </button>
+            {data.analogues.length > 0 && data.may_edit && (
+              <button
+                type="button"
+                className="link"
+                onClick={() =>
+                  leaveFamily(data.id)
+                    .then(load)
+                    .catch((trouble) => setError(trouble.message))
+                }
+              >
+                {t('bank.analogue.leave')}
+              </button>
+            )}
+          </div>
+        </div>
+        {data.analogues.length === 0 ? (
+          <p className="hint">{t('bank.analogue.none')}</p>
+        ) : (
           <ul className="problem-list">
             {data.analogues.map((one) => (
               <li key={one.id}>
@@ -203,8 +254,8 @@ export default function BankProblem() {
               </li>
             ))}
           </ul>
-        </section>
-      )}
+        )}
+      </section>
     </main>
   )
 }
