@@ -61,6 +61,12 @@ export default function Bank() {
           <Link className="link-button" to="/bank/search">
             {t('bank.search.open')}
           </Link>
+          <Link className="link-button" to="/bank/topics">
+            {t('bank.topics.title')}
+          </Link>
+          <Link className="link-button" to="/bank/chronology">
+            {t('bank.chronology.title')}
+          </Link>
         <button type="button" onClick={() => setAdding({ title: '', author: '', level: 'personal' })}>
           {t('bank.addSource')}
         </button>

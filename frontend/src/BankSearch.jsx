@@ -188,8 +188,7 @@ export default function BankSearch() {
                 className={`tag ${facet.side === 'avoids' ? 'avoids' : ''}`}
                 onClick={() => drop(facet)}
               >
-                {facet.side === 'avoids' ? `${t('bank.without')} ` : ''}
-                {facet.name} ✕
+                {label(t, facet)} ✕
               </button>
             ))}
           </p>
@@ -211,8 +210,7 @@ export default function BankSearch() {
                   disabled={byTree}
                   onClick={() => take(facet)}
                 >
-                  {facet.side === 'avoids' ? `${t('bank.without')} ` : ''}
-                  {facet.name}
+                  {label(t, facet)}
                 </button>
                 <span className="count">{facet.count}</span>
               </li>
@@ -246,4 +244,18 @@ export default function BankSearch() {
       </div>
     </main>
   )
+}
+
+/**
+ * Подпись грани.
+ *
+ * Сторону приходится называть словом: «алгебра» на условии и «алгебра» в
+ * решении — разные грани с разными числами, а в списке они выглядели
+ * одинаково. Две одинаковые строки подряд читаются как дубль, и какая из них
+ * какая, узнать было нельзя ничем.
+ */
+function label(t, facet) {
+  if (facet.side === 'uses') return `${t('bank.inSolution')}: ${facet.name}`
+  if (facet.side === 'avoids') return `${t('bank.inSolution')} ${t('bank.without')}: ${facet.name}`
+  return facet.name
 }

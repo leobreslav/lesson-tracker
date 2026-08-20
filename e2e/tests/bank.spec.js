@@ -87,8 +87,10 @@ test('поиск сужается словом и гранью, и грань г
   await ready(page)
 
   // посеянный словарь: грани видно сразу, до всякого ввода
+  // грань условия и грань решения — разные, и подпись их различает
   const facets = page.locator('.facet-list li')
-  await expect(facets.filter({ hasText: 'алгебра' })).toContainText('3')
+  await expect(facets.filter({ hasText: /^алгебра/ })).toContainText('3')
+  await expect(facets.filter({ hasText: 'решение: алгебра' })).toContainText('2')
 
   await page.getByRole('button', { name: 'геометрия' }).click()
   await expect(page.locator('.problem-list li')).toHaveCount(1)
@@ -199,4 +201,80 @@ test('аналог объявляется поиском, и семья видн
   await expect(page.locator('.panel', { hasText: 'Аналоги' })).toContainText(
     `#${first.id}`,
   )
+})
+
+test('хронология: понятие вводится однажды и переносится, а не двоится', async ({
+  page,
+  signIn,
+}) => {
+  await signIn(PEOPLE.ivanova)
+  await page.goto('/bank/chronology')
+  await ready(page)
+
+  const rows = page.locator('.chronology li')
+  await expect(rows.first()).toContainText('теорема Виета')
+
+  // то же понятие на другом уроке — это перенос: вводится оно один раз
+  await rows.nth(2).getByRole('button', { name: '+ понятие' }).click()
+  await rows.nth(2).getByLabel('Тег').selectOption({ label: 'теорема Виета' })
+
+  await expect(rows.nth(2)).toContainText('теорема Виета')
+  await expect(rows.first()).not.toContainText('теорема Виета')
+})
+
+test('закрытая тема отвечает по хронологии, открытая — по всему банку', async ({
+  page,
+  signIn,
+}) => {
+  await signIn(PEOPLE.ivanova)
+  await page.goto('/bank/topics')
+  await ready(page)
+
+  // открытая тема: разбор через замену переменной в неё попадает
+  await page.getByRole('button', { name: 'Квадратные уравнения' }).click()
+  await expect(page.locator('.problem-list li')).toHaveCount(2)
+
+  // закрытая: пройдена только теорема Виета, значит и задача одна
+  await page.getByRole('button', { name: 'Что мы уже умеем' }).click()
+  await expect(page.locator('.problem-list li')).toHaveCount(1)
+  await expect(page.locator('.problem-list')).toContainText('x^2 - 5x + 6')
+})
+
+test('тег вешается на условие и на решение — у решения со знаком', async ({
+  page,
+  signIn,
+  api,
+}) => {
+  const teacher = await api(PEOPLE.ivanova)
+  const found = await teacher.get('/api/bank/search/?text=Окружность')
+  const problem = found.body.problems[0].id
+
+  await signIn(PEOPLE.ivanova)
+  await page.goto(`/bank/problem/${problem}`)
+  await ready(page)
+
+  // на условии — вид задачи, знака у него не бывает
+  await page.locator('.panel').first().getByRole('button', { name: '+ тег' }).click()
+  await page.locator('.panel').first().getByLabel('Тег', { exact: true }).selectOption({ label: 'доказательство' })
+  await expect(page.getByLabel('Знак')).toHaveCount(0)
+  await page.getByRole('button', { name: 'Повесить' }).click()
+  await expect(page.locator('.tag-strip').first()).toContainText('доказательство')
+
+  // у разбора — со знаком: «без производной» это утверждение, а не молчание
+  await page.getByRole('button', { name: 'Добавить решение' }).click()
+  await page.getByLabel('Метод, в двух словах').fill('Через вписанную')
+  await page.locator('.inline-form textarea').fill('$r = (a+b-c)/2$')
+  await page.locator('.inline-form').getByRole('button', { name: 'Сохранить' }).click()
+
+  // якорь у разбора свой (`data-block="solution.<id>"`) — по тексту сюда не попасть
+  const solution = page.locator('[data-block^="solution."]', {
+    hasText: 'Через вписанную',
+  })
+  await solution.locator('.panel-toggle').click()
+  await solution.getByRole('button', { name: '+ тег' }).click()
+  await solution.getByLabel('Тег', { exact: true }).selectOption({ label: 'замена переменной' })
+  await solution.getByLabel('Знак').selectOption({ label: 'решение обходится без' })
+  await solution.getByRole('button', { name: 'Повесить' }).click()
+
+  await expect(solution.locator('.tag.avoids')).toContainText('замена переменной')
 })

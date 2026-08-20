@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useState } from 'react'
 import Bank from './Bank'
 import BankProblem from './BankProblem'
+import BankChronology from './BankChronology'
 import BankSearch from './BankSearch'
+import BankTopics from './BankTopics'
 import BankSource from './BankSource'
 import {
   BrowserRouter,
@@ -177,6 +179,8 @@ export default function App() {
           <Route path="/works" element={guarded(Works)} />
           <Route path="/works/:id" element={guarded(WorkTable)} />
           <Route path="/bank" element={guarded(Bank)} />
+          <Route path="/bank/topics" element={guarded(BankTopics)} />
+          <Route path="/bank/chronology" element={guarded(BankChronology)} />
           <Route path="/bank/search" element={guarded(BankSearch)} />
           <Route path="/bank/source/:id" element={guarded(BankSource)} />
           <Route path="/bank/problem/:id" element={guarded(BankProblem)} />

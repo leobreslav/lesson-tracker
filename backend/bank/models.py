@@ -398,3 +398,99 @@ class SavedSearch(Owned):
 
     def __str__(self):
         return self.name
+
+
+class Introduction(models.Model):
+    """
+    «Этот урок вводит этот тег» — план как хронология появления понятий.
+
+    Роль одна и только одна: **вводит**. Обсуждались и другие («повторяет»,
+    «использует»), и все они отпали по одной причине: отвечают они на разные
+    вопросы, а нужен ровно один — «что к этому дню уже пройдено». Повторение на
+    него не влияет, а использование выводится из решений, которые уже
+    размечены тегами.
+
+    Уникальность — на **курс и тег**, а не на урок: понятие вводится однажды.
+    Вписали его второму уроку — значит первое место было ошибкой, и его надо
+    перенести, а не завести рядом ещё одно.
+    """
+
+    course = models.ForeignKey(
+        "schedule.Course",
+        on_delete=models.CASCADE,
+        related_name="introductions",
+        verbose_name="course",
+    )
+    node = models.ForeignKey(
+        "plans.PlanNode",
+        on_delete=models.CASCADE,
+        related_name="introductions",
+        verbose_name="the lesson that introduces it",
+    )
+    tag = models.ForeignKey(
+        Tag, on_delete=models.CASCADE, related_name="introductions"
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = "tag introduced by a lesson"
+        verbose_name_plural = "tags introduced by lessons"
+        constraints = [
+            models.UniqueConstraint(
+                fields=("course", "tag"), name="one_lesson_introduces_a_tag"
+            )
+        ]
+
+    def __str__(self):
+        return f"{self.node} вводит {self.tag}"
+
+
+class Topic(models.Model):
+    """
+    Тема — **папка, заданная условием**, а не списком.
+
+    Жёсткий каталог у нас уже есть: это источники, где задача лежит по адресу
+    «книга, раздел, номер». Тематический устроен иначе: «квадратные уравнения»
+    — это все разборы, которые пользуются такими-то средствами, и список у них
+    пополняется сам, когда кто-то напишет новый разбор.
+
+    Живёт тема **только системной**: тематический каталог общий, и школьная
+    копия «Квадратных уравнений» рядом с системной означала бы, что тема — это
+    два разных ответа на один вопрос. Личные подборки выражаются другим —
+    сохранённым поиском (свой, с именем) и своей книгой (жёсткая папка).
+
+    Условие тут не общее логическое дерево, а три поля, и это сознательное
+    сужение: тема должна читаться названием своих тегов, а не разбором скобок.
+    """
+
+    parent = models.ForeignKey(
+        "self",
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="children",
+        verbose_name="parent topic",
+    )
+    title = models.CharField("title", max_length=200)
+    position = models.PositiveIntegerField("position", default=0)
+
+    # Суть: чем разбор обязан пользоваться. Все сразу — «и», потому что тема
+    # это пересечение средств, а не их список.
+    essence = models.ManyToManyField(
+        Tag, related_name="topics_needing", blank=True, verbose_name="must use"
+    )
+    # Чего в разборе быть не должно: «без производной» — обычное требование к
+    # теме, идущей до производной.
+    forbidden = models.ManyToManyField(
+        Tag, related_name="topics_avoiding", blank=True, verbose_name="must avoid"
+    )
+    # Закрытая тема требует, чтобы разбор не выходил за пройденное вовсе.
+    closed = models.BooleanField("closed to what has been covered", default=False)
+
+    class Meta:
+        verbose_name = "topic"
+        verbose_name_plural = "topics"
+        ordering = ("position", "title", "id")
+
+    def __str__(self):
+        return self.title

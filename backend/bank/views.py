@@ -14,7 +14,8 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from . import copying, expressions, search, services
+from . import copying, expressions, search, services, topics
+from .owning import writable_ids
 from .models import (
     NEGATABLE,
     ON_PROBLEM,
@@ -25,6 +26,7 @@ from .models import (
     Section,
     Solution,
     SolutionTag,
+    Introduction,
     SavedSearch,
     Source,
     Tag,
@@ -41,7 +43,10 @@ class SourcesView(BankView):
     """Полка источников: системные, школьные и свои."""
 
     def get(self, request):
-        sources = Source.objects.visible_to(request.user).prefetch_related("entries")
+        sources = list(
+            Source.objects.visible_to(request.user).prefetch_related("entries")
+        )
+        mine = writable_ids(Source, request.user, sources)
         return Response(
             {
                 "sources": [
@@ -51,9 +56,7 @@ class SourcesView(BankView):
                         "author": source.author,
                         "level": source.level,
                         "problems": source.entries.count(),
-                        "may_edit": Source.objects.writable_by(request.user)
-                        .filter(pk=source.pk)
-                        .exists(),
+                        "may_edit": source.pk in mine,
                     }
                     for source in sources
                 ]
@@ -301,13 +304,24 @@ class TagLinkView(BankView):
         return Response({"ok": True})
 
     def delete(self, request):
+        # Снятие тега — такая же правка, как навешивание, и права у неё те же.
+        # Пока проверки тут не было, любой учитель школы мог раздеть системную
+        # задачу — молча и без следа: снятая связь ничего о себе не оставляет.
         if request.data.get("solution"):
+            solution = get_object_or_404(
+                Solution.objects.visible_to(request.user), pk=request.data["solution"]
+            )
+            services.refuse_unless_writable(request.user, solution)
             SolutionTag.objects.filter(
-                solution_id=request.data["solution"], tag_id=request.data.get("tag")
+                solution=solution, tag_id=request.data.get("tag")
             ).delete()
         else:
+            problem = get_object_or_404(
+                Problem.objects.visible_to(request.user), pk=request.data.get("problem")
+            )
+            services.refuse_unless_writable(request.user, problem)
             ProblemTag.objects.filter(
-                problem_id=request.data.get("problem"), tag_id=request.data.get("tag")
+                problem=problem, tag_id=request.data.get("tag")
             ).delete()
         return Response(status=204)
 
@@ -347,11 +361,12 @@ class SavedSearchesView(BankView):
     """Сохранённые запросы: свои, школьные и системные."""
 
     def get(self, request):
+        searches = list(SavedSearch.objects.visible_to(request.user))
+        mine = writable_ids(SavedSearch, request.user, searches)
         return Response(
             {
                 "searches": [
-                    _saved(saved, request.user)
-                    for saved in SavedSearch.objects.visible_to(request.user)
+                    _saved(saved, request.user, mine=mine) for saved in searches
                 ]
             }
         )
@@ -407,13 +422,17 @@ class SavedSearchView(BankView):
         return Response(status=204)
 
 
-def _saved(saved, user):
+def _saved(saved, user, *, mine=None):
+    """Одна строка списка. `mine` — уже посчитанное право, чтобы не спрашивать
+    его по разу на запись."""
+    if mine is None:
+        mine = writable_ids(SavedSearch, user, [saved])
     return {
         "id": saved.pk,
         "name": saved.name,
         "level": saved.level,
         "expression": saved.expression,
-        "may_edit": SavedSearch.objects.writable_by(user).filter(pk=saved.pk).exists(),
+        "may_edit": saved.pk in mine,
     }
 
 
@@ -486,3 +505,127 @@ class AnalogueView(BankView):
         services.refuse_unless_writable(request.user, problem)
         copying.leave_family(problem)
         return Response(status=204)
+
+
+class TopicsView(BankView):
+    """
+    Тематический каталог: темы деревом.
+
+    Заводит их суперпользователь — каталог общий, как и словарь. Школьная
+    «своя тема» рядом с системной означала бы два ответа на один вопрос; своё
+    выражается сохранённым поиском и своей книгой.
+    """
+
+    def get(self, request):
+        return Response(
+            {"topics": topics.tree(), "may_edit": request.user.is_superuser}
+        )
+
+    def post(self, request):
+        if not request.user.is_superuser:
+            api_error(
+                Codes.SUPERUSER_ONLY_TAGS,
+                "Only a superuser edits the thematic catalogue: it is shared.",
+                field="title",
+            )
+        topic = topics.Topic.objects.create(
+            title=(request.data.get("title") or "").strip(),
+            parent_id=request.data.get("parent") or None,
+            closed=bool(request.data.get("closed")),
+        )
+        topic.essence.set(Tag.objects.filter(pk__in=request.data.get("essence") or []))
+        topic.forbidden.set(
+            Tag.objects.filter(pk__in=request.data.get("forbidden") or [])
+        )
+        return Response({"id": topic.pk}, status=201)
+
+
+class TopicView(BankView):
+    """
+    Что лежит в теме — с оглядкой на курс, если его назвали.
+
+    Курс и урок необязательны: без них тема отвечает «что вообще есть», с ними
+    — «что из этого мы умеем к этому дню». Это два разных вопроса, и второй
+    имеет смысл только у закрытой темы.
+    """
+
+    def get(self, request, pk):
+        topic = get_object_or_404(topics.Topic, pk=pk)
+        course, upto = _where_in_the_year(request)
+
+        found = topics.problems_in(topic, user=request.user, course=course, upto=upto)
+        return Response(
+            {
+                "id": topic.pk,
+                "title": topic.title,
+                "closed": topic.closed,
+                "essence": [
+                    {"id": tag.pk, "name": tag.name} for tag in topic.essence.all()
+                ],
+                "forbidden": [
+                    {"id": tag.pk, "name": tag.name} for tag in topic.forbidden.all()
+                ],
+                **search.shape(found),
+            }
+        )
+
+
+def _where_in_the_year(request):
+    """Курс и урок из строки запроса — оба только среди своих."""
+    from plans.models import PlanNode
+    from schedule.models import Course
+
+    course = None
+    upto = None
+    if request.query_params.get("course"):
+        course = get_object_or_404(
+            Course.objects.for_teacher(request.user),
+            pk=request.query_params["course"],
+        )
+    if course and request.query_params.get("upto"):
+        upto = get_object_or_404(
+            PlanNode.objects.filter(course=course), pk=request.query_params["upto"]
+        )
+    return course, upto
+
+
+class ChronologyView(BankView):
+    """
+    План курса как хронология понятий: где что вводится.
+
+    Правит её ведущий курса — это разметка **его** программы, а не общего
+    словаря. Тег при этом берётся из общего: своих понятий не заводят.
+    """
+
+    def get(self, request, course):
+        course = self.course(request, course)
+        return Response({"lessons": topics.chronology(course)})
+
+    def post(self, request, course):
+        course = self.course(request, course, writing=True)
+        from plans.models import PlanNode
+
+        node = get_object_or_404(
+            PlanNode.objects.filter(course=course, is_section=False),
+            pk=request.data.get("node"),
+        )
+        tag = get_object_or_404(Tag, pk=request.data.get("tag"))
+        topics.introduce(course, node, tag)
+        return Response({"lessons": topics.chronology(course)}, status=201)
+
+    def delete(self, request, course):
+        course = self.course(request, course, writing=True)
+        Introduction.objects.filter(
+            course=course, tag_id=request.data.get("tag")
+        ).delete()
+        return Response(status=204)
+
+    def course(self, request, pk, *, writing=False):
+        from schedule.models import Course
+
+        source = (
+            Course.objects.writable_by(request.user)
+            if writing
+            else Course.objects.for_teacher(request.user)
+        )
+        return get_object_or_404(source, pk=pk)

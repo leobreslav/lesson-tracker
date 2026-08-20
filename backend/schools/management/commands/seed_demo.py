@@ -16,7 +16,7 @@ uniform dataset hides exactly the states that break layouts.
 from datetime import date, timedelta
 
 from allauth.account.models import EmailAddress
-from bank.models import Entry, Problem, Section, Source, Tag
+from bank.models import Entry, Problem, Section, Solution, SolutionTag, Source, Tag, Topic
 from calendars.models import DayException, SchoolYear, Term
 from calendars.services import KIND_HOLIDAY, KIND_VACATION
 from django.conf import settings
@@ -316,6 +316,18 @@ DEMO_TAGS = [
     ("замена переменной", "method"),
 ]
 
+DEMO_SOLUTIONS = [
+    ("1", "По теореме Виета", ["алгебра", "теорема Виета"]),
+    ("2", "Заменой $t=x^2$", ["алгебра", "замена переменной"]),
+]
+
+# Открытая тема спрашивает «есть ли в разборе вот это», закрытая — ещё и «нет
+# ли в нём ничего сверх пройденного». Порознь разницу не увидеть.
+DEMO_TOPICS = [
+    ("Квадратные уравнения", ["алгебра"], False),
+    ("Что мы уже умеем", ["алгебра"], True),
+]
+
 DEMO_PROBLEMS = [
     ("1", r"Решите уравнение $x^2 - 5x + 6 = 0$.", ["алгебра", "многочлен", "уравнение"]),
     ("2", r"Решите уравнение $x^4 - 5x^2 + 4 = 0$.", ["алгебра", "уравнение"]),
@@ -387,7 +399,7 @@ class Command(BaseCommand):
                 self.schedule(year, courses, people)
                 self.plans(courses, people)
                 self.library(school, subjects, people, courses)
-                self.bank(school, people)
+                self.bank(school, people, courses)
 
             if rich and not options["minimal"]:
                 rich_demo.build(
@@ -954,7 +966,7 @@ class Command(BaseCommand):
 
             PlanTemplateRow.objects.bulk_create(rows)
 
-    def bank(self, school, people):
+    def bank(self, school, people, courses=None):
         """
         Задачник: словарь тегов и книга с задачами.
 
@@ -991,7 +1003,53 @@ class Command(BaseCommand):
                 label=label,
                 position=position,
             )
-        self.stdout.write("  задачник:  4 задачи, словарь из 8 тегов")
+        self.solutions(school, teacher, tags, source)
+        self.topics(tags)
+        if courses:
+            self.chronology(courses, tags)
+        self.stdout.write("  задачник:  4 задачи, 2 разбора, словарь из 8 тегов")
+
+    def solutions(self, school, teacher, tags, source):
+        """
+        Разборы: без них тематический каталог пуст, а он именно про них.
+        Тема — условие на средства **решения**, и задача попадает в неё через
+        свой разбор, а не через собственные теги.
+        """
+        for label, title, uses in DEMO_SOLUTIONS:
+            entry = source.entries.filter(label=label).first()
+            if entry is None or entry.problem.solutions.exists():
+                continue
+            solution = Solution.objects.create(
+                problem=entry.problem,
+                title=title,
+                text="…",
+                school=school,
+                owner=teacher,
+                created_by=teacher,
+            )
+            for name in uses:
+                solution.links.create(tag=tags[name], side=SolutionTag.USES)
+
+    def topics(self, tags):
+        """Две темы: открытая и закрытая — разницу между ними видно только парой."""
+        for title, essence, closed in DEMO_TOPICS:
+            topic, made = Topic.objects.get_or_create(
+                title=title, defaults={"closed": closed}
+            )
+            if made:
+                topic.essence.set([tags[name] for name in essence])
+
+    def chronology(self, courses, tags):
+        """
+        Одно понятие отмечено введённым: закрытая тема без хронологии отвечает
+        «ничего» — правда, но бесполезная, и на демо она выглядит поломкой.
+        """
+        from bank import topics as bank_topics
+
+        course = courses["Grade 6 Algebra"]
+        lesson = PlanNode.objects.filter(course=course, is_section=False).first()
+        if lesson:
+            bank_topics.introduce(course, lesson, tags["теорема Виета"])
 
     def write_plan(self, course, teacher, blocks):
         if PlanNode.objects.filter(course=course).exists():

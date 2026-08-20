@@ -6502,3 +6502,55 @@ button.dropzone:hover:not(:disabled) {
 .expression-leaf select {
   max-width: 14rem;
 }
+
+/* Хронология: номер урока, название, понятия. Колонки те же, что у списка
+   задач, — это один и тот же способ читать список сверху вниз. */
+.chronology {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.chronology li {
+  display: grid;
+  grid-template-columns: 2.5rem minmax(0, 1fr) auto;
+  gap: 0.5rem;
+  align-items: baseline;
+  padding: 0.2rem 0;
+  border-top: 1px solid var(--border);
+}
+
+.chronology li:first-child {
+  border-top: none;
+}
+
+.chronology .label {
+  color: var(--muted);
+  text-align: right;
+}
+
+.chronology .text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chronology .tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  align-items: baseline;
+}
+
+/* Полоска тегов: сами теги и кнопка «+ тег» в одну строку с переносом. */
+.tag-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  align-items: baseline;
+  margin-top: 0.4rem;
+}
+
+.tag-strip .tag button {
+  margin-left: 0.25rem;
+}

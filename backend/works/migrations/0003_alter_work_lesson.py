@@ -22,6 +22,13 @@ class Migration(migrations.Migration):
         ("works", "0002_remove_work_work_owner_idx_remove_work_teacher_and_more"),
     ]
 
+    # Эта правка написана до переименования `Lesson` в `Slot` и ссылается на
+    # старое имя. Порядок между приложениями Django выбирает сам, и до сих пор
+    # он случайно совпадал с нужным; первая же новая связь между приложениями
+    # его переставила, и `to="schedule.lesson"` перестало разрешаться вовсе —
+    # с ошибкой, в которой ни слова про имя. Порядок поэтому назван явно.
+    run_before = [("schedule", "0015_rename_lesson_slot")]
+
     operations = [
         migrations.RunPython(forget_the_plan_row, migrations.RunPython.noop),
         migrations.AlterField(

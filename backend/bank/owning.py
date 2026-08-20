@@ -94,3 +94,19 @@ class Owned(models.Model):
         if self.school_id is None:
             return SYSTEM
         return PERSONAL if self.owner_id else SCHOOL
+
+
+def writable_ids(model, user, rows) -> set[int]:
+    """
+    Кто из этих строк правится — **одним** запросом, а не по строке.
+
+    Список отдаёт `may_edit` у каждой записи: без него интерфейс не знает, кому
+    рисовать карандаш. Спрошенное построчно это запрос на строку, и растёт оно
+    ровно там, где полка большая, — то есть у того, ради кого полку и завели.
+    """
+    ids = [row.pk for row in rows]
+    return set(
+        model.objects.writable_by(user)
+        .filter(pk__in=ids)
+        .values_list("pk", flat=True)
+    )

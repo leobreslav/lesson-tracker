@@ -1356,6 +1356,29 @@
       "none": "No analogues marked.",
       "pick": "This one",
       "hint": "An analogue is the same problem with different numbers. The relation is shared by the whole family, and none of them is the original."
+    },
+    "chronology": {
+      "title": "Chronology",
+      "hint": "Mark which lesson introduces a notion: this is how the system knows what the class can already do. A notion is introduced once — marking it on another lesson moves the mark.",
+      "add": "+ notion",
+      "forget": "Remove the mark",
+      "noPlan": "The course has no plan yet — nothing to mark."
+    },
+    "topics": {
+      "title": "Topics",
+      "none": "The thematic catalogue is empty: topics are set up by a superuser.",
+      "closed": "covered material only",
+      "upto": "Up to lesson",
+      "wholeYear": "the whole year",
+      "nothing": "No solutions on this topic yet.",
+      "nothingYet": "Nothing for this lesson yet — the notions such a solution needs have not been covered."
+    },
+    "inSolution": "solution",
+    "tags": {
+      "open": "+ tag",
+      "add": "Attach",
+      "remove": "Remove the tag “{{name}}”",
+      "side": "Sign"
     }
   }
 }

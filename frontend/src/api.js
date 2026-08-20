@@ -987,3 +987,27 @@ export const declareAnalogue = (problem, other) =>
 
 export const leaveFamily = (problem) =>
   request('/api/bank/analogues/', { method: 'DELETE', body: { problem } })
+
+/** Хронология курса: где какое понятие вводится. */
+export const fetchChronology = (course) =>
+  request(`/api/bank/chronology/${course}/`)
+
+export const introduceTag = (course, node, tag) =>
+  request(`/api/bank/chronology/${course}/`, { method: 'POST', body: { node, tag } })
+
+export const forgetTag = (course, tag) =>
+  request(`/api/bank/chronology/${course}/`, { method: 'DELETE', body: { tag } })
+
+export const fetchTopics = () => request('/api/bank/topics/')
+
+/**
+ * Что лежит в теме. Курс и урок необязательны: без них тема отвечает «что
+ * вообще есть», с ними — «что из этого мы умеем к этому дню».
+ */
+export const fetchTopic = (id, { course, upto } = {}) => {
+  const params = new URLSearchParams()
+  if (course) params.set('course', course)
+  if (upto) params.set('upto', upto)
+  const query = params.toString()
+  return request(`/api/bank/topics/${id}/${query ? `?${query}` : ''}`)
+}

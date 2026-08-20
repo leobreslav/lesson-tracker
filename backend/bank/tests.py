@@ -8,21 +8,25 @@
 """
 
 from django.core.exceptions import ValidationError
+from django.test.utils import CaptureQueriesContext
+from django.db import connection
 from django.urls import reverse
 from rest_framework.test import APITestCase
-from schools.testing import SchoolTestMixin
+from schools.testing import SchoolTestMixin, make_course, make_node
 
-from . import services
+from . import services, topics
 from .models import (
     METHOD,
     OBJECT,
     Entry,
     Problem,
+    Introduction,
     Section,
     Solution,
     SolutionTag,
     Source,
     Tag,
+    Topic,
 )
 
 
@@ -604,3 +608,230 @@ class AnalogueTests(SchoolTestMixin, APITestCase):
         answer = self.declare(self.problems[0], self.problems[0])
         self.assertEqual(answer.status_code, 400)
         self.assertEqual(answer.data["code"], "bank_same_problem")
+
+
+class ChronologyTests(SchoolTestMixin, APITestCase):
+    """
+    План как хронология понятий. Проверяется главное: понятие вводится
+    **однажды**, а «пройдено» считается по порядку плана, а не по датам.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.course = make_course(self.school)
+        self.first = make_node(self.user, self.course, "Квадратный трёхчлен", position=0)
+        self.second = make_node(self.user, self.course, "Теорема Виета", position=1)
+        self.third = make_node(self.user, self.course, "Производная", position=2)
+
+        self.vieta = Tag.objects.create(name="теорема Виета", kind="theorem")
+        self.derivative = Tag.objects.create(name="производная", kind=METHOD)
+
+    def introduce(self, node, tag):
+        self.client.force_authenticate(self.user)
+        return self.client.post(
+            reverse("bank-chronology", args=[self.course.pk]),
+            {"node": node.pk, "tag": tag.pk},
+            format="json",
+        )
+
+    def test_a_notion_is_introduced_once_and_moves_rather_than_doubles(self):
+        self.introduce(self.second, self.vieta)
+        self.introduce(self.third, self.vieta)
+
+        rows = Introduction.objects.filter(course=self.course, tag=self.vieta)
+        self.assertEqual(rows.count(), 1)
+        self.assertEqual(rows.get().node_id, self.third.pk)
+
+    def test_covered_is_counted_by_the_order_of_the_plan(self):
+        self.introduce(self.second, self.vieta)
+        self.introduce(self.third, self.derivative)
+
+        self.assertEqual(topics.introduced(self.course, upto=self.first), set())
+        self.assertEqual(
+            topics.introduced(self.course, upto=self.second), {self.vieta.pk}
+        )
+        self.assertEqual(
+            topics.introduced(self.course, upto=self.third),
+            {self.vieta.pk, self.derivative.pk},
+        )
+
+    def test_the_chronology_comes_in_the_order_of_the_plan(self):
+        self.introduce(self.third, self.derivative)
+        self.client.force_authenticate(self.user)
+        answer = self.client.get(reverse("bank-chronology", args=[self.course.pk]))
+
+        self.assertEqual(
+            [row["title"] for row in answer.data["lessons"]],
+            ["Квадратный трёхчлен", "Теорема Виета", "Производная"],
+        )
+        self.assertEqual(answer.data["lessons"][2]["tags"][0]["name"], "производная")
+
+    def test_a_colleague_does_not_mark_up_someone_elses_course(self):
+        self.client.force_authenticate(self.colleague)
+        answer = self.client.post(
+            reverse("bank-chronology", args=[self.course.pk]),
+            {"node": self.first.pk, "tag": self.vieta.pk},
+            format="json",
+        )
+        self.assertEqual(answer.status_code, 404)
+
+
+class TopicTests(SchoolTestMixin, APITestCase):
+    """
+    Тема как условие. Главное здесь — **закрытость**: открытая спрашивает «есть
+    ли в разборе вот это», закрытая ещё и «нет ли в нём ничего сверх
+    пройденного».
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.course = make_course(self.school)
+        self.lesson = make_node(self.user, self.course, "Теорема Виета")
+
+        self.square = Tag.objects.create(name="квадратное уравнение", kind=OBJECT)
+        self.vieta = Tag.objects.create(name="теорема Виета", kind="theorem")
+        self.derivative = Tag.objects.create(name="производная", kind=METHOD)
+
+        self.problem = Problem.objects.create(
+            text="$x^2-5x+6=0$",
+            school=self.school,
+            owner=self.user,
+            created_by=self.user,
+        )
+        self.plain = self.solution("в лоб", [self.square, self.vieta])
+        self.fancy = self.solution("через производную", [self.square, self.derivative])
+
+        self.topic = Topic.objects.create(title="Квадратные уравнения")
+        self.topic.essence.set([self.square])
+
+    def solution(self, title, tags):
+        made = Solution.objects.create(
+            problem=self.problem,
+            title=title,
+            text="…",
+            school=self.school,
+            owner=self.user,
+            created_by=self.user,
+        )
+        for tag in tags:
+            made.links.create(tag=tag, side=SolutionTag.USES)
+        return made
+
+    def found(self, **params):
+        self.client.force_authenticate(self.user)
+        answer = self.client.get(reverse("bank-topic", args=[self.topic.pk]), params)
+        self.assertEqual(answer.status_code, 200, answer.data)
+        return answer.data
+
+    def test_an_open_topic_takes_any_solution_with_the_essence(self):
+        self.assertEqual(self.found()["total"], 1)
+        self.assertEqual(
+            set(topics.solutions_in(self.topic, user=self.user).values_list("pk", flat=True)),
+            {self.plain.pk, self.fancy.pk},
+        )
+
+    def test_a_closed_topic_refuses_what_goes_beyond_what_was_covered(self):
+        self.topic.closed = True
+        self.topic.save(update_fields=["closed"])
+
+        # ничего не пройдено: даже разбор через Виета выходит за суть темы
+        self.assertEqual(
+            set(topics.solutions_in(self.topic, user=self.user, course=self.course)),
+            set(),
+        )
+
+        topics.introduce(self.course, self.lesson, self.vieta)
+        self.assertEqual(
+            set(
+                topics.solutions_in(
+                    self.topic, user=self.user, course=self.course
+                ).values_list("pk", flat=True)
+            ),
+            {self.plain.pk},
+        )
+
+    def test_a_forbidden_notion_throws_the_solution_out(self):
+        self.topic.forbidden.set([self.derivative])
+        self.assertEqual(
+            set(
+                topics.solutions_in(self.topic, user=self.user).values_list(
+                    "pk", flat=True
+                )
+            ),
+            {self.plain.pk},
+        )
+
+    def test_only_a_superuser_edits_the_thematic_catalogue(self):
+        self.client.force_authenticate(self.admin)
+        answer = self.client.post(
+            reverse("bank-topics"), {"title": "Своя тема"}, format="json"
+        )
+        self.assertEqual(answer.status_code, 400)
+        self.assertEqual(answer.data["code"], "superuser_only_tags")
+
+
+class TagLinkTests(SchoolTestMixin, APITestCase):
+    """
+    Разметка тегами. Снятие проверяется отдельно от навешивания: права у них
+    одни, а написаны они порознь — и однажды одно из двух осталось без них.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.root = self.make_root()
+        self.object_tag = Tag.objects.create(name="многочлен", kind=OBJECT)
+        self.method = Tag.objects.create(name="производная", kind=METHOD)
+        self.common = Problem.objects.create(text="$x^2=4$", created_by=self.root)
+        self.common.links.create(tag=self.object_tag)
+
+    def link(self, method, body):
+        self.client.force_authenticate(self.user)
+        return getattr(self.client, method)(
+            reverse("bank-tag-links"), body, format="json"
+        )
+
+    def test_a_system_problem_cannot_be_undressed_by_a_teacher(self):
+        answer = self.link(
+            "delete", {"problem": self.common.pk, "tag": self.object_tag.pk}
+        )
+        self.assertEqual(answer.status_code, 400)
+        self.assertEqual(answer.data["code"], "bank_read_only")
+        self.assertEqual(self.common.links.count(), 1)
+
+    def test_a_method_does_not_go_on_a_statement(self):
+        mine = Problem.objects.create(
+            text="…", school=self.school, owner=self.user, created_by=self.user
+        )
+        answer = self.link("post", {"problem": mine.pk, "tag": self.method.pk})
+        self.assertEqual(answer.status_code, 400)
+        self.assertEqual(answer.data["code"], "tag_kind_mismatch")
+
+
+class ListQueryTests(SchoolTestMixin, APITestCase):
+    """
+    Списки задачника не должны дорожать от того, что на полке много книг.
+
+    Право на правку у каждой строки своё, и спрошенное построчно оно даёт
+    запрос на строку — ровно у того, ради кого полку и завели.
+    """
+
+    def test_the_shelf_costs_the_same_for_one_book_and_for_ten(self):
+        self.client.force_authenticate(self.user)
+        self.book("Одна")
+
+        with CaptureQueriesContext(connection) as one:
+            self.client.get(reverse("bank-sources"))
+
+        for number in range(9):
+            self.book(f"Книга {number}")
+
+        with CaptureQueriesContext(connection) as ten:
+            answer = self.client.get(reverse("bank-sources"))
+
+        self.assertEqual(len(answer.data["sources"]), 10)
+        self.assertEqual(len(ten.captured_queries), len(one.captured_queries))
+
+    def book(self, title):
+        return Source.objects.create(
+            title=title, school=self.school, owner=self.user, created_by=self.user
+        )

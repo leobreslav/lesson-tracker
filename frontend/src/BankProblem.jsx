@@ -6,7 +6,8 @@ import AnalogueDialog from './AnalogueDialog'
 import Collapsible from './Collapsible'
 import CopyToShelf from './CopyToShelf'
 import Markdown from './Markdown'
-import { createSolution, fetchProblem, leaveFamily, saveProblem } from './api'
+import TagStrip from './TagStrip'
+import { createSolution, fetchProblem, fetchTags, leaveFamily, saveProblem } from './api'
 
 /**
  * Условие целиком: разборы, где встречается, аналоги.
@@ -22,6 +23,8 @@ export default function BankProblem() {
   const [error, setError] = useState(null)
   const [copying, setCopying] = useState(false)
   const [analogue, setAnalogue] = useState(false)
+  // Словарь общий на всю страницу: он один и тот же для условия и всех разборов.
+  const [vocabulary, setVocabulary] = useState([])
   const [busy, setBusy] = useState(false)
   const [editing, setEditing] = useState(null) // текст условия
   const [adding, setAdding] = useState(null) // {title, text}
@@ -33,6 +36,12 @@ export default function BankProblem() {
         .catch((problem) => setError(problem.message)),
     [id],
   )
+
+  useEffect(() => {
+    fetchTags()
+      .then((answer) => setVocabulary(answer.tags))
+      .catch(() => setVocabulary([]))
+  }, [])
 
   useEffect(() => {
     load()
@@ -97,6 +106,14 @@ export default function BankProblem() {
             {data.answer && (
               <p className="hint">{t('bank.answer', { answer: data.answer })}</p>
             )}
+            <TagStrip
+              tags={data.tags}
+              vocabulary={vocabulary}
+              kinds={['subject', 'object', 'task']}
+              mayEdit={data.may_edit}
+              target={{ problem: data.id }}
+              onChange={load}
+            />
             {data.may_edit && (
               <button type="button" className="link" onClick={() => setEditing(data.text)}>
                 {t('common.edit')}
@@ -171,16 +188,14 @@ export default function BankProblem() {
             openByDefault={false}
           >
             <Markdown text={solution.text} />
-            {solution.tags.length > 0 && (
-              <p className="hint">
-                {solution.tags.map((tag) => (
-                  <span key={tag.id} className={tag.side === 'avoids' ? 'tag avoids' : 'tag'}>
-                    {tag.side === 'avoids' ? '¬' : ''}
-                    {tag.name}
-                  </span>
-                ))}
-              </p>
-            )}
+            <TagStrip
+              tags={solution.tags}
+              vocabulary={vocabulary}
+              kinds={['subject', 'theorem', 'method']}
+              mayEdit={solution.may_edit}
+              target={{ solution: solution.id }}
+              onChange={load}
+            />
           </Collapsible>
         ))}
 
