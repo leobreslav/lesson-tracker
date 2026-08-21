@@ -55,4 +55,8 @@ log "Собираю и поднимаю прод-подобный стек"
 $COMPOSE up -d --build db backend frontend-build nginx
 
 log "Прогоняю тесты"
-$COMPOSE run --rm e2e npx playwright test "${ARGS[@]}"
+# -T, когда терминала нет: в CI `docker compose run` без него спотыкается о
+# «the input device is not a TTY». Локально флаг не ставим — с ним пропадает
+# цвет и посекундный вывод Playwright, а смотрят на него именно глазами.
+[ -t 1 ] && TTY=() || TTY=(-T)
+$COMPOSE run --rm "${TTY[@]}" e2e npx playwright test "${ARGS[@]}"
