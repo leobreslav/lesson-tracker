@@ -68,6 +68,11 @@ E2E_TEST_LOGIN=true
 
 ANTHROPIC_API_KEY=
 ENV
+    # В этот файл рано или поздно вписывают настоящие ключи — тот же ключ
+    # Anthropic, что на проде, секрет Google, токены R2. Права ставятся сразу:
+    # доводить их потом руками значит не доводить. Проверено на себе — на
+    # ноутбуке файл прожил так до аудита.
+    chmod 600 .env
     made+=(".env")
 fi
 
@@ -80,6 +85,7 @@ if [ ! -f frontend/.env ]; then
 # E2E_TEST_LOGIN («войти как» в меню пользователя).
 VITE_GOOGLE_CLIENT_ID=
 ENV
+    chmod 600 frontend/.env
     made+=("frontend/.env")
 fi
 

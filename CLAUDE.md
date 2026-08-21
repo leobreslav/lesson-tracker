@@ -325,6 +325,12 @@ docker compose exec frontend npm test      # tests/*.test.js
 `curl`/`wget`, питон с `-c`/`-m`/файлом, поминающий клиента, и питон,
 читающий программу со stdin через heredoc.
 
+**«Поминает клиента» значит вызов, а не слово.** Ищутся `vision.client`,
+`read_header(`, `read_questions(`, конструктор `Anthropic(`, `messages.create`
+и адрес API — но **не** имя `ANTHROPIC_API_KEY`: его поминают всюду, от
+`ENV_VARS.md` до правки конфига, а `printenv` денег не стоит. И не
+`vision.prices`: подсчёт цены наружу не ходит и разрешён прямо.
+
 **Данные он отличает от кода, и это стоило двух ложных срабатываний.** Тело
 heredoc проверяется, только если перед ним стоит интерпретатор: у
 `python3 - <<'PY' … PY` тело и есть программа, а у `git commit -F - <<'MSG' …

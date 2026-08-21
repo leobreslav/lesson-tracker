@@ -39,6 +39,24 @@ import json
 import re
 import sys
 
+# Что именно **тратит деньги**. Не слово «anthropic» — его поминают всюду, от
+# ENV_VARS.md до правки конфига, — а вызов.
+#
+# Первая версия ловила голое `anthropic|vision`, и на этом обожглись трижды за
+# сессию: правка файла, где в тексте стоит `ANTHROPIC_API_KEY`, вызывала
+# вопрос про трату. Имя переменной не запрос; `printenv ANTHROPIC_API_KEY`
+# денег не стоит, а `Anthropic(...)` стоит.
+# Из `vision` наружу ходят только `client` и `services`. `prices` считает
+# стоимость по таблице и не отправляет ничего — CLAUDE.md разрешает его прямо,
+# и голый `from vision import` ловил бы разрешённое.
+CALLS = (
+    r"(vision\.client|vision\.services"
+    r"|from\s+vision\s+import\s+(client|services)"
+    r"|read_header\s*\(|read_questions\s*\("
+    r"|Anthropic\s*\(|messages\.create"
+    r"|api\.anthropic\.com)"
+)
+
 # (образец, чем объяснить человеку). Порядок важен: первое совпадение и
 # отвечает, поэтому сверху самая частая форма.
 SPEND_SHAPES = [
@@ -57,8 +75,7 @@ SPEND_SHAPES = [
         "прямое обращение к api.anthropic.com",
     ),
     (
-        r"python[0-9.]*\s+(-c|-m|[^\s|;&]*\.py)"
-        r"[^|;&]*(vision|anthropic|read_header|read_questions)",
+        rf"python[0-9.]*\s+(-c|-m|[^\s|;&]*\.py)[^|;&]*{CALLS}",
         "запуск кода, который зовёт клиента Anthropic",
     ),
     (
@@ -66,8 +83,7 @@ SPEND_SHAPES = [
         # исполнителя стоит `-`, а не `-c` и не имя файла, поэтому прошлое
         # правило его не видело — а это самый короткий путь к трате из тех,
         # что пишутся на ходу.
-        r"python[0-9.]*\s+-\s*<<[^\n]*\n[\s\S]*?"
-        r"(vision|anthropic|read_header|read_questions)",
+        rf"python[0-9.]*\s+-\s*<<[^\n]*\n[\s\S]*?{CALLS}",
         "программа приходит питону со stdin и зовёт клиента Anthropic",
     ),
 ]

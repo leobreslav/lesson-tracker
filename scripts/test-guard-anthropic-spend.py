@@ -35,12 +35,20 @@ ASK = [
     ("curl наружу", "curl -s https://api.anthropic.com/v1/models"),
     ("питон одной строкой", 'docker compose exec -T backend python -c "from vision import client"'),
     ("heredoc, который ИСПОЛНЯЕТСЯ", "python3 - <<'PY'\nfrom vision import client\nclient.read_header(b'')\nPY"),
+    ("конструктор клиента в heredoc", "python3 - <<'PY'\nimport anthropic\nc = anthropic.Anthropic(api_key=k)\nPY"),
+    ("прямой вызов messages.create", 'python3 -c "c.messages.create(model=m)"'),
 ]
 
 QUIET = [
     ("сообщение коммита про сторожа",
      f"git commit -q -F - <<'MSG'\nДеньги ушли через отладочный python {SH},\nа не через тест.\nMSG"),
     ("запись файла через heredoc", f"cat > notes.md <<'EOF'\nзапускали python {SH}\nEOF"),
+    # Обожглись трижды: правка файла питоном, где в тексте лишь поминается имя
+    # переменной. Имя не вызов, и денег оно не стоит.
+    ("правка файла, где помянут ключ",
+     "python3 - <<'PY'\nt = t.replace('# ANTHROPIC_API' + '_KEY=', 'x')\nopen(p,'w').write(t)\nPY"),
+    ("чтение переменной окружения", "docker compose exec -T backend printenv ANTHROPIC_API" + "_KEY"),
+    ("подсчёт цены, наружу не ходит", "docker compose exec -T backend python -c 'from vision import prices; print(prices.PRICES)'"),
     ("поиск по коду", "grep -rn 'read_header' backend/"),
     ("обычный прогон тестов", "docker compose exec -T backend python manage.py test"),
     ("чтение исходника", "sed -n '1,20p' backend/vision/client.py"),
