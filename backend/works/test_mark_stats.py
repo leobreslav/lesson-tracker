@@ -28,7 +28,9 @@ class MarkStatsTests(SchoolTestMixin, APITestCase):
         self.course = make_course(self.school, self.year)
         self.work = make_work(self.user, self.course, on_paper=True)
         services.set_questions(
-            self.work, [{"question": f"Задача {n}", "maximum": 3} for n in (1, 2, 3)]
+            self.work,
+            [{"question": f"Задача {n}", "maximum": 3} for n in (1, 2, 3)],
+            by=self.user,
         )
         self.questions = list(self.work.tasks.all())
 

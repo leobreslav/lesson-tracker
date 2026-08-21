@@ -34,12 +34,21 @@ def teacher_courses(serializer):
 
 class TaskSerializer(serializers.ModelSerializer):
     """
-    Задача глазами учителя: условие, эталоны и цена правки.
+    Ячейка работы глазами учителя.
 
-    `impact` не считается для списка — там он был бы запросом на строку, а
-    показывают его в одном месте: когда задачу открывают на правку.
+    Условие и эталоны у неё **не свои** — они живут в `bank.Problem`, — но с
+    экрана это одно поле ввода, и провод остаётся тем же: `question` и
+    `answers` приходят и уходят как обычные поля. Складывает их в условие
+    `statements.say`, одно место на все пути записи.
+
+    `mode` — ответ на вопрос «править везде или сделать копию», и нужен он
+    только когда по условию уже отвечали. В остальных случаях умолчание
+    очевидно, и спрашивать нечего.
     """
 
+    question = serializers.CharField(
+        required=False, allow_blank=True, trim_whitespace=False
+    )
     # свой список, а не тот, что DRF выводит из ArrayField: тот отвергает
     # пустую строку раньше, чем до неё дойдёт очередь, и `trim_whitespace`
     # у него включён — а эталон, как и ответ, хранится ровно как введён
@@ -47,6 +56,49 @@ class TaskSerializer(serializers.ModelSerializer):
         child=serializers.CharField(allow_blank=True, trim_whitespace=False),
         required=False,
     )
+    mode = serializers.CharField(required=False, write_only=True)
+
+    def create(self, validated_data):
+        said = self._said(validated_data)
+        task = super().create(validated_data)
+        self._say(task, said)
+        return task
+
+    def update(self, instance, validated_data):
+        said = self._said(validated_data)
+        task = super().update(instance, validated_data)
+        self._say(task, said)
+        return task
+
+    @staticmethod
+    def _said(validated_data):
+        return {
+            "text": validated_data.pop("question", None),
+            "answers": validated_data.pop("answers", None),
+            "mode": validated_data.pop("mode", None),
+        }
+
+    def _say(self, task, said):
+        from . import statements
+
+        if said["text"] is None and said["answers"] is None:
+            return
+        statements.say(
+            task,
+            text=said["text"],
+            answers=said["answers"],
+            user=self.context["request"].user,
+            mode=said["mode"],
+        )
+        task.refresh_from_db()
+
+    def to_representation(self, instance):
+        from . import statements
+
+        data = super().to_representation(instance)
+        data["question"] = statements.statement_of(instance)
+        data["answers"] = statements.answers_of(instance)
+        return data
 
     class Meta:
         model = Task
@@ -60,19 +112,11 @@ class TaskSerializer(serializers.ModelSerializer):
             "question",
             "answers",
             "maximum",
+            "mode",
             "problem",
             "created_at",
         )
         read_only_fields = ("id", "position", "problem", "created_at")
-
-    def validate_question(self, value):
-        if not value.strip():
-            api_error(
-                Codes.TASK_QUESTION_REQUIRED,
-                "A task needs a question.",
-                field="question",
-            )
-        return value
 
     def validate_answers(self, value):
         # пустые строки в списке эталонов — след пустой строки формы, а не
@@ -236,11 +280,6 @@ class CriterionSerializer(serializers.Serializer):
 
     name = serializers.CharField(max_length=100, allow_blank=True, default="")
     maximum = serializers.IntegerField(min_value=1, max_value=MAX_MARK)
-    # условие задачи: у бумажной работы критерий и есть задача. Приходит либо
-    # чтением листа условий, либо руками
-    question = serializers.CharField(
-        required=False, allow_blank=True, trim_whitespace=False, default=""
-    )
 
 
 class QuestionSerializer(serializers.Serializer):
@@ -255,6 +294,9 @@ class QuestionSerializer(serializers.Serializer):
         required=False,
         allow_empty=True,
     )
+    # «править везде» или «сделать копию» — спрашивается только когда по
+    # условию уже отвечали; в остальных случаях умолчание очевидно
+    mode = serializers.CharField(required=False, allow_blank=True)
 
 
 class QuestionsSerializer(serializers.Serializer):

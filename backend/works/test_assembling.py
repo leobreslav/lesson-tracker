@@ -18,7 +18,7 @@ from schools.testing import (
     make_work,
 )
 
-from . import assembling
+from . import assembling, statements
 from .models import Task, Work
 
 
@@ -30,7 +30,7 @@ class AssemblingTests(SchoolTestMixin, APITestCase):
         self.problems = [
             Problem.objects.create(
                 text=f"Задача {number}",
-                answer=str(number),
+                answers=[str(number)],
                 school=self.school,
                 owner=self.user,
                 created_by=self.user,
@@ -62,38 +62,22 @@ class AssemblingTests(SchoolTestMixin, APITestCase):
             [task.problem_id for task in work.tasks.order_by("position")], wanted
         )
         self.assertEqual(
-            [task.question for task in work.tasks.order_by("position")],
+            [statements.statement_of(task) for task in work.tasks.order_by("position")],
             ["Задача 3", "Задача 2", "Задача 1"],
         )
 
-    def test_the_statement_is_a_snapshot_and_the_answer_comes_along(self):
-        work = Work.objects.get(pk=self.collect().data["id"])
-        first = work.tasks.order_by("position").first()
-        self.assertEqual(first.answers, ["1"])
-
-        # правка в банке не переписывает то, что ученики уже решали
-        self.problems[0].text = "Задача 1, но с другими числами"
-        self.problems[0].save(update_fields=["text"])
-        first.refresh_from_db()
-        self.assertEqual(first.question, "Задача 1")
-
-    def test_the_divergence_is_named_and_refreshed_only_on_request(self):
+    def test_the_cell_holds_a_reference_and_nothing_of_its_own(self):
         work = Work.objects.get(pk=self.collect().data["id"])
         first = work.tasks.order_by("position").first()
 
+        self.assertEqual(first.problem_id, self.problems[0].pk)
+        self.assertEqual(statements.answers_of(first), ["1"])
+
+        # правка условия доезжает до работы: второго текста у работы нет
         self.problems[0].text = "Уточнённое условие"
         self.problems[0].save(update_fields=["text"])
-
-        self.client.force_authenticate(self.user)
-        stale = self.client.get(reverse("work-stale", args=[work.pk]))
-        self.assertEqual(stale.data["stale"], {first.pk: "Уточнённое условие"})
-
-        self.client.post(reverse("task-refresh", args=[first.pk]))
         first.refresh_from_db()
-        self.assertEqual(first.question, "Уточнённое условие")
-        self.assertEqual(
-            self.client.get(reverse("work-stale", args=[work.pk])).data["stale"], {}
-        )
+        self.assertEqual(statements.statement_of(first), "Уточнённое условие")
 
     def test_a_work_can_be_set_at_a_lesson(self):
         slot = make_slot(self.user, self.course)
@@ -139,7 +123,11 @@ class AssemblingTests(SchoolTestMixin, APITestCase):
 
     def test_problems_are_added_to_the_end_of_an_existing_work(self):
         work = make_work(self.user, self.course)
-        Task.objects.create(work=work, position=0, question="Своя, руками")
+        statements.say(
+            Task.objects.create(work=work, position=0),
+            text="Своя, руками",
+            user=self.user,
+        )
 
         self.client.force_authenticate(self.user)
         answer = self.client.post(
@@ -149,18 +137,20 @@ class AssemblingTests(SchoolTestMixin, APITestCase):
         )
         self.assertEqual(answer.status_code, 201)
         self.assertEqual(
-            [task.question for task in work.tasks.order_by("position")],
+            [statements.statement_of(task) for task in work.tasks.order_by("position")],
             ["Своя, руками", "Задача 2"],
         )
 
-    def test_a_task_typed_by_hand_has_nothing_to_refresh(self):
+    def test_a_statement_typed_by_hand_is_a_problem_of_my_own(self):
         work = make_work(self.user, self.course)
-        mine = Task.objects.create(work=work, position=0, question="Своя")
+        mine = Task.objects.create(work=work, position=0)
+        statements.say(mine, text="Своя, руками", user=self.user)
+        mine.refresh_from_db()
 
-        self.client.force_authenticate(self.user)
-        answer = self.client.post(reverse("task-refresh", args=[mine.pk]))
-        self.assertEqual(answer.status_code, 400)
-        self.assertEqual(answer.data["code"], "task_not_from_bank")
+        self.assertEqual(mine.problem.level, "personal")
+        self.assertEqual(mine.problem.owner_id, self.user.pk)
+        # в библиотеке её нет: строки в оглавлении не завелось
+        self.assertFalse(mine.problem.entries.exists())
 
     def test_where_a_problem_was_already_asked_counts_only_my_courses(self):
         self.collect()

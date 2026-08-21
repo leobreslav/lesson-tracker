@@ -1022,12 +1022,6 @@ export const assembleWork = (body) =>
 export const addFromBank = (work, problems) =>
   request(`/api/works/${work}/add-from-bank/`, { method: 'POST', body: { problems } })
 
-/** Где условие в банке ушло вперёд снимка, лежащего в работе. */
-export const fetchStale = (work) => request(`/api/works/${work}/stale/`)
-
-export const refreshTask = (task) =>
-  request(`/api/works/tasks/${task}/refresh/`, { method: 'POST' })
-
 /** Часы курса за период — ими называют занятие, на котором задали работу. */
 export const fetchCourseSlots = (course, { start, end }) =>
   request(`/api/slots/?${new URLSearchParams({ course, start, end })}`)

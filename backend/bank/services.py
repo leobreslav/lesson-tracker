@@ -220,7 +220,7 @@ def problem_payload(problem, *, user) -> dict:
     return {
         "id": problem.pk,
         "text": problem.text,
-        "answer": problem.answer,
+        "answers": list(problem.answers),
         "level": problem.level,
         "may_edit": Problem.objects.writable_by(user).filter(pk=problem.pk).exists(),
         "created_by": (problem.created_by and problem.created_by.get_full_name()) or "",

@@ -49,6 +49,7 @@ from schedule.models import (
 from files.models import KIND_LINK, Attachment
 from schools.models import Invitation
 from schools import services
+from works import statements
 from works.models import Criterion, StudentWork, Submission, Task, Work
 from schedule import services as schedule_services
 from works import services as work_services
@@ -869,15 +870,13 @@ def make_works(courses, people, students) -> int:
                 attempts=2,
             )
             made += 1
-            tasks = Task.objects.bulk_create(
-                Task(
-                    work=work,
-                    position=position,
-                    question=question,
-                    answers=list(answers),
-                )
+            # Условие живёт в банке, и заводится оно тем же путём, что и в
+            # приложении: `bulk_create` тут не годится — ячейке нужна ссылка,
+            # а ссылке нужен объект.
+            tasks = [
+                ask(work, teacher, position, question, answers)
                 for position, (question, answers) in enumerate(QUESTIONS[:5])
-            )
+            ]
             if answered:
                 answer(list(work.tasks.order_by("position")), group, teacher, now,
                        checked=checked, salt=order)
@@ -911,7 +910,7 @@ def answer(tasks, students, teacher, now, *, checked, salt) -> None:
             if not checked and state in ("correct", "wrong"):
                 state = "unchecked"
 
-            right = task.answers[0] if task.answers else "мой ответ"
+            right = (statements.answers_of(task) or ["мой ответ"])[0]
             rows.append(
                 Submission(
                     task=task,
@@ -932,6 +931,13 @@ def answer(tasks, students, teacher, now, *, checked, salt) -> None:
         Submission(task=task, student=student, answer=right)
         for task, student, right in redone
     )
+
+
+def ask(work, teacher, position, question, answers):
+    """Ячейка вместе с условием: своего текста у ячейки нет."""
+    task = Task.objects.create(work=work, position=position)
+    statements.say(task, text=question, answers=list(answers), user=teacher)
+    return task
 
 
 def paper_work(course, teacher, group, now, *, salt) -> int:

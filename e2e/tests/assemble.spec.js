@@ -49,39 +49,6 @@ test('задачи отбираются на разных экранах и ст
   await expect(page.locator('.basket')).toHaveCount(0)
 })
 
-test('условие в работе — снимок: правка в банке его не переписывает', async ({
-  page,
-  signIn,
-  api,
-}) => {
-  const teacher = await api(PEOPLE.ivanova)
-  const found = await teacher.get('/api/bank/search/?text=Окружность')
-  const problem = found.body.problems[0]
-  const courses = await teacher.get('/api/courses/')
-  const work = await teacher.post('/api/works/from-bank/', {
-    course: courses.body[0].id,
-    title: 'Снимок',
-    problems: [problem.id],
-  })
-
-  // условие в банке уехало вперёд
-  await teacher.patch(`/api/bank/problems/${problem.id}/`, {
-    text: 'Совсем другое условие',
-  })
-
-  await signIn(PEOPLE.ivanova)
-  await page.goto('/works')
-  await ready(page)
-  await page.getByRole('button', { name: 'Снимок' }).first().click()
-
-  // в работе — то, что решали, а расхождение названо и предлагает обновить
-  await expect(page.locator('.task-list')).toContainText('Окружность')
-  await expect(page.locator('.task-list')).toContainText('условие в банке изменилось')
-
-  await page.getByRole('button', { name: 'Обновить из банка' }).click()
-  await expect(page.locator('.task-list')).toContainText('Совсем другое условие')
-})
-
 test('на странице задачи видно, где её уже спрашивали', async ({ page, signIn, api }) => {
   const teacher = await api(PEOPLE.ivanova)
   const found = await teacher.get('/api/bank/search/?text=Окружность')
@@ -100,4 +67,49 @@ test('на странице задачи видно, где её уже спра
   const asked = page.locator('.panel', { hasText: 'Где её уже спрашивали' })
   await expect(asked).toContainText('Уже задавал')
   await expect(asked).toContainText(courses.body[0].name)
+})
+
+test('условие ячейки — то же самое условие: правка видна везде, где его спросили', async ({
+  page,
+  signIn,
+  api,
+}) => {
+  const teacher = await api(PEOPLE.ivanova)
+  const courses = await teacher.get('/api/courses/')
+  const found = await teacher.get('/api/bank/search/?text=Окружность')
+  const problem = found.body.problems[0].id
+
+  // одно условие в двух работах
+  const first = await teacher.post('/api/works/from-bank/', {
+    course: courses.body[0].id,
+    title: 'Первая',
+    problems: [problem],
+  })
+  await teacher.post('/api/works/from-bank/', {
+    course: courses.body[0].id,
+    title: 'Вторая',
+    problems: [problem],
+  })
+
+  await signIn(PEOPLE.ivanova)
+  await page.goto('/works')
+  await ready(page)
+  await page.getByRole('button', { name: 'Первая' }).first().click()
+
+  // кнопки строки появляются при наведении — как в таблице плана
+  const row = page.locator('.task-list li').first()
+  await row.hover()
+  await row.getByRole('button', { name: 'Изменить' }).click()
+  await expect(page.locator('.statement-cost')).toContainText('2')
+
+  // по условию не отвечали — правка идёт везде, и выбор об этом говорит
+  await expect(page.getByRole('radio', { name: 'Везде' })).toBeChecked()
+  await page.locator('.modal textarea').first().fill('Поправленное условие')
+  await page.locator('.modal').getByRole('button', { name: 'Сохранить' }).click()
+
+  await expect(page.locator('.task-list')).toContainText('Поправленное условие')
+
+  // и во второй работе — оно же: второго текста у работы нет
+  await page.getByRole('button', { name: 'Вторая' }).first().click()
+  await expect(page.locator('.task-list')).toContainText('Поправленное условие')
 })

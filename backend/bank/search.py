@@ -35,8 +35,11 @@ def find(user, *, text="", tags=(), uses=(), avoids=(), level=None):
     """
     found = Problem.objects.visible_to(user).filter(retired=False)
 
+    # Ищется только условие: эталоны лежат массивом, и `icontains` по нему
+    # Postgres не даёт, а поиск задачи по её ответу — вопрос, которого никто
+    # не задаёт.
     for word in text.split():
-        found = found.filter(Q(text__icontains=word) | Q(answer__icontains=word))
+        found = found.filter(text__icontains=word)
 
     # каждый тег условия сужает: «многочлен и доказательство», а не «или»
     for tag_id in tags:

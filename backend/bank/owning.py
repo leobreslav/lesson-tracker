@@ -66,9 +66,13 @@ class Owned(models.Model):
         related_name="+",
         verbose_name="school; empty means the system catalogue",
     )
+    # Человек ушёл — его личное **становится школьным**, а не исчезает: по
+    # этим условиям писали контрольные, и уносить их вместе с учёткой значило
+    # бы обнулить чужие ответы. То же правило, что у работ, где авторство
+    # развели с принадлежностью курсу.
     owner = models.ForeignKey(
         settings.AUTH_USER_MODEL,
-        on_delete=models.CASCADE,
+        on_delete=models.SET_NULL,
         null=True,
         blank=True,
         related_name="+",

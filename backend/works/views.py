@@ -22,7 +22,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from . import assembling, services, threads
+from . import assembling, services, statements, threads
 from .models import Thread
 from vision import services as vision_services
 from .models import Submission, Task, Work
@@ -162,11 +162,6 @@ class WorkViewSet(CourseScopedViewSet):
         return Response({"added": len(made)}, status=status.HTTP_201_CREATED)
 
     @action(detail=True, methods=["get"])
-    def stale(self, request, pk=None):
-        """Где условие в банке ушло вперёд снимка, лежащего в работе."""
-        return Response({"stale": assembling.stale(self.get_object())})
-
-    @action(detail=True, methods=["get"])
     def impact(self, request, pk=None):
         """Что стоит за этой работой прямо сейчас — до того, как её правят."""
         work = self.get_object()
@@ -291,7 +286,9 @@ class WorkViewSet(CourseScopedViewSet):
         if request.method == "PUT":
             form = QuestionsSerializer(data=request.data)
             form.is_valid(raise_exception=True)
-            services.set_questions(work, form.validated_data["questions"])
+            services.set_questions(
+            work, form.validated_data["questions"], by=request.user
+        )
 
         return Response(
             {
@@ -299,9 +296,9 @@ class WorkViewSet(CourseScopedViewSet):
                     {
                         "id": task.pk,
                         "position": task.position,
-                        "question": task.question,
+                        "question": statements.statement_of(task),
                         "maximum": task.maximum,
-                        "answers": task.answers,
+                        "answers": statements.answers_of(task),
                     }
                     for task in work.tasks.all()
                 ]
@@ -402,7 +399,7 @@ class WorkViewSet(CourseScopedViewSet):
             work=work,
             image=form.validated_data["sheet"].read(),
         )
-        return Response(services.apply_questions(work, found))
+        return Response(services.apply_questions(work, by=request.user, found=found))
 
     @action(detail=True, methods=["post"], url_path="scan/apply")
     def scan_apply(self, request, pk=None):
@@ -519,21 +516,10 @@ class TaskViewSet(CourseScopedViewSet):
 
         return Response({"moved": services.move(task, direction)})
 
-    @action(detail=True, methods=["post"])
-    def refresh(self, request, pk=None):
-        """
-        Взять условие из банка заново.
-
-        Только по прямой просьбе: задача работы — снимок, и обновлять его за
-        учителя значит переписывать то, по чему уже писали.
-        """
-        task = assembling.refresh(self.get_object())
-        return Response(TaskSerializer(task).data)
-
     @action(detail=True, methods=["get"])
     def impact(self, request, pk=None):
         """Сколько ответов и вердиктов затронет правка этой задачи."""
-        return Response(services.task_impact(self.get_object()))
+        return Response(services.task_impact(self.get_object(), user=request.user))
 
     @action(detail=True, methods=["post"])
     def recheck(self, request, pk=None):
@@ -684,7 +670,7 @@ class StudentWorkView(APIView):
                     {
                         "id": task.pk,
                         "position": task.position,
-                        "question": task.question,
+                        "question": statements.statement_of(task),
                         "attempts_left": services.attempts_left(
                             work, len(journal[task.pk])
                         ),

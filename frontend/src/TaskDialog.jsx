@@ -2,10 +2,18 @@ import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import Markdown from './Markdown'
 import Modal from './Modal'
+import Switch from './Switch'
 import { fetchTaskImpact } from './api'
 
 /**
- * Задача: условие и список допустимых ответов.
+ * Ячейка работы: условие и список допустимых ответов.
+ *
+ * Условие у ячейки **не своё** — оно живёт в банке, и та же задача может
+ * стоять в другой работе и в книге. Поэтому правка называет цену: сколько
+ * работ и ответов она затронет, — и предлагает выбор, когда цена не нулевая.
+ * Умолчание следует за ценой: по условию не отвечали — правим везде (это
+ * опечатка); отвечали — делаем копию, чтобы не переписать прошлое. Чужое
+ * условие правится только копией: другого исхода нет, и спрашивать нечего.
  *
  * Ответов несколько, потому что «x+3» и «3+x» одинаково верны, и решить это
  * при проверке нельзя — учитель сверяется с эталоном глазами. Пустой список
@@ -24,6 +32,8 @@ export default function TaskDialog({ task, busy, onSubmit, onRecheck, onClose })
   const [answers, setAnswers] = useState(() => [...(task?.answers ?? []), ''])
   const [impact, setImpact] = useState(null)
   const [preview, setPreview] = useState(false)
+  // 'everywhere' | 'copy' — только когда цена не нулевая
+  const [mode, setMode] = useState(null)
 
   useEffect(() => {
     if (!task) return undefined
@@ -55,6 +65,7 @@ export default function TaskDialog({ task, busy, onSubmit, onRecheck, onClose })
     onSubmit({
       question,
       answers: answers.filter((answer) => answer.trim()),
+      ...(mode ? { mode } : {}),
     })
   }
 
@@ -69,6 +80,30 @@ export default function TaskDialog({ task, busy, onSubmit, onRecheck, onClose })
               checked: impact.checked,
             })}
           </p>
+        )}
+
+        {statementCost(impact) && (
+          <div className="statement-cost">
+            <p className="hint warning">
+              {impact.statement.mine
+                ? t('works.task.usedElsewhere', {
+                    works: impact.statement.works,
+                    answers: impact.statement.answers,
+                  })
+                : t('works.task.notMine')}
+            </p>
+            {impact.statement.mine && (
+              <Switch
+                value={mode ?? (impact.statement.answers ? 'copy' : 'everywhere')}
+                label={t('works.task.howToEdit')}
+                options={[
+                  { value: 'everywhere', label: t('works.task.everywhere') },
+                  { value: 'copy', label: t('works.task.copy') },
+                ]}
+                onChange={setMode}
+              />
+            )}
+          </div>
         )}
 
         <div className="row">
@@ -133,4 +168,18 @@ export default function TaskDialog({ task, busy, onSubmit, onRecheck, onClose })
       </form>
     </Modal>
   )
+}
+
+/**
+ * Показывать ли разговор о цене условия.
+ *
+ * Ровно тогда, когда исход не единственный: условие спрошено где-то ещё, по
+ * нему отвечали, или оно чужое. В остальных случаях правка идёт молча — и
+ * должна: спрашивать «что сделать» там, где ответ один, значит требовать
+ * нажатия ни за что.
+ */
+const statementCost = (impact) => {
+  const cost = impact?.statement
+  if (!cost) return false
+  return !cost.mine || cost.answers > 0 || cost.works > 1
 }

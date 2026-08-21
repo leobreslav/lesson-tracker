@@ -277,7 +277,7 @@
     "search_name_required": "A saved search needs a name — that is how it is found again.",
     "bank_same_problem": "A problem is not its own analogue.",
     "work_nothing_to_assemble": "No problems picked: there is nothing to assemble.",
-    "task_not_from_bank": "This question was typed by hand — there is nothing to refresh it from."
+    "statement_mode_unknown": "It is unclear whether to edit the statement everywhere or make a copy."
   },
   "classPicker": {
     "label": "Classes:",
@@ -1035,8 +1035,11 @@
       "impact": "{{answers}} answers already, {{checked}} of them checked.",
       "recheck_one": "Clear {{count}} verdict",
       "recheck_other": "Clear {{count}} verdicts",
-      "stale": "the statement in the bank has changed · ",
-      "refresh": "Refresh from the bank"
+      "usedElsewhere": "This statement stands in {{works}} assignments and has been answered {{answers}} times.",
+      "notMine": "A statement from the shared catalogue: it cannot be edited, but a copy of your own can — and it will take this cell.",
+      "howToEdit": "How to edit",
+      "everywhere": "Everywhere",
+      "copy": "Make a copy"
     },
     "answers": "Answers",
     "description": "What to do",

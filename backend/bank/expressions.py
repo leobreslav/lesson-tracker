@@ -70,7 +70,7 @@ def compile_(node, *, where="запрос", depth=0):
         word = str(node["text"]).strip()
         if not word:
             raise api_error(Codes.BANK_EXPRESSION_BAD, f"Слово пустое ({where}).")
-        return Q(text__icontains=word) | Q(answer__icontains=word)
+        return Q(text__icontains=word)
 
     if "tag" in node:
         return _tag(node, where)

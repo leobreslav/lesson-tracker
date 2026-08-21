@@ -18,6 +18,7 @@
 
 from config.errors import Codes, api_error
 from django.core.exceptions import ValidationError
+from django.contrib.postgres.fields import ArrayField
 from django.db import models
 
 from .owning import Owned
@@ -151,7 +152,16 @@ class Problem(Owned):
     """
 
     text = models.TextField("statement, Markdown with LaTeX")
-    answer = models.CharField("answer, if it is short", max_length=200, blank=True)
+    # Что считается верным ответом — свойство **условия**, а не работы, в
+    # которой его спросили: «x+3» и «3+x» одинаково верны везде. Список, а не
+    # строка, ровно поэтому: форм у верного ответа несколько.
+    answers = ArrayField(
+        models.TextField(),
+        default=list,
+        blank=True,
+        verbose_name="accepted answers",
+        help_text="Хранятся ровно как введены: обработка — при сравнении.",
+    )
 
     family = models.ForeignKey(
         Family,

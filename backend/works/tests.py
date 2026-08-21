@@ -313,8 +313,12 @@ class TeacherSideTests(WorkTestCase):
         self.client.delete(reverse("task-detail", args=[second["id"]]))
 
         self.assertEqual(
-            list(Task.objects.filter(work=self.work).values_list("question", "position")),
-            [(first.question, 0), ("Третья", 1)],
+            list(
+                Task.objects.filter(work=self.work).values_list(
+                    "problem__text", "position"
+                )
+            ),
+            [(first.problem.text, 0), ("Третья", 1)],
         )
 
     def test_the_edge_of_the_list_is_not_an_error(self):

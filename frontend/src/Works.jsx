@@ -13,12 +13,10 @@ import {
   deleteTask,
   deleteWork,
   fetchCourses,
-  fetchStale,
   fetchTasks,
   fetchWorks,
   moveTask,
   recheckTask,
-  refreshTask,
   updateTask,
   updateWork,
 } from './api'
@@ -47,8 +45,6 @@ export default function Works({ onLoggedOut }) {
   const [works, setWorks] = useState(null)
   const [expanded, setExpanded] = useState(null)
   const [tasks, setTasks] = useState([])
-  // Где условие в банке ушло вперёд снимка: `{id задачи: текст}`.
-  const [stale, setStale] = useState({})
   const [editing, setEditing] = useState(null)
   const [scanning, setScanning] = useState(null)
   const [editingTask, setEditingTask] = useState(null) // {task} | {task: null}
@@ -98,22 +94,7 @@ export default function Works({ onLoggedOut }) {
   }, [reload, handleError])
 
   const reloadTasks = useCallback(
-    (workId) => {
-      if (!workId) {
-        setTasks([])
-        setStale({})
-        return Promise.resolve()
-      }
-      return fetchTasks(workId).then((list) => {
-        setTasks(list)
-        // Расхождение спрашивается вместе с задачами и только у раскрытой
-        // работы: у списка это был бы запрос на строку ради пометки, которую
-        // видно, только когда работу открыли.
-        return fetchStale(workId)
-          .then((answer) => setStale(answer.stale || {}))
-          .catch(() => setStale({}))
-      })
-    },
+    (workId) => (workId ? fetchTasks(workId).then(setTasks) : Promise.resolve(setTasks([]))),
     [],
   )
 
@@ -312,19 +293,6 @@ export default function Works({ onLoggedOut }) {
                               <div className="task-head">
                                 <div className="task-question">
                                   <Markdown text={task.question} />
-                                  {stale[task.id] && (
-                                    <p className="hint stale">
-                                      {t('works.task.stale')}
-                                      <button
-                                        type="button"
-                                        className="link"
-                                        disabled={busy}
-                                        onClick={() => run(() => refreshTask(task.id))}
-                                      >
-                                        {t('works.task.refresh')}
-                                      </button>
-                                    </p>
-                                  )}
                                 </div>
                                 <div className="task-actions">
                                 <button

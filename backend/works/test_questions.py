@@ -21,7 +21,7 @@ class QuestionTests(SchoolTestMixin, APITestCase):
         self.course = make_course(self.school, self.year)
         self.work = make_work(self.user, self.course, on_paper=True)
         services.set_questions(
-            self.work, [{"maximum": 3} for _ in (1, 2, 3)]
+            self.work, [{"maximum": 3} for _ in (1, 2, 3)], by=self.user
         )
 
     def questions(self, *items):
@@ -33,11 +33,14 @@ class QuestionTests(SchoolTestMixin, APITestCase):
     def test_the_statements_land_on_the_questions_by_number(self):
         got = services.apply_questions(
             self.work,
-            self.questions((1, "$2+2$", 3), (2, "$3\\times3$", 3), (3, "Сколько?", 3)),
+            by=self.user,
+            found=self.questions(
+                (1, "$2+2$", 3), (2, "$3\\times3$", 3), (3, "Сколько?", 3)
+            ),
         )
 
         self.assertEqual(got["written"], 3)
-        texts = list(self.work.tasks.values_list("question", flat=True))
+        texts = list(self.work.tasks.values_list("problem__text", flat=True))
         self.assertEqual(texts, ["$2+2$", "$3\\times3$", "Сколько?"])
 
     def test_questions_beyond_the_scale_are_named_not_added(self):
@@ -48,29 +51,29 @@ class QuestionTests(SchoolTestMixin, APITestCase):
         могут стоять оценки.
         """
         got = services.apply_questions(
-            self.work, self.questions((1, "раз", 3), (4, "четыре", 3))
+            self.work, by=self.user, found=self.questions((1, "раз", 3), (4, "четыре", 3))
         )
 
         self.assertEqual(got["extra"], [4])
         self.assertEqual(self.work.tasks.count(), 3)
 
     def test_a_different_top_mark_is_reported_not_applied(self):
-        got = services.apply_questions(self.work, self.questions((2, "два", 5)))
+        got = services.apply_questions(self.work, by=self.user, found=self.questions((2, "два", 5)))
 
         self.assertEqual(got["marks_differ"], [{"number": 2, "marks": 5}])
         self.assertEqual(self.work.tasks.all()[1].maximum, 3)
 
     def test_reading_again_overwrites_the_old_text(self):
         """Кнопку жмут второй раз именно затем, чтобы переписать прочитанное."""
-        services.apply_questions(self.work, self.questions((1, "старое", None)))
-        services.apply_questions(self.work, self.questions((1, "новое", None)))
+        services.apply_questions(self.work, by=self.user, found=self.questions((1, "старое", None)))
+        services.apply_questions(self.work, by=self.user, found=self.questions((1, "новое", None)))
 
-        self.assertEqual(self.work.tasks.first().question, "новое")
+        self.assertEqual(self.work.tasks.first().problem.text, "новое")
 
     def test_a_sheet_without_questions_changes_nothing(self):
-        services.apply_questions(self.work, self.questions((1, "раз", None)))
+        services.apply_questions(self.work, by=self.user, found=self.questions((1, "раз", None)))
 
-        got = services.apply_questions(self.work, [])
+        got = services.apply_questions(self.work, by=self.user, found=[])
 
         self.assertEqual(got["written"], 0)
-        self.assertEqual(self.work.tasks.first().question, "раз")
+        self.assertEqual(self.work.tasks.first().problem.text, "раз")

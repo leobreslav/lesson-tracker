@@ -13,6 +13,9 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from django.db.models import Count, Max
 from django.utils import timezone
 
+from bank.models import Problem
+
+from . import statements
 from .models import (
     CLOSED,
     GradingSystem,
@@ -166,14 +169,27 @@ def impact_of(work) -> dict:
     }
 
 
-def task_impact(task) -> dict:
-    """То же самое про одну задачу: сколько вердиктов затронет правка."""
+def task_impact(task, *, user) -> dict:
+    """
+    Цена правки этой ячейки: сколько ответов и вердиктов она затронет — и
+    отдельно, во что обойдётся правка **условия**.
+
+    Второе считается по всем работам, где это условие спрошено, а не только по
+    этой: условие одно на всех, и правка доезжает всюду. Из этих чисел
+    интерфейс и берёт умолчание — править везде или сделать копию.
+    """
     submissions = Submission.objects.filter(task=task)
 
     return {
         "answers": submissions.count(),
         "students": submissions.values("student_id").distinct().count(),
         "checked": submissions.filter(is_correct__isnull=False).count(),
+        "statement": {
+            **statements.cost(task.problem),
+            # чужое условие правится только копией: другого исхода нет
+            "mine": task.problem is None
+            or Problem.objects.writable_by(user).filter(pk=task.problem_id).exists(),
+        },
     }
 
 
@@ -426,8 +442,8 @@ def build_table(work) -> dict:
         {
             "id": task.pk,
             "position": task.position,
-            "question": task.question,
-            "answers": task.answers,
+            "question": statements.statement_of(task),
+            "answers": statements.answers_of(task),
             "maximum": task.maximum,
             **per_task[task.pk],
         }
@@ -451,8 +467,6 @@ def build_table(work) -> dict:
                 "position": item.position,
                 "name": item.name,
                 "maximum": item.maximum,
-                # условие с листа: у бумажной работы критерий и есть задача
-                "question": item.question,
             }
             for item in criteria
         ],
@@ -531,7 +545,7 @@ def mark_stats(students, questions) -> dict:
                 "id": item.pk,
                 "name": f"Q{item.position + 1}",
                 "maximum": item.maximum,
-                "question": item.question,
+                "question": statements.statement_of(item),
                 "graded": len(values),
                 "earned": earned,
                 # доля набранного от возможного, в процентах
@@ -755,7 +769,7 @@ def scale_payload(work) -> dict:
     }
 
 
-def set_questions(work, items):
+def set_questions(work, items, *, by):
     """
     Заменить вопросы работы целиком. Позиция — индекс в присланном списке.
 
@@ -774,19 +788,18 @@ def set_questions(work, items):
                 row = existing[position]
                 row.position = position
                 row.maximum = item.get("maximum", row.maximum)
-                if item.get("question"):
-                    row.question = item["question"]
-                if item.get("answers") is not None:
-                    row.answers = item["answers"]
-                row.save(update_fields=["position", "maximum", "question", "answers"])
+                row.save(update_fields=["position", "maximum"])
             else:
-                Task.objects.create(
-                    work=work,
-                    position=position,
-                    question=item.get("question", ""),
-                    maximum=item.get("maximum", 1),
-                    answers=item.get("answers") or [],
+                row = Task.objects.create(
+                    work=work, position=position, maximum=item.get("maximum", 1)
                 )
+            statements.say(
+                row,
+                text=item.get("question"),
+                answers=item.get("answers"),
+                user=by,
+                mode=item.get("mode"),
+            )
 
         for row in existing[len(items):]:
             row.delete()
@@ -817,20 +830,13 @@ def set_scale(work, criteria):
                 row.position = position
                 row.name = item["name"]
                 row.maximum = item["maximum"]
-                # пустое условие в списке не стирает прочитанное: экран шкалы
-                # его не показывает, и присылать ему нечего
-                if item.get("question"):
-                    row.question = item["question"]
-                row.save(
-                    update_fields=["position", "name", "maximum", "question"]
-                )
+                row.save(update_fields=["position", "name", "maximum"])
             else:
                 Criterion.objects.create(
                     work=work,
                     position=position,
                     name=item["name"],
                     maximum=item["maximum"],
-                    question=item.get("question", ""),
                 )
 
         for row in existing[len(criteria):]:
@@ -1274,7 +1280,7 @@ def edit_scan_page(work, *, index: int, student=UNSET, cells=None):
     return row
 
 
-def apply_questions(work, found: list) -> dict:
+def apply_questions(work, found: list, *, by) -> dict:
     """
     Записать прочитанные условия в шкалу работы.
 
@@ -1299,8 +1305,7 @@ def apply_questions(work, found: list) -> dict:
         item = by_number.get(position)
         if not item:
             continue
-        task.question = item["text"]
-        task.save(update_fields=["question"])
+        statements.say(task, text=item["text"], user=by)
         written += 1
 
     mismatched = [

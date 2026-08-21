@@ -179,7 +179,7 @@ class ProblemView(BankView):
         problem = get_object_or_404(Problem.objects.visible_to(request.user), pk=pk)
         services.refuse_unless_writable(request.user, problem)
 
-        for field in ("text", "answer"):
+        for field in ("text", "answers"):
             if field in request.data:
                 setattr(problem, field, request.data[field])
         problem.save()

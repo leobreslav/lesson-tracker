@@ -104,8 +104,10 @@ export default function BankProblem() {
         {editing === null ? (
           <>
             <Markdown text={data.text} />
-            {data.answer && (
-              <p className="hint">{t('bank.answer', { answer: data.answer })}</p>
+            {data.answers.length > 0 && (
+              <p className="hint">
+                {t('bank.answer', { answer: data.answers.join(' · ') })}
+              </p>
             )}
             <TagStrip
               tags={data.tags}

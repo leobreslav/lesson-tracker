@@ -43,6 +43,7 @@ from schedule.models import (
 from schedule import services as schedule_services
 from schools import rich_demo, services as school_services
 from schools.models import Invitation, School
+from works import statements
 from works.models import Submission, Task, Work
 
 User = get_user_model()
@@ -494,12 +495,7 @@ class Command(BaseCommand):
         )
         if created:
             for position, (question, answers) in enumerate(OPEN_TASKS):
-                Task.objects.create(
-                    work=open_work,
-                    position=position,
-                    question=question,
-                    answers=list(answers),
-                )
+                self.ask(open_work, teacher, position, question, answers)
 
         past, created = Work.objects.get_or_create(
             course=course,
@@ -513,9 +509,7 @@ class Command(BaseCommand):
         )
         if created:
             for position, (question, answers) in enumerate(PAST_TASKS):
-                Task.objects.create(
-                    work=past, position=position, question=question, answers=list(answers)
-                )
+                self.ask(past, teacher, position, question, answers)
 
         # ответы досеваются на каждом прогоне, а не только при создании
         # работы: ученик, появившийся позже, иначе остался бы с пустой
@@ -536,6 +530,19 @@ class Command(BaseCommand):
                 "show_result": False,
             },
         )
+
+    def ask(self, work, teacher, position, question, answers):
+        """
+        Ячейка работы вместе с условием.
+
+        Условие заводится тем же путём, что и в приложении: своего текста у
+        ячейки нет ни одного поля, и посев, пишущий его мимо, выражал бы
+        состояние, которого не бывает. Задачи эти личные и ни в одной книге не
+        лежат — ровно как у учителя, набравшего их на бегу.
+        """
+        task = Task.objects.create(work=work, position=position)
+        statements.say(task, text=question, answers=list(answers), user=teacher)
+        return task
 
     def answers(self, tasks, students, teacher, now, *, checked):
         """
@@ -582,7 +589,8 @@ class Command(BaseCommand):
                     # открытую ещё не проверяли: пусть ждёт очереди
                     state = "unchecked"
 
-                right = task.answers[0] if task.answers else "мой ответ"
+                right = statements.answers_of(task)[:1] or ["мой ответ"]
+                right = right[0]
                 wrong = "не знаю"
                 minutes = index * 3 + position
 

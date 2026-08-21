@@ -877,3 +877,39 @@ class BookListingTests(SchoolTestMixin, APITestCase):
 
     def test_outside_the_chapters_is_a_choice_of_its_own(self):
         self.assertEqual(self.open(section="none"), ["2"])
+
+
+class ForkTests(SchoolTestMixin, APITestCase):
+    """
+    Копия несёт разметку. Без этого подборка, набранная копированием, немая:
+    она не ищется по граням — то есть самым частым способом.
+    """
+
+    def test_a_copy_carries_the_tags_and_the_answers(self):
+        root = self.make_root()
+        tag = Tag.objects.create(name="многочлен", kind=OBJECT)
+        common = Problem.objects.create(
+            text="$x^2=4$", answers=["2", "-2"], created_by=root
+        )
+        common.links.create(tag=tag)
+        mine = Source.objects.create(
+            title="Моя книга",
+            school=self.school,
+            owner=self.user,
+            created_by=self.user,
+        )
+
+        self.client.force_authenticate(self.user)
+        answer = self.client.post(
+            reverse("bank-copy"),
+            {"problem": common.pk, "into": mine.pk, "mode": "fork"},
+            format="json",
+        )
+        copy = Problem.objects.get(pk=answer.data["problem"])
+
+        self.assertEqual([link.tag_id for link in copy.links.all()], [tag.pk])
+        self.assertEqual(copy.answers, ["2", "-2"])
+        self.assertEqual(copy.copied_from_id, common.pk)
+
+        # у оригинала разметка не тронута: копия — вторая строка, а не переезд
+        self.assertEqual(common.links.count(), 1)

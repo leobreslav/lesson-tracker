@@ -209,7 +209,7 @@ class Codes:
     BANK_EXPRESSION_BAD = "bank_expression_bad"
     BANK_SAME_PROBLEM = "bank_same_problem"
     WORK_NOTHING_TO_ASSEMBLE = "work_nothing_to_assemble"
-    TASK_NOT_FROM_BANK = "task_not_from_bank"
+    STATEMENT_MODE_UNKNOWN = "statement_mode_unknown"
     SEARCH_NAME_REQUIRED = "search_name_required"
 
     # разговор о задаче

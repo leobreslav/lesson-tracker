@@ -26,7 +26,7 @@
 from config.errors import Codes, api_error
 from django.db import transaction
 
-from .models import Entry, Family, Problem, Section, Source
+from .models import Entry, Family, Problem, ProblemTag, Section, Source
 
 LINK = "link"
 FORK = "fork"
@@ -85,15 +85,26 @@ def _fork(problem, into, user):
     Своя копия: то же условие, но **владение у неё от книги**, а не от
     оригинала. Иначе копия системной задачи в личной книге осталась бы
     системной, и править её человек не смог бы — то есть копировал он зря.
+
+    **Теги едут с копией.** Без них копия немая: она выпадает из поиска по
+    граням, и подборка активного учителя, набранная копированием, перестаёт
+    искаться вовсе. Разметка — свойство условия, а не чужая собственность.
+
+    А вот разборы не едут: они принадлежат своим авторам. Показываются они у
+    копии как разборы того, от чего она произошла, — со ссылкой.
     """
-    return Problem.objects.create(
+    made = Problem.objects.create(
         school=into.school,
         owner=into.owner,
         created_by=user,
         text=problem.text,
-        answer=problem.answer,
+        answers=list(problem.answers),
         copied_from=problem,
     )
+    made.links.bulk_create(
+        [ProblemTag(problem=made, tag_id=tag_id) for tag_id in problem.links.values_list("tag_id", flat=True)]
+    )
+    return made
 
 
 def _label_of(problem):

@@ -184,11 +184,25 @@ def make_work(teacher, course, *, title="Контрольная", opens=None, cl
 
 
 def make_task(work, question="Сколько будет 2+2?", answers=("4",), position=0):
+    """
+    Ячейка работы вместе с условием.
+
+    Условие заводится тем же путём, что и в приложении (`statements.say`), а не
+    строкой в базе: у ячейки своего текста нет ни одного поля, и фикстура,
+    пишущая его мимо, выражала бы состояние, которого не бывает.
+    """
+    from works import statements
     from works.models import Task
 
-    return Task.objects.create(
-        work=work, question=question, answers=list(answers), position=position
+    task = Task.objects.create(work=work, position=position)
+    statements.say(
+        task,
+        text=question,
+        answers=list(answers),
+        user=work.created_by or work.course.school.members.first(),
     )
+    task.refresh_from_db()
+    return task
 
 
 def make_term(year, name="1 четверть", start=None, end=None):
