@@ -67,7 +67,7 @@ function lessonClassName(lesson) {
   )
 }
 
-export default function Agenda({ onLoggedOut }) {
+export default function Agenda({ views = null, onLoggedOut }) {
   const { t } = useTranslation()
   const navigate = useNavigate()
   /*
@@ -616,6 +616,9 @@ export default function Agenda({ onLoggedOut }) {
     <main className="page wide">
       <header className="page-header">
         <h1>{t('agenda.title')}</h1>
+        {/* «Мои · Вся школа» — тумблер приезжает сверху: страница одна, и
+            какой вид сейчас, решает она, а не сетка */}
+        {views}
       </header>
 
       <div className="agenda-bar">

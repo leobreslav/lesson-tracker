@@ -41,7 +41,7 @@ const NUMBERS = Array.from({ length: MAX_LESSON_NUMBER }, (_, index) => index + 
  * cannot drift apart — with the teacher's name in the cell instead of the
  * topic, and filters that a personal schedule has no use for.
  */
-export default function SchoolSchedule({ onLoggedOut }) {
+export default function SchoolSchedule({ views = null, onLoggedOut }) {
   const { t } = useTranslation()
   const [years, setYears] = useState(null)
   const [yearId, setYearId] = useState(null)
@@ -212,6 +212,7 @@ export default function SchoolSchedule({ onLoggedOut }) {
       <main className="page narrow">
         <header className="page-header">
           <h1>{t('schoolSchedule.title')}</h1>
+          {views}
         </header>
         <EmptyState title={t('school.courses.needYear')}>
           {t('school.year.hint')}
@@ -224,6 +225,8 @@ export default function SchoolSchedule({ onLoggedOut }) {
     <main className="page wide">
       <header className="page-header">
         <h1>{t('schoolSchedule.title')}</h1>
+        {/* тумблер вида — тот же, что на своей неделе: страница одна */}
+        {views}
       </header>
 
       <p className="hint">{t('schoolSchedule.hint')}</p>

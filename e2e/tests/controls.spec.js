@@ -36,7 +36,8 @@ const PAGES = [
   ['/school/courses', PEOPLE.admin],
   ['/school/students', PEOPLE.admin],
   ['/school/reference', PEOPLE.admin],
-  ['/school/schedule', PEOPLE.admin],
+  // страница расписания одна на два вида; старый адрес приводит сюда же
+  ['/schedule?view=school', PEOPLE.admin],
 ]
 
 /** Строки контролов страницы: что в них не так. */

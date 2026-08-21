@@ -15,7 +15,6 @@ import {
   useLocation,
 } from 'react-router-dom'
 import ErrorBoundary from './ErrorBoundary'
-import Agenda from './Agenda'
 import LessonScreen from './LessonScreen'
 import Calendar from './Calendar'
 import Login from './Login'
@@ -24,6 +23,7 @@ import NoSchool from './NoSchool'
 import NotFound from './NotFound'
 import Plan from './Plan'
 import Profile from './Profile'
+import Schedule from './Schedule'
 import School from './School'
 import StudentApp from './StudentApp'
 import SchoolCourses from './SchoolCourses'
@@ -33,7 +33,6 @@ import SchoolStudents from './SchoolStudents'
 import Works from './Works'
 import WorkTable from './WorkTable'
 import SchoolTeachers from './SchoolTeachers'
-import SchoolSchedule from './SchoolSchedule'
 import StartHere, { hasSteps } from './StartHere'
 import Schools from './Schools'
 import {
@@ -174,7 +173,7 @@ export default function App() {
           {/* раздела «Мои курсы» больше нет: числа в нём дублировали план,
               долги переехали в его таблицу, надзор методиста — в селектор
               курса, а шаги первого входа сюда, на корень */}
-          <Route path="/schedule" element={guarded(Agenda)} />
+          <Route path="/schedule" element={guarded(Schedule, { user })} />
           {/* роль нужна самой странице: администратору она показывает
               курсы школы отдельной группой селектора */}
           <Route path="/plan" element={guarded(Plan, { user })} />
@@ -205,7 +204,12 @@ export default function App() {
             <Route path="reference" element={<SchoolReference />} />
           </Route>
           <Route path="/schools" element={guarded(Schools, { user })} />
-          <Route path="/school/schedule" element={guarded(SchoolSchedule)} />
+          {/* адрес остался жив: на него ведут ссылки из раздела «Школа» и
+              закладки, а страница расписания теперь одна на оба вида */}
+          <Route
+            path="/school/schedule"
+            element={<Navigate to="/schedule?view=school" replace />}
+          />
           <Route path="/year" element={guarded(Calendar, { user })} />
           <Route path="/profile" element={guarded(Profile, { onSaved: setUser })} />
           <Route path="*" element={<NotFound />} />

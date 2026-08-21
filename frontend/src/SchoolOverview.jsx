@@ -164,7 +164,7 @@ export default function SchoolOverview() {
         <h3>{t('schoolSchedule.title')}</h3>
         <p className="hint">{t('schoolSchedule.hint')}</p>
         <p>
-          <Link to="/school/schedule">{t('schoolSchedule.open')}</Link>
+          <Link to="/schedule?view=school">{t('schoolSchedule.open')}</Link>
         </p>
       </section>
     </>

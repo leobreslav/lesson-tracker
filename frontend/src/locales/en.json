@@ -651,6 +651,11 @@
     "today": "Today",
     "goToDate": "Go to a date",
     "copyWeek": "Copy the week…",
+    "views": {
+      "label": "Which timetable",
+      "mine": "Mine",
+      "school": "The whole school"
+    },
     "gridHint": "A click on a lesson opens its menu: the lesson itself, cancelling, moving, the whole row.",
     "copySelected": "Copy the selected days",
     "copyWholeWeek": "Copy the whole week",

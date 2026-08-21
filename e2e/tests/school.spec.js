@@ -242,6 +242,39 @@ test('обзор считает школу и подсказывает след�
   await expect(cards.filter({ hasText: 'курсов' })).toContainText('4')
 })
 
+test('расписание одно: вид переключается на месте', async ({ page, signIn }) => {
+  // Экрана было два, и ходить между ними приходилось через раздел «Школа»:
+  // завуч, глядя на свою неделю, не мог поставить час чужому курсу, не уйдя
+  // со страницы и не найдя её заново. Данные у них одни и те же с тех пор,
+  // как школьное расписание стало всеми расписаниями курсов.
+  await signIn(PEOPLE.admin)
+  await openSection(page, '/schedule')
+  await expect(page.locator('h1')).toHaveText('Моё расписание')
+
+  await page.getByRole('radio', { name: 'Вся школа' }).check()
+  await ready(page)
+  await expect(page.locator('h1')).toHaveText('Расписание школы')
+  await expect(page).toHaveURL(/view=school/)
+
+  // и обратно, тем же тумблером
+  await page.getByRole('radio', { name: 'Мои', exact: true }).check()
+  await expect(page.locator('h1')).toHaveText('Моё расписание')
+
+  // старый адрес приводит сюда же, в школьный вид
+  await openSection(page, '/school/schedule')
+  await expect(page.locator('h1')).toHaveText('Расписание школы')
+  await expect(page).toHaveURL(/\/schedule\?view=school/)
+})
+
+test('учителю тумблера видов не показывают', async ({ page, signIn }) => {
+  // Чужие часы он правит нечем, а свои и так на экране. Показанный тумблер
+  // обещал бы страницу, на которой ему делать нечего.
+  await signIn(PEOPLE.ivanova)
+  await openSection(page, '/schedule')
+
+  await expect(page.getByRole('radio', { name: 'Вся школа' })).toHaveCount(0)
+})
+
 test('в школьном расписании урок ставится в обычный будний день', async ({
   page,
   signIn,
