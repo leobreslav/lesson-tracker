@@ -29,8 +29,10 @@ docker info >/dev/null 2>&1 || fail "нет доступа к docker (польз
 
 [ -f "$ENV_FILE" ] || fail "нет файла $ENV_FILE — создайте его из .env.prod.example"
 
-# HTTPS включается одним флагом в .env.prod, вместе с secure-куками
-COMPOSE_FILES=(-f docker-compose.prod.yml)
+# --env-file: compose берёт оттуда значения для ${...} в самих compose-файлах
+# (имя проекта и домен). Раньше файла для подстановки не было вовсе, и
+# переменные приходили только через env_file внутрь контейнеров.
+COMPOSE_FILES=(--env-file "$ENV_FILE" -f docker-compose.prod.yml)
 SCHEME="http"
 if grep -Eq '^NGINX_SSL=(1|true|True|yes)[[:space:]]*$' "$ENV_FILE"; then
     COMPOSE_FILES+=(-f docker-compose.ssl.yml)
@@ -38,7 +40,17 @@ if grep -Eq '^NGINX_SSL=(1|true|True|yes)[[:space:]]*$' "$ENV_FILE"; then
     [ -d /etc/letsencrypt/live ] || fail "NGINX_SSL включён, но /etc/letsencrypt/live отсутствует"
 fi
 
-log "Режим: $SCHEME"
+# DOMAIN спрашивается здесь, а не в момент старта nginx: без него envsubst
+# вписал бы в server_name и в путь к сертификату пустоту, и nginx не
+# поднялся бы уже после git pull и пересборки. Отказ должен быть до того,
+# как тронуто хоть что-то.
+env_value() { sed -n "s/^$1=//p" "$ENV_FILE" | tail -n1; }
+DOMAIN="$(env_value DOMAIN)"
+[ -n "$DOMAIN" ] || fail "в $ENV_FILE не задан DOMAIN.
+Добавьте строку DOMAIN=<домен этого контура>, а при нескольких именах —
+ещё DOMAIN_ALIASES=<остальные через пробел>. Пример: .env.prod.example"
+
+log "Режим: $SCHEME, домен: $DOMAIN"
 
 # --- обновление кода --------------------------------------------------------
 
@@ -61,8 +73,9 @@ docker compose "${COMPOSE_FILES[@]}" up -d --remove-orphans
 
 # nginx пересоздаётся, **только когда его конфиг разошёлся** с репозиторием.
 #
-# Почему вообще пересоздаётся: конфиг смонтирован отдельным файлом
-# (`./nginx/default.conf:...:ro`), а bind-mount файла держит inode, а не имя.
+# Почему вообще пересоздаётся: шаблон конфига смонтирован отдельным файлом
+# (`./nginx/default.conf.template:...:ro`), а bind-mount файла держит inode,
+# а не имя.
 # `git pull` меняет файл заменой — пишет новый и переименовывает поверх, —
 # inode другой, и контейнер до конца своей жизни видит прежний конфиг. Ни
 # `up -d` (образ и настройки сервиса не менялись, пересоздавать нечего), ни
@@ -72,15 +85,23 @@ docker compose "${COMPOSE_FILES[@]}" up -d --remove-orphans
 # 443 не слушает никто. Сначала так и делали, каждую выкатку, и это тут же
 # поймал учитель на проде: `ERR_CONNECTION_REFUSED` посреди работы. Обычная
 # выкатка конфиг не трогает, а значит и трогать nginx незачем.
-# Сравниваются **все** файлы, смонтированные внутрь по отдельности: сайтовый
-# конфиг (его подменяет ssl-оверлей на том же mount point) и proxy_params.
-# Каталоги в этот список не входят — у них inode не подменяется, правка в
-# них видна контейнеру сразу.
-active_conf="nginx/default.conf"
-[ "$SCHEME" = "https" ] && active_conf="nginx/ssl.conf"
+# Сравниваются **все** файлы, смонтированные внутрь по отдельности: шаблон
+# сайтового конфига (его подменяет ssl-оверлей на том же mount point) и
+# proxy_params. Каталоги в этот список не входят — у них inode не
+# подменяется, правка в них видна контейнеру сразу.
+#
+# Сравнивается именно **шаблон**, а не отрисованный /etc/nginx/conf.d/
+# default.conf: домен в нём уже подставлен, и с шаблоном он не совпал бы
+# никогда — nginx пересоздавался бы каждую выкатку, то есть вернулась бы
+# та самая секундная недоступность, ради которой проверка и заведена.
+# Смену самого домена ловить тут не нужно: DOMAIN объявлен в environment
+# сервиса, а значит входит в конфиг сервиса, и `up -d` выше пересоздаёт
+# контейнер сам.
+active_conf="nginx/default.conf.template"
+[ "$SCHEME" = "https" ] && active_conf="nginx/ssl.conf.template"
 
 inside="$(docker compose "${COMPOSE_FILES[@]}" exec -T nginx \
-    cat /etc/nginx/conf.d/default.conf /etc/nginx/proxy_params.conf 2>/dev/null |
+    cat /etc/nginx/templates/default.conf.template /etc/nginx/proxy_params.conf 2>/dev/null |
     sha256sum | cut -d' ' -f1 || true)"
 outside="$(cat "$active_conf" nginx/proxy_params.conf | sha256sum | cut -d' ' -f1)"
 

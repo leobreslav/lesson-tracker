@@ -71,9 +71,14 @@ dev-бакет.
 
 ```bash
 cp ~/secrets/lesson-tracker.env.local-prod .env.prod
-docker compose -f docker-compose.prod.yml up -d --build
-docker compose -f docker-compose.prod.yml down && rm .env.prod
+docker compose --env-file .env.prod -f docker-compose.prod.yml up -d --build
+docker compose --env-file .env.prod -f docker-compose.prod.yml down && rm .env.prod
 ```
+
+`--env-file` тут обязателен: из него compose берёт `DOMAIN` и
+`COMPOSE_PROJECT_NAME` для подстановки в сами compose-файлы. Без флага
+compose ищет `.env`, не находит `DOMAIN` и честно отказывается —
+молча подняться с пустым `server_name` он не может.
 
 Он поднимается рядом с dev — своё имя проекта, свои порты 80/443. В пустой
 базе школы нет и войти некуда, поэтому в файле лежит закомментированная
@@ -81,18 +86,19 @@ docker compose -f docker-compose.prod.yml down && rm .env.prod
 `/admin/`.
 
 HTTPS включается одним флагом `NGINX_SSL=true` в `.env.prod`: `deploy.sh`
-добавляет оверлей `docker-compose.ssl.yml`, который подменяет конфиг nginx
-на `nginx/ssl.conf` и прокидывает `/etc/letsencrypt`. Конфиг с TLS —
+добавляет оверлей `docker-compose.ssl.yml`, который подменяет шаблон nginx
+на `nginx/ssl.conf.template` и прокидывает `/etc/letsencrypt`. Конфиг с TLS —
 отдельный файл, а не закомментированный блок, потому что правка
-`nginx/default.conf` руками на сервере сломала бы `git pull` в `deploy.sh`.
+шаблона руками на сервере сломала бы `git pull` в `deploy.sh`.
 Сертификаты выпускает certbot **на хосте** (`certonly --webroot`), продление
 делает его systemd-таймер, а `scripts/reload-nginx.sh` в
 `/etc/letsencrypt/renewal-hooks/deploy/` перечитывает конфиг в контейнере.
 
 ```bash
-docker compose -f docker-compose.prod.yml up -d --build
-docker compose -f docker-compose.prod.yml logs -f backend
-docker compose -f docker-compose.prod.yml down
+C="docker compose --env-file .env.prod -f docker-compose.prod.yml"
+$C up -d --build
+$C logs -f backend
+$C down
 ```
 
 Отличия от dev:
@@ -109,14 +115,25 @@ docker compose -f docker-compose.prod.yml down
 
 Что стоит помнить:
 
-- У prod-стека **своё имя проекта** (`name: lesson-tracker-prod`). Без него
-  compose взял бы имя каталога — как у dev — и переиспользовал его контейнеры
-  и том с базой. Благодаря разным именам оба стека можно держать поднятыми
-  одновременно.
-- Переменные в prod-compose приходят через `env_file: .env.prod`, а не через
-  `${...}`: подстановка compose читает `.env`, которого в проде не будет.
-  В healthcheck по той же причине `$$POSTGRES_USER` — разворачивает шелл
+- У prod-стека **своё имя проекта** — `${COMPOSE_PROJECT_NAME:-lesson-tracker-prod}`.
+  Без него compose взял бы имя каталога, как у dev, и переиспользовал его
+  контейнеры и том с базой. Умолчание оставлено прежним намеренно: env-файл
+  без этой переменной обязан дать тот же проект, иначе стек молча получил бы
+  новые тома и пустую базу.
+- **Внутрь контейнеров** переменные приходят через `env_file: .env.prod`.
+  А для `${...}` в самих compose-файлах — имя проекта и `DOMAIN` — тот же
+  файл передаётся флагом `--env-file`: по умолчанию compose искал бы `.env`,
+  которого в проде нет. Раньше `${...}` не использовался вовсе именно
+  поэтому.
+  В healthcheck по-прежнему `$$POSTGRES_USER` — его разворачивает шелл
   контейнера, а не compose.
+- **Домена в репозитории не осталось.** `nginx/*.conf.template` прогоняются
+  через `envsubst` при старте контейнера, `DOMAIN` и `DOMAIN_ALIASES` берутся
+  из env-файла. `NGINX_ENVSUBST_FILTER` ограничивает подстановку этими двумя
+  именами — без фильтра `envsubst` подставил бы и `$host`, `$uri`,
+  `$backend_addr`, то есть переменные самого nginx, и конфиг сломался бы
+  молча. `deploy.sh` отказывается работать без `DOMAIN` **до** `git pull`:
+  пустой `server_name` уронил бы nginx уже после пересборки.
 - `VITE_GOOGLE_CLIENT_ID` нужен **на этапе сборки** фронта: Vite вшивает его
   в бандл. Меняется — нужно пересобрать `frontend-build`.
 - **Адрес backend'а nginx держит в переменной** (`set $backend_addr backend:8000;`

@@ -217,7 +217,7 @@ input` был потомковым селектором и растягивал 
 странице.
 
 Прямой заход по адресу работает: Vite в dev отдаёт `index.html` на любой
-путь, в проде это делает `try_files $uri /index.html` в `nginx/default.conf`
+путь, в проде это делает `try_files $uri /index.html` в `nginx/default.conf.template`
 (проверено на реальном nginx с этим конфигом — `/plan`, `/classes`,
 `/nope/deep` возвращают `index.html`, а существующие файлы отдаются как есть;
 `/api/`, `/admin/` и `/static/` перехватываются своими location до fallback).

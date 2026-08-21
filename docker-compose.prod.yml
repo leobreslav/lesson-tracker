@@ -1,6 +1,8 @@
-# отдельное имя проекта: иначе compose взял бы имя каталога, как у dev-стека,
-# и prod переиспользовал бы его контейнеры и том с базой
-name: lesson-tracker-prod
+# Имя проекта: им разведены контуры на одной машине. Умолчание оставлено
+# прежним намеренно — .env.prod без этой переменной должен дать ровно тот же
+# проект, что и раньше, иначе стек получил бы новые тома и пустую базу.
+# Значение берётся из env-файла: deploy.sh зовёт compose с --env-file.
+name: ${COMPOSE_PROJECT_NAME:-lesson-tracker-prod}
 
 services:
   db:
@@ -54,11 +56,19 @@ services:
   nginx:
     image: nginx:1.27-alpine
     restart: unless-stopped
+    # Домен приходит из env-файла и подставляется в шаблон при старте.
+    # NGINX_ENVSUBST_FILTER ограничивает подстановку двумя именами: без него
+    # envsubst съел бы $$host, $$uri и $$backend_addr — переменные самого
+    # nginx, — и конфиг сломался бы молча.
+    environment:
+      NGINX_ENVSUBST_FILTER: "^(DOMAIN|DOMAIN_ALIASES)$$"
+      DOMAIN: ${DOMAIN:?не задан DOMAIN — добавьте его в .env.prod}
+      DOMAIN_ALIASES: ${DOMAIN_ALIASES:-}
     ports:
       - "80:80"
       - "443:443"
     volumes:
-      - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./nginx/default.conf.template:/etc/nginx/templates/default.conf.template:ro
       - ./nginx/proxy_params.conf:/etc/nginx/proxy_params.conf:ro
       - frontend_dist:/var/www/frontend:ro
       - static_files:/var/www/static:ro

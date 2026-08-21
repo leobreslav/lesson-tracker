@@ -23,9 +23,9 @@
 │   └── tests/controls.spec.js # сторож: контролы в ряду одного роста
 ├── .env / .env.example       # dev-окружение; .env.prod живёт в ~/secrets
 ├── .env.prod.example         # шаблон боевого и локально-прод файлов
-├── nginx/
-│   ├── default.conf          # HTTP + отдача ACME-challenge
-│   ├── ssl.conf              # HTTPS + редирект с 80, включается флагом
+├── nginx/                    # шаблоны: домен подставляется из DOMAIN
+│   ├── default.conf.template # HTTP + отдача ACME-challenge
+│   ├── ssl.conf.template     # HTTPS + редирект с 80, включается флагом
 │   └── proxy_params.conf     # заголовки для проксирования на backend
 ├── certbot/www/              # webroot для проверки домена certbot'ом
 ├── mirrors/                  # общие случаи для зеркал: один файл на две реализации

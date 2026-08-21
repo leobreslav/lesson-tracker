@@ -350,7 +350,7 @@ sudo ls -l /etc/letsencrypt/live/lbreslav.com/
 
 ## 7. HTTPS: переключение nginx
 
-Конфиг с TLS лежит в `nginx/ssl.conf` и подключается оверлеем
+Конфиг с TLS лежит в `nginx/ssl.conf.template` и подключается оверлеем
 `docker-compose.ssl.yml`. Руками ничего править не нужно — достаточно флага.
 Правится он **на ноутбуке**, в главной копии (раздел 2):
 

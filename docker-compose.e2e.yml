@@ -79,10 +79,18 @@ services:
 
   nginx:
     image: nginx:1.27-alpine
+    # Конфиг тот же, что в проде, но домена у стенда нет: сервер объявлен
+    # default_server и отвечает на любой Host, так что имена здесь —
+    # просто то, как к нему обращаются тесты. Значения фиксированы, а не
+    # из env-файла: у e2e-стека его нет.
+    environment:
+      NGINX_ENVSUBST_FILTER: "^(DOMAIN|DOMAIN_ALIASES)$$"
+      DOMAIN: localhost
+      DOMAIN_ALIASES: nginx 127.0.0.1
     ports:
       - "8080:80"
     volumes:
-      - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./nginx/default.conf.template:/etc/nginx/templates/default.conf.template:ro
       - ./nginx/proxy_params.conf:/etc/nginx/proxy_params.conf:ro
       - frontend_dist:/var/www/frontend:ro
       - static_files:/var/www/static:ro

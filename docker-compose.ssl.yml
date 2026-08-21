@@ -2,15 +2,20 @@
 #   docker compose -f docker-compose.prod.yml -f docker-compose.ssl.yml up -d
 # deploy.sh подставляет его сам, если в .env.prod стоит NGINX_SSL=true.
 #
-# Отдельный файл вместо правки nginx/default.conf на сервере: default.conf
-# лежит в git, и ручная правка ломала бы git pull в deploy.sh.
-name: lesson-tracker-prod
+# Отдельный файл вместо правки шаблона на сервере: он лежит в git, и
+# ручная правка ломала бы git pull в deploy.sh.
+
+# Имя проекта: им разведены контуры на одной машине. Умолчание оставлено
+# прежним намеренно — .env.prod без этой переменной должен дать ровно тот же
+# проект, что и раньше, иначе стек получил бы новые тома и пустую базу.
+# Значение берётся из env-файла: deploy.sh зовёт compose с --env-file.
+name: ${COMPOSE_PROJECT_NAME:-lesson-tracker-prod}
 
 services:
   nginx:
     volumes:
-      # тот же mount point, что и в основном файле, — конфиг подменяется
-      - ./nginx/ssl.conf:/etc/nginx/conf.d/default.conf:ro
+      # тот же mount point, что и в основном файле, — шаблон подменяется
+      - ./nginx/ssl.conf.template:/etc/nginx/templates/default.conf.template:ro
       - ./nginx/proxy_params.conf:/etc/nginx/proxy_params.conf:ro
       - frontend_dist:/var/www/frontend:ro
       - static_files:/var/www/static:ro

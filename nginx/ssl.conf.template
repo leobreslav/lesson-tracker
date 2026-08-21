@@ -1,3 +1,12 @@
+# ВНИМАНИЕ: это шаблон, а не готовый конфиг. Официальный образ nginx
+# прогоняет /etc/nginx/templates/*.template через envsubst при старте и
+# кладёт результат в /etc/nginx/conf.d/.
+#
+# Подставляются ТОЛЬКО ${DOMAIN} и ${DOMAIN_ALIASES}: список задан
+# переменной NGINX_ENVSUBST_FILTER в compose. Без неё envsubst подставил бы
+# всё подряд — и $host, $uri, $backend_addr превратились бы в пустые строки,
+# то есть конфиг сломался бы молча, а не с ошибкой.
+
 # встроенный DNS docker'а. Короткий TTL: после пересоздания backend nginx
 # должен быстро увидеть новый IP.
 resolver 127.0.0.11 valid=10s ipv6=off;
@@ -12,7 +21,7 @@ types {
 
 server {
     listen 80 default_server;
-    server_name lbreslav.com www.lbreslav.com;
+    server_name ${DOMAIN} ${DOMAIN_ALIASES};
 
     # продление сертификата ходит по http, поэтому редирект стоит после
     location /.well-known/acme-challenge/ {
@@ -27,7 +36,7 @@ server {
 server {
     listen 443 ssl default_server;
     http2 on;
-    server_name lbreslav.com www.lbreslav.com;
+    server_name ${DOMAIN} ${DOMAIN_ALIASES};
 
     client_max_body_size 25m;
 
@@ -36,8 +45,8 @@ server {
     # ходить на старый IP, отдавая 502
     set $backend_addr backend:8000;
 
-    ssl_certificate     /etc/letsencrypt/live/lbreslav.com/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/lbreslav.com/privkey.pem;
+    ssl_certificate     /etc/letsencrypt/live/${DOMAIN}/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/${DOMAIN}/privkey.pem;
 
     # параметры заданы явно: certbot с certonly не создаёт
     # options-ssl-nginx.conf, на который обычно ссылаются примеры
@@ -53,7 +62,7 @@ server {
     }
 
     # куски бандла — только сами файлы, без фолбэка на index.html; почему
-    # так, подробно написано в default.conf
+    # так, подробно написано в default.conf.template
     location /assets/ {
         root /var/www/frontend;
         try_files $uri =404;

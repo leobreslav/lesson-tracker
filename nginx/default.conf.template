@@ -1,3 +1,12 @@
+# ВНИМАНИЕ: это шаблон, а не готовый конфиг. Официальный образ nginx
+# прогоняет /etc/nginx/templates/*.template через envsubst при старте и
+# кладёт результат в /etc/nginx/conf.d/.
+#
+# Подставляются ТОЛЬКО ${DOMAIN} и ${DOMAIN_ALIASES}: список задан
+# переменной NGINX_ENVSUBST_FILTER в compose. Без неё envsubst подставил бы
+# всё подряд — и $host, $uri, $backend_addr превратились бы в пустые строки,
+# то есть конфиг сломался бы молча, а не с ошибкой.
+
 # встроенный DNS docker'а. Короткий TTL: после пересоздания backend nginx
 # должен быстро увидеть новый IP.
 resolver 127.0.0.11 valid=10s ipv6=off;
@@ -14,7 +23,7 @@ server {
     # default_server — чтобы конфиг отвечал и на http://localhost при
     # локальной проверке, а не только на боевые имена
     listen 80 default_server;
-    server_name lbreslav.com www.lbreslav.com;
+    server_name ${DOMAIN} ${DOMAIN_ALIASES};
 
     client_max_body_size 25m;
 
