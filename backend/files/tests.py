@@ -1048,3 +1048,42 @@ class DatabaseDumpTests(SimpleTestCase):
             CommandError
         ):
             self.run_backup(FakeR2(backup={}))
+
+
+class StorageIsConfiguredAnswersInsteadOfCrashingTests(SimpleTestCase):
+    """
+    «Настроено ли хранилище» — это **вопрос**, и у него бывает ответ «нет».
+
+    Стенд браузерных тестов и всякий чистый клон живут без ключей R2, и
+    ответ «нет» для них штатный: файлы не грузятся, всё остальное работает.
+    Пока `configured()` спрашивала вид бэкенда у объекта
+    (`hasattr(store, "bucket")`), она выполняла ленивое свойство S3-хранилища
+    — то есть строила клиент boto3, а тот на пустом `R2_ENDPOINT_URL`
+    поднимает `ValueError: Invalid endpoint`.
+
+    Стоило это падения backend'а на старте: `seed_demo` спрашивал про
+    хранилище, получал исключение вместо «нет», и стенд не поднимался вовсе.
+    Поэтому вид спрашивается у класса, а тест стоит ровно на том, что
+    функция **отвечает**, а не бросает.
+    """
+
+    R2 = {
+        "files": {
+            "BACKEND": "storages.backends.s3.S3Storage",
+            "OPTIONS": {"bucket_name": "", "endpoint_url": ""},
+        }
+    }
+
+    def test_an_empty_endpoint_answers_no(self):
+        with override_settings(
+            STORAGES=self.R2, R2_BUCKET_NAME="", R2_ENDPOINT_URL=""
+        ):
+            self.assertIs(storage.configured(), False)
+
+    def test_a_filled_endpoint_answers_yes(self):
+        with override_settings(
+            STORAGES=self.R2,
+            R2_BUCKET_NAME="lessons",
+            R2_ENDPOINT_URL="https://example.r2.cloudflarestorage.com",
+        ):
+            self.assertIs(storage.configured(), True)

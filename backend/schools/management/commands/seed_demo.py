@@ -1143,8 +1143,17 @@ class Command(BaseCommand):
         The browser-test stack and a fresh clone have no R2 keys, and a
         seeder that dies because of that is a seeder that stops being run.
         Content and links still land; only the uploads are skipped, loudly.
+
+        Спрашивается **хранилище**, а не настройки, и разница не
+        косметическая. Тут стояла своя копия того же условия
+        (`R2_BUCKET_NAME and R2_ENDPOINT_URL`), и в тестах она врала: раннер
+        подменяет бэкенд на память, писать туда можно и нужно, а копия
+        по-прежнему смотрела в пустые настройки и пропускала файлы. Сторож
+        пустоты падал у всех, у кого нет ключей R2, — то есть у всех, кроме
+        машины, где эти строки писали. `files.storage.configured()` знает
+        оба случая, и знать их должен он один.
         """
-        return bool(settings.R2_BUCKET_NAME and settings.R2_ENDPOINT_URL)
+        return file_storage.configured()
 
     def attachments(self, course, teacher):
         """Files and links on the lessons that have content."""
