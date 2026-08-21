@@ -18,13 +18,12 @@
 
 set -Eeuo pipefail
 
-SERVER="${DEPLOY_SERVER:-leobreslav@194.67.111.40}"
-REMOTE_DIR="${DEPLOY_DIR:-~/lesson-tracker}"
-SITE="${DEPLOY_SITE:-https://lbreslav.com/}"
+# Адрес, каталог, сайт и главная копия .env.prod — из общего описания
+# контуров: единственное место в репозитории, знающее адреса машин.
+# ENV_SOURCE лежит вне папки проекта, чтобы git add -A не мог его подобрать.
+. "$(dirname "$(readlink -f "$0")")/scripts/contours.sh"
+contour prod || exit 1
 BRANCH="main"
-
-# главный .env.prod: вне папки проекта, чтобы git add -A не мог его подобрать
-ENV_SOURCE="${DEPLOY_ENV_FILE:-$HOME/secrets/lesson-tracker.env.prod}"
 
 # то, что не должно уехать в репозиторий ни при каких обстоятельствах
 FORBIDDEN=(

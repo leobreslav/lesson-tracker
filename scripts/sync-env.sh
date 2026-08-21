@@ -36,48 +36,33 @@ CONTOUR="${1:-}"
 ASSUME_YES=0
 [ "${2:-}" = "--yes" ] && ASSUME_YES=1
 
-# --- контуры ------------------------------------------------------------------
-# Переменные окружения оставлены ради push-deploy.sh: он умел переопределять
-# сервер и путь, и эта возможность не должна пропасть от переезда кода сюда.
-case "$CONTOUR" in
-    prod)
-        SOURCE="${DEPLOY_ENV_FILE:-$HOME/secrets/lesson-tracker.env.prod}"
-        SERVER="${DEPLOY_SERVER:-leobreslav@194.67.111.40}"
-        REMOTE_DIR="${DEPLOY_DIR:-lesson-tracker}"
-        ;;
-    staging)
-        SOURCE="${STAGING_ENV_FILE:-$HOME/secrets/lesson-tracker.env.staging}"
-        SERVER="${STAGING_SERVER:-leobreslav@194.67.119.42}"
-        REMOTE_DIR="${STAGING_DIR:-apps/lesson-tracker}"
-        ;;
-    *)
-        fail "укажите контур: prod или staging
-  ./scripts/sync-env.sh prod
-  ./scripts/sync-env.sh staging [--yes]"
-        ;;
-esac
+# --- контур ------------------------------------------------------------------
+# Адреса живут в одном месте на весь репозиторий: в день переезда правится
+# один файл, а не три скрипта.
+. "$REPO_DIR/scripts/contours.sh"
+contour "$CONTOUR" || exit 1
 
 log "Проверяю .env.prod контура «$CONTOUR» на $SERVER"
 
 # Нет файла — это не отказ: контур мог не заводиться на этой машине.
-if [ ! -f "$SOURCE" ]; then
-    warn "нет локального файла $SOURCE — шаг пропущен."
+if [ ! -f "$ENV_SOURCE" ]; then
+    warn "нет локального файла $ENV_SOURCE — шаг пропущен."
     info "На сервере останется тот .env.prod, что там уже лежит."
     exit 0
 fi
 
 # Один CR вместо перевода строки — и compose прочитает файл как одну
 # переменную, а Django не сойдётся с базой по паролю (см. CLAUDE.md).
-if grep -q $'\r' "$SOURCE"; then
-    fail "в $SOURCE концы строк CR или CRLF.
+if grep -q $'\r' "$ENV_SOURCE"; then
+    fail "в $ENV_SOURCE концы строк CR или CRLF.
 compose прочитает такой файл как одну переменную. Лечится:
-  tr -d '\\r' < \"$SOURCE\" > /tmp/env && mv /tmp/env \"$SOURCE\""
+  tr -d '\\r' < \"$ENV_SOURCE\" > /tmp/env && mv /tmp/env \"$ENV_SOURCE\""
 fi
 
 sha_of() { sha256sum "$1" | cut -d' ' -f1; }
 NAMES_CMD="grep -oE '^[A-Za-z_][A-Za-z0-9_]*=' .env.prod | tr -d '=' | sort"
 
-local_sum="$(sha_of "$SOURCE")"
+local_sum="$(sha_of "$ENV_SOURCE")"
 remote_sum="$(ssh -o BatchMode=yes "$SERVER" "cd $REMOTE_DIR && sha256sum .env.prod 2>/dev/null | cut -d' ' -f1" || true)"
 
 if [ "$local_sum" = "$remote_sum" ]; then
@@ -90,8 +75,8 @@ if [ -z "$remote_sum" ]; then
 else
     remote_names="$(ssh -o BatchMode=yes "$SERVER" "cd $REMOTE_DIR && $NAMES_CMD" || true)"
     remote_file="$(mktemp)"; printf '%s\n' "$remote_names" | sed '/^$/d' > "$remote_file"
-    added="$(comm -23 <(grep -oE '^[A-Za-z_][A-Za-z0-9_]*=' "$SOURCE" | tr -d '=' | sort) "$remote_file" || true)"
-    removed="$(comm -13 <(grep -oE '^[A-Za-z_][A-Za-z0-9_]*=' "$SOURCE" | tr -d '=' | sort) "$remote_file" || true)"
+    added="$(comm -23 <(grep -oE '^[A-Za-z_][A-Za-z0-9_]*=' "$ENV_SOURCE" | tr -d '=' | sort) "$remote_file" || true)"
+    removed="$(comm -13 <(grep -oE '^[A-Za-z_][A-Za-z0-9_]*=' "$ENV_SOURCE" | tr -d '=' | sort) "$remote_file" || true)"
     rm -f "$remote_file"
     if [ -z "$added" ] && [ -z "$removed" ]; then
         info "набор переменных тот же, различаются значения"
@@ -116,6 +101,11 @@ if [ "$ASSUME_YES" -eq 0 ]; then
     esac
 fi
 
+# Прежде чем писать — убедиться, что машина та. Список адресов не спасает от
+# устаревшего адреса, а перезапись env-файла не на том сервере это худшее из
+# того, что этот скрипт умеет.
+contour_matches_machine || exit 1
+
 # Копия делается до перезаписи и до всего остального: если scp оборвётся на
 # середине, откатываться будет к чему.
 if [ -n "$remote_sum" ]; then
@@ -126,7 +116,7 @@ if [ -n "$remote_sum" ]; then
     info "резервная копия: .env.prod.bak.$stamp (храним последние $ENV_BACKUPS)"
 fi
 
-scp -q "$SOURCE" "$SERVER:$REMOTE_DIR/.env.prod"
+scp -q "$ENV_SOURCE" "$SERVER:$REMOTE_DIR/.env.prod"
 ssh -o BatchMode=yes "$SERVER" "chmod 600 $REMOTE_DIR/.env.prod"
 
 remote_sum="$(ssh -o BatchMode=yes "$SERVER" "cd $REMOTE_DIR && sha256sum .env.prod | cut -d' ' -f1")"

@@ -27,12 +27,13 @@ bad()  { printf '\033[31m  %s\033[0m\n' "$*"; }
 # Контуры перечислены явно. Забытый контур — та же беда, что забытый ключ,
 # поэтому список тут, а не собирается догадкой.
 LOCAL_DEV="${LOCAL_DEV:-$PWD/.env}"
-MASTER_PROD="${MASTER_PROD:-$HOME/secrets/lesson-tracker.env.prod}"
 LOCAL_PROD="${LOCAL_PROD:-$HOME/secrets/lesson-tracker.env.local-prod}"
-PROD_HOST="${PROD_HOST:-leobreslav@194.67.111.40}"
-PROD_DIR="${PROD_DIR:-lesson-tracker}"
-STAGING_HOST="${STAGING_HOST:-leobreslav@194.67.119.42}"
-STAGING_DIR="${STAGING_DIR:-apps/lesson-tracker}"
+# Адреса машин — из общего описания контуров, а не своей копией здесь.
+. "$(dirname "$(readlink -f "$0")")/contours.sh"
+contour prod    || exit 1
+PROD_HOST="$SERVER";    PROD_DIR="$REMOTE_DIR";    MASTER_PROD="$ENV_SOURCE"
+contour staging || exit 1
+STAGING_HOST="$SERVER"; STAGING_DIR="$REMOTE_DIR"; MASTER_STAGING="$ENV_SOURCE"
 
 # Ключи, которые вообще стоит сверять. Не все переменные — только секреты и
 # то, что различает контуры.
@@ -76,19 +77,21 @@ log "Собираю отпечатки"
 collect dev      cat "$LOCAL_DEV"
 collect master   cat "$MASTER_PROD"
 collect localprod cat "$LOCAL_PROD"
+collect masterstaging cat "$MASTER_STAGING"
 collect prod     ssh -o BatchMode=yes "$PROD_HOST" "cat $PROD_DIR/.env.prod"
 collect staging  ssh -o BatchMode=yes "$STAGING_HOST" "cat $STAGING_DIR/.env.prod"
 
 # --- вывод --------------------------------------------------------------------
 log "Отпечатки по контурам (— пусто, «нет» строки нет вовсе)"
-printf '  %-26s %-14s %-14s %-14s %-14s %-14s\n' 'ключ' 'dev' 'локал-прод' 'мастер-прод' 'ПРОД' 'стенд'
+printf '  %-24s %-13s %-13s %-13s %-13s %-13s %-13s\n' \
+    'ключ' 'dev' 'локал-прод' 'мастер-прод' 'ПРОД' 'мастер-стенд' 'стенд'
 for k in "${KEYS[@]}"; do
     row=""
-    for c in dev localprod master prod staging; do
+    for c in dev localprod master prod masterstaging staging; do
         v="$(awk -v k="$k" '$1==k{print $2}' "/tmp/secrets-$c.txt" 2>/dev/null)"
-        row+="$(printf '%-14s ' "${v:-?}")"
+        row+="$(printf '%-13s ' "${v:-?}")"
     done
-    printf '  %-26s %s\n' "$k" "$row"
+    printf '  %-24s %s\n' "$k" "$row"
 done
 
 # --- что должно настораживать -------------------------------------------------
@@ -99,11 +102,18 @@ for k in SECRET_KEY POSTGRES_PASSWORD R2_SECRET_ACCESS_KEY ANTHROPIC_API_KEY; do
     [ -n "$p" ] && [ "$p" = "$s" ] && [ "$p" != "—" ] &&
         bad "$k одинаков на проде и стенде — боевой секрет лежит на машине, где можно всё"
 done
+# Мастер-копия на ноутбуке — единственный хозяин env-файла (см.
+# .claude/rules/deploy.md). Разошлась с сервером — значит либо забыли отвезти,
+# либо правили руками на машине; и то и другое кончается затёртым ключом.
 for k in "${KEYS[@]}"; do
     m="$(awk -v k="$k" '$1==k{print $2}' /tmp/secrets-master.txt 2>/dev/null)"
     p="$(awk -v k="$k" '$1==k{print $2}' /tmp/secrets-prod.txt 2>/dev/null)"
     [ -n "$m" ] && [ -n "$p" ] && [ "$m" != "$p" ] &&
-        bad "$k расходится: мастер-копия на ноутбуке и боевой сервер разные"
+        bad "$k расходится: мастер-копия и ПРОД разные — отвезите sync-env.sh prod"
+    ms="$(awk -v k="$k" '$1==k{print $2}' /tmp/secrets-masterstaging.txt 2>/dev/null)"
+    s="$(awk -v k="$k" '$1==k{print $2}' /tmp/secrets-staging.txt 2>/dev/null)"
+    [ -n "$ms" ] && [ -n "$s" ] && [ "$ms" != "$s" ] &&
+        bad "$k расходится: мастер-копия и стенд разные — отвезите sync-env.sh staging"
 done
 g_p="$(awk '$1=="GOOGLE_CLIENT_SECRET"{print $2}' /tmp/secrets-prod.txt 2>/dev/null)"
 g_s="$(awk '$1=="GOOGLE_CLIENT_SECRET"{print $2}' /tmp/secrets-staging.txt 2>/dev/null)"
