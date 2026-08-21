@@ -551,7 +551,6 @@ export default function Agenda({ onLoggedOut }) {
    * в урок можно было только его первым пунктом: два нажатия там, где
    * достаточно одного.
    */
-  const openLesson = (date, lesson) => navigate(`/lesson/${lesson.id}`)
 
   const openMenu = (date, lesson, at) =>
     setDialog({ type: 'lesson', date, lesson, at })
@@ -597,7 +596,6 @@ export default function Agenda({ onLoggedOut }) {
       }
       isFree={(inCell) => !inCell.some((item) => !item.is_cancelled)}
       onPickDay={pickDay}
-      onOpen={openLesson}
       onMenu={openMenu}
       onAdd={openFreeCell}
     />

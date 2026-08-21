@@ -56,45 +56,39 @@ test('урок ставится рядом и в своём расписании
   expect(row).toEqual(['2026-09-07', '2026-09-21', '2026-10-05'])
 })
 
-test('левое нажатие ведёт в занятие, правое открывает меню', async ({
+test('любое нажатие по уроку открывает одно и то же меню', async ({
   page,
   signIn,
 }) => {
-  // Разделено по частоте: в занятие ходят каждый день — журнал, тема,
-  // работы, — а сетку правят реже. Раньше левое открывало меню, и попасть
-  // в урок можно было только его первым пунктом.
+  // Разделено по частоте это было: левое вело прямо в занятие, меню висело
+  // на правой кнопке. Экономия одного нажатия обошлась дороже — правая
+  // кнопка ничем себя не показывает, и отмену с переносом просто не
+  // находили. В занятие теперь ведёт первый пункт меню.
   await signIn(PEOPLE.ivanova)
   await openWeek(page, MONDAY)
 
   const lesson = page.locator(`[data-lesson="${MONDAY}:1"]`)
+  const menu = page.locator('.context-menu')
 
   // правое — меню, и браузерного контекстного меню при этом не появляется
   await lesson.click({ button: 'right' })
   // выпадающее меню у курсора, а не окно посреди экрана
-  const menu = page.locator('.context-menu')
   await expect(menu).toBeVisible()
   await expect(page.locator('dialog.modal')).toHaveCount(0)
   await page.keyboard.press('Escape')
   await expect(menu).toHaveCount(0)
 
-  // долгое нажатие — то же меню: на телефоне правой кнопки нет, и без
-  // него отмена с переносом потерялись бы целиком
-  await lesson.dispatchEvent('pointerdown', { pointerType: 'touch' })
-  await page.waitForTimeout(600)
-  await lesson.dispatchEvent('pointerup', { pointerType: 'touch' })
+  // левое — то же самое меню
+  await lesson.click()
   await expect(menu).toBeVisible()
-  await page.keyboard.press('Escape')
-  await expect(menu).toHaveCount(0)
 
-  // левое — сразу занятие
-  // клик мимо тоже закрывает — меню не окно, затемнения у него нет
-  await lesson.click({ button: 'right' })
-  await expect(menu).toBeVisible()
+  // клик мимо закрывает — меню не окно, затемнения у него нет
   await page.locator('h1').click()
   await expect(menu).toHaveCount(0)
 
-  // левое — сразу занятие
+  // в занятие ведёт первый пункт
   await lesson.click()
+  await menu.getByRole('button', { name: 'Открыть урок' }).click()
   await ready(page)
   await expect(page).toHaveURL(/\/lesson\/\d+$/)
 })

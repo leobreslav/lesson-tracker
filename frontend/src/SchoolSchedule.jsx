@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { useNavigate } from 'react-router-dom'
 import { LessonMenu, RepeatChoice } from './AgendaDialogs'
 import CopyDialog from './CopyDialog'
 import EmptyState from './EmptyState'
@@ -43,7 +42,6 @@ const NUMBERS = Array.from({ length: MAX_LESSON_NUMBER }, (_, index) => index + 
  */
 export default function SchoolSchedule({ onLoggedOut }) {
   const { t } = useTranslation()
-  const navigate = useNavigate()
   const [years, setYears] = useState(null)
   const [yearId, setYearId] = useState(null)
   const [courses, setCourses] = useState([])
@@ -353,9 +351,9 @@ export default function SchoolSchedule({ onLoggedOut }) {
         lessonTitle={(slot) =>
           [slot.course_name, slot.teacher_name].filter(Boolean).join(' — ')
         }
-        /* левое нажатие ведёт в занятие, правое — в меню: по сетке живут
-           каждый день, а правят её реже */
-        onOpen={(date, slot) => navigate(`/lesson/${slot.id}`)}
+        /* любое нажатие — меню, и первым пунктом в нём «Открыть урок»:
+           правая кнопка ничем себя не показывала, и половина работы с
+           сеткой (отмена, перенос) просто не находилась */
         onMenu={(date, slot, at) => setDialog({ type: 'menu', date, slot, at })}
         onAdd={(date, number) => setDialog({ type: 'add', date, number })}
       />

@@ -1,4 +1,4 @@
-import { Fragment, useRef } from 'react'
+import { Fragment } from 'react'
 import { useTranslation } from 'react-i18next'
 import { parseDate, today } from './calendarLogic'
 import { shortWeekday } from './dates'
@@ -14,16 +14,22 @@ import { shortWeekday } from './dates'
  * * `renderLesson(lesson)` — the label inside the button;
  * * `isFree(cell)` — whether the «+» is offered on top of what is there
  *   (a cancelled lesson frees the hour without leaving the screen);
- * * `onPickDay` / `onOpen` / `onAdd` / `onMenu` — что значит нажатие.
+ * * `onPickDay` / `onAdd` / `onMenu` — что значит нажатие.
  *
- * Нажатий по уроку два, и разделены они по частоте: **левое ведёт в само
- * занятие** — туда ходят каждый день, — а меню (отменить, перенести,
- * удалить ряд) висит на **правой кнопке**, потому что сетку правят реже,
- * чем по ней живут. Раньше левое открывало меню, и в занятие приходилось
- * заходить через его первый пункт: два нажатия там, где нужно ноль.
+ * **Нажатие по уроку одно, и любое из них открывает меню.** Левое, правое,
+ * палец по экрану — один ответ, и в занятие ведёт первый пункт меню.
  *
- * На сенсорном экране правой кнопки нет, поэтому меню открывает **долгое
- * нажатие**: без него телефон потерял бы отмену и перенос целиком.
+ * Разделены они были по частоте: левое вело прямо в занятие, потому что
+ * туда ходят каждый день, а меню (отменить, перенести, удалить ряд) висело
+ * на правой кнопке. Считалось это экономией нажатия, а обошлось дороже:
+ * правая кнопка ничем себя не показывает, и человек, который её не пробовал,
+ * не знал про отмену и перенос вовсе — то есть половина работы с сеткой
+ * просто не находилась. Подпись под сеткой этого не чинит: её читают один
+ * раз и не запоминают. На телефоне же правой кнопки нет совсем, и всё это
+ * держалось на долгом нажатии, о котором догадаться ещё труднее.
+ *
+ * Цена названа прямо: в занятие теперь два нажатия вместо одного. Первый
+ * пункт меню — «Открыть урок», и стоит он первым как раз поэтому.
  *
  * Keeping one grid means a fix to the day header or the stacked-cell layout
  * lands on both pages at once, which is the whole reason it is here.
@@ -40,48 +46,25 @@ export default function WeekGrid({
   lessonTitle = () => undefined,
   isFree = () => true,
   onPickDay,
-  onOpen,
   onAdd,
   onMenu,
 }) {
   const { t } = useTranslation()
 
   /*
-   * Долгое нажатие — то же меню, что и правая кнопка.
+   * Меню встаёт у курсора, а не посреди экрана, — значит нужны координаты.
    *
-   * На сенсорном экране правой кнопки нет, и без этого пути телефон
-   * потерял бы отмену, перенос и удаление ряда целиком.
-   *
-   * Флаг «меню уже открыто долгим нажатием» снимается на **начале
-   * следующего нажатия**, а не на клике, который его погасил. Разница
-   * поймана тестом: после `touchend` браузер шлёт обычный `click`, и его
-   * глушить надо; но если клика не случилось — меню закрыли с клавиатуры,
-   * палец ушёл в сторону, — флаг оставался поднятым и съедал первое
-   * честное нажатие. `pointerdown` приходит и от мыши, и от пальца, то
-   * есть чинит оба случая разом.
+   * У нажатия с клавиатуры их нет: `clientX` там ноль, и меню уехало бы в
+   * левый верхний угол — то есть человек, дошедший до клетки табуляцией,
+   * получил бы меню в другом конце экрана. Тогда координаты берутся у самой
+   * клетки: место нажатия известно и без курсора.
    */
-  const timer = useRef(null)
-  const held = useRef(false)
-
-  const press = (event, date, lesson) => {
-    held.current = false
-    if (event.pointerType !== 'touch') return
-
-    clearTimeout(timer.current)
-    // палец: меню встаёт там, где держали
-    const at = { x: event.clientX, y: event.clientY }
-    timer.current = setTimeout(() => {
-      held.current = true
-      onMenu?.(date, lesson, at)
-    }, 500)
-  }
-
-  const release = () => clearTimeout(timer.current)
-
-  const open = (date, lesson) => {
-    // клик, рождённый отпусканием долгого нажатия: меню уже открыто
-    if (held.current) return
-    onOpen?.(date, lesson)
+  const menuAt = (event) => {
+    if (event.clientX || event.clientY) {
+      return { x: event.clientX, y: event.clientY }
+    }
+    const cell = event.currentTarget.getBoundingClientRect()
+    return { x: cell.left, y: cell.bottom }
   }
 
   const dayHeadClass = (date) => {
@@ -161,22 +144,14 @@ export default function WeekGrid({
                     className={lessonClassName(lesson)}
                     title={lessonTitle(lesson)}
                     disabled={busy}
-                    onClick={() => open(date, lesson)}
+                    onClick={(event) => onMenu?.(date, lesson, menuAt(event))}
                     onContextMenu={(event) => {
-                      // своё меню вместо браузерного: правая кнопка тут
-                      // значит «что сделать с этим часом». Координаты едут
-                      // с событием — меню открывается у курсора, а не
-                      // посреди экрана
+                      // своё меню вместо браузерного, и то же самое, что у
+                      // левой кнопки: правое нажатие по клетке календаря
+                      // значит ровно то же — «что сделать с этим часом»
                       event.preventDefault()
-                      onMenu?.(date, lesson, {
-                        x: event.clientX,
-                        y: event.clientY,
-                      })
+                      onMenu?.(date, lesson, menuAt(event))
                     }}
-                    onPointerDown={(event) => press(event, date, lesson)}
-                    onPointerUp={release}
-                    onPointerLeave={release}
-                    onPointerCancel={release}
                   >
                     {renderLesson(lesson)}
                   </button>
