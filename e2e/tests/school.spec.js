@@ -251,13 +251,18 @@ test('расписание одно: вид переключается на ме
   await openSection(page, '/schedule')
   await expect(page.locator('h1')).toHaveText('Моё расписание')
 
-  await page.getByRole('radio', { name: 'Вся школа' }).check()
+  // `click`, а не `check`: переключение вида размонтирует сетку вместе с
+  // её тумблером, и `check` проверял бы состояние уже отсоединённого поля.
+  // Для человека это незаметно — на месте старого тумблера сразу стоит
+  // новый, уже переключённый, — а тест иначе падает на здоровой странице
+  await page.getByRole('radio', { name: 'Вся школа' }).click()
   await ready(page)
   await expect(page.locator('h1')).toHaveText('Расписание школы')
   await expect(page).toHaveURL(/view=school/)
+  await expect(page.getByRole('radio', { name: 'Вся школа' })).toBeChecked()
 
   // и обратно, тем же тумблером
-  await page.getByRole('radio', { name: 'Мои', exact: true }).check()
+  await page.getByRole('radio', { name: 'Мои', exact: true }).click()
   await expect(page.locator('h1')).toHaveText('Моё расписание')
 
   // старый адрес приводит сюда же, в школьный вид

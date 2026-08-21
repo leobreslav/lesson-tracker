@@ -895,7 +895,8 @@
     "nothingFound": "Nothing matches.",
     "look": "Look inside",
     "pickHint": "Tick what you need: a block header takes the whole block. The ticked rows are added to the end of your plan.",
-    "takePicked": "Take the ticked · {{count}}"
+    "takePicked": "Take the ticked · {{count}}",
+    "partHint": "Need only a block or a single lesson? Open «Look inside» and tick what you want."
   },
   "lesson": {
     "fields": {

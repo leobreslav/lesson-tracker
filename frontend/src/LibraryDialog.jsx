@@ -162,6 +162,9 @@ export default function LibraryDialog({
 
           {mode === 'replace' && <p className="error">{t('csv.replaceWarning')}</p>}
           <p className="hint">{t('library.once')}</p>
+          {/* иначе конструктор не находится: кнопка называется «Посмотреть»,
+              и по ней не видно, что оттуда можно взять часть */}
+          <p className="hint">{t('library.partHint')}</p>
         </>
       )}
 
