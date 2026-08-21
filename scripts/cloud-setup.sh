@@ -118,23 +118,72 @@ ENV SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt \
     NODE_EXTRA_CA_CERTS=/etc/ssl/certs/ca-certificates.crt
 CADOCKERFILE
 
-    for base in python:3.12-slim node:22-alpine \
-                mcr.microsoft.com/playwright:v1.56.0-noble; do
+    # Браузеру системного хранилища мало. Chromium на Linux спрашивает про
+    # корни **своё** хранилище NSS (`~/.pki/nssdb`), а не `/etc/ssl/certs`,
+    # и потому шаг выше его не лечит вовсе. Наружу это вылезает не отказом
+    # сборки, а падением ВСЕГО браузерного набора разом: `index.html` тянет
+    # `https://accounts.google.com/gsi/client` на каждой странице, консоль
+    # получает `ERR_CERT_AUTHORITY_INVALID`, и сторож консоли в
+    # `e2e/tests/harness.js` валит любой тест. Приложение при этом работает
+    # — в отчёте видно отрисованную страницу, — и это самое обманчивое:
+    # выглядит как сломанный продукт, а сломано окружение.
+    #
+    # `certutil` ставится из ubuntu-репозитория самого образа. Отдельно
+    # оговорено `|| true` у `apt-get update`: в образе прописан сторонний
+    # репозиторий NodeSource, политика сети отдаёт по нему 403, и обновление
+    # списков возвращает ненулевой код, хотя `archive.ubuntu.com` доступен и
+    # пакет ставится. Без этой оговорки шаг падал бы на здоровой сети.
+    #
+    # В хранилище кладутся не все 152 корня из связки, а только корни
+    # площадки: остальные у браузера уже есть, а `certutil` берёт по одному
+    # сертификату за раз.
+    cat > "$ca_ctx/Dockerfile.browser" <<'CABROWSERFILE'
+ARG BASE
+FROM ${BASE}
+COPY ccr-ca-bundle.crt /usr/local/share/ccr-ca-bundle.crt
+RUN cat /usr/local/share/ccr-ca-bundle.crt >> /etc/ssl/certs/ca-certificates.crt
+ENV SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt \
+    REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt \
+    PIP_CERT=/etc/ssl/certs/ca-certificates.crt \
+    NODE_EXTRA_CA_CERTS=/etc/ssl/certs/ca-certificates.crt
+RUN apt-get update >/dev/null 2>&1 || true; \
+    apt-get install -y --no-install-recommends libnss3-tools >/dev/null && \
+    mkdir -p /root/.pki/nssdb && \
+    certutil -N -d sql:/root/.pki/nssdb --empty-password && \
+    awk '/BEGIN CERTIFICATE/{n++} n{print > sprintf("/tmp/%03d.crt", n)}' \
+        /usr/local/share/ccr-ca-bundle.crt && \
+    for one in /tmp/[0-9][0-9][0-9].crt; do \
+        openssl x509 -in "$one" -noout -subject | grep -q Anthropic || continue; \
+        certutil -A -n "ccr-$(basename "$one" .crt)" -t "C,," \
+            -d sql:/root/.pki/nssdb -i "$one"; \
+    done && \
+    certutil -L -d sql:/root/.pki/nssdb | grep -c '^ccr-' && \
+    rm -f /tmp/[0-9][0-9][0-9].crt && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
+CABROWSERFILE
+
+    rebase() {
+        base="$1"
+        recipe="$2"
         marked="$(docker image inspect \
             -f '{{index .Config.Labels "com.lesson-tracker.ccr-ca"}}' \
             "$base" 2>/dev/null)"
         if [ "$marked" = "1" ]; then
             printf 'корень площадки уже в образе: %s\n' "$base"
-            continue
+            return 0
         fi
         if docker build -t "$base" --build-arg BASE="$base" \
                 --label com.lesson-tracker.ccr-ca=1 \
-                "$ca_ctx" >/dev/null 2>&1; then
+                -f "$ca_ctx/$recipe" "$ca_ctx" >/dev/null 2>&1; then
             printf 'корень площадки дописан в образ: %s\n' "$base"
         else
             printf 'ПРОГРЕВ НЕ ПРОШЁЛ: корень площадки не лёг в %s\n' "$base"
         fi
-    done
+    }
+
+    rebase python:3.12-slim Dockerfile
+    rebase node:22-alpine Dockerfile
+    rebase mcr.microsoft.com/playwright:v1.56.0-noble Dockerfile.browser
 
     rm -rf "$ca_ctx"
 fi
