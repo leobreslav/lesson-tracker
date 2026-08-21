@@ -198,14 +198,14 @@ dev-бакета: `seed_demo --flush` чистит свой бакет цели�
 
 ```bash
 cd ~/lesson-tracker
-docker compose -f docker-compose.prod.yml up -d --build
+docker compose --env-file .env.prod -f docker-compose.prod.yml up -d --build
 ```
 
 Сборка фронтенда и установка зависимостей Python занимают несколько минут.
 Следите за логами:
 
 ```bash
-docker compose -f docker-compose.prod.yml logs -f backend
+docker compose --env-file .env.prod -f docker-compose.prod.yml logs -f backend
 ```
 
 Ждём строки `Listening at: http://0.0.0.0:8000`. Миграции и `collectstatic`
@@ -214,7 +214,7 @@ docker compose -f docker-compose.prod.yml logs -f backend
 Состояние сервисов:
 
 ```bash
-docker compose -f docker-compose.prod.yml ps -a
+docker compose --env-file .env.prod -f docker-compose.prod.yml ps -a
 ```
 
 `frontend-build` должен быть в статусе `Exited (0)` — это одноразовый сборщик,
@@ -243,14 +243,14 @@ BOOTSTRAP_SUPERUSER_PASSWORD=
 Посмотреть, что она сделала:
 
 ```bash
-docker compose -f docker-compose.prod.yml -f docker-compose.ssl.yml \
+docker compose --env-file .env.prod -f docker-compose.prod.yml -f docker-compose.ssl.yml \
   logs backend | grep -A3 bootstrap
 ```
 
 Если переменные задавать не хочется, остаётся ручной путь:
 
 ```bash
-docker compose -f docker-compose.prod.yml exec backend python manage.py createsuperuser
+docker compose --env-file .env.prod -f docker-compose.prod.yml exec backend python manage.py createsuperuser
 ```
 
 Спросит только email и пароль — поля `username` в модели нет. Подтверждённый
@@ -301,7 +301,7 @@ curl -s http://lbreslav.com/api/me/
 Если что-то не так:
 
 ```bash
-docker compose -f docker-compose.prod.yml logs --tail 100 backend nginx
+docker compose --env-file .env.prod -f docker-compose.prod.yml logs --tail 100 backend nginx
 ```
 
 ---
@@ -431,7 +431,7 @@ curl -sI https://lbreslav.com/admin/login/ | grep -i strict-transport
 Контрольная проверка:
 
 ```bash
-docker compose -f docker-compose.prod.yml -f docker-compose.ssl.yml \
+docker compose --env-file .env.prod -f docker-compose.prod.yml -f docker-compose.ssl.yml \
   exec backend python manage.py check --deploy
 ```
 
@@ -540,7 +540,7 @@ tail ~/backups/backup.log ~/backups/files.log
 ```bash
 cd ~/lesson-tracker
 gunzip -c ~/backups/lesson-tracker/lessons_ГГГГ-ММ-ДД_ЧЧММ.sql.gz \
-  | docker compose -f docker-compose.prod.yml exec -T db \
+  | docker compose --env-file .env.prod -f docker-compose.prod.yml exec -T db \
       psql -U lessons -d lessons
 ```
 
@@ -579,7 +579,7 @@ cd ~/lesson-tracker
 посмотреть, что разошлось:
 
 ```bash
-docker compose -f docker-compose.prod.yml exec backend \
+docker compose --env-file .env.prod -f docker-compose.prod.yml exec backend \
   python manage.py cleanup_orphaned_files
 ```
 
@@ -603,7 +603,7 @@ docker compose -f docker-compose.prod.yml exec backend \
 ```bash
 ssh leobreslav@194.67.111.40
 cd ~/lesson-tracker
-docker compose -f docker-compose.prod.yml -f docker-compose.ssl.yml down
+docker compose --env-file .env.prod -f docker-compose.prod.yml -f docker-compose.ssl.yml down
 docker volume rm lesson-tracker-prod_pgdata
 ./deploy.sh
 ```
@@ -652,7 +652,7 @@ cd ~/lesson-tracker
 
 ```bash
 cd ~/lesson-tracker
-C="docker compose -f docker-compose.prod.yml -f docker-compose.ssl.yml"
+C="docker compose --env-file .env.prod -f docker-compose.prod.yml -f docker-compose.ssl.yml"
 
 $C ps -a
 $C logs -f backend

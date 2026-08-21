@@ -12,7 +12,7 @@
 #
 # Пустой лог — это и есть «всё в порядке». Появились строки — идти руками:
 #
-#   docker compose -f docker-compose.prod.yml exec backend \
+#   docker compose --env-file .env.prod -f docker-compose.prod.yml exec backend \
 #       python manage.py cleanup_orphaned_files --delete
 
 set -Eeuo pipefail
@@ -29,7 +29,7 @@ fail() { log "ОШИБКА: $*" >&2; exit 1; }
 
 [ -f .env.prod ] || fail "нет .env.prod в $REPO_DIR"
 
-if ! docker compose -f docker-compose.prod.yml ps --status running --services \
+if ! docker compose --env-file .env.prod -f docker-compose.prod.yml ps --status running --services \
         2>/dev/null | grep -qx backend; then
     fail "контейнер backend не запущен"
 fi
@@ -37,7 +37,7 @@ fi
 # --quiet: команда молчит, когда находить нечего. Пустой лог — это и есть
 # «всё в порядке», а еженедельная строка «сирот нет» через год стала бы
 # всем логом
-output="$(docker compose -f docker-compose.prod.yml exec -T backend \
+output="$(docker compose --env-file .env.prod -f docker-compose.prod.yml exec -T backend \
     python manage.py cleanup_orphaned_files --quiet "$@")"
 
 if [ -n "${output//[[:space:]]/}" ]; then

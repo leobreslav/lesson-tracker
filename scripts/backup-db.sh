@@ -56,7 +56,7 @@ log "Дамп базы $DB_NAME -> $TARGET"
 
 # пишем во временный файл: оборванный дамп не должен выглядеть как готовый
 # pipefail гарантирует, что падение pg_dump уронит весь конвейер
-if ! docker compose -f docker-compose.prod.yml exec -T db \
+if ! docker compose --env-file .env.prod -f docker-compose.prod.yml exec -T db \
         pg_dump -U "$DB_USER" -d "$DB_NAME" --clean --if-exists | gzip > "$TMP"; then
     rm -f "$TMP"
     fail "pg_dump завершился с ошибкой"
@@ -82,7 +82,7 @@ if [ -z "$(peek_env R2_BACKUP_BUCKET_NAME)" ] \
     exit 0
 fi
 
-if ! docker compose -f docker-compose.prod.yml ps --status running --services \
+if ! docker compose --env-file .env.prod -f docker-compose.prod.yml ps --status running --services \
         2>/dev/null | grep -qx backend; then
     fail "контейнер backend не запущен: дамп на диске есть, в бакет не уехал"
 fi
@@ -91,7 +91,7 @@ log "Копия в резервный бакет $(peek_env R2_BACKUP_BUCKET_NAM
 
 # дамп идёт контейнеру на stdin: pg_dump живёт в контейнере базы, а boto3 —
 # в backend'е, и общего тома у них с хостом нет
-if ! docker compose -f docker-compose.prod.yml exec -T backend \
+if ! docker compose --env-file .env.prod -f docker-compose.prod.yml exec -T backend \
         python manage.py backup_db --name "$(basename "$TARGET")" \
         --keep-days "$KEEP_DAYS" < "$TARGET"; then
     fail "загрузка в резервный бакет не удалась (дамп на диске остался)"

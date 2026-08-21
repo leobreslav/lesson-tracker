@@ -46,12 +46,12 @@ log "Синхронизация вложений в резервный баке�
 
 # контейнер должен быть поднят: свой питон с boto3 на хосте не нужен, все
 # ключи и так лежат в окружении backend'а через env_file
-if ! docker compose -f docker-compose.prod.yml ps --status running --services \
+if ! docker compose --env-file .env.prod -f docker-compose.prod.yml ps --status running --services \
         2>/dev/null | grep -qx backend; then
     fail "контейнер backend не запущен"
 fi
 
-docker compose -f docker-compose.prod.yml exec -T backend \
+docker compose --env-file .env.prod -f docker-compose.prod.yml exec -T backend \
     python manage.py backup_files "$@"
 
 log "Готово"

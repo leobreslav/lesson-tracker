@@ -301,7 +301,7 @@ info "вывод сервера идёт ниже как есть"
 
 if ! ssh "$SERVER" "cd $REMOTE_DIR && ./deploy.sh"; then
     fail "деплой на сервере не прошёл — код на сервере мог остаться прежним.
-Логи: ssh $SERVER 'cd $REMOTE_DIR && docker compose -f docker-compose.prod.yml -f docker-compose.ssl.yml logs --tail 50 backend nginx'"
+Логи: ssh $SERVER 'cd $REMOTE_DIR && docker compose --env-file .env.prod -f docker-compose.prod.yml -f docker-compose.ssl.yml logs --tail 50 backend nginx'"
 fi
 
 # --- проверка сайта ---------------------------------------------------------
@@ -317,8 +317,8 @@ if [ "$VERIFY" -eq 1 ]; then
     else
         SITE_OK=0
         warn "Сайт ответил «${CODE:-нет ответа}» вместо 200."
-        info "Логи:   ssh $SERVER 'cd $REMOTE_DIR && docker compose -f docker-compose.prod.yml -f docker-compose.ssl.yml logs --tail 50 backend nginx'"
-        info "Статус: ssh $SERVER 'cd $REMOTE_DIR && docker compose -f docker-compose.prod.yml -f docker-compose.ssl.yml ps'"
+        info "Логи:   ssh $SERVER 'cd $REMOTE_DIR && docker compose --env-file .env.prod -f docker-compose.prod.yml -f docker-compose.ssl.yml logs --tail 50 backend nginx'"
+        info "Статус: ssh $SERVER 'cd $REMOTE_DIR && docker compose --env-file .env.prod -f docker-compose.prod.yml -f docker-compose.ssl.yml ps'"
     fi
 else
     log "Проверка сайта пропущена (--no-verify)"

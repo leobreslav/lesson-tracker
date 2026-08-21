@@ -27,8 +27,8 @@ dev-бакет, а не боевой.
 
 ```bash
 cp ~/secrets/lesson-tracker.env.local-prod .env.prod
-docker compose -f docker-compose.prod.yml up -d --build   # http://localhost
-docker compose -f docker-compose.prod.yml down            # том с базой остаётся
+docker compose --env-file .env.prod -f docker-compose.prod.yml up -d --build   # http://localhost
+docker compose --env-file .env.prod -f docker-compose.prod.yml down            # том с базой остаётся
 rm .env.prod                                              # чтобы не путался
 ```
 
