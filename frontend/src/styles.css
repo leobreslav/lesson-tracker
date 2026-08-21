@@ -6582,3 +6582,13 @@ button.dropzone:hover:not(:disabled) {
 .task-question .stale {
   margin-top: 0.2rem;
 }
+
+/* Условие с шапкой сюжета: шапка приглушена и отбита, потому что читают её
+   один раз, а вопрос — каждый. Полоса слева говорит, что это общее условие,
+   а не первый абзац вопроса. */
+.statement-stem {
+  border-left: 3px solid var(--border);
+  padding-left: 0.6rem;
+  margin-bottom: 0.4rem;
+  color: var(--muted);
+}

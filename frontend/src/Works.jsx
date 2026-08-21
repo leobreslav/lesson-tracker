@@ -5,6 +5,7 @@ import EmptyState from './EmptyState'
 import CellDialogBank from './CellDialogBank'
 import CoursePicker from './CoursePicker'
 import Markdown from './Markdown'
+import Statement from './Statement'
 import ScanWizard from './ScanWizard'
 import TaskDialog from './TaskDialog'
 import WorkDialog from './WorkDialog'
@@ -295,7 +296,21 @@ export default function Works({ onLoggedOut }) {
                                   за собой пустую строку в каждой задаче */}
                               <div className="task-head">
                                 <div className="task-question">
-                                  <Markdown text={task.question} />
+                                  {/* условие с шапкой сюжета и пометкой «это
+                                      пункт» — одной отрисовкой на все экраны */}
+                                  <Statement
+                                    shown={task.shown}
+                                    onWhole={
+                                      task.problem
+                                        ? () => navigate(`/bank/problem/${task.problem}`)
+                                        : undefined
+                                    }
+                                  />
+                                  {!task.shown?.with_stem && task.shown?.is_part && (
+                                    <p className="hint warning">
+                                      {t('works.task.stemHidden')}
+                                    </p>
+                                  )}
                                 </div>
                                 <div className="task-actions">
                                 <button

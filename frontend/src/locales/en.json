@@ -278,7 +278,9 @@
     "bank_same_problem": "A problem is not its own analogue.",
     "work_nothing_to_assemble": "No problems picked: there is nothing to assemble.",
     "statement_mode_unknown": "It is unclear whether to edit the statement everywhere or make a copy.",
-    "bank_nothing_to_copy": "No problems picked: there is nothing to take."
+    "bank_nothing_to_copy": "No problems picked: there is nothing to take.",
+    "part_without_number": "An indented line with no number above it: a part always belongs to a number.",
+    "number_needs_a_tab": "Separate the number from the statement with a tab — otherwise it is unclear which is which."
   },
   "classPicker": {
     "label": "Classes:",
@@ -1046,7 +1048,11 @@
       "fromBank": "A statement for cell {{number}}",
       "putHere": "Put it here",
       "empty": "Leave the cell blank",
-      "swapCost": "This cell has been answered {{count}} times. The answers stay, the verdicts are dropped: they were about the previous statement."
+      "swapCost": "This cell has been answered {{count}} times. The answers stay, the verdicts are dropped: they were about the previous statement.",
+      "isPart": "a question to a shared statement · ",
+      "whole": "show the whole problem",
+      "showStem": "Show the shared statement to the student",
+      "stemHidden": "The shared statement is hidden: the student sees only the question."
     },
     "answers": "Answers",
     "description": "What to do",

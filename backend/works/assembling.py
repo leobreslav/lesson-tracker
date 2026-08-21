@@ -80,18 +80,33 @@ def take(problem, *, work, position) -> Task:
 
 def _ordered(problems, user):
     """
-    Задачи в том порядке, в каком их назвали.
+    Задачи в том порядке, в каком их назвали, — и **сюжет разворачивается**.
 
-    Порядок — это решение учителя (он ставил задачи по возрастанию
-    сложности), и терять его на выборке из базы нельзя. Чужая задача просто не
-    находится: видимость спрашивается тем же `visible_to`, что и везде.
+    Порядок это решение учителя (он ставил задачи по возрастанию сложности), и
+    терять его на выборке из базы нельзя. Чужая задача просто не находится:
+    видимость спрашивается тем же `visible_to`, что и везде.
+
+    Сюжет ячейкой не бывает: у него нет ни вопроса, ни ответа, ни балла, а
+    оценивают всегда пункт. Поэтому названный сюжет превращается в **его
+    пункты**, в авторском порядке, — то есть «взял четырнадцатую» значит «взял
+    все её вопросы», каждый своей ячейкой.
     """
     ids = [int(one) for one in problems]
     found = {
         problem.pk: problem
-        for problem in Problem.objects.visible_to(user).filter(pk__in=ids)
+        for problem in Problem.objects.visible_to(user)
+        .filter(pk__in=ids)
+        .prefetch_related("parts")
     }
-    return [found[one] for one in ids if one in found]
+
+    chosen = []
+    for one in ids:
+        problem = found.get(one)
+        if problem is None:
+            continue
+        parts = list(problem.parts.all())
+        chosen.extend(sorted(parts, key=lambda part: (part.position, part.pk)) or [problem])
+    return chosen
 
 
 def _opens_at(slot, now):

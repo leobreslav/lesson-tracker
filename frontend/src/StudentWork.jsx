@@ -3,6 +3,7 @@ import TaskThread from './TaskThread'
 import { useTranslation } from 'react-i18next'
 import { Link, useParams } from 'react-router-dom'
 import Markdown from './Markdown'
+import Statement from './Statement'
 import { fetchStudentWork, openAttachment, sendAnswer } from './api'
 import { dateTime } from './dates'
 import { POLL_MS } from './polling'
@@ -210,7 +211,9 @@ function TaskCard({ task, number, canAnswer, onSent, onError }) {
   return (
     <li className="panel student-task">
       <div className="task-question">
-        <Markdown text={task.question} />
+        {/* пункт показывается вместе со своим сюжетом — или без него, если
+            учитель шапку выключил: данные он написал на доске */}
+        <Statement shown={task.shown} />
       </div>
 
       {task.submissions.length > 0 && (

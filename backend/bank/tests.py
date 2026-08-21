@@ -1054,3 +1054,120 @@ class CopyManyTests(SchoolTestMixin, APITestCase):
         )
         self.assertEqual(answer.status_code, 400)
         self.assertEqual(answer.data["code"], "bank_nothing_to_copy")
+
+
+class PartsTests(SchoolTestMixin, APITestCase):
+    """
+    Пункты задачи: два дерева и то, как их различает вставка.
+
+    Главное здесь — что **буква принадлежит книге, а не задаче**: один и тот
+    же пункт бывает «3а» у Мордковича и «5б» у Галицкого, и обе метки
+    правдивы. И что сюжет — не задача: у него нет ни вопроса, ни ответа.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.book = Source.objects.create(
+            title="Мордкович",
+            school=self.school,
+            owner=self.user,
+            created_by=self.user,
+        )
+
+    def fill(self, text, source=None):
+        return services.add_problems(
+            source or self.book, section=None, text=text, user=self.user
+        )
+
+    def test_a_stem_with_parts_makes_one_number_and_two_letters(self):
+        made = self.fill(
+            "3\tДан треугольник ABC со сторонами 3, 4, 5.\n"
+            "  а)\tНайдите площадь.\n"
+            "  б)\tНайдите радиус вписанной окружности."
+        )
+
+        # задач две: сюжет в счёт не идёт, он не задача
+        self.assertEqual(made, 2)
+
+        number = self.book.entries.get(parent__isnull=True)
+        self.assertEqual(number.label, "3")
+        self.assertEqual(number.problem.text, "Дан треугольник ABC со сторонами 3, 4, 5.")
+
+        letters = list(number.children.order_by("position"))
+        self.assertEqual([one.label for one in letters], ["а)", "б)"])
+        # дерево задачи: пункты — дети сюжета, и порядок у них авторский
+        self.assertEqual(
+            [one.problem.parent_id for one in letters], [number.problem_id] * 2
+        )
+        self.assertEqual([one.problem.position for one in letters], [0, 1])
+
+    def test_a_bare_number_leaves_its_parts_independent(self):
+        # «15. а) x²=4 б) x²=9» — четыре уравнения под одним номером, но
+        # ничем, кроме номера, не связанные
+        made = self.fill("15\n  а)\t$x^2=4$\n  б)\t$x^2=9$")
+
+        self.assertEqual(made, 2)
+        number = self.book.entries.get(parent__isnull=True)
+        self.assertIsNone(number.problem)
+        self.assertEqual(
+            [one.problem.parent_id for one in number.children.all()], [None, None]
+        )
+
+    def test_letters_written_into_the_number_stay_separate_problems(self):
+        made = self.fill("16а\tРешите неравенство\n16б\tПостройте график")
+
+        self.assertEqual(made, 2)
+        self.assertEqual(self.book.entries.filter(parent__isnull=True).count(), 2)
+        self.assertFalse(Problem.objects.filter(parent__isnull=False).exists())
+
+    def test_an_indent_without_a_number_above_is_refused(self):
+        self.client.force_authenticate(self.user)
+        answer = self.client.post(
+            reverse("bank-source", args=[self.book.pk]),
+            {"problems": "  а)\tОдин пункт без номера"},
+            format="json",
+        )
+        self.assertEqual(answer.status_code, 400)
+        self.assertEqual(answer.data["code"], "part_without_number")
+
+    def test_the_same_part_gets_its_own_label_in_another_book(self):
+        self.fill("3\tДан треугольник ABC.\n  а)\tНайдите площадь.")
+        part = Problem.objects.get(text="Найдите площадь.")
+
+        other = Source.objects.create(
+            title="Галицкий",
+            school=self.school,
+            owner=self.user,
+            created_by=self.user,
+        )
+        number = Entry.objects.create(source=other, label="5")
+        Entry.objects.create(source=other, parent=number, problem=part, label="5б")
+
+        # одно условие, два адреса, и обе метки живут на строках книг
+        self.assertEqual(
+            sorted(entry.label for entry in part.entries.all()), ["5б", "а)"]
+        )
+        # а дерево задачи от этого не двоится: сюжет у пункта один
+        self.assertEqual(part.parent.text, "Дан треугольник ABC.")
+
+    def test_a_phrase_over_parts_needs_a_tab_rather_than_a_guess(self):
+        # «15» с пунктами — номер, а «Решите уравнение:» — условие сюжета.
+        # Различить их можно только разделителем, и вместо угадывания отказ.
+        self.client.force_authenticate(self.user)
+        answer = self.client.post(
+            reverse("bank-source", args=[self.book.pk]),
+            {"problems": "Решите уравнение:\n  а)\t$x^2=4$"},
+            format="json",
+        )
+        self.assertEqual(answer.status_code, 400)
+        self.assertEqual(answer.data["code"], "number_needs_a_tab")
+
+    def test_a_part_of_a_part_is_refused(self):
+        self.fill("3\tСюжет.\n  а)\tПункт.")
+        part = Problem.objects.get(text="Пункт.")
+        deeper = Problem(
+            text="Подпункт", school=self.school, owner=self.user, parent=part
+        )
+
+        with self.assertRaises(ValidationError):
+            deeper.full_clean()

@@ -297,6 +297,7 @@ class WorkViewSet(CourseScopedViewSet):
                         "id": task.pk,
                         "position": task.position,
                         "question": statements.statement_of(task),
+                        "shown": statements.shown(task),
                         "maximum": task.maximum,
                         "answers": statements.answers_of(task),
                     }
@@ -695,6 +696,10 @@ class StudentWorkView(APIView):
                         "id": task.pk,
                         "position": task.position,
                         "question": statements.statement_of(task),
+                        # ученику — с оглядкой на выключенную шапку: если её
+                        # спрятали, не приезжает ни она сама, ни пометка,
+                        # иначе скрытие бессмысленно
+                        "shown": statements.shown(task, to_student=True),
                         "attempts_left": services.attempts_left(
                             work, len(journal[task.pk])
                         ),

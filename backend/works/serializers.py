@@ -98,6 +98,10 @@ class TaskSerializer(serializers.ModelSerializer):
         data = super().to_representation(instance)
         data["question"] = statements.statement_of(instance)
         data["answers"] = statements.answers_of(instance)
+        # Показывать пункт без сюжета нельзя: экран берёт готовый разбор, а не
+        # склеенный текст — иначе пропадёт и пометка, и разница между тем, что
+        # видит учитель и что ученик.
+        data["shown"] = statements.shown(instance)
         return data
 
     class Meta:
@@ -114,6 +118,7 @@ class TaskSerializer(serializers.ModelSerializer):
             "maximum",
             "mode",
             "problem",
+            "show_stem",
             "created_at",
         )
         read_only_fields = ("id", "position", "problem", "created_at")

@@ -91,70 +91,184 @@ def set_outline(source, text: str) -> int:
 
 def parse_problems(text: str) -> list[dict]:
     """
-    Задачи строками «номер ⇥ условие».
+    Задачи строками «номер ⇥ условие», пункты — отступом.
 
-    Табуляция или два пробела подряд отделяют номер от условия — так строка
-    приезжает из таблицы и из книги. Номера может не быть вовсе: тогда вся
-    строка это условие.
+    Разбор понимает два случая, и различает их **отступ**, а не догадка:
+
+        14\tДан треугольник ABC со сторонами 3, 4, 5.
+          а)\tНайдите площадь.
+          б)\tНайдите радиус вписанной окружности.
+
+        15
+          а)\t$x^2 = 4$
+          б)\t$x^2 = 9$
+
+        16а\tРешите неравенство …
+        16б\tПостройте график …
+
+    Первый номер — **сюжет**: у строки-номера есть текст, значит пункты без
+    него бессмысленны, и в дереве задачи они его дети. Второй — просто номер:
+    текста нет, и четыре уравнения под ним самостоятельны, а буквы им даёт
+    книга. Третий — две отдельные задачи, у каждой свой номер целиком.
+
+    Различить это машиной нельзя, и она не пытается: решает вписывающий. Зато
+    **вместо угадывания — отказ**: строка с отступом, над которой нет номера,
+    отклоняется с указанием своей строки, как и прыжок глубины в оглавлении.
+
+    Отдаёт плоский список строк, у каждой `label`, `text` и `parts` —
+    список таких же строк на один уровень глубже.
     """
     rows = []
     for number, raw in enumerate(text.splitlines(), start=1):
-        # обрезаем только края, но не разделитель: `strip()` съедал табуляцию,
-        # и строка «6⇥» становилась условием «6» вместо отказа
-        line = raw.strip(" \r")
-        if not line.strip():
+        if not raw.strip():
             continue
 
-        if "\t" in line:
-            label, _, body = line.partition("\t")
-        elif "  " in line:
-            label, _, body = line.partition("  ")
-        else:
-            label, body = "", line
+        # обрезаем только края, но не разделитель: `strip()` съедал табуляцию,
+        # и строка «6⇥» становилась условием «6» вместо отказа
+        # Отступ — только пробелы: табуляция здесь уже занята разделителем
+        # номера и условия, и путать их нельзя.
+        indented = raw[:1] == " "
+        line = raw.strip(" \r")
 
-        body = body.strip()
-        if not body:
+        label, body, split = _split_row(line)
+        row = {"label": label, "text": body, "parts": [], "line": number, "split": split}
+
+        if not indented:
+            rows.append(row)
+            continue
+
+        if not rows:
             api_error(
-                Codes.PROBLEM_TEXT_REQUIRED,
-                f"Line {number} has a number but no statement.",
+                Codes.PART_WITHOUT_NUMBER,
+                f"Line {number} is indented but there is no number above it.",
                 field="problems",
                 line=number,
             )
-        rows.append({"label": label.strip(), "text": body})
+        rows[-1]["parts"].append(row)
 
     if not rows:
         api_error(Codes.OUTLINE_EMPTY, "There is nothing to read.", field="problems")
+
+    for row in rows:
+        if row["parts"] and not row["split"]:
+            # Строка с пунктами и без разделителя: «15» — это номер, а
+            # «Решите уравнение:» — условие сюжета, и различить их можно
+            # только разделителем. Одно слово читаем номером, а фразу
+            # отклоняем: вместо угадывания — отказ.
+            if row["text"].split() == [row["text"]]:
+                row["label"], row["text"] = row["text"], ""
+            else:
+                api_error(
+                    Codes.NUMBER_NEEDS_A_TAB,
+                    f"Line {row['line']} has parts: separate its number from the "
+                    "statement with a tab.",
+                    field="problems",
+                    line=row["line"],
+                )
+
+        # У номера с пунктами текста может не быть вовсе — это чистый адрес. А
+        # вот у строки без пунктов условие обязательно: номер, за которым
+        # ничего не стоит, это опечатка, а не задача.
+        if not row["text"] and not row["parts"]:
+            api_error(
+                Codes.PROBLEM_TEXT_REQUIRED,
+                f"Line {row['line']} has a number but no statement.",
+                field="problems",
+                line=row["line"],
+            )
+        for part in row["parts"]:
+            if not part["text"]:
+                api_error(
+                    Codes.PROBLEM_TEXT_REQUIRED,
+                    f"Line {part['line']} has a letter but no statement.",
+                    field="problems",
+                    line=part["line"],
+                )
+
     return rows
+
+
+def _split_row(line: str) -> tuple[str, str, bool]:
+    """
+    Номер и условие. Табуляция или два пробела подряд — так строка приезжает
+    из таблицы и из книги; номера может не быть вовсе.
+
+    Третьим отдаёт, был ли разделитель: без него строка неоднозначна, и
+    решает это уже вызывающий — по тому, есть ли у неё пункты.
+    """
+    if "\t" in line:
+        label, _, body = line.partition("\t")
+    elif "  " in line:
+        label, _, body = line.partition("  ")
+    else:
+        return "", line.strip(), False
+
+    return label.strip(), body.strip(), True
 
 
 def add_problems(source, *, section, text: str, user) -> int:
     """
-    Вписать задачи в раздел источника. Заводит условия и связи разом.
+    Вписать задачи в раздел источника. Заводит оба дерева разом.
 
     Владение у заведённых условий — то же, что у источника: задачи системной
     книги системные, школьной — школьные. Иначе учитель, вписавший главу в
     общую книгу, оказался бы владельцем половины её содержимого.
+
+    Что получается из трёх случаев разбора:
+
+    | вписано | дерево задачи | дерево книги |
+    |---------|---------------|--------------|
+    | номер с текстом и пунктами | сюжет и его дети | строка-номер и строки-пункты |
+    | номер без текста, с пунктами | ничего: пункты самостоятельны | то же |
+    | номер с текстом, без пунктов | одна задача | одна строка |
+
+    Возвращает число заведённых **задач** — то есть листьев, а не строк:
+    спрашивают «сколько задач вписалось», и сюжет в этом счёте не участвует.
     """
     rows = parse_problems(text)
 
+    made = 0
     with transaction.atomic():
-        start = source.entries.count()
+        start = source.entries.filter(parent__isnull=True).count()
         for offset, row in enumerate(rows):
-            problem = Problem.objects.create(
-                school=source.school,
-                owner=source.owner,
-                created_by=user,
-                text=row["text"],
-            )
-            Entry.objects.create(
+            stem = None
+            if row["text"]:
+                stem = _problem(source, user, row["text"])
+                if not row["parts"]:
+                    made += 1
+
+            number = Entry.objects.create(
                 source=source,
                 section=section,
-                problem=problem,
+                problem=stem,
                 label=row["label"],
                 position=start + offset,
             )
 
-    return len(rows)
+            for place, part in enumerate(row["parts"]):
+                problem = _problem(source, user, part["text"], parent=stem, position=place)
+                Entry.objects.create(
+                    source=source,
+                    section=section,
+                    problem=problem,
+                    parent=number,
+                    label=part["label"],
+                    position=place,
+                )
+                made += 1
+
+    return made
+
+
+def _problem(source, user, text, *, parent=None, position=0):
+    return Problem.objects.create(
+        school=source.school,
+        owner=source.owner,
+        created_by=user,
+        text=text,
+        parent=parent,
+        position=position,
+    )
 
 
 def outline_of(source) -> list[dict]:
@@ -217,8 +331,22 @@ def problem_payload(problem, *, user) -> dict:
             .exclude(pk=problem.pk)
         ]
 
+    parts = [
+        {"id": part.pk, "text": part.text, "position": part.position}
+        for part in problem.parts.order_by("position", "id")
+    ]
+
     return {
         "id": problem.pk,
+        # Сюжет, если это пункт: показывать пункт без него нельзя ни учителю,
+        # ни ученику — он бессмыслен. И сами пункты, если это сюжет: «показать
+        # целиком» отвечает из этого же ответа, без второго запроса.
+        "stem": (
+            {"id": problem.parent_id, "text": problem.parent.text}
+            if problem.parent_id
+            else None
+        ),
+        "parts": parts,
         "text": problem.text,
         "answers": list(problem.answers),
         "level": problem.level,

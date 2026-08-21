@@ -32,14 +32,22 @@ def find(user, *, text="", tags=(), uses=(), avoids=(), level=None, shelved=None
     """
     Задачи, отвечающие всем граням сразу. Возвращает queryset — считать по
     нему грани дешевле, чем второй раз повторять условия.
+
+    **Задача — это лист.** Сюжет («Дан треугольник ABC») из поиска исключается:
+    у него нет ни вопроса, ни ответа, и в выдаче он был бы строкой, которая
+    ничего не спрашивает. А вот слово из сюжета обязано находить его пункты —
+    поэтому текст ищется и на уровень выше.
     """
-    found = Problem.objects.visible_to(user).filter(retired=False)
+    found = Problem.objects.visible_to(user).filter(retired=False, parts__isnull=True)
 
     # Ищется только условие: эталоны лежат массивом, и `icontains` по нему
     # Postgres не даёт, а поиск задачи по её ответу — вопрос, которого никто
-    # не задаёт.
+    # не задаёт. Зато вместе с условием ищется сюжет: «окружность» из шапки
+    # обязана находить пункт «найдите радиус», где этого слова нет.
     for word in text.split():
-        found = found.filter(text__icontains=word)
+        found = found.filter(
+            Q(text__icontains=word) | Q(parent__text__icontains=word)
+        )
 
     # каждый тег условия сужает: «многочлен и доказательство», а не «или»
     for tag_id in tags:

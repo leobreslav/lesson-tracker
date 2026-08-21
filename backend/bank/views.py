@@ -9,6 +9,7 @@
 
 from config.access import IsSchoolMember, IsTeacher
 from config.errors import Codes, api_error
+from django.db.models import Q
 from django.shortcuts import get_object_or_404
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -105,10 +106,14 @@ class SourceView(BankView):
         section = request.query_params.get("section")
         label = (request.query_params.get("label") or "").strip()
 
-        entries = source.entries.select_related("problem", "section")
+        entries = source.entries.select_related("problem", "section", "parent")
         if label:
-            # номер — это адрес, а не текст: «14а» ищется точным совпадением
-            entries = entries.filter(label__iexact=label)
+            # Номер — это адрес, а не текст: «14а» ищется точным совпадением.
+            # Спросили номер целиком — отдаём его вместе с пунктами: «покажи
+            # весь третий» и «покажи 3б» — разные вопросы, и оба законные.
+            entries = entries.filter(
+                Q(label__iexact=label) | Q(parent__label__iexact=label)
+            )
         elif section == "none":
             # «вне разделов» — это выбор, а не отсутствие выбора: задачи,
             # которые в оглавление не разложили, надо уметь увидеть отдельно
@@ -136,16 +141,23 @@ class SourceView(BankView):
                         "id": entry.pk,
                         "label": entry.label,
                         "page": entry.page,
+                        # строка-номер может ни на что не показывать: это
+                        # чистый адрес, у которого есть только пункты
+                        "parent": entry.parent_id,
                         "problem": entry.problem_id,
-                        "text": entry.problem.text,
-                        "solutions": entry.problem.solutions.count(),
+                        "text": entry.problem.text if entry.problem_id else "",
+                        "solutions": (
+                            entry.problem.solutions.count() if entry.problem_id else 0
+                        ),
                         # Чьё условие и живо ли оно. В подборку кладут чужое —
                         # ссылкой, — и от того, чьё оно, зависит, что с ним
                         # можно сделать: своё правится, общее только копией. А
                         # снятое (`retired`) выглядело бы обычным, хотя из
                         # поиска давно ушло.
-                        "level": entry.problem.level,
-                        "retired": entry.problem.retired,
+                        "level": entry.problem.level if entry.problem_id else None,
+                        "retired": bool(
+                            entry.problem_id and entry.problem.retired
+                        ),
                     }
                     for entry in entries[:500]
                 ],

@@ -17,7 +17,7 @@ from schools.testing import (
     make_work,
 )
 
-from . import services, statements
+from . import assembling, services, statements
 from .models import Submission, Task
 
 
@@ -246,3 +246,93 @@ class TakeIntoCellTests(SchoolTestMixin, APITestCase):
 
         self.assertEqual(Problem.objects.count(), 1)
         self.assertEqual(self.problem.text, "Из каталога")
+
+
+class StemInACellTests(SchoolTestMixin, APITestCase):
+    """
+    Пункт в работе: сюжет показывается вместе с ним, а соседние пункты — нет.
+
+    И шапку можно выключить: свойство **ячейки**, а не условия, потому что
+    одна и та же задача идёт в контрольной с данными, а в домашней без — их
+    написали на доске.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.course = make_course(self.school)
+        assign(self.user, self.course)
+        self.work = make_work(self.user, self.course)
+
+        self.stem = Problem.objects.create(
+            text="Дан треугольник ABC со сторонами 3, 4, 5.",
+            school=self.school,
+            owner=self.user,
+            created_by=self.user,
+        )
+        self.first = Problem.objects.create(
+            text="Найдите площадь.",
+            parent=self.stem,
+            position=0,
+            school=self.school,
+            owner=self.user,
+            created_by=self.user,
+        )
+        self.second = Problem.objects.create(
+            text="Найдите радиус.",
+            parent=self.stem,
+            position=1,
+            school=self.school,
+            owner=self.user,
+            created_by=self.user,
+        )
+
+    def cell(self, problem):
+        return Task.objects.create(work=self.work, position=0, problem=problem)
+
+    def test_a_stem_becomes_one_cell_per_part(self):
+        made = assembling.assemble(
+            self.course,
+            problems=[self.stem.pk],
+            title="Контрольная",
+            user=self.user,
+        )
+
+        # ячеек две — по числу пунктов, в авторском порядке; сюжета среди них
+        # нет: у него нет ни вопроса, ни балла
+        self.assertEqual(
+            [task.problem_id for task in made.tasks.order_by("position")],
+            [self.first.pk, self.second.pk],
+        )
+
+    def test_the_stem_comes_with_the_part_but_the_neighbours_do_not(self):
+        shown = statements.shown(self.cell(self.first))
+
+        self.assertEqual(shown["text"], "Найдите площадь.")
+        self.assertEqual(shown["stem"]["text"], "Дан треугольник ABC со сторонами 3, 4, 5.")
+        self.assertTrue(shown["is_part"])
+        # соседний пункт в ответе не участвует вовсе
+        self.assertNotIn("Найдите радиус.", str(shown))
+
+    def test_a_hidden_stem_is_hidden_from_the_student_together_with_the_hint(self):
+        task = self.cell(self.first)
+        task.show_stem = False
+        task.save(update_fields=["show_stem"])
+
+        student = statements.shown(task, to_student=True)
+        self.assertIsNone(student["stem"])
+        # и пометка «это пункт» тоже: иначе одним нажатием видно скрытое
+        self.assertFalse(student["is_part"])
+
+        # а учителю видно, что он показывает огрызок
+        teacher = statements.shown(task)
+        self.assertTrue(teacher["is_part"])
+        self.assertIsNone(teacher["stem"])
+
+    def test_a_cell_without_a_stem_says_nothing_about_parts(self):
+        plain = Problem.objects.create(
+            text="Обычная", school=self.school, owner=self.user, created_by=self.user
+        )
+        shown = statements.shown(self.cell(plain))
+
+        self.assertFalse(shown["is_part"])
+        self.assertIsNone(shown["stem"])

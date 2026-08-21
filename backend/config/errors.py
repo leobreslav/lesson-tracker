@@ -203,6 +203,8 @@ class Codes:
     OUTLINE_JUMP = "outline_jump"
     OUTLINE_EMPTY = "outline_empty"
     PROBLEM_TEXT_REQUIRED = "problem_text_required"
+    PART_WITHOUT_NUMBER = "part_without_number"
+    NUMBER_NEEDS_A_TAB = "number_needs_a_tab"
     TAG_KIND_MISMATCH = "tag_kind_mismatch"
     TAG_NOT_NEGATABLE = "tag_not_negatable"
     SUPERUSER_ONLY_TAGS = "superuser_only_tags"

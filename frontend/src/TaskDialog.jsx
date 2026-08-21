@@ -34,6 +34,8 @@ export default function TaskDialog({ task, busy, onSubmit, onRecheck, onClose })
   const [preview, setPreview] = useState(false)
   // 'everywhere' | 'copy' — только когда цена не нулевая
   const [mode, setMode] = useState(null)
+  // показывать ли ученику шапку сюжета — свойство ячейки, а не условия
+  const [withStem, setWithStem] = useState(task?.shown?.with_stem ?? true)
 
   useEffect(() => {
     if (!task) return undefined
@@ -66,6 +68,7 @@ export default function TaskDialog({ task, busy, onSubmit, onRecheck, onClose })
       question,
       answers: answers.filter((answer) => answer.trim()),
       ...(mode ? { mode } : {}),
+      ...(task?.shown?.stem || task?.shown?.is_part ? { show_stem: withStem } : {}),
     })
   }
 
@@ -129,6 +132,17 @@ export default function TaskDialog({ task, busy, onSubmit, onRecheck, onClose })
             aria-label={t('works.task.question')}
             onChange={(event) => setQuestion(event.target.value)}
           />
+        )}
+
+        {(task?.shown?.stem || task?.shown?.is_part) && (
+          <label className="checkbox">
+            <input
+              type="checkbox"
+              checked={withStem}
+              onChange={(event) => setWithStem(event.target.checked)}
+            />
+            <span>{t('works.task.showStem')}</span>
+          </label>
         )}
 
         <span className="hint">{t('works.task.answers')}</span>
