@@ -20,6 +20,12 @@
           {
             "type": "command",
             "command": "bash \"$CLAUDE_PROJECT_DIR\"/scripts/dev-env.sh"
+          },
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR\"/scripts/session-check.sh",
+            "statusMessage": "Смотрю, не отстало ли дерево и база",
+            "timeout": 30
           }
         ]
       }
