@@ -304,10 +304,15 @@ class ImportFromTemplateView(APIView):
 
         # снимок до записи: полка сносит план так же, как импорт файлом, и
         # отменяться это должно так же — одним нажатием
+        #
+        # Взятый блок назван в журнале своим словом: «взятие плана из
+        # библиотеки» у кнопки отмены обещало бы не то — план на месте, а
+        # отменяются пять дописанных уроков.
+        rows = data.get("rows")
         plan_history.take(
             data["course"],
             request.user,
-            f"template_{data['mode']}",
+            "template_part" if rows else f"template_{data['mode']}",
             data["template"].title,
         )
 
@@ -315,6 +320,7 @@ class ImportFromTemplateView(APIView):
             template=data["template"],
             course_id=data["course"].pk,
             append=data["mode"] == "append",
+            rows=rows,
         )
 
         return Response(result)

@@ -182,7 +182,43 @@ export default function LibraryDialog({
 }
 
 /**
- * Содержимое шаблона, только на чтение.
+ * Что лежит внутри какого блока — по плоскому списку строк.
+ *
+ * Шаблон плоский (`is_header` вместо вложенности), поэтому блок здесь не
+ * узел, а отрезок: заголовок и всё до следующего заголовка. Считается один
+ * раз на шаблон — выбор блока целиком нужен на каждое нажатие по нему.
+ */
+function blocksOf(rows) {
+  const blocks = new Map()
+  let header = null
+
+  for (const row of rows) {
+    if (row.is_header) {
+      header = row.id
+      blocks.set(header, [])
+      continue
+    }
+    if (header !== null) blocks.get(header).push(row.id)
+  }
+
+  return blocks
+}
+
+/**
+ * Содержимое шаблона: посмотреть — и взять целиком или по частям.
+ *
+ * Курс собирают конструктором. «Возьму отсюда тему про векторы, а оттуда
+ * два урока» — обычная просьба, и до сих пор ответом на неё было «возьмите
+ * план целиком и удалите лишнее»: в плане на сотню уроков это работа на
+ * полчаса, после которой отменять нечего.
+ *
+ * Поэтому у каждой строки флажок, а у заголовка он берёт блок целиком:
+ * блоками и мыслят, а десять флажков подряд ради одной темы — та же работа
+ * руками, только мельче.
+ *
+ * Выбранное **дописывается в конец** плана, а не заменяет его: конструктор
+ * складывает, а не начинает заново. Взять план целиком по-прежнему можно
+ * соседней кнопкой, и она по-прежнему заменяет.
  *
  * Строки правят в плане курса и возвращают кнопкой «Обновить в библиотеке»:
  * шаблон — снимок плана, поэтому страница плана и есть его единственный
@@ -190,7 +226,30 @@ export default function LibraryDialog({
  */
 export function TemplateView({ template, busy, onUse, onClose }) {
   const { t } = useTranslation()
+  const [picked, setPicked] = useState(() => new Set())
+  const blocks = useMemo(() => blocksOf(template.rows), [template.rows])
   let number = 0
+
+  /** Нажатие по строке: у заголовка — вместе с блоком, у урока — по себе. */
+  const toggle = (row) =>
+    setPicked((current) => {
+      const next = new Set(current)
+      const family = [row.id, ...(blocks.get(row.id) ?? [])]
+      // блок, взятый не целиком, добирается до целого: так нажатие по
+      // заголовку всегда значит «весь блок», а не «наоборот тому, что есть»
+      const whole = family.every((id) => next.has(id))
+
+      for (const id of family) {
+        if (whole) next.delete(id)
+        else next.add(id)
+      }
+
+      return next
+    })
+
+  const lessons = template.rows.filter(
+    (row) => !row.is_header && picked.has(row.id),
+  ).length
 
   return (
     <Modal onClose={onClose} title={template.title}>
@@ -203,19 +262,29 @@ export function TemplateView({ template, busy, onUse, onClose }) {
         })}
       </p>
       {template.description && <p>{template.description}</p>}
+      <p className="hint">{t('library.pickHint')}</p>
 
-      <ul className="plan-preview">
+      <ul className="plan-preview pickable">
         {template.rows.map((row) => {
           if (!row.is_header) number += 1
           return (
             <li key={row.id} className={row.is_header ? 'section' : 'lesson'}>
-              {row.is_header ? (
-                <strong>{row.title}</strong>
-              ) : (
-                <>
-                  <span className="plan-number">{number}.</span> {row.title}
-                </>
-              )}
+              <label className="checkbox">
+                <input
+                  type="checkbox"
+                  data-row={row.id}
+                  checked={picked.has(row.id)}
+                  aria-label={row.title}
+                  onChange={() => toggle(row)}
+                />
+                {row.is_header ? (
+                  <strong>{row.title}</strong>
+                ) : (
+                  <>
+                    <span className="plan-number">{number}.</span> {row.title}
+                  </>
+                )}
+              </label>
               {row.note && <span className="hint">{row.note}</span>}
             </li>
           )
@@ -223,7 +292,14 @@ export function TemplateView({ template, busy, onUse, onClose }) {
       </ul>
 
       <div className="actions wrap">
-        <button type="button" disabled={busy} onClick={onUse}>
+        <button
+          type="button"
+          disabled={busy || !picked.size}
+          onClick={() => onUse({ rows: [...picked], mode: 'append' })}
+        >
+          {t('library.takePicked', { count: lessons })}
+        </button>
+        <button type="button" className="secondary" disabled={busy} onClick={() => onUse()}>
           {t('library.use')}
         </button>
       </div>

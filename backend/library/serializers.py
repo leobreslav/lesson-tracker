@@ -194,13 +194,26 @@ class FromPlanSerializer(serializers.Serializer):
 
 
 class UseTemplateSerializer(serializers.Serializer):
-    """Taking a template into a course."""
+    """
+    Taking a template into a course — whole, or by the row.
+
+    `rows` — идентификаторы строк шаблона, которые берут. Нет поля вовсе —
+    берут план целиком, как и раньше; курс при этом собирают из готовых
+    блоков и отдельных уроков, а не только чужими планами разом.
+
+    Список проверяется здесь, а не в сервисе: строка чужого шаблона так же
+    не должна приниматься, как чужой шаблон, — и отказ на неё обязан
+    называться, иначе «взял пять уроков, приехало три» осталось бы молчащим.
+    """
 
     course = serializers.PrimaryKeyRelatedField(queryset=Course.objects.none())
     template = serializers.PrimaryKeyRelatedField(
         queryset=PlanTemplate.objects.none()
     )
     mode = serializers.ChoiceField(choices=("replace", "append"), default="replace")
+    rows = serializers.ListField(
+        child=serializers.IntegerField(), required=False, allow_empty=False
+    )
 
     def get_fields(self):
         fields = super().get_fields()
@@ -209,6 +222,26 @@ class UseTemplateSerializer(serializers.Serializer):
             self.context["request"].user
         )
         return fields
+
+    def validate(self, attrs):
+        picked = attrs.get("rows")
+        if picked is None:
+            return attrs
+
+        known = set(
+            attrs["template"].rows.filter(pk__in=picked).values_list("pk", flat=True)
+        )
+        missing = sorted(set(picked) - known)
+        if missing:
+            api_error(
+                Codes.TEMPLATE_ROW_UNKNOWN,
+                "Some of the chosen rows are not in this plan any more. "
+                "Open it again and pick them anew.",
+                field="rows",
+                rows=missing,
+            )
+
+        return attrs
 
 
 class UpdateFromPlanSerializer(serializers.Serializer):

@@ -51,18 +51,55 @@ def plan_as_rows(course_id: int) -> list[plan_services.ImportedRow]:
     return rows
 
 
-def template_as_rows(template) -> list[plan_services.ImportedRow]:
-    """Template rows in the shape `apply_import` expects."""
-    return [
-        plan_services.ImportedRow(
-            is_section=row.is_header,
-            title=row.title,
-            note=row.note,
-            content=None if row.is_header else _content_of(row),
-            attachments=() if row.is_header else file_services.attachments_of(row),
-        )
-        for row in template.rows.prefetch_related("attachments__stored_file")
-    ]
+def _as_imported(row, *, at_top_level: bool) -> plan_services.ImportedRow:
+    return plan_services.ImportedRow(
+        is_section=row.is_header,
+        title=row.title,
+        note=row.note,
+        content=None if row.is_header else _content_of(row),
+        attachments=() if row.is_header else file_services.attachments_of(row),
+        at_top_level=at_top_level,
+    )
+
+
+def template_as_rows(template, only=None) -> list[plan_services.ImportedRow]:
+    """
+    Template rows in the shape `apply_import` expects.
+
+    `only` — идентификаторы строк, которые берут. Курс собирают из чужих
+    блоков и отдельных уроков, а не только целыми планами: «возьму отсюда
+    тему про векторы, а оттуда два урока» — обычная просьба, и до сих пор
+    ответом на неё было «возьмите план целиком и удалите лишнее».
+
+    Выбор — это **фильтр**, а не новая раскладка: порядок остаётся
+    шаблонным, и решать, что за чем идёт, человеку не приходится.
+
+    Урок, чей заголовок не взяли, приезжает на верхний уровень. Иначе он
+    попал бы в предыдущий **взятый** блок — `apply_import` кладёт урок в
+    последний виденный заголовок, — то есть «взял урок из темы А» молча
+    значило бы «положи его в тему Б».
+    """
+    rows = template.rows.prefetch_related("attachments__stored_file")
+
+    if only is None:
+        return [_as_imported(row, at_top_level=False) for row in rows]
+
+    chosen = set(only)
+    taken = []
+    header = None
+
+    for row in rows:
+        if row.is_header:
+            header = row
+            if row.pk in chosen:
+                taken.append(_as_imported(row, at_top_level=False))
+            continue
+
+        if row.pk in chosen:
+            orphan = header is None or header.pk not in chosen
+            taken.append(_as_imported(row, at_top_level=orphan))
+
+    return taken
 
 
 @transaction.atomic
@@ -105,13 +142,18 @@ def write_rows(template, rows) -> int:
 
 
 @transaction.atomic
-def import_into_course(*, template, course_id: int, append: bool) -> dict:
+def import_into_course(*, template, course_id: int, append: bool, rows=None) -> dict:
     """
     Copy a template into the plan of a course.
 
     Straight through `apply_import`, the same call the CSV import makes, so
     numbering and the replace/append behaviour cannot drift between the two
     ways of filling a plan.
+
+    `rows` — взять не весь шаблон, а перечисленные строки: блок, два
+    блока или один урок. Всё остальное при этом не меняется, включая режим:
+    `append` дописывает выбранное в конец плана, `replace` строит план из
+    него одного.
 
     The lesson content is copied; the files are **not**. What the new plan
     gets is its own `Attachment` rows pointing at the template's
@@ -122,7 +164,7 @@ def import_into_course(*, template, course_id: int, append: bool) -> dict:
         PlanNode.objects.filter(course_id=course_id).delete()
 
     created = plan_services.apply_import(
-        course_id, template_as_rows(template), append=append
+        course_id, template_as_rows(template, rows), append=append
     )
 
     files = 0

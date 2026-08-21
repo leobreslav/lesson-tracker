@@ -650,6 +650,176 @@ class ImportTests(LibraryTestCase):
         self.assertEqual(self.structure(), [(False, "Старый урок", None)])
 
 
+class TakingPartOfATemplateTests(LibraryTestCase):
+    """
+    Курс собирают конструктором: блок отсюда, урок оттуда.
+
+    До этого полка умела одно — отдать план целиком, — и «мне нужна только
+    тема про векторы» решалось так: взять сотню чужих уроков и удалить
+    девяносто. Работа на полчаса, после которой отменять нечего.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.template = make_template(
+            self.school, self.colleague, subject=self.subject, rows=SAMPLE
+        )
+        self.rows = {row.title: row.pk for row in self.template.rows.all()}
+
+    def take(self, titles, **overrides):
+        payload = {
+            "course": self.course.pk,
+            "template": self.template.pk,
+            "mode": "append",
+            "rows": [self.rows[title] for title in titles],
+            **overrides,
+        }
+        return self.client.post(
+            reverse("plan-import-from-template"), payload, format="json"
+        )
+
+    def test_a_block_arrives_whole_and_nothing_else_does(self):
+        response = self.take(["Тригонометрия", "Синус суммы", "Косинус суммы"])
+
+        self.assertEqual(response.status_code, 200, response.content)
+        self.assertEqual(
+            self.structure(),
+            [
+                (True, "Тригонометрия", None),
+                (False, "Синус суммы", "Тригонометрия"),
+                (False, "Косинус суммы", "Тригонометрия"),
+            ],
+        )
+
+    def test_one_lesson_is_a_legal_thing_to_take(self):
+        self.take(["Синус суммы"])
+
+        self.assertEqual(self.structure(), [(False, "Синус суммы", None)])
+
+    def test_a_lesson_whose_header_stayed_behind_lands_on_the_top_level(self):
+        """
+        Иначе оно молча уехало бы в чужую тему.
+
+        `apply_import` кладёт урок в последний виденный заголовок, и без
+        отдельного признака «этот урок вне темы» взятый из «Векторов» урок
+        оказался бы внутри взятой «Тригонометрии» — то есть план получил бы
+        связь, которой никто не просил и которую никто не заметит.
+        """
+        self.take(["Тригонометрия", "Синус суммы", "Понятие вектора"])
+
+        self.assertEqual(
+            self.structure(),
+            [
+                (True, "Тригонометрия", None),
+                (False, "Синус суммы", "Тригонометрия"),
+                (False, "Понятие вектора", None),
+            ],
+        )
+
+    def test_the_order_stays_the_templates_own(self):
+        """Выбор — фильтр, а не новая раскладка: порядок решать не человеку."""
+        self.take(["Понятие вектора", "Вводный урок"])
+
+        self.assertEqual(
+            [title for _, title, _ in self.structure()],
+            ["Вводный урок", "Понятие вектора"],
+        )
+
+    def test_it_is_added_to_the_plan_that_is_already_there(self):
+        make_node(self.user, self.course, "Старый урок", position=0)
+
+        self.take(["Векторы", "Понятие вектора"])
+
+        self.assertEqual(
+            [title for _, title, _ in self.structure()],
+            ["Старый урок", "Векторы", "Понятие вектора"],
+        )
+
+    def test_replace_still_replaces_when_only_a_block_is_taken(self):
+        make_node(self.user, self.course, "Старый урок", position=0)
+
+        self.take(["Векторы", "Понятие вектора"], mode="replace")
+
+        self.assertEqual(
+            [title for _, title, _ in self.structure()],
+            ["Векторы", "Понятие вектора"],
+        )
+
+    def test_a_row_of_another_template_is_refused_by_name(self):
+        """
+        Молчать тут нельзя: «взял пять уроков, приехало три» не объяснится.
+
+        Строка чужого шаблона так же не должна приниматься, как чужой
+        шаблон, — и отказ обязан называться, а не терять лишнее по дороге.
+        """
+        other = make_template(
+            self.school, self.colleague, subject=self.subject, rows=SAMPLE
+        )
+        alien = other.rows.first().pk
+
+        response = self.client.post(
+            reverse("plan-import-from-template"),
+            {
+                "course": self.course.pk,
+                "template": self.template.pk,
+                "mode": "append",
+                "rows": [self.rows["Вводный урок"], alien],
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400, response.content)
+        self.assertEqual(response.json()["code"], "template_row_unknown")
+        self.assertFalse(PlanNode.objects.filter(course=self.course).exists())
+
+    def test_an_empty_choice_is_not_a_way_to_wipe_the_plan(self):
+        make_node(self.user, self.course, "Старый урок", position=0)
+
+        response = self.client.post(
+            reverse("plan-import-from-template"),
+            {
+                "course": self.course.pk,
+                "template": self.template.pk,
+                "mode": "replace",
+                "rows": [],
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400, response.content)
+        self.assertTrue(
+            PlanNode.objects.filter(course=self.course, title="Старый урок").exists()
+        )
+
+    def test_the_undo_button_says_a_block_rather_than_a_plan(self):
+        """
+        «Отменить загрузку плана» обещало бы не то: план на месте, а
+        отменяются пять дописанных уроков.
+        """
+        from plans.history import PlanSnapshot
+
+        self.take(["Векторы", "Понятие вектора"])
+
+        snapshot = PlanSnapshot.objects.filter(course=self.course).latest("made_at")
+        self.assertEqual(snapshot.action, "template_part")
+        self.assertEqual(snapshot.detail, self.template.title)
+
+    def test_taking_the_whole_template_is_still_one_field_short(self):
+        """Нет поля — прежнее поведение, до последней строки."""
+        response = self.client.post(
+            reverse("plan-import-from-template"),
+            {
+                "course": self.course.pk,
+                "template": self.template.pk,
+                "mode": "replace",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200, response.content)
+        self.assertEqual(self.structure(), list(SAMPLE_TREE))
+
+
 class RowEditingTests(LibraryTestCase):
     def setUp(self):
         super().setUp()

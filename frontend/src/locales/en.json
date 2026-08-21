@@ -172,6 +172,7 @@
     "subject_required": "Pick a subject: the library is searched by subject and grade.",
     "grade_required": "Pick a grade: the library is searched by subject and grade.",
     "plan_empty": "There is nothing to publish: the plan of this course is empty.",
+    "template_row_unknown": "Some of the chosen rows are not in this plan any more. Open it again and pick them anew.",
     "subject_name_taken": "This school already has a subject with that name.",
     "subject_in_use": "«{{name}}» is used by {{courses}} courses.",
     "content_on_section": "A theme holds no lesson content — only a lesson does.",
@@ -405,7 +406,8 @@
         "import_append": "a file import",
         "import_replace": "replacing the plan from a file",
         "template_replace": "taking a plan from the library",
-        "template_append": "taking a plan from the library"
+        "template_append": "taking a plan from the library",
+        "template_part": "taking a block from the library"
       }
     },
     "intervention": {
@@ -882,7 +884,9 @@
     },
     "search": "Search by title or subject",
     "nothingFound": "Nothing matches.",
-    "look": "Look inside"
+    "look": "Look inside",
+    "pickHint": "Tick what you need: a block header takes the whole block. The ticked rows are added to the end of your plan.",
+    "takePicked": "Take the ticked · {{count}}"
   },
   "lesson": {
     "fields": {

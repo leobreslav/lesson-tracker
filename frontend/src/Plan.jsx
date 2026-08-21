@@ -664,10 +664,32 @@ export default function Plan({ user, onLoggedOut }) {
     run(() => deleteTemplate(template.id)).then(loadShelf)
   }
 
-  const takeTemplate = ({ template, mode }) =>
-    run(() => importTemplate({ course: classId, template, mode })).then(() => {
+  /**
+   * Взять с полки: весь план или выбранные строки.
+   *
+   * `rows` — конструктор: блок, два блока или один урок. Дальше всё общее,
+   * вплоть до ответа, и именно поэтому второго пути тут нет — «взять план»
+   * и «взять из плана» отличаются одним полем запроса.
+   *
+   * Ответ называется словами: без него взятый блок выглядит как ничего не
+   * произошедшее — план длинный, дописанное ушло в конец, и на экране
+   * ничего не сдвинулось.
+   */
+  const takeTemplate = ({ template, mode, rows }) =>
+    run(() =>
+      importTemplate({ course: classId, template, mode, ...(rows ? { rows } : {}) }),
+    ).then((result) => {
       setDialog(null)
       setPreview(null)
+      if (result) {
+        setNotice(
+          t('plan.imported', {
+            rows: result.created_rows,
+            sections: result.created_headers,
+            lessons: result.created_lessons,
+          }),
+        )
+      }
     })
 
   /** A template of mine matching this course's subject and grade, if any. */
@@ -1735,7 +1757,11 @@ export default function Plan({ user, onLoggedOut }) {
         <TemplateView
           template={preview}
           busy={busy}
-          onUse={() => takeTemplate({ template: preview.id, mode: 'replace' })}
+          // без выбора — весь план и заменой, как было; с выбором —
+          // дописыванием: конструктор складывает, а не начинает заново
+          onUse={(picked) =>
+            takeTemplate({ template: preview.id, mode: 'replace', ...(picked ?? {}) })
+          }
           onClose={() => setPreview(null)}
         />
       )}

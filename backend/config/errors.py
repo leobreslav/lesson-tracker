@@ -114,6 +114,7 @@ class Codes:
     SUBJECT_REQUIRED = "subject_required"
     GRADE_REQUIRED = "grade_required"
     PLAN_EMPTY = "plan_empty"
+    TEMPLATE_ROW_UNKNOWN = "template_row_unknown"
     SUBJECT_NAME_TAKEN = "subject_name_taken"
     SUBJECT_IN_USE = "subject_in_use"
     MODE_INVALID = "mode_invalid"
