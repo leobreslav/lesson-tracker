@@ -76,8 +76,36 @@ env-файла). Первое развёртывание на сервер оп�
 | `DOMAIN` | `staging.lbreslav.com` | `lbreslav.com` |
 | `AUTH_BASIC` | включён | `off` |
 | `E2E_TEST_LOGIN` | `true` | строки нет |
+| OAuth-клиент Google | свой `client_id` | свой |
 | выкатка | сама, из crontab | по просьбе человека |
 | TLS | Let's Encrypt, свой сертификат | Let's Encrypt |
+
+#### Клиент Google у контуров разный, и дело не в секрете
+
+Вход идёт **frontend-flow** Google Identity Services: браузер получает
+`id_token`, сервер проверяет его подпись по ключам Google. Обмена кода на
+токен нет (`did_fetch_access_token=False`), поэтому `GOOGLE_CLIENT_SECRET` в
+этом потоке фактически **не работает** — лежит в конфиге allauth и всё.
+
+Работает `client_id`, и работает он аудиторией токена: allauth проверяет
+`id_token` с `audience=app.client_id`. Отсюда то, ради чего клиенты и
+развели: пока `client_id` был общим, токен, выписанный при входе **на
+стенде**, проходил проверку **на проде** — контуры были разделены доменом и
+паролем, но не тем, чем удостоверяются.
+
+Новый клиент заводится в той же консоли Google, тип **Web application**, и
+из полей нужно ровно одно — **Authorized JavaScript origins** с адресом
+контура. Redirect URI не заполняется: редиректа в этом потоке нет.
+
+`VITE_GOOGLE_CLIENT_ID` при смене требует **пересборки фронта** — Vite
+вшивает его в бандл. Проверять поэтому надо не env-файл, а сам бандл:
+
+```bash
+docker compose --env-file .env.prod -f docker-compose.prod.yml exec -T nginx \
+    sh -c "grep -rhoE '[0-9]+-[a-zA-Z0-9_]+\.apps\.googleusercontent\.com' /var/www/frontend | sort -u"
+```
+
+Найтись должен ровно один, и совпасть с тем, что в `.env.prod`.
 
 Сертификат стенда выпущен тем же способом, что боевой — `certbot certonly
 --webroot` по каталогу `certbot/www`, — и работает это потому, что
@@ -218,7 +246,7 @@ docker network prune -f     # старые сети сохранили преж�
 | `~/secrets/lesson-tracker.env.local-prod` | прод-сборка на `http://localhost` | `False` | dev |
 | `~/secrets/lesson-tracker.env.prod` | боевой; копия серверного | `False` | **прод** |
 
-Совпадают у них только ключи Google: клиент один, `http://localhost` есть в
+Совпадают у них только ключи Google: клиент один на эти три, `http://localhost` есть в
 разрешённых origins. `SECRET_KEY`, пароль базы и токены R2 — разные, и это
 не гигиена ради гигиены: `seed_demo --flush` чистит бакет целиком, поэтому
 один запуск не с тем файлом стоил бы школе всех вложений. Отсюда правило:
