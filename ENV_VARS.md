@@ -123,6 +123,9 @@
 | `SECURE_HSTS_SECONDS` | HSTS | `0` |
 | `SECURE_HSTS_INCLUDE_SUBDOMAINS` | HSTS на поддомены | `False` |
 | `NGINX_SSL` | читает `deploy.sh`: включить оверлей с TLS | `false` |
+| `AUTH_BASIC` | realm basic-auth одним словом; `off` — пароля нет | `off` |
+| `AUTH_BASIC_FILE` | файл паролей внутри контейнера | `/etc/nginx/auth/htpasswd` |
+| `HEALTHCHECK_AUTH` | `логин:пароль` для проверки в `deploy.sh` | пусто — проверка идёт без пароля |
 | `BOOTSTRAP_SUPERUSER_EMAIL` | суперпользователь при старте контейнера | пусто — шаг пропускается с предупреждением |
 | `BOOTSTRAP_SUPERUSER_PASSWORD` | его пароль | то же |
 

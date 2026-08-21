@@ -17,6 +17,7 @@ services:
       # тот же mount point, что и в основном файле, — шаблон подменяется
       - ./nginx/ssl.conf.template:/etc/nginx/templates/default.conf.template:ro
       - ./nginx/proxy_params.conf:/etc/nginx/proxy_params.conf:ro
+      - ./nginx/auth:/etc/nginx/auth:ro
       - frontend_dist:/var/www/frontend:ro
       - static_files:/var/www/static:ro
       - ./certbot/www:/var/www/certbot:ro

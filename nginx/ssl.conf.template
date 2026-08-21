@@ -2,7 +2,8 @@
 # прогоняет /etc/nginx/templates/*.template через envsubst при старте и
 # кладёт результат в /etc/nginx/conf.d/.
 #
-# Подставляются ТОЛЬКО ${DOMAIN} и ${DOMAIN_ALIASES}: список задан
+# Подставляются ТОЛЬКО ${DOMAIN}, ${DOMAIN_ALIASES}, ${AUTH_BASIC} и
+# ${AUTH_BASIC_FILE}: список задан
 # переменной NGINX_ENVSUBST_FILTER в compose. Без неё envsubst подставил бы
 # всё подряд — и $host, $uri, $backend_addr превратились бы в пустые строки,
 # то есть конфиг сломался бы молча, а не с ошибкой.
@@ -23,7 +24,8 @@ server {
     listen 80 default_server;
     server_name ${DOMAIN} ${DOMAIN_ALIASES};
 
-    # продление сертификата ходит по http, поэтому редирект стоит после
+    # продление сертификата ходит по http, поэтому редирект стоит после.
+    # Пароля тут нет и быть не должно: certbot приходит без него.
     location /.well-known/acme-challenge/ {
         root /var/www/certbot;
     }
@@ -39,6 +41,13 @@ server {
     server_name ${DOMAIN} ${DOMAIN_ALIASES};
 
     client_max_body_size 25m;
+
+    # Пароль на весь контур. На проде переменных нет, и умолчание в compose
+    # даёт `off` — то есть ровно прежнее поведение, ничего не спрашивается.
+    # Realm пишется одним словом: кавычек тут нет намеренно, иначе значение
+    # `off` перестало бы означать «выключено».
+    auth_basic ${AUTH_BASIC};
+    auth_basic_user_file ${AUTH_BASIC_FILE};
 
     # адрес в переменной, а не в блоке upstream: имя в upstream резолвится
     # один раз при старте, и после пересоздания backend nginx продолжает
