@@ -27,9 +27,9 @@ from .models import (
     Solution,
     SolutionTag,
     Introduction,
-    SavedSearch,
     Source,
     Tag,
+    Topic,
 )
 
 
@@ -362,83 +362,119 @@ class SearchView(BankView):
         )
 
 
-class SavedSearchesView(BankView):
-    """Сохранённые запросы: свои, школьные и системные."""
+class TopicsView(BankView):
+    """
+    Дерево тем: общие, школьные и свои — одним списком с уровнями.
+
+    Тема и сохранённый поиск — одна вещь: названное условие с местом в дереве.
+    Общие ведёт суперпользователь, школьные — администратор, свои человек
+    называет как хочет; родителем своей темы может быть общая — тогда своя
+    ветка живёт внутри общего каталога и сужает его.
+    """
 
     def get(self, request):
-        searches = list(SavedSearch.objects.visible_to(request.user))
-        mine = writable_ids(SavedSearch, request.user, searches)
+        found = list(Topic.objects.visible_to(request.user))
+        mine = writable_ids(Topic, request.user, found)
+        return Response({"topics": topics.tree(found, mine)})
+
+    def post(self, request):
+        parent = None
+        if request.data.get("parent"):
+            parent = get_object_or_404(
+                Topic.objects.visible_to(request.user), pk=request.data["parent"]
+            )
+
+        title = (request.data.get("title") or "").strip()
+        if not title:
+            raise api_error(
+                Codes.SEARCH_NAME_REQUIRED,
+                "У темы должно быть имя — по нему её и найдут.",
+                field="title",
+            )
+
+        expression = request.data.get("expression") or {}
+        if expression:
+            expressions.compile_(expression)
+
+        level = request.data.get("level") or "personal"
+        topic = Topic(
+            title=title,
+            parent=parent,
+            expression=expression,
+            school=None if level == "system" else request.user.school,
+            owner=None if level in ("system", "school") else request.user,
+            created_by=request.user,
+        )
+        topic.save()
+        if not Topic.objects.writable_by(request.user).filter(pk=topic.pk).exists():
+            # Заявленный уровень человеку не по чину. Заводить молча на
+            # уровень ниже нельзя: он назвал место, и место должно быть тем.
+            topic.delete()
+            raise api_error(Codes.BANK_READ_ONLY, "Заводить сюда может не всякий.")
+        return Response(topics.payload(topic, mine=True), status=201)
+
+
+class TopicView(BankView):
+    """
+    Одна тема: что в ней лежит, и правка — если она моя.
+
+    Курс и урок спрашиваются, только когда условие про пройденное: без них
+    закрытая тема честно отвечает «ничего», и это правда, просто бесполезная.
+    """
+
+    def find(self, request, pk, *, writing=False):
+        source = (
+            Topic.objects.writable_by(request.user)
+            if writing
+            else Topic.objects.visible_to(request.user)
+        )
+        return get_object_or_404(source, pk=pk)
+
+    def get(self, request, pk):
+        topic = self.find(request, pk)
+        course, upto = _where_in_the_year(request)
+        condition = topic.condition()
+
+        allowed = topics.covered(course, upto) if course else set()
+        found = (
+            expressions.find(request.user, condition, allowed=allowed)
+            if condition
+            else Problem.objects.visible_to(request.user).filter(retired=False)
+        )
         return Response(
             {
-                "searches": [
-                    _saved(saved, request.user, mine=mine) for saved in searches
-                ]
+                **topics.payload(
+                    topic,
+                    mine=Topic.objects.writable_by(request.user)
+                    .filter(pk=topic.pk)
+                    .exists(),
+                ),
+                "needs_course": expressions.mentions_covered(condition),
+                **search.shape(found),
             }
         )
 
-    def post(self, request):
-        name = (request.data.get("name") or "").strip()
-        if not name:
-            raise api_error(
-                Codes.SEARCH_NAME_REQUIRED,
-                "У сохранённого поиска должно быть имя — по нему его и найдут.",
-            )
-        node = request.data.get("expression") or {}
-        # Кривое выражение отклоняется здесь, а не при первом открытии:
-        # сохранённый поиск, который не ищет, — худший вид мусора.
-        expressions.compile_(node)
-
-        saved = SavedSearch.objects.create(
-            name=name,
-            expression=node,
-            school=None if request.data.get("level") == "system" else request.user.school,
-            owner=None if request.data.get("level") in ("system", "school") else request.user,
-            created_by=request.user,
-        )
-        if not SavedSearch.objects.writable_by(request.user).filter(pk=saved.pk).exists():
-            # Заявленный уровень человеку не по чину — не заводим молча на
-            # уровень ниже: он назвал место, и место должно быть тем.
-            saved.delete()
-            raise api_error(
-                Codes.BANK_READ_ONLY, "Сохранять сюда может не всякий."
-            )
-        return Response(_saved(saved, request.user), status=201)
-
-
-class SavedSearchView(BankView):
-    """Один сохранённый запрос: переименовать, уточнить, убрать."""
-
-    def get_object(self, request, pk, *, writing=False):
-        source = SavedSearch.objects.writable_by(request.user) if writing else SavedSearch.objects.visible_to(request.user)
-        return get_object_or_404(source, pk=pk)
-
     def patch(self, request, pk):
-        saved = self.get_object(request, pk, writing=True)
-        if "name" in request.data:
-            saved.name = (request.data["name"] or "").strip()
+        topic = self.find(request, pk, writing=True)
+        if "title" in request.data:
+            topic.title = (request.data["title"] or "").strip()
         if "expression" in request.data:
             expressions.compile_(request.data["expression"] or {})
-            saved.expression = request.data["expression"]
-        saved.save(update_fields=["name", "expression"])
-        return Response(_saved(saved, request.user))
+            topic.expression = request.data["expression"] or {}
+        if "parent" in request.data:
+            topic.parent = (
+                get_object_or_404(
+                    Topic.objects.visible_to(request.user), pk=request.data["parent"]
+                )
+                if request.data["parent"]
+                else None
+            )
+        topic.save()
+        return Response(topics.payload(topic, mine=True))
 
     def delete(self, request, pk):
-        self.get_object(request, pk, writing=True).delete()
+        topics.remove(self.find(request, pk, writing=True))
         return Response(status=204)
-
-
-def _saved(saved, user, *, mine=None):
-    """Одна строка списка. `mine` — уже посчитанное право, чтобы не спрашивать
-    его по разу на запись."""
-    if mine is None:
-        mine = writable_ids(SavedSearch, user, [saved])
-    return {
-        "id": saved.pk,
-        "name": saved.name,
-        "level": saved.level,
-        "expression": saved.expression,
-        "may_edit": saved.pk in mine,
-    }
 
 
 class CopyView(BankView):
@@ -512,71 +548,13 @@ class AnalogueView(BankView):
         return Response(status=204)
 
 
-class TopicsView(BankView):
-    """
-    Тематический каталог: темы деревом.
-
-    Заводит их суперпользователь — каталог общий, как и словарь. Школьная
-    «своя тема» рядом с системной означала бы два ответа на один вопрос; своё
-    выражается сохранённым поиском и своей книгой.
-    """
-
-    def get(self, request):
-        return Response(
-            {"topics": topics.tree(), "may_edit": request.user.is_superuser}
-        )
-
-    def post(self, request):
-        if not request.user.is_superuser:
-            api_error(
-                Codes.SUPERUSER_ONLY_TAGS,
-                "Only a superuser edits the thematic catalogue: it is shared.",
-                field="title",
-            )
-        topic = topics.Topic.objects.create(
-            title=(request.data.get("title") or "").strip(),
-            parent_id=request.data.get("parent") or None,
-            closed=bool(request.data.get("closed")),
-        )
-        topic.essence.set(Tag.objects.filter(pk__in=request.data.get("essence") or []))
-        topic.forbidden.set(
-            Tag.objects.filter(pk__in=request.data.get("forbidden") or [])
-        )
-        return Response({"id": topic.pk}, status=201)
-
-
-class TopicView(BankView):
-    """
-    Что лежит в теме — с оглядкой на курс, если его назвали.
-
-    Курс и урок необязательны: без них тема отвечает «что вообще есть», с ними
-    — «что из этого мы умеем к этому дню». Это два разных вопроса, и второй
-    имеет смысл только у закрытой темы.
-    """
-
-    def get(self, request, pk):
-        topic = get_object_or_404(topics.Topic, pk=pk)
-        course, upto = _where_in_the_year(request)
-
-        found = topics.problems_in(topic, user=request.user, course=course, upto=upto)
-        return Response(
-            {
-                "id": topic.pk,
-                "title": topic.title,
-                "closed": topic.closed,
-                "essence": [
-                    {"id": tag.pk, "name": tag.name} for tag in topic.essence.all()
-                ],
-                "forbidden": [
-                    {"id": tag.pk, "name": tag.name} for tag in topic.forbidden.all()
-                ],
-                **search.shape(found),
-            }
-        )
-
-
 def _where_in_the_year(request):
-    """Курс и урок из строки запроса — оба только среди своих."""
+    """
+    Курс и урок из строки запроса — оба только среди своих.
+
+    Нужны они одному листу выражения — «не выходит за пройденное»: пройденное
+    приходит извне, из хронологии плана, и другого источника у него нет.
+    """
     from plans.models import PlanNode
     from schedule.models import Course
 

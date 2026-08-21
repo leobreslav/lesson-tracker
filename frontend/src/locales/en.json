@@ -1320,7 +1320,12 @@
       "found_other": "{{count}} problems",
       "more_one": "and {{count}} more — narrow the search",
       "more_other": "and {{count}} more — narrow the search",
-      "open": "Search"
+      "open": "Search",
+      "where": "Where it lies",
+      "anywhere": "everything of mine",
+      "inBooks": "in books",
+      "onlyInWorks": "only in assignments",
+      "nowhere": "not filed anywhere"
     },
     "without": "without",
     "expression": {
@@ -1374,11 +1379,13 @@
     "topics": {
       "title": "Topics",
       "none": "The thematic catalogue is empty: topics are set up by a superuser.",
-      "closed": "covered material only",
       "upto": "Up to lesson",
       "wholeYear": "the whole year",
       "nothing": "No solutions on this topic yet.",
-      "nothingYet": "Nothing for this lesson yet — the notions such a solution needs have not been covered."
+      "nothingYet": "Nothing for this lesson yet — the notions such a solution needs have not been covered.",
+      "add": "New topic",
+      "name": "Title",
+      "inside": "inside “{{name}}” — the conditions add up"
     },
     "inSolution": "solution",
     "tags": {

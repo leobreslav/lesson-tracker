@@ -954,6 +954,7 @@ export const searchProblems = (query) => {
   const params = new URLSearchParams()
   if (query.text) params.set('text', query.text)
   if (query.level) params.set('level', query.level)
+  if (query.shelved) params.set('shelved', query.shelved)
   ;(query.tags || []).forEach((id) => params.append('tag', id))
   ;(query.uses || []).forEach((id) => params.append('uses', id))
   ;(query.avoids || []).forEach((id) => params.append('avoids', id))
@@ -964,16 +965,18 @@ export const searchProblems = (query) => {
 export const searchByExpression = (expression) =>
   request('/api/bank/search/', { method: 'POST', body: { expression } })
 
-export const fetchSavedSearches = () => request('/api/bank/searches/')
+/**
+ * Темы: они же сохранённые поиски. Одна вещь — названное условие с местом в
+ * дереве, — поэтому и адрес у них один.
+ */
+export const saveTopic = (fields) =>
+  request('/api/bank/topics/', { method: 'POST', body: fields })
 
-export const saveSearch = (fields) =>
-  request('/api/bank/searches/', { method: 'POST', body: fields })
+export const updateTopic = (id, fields) =>
+  request(`/api/bank/topics/${id}/`, { method: 'PATCH', body: fields })
 
-export const updateSavedSearch = (id, fields) =>
-  request(`/api/bank/searches/${id}/`, { method: 'PATCH', body: fields })
-
-export const deleteSavedSearch = (id) =>
-  request(`/api/bank/searches/${id}/`, { method: 'DELETE' })
+export const deleteTopic = (id) =>
+  request(`/api/bank/topics/${id}/`, { method: 'DELETE' })
 
 /**
  * Взять задачу или раздел к себе. `mode` — «ссылка» или «своя копия», и это

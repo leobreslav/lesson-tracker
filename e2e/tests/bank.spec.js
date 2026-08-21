@@ -92,6 +92,12 @@ test('поиск сужается словом и гранью, и грань г
   await expect(facets.filter({ hasText: /^алгебра/ })).toContainText('3')
   await expect(facets.filter({ hasText: 'решение: алгебра' })).toContainText('2')
 
+  // по умолчанию видно всё своё, включая условия, набранные прямо в работах:
+  // «я это уже спрашивал» обязано находить и их
+  await expect(page.locator('.problem-list li').first()).toBeVisible()
+  await page.getByLabel('Где лежит').selectOption('yes')
+  await expect(page.locator('.problem-list li')).toHaveCount(4)
+
   await page.getByRole('button', { name: 'геометрия' }).click()
   await expect(page.locator('.problem-list li')).toHaveCount(1)
   await expect(page.locator('.problem-list')).toContainText('Окружность')
@@ -222,7 +228,7 @@ test('хронология: понятие вводится однажды и п
   await expect(rows.first()).not.toContainText('теорема Виета')
 })
 
-test('закрытая тема отвечает по хронологии, открытая — по всему банку', async ({
+test('тема про пройденное отвечает по хронологии, обычная — по всему банку', async ({
   page,
   signIn,
 }) => {
@@ -230,14 +236,35 @@ test('закрытая тема отвечает по хронологии, от
   await page.goto('/bank/topics')
   await ready(page)
 
-  // открытая тема: разбор через замену переменной в неё попадает
+  // обычная тема: разбор через замену переменной в неё попадает
   await page.getByRole('button', { name: 'Квадратные уравнения' }).click()
   await expect(page.locator('.problem-list li')).toHaveCount(2)
 
-  // закрытая: пройдена только теорема Виета, значит и задача одна
+  // вложенная и про пройденное: она сужает родителя и смотрит в хронологию —
+  // пройдена только теорема Виета, значит и задача одна
   await page.getByRole('button', { name: 'Что мы уже умеем' }).click()
   await expect(page.locator('.problem-list li')).toHaveCount(1)
   await expect(page.locator('.problem-list')).toContainText('x^2 - 5x + 6')
+})
+
+test('своя тема заводится и живёт внутри общей, суживая её', async ({ page, signIn }) => {
+  await signIn(PEOPLE.ivanova)
+  await page.goto('/bank/topics')
+  await ready(page)
+
+  await page.getByRole('button', { name: 'Квадратные уравнения' }).click()
+  await page.getByRole('button', { name: 'Новая тема' }).click()
+  await expect(page.locator('.panel').first()).toContainText('внутри «Квадратные уравнения»')
+
+  await page.getByLabel('Название').fill('Мои на пробник')
+  await page.locator('.panel').first().getByRole('button', { name: 'Сохранить' }).click()
+
+  const mine = page.locator('.outline li', { hasText: 'Мои на пробник' })
+  await expect(mine).toContainText('Мои')
+
+  // пустое условие значит «равна родителю»: раздел ради структуры
+  await mine.getByRole('button', { name: 'Мои на пробник' }).click()
+  await expect(page.locator('.problem-list li')).toHaveCount(2)
 })
 
 test('тег вешается на условие и на решение — у решения со знаком', async ({

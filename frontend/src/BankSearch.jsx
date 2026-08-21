@@ -10,10 +10,9 @@ import Switch from './Switch'
 import { prune } from './expressionTree'
 import { taken } from './basket'
 import {
-  deleteSavedSearch,
-  fetchSavedSearches,
   fetchTags,
-  saveSearch,
+  fetchTopics,
+  saveTopic,
   searchByExpression,
   searchProblems,
 } from './api'
@@ -39,6 +38,8 @@ export default function BankSearch() {
   const [found, setFound] = useState(null)
   const [error, setError] = useState(null)
   const [picked, setPicked] = useState(taken())
+  // '' — всё своё, 'yes' — разложенное по книгам, 'no' — только из работ
+  const [shelved, setShelved] = useState('')
   // Второй вход в тот же набор: грани отвечают только на «и», выражение — на
   // «или» и на отрицание. Вид один за раз: два списка результатов рядом
   // означали бы два ответа на вопрос «что нашлось».
@@ -53,8 +54,11 @@ export default function BankSearch() {
     fetchTags()
       .then((answer) => setVocabulary(answer.tags))
       .catch(() => setVocabulary([]))
-    fetchSavedSearches()
-      .then((answer) => setSaved(answer.searches))
+    // Сохранённые поиски и темы — одно и то же: названное условие. Здесь
+    // показываются те, что без родителя: их условие ни с чем не складывается,
+    // и подставить его в поиск можно как есть.
+    fetchTopics()
+      .then((answer) => setSaved(answer.topics.filter((one) => !one.parent)))
       .catch(() => setSaved([]))
   }, [])
 
@@ -76,7 +80,7 @@ export default function BankSearch() {
       const asked =
         byTree && trimmed
           ? searchByExpression(trimmed)
-          : searchProblems(byTree ? {} : { text, tags, uses, avoids })
+          : searchProblems(byTree ? {} : { text, tags, uses, avoids, shelved })
       asked
         .then((answer) => {
           if (!alive) return
@@ -90,7 +94,7 @@ export default function BankSearch() {
       clearTimeout(timer)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [text, key, byTree, JSON.stringify(tree)])
+  }, [text, key, byTree, shelved, JSON.stringify(tree)])
 
   const drop = (facet) =>
     setChosen(chosen.filter((one) => !(one.tag === facet.tag && one.side === facet.side)))
@@ -133,7 +137,7 @@ export default function BankSearch() {
                 <option value="">—</option>
                 {saved.map((one) => (
                   <option key={one.id} value={one.id}>
-                    {one.name}
+                    {one.title}
                   </option>
                 ))}
               </select>
@@ -160,9 +164,14 @@ export default function BankSearch() {
                     disabled={!naming.trim()}
                     onClick={async () => {
                       try {
-                        await saveSearch({ name: naming, expression: prune(tree) || { all: [] } })
+                        await saveTopic({
+                          title: naming,
+                          expression: prune(tree) || {},
+                        })
                         setNaming(null)
-                        setSaved((await fetchSavedSearches()).searches)
+                        setSaved(
+                          (await fetchTopics()).topics.filter((one) => !one.parent),
+                        )
                       } catch (problem) {
                         setError(problem.message)
                       }
@@ -182,6 +191,14 @@ export default function BankSearch() {
             <label className="field">
               <span>{t('bank.search.text')}</span>
               <input value={text} onChange={(event) => setText(event.target.value)} />
+            </label>
+            <label className="field">
+              <span>{t('bank.search.where')}</span>
+              <select value={shelved} onChange={(event) => setShelved(event.target.value)}>
+                <option value="">{t('bank.search.anywhere')}</option>
+                <option value="yes">{t('bank.search.inBooks')}</option>
+                <option value="no">{t('bank.search.onlyInWorks')}</option>
+              </select>
             </label>
           </div>
         )}
@@ -240,7 +257,11 @@ export default function BankSearch() {
                     <MathText text={problem.text} />
                   </Link>
                 </span>
-                <span className="hint">{t(`bank.levels.${problem.level}`)}</span>
+                <span className="hint">
+                  {problem.where
+                    ? problem.where.title
+                    : t('bank.search.nowhere')}
+                </span>
               </li>
             ))}
           </ul>

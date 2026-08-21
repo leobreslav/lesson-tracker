@@ -452,43 +452,6 @@ class ExpressionTests(SchoolTestMixin, APITestCase):
         self.assertIn("2", response.data["detail"])
 
 
-class SavedSearchTests(SchoolTestMixin, APITestCase):
-    def setUp(self):
-        super().setUp()
-        self.tag = Tag.objects.create(name="алгебра", kind="subject")
-
-    def save(self, user, **fields):
-        self.client.force_authenticate(user)
-        body = {"name": "Мой поиск", "expression": {"tag": self.tag.pk}, **fields}
-        return self.client.post(reverse("bank-searches"), body, format="json")
-
-    def test_a_saved_search_keeps_the_tree_and_comes_back(self):
-        made = self.save(self.user)
-        self.assertEqual(made.status_code, 201)
-        self.assertEqual(made.data["level"], "personal")
-
-        listed = self.client.get(reverse("bank-searches"))
-        self.assertEqual(
-            [one["expression"] for one in listed.data["searches"]],
-            [{"tag": self.tag.pk}],
-        )
-
-    def test_a_broken_tree_is_refused_at_saving_time(self):
-        answer = self.save(self.user, expression={"колдовство": 1})
-        self.assertEqual(answer.status_code, 400)
-        self.assertEqual(answer.data["code"], "bank_expression_bad")
-
-    def test_a_teacher_cannot_save_for_the_whole_school(self):
-        self.assertEqual(self.save(self.user, level="school").status_code, 400)
-        self.assertEqual(self.save(self.admin, level="school").status_code, 201)
-
-    def test_a_colleague_does_not_see_a_personal_search(self):
-        self.save(self.user)
-        self.client.force_authenticate(self.colleague)
-        listed = self.client.get(reverse("bank-searches"))
-        self.assertEqual(listed.data["searches"], [])
-
-
 class CopyingTests(SchoolTestMixin, APITestCase):
     """
     Взять чужое к себе. Проверяются обе стороны разницы между ссылкой и своей
@@ -678,9 +641,11 @@ class ChronologyTests(SchoolTestMixin, APITestCase):
 
 class TopicTests(SchoolTestMixin, APITestCase):
     """
-    Тема как условие. Главное здесь — **закрытость**: открытая спрашивает «есть
-    ли в разборе вот это», закрытая ещё и «нет ли в нём ничего сверх
-    пройденного».
+    Тема — папка, заданная условием, и она же сохранённый поиск.
+
+    Главное здесь два правила: **вложение сужает** (условие ребёнка включает
+    родительское) и **закрытость** — «разбор не выходит за пройденное»,
+    которое считается по хронологии курса.
     """
 
     def setUp(self):
@@ -688,26 +653,26 @@ class TopicTests(SchoolTestMixin, APITestCase):
         self.course = make_course(self.school)
         self.lesson = make_node(self.user, self.course, "Теорема Виета")
 
-        self.square = Tag.objects.create(name="квадратное уравнение", kind=OBJECT)
+        self.algebra = Tag.objects.create(name="алгебра", kind="subject")
         self.vieta = Tag.objects.create(name="теорема Виета", kind="theorem")
         self.derivative = Tag.objects.create(name="производная", kind=METHOD)
 
-        self.problem = Problem.objects.create(
-            text="$x^2-5x+6=0$",
-            school=self.school,
-            owner=self.user,
-            created_by=self.user,
+        self.problem = self.make_problem("$x^2-5x+6=0$")
+        self.plain = self.solution(self.problem, [self.algebra, self.vieta])
+        self.fancy = self.solution(self.problem, [self.algebra, self.derivative])
+
+        self.other = self.make_problem("Окружность")
+        self.solution(self.other, [self.derivative])
+
+    def make_problem(self, text):
+        return Problem.objects.create(
+            text=text, school=self.school, owner=self.user, created_by=self.user
         )
-        self.plain = self.solution("в лоб", [self.square, self.vieta])
-        self.fancy = self.solution("через производную", [self.square, self.derivative])
 
-        self.topic = Topic.objects.create(title="Квадратные уравнения")
-        self.topic.essence.set([self.square])
-
-    def solution(self, title, tags):
+    def solution(self, problem, tags):
         made = Solution.objects.create(
-            problem=self.problem,
-            title=title,
+            problem=problem,
+            title="разбор",
             text="…",
             school=self.school,
             owner=self.user,
@@ -717,57 +682,138 @@ class TopicTests(SchoolTestMixin, APITestCase):
             made.links.create(tag=tag, side=SolutionTag.USES)
         return made
 
-    def found(self, **params):
+    def make_topic(self, title, expression, parent=None, **fields):
+        return Topic.objects.create(
+            title=title,
+            expression=expression,
+            parent=parent,
+            created_by=self.root if hasattr(self, "root") else None,
+            **fields,
+        )
+
+    def found(self, topic, **params):
         self.client.force_authenticate(self.user)
-        answer = self.client.get(reverse("bank-topic", args=[self.topic.pk]), params)
+        answer = self.client.get(reverse("bank-topic", args=[topic.pk]), params)
         self.assertEqual(answer.status_code, 200, answer.data)
-        return answer.data
+        return {row["id"] for row in answer.data["problems"]}
 
-    def test_an_open_topic_takes_any_solution_with_the_essence(self):
-        self.assertEqual(self.found()["total"], 1)
-        self.assertEqual(
-            set(topics.solutions_in(self.topic, user=self.user).values_list("pk", flat=True)),
-            {self.plain.pk, self.fancy.pk},
+    def test_a_topic_finds_what_its_condition_says(self):
+        topic = self.make_topic("Алгебра", {"solution": {"uses": [self.algebra.pk]}})
+        self.assertEqual(self.found(topic), {self.problem.pk})
+
+    def test_nesting_narrows_it(self):
+        parent = self.make_topic("Алгебра", {"solution": {"uses": [self.algebra.pk]}})
+        # у ребёнка своё условие — одно, без повторения родительского
+        child = self.make_topic(
+            "Через Виета", {"solution": {"uses": [self.vieta.pk]}}, parent=parent
         )
 
-    def test_a_closed_topic_refuses_what_goes_beyond_what_was_covered(self):
-        self.topic.closed = True
-        self.topic.save(update_fields=["closed"])
+        self.assertEqual(self.found(child), {self.problem.pk})
 
-        # ничего не пройдено: даже разбор через Виета выходит за суть темы
-        self.assertEqual(
-            set(topics.solutions_in(self.topic, user=self.user, course=self.course)),
-            set(),
+        # а вот ребёнок, чьё условие не пересекается с родителем, пуст:
+        # вниз по дереву всегда уже
+        deeper = self.make_topic(
+            "Про окружность", {"text": "Окружность"}, parent=child
         )
+        self.assertEqual(self.found(deeper), set())
+
+    def test_a_topic_without_a_condition_equals_its_parent(self):
+        parent = self.make_topic("Алгебра", {"solution": {"uses": [self.algebra.pk]}})
+        section = self.make_topic("Просто раздел", {}, parent=parent)
+        self.assertEqual(self.found(section), {self.problem.pk})
+
+    def test_closed_asks_the_chronology_of_the_course(self):
+        topic = self.make_topic(
+            "Что мы умеем",
+            {"solution": {"uses": [self.algebra.pk], "covered": True}},
+        )
+
+        # ничего не пройдено — ни один разбор не годится
+        self.assertEqual(self.found(topic, course=self.course.pk), set())
 
         topics.introduce(self.course, self.lesson, self.vieta)
+        topics.introduce(self.course, self.lesson, self.algebra)
+        self.assertEqual(self.found(topic, course=self.course.pk), {self.problem.pk})
+
+    def test_the_screen_is_told_that_a_course_is_needed(self):
+        topic = self.make_topic("Умеем", {"solution": {"covered": True}})
+        self.client.force_authenticate(self.user)
+        answer = self.client.get(reverse("bank-topic", args=[topic.pk]))
+        self.assertTrue(answer.data["needs_course"])
+
+    def test_the_requirements_are_asked_of_one_solution(self):
+        # «через Виета и без производной» — про один разбор: у этой задачи
+        # это два разных, и такому условию она не отвечает
+        topic = self.make_topic(
+            "Оба сразу",
+            {"solution": {"uses": [self.vieta.pk, self.derivative.pk]}},
+        )
+        self.assertEqual(self.found(topic), set())
+
+    def test_a_saved_search_is_a_topic_of_my_own(self):
+        self.client.force_authenticate(self.user)
+        made = self.client.post(
+            reverse("bank-topics"),
+            {"title": "Мой запрос", "expression": {"tag": self.algebra.pk}},
+            format="json",
+        )
+        self.assertEqual(made.status_code, 201)
+        self.assertEqual(made.data["level"], "personal")
+
+        listed = self.client.get(reverse("bank-topics"))
         self.assertEqual(
-            set(
-                topics.solutions_in(
-                    self.topic, user=self.user, course=self.course
-                ).values_list("pk", flat=True)
-            ),
-            {self.plain.pk},
+            [row["title"] for row in listed.data["topics"]], ["Мой запрос"]
         )
 
-    def test_a_forbidden_notion_throws_the_solution_out(self):
-        self.topic.forbidden.set([self.derivative])
-        self.assertEqual(
-            set(
-                topics.solutions_in(self.topic, user=self.user).values_list(
-                    "pk", flat=True
-                )
-            ),
-            {self.plain.pk},
-        )
-
-    def test_only_a_superuser_edits_the_thematic_catalogue(self):
-        self.client.force_authenticate(self.admin)
+    def test_a_broken_condition_is_refused_at_saving_time(self):
+        self.client.force_authenticate(self.user)
         answer = self.client.post(
-            reverse("bank-topics"), {"title": "Своя тема"}, format="json"
+            reverse("bank-topics"),
+            {"title": "Кривой", "expression": {"колдовство": 1}},
+            format="json",
         )
         self.assertEqual(answer.status_code, 400)
-        self.assertEqual(answer.data["code"], "superuser_only_tags")
+        self.assertEqual(answer.data["code"], "bank_expression_bad")
+
+    def test_a_teacher_cannot_start_a_common_topic(self):
+        self.client.force_authenticate(self.user)
+        answer = self.client.post(
+            reverse("bank-topics"),
+            {"title": "Общая", "expression": {}, "level": "system"},
+            format="json",
+        )
+        self.assertEqual(answer.status_code, 400)
+
+    def test_a_colleague_does_not_see_my_topic(self):
+        self.client.force_authenticate(self.user)
+        self.client.post(
+            reverse("bank-topics"), {"title": "Моя", "expression": {}}, format="json"
+        )
+
+        self.client.force_authenticate(self.colleague)
+        listed = self.client.get(reverse("bank-topics"))
+        self.assertEqual(listed.data["topics"], [])
+
+    def test_deleting_a_parent_imprints_its_condition_into_the_children(self):
+        parent = self.make_topic("Алгебра", {"solution": {"uses": [self.algebra.pk]}})
+        child = self.make_topic(
+            "Через Виета", {"solution": {"uses": [self.vieta.pk]}}, parent=parent
+        )
+
+        topics.remove(parent)
+        child.refresh_from_db()
+
+        # ветка не стала шире, чем была: условие родителя впечатано
+        self.assertEqual(
+            child.expression,
+            {
+                "all": [
+                    {"solution": {"uses": [self.algebra.pk]}},
+                    {"solution": {"uses": [self.vieta.pk]}},
+                ]
+            },
+        )
+        self.assertIsNone(child.parent_id)
 
 
 class TagLinkTests(SchoolTestMixin, APITestCase):
@@ -913,3 +959,53 @@ class ForkTests(SchoolTestMixin, APITestCase):
 
         # у оригинала разметка не тронута: копия — вторая строка, а не переезд
         self.assertEqual(common.links.count(), 1)
+
+
+class ShelvedTests(SchoolTestMixin, APITestCase):
+    """
+    «В книге» против «только в работе».
+
+    После того как ячейка работы стала условием, личный поиск наполовину
+    состоит из набранного на бегу. Это правильно — «я это уже спрашивал»
+    обязано их находить, — но отличать одно от другого надо: грань и делает
+    это, а строка результата называет место.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.book = Source.objects.create(
+            title="Мои листочки",
+            school=self.school,
+            owner=self.user,
+            created_by=self.user,
+        )
+        self.shelved = self.problem("В книге")
+        Entry.objects.create(source=self.book, problem=self.shelved, label="1")
+        self.scratch = self.problem("Только в работе")
+
+    def problem(self, text):
+        return Problem.objects.create(
+            text=text, school=self.school, owner=self.user, created_by=self.user
+        )
+
+    def find(self, **params):
+        self.client.force_authenticate(self.user)
+        return self.client.get(reverse("bank-search"), params).data
+
+    def test_by_default_everything_of_mine_is_found(self):
+        self.assertEqual(self.find()["total"], 2)
+
+    def test_the_facet_tells_them_apart(self):
+        self.assertEqual(
+            [row["id"] for row in self.find(shelved="yes")["problems"]],
+            [self.shelved.pk],
+        )
+        self.assertEqual(
+            [row["id"] for row in self.find(shelved="no")["problems"]],
+            [self.scratch.pk],
+        )
+
+    def test_the_row_says_where_it_lies(self):
+        rows = {row["id"]: row["where"] for row in self.find()["problems"]}
+        self.assertEqual(rows[self.shelved.pk], {"kind": "book", "title": "Мои листочки"})
+        self.assertIsNone(rows[self.scratch.pk])

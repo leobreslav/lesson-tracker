@@ -12,16 +12,14 @@
 называет разбор, поэтому и тема — это набор **разборов**, а задачи в неё
 попадают через них.
 
-Закрытость темы — отдельный флаг, и это самое тонкое место. Открытая тема
-спрашивает «пользуется ли разбор вот этим»; закрытая — ещё и «не пользуется ли
-он ничем сверх пройденного». Второе нужно ровно для «дайте задач на сейчас»:
-разбор через производную формально пользуется квадратным трёхчленом, но
-шестикласснику он бесполезен.
+Закрытость темы — не флаг, а лист выражения (`{"solution": {"covered": true}}`),
+и это самое тонкое место. Обычная тема спрашивает «пользуется ли разбор вот
+этим»; закрытая — ещё и «не пользуется ли он ничем сверх пройденного». Второе
+нужно ровно для «дайте задач на сейчас»: разбор через производную формально
+пользуется квадратным трёхчленом, но шестикласснику он бесполезен.
 """
 
-from django.db.models import Count, Exists, OuterRef
-
-from .models import Introduction, Problem, Solution, SolutionTag, Tag, Topic
+from .models import Introduction, Topic
 
 
 def introduce(course, node, tag):
@@ -67,71 +65,66 @@ def _order(course) -> dict[int, int]:
     }
 
 
-def solutions_in(topic, *, user, course=None, upto=None):
+def covered(course, upto=None) -> set:
+    """Что пройдено к этому уроку — то же, что `introduced`, но именем яснее."""
+    return introduced(course, upto=upto)
+
+
+def tree(found, mine) -> list[dict]:
     """
-    Разборы темы — из того, что человеку видно.
+    Темы деревом: плоский список с уровнями, как оглавление книги.
 
-    Суть складывается «и»: тема это пересечение средств. Запрещённое
-    отсекается. Закрытая тема вдобавок требует, чтобы **ни одного** чужого
-    средства в разборе не было.
+    Уровень считается по родителю, а не по владению: дерево общее, и своя
+    ветка внутри общей темы стоит там, где её положили.
     """
-    found = Solution.objects.visible_to(user).filter(retired=False)
-
-    needed = list(topic.essence.values_list("pk", flat=True))
-    for tag_id in needed:
-        found = found.filter(links__tag_id=tag_id, links__side=SolutionTag.USES)
-
-    for tag_id in topic.forbidden.values_list("pk", flat=True):
-        found = found.exclude(links__tag_id=tag_id, links__side=SolutionTag.USES)
-
-    if topic.closed:
-        allowed = set(needed)
-        if course is not None:
-            allowed |= introduced(course, upto=upto)
-        # «Пользуется чем-то сверх дозволенного» — это существование связи с
-        # тегом не из списка. Спрашивается оно подзапросом, и иначе нельзя:
-        # `exclude(~Q(...), ...)` на многозначной связи соединяет условия не с
-        # той строкой и отвечает «ничего не нашлось» молча.
-        outside = SolutionTag.objects.filter(
-            solution=OuterRef("pk"), side=SolutionTag.USES
-        ).exclude(tag_id__in=allowed)
-        found = found.filter(~Exists(outside))
-
-    return found.distinct()
-
-
-def problems_in(topic, **kwargs):
-    """Задачи темы — те, у которых есть подходящий разбор."""
-    user = kwargs["user"]
-    solutions = solutions_in(topic, **kwargs)
-    return (
-        Problem.objects.visible_to(user)
-        .filter(retired=False, pk__in=solutions.values("problem_id"))
-        .distinct()
-    )
-
-
-def tree(course=None, *, upto=None):
-    """Темы деревом, с числом разборов у каждой — как оглавление у книги."""
-    counted = {
-        row["pk"]: row["how_many"]
-        for row in Topic.objects.values("pk").annotate(how_many=Count("essence"))
-    }
+    by_id = {topic.pk: topic for topic in found}
     depth = {}
-    out = []
-    for topic in Topic.objects.all().order_by("position", "title", "id"):
-        depth[topic.pk] = depth.get(topic.parent_id, -1) + 1
-        out.append(
-            {
-                "id": topic.pk,
-                "title": topic.title,
-                "parent": topic.parent_id,
-                "depth": depth[topic.pk],
-                "closed": topic.closed,
-                "essence": counted.get(topic.pk, 0),
-            }
-        )
-    return out
+
+    def deep(topic):
+        if topic.pk in depth:
+            return depth[topic.pk]
+        parent = by_id.get(topic.parent_id)
+        depth[topic.pk] = 0 if parent is None else deep(parent) + 1
+        return depth[topic.pk]
+
+    ordered = sorted(found, key=lambda topic: (deep(topic), topic.position, topic.title))
+    return [payload(topic, mine=topic.pk in mine, depth=deep(topic)) for topic in ordered]
+
+
+def payload(topic, *, mine, depth=0) -> dict:
+    return {
+        "id": topic.pk,
+        "title": topic.title,
+        "parent": topic.parent_id,
+        "depth": depth,
+        "level": topic.level,
+        "expression": topic.expression,
+        "may_edit": mine,
+    }
+
+
+def remove(topic) -> None:
+    """
+    Убрать тему, **впечатав** её условие в детей.
+
+    Иначе ветка, висевшая на удалённой, молча стала бы шире, чем была, и
+    человек узнал бы об этом по чужим задачам в ней.
+    """
+    from django.db import transaction
+
+    with transaction.atomic():
+        for child in topic.children.all():
+            parts = [
+                part
+                for part in (topic.expression, child.expression)
+                if part
+            ]
+            child.expression = (
+                {} if not parts else parts[0] if len(parts) == 1 else {"all": parts}
+            )
+            child.parent = topic.parent
+            child.save(update_fields=["expression", "parent"])
+        topic.delete()
 
 
 def chronology(course) -> list[dict]:
@@ -161,13 +154,4 @@ def chronology(course) -> list[dict]:
     ]
 
 
-__all__ = [
-    "introduce",
-    "introduced",
-    "solutions_in",
-    "problems_in",
-    "tree",
-    "chronology",
-    "Tag",
-    "Topic",
-]
+__all__ = ["introduce", "introduced", "covered", "tree", "payload", "remove", "chronology", "Topic"]

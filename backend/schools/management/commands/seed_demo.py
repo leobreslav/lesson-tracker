@@ -1039,13 +1039,21 @@ class Command(BaseCommand):
                 solution.links.create(tag=tags[name], side=SolutionTag.USES)
 
     def topics(self, tags):
-        """Две темы: открытая и закрытая — разницу между ними видно только парой."""
+        """
+        Две темы, и вторая вложена в первую: **вложение сужает**, и увидеть
+        это можно только парой. Заодно вторая — про пройденное, то есть та,
+        что спрашивает курс и урок.
+        """
+        parent = None
         for title, essence, closed in DEMO_TOPICS:
-            topic, made = Topic.objects.get_or_create(
-                title=title, defaults={"closed": closed}
+            wanted = {"uses": [tags[name].pk for name in essence]}
+            if closed:
+                wanted["covered"] = True
+            topic, _ = Topic.objects.get_or_create(
+                title=title,
+                defaults={"expression": {"solution": wanted}, "parent": parent},
             )
-            if made:
-                topic.essence.set([tags[name] for name in essence])
+            parent = parent or topic
 
     def chronology(self, courses, tags):
         """

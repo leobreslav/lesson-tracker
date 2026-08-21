@@ -28,7 +28,7 @@ from .models import (
 LIMIT = 60
 
 
-def find(user, *, text="", tags=(), uses=(), avoids=(), level=None):
+def find(user, *, text="", tags=(), uses=(), avoids=(), level=None, shelved=None):
     """
     Задачи, отвечающие всем граням сразу. Возвращает queryset — считать по
     нему грани дешевле, чем второй раз повторять условия.
@@ -50,6 +50,11 @@ def find(user, *, text="", tags=(), uses=(), avoids=(), level=None):
 
     if level:
         found = found.filter(_level(level))
+
+    if shelved == "yes":
+        found = found.filter(entries__isnull=False)
+    elif shelved == "no":
+        found = found.filter(entries__isnull=True)
 
     return found.distinct()
 
@@ -133,6 +138,7 @@ def payload(user, params):
         uses=uses,
         avoids=avoids,
         level=params.get("level") or None,
+        shelved=params.get("shelved") or None,
     )
     return shape(found, chosen_tags=tags, chosen_uses=uses, chosen_avoids=avoids)
 
@@ -145,7 +151,8 @@ def shape(found, *, chosen_tags=(), chosen_uses=(), chosen_avoids=()):
     одним и тем же списком: два способа спросить, один способ ответить.
     """
     total = found.count()
-    problems = found.select_related("family").order_by("pk")[:LIMIT]
+    problems = list(found.select_related("family").order_by("pk")[:LIMIT])
+    where = _where(problems)
 
     return {
         "total": total,
@@ -156,6 +163,10 @@ def shape(found, *, chosen_tags=(), chosen_uses=(), chosen_avoids=()):
                 "text": problem.text,
                 "level": problem.level,
                 "family": problem.family_id,
+                # где лежит: в книге или только в работе. Отдельного признака
+                # «черновая» нет — это и есть ответ на вопрос, чем набранная
+                # на бегу отличается от разложенной по книгам
+                "where": where.get(problem.pk),
             }
             for problem in problems
         ],
@@ -166,6 +177,37 @@ def shape(found, *, chosen_tags=(), chosen_uses=(), chosen_avoids=()):
             chosen_avoids=chosen_avoids,
         ),
     }
+
+
+def _where(problems) -> dict:
+    """
+    Где лежит каждое из показанных условий — одним запросом на страницу.
+
+    Книга главнее работы: если условие разложено по книгам, номер в книге и
+    есть его адрес, а работы — то, где его спрашивали.
+    """
+    from .models import Entry
+
+    ids = [problem.pk for problem in problems]
+    found = {}
+
+    for entry in Entry.objects.filter(problem_id__in=ids).select_related("source"):
+        found.setdefault(entry.problem_id, {"kind": "book", "title": entry.source.title})
+
+    missing = [one for one in ids if one not in found]
+    if missing:
+        from works.models import Task
+
+        for task in (
+            Task.objects.filter(problem_id__in=missing)
+            .select_related("work")
+            .order_by("work__opens_at")
+        ):
+            found.setdefault(
+                task.problem_id, {"kind": "work", "title": task.work.title}
+            )
+
+    return found
 
 
 def _numbers(values):
