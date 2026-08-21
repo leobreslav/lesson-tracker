@@ -21,3 +21,7 @@ blank/*.log
 blank/*.synctex.gz
 blank/preview*.png
 blank/decode_src.png
+
+# личные настройки Claude Code: права и хуки замеров — они про машину, а не
+# про проект; общие настройки лежат рядом в settings.json и едут в git
+.claude/settings.local.json
