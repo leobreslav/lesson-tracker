@@ -17,7 +17,7 @@ import { copyIntoSource, fetchSources } from './api'
  * Умолчание — ссылка: чаще всего задачу берут как есть, а лишняя копия значит,
  * что исправленная опечатка до неё не дойдёт.
  */
-export default function CopyToShelf({ problem, section, onClose, onDone }) {
+export default function CopyToShelf({ problem, problems, section, onClose, onDone }) {
   const { t } = useTranslation()
   const [shelves, setShelves] = useState(null)
   const [into, setInto] = useState('')
@@ -39,7 +39,13 @@ export default function CopyToShelf({ problem, section, onClose, onDone }) {
     setBusy(true)
     setError(null)
     try {
-      await copyIntoSource({ problem, section, into: Number(into), mode })
+      await copyIntoSource({
+        problem,
+        problems,
+        section,
+        into: Number(into),
+        mode,
+      })
       onDone()
     } catch (trouble) {
       setError(trouble.message)
@@ -48,7 +54,14 @@ export default function CopyToShelf({ problem, section, onClose, onDone }) {
   }
 
   return (
-    <Modal title={t('bank.copy.title')} onClose={onClose}>
+    <Modal
+      title={
+        problems?.length > 1
+          ? t('bank.copy.titleMany', { count: problems.length })
+          : t('bank.copy.title')
+      }
+      onClose={onClose}
+    >
       {error && <p className="error">{error}</p>}
 
       {shelves && shelves.length === 0 ? (

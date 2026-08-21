@@ -139,6 +139,13 @@ class SourceView(BankView):
                         "problem": entry.problem_id,
                         "text": entry.problem.text,
                         "solutions": entry.problem.solutions.count(),
+                        # Чьё условие и живо ли оно. В подборку кладут чужое —
+                        # ссылкой, — и от того, чьё оно, зависит, что с ним
+                        # можно сделать: своё правится, общее только копией. А
+                        # снятое (`retired`) выглядело бы обычным, хотя из
+                        # поиска давно ушло.
+                        "level": entry.problem.level,
+                        "retired": entry.problem.retired,
                     }
                     for entry in entries[:500]
                 ],
@@ -503,23 +510,45 @@ class CopyView(BankView):
             )
             return Response({"section": made.pk}, status=201)
 
-        problem = get_object_or_404(
-            Problem.objects.visible_to(request.user), pk=request.data.get("problem")
+        # Берут пачкой: главу, вариант, десяток отобранного из поиска. По
+        # одной — тоже, и это тот же путь с одним элементом.
+        wanted = request.data.get("problems") or [request.data.get("problem")]
+        found = Problem.objects.visible_to(request.user).in_bulk(
+            [one for one in wanted if one]
         )
+        chosen = [found[one] for one in wanted if one in found]
+        if not chosen:
+            raise api_error(
+                Codes.BANK_NOTHING_TO_COPY,
+                "Не выбрано ни одной задачи: брать нечего.",
+                field="problems",
+            )
+
         section = None
         if request.data.get("into_section"):
             section = get_object_or_404(
                 Section.objects.filter(source=into), pk=request.data["into_section"]
             )
-        entry = copying.copy_problem(
-            problem,
-            into=into,
-            mode=mode,
-            label=request.data.get("label") or "",
-            section=section,
-            user=request.user,
+
+        entries = [
+            copying.copy_problem(
+                problem,
+                into=into,
+                mode=mode,
+                label=request.data.get("label") or "",
+                section=section,
+                user=request.user,
+            )
+            for problem in chosen
+        ]
+        return Response(
+            {
+                "taken": len(entries),
+                "entry": entries[0].pk,
+                "problem": entries[0].problem_id,
+            },
+            status=201,
         )
-        return Response({"entry": entry.pk, "problem": entry.problem_id}, status=201)
 
 
 class AnalogueView(BankView):

@@ -305,3 +305,34 @@ test('тег вешается на условие и на решение — у 
 
   await expect(solution.locator('.tag.avoids')).toContainText('замена переменной')
 })
+
+test('отобранное кладётся и в книгу, а в книге видно, чьё условие', async ({
+  page,
+  signIn,
+  api,
+}) => {
+  const teacher = await api(PEOPLE.ivanova)
+  await teacher.post('/api/bank/sources/', { title: 'Полка', level: 'personal' })
+
+  await signIn(PEOPLE.ivanova)
+  await page.goto('/bank/search')
+  await ready(page)
+  await page.getByLabel('Где лежит').selectOption('yes')
+
+  // два условия отобраны и уехали в книгу одним действием
+  const rows = page.locator('.problem-list li')
+  await rows.nth(0).getByRole('button', { name: 'Отложить задачу' }).click()
+  await rows.nth(1).getByRole('button', { name: 'Отложить задачу' }).click()
+  await page.getByRole('button', { name: 'В книгу…' }).click()
+  await page.getByLabel('В какую книгу').selectOption({ label: 'Полка' })
+  await page.locator('.modal').getByRole('button', { name: 'Взять' }).click()
+
+  await expect(page.locator('.basket')).toHaveCount(0)
+
+  await page.goto('/bank')
+  await ready(page)
+  await page.getByRole('link', { name: 'Полка' }).click()
+  await ready(page)
+
+  await expect(page.locator('.problem-list li')).toHaveCount(2)
+})

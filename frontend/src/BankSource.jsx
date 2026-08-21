@@ -174,11 +174,16 @@ export default function BankSource() {
                   <span className="text">
                     <Markdown text={entry.text} />
                   </span>
-                  {entry.solutions > 0 && (
-                    <span className="hint">
-                      {t('bank.solutionCount', { count: entry.solutions })}
-                    </span>
-                  )}
+                  <span className="hint">
+                    {/* чьё условие: от этого зависит, что с ним можно
+                        сделать, а по строке этого иначе не понять */}
+                    {entry.level !== 'personal' && (
+                      <>{t(`bank.levels.${entry.level}`)} · </>
+                    )}
+                    {entry.retired && <>{t('bank.retired')} · </>}
+                    {entry.solutions > 0 &&
+                      t('bank.solutionCount', { count: entry.solutions })}
+                  </span>
                 </li>
               ))}
             </ul>

@@ -1009,3 +1009,48 @@ class ShelvedTests(SchoolTestMixin, APITestCase):
         rows = {row["id"]: row["where"] for row in self.find()["problems"]}
         self.assertEqual(rows[self.shelved.pk], {"kind": "book", "title": "Мои листочки"})
         self.assertIsNone(rows[self.scratch.pk])
+
+
+class CopyManyTests(SchoolTestMixin, APITestCase):
+    """
+    Берут пачкой: главу, вариант, десяток отобранного. По одной — тот же путь
+    с одним элементом, и второго кода для этого не заводится.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.root = self.make_root()
+        self.common = [
+            Problem.objects.create(text=f"Общая {number}", created_by=self.root)
+            for number in (1, 2, 3)
+        ]
+        self.mine = Source.objects.create(
+            title="Моя книга",
+            school=self.school,
+            owner=self.user,
+            created_by=self.user,
+        )
+
+    def test_a_handful_lands_in_the_order_it_was_picked(self):
+        wanted = [one.pk for one in reversed(self.common)]
+        self.client.force_authenticate(self.user)
+        answer = self.client.post(
+            reverse("bank-copy"),
+            {"problems": wanted, "into": self.mine.pk},
+            format="json",
+        )
+
+        self.assertEqual(answer.status_code, 201)
+        self.assertEqual(answer.data["taken"], 3)
+        self.assertEqual(
+            [entry.problem_id for entry in self.mine.entries.order_by("position")],
+            wanted,
+        )
+
+    def test_an_empty_pick_is_refused(self):
+        self.client.force_authenticate(self.user)
+        answer = self.client.post(
+            reverse("bank-copy"), {"problems": [], "into": self.mine.pk}, format="json"
+        )
+        self.assertEqual(answer.status_code, 400)
+        self.assertEqual(answer.data["code"], "bank_nothing_to_copy")

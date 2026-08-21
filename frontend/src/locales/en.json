@@ -277,7 +277,8 @@
     "search_name_required": "A saved search needs a name — that is how it is found again.",
     "bank_same_problem": "A problem is not its own analogue.",
     "work_nothing_to_assemble": "No problems picked: there is nothing to assemble.",
-    "statement_mode_unknown": "It is unclear whether to edit the statement everywhere or make a copy."
+    "statement_mode_unknown": "It is unclear whether to edit the statement everywhere or make a copy.",
+    "bank_nothing_to_copy": "No problems picked: there is nothing to take."
   },
   "classPicker": {
     "label": "Classes:",
@@ -1359,7 +1360,9 @@
       "linkHint": "One problem for everybody: the author's corrections show up in your book too.",
       "forkHint": "A statement of your own, marked with where it came from — edit it freely.",
       "do": "Take",
-      "noShelf": "You have no book of your own yet. Start one in the bank — that is where taken problems land."
+      "noShelf": "You have no book of your own yet. Start one in the bank — that is where taken problems land.",
+      "titleMany_one": "Take {{count}} problem",
+      "titleMany_other": "Take {{count}} problems"
     },
     "analogue": {
       "title": "Mark an analogue",
@@ -1400,7 +1403,8 @@
       "assemble": "Assemble an assignment",
       "clear": "Clear the picks",
       "take": "Pick this problem",
-      "drop": "Remove from the picks"
+      "drop": "Remove from the picks",
+      "toBook": "Into a book…"
     },
     "assemble": {
       "title_one": "An assignment out of {{count}} problem",
@@ -1420,6 +1424,7 @@
       "do": "Assemble"
     },
     "wholeBook": "The whole book",
-    "askedIn": "Where it has been asked"
+    "askedIn": "Where it has been asked",
+    "retired": "retired"
   }
 }

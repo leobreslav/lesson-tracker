@@ -208,6 +208,7 @@ class Codes:
     SUPERUSER_ONLY_TAGS = "superuser_only_tags"
     BANK_EXPRESSION_BAD = "bank_expression_bad"
     BANK_SAME_PROBLEM = "bank_same_problem"
+    BANK_NOTHING_TO_COPY = "bank_nothing_to_copy"
     WORK_NOTHING_TO_ASSEMBLE = "work_nothing_to_assemble"
     STATEMENT_MODE_UNKNOWN = "statement_mode_unknown"
     SEARCH_NAME_REQUIRED = "search_name_required"
