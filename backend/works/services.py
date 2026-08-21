@@ -15,7 +15,7 @@ from django.utils import timezone
 
 from bank.models import Problem
 
-from . import statements
+from . import statements, track
 from .models import (
     CLOSED,
     GradingSystem,
@@ -404,6 +404,15 @@ def build_table(work) -> dict:
     for row in Submission.objects.filter(task__work=work).order_by("created_at", "id"):
         journal[(row.task_id, row.student_id)].append(row)
 
+    # «Эту задачу он уже решал» — одним запросом на всю таблицу: тридцать
+    # учеников на десять задач это триста вопросов, и по запросу на клетку
+    # экран бы не открылся.
+    seen_before = track.solved_before(
+        [task.problem_id for task in tasks if task.problem_id],
+        [row.student_id for row in rows],
+        besides=work,
+    )
+
     students = []
     per_task = {task.pk: {"answered": 0, "correct": 0, "wrong": 0, "unchecked": 0} for task in tasks}
 
@@ -413,7 +422,13 @@ def build_table(work) -> dict:
 
         for task in tasks:
             history = journal[(task.pk, enrolment.student_id)]
-            cells.append(cell_of(task, history))
+            cell = cell_of(task, history)
+            # сколько раз он встречал это условие в **других** работах: по
+            # нему видно, что задача не новая, — и учителю, и в разговоре
+            cell["seen_before"] = seen_before.get(
+                (task.problem_id, enrolment.student_id), 0
+            )
+            cells.append(cell)
             if not history:
                 continue
 

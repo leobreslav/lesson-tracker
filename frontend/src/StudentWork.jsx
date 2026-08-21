@@ -214,6 +214,15 @@ function TaskCard({ task, number, canAnswer, onSent, onError }) {
         {/* пункт показывается вместе со своим сюжетом — или без него, если
             учитель шапку выключил: данные он написал на доске */}
         <Statement shown={task.shown} />
+        {/* «вы это уже решали» — факт, но без старого ответа: он живёт в той
+            работе и показывается по её правилам */}
+        {task.seen_before?.length > 0 && (
+          <p className="hint">
+            {t('student.seenBefore', {
+              title: task.seen_before[0].title,
+            })}
+          </p>
+        )}
       </div>
 
       {task.submissions.length > 0 && (

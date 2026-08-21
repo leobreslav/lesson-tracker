@@ -226,49 +226,94 @@ def add_problems(source, *, section, text: str, user) -> int:
     спрашивают «сколько задач вписалось», и сюжет в этом счёте не участвует.
     """
     rows = parse_problems(text)
+    return write_numbers(source, rows, user=user, section=section)
 
+
+def write_numbers(source, numbers, *, user, section=None) -> int:
+    """
+    Записать разобранные номера в книгу — общий писатель на все три входа.
+
+    Вставка отступом, таблица и книга Excel разбираются по-разному, но кладутся
+    **одним кодом**: иначе три пути завели бы три немного разных книги, и
+    расхождение всплыло бы через полгода на чужих данных.
+
+    Раздел берётся из строки, если он там назван: таблица приходит с колонкой
+    «Раздел», и заводить оглавление отдельным заходом было бы издевательством.
+    """
     made = 0
     with transaction.atomic():
         start = source.entries.filter(parent__isnull=True).count()
-        for offset, row in enumerate(rows):
+        chapters = {}
+
+        for offset, row in enumerate(numbers):
+            place = section
+            title = (row.get("section") or "").strip()
+            if title:
+                if title not in chapters:
+                    chapters[title], _ = Section.objects.get_or_create(
+                        source=source, title=title, parent=None
+                    )
+                place = chapters[title]
+
             stem = None
             if row["text"]:
-                stem = _problem(source, user, row["text"])
+                stem = _problem(
+                    source, user, row["text"], answers=row.get("answers") or []
+                )
                 if not row["parts"]:
                     made += 1
 
             number = Entry.objects.create(
                 source=source,
-                section=section,
+                section=place,
                 problem=stem,
                 label=row["label"],
                 position=start + offset,
             )
 
-            for place, part in enumerate(row["parts"]):
-                problem = _problem(source, user, part["text"], parent=stem, position=place)
+            for spot, part in enumerate(row["parts"]):
+                problem = _problem(
+                    source,
+                    user,
+                    part["text"],
+                    parent=stem,
+                    position=spot,
+                    answers=part.get("answers") or [],
+                )
                 Entry.objects.create(
                     source=source,
-                    section=section,
+                    section=place,
                     problem=problem,
                     parent=number,
                     label=part["label"],
-                    position=place,
+                    position=spot,
                 )
                 made += 1
 
     return made
 
 
-def _problem(source, user, text, *, parent=None, position=0):
-    return Problem.objects.create(
+def _problem(source, user, text, *, parent=None, position=0, answers=()):
+    """
+    Условие книги. Предмет книги достаётся ему сразу.
+
+    Предмет — самый частый фильтр, и вешать его руками на каждую из четырёхсот
+    вписанных задач никто не станет. А книга своим предметом уже названа, и
+    другого у её задач не бывает: сборник по алгебре не содержит задач по
+    географии.
+    """
+    made = Problem.objects.create(
         school=source.school,
         owner=source.owner,
         created_by=user,
         text=text,
         parent=parent,
         position=position,
+        answers=list(answers),
     )
+    if source.subject_id:
+        made.links.create(tag_id=source.subject_id)
+    return made
 
 
 def outline_of(source) -> list[dict]:

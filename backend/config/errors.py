@@ -213,6 +213,7 @@ class Codes:
     BANK_NOTHING_TO_COPY = "bank_nothing_to_copy"
     WORK_NOTHING_TO_ASSEMBLE = "work_nothing_to_assemble"
     STATEMENT_MODE_UNKNOWN = "statement_mode_unknown"
+    STEM_IS_NOT_A_QUESTION = "stem_is_not_a_question"
     SEARCH_NAME_REQUIRED = "search_name_required"
 
     # разговор о задаче

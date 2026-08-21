@@ -3,6 +3,7 @@ import Bank from './Bank'
 import BankProblem from './BankProblem'
 import BankChronology from './BankChronology'
 import BankSearch from './BankSearch'
+import StudentTrack from './StudentTrack'
 import BankTopics from './BankTopics'
 import BankSource from './BankSource'
 import {
@@ -179,6 +180,7 @@ export default function App() {
           <Route path="/works" element={guarded(Works)} />
           <Route path="/works/:id" element={guarded(WorkTable)} />
           <Route path="/bank" element={guarded(Bank)} />
+          <Route path="/track/:id" element={guarded(StudentTrack)} />
           <Route path="/bank/topics" element={guarded(BankTopics)} />
           <Route path="/bank/chronology" element={guarded(BankChronology)} />
           <Route path="/bank/search" element={guarded(BankSearch)} />

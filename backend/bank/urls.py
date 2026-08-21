@@ -2,6 +2,7 @@ from django.urls import path
 
 from .views import (
     AnalogueView,
+    ImportView,
     ChronologyView,
     CopyView,
     ProblemView,
@@ -19,6 +20,7 @@ urlpatterns = [
     path("sources/", SourcesView.as_view(), name="bank-sources"),
     path("sources/<int:pk>/", SourceView.as_view(), name="bank-source"),
     path("problems/<int:pk>/", ProblemView.as_view(), name="bank-problem"),
+    path("sources/<int:pk>/import/", ImportView.as_view(), name="bank-import"),
     path("solutions/", SolutionsView.as_view(), name="bank-solutions"),
     path("search/", SearchView.as_view(), name="bank-search"),
     path("copy/", CopyView.as_view(), name="bank-copy"),

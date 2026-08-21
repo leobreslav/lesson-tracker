@@ -6,7 +6,7 @@ import Basket from './Basket'
 import Markdown from './Markdown'
 import Modal from './Modal'
 import Pick from './Pick'
-import { fetchSource, fillSource } from './api'
+import { fetchSource, fillSource, importFileIntoSource, importIntoSource } from './api'
 import { taken } from './basket'
 
 /**
@@ -27,6 +27,8 @@ export default function BankSource() {
   const [section, setSection] = useState('')
   const [label, setLabel] = useState('')
   const [picked, setPicked] = useState(taken())
+  // массовый импорт: матрица из буфера или файл
+  const [importing, setImporting] = useState(null) // {text, preview}
   const [error, setError] = useState(null)
   const [filling, setFilling] = useState(null) // {kind: 'outline'|'problems', text}
   const [busy, setBusy] = useState(false)
@@ -105,6 +107,37 @@ export default function BankSource() {
               >
                 {t('bank.pasteProblems')}
               </button>
+              {/* массовый импорт: та же книга, но приходит таблицей — из
+                  чужой системы, из файла, из Excel */}
+              <button
+                type="button"
+                className="secondary"
+                onClick={() => setImporting({ text: '', preview: null })}
+              >
+                {t('bank.import.open')}
+              </button>
+              <label className="link-button">
+                {t('bank.import.file')}
+                <input
+                  type="file"
+                  accept=".csv,.xlsx"
+                  hidden
+                  onChange={async (event) => {
+                    const chosen = event.target.files[0]
+                    if (!chosen) return
+                    setBusy(true)
+                    try {
+                      await importFileIntoSource(id, chosen)
+                      await load({ section, label })
+                    } catch (problem) {
+                      setError(problem.message)
+                    } finally {
+                      setBusy(false)
+                      event.target.value = ''
+                    }
+                  }}
+                />
+              </label>
             </>
           )}
         </div>
@@ -191,6 +224,67 @@ export default function BankSource() {
         </section>
       </div>
 
+      {importing && (
+        <Modal title={t('bank.import.title')} onClose={() => setImporting(null)}>
+          <p className="hint">{t('bank.import.hint')}</p>
+          <textarea
+            autoFocus
+            rows="10"
+            value={importing.text}
+            onChange={(event) =>
+              setImporting({ text: event.target.value, preview: null })
+            }
+          />
+
+          {importing.preview && (
+            <p className={importing.preview.errors.length ? 'error' : 'hint'}>
+              {importing.preview.errors.length
+                ? importing.preview.errors.join(' · ')
+                : t('bank.import.counted', importing.preview)}
+            </p>
+          )}
+
+          <div className="row">
+            <button
+              type="button"
+              className="secondary"
+              disabled={busy || !importing.text.trim()}
+              onClick={async () => {
+                try {
+                  const answer = await importIntoSource(id, {
+                    rows: rowsOf(importing.text),
+                    preview: true,
+                  })
+                  setImporting({ ...importing, preview: answer })
+                } catch (problem) {
+                  setError(problem.message)
+                }
+              }}
+            >
+              {t('bank.import.check')}
+            </button>
+            <button
+              type="button"
+              disabled={busy || !importing.text.trim()}
+              onClick={async () => {
+                setBusy(true)
+                try {
+                  await importIntoSource(id, { rows: rowsOf(importing.text) })
+                  setImporting(null)
+                  await load({ section, label })
+                } catch (problem) {
+                  setError(problem.message)
+                } finally {
+                  setBusy(false)
+                }
+              }}
+            >
+              {t('bank.import.do')}
+            </button>
+          </div>
+        </Modal>
+      )}
+
       {filling && (
         <Modal
           onClose={() => setFilling(null)}
@@ -214,3 +308,16 @@ export default function BankSource() {
     </main>
   )
 }
+
+/**
+ * Вставленная таблица → матрица ячеек.
+ *
+ * Excel кладёт в буфер TSV, и разбирает его браузер — на сервер уезжает уже
+ * матрица. Второго угадывания разделителя нигде нет: у файла его определяет
+ * серверный разбор, у вставки разделитель известен.
+ */
+const rowsOf = (text) =>
+  text
+    .split(/\r?\n/)
+    .filter((line) => line.trim())
+    .map((line) => line.split('\t'))

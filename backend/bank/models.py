@@ -356,6 +356,18 @@ class Source(Owned):
     title = models.CharField("title", max_length=300)
     author = models.CharField("author", max_length=200, blank=True)
     note = models.TextField("note", blank=True)
+    # Предмет книги — тег из общего словаря, а не своё поле и не школьный
+    # `schedule.Subject`: банк общий на все школы, а тот справочник у каждой
+    # свой. Предмет книги достаётся её задачам при вписывании — иначе самый
+    # частый фильтр не работал бы ровно там, где задач больше всего.
+    subject = models.ForeignKey(
+        Tag,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="sources",
+        verbose_name="subject",
+    )
 
     class Meta:
         verbose_name = "source"

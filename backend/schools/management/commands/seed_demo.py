@@ -992,7 +992,9 @@ class Command(BaseCommand):
             title="Листочки по алгебре",
             school=school,
             owner=teacher,
-            defaults={"created_by": teacher},
+            # предмет у книги — чтобы самый глобальный фильтр было чем
+            # проверить, и чтобы её задачи получили его сразу
+            defaults={"created_by": teacher, "subject": tags["алгебра"]},
         )
         if source.entries.exists():
             return

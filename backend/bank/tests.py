@@ -1171,3 +1171,257 @@ class PartsTests(SchoolTestMixin, APITestCase):
 
         with self.assertRaises(ValidationError):
             deeper.full_clean()
+
+
+class FamilyInTheListTests(SchoolTestMixin, APITestCase):
+    """
+    Семья аналогов стоит в выдаче **одной строкой**.
+
+    Аналогов у задачи бывают сотни: та же задача с другими числами, разосланная
+    по вариантам. Показывать каждую — значит замылить выдачу одним и тем же
+    условием, а искать в ней станет невозможно. Строка поэтому одна, и она же
+    дверь: с её страницы видны все аналоги.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.tag = Tag.objects.create(name="уравнение", kind="task")
+        self.family = [self.problem(f"$x^2 = {number}$") for number in (4, 9, 16)]
+        self.alone = self.problem("Окружность вписана в треугольник")
+
+        self.client.force_authenticate(self.user)
+        for other in self.family[1:]:
+            self.client.post(
+                reverse("bank-analogues"),
+                {"problem": self.family[0].pk, "other": other.pk},
+                format="json",
+            )
+
+    def problem(self, text):
+        made = Problem.objects.create(
+            text=text, school=self.school, owner=self.user, created_by=self.user
+        )
+        made.links.create(tag=self.tag)
+        return made
+
+    def find(self, **params):
+        self.client.force_authenticate(self.user)
+        return self.client.get(reverse("bank-search"), params).data
+
+    def test_a_family_takes_one_row_and_says_how_many_more(self):
+        found = self.find()
+
+        # четыре задачи, но семей две: три уравнения — одно и то же условие
+        self.assertEqual(found["total"], 2)
+        rows = {row["id"]: row for row in found["problems"]}
+        self.assertEqual(len(rows), 2)
+
+        shown = next(row for row in found["problems"] if row["family"])
+        self.assertEqual(shown["analogues"], 2)
+        self.assertEqual(rows[self.alone.pk]["analogues"], 0)
+
+    def test_the_facets_count_families_too(self):
+        # грань, обещавшая четыре и оставившая две строки, врала бы
+        rows = {row["tag"]: row["count"] for row in self.find()["facets"]}
+        self.assertEqual(rows[self.tag.pk], 2)
+
+    def test_leaving_the_family_brings_the_problem_back_as_its_own_row(self):
+        self.client.delete(
+            reverse("bank-analogues"), {"problem": self.family[1].pk}, format="json"
+        )
+        found = self.find()
+
+        # вышел из семьи — стал отдельной строкой: строк три, а не две
+        self.assertEqual(found["total"], 3)
+
+
+class SubjectTests(SchoolTestMixin, APITestCase):
+    """
+    Предмет — самый глобальный фильтр, и он же обычный тег.
+
+    Своего поля у задачи под него нет намеренно: второе хранилище предмета
+    разошлось бы с разметкой на первой же правке. А вот у книги поле есть — и
+    её предмет достаётся вписанным в неё задачам, иначе фильтр не работал бы
+    ровно там, где задач больше всего.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.algebra = Tag.objects.create(name="алгебра", kind="subject")
+        self.geometry = Tag.objects.create(name="геометрия", kind="subject")
+
+        self.book = Source.objects.create(
+            title="Алгебра, сборник",
+            subject=self.algebra,
+            school=self.school,
+            owner=self.user,
+            created_by=self.user,
+        )
+        services.add_problems(
+            self.book, section=None, text="1\tРешите уравнение", user=self.user
+        )
+
+    def test_a_problem_typed_into_a_book_takes_its_subject(self):
+        problem = self.book.entries.get().problem
+        self.assertEqual(
+            [link.tag_id for link in problem.links.all()], [self.algebra.pk]
+        )
+
+    def test_the_search_narrows_by_subject(self):
+        other = Source.objects.create(
+            title="Геометрия",
+            subject=self.geometry,
+            school=self.school,
+            owner=self.user,
+            created_by=self.user,
+        )
+        services.add_problems(other, section=None, text="1\tНайдите угол", user=self.user)
+
+        self.client.force_authenticate(self.user)
+        found = self.client.get(
+            reverse("bank-search"), {"subject": self.algebra.pk}
+        ).data
+        self.assertEqual([row["text"] for row in found["problems"]], ["Решите уравнение"])
+
+    def test_a_part_is_found_by_the_subject_of_its_stem(self):
+        # у пункта своей разметки может не быть вовсе, а предмет у него тот же
+        services.add_problems(
+            self.book,
+            section=None,
+            text="7\tДан треугольник\n  а)\tНайдите площадь",
+            user=self.user,
+        )
+        part = Problem.objects.get(text="Найдите площадь")
+        part.links.all().delete()
+
+        self.client.force_authenticate(self.user)
+        found = self.client.get(
+            reverse("bank-search"), {"subject": self.algebra.pk, "text": "площадь"}
+        ).data
+        self.assertEqual([row["id"] for row in found["problems"]], [part.pk])
+
+    def test_the_shelf_narrows_by_subject_too(self):
+        Source.objects.create(
+            title="Геометрия",
+            subject=self.geometry,
+            school=self.school,
+            owner=self.user,
+            created_by=self.user,
+        )
+        self.client.force_authenticate(self.user)
+        shelf = self.client.get(reverse("bank-sources"), {"subject": self.algebra.pk})
+        self.assertEqual(
+            [row["title"] for row in shelf.data["sources"]], ["Алгебра, сборник"]
+        )
+
+
+class ImportTests(SchoolTestMixin, APITestCase):
+    """
+    Массовый импорт таблицей: колонка «Пункт» различает то же, что отступ.
+
+    Формат один на три входа (вставка таблицы, CSV, книга Excel), и пишет их
+    один код — иначе три пути завели бы три немного разных книги.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.book = Source.objects.create(
+            title="Импортированная",
+            school=self.school,
+            owner=self.user,
+            created_by=self.user,
+        )
+        self.client.force_authenticate(self.user)
+
+    def send(self, rows, **extra):
+        return self.client.post(
+            reverse("bank-import", args=[self.book.pk]),
+            {"rows": rows, **extra},
+            format="json",
+        )
+
+    HEADER = ["Раздел", "Номер", "Пункт", "Условие", "Ответ"]
+
+    def test_a_table_lands_as_sections_numbers_and_parts(self):
+        answer = self.send(
+            [
+                self.HEADER,
+                ["Квадратные уравнения", "14", "", "Дан треугольник ABC.", ""],
+                ["Квадратные уравнения", "14", "а)", "Найдите площадь", "6"],
+                ["Квадратные уравнения", "14", "б)", "Найдите радиус", "1"],
+                ["Квадратные уравнения", "15", "а)", "$x^2=4$", "±2"],
+            ]
+        )
+
+        self.assertEqual(answer.status_code, 201)
+        # задач три: сюжет в счёт не идёт
+        self.assertEqual(answer.data["added"], 3)
+
+        # раздел завёлся сам: заводить оглавление отдельным заходом —
+        # издевательство над тем, кто принёс таблицу
+        self.assertEqual([one.title for one in self.book.sections.all()],
+                         ["Квадратные уравнения"])
+
+        numbers = list(self.book.entries.filter(parent__isnull=True).order_by("position"))
+        self.assertEqual([one.label for one in numbers], ["14", "15"])
+        # у четырнадцатого сюжет, у пятнадцатого — чистый номер
+        self.assertEqual(numbers[0].problem.text, "Дан треугольник ABC.")
+        self.assertIsNone(numbers[1].problem)
+
+        part = numbers[0].children.first()
+        self.assertEqual(part.problem.answers, ["6"])
+        self.assertEqual(part.problem.parent_id, numbers[0].problem_id)
+
+    def test_a_part_without_a_number_is_refused_with_its_line(self):
+        answer = self.send([self.HEADER, ["", "", "а)", "Пункт без номера", ""]])
+
+        self.assertEqual(answer.status_code, 400)
+        self.assertEqual(answer.data["code"], "part_without_number")
+        self.assertEqual(answer.data["params"]["line"], 2)
+
+    def test_a_wrong_header_is_refused_rather_than_guessed(self):
+        answer = self.send([["Задача", "Ответ"], ["…", "…"]])
+
+        self.assertEqual(answer.status_code, 400)
+        self.assertEqual(answer.data["code"], "csv_header_invalid")
+
+    def test_the_preview_writes_nothing_and_refuses_nothing(self):
+        answer = self.send(
+            [self.HEADER, ["", "", "а)", "Пункт без номера", ""]], preview=True
+        )
+
+        # ошибка приезжает списком в теле: иначе единственным её следом была бы
+        # ошибка в консоли браузера
+        self.assertEqual(answer.status_code, 200)
+        self.assertTrue(answer.data["errors"])
+        self.assertFalse(self.book.entries.exists())
+
+    def test_the_preview_counts_what_will_appear(self):
+        answer = self.send(
+            [
+                self.HEADER,
+                ["Глава", "14", "", "Сюжет", ""],
+                ["Глава", "14", "а)", "Пункт", ""],
+                ["Глава", "20", "", "Обычная задача", ""],
+            ],
+            preview=True,
+        )
+
+        self.assertEqual(answer.data["numbers"], 2)
+        self.assertEqual(answer.data["problems"], 2)
+        self.assertEqual(answer.data["stems"], 1)
+        self.assertEqual(answer.data["sections"], 1)
+
+    def test_a_book_that_is_not_mine_takes_nothing(self):
+        alien = Source.objects.create(
+            title="Чужая",
+            school=self.school,
+            owner=self.colleague,
+            created_by=self.colleague,
+        )
+        answer = self.client.post(
+            reverse("bank-import", args=[alien.pk]),
+            {"rows": [self.HEADER, ["", "1", "", "Задача", ""]]},
+            format="json",
+        )
+        self.assertEqual(answer.status_code, 404)

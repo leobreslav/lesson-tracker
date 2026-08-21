@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 
 import EmptyState from './EmptyState'
+import SubjectPicker, { chosenSubject } from './SubjectPicker'
 import { createSource, fetchSources } from './api'
 
 /**
@@ -21,15 +22,17 @@ export default function Bank() {
   const [error, setError] = useState(null)
   const [adding, setAdding] = useState(null) // {title, author, level}
   const [busy, setBusy] = useState(false)
+  const [subject, setSubject] = useState(chosenSubject())
 
   const load = () =>
-    fetchSources()
+    fetchSources(subject)
       .then((answer) => setSources(answer.sources))
       .catch((problem) => setError(problem.message))
 
   useEffect(() => {
     load()
-  }, [])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [subject])
 
   const add = async () => {
     setBusy(true)
@@ -58,6 +61,7 @@ export default function Bank() {
       <header className="page-header spread">
         <h1>{t('bank.title')}</h1>
         <div className="row">
+          <SubjectPicker value={subject} onChange={setSubject} />
           <Link className="link-button" to="/bank/search">
             {t('bank.search.open')}
           </Link>

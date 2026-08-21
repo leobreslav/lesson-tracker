@@ -209,6 +209,17 @@ def take(task, problem, *, user):
     """
     from . import services
 
+    if problem is not None and problem.parts.exists():
+        # Сюжет — не вопрос: у него нет ни ответа, ни балла, и ячейка,
+        # показывающая на него, спрашивала бы «решите условие». Сборка из
+        # банка разворачивает сюжет по пунктам, а тут отказ: это последняя
+        # дверь, через которую он мог бы попасть в работу.
+        raise api_error(
+            Codes.STEM_IS_NOT_A_QUESTION,
+            "Это сюжет, а не вопрос: в ячейку кладётся его пункт.",
+            field="problem",
+        )
+
     if task.problem_id == (problem.pk if problem else None):
         return task.problem
 

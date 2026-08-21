@@ -7,6 +7,7 @@ import ExpressionEditor from './ExpressionEditor'
 import MathText from './MathText'
 import Pick from './Pick'
 import Switch from './Switch'
+import SubjectPicker, { chosenSubject } from './SubjectPicker'
 import { prune } from './expressionTree'
 import { taken } from './basket'
 import {
@@ -40,6 +41,7 @@ export default function BankSearch() {
   const [picked, setPicked] = useState(taken())
   // '' — всё своё, 'yes' — разложенное по книгам, 'no' — только из работ
   const [shelved, setShelved] = useState('')
+  const [subject, setSubject] = useState(chosenSubject())
   // Второй вход в тот же набор: грани отвечают только на «и», выражение — на
   // «или» и на отрицание. Вид один за раз: два списка результатов рядом
   // означали бы два ответа на вопрос «что нашлось».
@@ -80,7 +82,9 @@ export default function BankSearch() {
       const asked =
         byTree && trimmed
           ? searchByExpression(trimmed)
-          : searchProblems(byTree ? {} : { text, tags, uses, avoids, shelved })
+          : searchProblems(
+              byTree ? { subject } : { text, tags, uses, avoids, shelved, subject },
+            )
       asked
         .then((answer) => {
           if (!alive) return
@@ -94,7 +98,7 @@ export default function BankSearch() {
       clearTimeout(timer)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [text, key, byTree, shelved, JSON.stringify(tree)])
+  }, [text, key, byTree, shelved, subject, JSON.stringify(tree)])
 
   const drop = (facet) =>
     setChosen(chosen.filter((one) => !(one.tag === facet.tag && one.side === facet.side)))
@@ -114,6 +118,7 @@ export default function BankSearch() {
 
       <section className="panel">
         <div className="row">
+          <SubjectPicker value={subject} onChange={setSubject} />
           <Switch
             value={byTree ? 'tree' : 'facets'}
             options={[
@@ -258,9 +263,12 @@ export default function BankSearch() {
                   </Link>
                 </span>
                 <span className="hint">
-                  {problem.where
-                    ? problem.where.title
-                    : t('bank.search.nowhere')}
+                  {/* семья стоит одной строкой: аналогов бывают сотни, и
+                      каждый из них — та же задача с другими числами */}
+                  {problem.analogues > 0 && (
+                    <>{t('bank.search.analogues', { count: problem.analogues })} · </>
+                  )}
+                  {problem.where ? problem.where.title : t('bank.search.nowhere')}
                 </span>
               </li>
             ))}

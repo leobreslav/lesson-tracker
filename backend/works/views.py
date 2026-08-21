@@ -14,6 +14,7 @@ from config.access import (
 )
 from config.errors import Codes, api_error
 from django.db.models import Count
+from django.http import Http404
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework import status
@@ -22,7 +23,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from . import assembling, services, statements, threads
+from . import assembling, services, statements, threads, track
 from .models import Thread
 from vision import services as vision_services
 from .models import Submission, Task, Work
@@ -471,6 +472,37 @@ class WorkViewSet(CourseScopedViewSet):
         return Response(services.build_table(work))
 
 
+class StudentTrackView(APIView):
+    """
+    След ученика: что он решал за всё время, собранный по **условиям**.
+
+    Учителю показываются только его курсы: «в 9Б он решал это в марте» —
+    сведение о чужом курсе, а след общий на всю школу. Ученик спрашивает свой
+    и видит его целиком; чужой ему не показывается вовсе — 404, как везде.
+
+    Ради этого следа ячейка и держит ссылку на условие, а не копию текста:
+    задача, спрошенная в пятом классе и в девятом, остаётся тем же объектом, и
+    сложить эти встречи можно только так.
+    """
+
+    permission_classes = [IsAuthenticated, IsSchoolMember]
+
+    def get(self, request, student):
+        from accounts.models import User
+        from schedule.models import Course
+
+        me = request.user
+        if me.kind == "student":
+            if me.pk != int(student):
+                raise Http404
+            rows = track.track(me)
+        else:
+            person = get_object_or_404(User.objects.filter(school=me.school), pk=student)
+            rows = track.track(person, courses=Course.objects.for_teacher(me))
+
+        return Response({"track": rows, "summary": track.summary(rows)})
+
+
 class TaskViewSet(CourseScopedViewSet):
     """
     Задачи внутри работы. Курс тот же, путь до него — через работу.
@@ -700,6 +732,16 @@ class StudentWorkView(APIView):
                         # спрятали, не приезжает ни она сама, ни пометка,
                         # иначе скрытие бессмысленно
                         "shown": statements.shown(task, to_student=True),
+                        # «эту задачу вы уже решали» — факт, но **без
+                        # ответа**: старый ответ показывается там, где ему
+                        # место, — в той работе, и только если она закрыта.
+                        # Иначе повторный вопрос теряет смысл: его задают,
+                        # чтобы посмотреть, как человек решает сейчас.
+                        "seen_before": track.seen_by(
+                            request.user, task.problem, besides=work
+                        )
+                        if task.problem_id
+                        else [],
                         "attempts_left": services.attempts_left(
                             work, len(journal[task.pk])
                         ),

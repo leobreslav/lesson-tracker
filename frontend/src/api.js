@@ -587,7 +587,8 @@ export const fetchScaleImpact = (work) =>
 
 /* --- банк задач ------------------------------------------------------------ */
 
-export const fetchSources = () => request('/api/bank/sources/')
+export const fetchSources = (subject) =>
+  request(`/api/bank/sources/${subject ? `?subject=${subject}` : ''}`)
 
 export const createSource = (fields) =>
   request('/api/bank/sources/', { method: 'POST', body: fields })
@@ -955,6 +956,7 @@ export const searchProblems = (query) => {
   if (query.text) params.set('text', query.text)
   if (query.level) params.set('level', query.level)
   if (query.shelved) params.set('shelved', query.shelved)
+  if (query.subject) params.set('subject', query.subject)
   ;(query.tags || []).forEach((id) => params.append('tag', id))
   ;(query.uses || []).forEach((id) => params.append('uses', id))
   ;(query.avoids || []).forEach((id) => params.append('avoids', id))
@@ -1035,3 +1037,23 @@ export const fetchCourseSlots = (course, { start, end }) =>
  */
 export const takeIntoCell = (task, problem) =>
   request(`/api/works/tasks/${task}/take/`, { method: 'POST', body: { problem } })
+
+/**
+ * След ученика: что он решал за всё время, собранный по условиям.
+ * Учителю — по своим курсам, ученику — свой целиком.
+ */
+export const fetchTrack = (student) => request(`/api/works/track/${student}/`)
+
+/**
+ * Массовый импорт задач в книгу: матрица ячеек или файл (CSV, xlsx).
+ * `preview` ничего не пишет и ни от чего не отказывается — ошибки приезжают
+ * списком в теле.
+ */
+export const importIntoSource = (source, body) =>
+  request(`/api/bank/sources/${source}/import/`, { method: 'POST', body })
+
+export const importFileIntoSource = (source, file) => {
+  const form = new FormData()
+  form.append('file', file)
+  return request(`/api/bank/sources/${source}/import/`, { method: 'POST', body: form })
+}

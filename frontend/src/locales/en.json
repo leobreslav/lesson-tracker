@@ -280,7 +280,8 @@
     "statement_mode_unknown": "It is unclear whether to edit the statement everywhere or make a copy.",
     "bank_nothing_to_copy": "No problems picked: there is nothing to take.",
     "part_without_number": "An indented line with no number above it: a part always belongs to a number.",
-    "number_needs_a_tab": "Separate the number from the statement with a tab — otherwise it is unclear which is which."
+    "number_needs_a_tab": "Separate the number from the statement with a tab — otherwise it is unclear which is which.",
+    "stem_is_not_a_question": "That is a shared statement, not a question: a cell takes one of its parts."
   },
   "classPicker": {
     "label": "Classes:",
@@ -973,7 +974,8 @@
       "correct": "correct",
       "wrong": "wrong",
       "unchecked": "not checked yet"
-    }
+    },
+    "seenBefore": "You have solved this problem before — in “{{title}}”."
   },
   "roster": {
     "title": "Roster of «{{name}}»",
@@ -1165,7 +1167,9 @@
     "startedLabel": "have started",
     "finishedLabel": "answered everything",
     "studentsTotal_one": "{{count}} student in the course",
-    "studentsTotal_other": "{{count}} students in the course"
+    "studentsTotal_other": "{{count}} students in the course",
+    "seenBefore_one": "already solved this problem {{count}} time elsewhere",
+    "seenBefore_other": "already solved this problem {{count}} times elsewhere"
   },
   "devSwitch": {
     "label": "Sign in as (dev only)",
@@ -1338,7 +1342,9 @@
       "anywhere": "everything of mine",
       "inBooks": "in books",
       "onlyInWorks": "only in assignments",
-      "nowhere": "not filed anywhere"
+      "nowhere": "not filed anywhere",
+      "analogues_one": "{{count}} more analogue",
+      "analogues_other": "{{count}} more analogues"
     },
     "without": "without",
     "expression": {
@@ -1439,6 +1445,23 @@
     },
     "wholeBook": "The whole book",
     "askedIn": "Where it has been asked",
-    "retired": "retired"
+    "retired": "retired",
+    "subject": "Subject",
+    "anySubject": "any subject",
+    "import": {
+      "open": "Import a table",
+      "file": "From a file…",
+      "title": "Import problems from a table",
+      "hint": "Paste from Excel: Section · Number · Part · Statement · Answer. A row without a part is a number; if it has a statement, that becomes the shared one.",
+      "check": "Check",
+      "do": "Import",
+      "counted": "Numbers: {{numbers}} · problems: {{problems}} · with a shared statement: {{stems}} · sections: {{sections}}"
+    }
+  },
+  "track": {
+    "title": "The student's track",
+    "summary": "Problems: {{problems}} · attempts: {{attempts}} · asked more than once: {{repeated}}",
+    "empty": "Nothing solved yet — or it was not in your courses.",
+    "right": "answered correctly"
   }
 }

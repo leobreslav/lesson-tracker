@@ -242,7 +242,11 @@ export default function WorkTable() {
                           <button
                             type="button"
                             className="cell"
-                            title={item.answer ?? t('table.empty')}
+                            title={
+                              item.seen_before
+                                ? t('table.seenBefore', { count: item.seen_before })
+                                : (item.answer ?? t('table.empty'))
+                            }
                             disabled={!item.submission}
                             onClick={() =>
                               setCell({
@@ -254,6 +258,10 @@ export default function WorkTable() {
                             }
                           >
                             {cellMark(item)}
+                            {/* эту задачу он уже решал в другой работе:
+                                уголок, а не строка — в клетке нет места, а
+                                знать это надо при проверке */}
+                            {item.seen_before > 0 && <i className="again" />}
                           </button>
                         </td>
                       ))}

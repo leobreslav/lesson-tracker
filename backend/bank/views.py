@@ -15,7 +15,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from . import copying, expressions, search, services, topics
+from . import copying, expressions, importing, search, services, topics
 from .owning import writable_ids
 from .models import (
     NEGATABLE,
@@ -44,9 +44,11 @@ class SourcesView(BankView):
     """Полка источников: системные, школьные и свои."""
 
     def get(self, request):
-        sources = list(
-            Source.objects.visible_to(request.user).prefetch_related("entries")
-        )
+        sources = Source.objects.visible_to(request.user).prefetch_related("entries")
+        subject = request.query_params.get("subject")
+        if subject and subject.isdigit():
+            sources = sources.filter(subject_id=subject)
+        sources = list(sources.select_related("subject"))
         mine = writable_ids(Source, request.user, sources)
         return Response(
             {
@@ -57,6 +59,8 @@ class SourcesView(BankView):
                         "author": source.author,
                         "level": source.level,
                         "problems": source.entries.count(),
+                        "subject": source.subject_id,
+                        "subject_name": source.subject.name if source.subject_id else "",
                         "may_edit": source.pk in mine,
                     }
                     for source in sources
@@ -88,6 +92,7 @@ class SourcesView(BankView):
         source = Source.objects.create(
             title=title,
             author=(request.data.get("author") or "").strip(),
+            subject_id=request.data.get("subject") or None,
             school=None if level == "system" else request.user.school,
             owner=request.user if level == "personal" else None,
             created_by=request.user,
@@ -185,6 +190,65 @@ class SourceView(BankView):
             user=request.user,
         )
         return Response({"problems": added})
+
+
+class ImportView(BankView):
+    """
+    Массовый импорт задач в книгу: таблицей, файлом или вставкой.
+
+    Два адреса и один разбор, как у импорта учебного плана: предпросмотр
+    **ничего не пишет и ни от чего не отказывается** (ошибки списком в теле —
+    иначе единственным следом отказа была бы ошибка в консоли), а импорт
+    пишет одной транзакцией. Половина импортированной книги хуже
+    неимпортированной: непонятно, какая половина.
+    """
+
+    def post(self, request, pk):
+        source = get_object_or_404(
+            Source.objects.writable_by(request.user), pk=pk
+        )
+        rows = _rows(request)
+
+        if request.data.get("preview"):
+            return Response(importing.preview(rows))
+
+        numbers = importing.parse_table(rows)
+        made = services.write_numbers(source, numbers, user=request.user)
+        return Response({"added": made}, status=201)
+
+
+def _rows(request):
+    """
+    Ячейки: из вставленной матрицы или из файла.
+
+    Формат один, файлов три — CSV, книга Excel и вставка из буфера. Читает
+    книгу то же место, что и у плана (`plans/xlsx.py`): вторая библиотека ради
+    того же самого была бы вторым местом, знающим про xlsx.
+    """
+    if request.data.get("rows") is not None:
+        return request.data["rows"]
+
+    uploaded = request.FILES.get("file")
+    if uploaded is None:
+        raise api_error(
+            Codes.CSV_HEADER_INVALID,
+            "Нечего читать: пришлите таблицу или файл.",
+            field="rows",
+        )
+
+    import csv
+    import io as streams
+
+    data = uploaded.read()
+    if uploaded.name.lower().endswith((".xlsx", ".xls")):
+        from plans.xlsx import read_plan_xlsx
+
+        return read_plan_xlsx(data, filename=uploaded.name).rows
+
+    from plans.services import decode_csv, sniff_delimiter
+
+    text = decode_csv(data)
+    return list(csv.reader(streams.StringIO(text), delimiter=sniff_delimiter(text)))
 
 
 class ProblemView(BankView):
