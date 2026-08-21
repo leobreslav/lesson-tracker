@@ -29,6 +29,7 @@ import {
 } from './calendarLogic'
 import { dateRange, firstWeekday } from './dates'
 import { weekdayIndex } from './weekStart'
+import { useKept } from './remember'
 import { MAX_LESSON_NUMBER } from './scheduleLogic'
 
 const NUMBERS = Array.from({ length: MAX_LESSON_NUMBER }, (_, index) => index + 1)
@@ -49,9 +50,16 @@ export default function SchoolSchedule({ onLoggedOut }) {
   const [slots, setSlots] = useState([])
   const [days, setDays] = useState({})
   const [summary, setSummary] = useState(null)
-  const [anchor, setAnchor] = useState(today)
-  const [teacherFilter, setTeacherFilter] = useState('')
-  const [courseFilter, setCourseFilter] = useState('')
+  /*
+   * Неделя и сужение переживают уход отсюда (`remember.useKept`).
+   *
+   * Отсюда уходят в занятие и возвращаются «назад» браузером: страница
+   * собирается заново, и неделя вместе с выбранным учителем терялись — а
+   * ради них сюда и заходили. Живёт это во вкладке, а не в настройках.
+   */
+  const [anchor, setAnchor] = useKept('school.schedule.week', today())
+  const [teacherFilter, setTeacherFilter] = useKept('school.schedule.teacher', '')
+  const [courseFilter, setCourseFilter] = useKept('school.schedule.course', '')
   const [dialog, setDialog] = useState(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)

@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom'
 import { AddLessonDialog, LessonMenu } from './AgendaDialogs'
 import EmptyState from './EmptyState'
 import CopyDialog from './CopyDialog'
-import { remember, remembered } from './remember'
+import { remember, remembered, useKept } from './remember'
 import { weekdayIndex } from './weekStart'
 import WeekGrid from './WeekGrid'
 import {
@@ -70,13 +70,25 @@ function lessonClassName(lesson) {
 export default function Agenda({ onLoggedOut }) {
   const { t } = useTranslation()
   const navigate = useNavigate()
-  const [anchor, setAnchor] = useState(today)
+  /*
+   * Какая неделя открыта и какие курсы скрыты — переживает уход отсюда.
+   *
+   * Из расписания уходят в занятие и возвращаются «назад» браузером, а
+   * страница при этом собирается заново: неделя вставала на сегодняшнюю, и
+   * до октябрьской надо было долистывать снова. Живёт это во вкладке
+   * (`remember.useKept`), а не в настройках: завтра утром расписание
+   * открывается на сегодняшнем дне, как и должно.
+   */
+  const [anchor, setAnchor] = useKept('agenda.week', today())
   const [data, setData] = useState(EMPTY)
   const [years, setYears] = useState([])
   // the school timetable, only as far as «is there anything of mine in it»:
   // the button must not appear for a school that keeps no timetable
   const [classes, setClasses] = useState([])
-  const [hidden, setHidden] = useState(() => new Set())
+  // список, а не `Set`: наружу он уезжает через JSON, и множество доехало
+  // бы пустым
+  const [hiddenIds, setHiddenIds] = useKept('agenda.hidden', [])
+  const hidden = useMemo(() => new Set(hiddenIds), [hiddenIds])
 
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
@@ -492,12 +504,11 @@ export default function Agenda({ onLoggedOut }) {
   }
 
   const toggleClass = (id) =>
-    setHidden((current) => {
-      const next = new Set(current)
-      if (next.has(id)) next.delete(id)
-      else next.add(id)
-      return next
-    })
+    setHiddenIds((current) =>
+      current.includes(id)
+        ? current.filter((one) => one !== id)
+        : [...current, id],
+    )
 
   const step = (direction) => setAnchor((current) => addDays(current, 7 * direction))
 

@@ -9,6 +9,7 @@ import Pick from './Pick'
 import Switch from './Switch'
 import SubjectPicker, { chosenSubject } from './SubjectPicker'
 import { prune } from './expressionTree'
+import { useKept } from './remember'
 import { taken } from './basket'
 import {
   fetchTags,
@@ -32,21 +33,30 @@ import {
  */
 export default function BankSearch() {
   const { t } = useTranslation()
-  const [text, setText] = useState('')
+  /*
+   * Набранное переживает уход со страницы (`remember.useKept`).
+   *
+   * Поиск здесь — не одно слово, а работа: три грани, отрицание, дерево
+   * условий. Открыть найденную задачу и вернуться «назад» значило собрать
+   * всё это заново, и на третий раз человек перестаёт открывать задачи
+   * вовсе — то есть сложный поиск переставал окупаться ровно из-за того,
+   * что он сложный.
+   */
+  const [text, setText] = useKept('bank.search.text', '')
   // Грань хранится целиком, вместе с именем: снятая из общего списка она
   // исчезает, и восстановить её подпись потом неоткуда.
-  const [chosen, setChosen] = useState([])
+  const [chosen, setChosen] = useKept('bank.search.facets', [])
   const [found, setFound] = useState(null)
   const [error, setError] = useState(null)
   const [picked, setPicked] = useState(taken())
   // '' — всё своё, 'yes' — разложенное по книгам, 'no' — только из работ
-  const [shelved, setShelved] = useState('')
+  const [shelved, setShelved] = useKept('bank.search.shelved', '')
   const [subject, setSubject] = useState(chosenSubject())
   // Второй вход в тот же набор: грани отвечают только на «и», выражение — на
   // «или» и на отрицание. Вид один за раз: два списка результатов рядом
   // означали бы два ответа на вопрос «что нашлось».
-  const [byTree, setByTree] = useState(false)
-  const [tree, setTree] = useState({ all: [] })
+  const [byTree, setByTree] = useKept('bank.search.byTree', false)
+  const [tree, setTree] = useKept('bank.search.tree', { all: [] })
   // Словарь целиком — им наполняются селекты в выражении.
   const [vocabulary, setVocabulary] = useState([])
   const [saved, setSaved] = useState([])
