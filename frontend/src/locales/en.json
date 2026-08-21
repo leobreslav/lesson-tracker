@@ -281,7 +281,10 @@
     "bank_nothing_to_copy": "No problems picked: there is nothing to take.",
     "part_without_number": "An indented line with no number above it: a part always belongs to a number.",
     "number_needs_a_tab": "Separate the number from the statement with a tab — otherwise it is unclear which is which.",
-    "stem_is_not_a_question": "That is a shared statement, not a question: a cell takes one of its parts."
+    "stem_is_not_a_question": "That is a shared statement, not a question: a cell takes one of its parts.",
+    "proposal_empty": "Say what it is about: an empty proposal cannot be resolved.",
+    "proposal_answer_required": "Say why it does not fit: a silent refusal explains nothing.",
+    "tag_kind_required": "Say what kind of tag it is: the dictionary is sorted by kind."
   },
   "classPicker": {
     "label": "Classes:",
@@ -1463,5 +1466,51 @@
     "summary": "Problems: {{problems}} · attempts: {{attempts}} · asked more than once: {{repeated}}",
     "empty": "Nothing solved yet — or it was not in your courses.",
     "right": "answered correctly"
+  },
+  "propose": {
+    "title": "Report or suggest",
+    "listTitle": "Proposals",
+    "kind": "What it is about",
+    "kinds": {
+      "typo": "A typo",
+      "tag": "A tag",
+      "problem": "A problem",
+      "solution": "A solution",
+      "other": "Something else"
+    },
+    "text": "What is wrong, or what you suggest",
+    "suggested": {
+      "typo": "How it should read (we write it in if accepted)",
+      "tag": "The tag's name, if the dictionary has none",
+      "solution": "The solution",
+      "problem": "The statement"
+    },
+    "whereItGoes": "You need not choose the addressee: shared items go to a superuser, school ones to a school administrator.",
+    "send": "Send",
+    "states": {
+      "pending": "waiting",
+      "accepted": "accepted",
+      "declined": "declined"
+    },
+    "answered": "Answer: {{answer}}",
+    "reply": "Reply",
+    "say": "Say",
+    "answer": "Answer",
+    "accept": "Accept and apply",
+    "decline": "Decline",
+    "tagKind": "Kind of tag",
+    "tagKinds": {
+      "subject": "subject",
+      "object": "object",
+      "task": "kind of task",
+      "theorem": "theorem",
+      "method": "method"
+    },
+    "waiting_one": "To resolve: {{count}}",
+    "waiting_other": "To resolve: {{count}}",
+    "mine": "My proposals",
+    "noneMine": "You have not proposed anything yet.",
+    "open": "Proposals",
+    "report": "Report a problem"
   }
 }

@@ -6,6 +6,8 @@ from .views import (
     ChronologyView,
     CopyView,
     ProblemView,
+    ProposalView,
+    ProposalsView,
     SearchView,
     SolutionsView,
     SourceView,
@@ -28,6 +30,8 @@ urlpatterns = [
     path("topics/", TopicsView.as_view(), name="bank-topics"),
     path("topics/<int:pk>/", TopicView.as_view(), name="bank-topic"),
     path("chronology/<int:course>/", ChronologyView.as_view(), name="bank-chronology"),
+    path("proposals/", ProposalsView.as_view(), name="bank-proposals"),
+    path("proposals/<int:pk>/", ProposalView.as_view(), name="bank-proposal"),
     path("tags/", TagsView.as_view(), name="bank-tags"),
     path("tag-links/", TagLinkView.as_view(), name="bank-tag-links"),
 ]

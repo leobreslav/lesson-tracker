@@ -10,12 +10,13 @@
 from config.access import IsSchoolMember, IsTeacher
 from config.errors import Codes, api_error
 from django.db.models import Q
+from django.http import Http404
 from django.shortcuts import get_object_or_404
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from . import copying, expressions, importing, search, services, topics
+from . import copying, expressions, importing, proposals, search, services, topics
 from .owning import writable_ids
 from .models import (
     NEGATABLE,
@@ -29,6 +30,7 @@ from .models import (
     SolutionTag,
     Introduction,
     Source,
+    Proposal,
     Tag,
     Topic,
 )
@@ -717,3 +719,107 @@ class ChronologyView(BankView):
             else Course.objects.for_teacher(request.user)
         )
         return get_object_or_404(source, pk=pk)
+
+
+class ProposalsView(BankView):
+    """
+    Предложения: сообщить об опечатке, предложить тег, задачу или разбор.
+
+    Закрытость общего каталога стоила ровно этого — учителю нечего было
+    сделать с чужой ошибкой, кроме копии. Дверь односторонняя только на вид:
+    разбирающий отвечает, автор видит ответ, и оба пишут реплики.
+
+    Список показывает **две разные вещи** одним адресом: «мои» — то, что я
+    предложил, и «на разбор» — то, что мне разбирать. Разделять их
+    эндпоинтами было бы честно ровно до первого экрана, где нужны оба.
+    """
+
+    def get(self, request):
+        mine = Proposal.objects.filter(author=request.user).select_related(
+            "problem", "solution", "tag", "author"
+        )
+        return Response(
+            {
+                "mine": [proposals.payload(one, user=request.user) for one in mine],
+                "waiting": [
+                    proposals.payload(one, user=request.user)
+                    for one in proposals.waiting_for(request.user)
+                ],
+            }
+        )
+
+    def post(self, request):
+        made = proposals.make(
+            request.user,
+            kind=request.data.get("kind") or Proposal.OTHER,
+            text=request.data.get("text") or "",
+            suggested=request.data.get("suggested") or "",
+            problem=self.find(Problem, request, "problem"),
+            solution=self.find(Solution, request, "solution"),
+            tag=self.find(Tag, request, "tag", visible=False),
+            level=request.data.get("level"),
+        )
+        return Response(proposals.payload(made, user=request.user), status=201)
+
+    def find(self, model, request, field, *, visible=True):
+        """
+        Цель предложения — только из того, что человеку видно.
+
+        Иначе предложение стало бы способом узнать о существовании чужого:
+        «сообщил об опечатке в задаче номер такой-то» и по ответу понял, что
+        она есть.
+        """
+        if not request.data.get(field):
+            return None
+        source = model.objects.visible_to(request.user) if visible else model.objects
+        return get_object_or_404(source, pk=request.data[field])
+
+
+class ProposalView(BankView):
+    """Один разговор: реплика, принятие, отказ."""
+
+    def get_object(self, request, pk):
+        found = get_object_or_404(Proposal, pk=pk)
+        if found.author_id != request.user.pk and not proposals.may_resolve(
+            request.user, found
+        ):
+            # чужое предложение неотличимо от несуществующего — как везде
+            raise Http404
+        return found
+
+    def get(self, request, pk):
+        return Response(
+            proposals.payload(self.get_object(request, pk), user=request.user)
+        )
+
+    def post(self, request, pk):
+        """Реплика в разговоре: её пишут обе стороны."""
+        found = self.get_object(request, pk)
+        proposals.say(found, request.user, request.data.get("text") or "")
+        return Response(proposals.payload(found, user=request.user), status=201)
+
+    def patch(self, request, pk):
+        """Решение: принять (и сделать) или отклонить (со словами)."""
+        found = self.get_object(request, pk)
+        if not proposals.may_resolve(request.user, found):
+            api_error(
+                Codes.BANK_READ_ONLY,
+                "Разбирает тот, кто вправе править: у общего каталога это "
+                "суперпользователь, у школьного — администратор школы.",
+                field="state",
+            )
+
+        if request.data.get("state") == Proposal.ACCEPTED:
+            proposals.accept(
+                found,
+                request.user,
+                answer=request.data.get("answer") or "",
+                tag_kind=request.data.get("tag_kind"),
+                side=request.data.get("side"),
+            )
+        else:
+            proposals.decline(
+                found, request.user, answer=request.data.get("answer") or ""
+            )
+
+        return Response(proposals.payload(found, user=request.user))

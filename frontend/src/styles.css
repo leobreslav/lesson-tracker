@@ -6608,3 +6608,16 @@ button.dropzone:hover:not(:disabled) {
 .cell {
   position: relative;
 }
+
+/* Предложения: карточка на разговор, как в списке работ. */
+.proposal-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--card-gap);
+}
+
+.proposal-list blockquote {
+  margin: 0.3rem 0;
+}

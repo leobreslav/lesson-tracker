@@ -5,6 +5,7 @@ import { Link, useParams } from 'react-router-dom'
 import AnalogueDialog from './AnalogueDialog'
 import Collapsible from './Collapsible'
 import CopyToShelf from './CopyToShelf'
+import ProposeDialog from './ProposeDialog'
 import Markdown from './Markdown'
 import TagStrip from './TagStrip'
 import { shortDate } from './dates'
@@ -24,6 +25,8 @@ export default function BankProblem() {
   const [error, setError] = useState(null)
   const [copying, setCopying] = useState(false)
   const [analogue, setAnalogue] = useState(false)
+  // сообщить об опечатке или предложить тег тем, кто вправе править
+  const [proposing, setProposing] = useState(null)
   // Словарь общий на всю страницу: он один и тот же для условия и всех разборов.
   const [vocabulary, setVocabulary] = useState([])
   const [busy, setBusy] = useState(false)
@@ -74,9 +77,26 @@ export default function BankProblem() {
         <button type="button" className="secondary" onClick={() => setCopying(true)}>
           {t('bank.copy.title')}
         </button>
+        {/* дверь в закрытый каталог: своё правят сами, о чужом сообщают */}
+        <button
+          type="button"
+          className="link"
+          onClick={() => setProposing({ problem: data.id })}
+        >
+          {t('propose.report')}
+        </button>
       </header>
 
       {error && <p className="error">{error}</p>}
+
+      {proposing && (
+        <ProposeDialog
+          problem={proposing.problem}
+          solution={proposing.solution}
+          onClose={() => setProposing(null)}
+          onDone={() => setProposing(null)}
+        />
+      )}
 
       {copying && (
         <CopyToShelf
@@ -207,6 +227,13 @@ export default function BankProblem() {
             openByDefault={false}
           >
             <Markdown text={solution.text} />
+            <button
+              type="button"
+              className="link"
+              onClick={() => setProposing({ solution: solution.id })}
+            >
+              {t('propose.report')}
+            </button>
             <TagStrip
               tags={solution.tags}
               vocabulary={vocabulary}

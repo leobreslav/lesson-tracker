@@ -1057,3 +1057,18 @@ export const importFileIntoSource = (source, file) => {
   form.append('file', file)
   return request(`/api/bank/sources/${source}/import/`, { method: 'POST', body: form })
 }
+
+/**
+ * Предложения: сообщить об опечатке, предложить тег, задачу или разбор.
+ * Кому это идёт, решает сервер по владению того, о чём речь.
+ */
+export const fetchProposals = () => request('/api/bank/proposals/')
+
+export const propose = (body) =>
+  request('/api/bank/proposals/', { method: 'POST', body })
+
+export const sayOnProposal = (id, text) =>
+  request(`/api/bank/proposals/${id}/`, { method: 'POST', body: { text } })
+
+export const resolveProposal = (id, body) =>
+  request(`/api/bank/proposals/${id}/`, { method: 'PATCH', body })

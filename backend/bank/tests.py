@@ -1425,3 +1425,39 @@ class ImportTests(SchoolTestMixin, APITestCase):
             format="json",
         )
         self.assertEqual(answer.status_code, 404)
+
+
+class AdminSeesWhatHeMayFixTests(SchoolTestMixin, APITestCase):
+    """
+    Администратор школы видит то, что вправе править.
+
+    Право у него было с самого начала, а видимости не было — и ветка была
+    недостижима: объект не находился раньше, чем спрашивалось право. Наружу
+    это вылезло на предложениях: он разбирал сообщение об опечатке в задаче,
+    которую не мог открыть.
+    """
+
+    def test_a_personal_problem_of_a_colleague_is_visible_to_the_admin(self):
+        mine = Problem.objects.create(
+            text="Личная", school=self.school, owner=self.user, created_by=self.user
+        )
+
+        self.assertIn(mine, Problem.objects.visible_to(self.admin))
+        # и править её он тоже вправе: одно без другого не работало
+        self.assertIn(mine, Problem.objects.writable_by(self.admin))
+
+    def test_a_colleague_still_does_not_see_it(self):
+        mine = Problem.objects.create(
+            text="Личная", school=self.school, owner=self.user, created_by=self.user
+        )
+
+        # право даёт роль, а не членство: рядовой учитель как не видел, так и
+        # не видит
+        self.assertNotIn(mine, Problem.objects.visible_to(self.colleague))
+
+    def test_another_school_is_still_invisible_to_its_admin(self):
+        mine = Problem.objects.create(
+            text="Наша", school=self.school, owner=self.user, created_by=self.user
+        )
+
+        self.assertNotIn(mine, Problem.objects.visible_to(self.alien_admin))

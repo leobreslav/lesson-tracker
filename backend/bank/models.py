@@ -18,10 +18,11 @@
 
 from config.errors import Codes, api_error
 from django.core.exceptions import ValidationError
+from django.conf import settings
 from django.contrib.postgres.fields import ArrayField
 from django.db import models
 
-from .owning import Owned
+from .owning import SCHOOL, Owned
 
 # --- словарь ---------------------------------------------------------------
 
@@ -608,3 +609,160 @@ class Topic(Owned):
             return {}
         return parts[0] if len(parts) == 1 else {"all": parts}
 
+
+
+class Proposal(models.Model):
+    """
+    Предложение: что пользователь говорит тем, кто вправе править.
+
+    Общий каталог и словарь тегов закрыты намеренно — иначе через год в них
+    будет «Виет», «т. Виета» и «viete», — но у закрытости есть цена: учитель,
+    нашедший опечатку в системной задаче или знающий недостающий тег, не может
+    сделать **ничего**. Единственным путём оставалась копия, то есть дубль в
+    общем каталоге. Эта модель и есть недостающая дверь.
+
+    **Кому идёт предложение, не хранится, а выводится** — из владения того, о
+    чём речь: системное разбирает суперпользователь, школьное —
+    администраторы школы. Поле «адресат» было бы вторым источником правды о
+    том же самом и разошлось бы с владением в первый же переезд задачи между
+    уровнями.
+
+    Виды не выдуманы, а взяты из того, с чем приходят:
+
+    | вид | о чём | что делает принятие |
+    |-----|-------|---------------------|
+    | `typo` | опечатка в условии или разборе | вписывает предложенный текст |
+    | `tag` | «сюда просится такой-то тег» | вешает тег; новый — заводит |
+    | `problem` | «вот вам задача» | заводит условие на том уровне |
+    | `solution` | «вот разбор к этой задаче» | заводит разбор |
+    | `other` | всё остальное | ничего, кроме пометки |
+
+    Принятие **делает дело**, а не просто помечает: предложение, после
+    которого администратору надо ещё раз сделать то же самое руками, никто не
+    станет ни писать, ни разбирать.
+    """
+
+    TYPO = "typo"
+    TAG = "tag"
+    PROBLEM = "problem"
+    SOLUTION = "solution"
+    OTHER = "other"
+    KINDS = [
+        (TYPO, "опечатка"),
+        (TAG, "тег"),
+        (PROBLEM, "задача"),
+        (SOLUTION, "разбор"),
+        (OTHER, "прочее"),
+    ]
+
+    PENDING = "pending"
+    ACCEPTED = "accepted"
+    DECLINED = "declined"
+    STATES = [
+        (PENDING, "ждёт"),
+        (ACCEPTED, "принято"),
+        (DECLINED, "отклонено"),
+    ]
+
+    kind = models.CharField("kind", max_length=16, choices=KINDS)
+    # О чём речь. Целей три вида, и они **не исключают друг друга**: «повесить
+    # такой-то тег на эту задачу» называет и задачу, и тег.
+    problem = models.ForeignKey(
+        Problem,
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="proposals",
+    )
+    solution = models.ForeignKey(
+        Solution,
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="proposals",
+    )
+    tag = models.ForeignKey(
+        Tag,
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="proposals",
+        verbose_name="the tag being suggested, if it already exists",
+    )
+
+    # Куда адресовано: в общий каталог или своей школе. У предложения про
+    # существующий объект считается из его владения, у новой задачи — выбор
+    # автора.
+    level = models.CharField("level", max_length=16, default=SCHOOL)
+    school = models.ForeignKey(
+        "schools.School",
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="+",
+    )
+
+    text = models.TextField("what the person says", blank=True)
+    # Предлагаемое: исправленный текст, условие новой задачи, разбор, имя
+    # нового тега. Одно поле на все виды намеренно — это всегда «вот что я
+    # предлагаю написать», и разводить его по видам значило бы завести пять
+    # полей, из которых четыре всегда пусты.
+    suggested = models.TextField("the text being suggested", blank=True)
+
+    state = models.CharField("state", max_length=16, choices=STATES, default=PENDING)
+    answer = models.TextField("what the resolver said", blank=True)
+
+    author = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name="proposals",
+    )
+    resolved_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="+",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    resolved_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        verbose_name = "proposal"
+        verbose_name_plural = "proposals"
+        ordering = ("-created_at", "-id")
+
+    def __str__(self):
+        return f"{self.get_kind_display()}: {self.text[:40]}"
+
+
+class ProposalNote(models.Model):
+    """
+    Реплика в разговоре о предложении.
+
+    Разговор нужен потому, что половина предложений — не «да/нет», а «а что
+    именно не так?»: опечатку надо показать, тег обсудить, задачу уточнить.
+    Отказ без разговора превращается в загадку, а с ним — в решение.
+
+    Своя модель, а не `works.Message`: тот привязан к паре «задача и ученик» и
+    отвечает на другой вопрос. Общий разговор поверх обоих — отдельная работа,
+    и делать её заодно значит переделывать оба.
+    """
+
+    proposal = models.ForeignKey(
+        Proposal, on_delete=models.CASCADE, related_name="notes"
+    )
+    author = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, related_name="+"
+    )
+    text = models.TextField("reply")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = "note on a proposal"
+        verbose_name_plural = "notes on proposals"
+        ordering = ("created_at", "id")
+
+    def __str__(self):
+        return self.text[:40]
