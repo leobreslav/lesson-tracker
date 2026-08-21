@@ -32,20 +32,22 @@ test('администратор заводит типовые системы и
   await page.goto('/school/reference')
   await ready(page)
 
-  // новая школа не получает ничего: угаданный набор хуже пустого списка
-  await expect(page.locator('[data-panel="grading"]')).toContainText('Пока ни одной')
-
+  // Пустоты тут не проверяем: посев кладёт школе систему оценивания, а
+  // «новая школа не получает ничего» доказано питоновским тестом на модели.
+  // Экран отвечает за другое — что кнопка заводит все три и что она идемпотентна.
+  const list = page.locator('.grading-list li')
   await page.getByRole('button', { name: 'Добавить типовые' }).click()
-  await expect(page.locator('.grading-list li')).toHaveCount(3)
+  for (const name of ['5-балльная', 'MYP', 'Зачёт']) {
+    await expect(list.filter({ hasText: name })).toHaveCount(1)
+  }
+  const после = await list.count()
 
   // нажать дважды не страшно
   await page.getByRole('button', { name: 'Добавить типовые' }).click()
-  await expect(page.locator('.grading-list li')).toHaveCount(3)
+  await expect(list).toHaveCount(после)
 
-  await page.locator('.grading-list li').first().getByRole('button', { name: 'запретить' }).click()
-  await expect(
-    page.locator('.grading-list li').first().getByRole('button', { name: 'разрешить' }),
-  ).toBeVisible()
+  await list.first().getByRole('button', { name: 'запретить' }).click()
+  await expect(list.first().getByRole('button', { name: 'разрешить' })).toBeVisible()
 })
 
 test('учитель выбирает систему сам, а запрещённой в списке нет', async ({

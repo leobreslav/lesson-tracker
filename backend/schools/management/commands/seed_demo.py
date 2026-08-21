@@ -16,7 +16,17 @@ uniform dataset hides exactly the states that break layouts.
 from datetime import date, timedelta
 
 from allauth.account.models import EmailAddress
-from bank.models import Entry, Problem, Section, Solution, SolutionTag, Source, Tag, Topic
+from bank.models import (
+    Entry,
+    Problem,
+    Proposal,
+    Section,
+    Solution,
+    SolutionTag,
+    Source as BankSource,
+    Tag as BankTag,
+    Topic,
+)
 from calendars.models import DayException, SchoolYear, Term
 from calendars.services import KIND_HOLIDAY, KIND_VACATION
 from django.conf import settings
@@ -41,7 +51,7 @@ from schedule.models import (
     Subject,
 )
 from schedule import services as schedule_services
-from schools import rich_demo, services as school_services
+from schools import demo_extras, rich_demo, services as school_services
 from schools.models import Invitation, School
 from works import statements
 from works.models import Submission, Task, Work
@@ -401,6 +411,9 @@ class Command(BaseCommand):
                 self.plans(courses, people)
                 self.library(school, subjects, people, courses)
                 self.bank(school, people, courses)
+                demo_extras.build(
+                    school, courses, people, students, log=self.stdout.write
+                )
 
             if rich and not options["minimal"]:
                 rich_demo.build(
@@ -627,7 +640,20 @@ class Command(BaseCommand):
         """
         # работы держат курс через PROTECT, как уроки и план, поэтому идут
         # первыми — вместе с задачами и ответами, которые висят на них
+        # Задачник сносится первым и **целиком**, включая системный уровень:
+        # у системных задач, книг и тем школы нет вовсе, и каскад от школы до
+        # них не доходит — после `--flush` они оставались бы в базе, а посев
+        # видел бы их и не заводил заново. Порядок внутри свой: предложения
+        # держат задачи, ячейки работ держат условия через `PROTECT`.
         Work.objects.all().delete()
+        Proposal.objects.all().delete()
+        # у темы родитель под `PROTECT` (ветка не должна молча расширяться),
+        # поэтому при сносе всего сперва развязываем дерево
+        Topic.objects.all().update(parent=None)
+        Topic.objects.all().delete()
+        BankSource.objects.all().delete()
+        Problem.objects.all().delete()
+        BankTag.objects.all().delete()
         PlanTemplate.objects.all().delete()
         PlanNode.objects.all().delete()
         # the two deletes above took every attachment with them, so nothing
@@ -646,7 +672,20 @@ class Command(BaseCommand):
         self.stdout.write(self.style.WARNING("  очищено: всё, кроме суперпользователей"))
 
     def flush_files(self):
-        """Empty the dev bucket of what this seed put there."""
+        """
+        Empty the dev bucket of what this seed put there.
+
+        Снимки плана сносятся **до** файлов, и это не мелочь: снимок держит
+        объект в хранилище через `PROTECT` — ровно затем, чтобы отменённое
+        удаление строки могло вернуть её вложения. При сносе всего этот
+        замок срабатывает первым, и `--flush` падает с `ProtectedError`,
+        успев удалить половину. Поймано досевом, который начал заводить
+        снимки: до него в базе разработки их просто не бывало.
+        """
+        from plans.models import PlanSnapshot
+
+        PlanSnapshot.objects.all().delete()
+
         gone = 0
         for stored in StoredFile.objects.all():
             try:
@@ -985,10 +1024,10 @@ class Command(BaseCommand):
         """
         tags = {}
         for name, kind in DEMO_TAGS:
-            tags[name] = Tag.objects.get_or_create(name=name, kind=kind)[0]
+            tags[name] = BankTag.objects.get_or_create(name=name, kind=kind)[0]
 
         teacher = people["ivanova@example.com"]
-        source, _ = Source.objects.get_or_create(
+        source, _ = BankSource.objects.get_or_create(
             title="Листочки по алгебре",
             school=school,
             owner=teacher,

@@ -28,9 +28,18 @@ const WEEKDAYS = 7
 
 export const STATUSES = [STATUS_STUDY, STATUS_HOLIDAY, STATUS_VACATION, STATUS_WEEKEND]
 
-/** A YYYY-MM-DD date into a Date at noon (noon survives DST shifts). */
+/**
+ * "2026-08-20" → Date. Полдень, а не полночь: перевод часов сдвинул бы дату.
+ *
+ * Время отрезается, если оно есть. Половина payload'ов проекта — даты
+ * (`2026-08-20`), половина — отметки времени (`2026-08-20T10:11:12Z`), и на
+ * экране из них показывают одно и то же — день. Пока время не отрезалось,
+ * `Number('20T10:11:12Z')` давал NaN, а `Intl` — `RangeError: Invalid time
+ * value`, то есть падение отрисовки. Держалось это годами: единственная
+ * панель с отметкой времени (журнал трат) в тестах была пуста.
+ */
 export function parseDate(iso) {
-  const [year, month, day] = iso.split('-').map(Number)
+  const [year, month, day] = String(iso).slice(0, 10).split('-').map(Number)
   return new Date(year, month - 1, day, 12)
 }
 

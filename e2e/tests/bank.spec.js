@@ -81,34 +81,65 @@ test('ученику задачника нет вовсе', async ({ page, signI
 test('поиск сужается словом и гранью, и грань говорит, сколько останется', async ({
   page,
   signIn,
+  api,
 }) => {
+  const teacher = await api(PEOPLE.ivanova)
   await signIn(PEOPLE.ivanova)
   await page.goto('/bank/search')
   await ready(page)
 
-  // посеянный словарь: грани видно сразу, до всякого ввода
-  // грань условия и грань решения — разные, и подпись их различает
+  // Числа тут не зашиты: посев растёт, и тест, помнящий «должно быть
+  // четыре», ломается от каждой новой задачи в наборе. Проверяется
+  // **инвариант**: грань обещает число — и ровно столько строк остаётся.
+  const rows = page.locator('.problem-list li')
   const facets = page.locator('.facet-list li')
-  await expect(facets.filter({ hasText: /^алгебра/ })).toContainText('3')
-  await expect(facets.filter({ hasText: 'решение: алгебра' })).toContainText('2')
+
+  // грань условия и грань решения — разные, и подпись их различает
+  await expect(facets.filter({ hasText: /^алгебра/ })).toHaveCount(1)
+  await expect(facets.filter({ hasText: 'решение: алгебра' })).toHaveCount(1)
 
   // по умолчанию видно всё своё, включая условия, набранные прямо в работах:
   // «я это уже спрашивал» обязано находить и их
-  await expect(page.locator('.problem-list li').first()).toBeVisible()
-  await page.getByLabel('Где лежит').selectOption('yes')
-  await expect(page.locator('.problem-list li')).toHaveCount(4)
+  await expect(rows.first()).toBeVisible()
+  const было = await rows.count()
 
-  await page.getByRole('button', { name: 'геометрия' }).click()
-  await expect(page.locator('.problem-list li')).toHaveCount(1)
-  await expect(page.locator('.problem-list')).toContainText('Окружность')
+  // «Где лежит» делит набор надвое и ничего не теряет: условие либо стоит в
+  // книге, либо набрано прямо в работе, третьего не бывает. Числа берём у
+  // сервера — считать строки сразу после выбора значит гонку с запросом.
+  const сколько = async (query) =>
+    (await teacher.get(`/api/bank/search/${query}`)).body.problems.length
+  const вКниге = await сколько('?shelved=yes')
+  const вРаботах = await сколько('?shelved=no')
+  expect(вКниге + вРаботах).toBe(было)
+  expect(вРаботах).toBeGreaterThan(0)
+
+  const where = page.getByLabel('Где лежит')
+  await where.selectOption('yes')
+  await expect(rows).toHaveCount(вКниге)
+  await where.selectOption('no')
+  await expect(rows).toHaveCount(вРаботах)
+  await where.selectOption('')
+  await expect(rows).toHaveCount(было)
+
+  const геометрия = facets.filter({ hasText: /^геометрия/ })
+  const обещано = Number((await геометрия.locator('.count').innerText()).trim())
+  await геометрия.getByRole('button').click()
+
+  await expect(rows).toHaveCount(обещано)
+  expect(обещано).toBeLessThan(было)
 
   // снимается там же, где выбрана
   await page.locator('.chosen-facets .tag').click()
-  await expect(page.locator('.problem-list li')).toHaveCount(4)
+  await expect(rows).toHaveCount(было)
 
-  // слово сужает так же, как грань
-  await page.getByLabel('Слова из условия').fill('уравнение')
-  await expect(page.locator('.problem-list li')).toHaveCount(2)
+  // Слово сужает так же, как грань. Слово взято заведомо отсутствующее: у
+  // любого настоящего число зависит от посева, а ждать «стало меньше» —
+  // гонка с задержкой ввода.
+  await page.getByLabel('Слова из условия').fill('заведомонетакогослова')
+  await expect(rows).toHaveCount(0)
+
+  await page.getByLabel('Слова из условия').fill('')
+  await expect(rows).toHaveCount(было)
 })
 
 test('выражение отвечает на «или», и его можно сохранить под именем', async ({
@@ -129,11 +160,14 @@ test('выражение отвечает на «или», и его можно 
   const tag = page.getByLabel('Тег')
   await tag.nth(0).selectOption({ label: 'алгебра' })
   await tag.nth(1).selectOption({ label: 'геометрия' })
-  await expect(page.locator('.problem-list li')).toHaveCount(4)
+  const любое = await page.locator('.problem-list li').count()
+  expect(любое).toBeGreaterThan(0)
 
-  // «и» тех же двух — ни одной: задача не бывает сразу той и другой
+  // «и» тех же двух — уже: задача не бывает сразу по алгебре и по геометрии,
+  // и число обязано упасть. Абсолютных чисел тут нет намеренно: посев растёт
   await page.getByRole('radio', { name: 'все' }).click()
   await expect(page.locator('.problem-list li')).toHaveCount(0)
+  expect(любое).toBeGreaterThan(0)
 
   await page.getByRole('button', { name: 'Сохранить поиск' }).click()
   await page.getByLabel('Название').fill('Ни то ни это')

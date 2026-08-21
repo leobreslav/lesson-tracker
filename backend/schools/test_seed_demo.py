@@ -233,7 +233,10 @@ class WorksTests(TestCase):
 
         states = sorted(work.state() for work in Work.objects.all())
 
-        self.assertEqual(states, ["closed", "open", "planned"])
+        # состояния должны **встречаться** — а не быть единственными: досев
+        # добавляет свои работы, и требовать ровно три значило бы запрещать
+        # набору расти
+        self.assertEqual(sorted(set(states)), ["closed", "open", "planned"])
 
     def test_the_answers_show_every_state_a_cell_can_have(self):
         """
@@ -580,3 +583,64 @@ class RichSeedTests(TestCase):
         year = SchoolYear.objects.get()
         self.assertEqual(str(year.start_date), "2026-09-01")
         self.assertEqual(str(year.end_date), "2027-05-31")
+
+
+@override_settings(DEBUG=True)
+class EveryModelIsSeededTests(TestCase):
+    """
+    После посева **в каждой модели что-то лежит**.
+
+    Пустая модель значит, что её экран никто ни разу не видел с данными, а её
+    запрос ни разу не выполнялся на непустой выборке. Первым это обнаруживает
+    не разработчик, а учитель — и обычно на том, что список, который «всегда
+    пустой», внезапно оказался длинным.
+
+    Двадцать моделей стояли пустыми, пока это не померили: эталоны плана,
+    снимки, журнал занятия, оценки, разговоры, предложения, траты. Список
+    исключений ниже короткий и каждое названо с причиной — иначе сторож тихо
+    перестаёт быть сторожем.
+    """
+
+    # Модели, которых после посева законно нет, и почему.
+    EMPTY_ON_PURPOSE = {
+        "accounts.UserGroups": "служебная таблица связи Django",
+        "accounts.UserUserPermissions": "то же самое про права",
+    }
+
+    OURS = {
+        "accounts",
+        "bank",
+        "calendars",
+        "files",
+        "library",
+        "onboarding",
+        "plans",
+        "schedule",
+        "schools",
+        "vision",
+        "works",
+    }
+
+    def test_no_model_is_left_empty(self):
+        from django.apps import apps
+
+        seed()
+
+        empty = []
+        for model in apps.get_models():
+            label = model._meta.app_label
+            if label not in self.OURS:
+                continue
+            name = f"{label}.{model.__name__}"
+            if name in self.EMPTY_ON_PURPOSE:
+                continue
+            if not model.objects.exists():
+                empty.append(name)
+
+        self.assertEqual(
+            sorted(empty),
+            [],
+            "после посева эти модели пусты: досейте их в `schools/demo_extras.py` "
+            "живым случаем — или назовите здесь с причиной, почему их быть не "
+            "должно",
+        )

@@ -21,6 +21,11 @@ test('учитель сообщает об опечатке, администр�
   await page.goto(`/bank/problem/${problem}`)
   await ready(page)
 
+  // Очередь считаем от того, что есть: посев кладёт в неё свои сообщения, и
+  // «На разбор: 1» было бы утверждением про пустую базу, а не про механизм.
+  const admin = await api(PEOPLE.admin)
+  const было = (await admin.get('/api/bank/proposals/')).body.waiting.length
+
   await page.getByRole('button', { name: 'Сообщить об ошибке' }).click()
   await page.getByLabel('Что не так или что предлагаете').fill('пропущена запятая')
   await page
@@ -37,9 +42,11 @@ test('учитель сообщает об опечатке, администр�
   await signIn(PEOPLE.admin)
   await page.goto('/bank/proposals')
   await ready(page)
-  await expect(page.locator('.page')).toContainText('На разбор: 1')
+  await expect(page.locator('.page')).toContainText(`На разбор: ${было + 1}`)
 
-  await page.getByRole('button', { name: 'Принять и применить' }).click()
+  // Кнопка берётся у своей карточки: в очереди лежат и посеянные сообщения.
+  const наше = page.locator('.proposal-list li').filter({ hasText: 'пропущена запятая' })
+  await наше.getByRole('button', { name: 'Принять и применить' }).click()
   await ready(page)
 
   // принятие сделало дело, а не пометку
@@ -56,20 +63,23 @@ test('отказ без слов не отправляется', async ({ page, 
     problem: found.body.problems[0].id,
     text: 'кажется, тут что-то не то',
   })
+  const admin = await api(PEOPLE.admin)
+  const было = (await admin.get('/api/bank/proposals/')).body.waiting.length
 
   await signIn(PEOPLE.admin)
   await page.goto('/bank/proposals')
   await ready(page)
 
-  const decline = page.getByRole('button', { name: 'Отклонить' })
+  const наше = page.locator('.proposal-list li').filter({ hasText: 'кажется, тут что-то не то' })
+  const decline = наше.getByRole('button', { name: 'Отклонить' })
   await expect(decline).toBeDisabled()
 
-  await page.getByLabel('Ответ').first().fill('всё верно, так и задумано')
+  await наше.getByLabel('Ответ').fill('всё верно, так и задумано')
   await expect(decline).toBeEnabled()
   await decline.click()
   await ready(page)
 
-  await expect(page.locator('.page')).not.toContainText('На разбор')
+  await expect(page.locator('.page')).toContainText(`На разбор: ${было - 1}`)
 })
 
 test('ученику предложений не видно вовсе', async ({ page, signIn }) => {

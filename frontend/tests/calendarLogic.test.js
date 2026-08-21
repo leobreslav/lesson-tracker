@@ -9,6 +9,7 @@ import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 
 import {
+  parseDate,
   STATUS_STUDY,
   STATUS_VACATION,
   STATUS_WEEKEND,
@@ -157,5 +158,19 @@ describe('suggestVacations', () => {
 
     assert.ok(autumn.end_date < winter.start_date)
     assert.ok(winter.end_date < spring.start_date)
+  })
+})
+
+describe('parseDate', () => {
+  it('читает и дату, и отметку времени', () => {
+    // Половина payload'ов проекта — даты, половина — отметки времени, а на
+    // экране из них показывают день. Пока время не отрезалось, `Intl`
+    // получал Invalid Date и ронял отрисовку панели трат.
+    const день = parseDate('2026-08-20')
+    const отметка = parseDate('2026-08-20T10:11:12.345678Z')
+    assert.equal(отметка.getFullYear(), день.getFullYear())
+    assert.equal(отметка.getMonth(), день.getMonth())
+    assert.equal(отметка.getDate(), день.getDate())
+    assert.ok(!Number.isNaN(отметка.getTime()))
   })
 })

@@ -26,10 +26,12 @@ test('в списке — имя и два действия, состояние 
   await signIn(PEOPLE.ivanova)
   const list = await openWorks(page)
 
-  // в строке только имя и то, что с работой делают: окно и попытки живут
-  // в настройках, где их и правят
-  await expect(list.locator('.course-row')).toHaveCount(3)
+  // В строке только имя и то, что с работой делают: окно и попытки живут в
+  // настройках, где их и правят. Числа работ тут нет: посев волен добавлять
+  // свои, и «ровно три» было бы утверждением про набор, а не про строку.
   const closed = list.locator('.course-row', { hasText: 'Контрольная' })
+  await expect(closed).toHaveCount(1)
+  await expect(closed).not.toContainText('попыт')
   await expect(closed.getByRole('button', { name: 'Настройки' })).toBeVisible()
 
   await closed.getByRole('button', { name: 'Проверка' }).click()
@@ -130,10 +132,11 @@ test('на главной у ученика только открытые раб
   await page.goto('/')
   await ready(page)
 
-  // список курсов отвечает на вопрос «что делать сейчас»
+  // Список курсов отвечает на вопрос «что делать сейчас». Считаем не сколько
+  // их, а какие: посев волен добавить курсу ещё одну открытую работу.
   const links = page.locator('.work-links > li')
-  await expect(links).toHaveCount(1)
-  await expect(links.first()).toContainText('Проверочная')
+  await expect(links.filter({ hasText: 'Проверочная' })).toHaveCount(1)
+  const открытых = await links.count()
   await expect(page.locator('body')).not.toContainText('Контрольная: тригонометрия')
   // запланированной для него не существует нигде: окно ещё не открылось
   await expect(page.locator('body')).not.toContainText('Домашняя работа на каникулы')
@@ -142,7 +145,9 @@ test('на главной у ученика только открытые раб
   await ready(page)
 
   // а в курсе — и закрытые: свои ответы и отметки он читает всегда
-  await expect(page.locator('.work-links > li')).toHaveCount(2)
+  const вКурсе = page.locator('.work-links > li')
+  await expect(вКурсе.filter({ hasText: 'Контрольная: тригонометрия' })).toHaveCount(1)
+  await expect(вКурсе).toHaveCount(открытых + 1)
   await expect(page.locator('body')).not.toContainText('Домашняя работа на каникулы')
 })
 
