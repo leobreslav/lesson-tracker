@@ -42,6 +42,12 @@ jobs:
       - name: Файл окружения
         run: bash scripts/dev-env.sh
 
+      - name: Сторож трат в Anthropic
+        # Секунда, и без контейнера: scripts/ никуда не примонтирован.
+        # Регулярка портится молча в обе стороны — и переставая ловить, и
+        # начиная ловить лишнее.
+        run: python3 scripts/test-guard-anthropic-spend.py
+
       - name: Питоновский набор
         run: docker compose run --rm -T backend python manage.py test
 

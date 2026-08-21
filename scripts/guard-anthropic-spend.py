@@ -43,7 +43,12 @@ import sys
 # отвечает, поэтому сверху самая частая форма.
 SPEND_SHAPES = [
     (
-        r"manage\.py\s+shell",
+        # Нужен **исполнитель** перед `manage.py`, а не упоминание. Иначе
+        # сторож ловит собственное описание: сообщение коммита про него самого
+        # содержит слова «manage.py shell» и целиком уезжает в командную
+        # строку `git commit`. Так и вышло — дважды, и оба раза это списали на
+        # оборвавшуюся сеть.
+        r"(python[0-9.]*|\./)\s*manage\.py\s+shell",
         "`manage.py shell` получает скрипт на stdin — по команде не видно, "
         "что он выполнит, а чтение сканов оттуда стоит денег",
     ),
@@ -56,12 +61,71 @@ SPEND_SHAPES = [
         r"[^|;&]*(vision|anthropic|read_header|read_questions)",
         "запуск кода, который зовёт клиента Anthropic",
     ),
+    (
+        # Питон, читающий программу со stdin: `python3 - <<'PY' … PY`. После
+        # исполнителя стоит `-`, а не `-c` и не имя файла, поэтому прошлое
+        # правило его не видело — а это самый короткий путь к трате из тех,
+        # что пишутся на ходу.
+        r"python[0-9.]*\s+-\s*<<[^\n]*\n[\s\S]*?"
+        r"(vision|anthropic|read_header|read_questions)",
+        "программа приходит питону со stdin и зовёт клиента Anthropic",
+    ),
 ]
 
 
+# Кто исполняет тело heredoc, а кто просто несёт его как текст.
+INTERPRETERS = re.compile(r"\b(python[0-9.]*|bash|sh|zsh|node|ruby|perl)\b")
+
+HEREDOC = re.compile(r"<<-?\s*(['\"]?)([A-Za-z_][A-Za-z0-9_]*)\1")
+
+
+def executable_text(command: str) -> str:
+    """
+    Оставляет от команды то, что действительно **выполнится**.
+
+    Разница не формальная. `git commit -F - <<'MSG' … MSG` несёт сообщение
+    коммита, и в нём совершенно законно поминаются опасные формы — например,
+    в описании этого самого сторожа. Данные это, а не код: git ничего из них
+    не запустит и до Anthropic не дойдёт никогда.
+
+    А `python3 - <<'PY' … PY` — ровно наоборот: тело и есть программа, и
+    выкинуть его значило бы ослепить сторож на самом коротком пути к трате.
+
+    Поэтому решает **команда перед heredoc**: интерпретатор — тело смотрим,
+    что угодно другое — тело выбрасываем. Без этого различения сторож
+    срабатывал на собственном описании, дважды за одну сессию, и оба раза
+    отказ списали на оборвавшуюся сеть.
+    """
+    match = HEREDOC.search(command)
+    if not match:
+        return command
+
+    head = command[: match.start()]
+    if INTERPRETERS.search(head):
+        return command  # тело исполняется — смотрим целиком
+
+    # Тело — данные. Оставляем только то, что стоит вокруг heredoc: сама
+    # команда и всё, что идёт после закрывающего слова.
+    delimiter = match.group(2)
+    body_and_tail = command[match.end():]
+    closing = re.search(rf"^\s*{re.escape(delimiter)}\s*$", body_and_tail, re.M)
+    tail = body_and_tail[closing.end():] if closing else ""
+    return head + tail
+
+
 def verdict(command: str) -> str | None:
+    # Проверка самого сторожа — не трата. Ей приходится содержать те самые
+    # формы, которые он ловит, иначе проверять нечего; без этого исключения
+    # сторож нельзя испытать, не потревожив человека.
+    #
+    # Дыры это не открывает больше, чем уже названо в докстринге: он и так
+    # закрывает случайную трату, а не намеренный обход.
+    if "guard-anthropic-spend" in command:
+        return None
+
+    text = executable_text(command)
     for pattern, why in SPEND_SHAPES:
-        if re.search(pattern, command, re.IGNORECASE):
+        if re.search(pattern, text, re.IGNORECASE):
             return why
     return None
 
