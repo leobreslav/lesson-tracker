@@ -16,15 +16,25 @@ import { PEOPLE, expect, ready, test } from './harness.js'
  * влезало, по-английски переносится.
  */
 
+// Список нарочно широкий: этот обход — самый дешёвый способ пройти по всем
+// экранам, а слушатель консоли ловит на них `ReferenceError` и прочее, что
+// сборка не видит. Появился раздел — допишите его сюда, иначе он останется
+// единственным местом, куда браузер ни разу не заглядывал.
 const PAGES = [
   ['/', PEOPLE.ivanova],
   ['/schedule', PEOPLE.ivanova],
   ['/plan', PEOPLE.ivanova],
   ['/works', PEOPLE.ivanova],
+  ['/bank', PEOPLE.ivanova],
+  ['/bank/search', PEOPLE.ivanova],
+  ['/bank/topics', PEOPLE.ivanova],
+  ['/bank/chronology', PEOPLE.ivanova],
+  ['/bank/proposals', PEOPLE.ivanova],
   ['/year', PEOPLE.admin],
   ['/school', PEOPLE.admin],
   ['/school/teachers', PEOPLE.admin],
   ['/school/courses', PEOPLE.admin],
+  ['/school/students', PEOPLE.admin],
   ['/school/reference', PEOPLE.admin],
   ['/school/schedule', PEOPLE.admin],
 ]
