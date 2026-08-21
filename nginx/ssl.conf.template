@@ -92,7 +92,13 @@ server {
         expires 30d;
     }
 
+    # Пароля тут нет, и это вынужденно: basic-auth и токен приложения делят
+    # один заголовок Authorization. Приложение ставит `Authorization: Token …`
+    # на каждый запрос, явный заголовок вытесняет basic-auth — и весь API
+    # отвечал бы 401 от nginx. Страницу и /admin/ пароль закрывает
+    # по-прежнему: там кука сессии, а не заголовок.
     location /api/ {
+        auth_basic off;
         proxy_pass http://$backend_addr;
         include /etc/nginx/proxy_params.conf;
     }
