@@ -284,6 +284,9 @@ class MatrixTests(AccessTestCase):
                 {"name": "task-move", "method": "post", "body": {"direction": "up"}},
                 "task-impact",
                 {"name": "task-recheck", "method": "post"},
+                # «накатить условие на ячейку»: чужую ячейку так же не тронуть,
+                # как и любую другую её правку
+                {"name": "task-take", "method": "post", "body": {"problem": None}},
             ),
         )
 

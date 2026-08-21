@@ -1028,3 +1028,10 @@ export const addFromBank = (work, problems) =>
 /** Часы курса за период — ими называют занятие, на котором задали работу. */
 export const fetchCourseSlots = (course, { start, end }) =>
   request(`/api/slots/?${new URLSearchParams({ course, start, end })}`)
+
+/**
+ * Накатить условие из банка на **эту** ячейку — или снять его (`null`).
+ * Не то же, что дописать задачи в конец работы: тут названо место.
+ */
+export const takeIntoCell = (task, problem) =>
+  request(`/api/works/tasks/${task}/take/`, { method: 'POST', body: { problem } })

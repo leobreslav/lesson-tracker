@@ -18,7 +18,7 @@ from schools.testing import (
 )
 
 from . import services, statements
-from .models import Task
+from .models import Submission, Task
 
 
 class StatementTests(SchoolTestMixin, APITestCase):
@@ -160,3 +160,89 @@ class StatementTests(SchoolTestMixin, APITestCase):
         problem.save(update_fields=["retired"])
         self.task.refresh_from_db()
         self.assertEqual(statements.statement_of(self.task), "Спрошенная")
+
+
+class TakeIntoCellTests(SchoolTestMixin, APITestCase):
+    """
+    «Накатить» условие на **эту** ячейку — не то же, что дописать в конец.
+
+    Случай обычный: работу собрали пустыми ячейками (условия на бумаге, искать
+    поленились), а потом третью заполнили задачей из каталога.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.course = make_course(self.school)
+        assign(self.user, self.course)
+        self.work = make_work(self.user, self.course)
+        self.cells = [
+            Task.objects.create(work=self.work, position=position, maximum=2)
+            for position in range(3)
+        ]
+        self.problem = Problem.objects.create(
+            text="Из каталога",
+            school=self.school,
+            owner=self.user,
+            created_by=self.user,
+        )
+
+    def take(self, task, problem):
+        self.client.force_authenticate(self.user)
+        return self.client.post(
+            reverse("task-take", args=[task.pk]),
+            {"problem": problem.pk if problem else None},
+            format="json",
+        )
+
+    def test_an_empty_cell_gets_the_statement_and_keeps_its_place(self):
+        answer = self.take(self.cells[2], self.problem)
+        self.assertEqual(answer.status_code, 200)
+
+        third = Task.objects.get(pk=self.cells[2].pk)
+        self.assertEqual(third.problem_id, self.problem.pk)
+        # позиция и цена — свойства ячейки, и подмена условия их не трогает
+        self.assertEqual((third.position, third.maximum), (2, 2))
+        # соседи как были пустыми, так и остались
+        self.assertEqual(
+            [Task.objects.get(pk=one.pk).problem_id for one in self.cells[:2]],
+            [None, None],
+        )
+
+    def test_swapping_the_statement_drops_the_verdicts_but_not_the_answers(self):
+        student = make_user(self.school, "uchenik@example.com", student=True)
+        statements.say(self.cells[0], text="Было", user=self.user)
+        sent = Submission.objects.create(
+            task=self.cells[0], student=student, answer="4", is_correct=True
+        )
+
+        self.take(self.cells[0], self.problem)
+        sent.refresh_from_db()
+
+        # ответ — слова ученика, они на месте; вердикт — наше суждение о
+        # ответе на **тот** вопрос, и после подмены он ни о чём
+        self.assertEqual(sent.answer, "4")
+        self.assertIsNone(sent.is_correct)
+
+    def test_a_cell_can_be_emptied_again(self):
+        self.take(self.cells[0], self.problem)
+        self.take(self.cells[0], None)
+
+        self.assertIsNone(Task.objects.get(pk=self.cells[0].pk).problem_id)
+
+    def test_a_statement_i_cannot_see_is_not_taken(self):
+        alien = Problem.objects.create(
+            text="Чужая",
+            school=self.school,
+            owner=self.colleague,
+            created_by=self.colleague,
+        )
+        self.assertEqual(self.take(self.cells[0], alien).status_code, 404)
+
+    def test_the_statement_stays_where_it_was(self):
+        # ячейка показывает на условие, а не забирает его себе: в банке оно
+        # остаётся тем же самым и там, где лежало
+        self.take(self.cells[0], self.problem)
+        self.problem.refresh_from_db()
+
+        self.assertEqual(Problem.objects.count(), 1)
+        self.assertEqual(self.problem.text, "Из каталога")

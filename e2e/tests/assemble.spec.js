@@ -113,3 +113,39 @@ test('условие ячейки — то же самое условие: пр�
   await page.getByRole('button', { name: 'Вторая' }).first().click()
   await expect(page.locator('.task-list')).toContainText('Поправленное условие')
 })
+
+test('пустая ячейка заполняется потом — готовым условием из банка', async ({
+  page,
+  signIn,
+  api,
+}) => {
+  const teacher = await api(PEOPLE.ivanova)
+  const courses = await teacher.get('/api/courses/')
+  const work = await teacher.post('/api/works/', {
+    course: courses.body[0].id,
+    title: 'Пустые ячейки',
+    opens_at: '2026-09-01T08:00:00Z',
+    closes_at: '2026-09-08T08:00:00Z',
+  })
+  // три пустые ячейки: условия были на бумаге, вбивать поленились
+  for (const _ of [1, 2, 3]) await teacher.post('/api/works/tasks/', { work: work.body.id })
+
+  await signIn(PEOPLE.ivanova)
+  await page.goto('/works')
+  await ready(page)
+  await page.getByRole('button', { name: 'Пустые ячейки' }).first().click()
+
+  const rows = page.locator('.task-list li')
+  await expect(rows).toHaveCount(3)
+
+  // третью заполняем не руками, а готовой задачей
+  const third = rows.nth(2)
+  await third.hover()
+  await third.getByRole('button', { name: 'Из банка…' }).click()
+  await page.locator('.modal').getByLabel('Слова из условия').fill('Окружность')
+  await page.locator('.modal .problem-list li').first().getByRole('button', { name: 'Сюда' }).click()
+
+  await expect(rows.nth(2)).toContainText('Окружность')
+  // соседи как были пустыми, так и остались: названо место, а не «в конец»
+  await expect(rows.nth(0)).not.toContainText('Окружность')
+})

@@ -503,6 +503,30 @@ class TaskViewSet(CourseScopedViewSet):
         services.reindex(work)
 
     @action(detail=True, methods=["post"])
+    def take(self, request, pk=None):
+        """
+        Взять в эту ячейку условие из банка — или снять его совсем.
+
+        Не то же самое, что дописать задачи в конец работы: здесь названо
+        **место**. Поленились искать и собрали работу пустыми ячейками — потом
+        заполняете третью, не трогая остальные.
+        """
+        from bank.models import Problem
+
+        task = self.get_object()
+        wanted = request.data.get("problem")
+        problem = (
+            get_object_or_404(Problem.objects.visible_to(request.user), pk=wanted)
+            if wanted
+            else None
+        )
+        statements.take(task, problem, user=request.user)
+        task.refresh_from_db()
+        return Response(
+            TaskSerializer(task, context=self.get_serializer_context()).data
+        )
+
+    @action(detail=True, methods=["post"])
     def move(self, request, pk=None):
         """`{"direction": "up"|"down"}`; `{"moved": false}` — край, не ошибка."""
         task = self.get_object()

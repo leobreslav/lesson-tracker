@@ -1040,7 +1040,13 @@
       "notMine": "A statement from the shared catalogue: it cannot be edited, but a copy of your own can — and it will take this cell.",
       "howToEdit": "How to edit",
       "everywhere": "Everywhere",
-      "copy": "Make a copy"
+      "copy": "Make a copy",
+      "bank": "From the bank…",
+      "blank": "a blank cell",
+      "fromBank": "A statement for cell {{number}}",
+      "putHere": "Put it here",
+      "empty": "Leave the cell blank",
+      "swapCost": "This cell has been answered {{count}} times. The answers stay, the verdicts are dropped: they were about the previous statement."
     },
     "answers": "Answers",
     "description": "What to do",

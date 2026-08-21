@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
 import EmptyState from './EmptyState'
+import CellDialogBank from './CellDialogBank'
 import CoursePicker from './CoursePicker'
 import Markdown from './Markdown'
 import ScanWizard from './ScanWizard'
@@ -48,6 +49,8 @@ export default function Works({ onLoggedOut }) {
   const [editing, setEditing] = useState(null)
   const [scanning, setScanning] = useState(null)
   const [editingTask, setEditingTask] = useState(null) // {task} | {task: null}
+  // какой ячейке накатываем условие из банка
+  const [takingInto, setTakingInto] = useState(null)
   const [showAnswers, setShowAnswers] = useState(() => remembered(ANSWERS_KEY, false))
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
@@ -321,6 +324,16 @@ export default function Works({ onLoggedOut }) {
                                 >
                                   {t('common.edit')}
                                 </button>
+                                {/* заполнить не руками, а готовым условием:
+                                    поленились искать — накатили потом */}
+                                <button
+                                  type="button"
+                                  className="link"
+                                  disabled={busy}
+                                  onClick={() => setTakingInto(task)}
+                                >
+                                  {t('works.task.bank')}
+                                </button>
                                 <button
                                   type="button"
                                   className="link"
@@ -359,14 +372,27 @@ export default function Works({ onLoggedOut }) {
                       {/* «добавить» — последняя строка списка, а не третья
                           кнопка в стороне: добавляют после последней задачи,
                           там ей и место */}
-                      <button
-                        type="button"
-                        className="task-add"
-                        disabled={busy}
-                        onClick={() => setEditingTask({ task: null })}
-                      >
-                        + {t('works.task.add')}
-                      </button>
+                      <div className="row">
+                        <button
+                          type="button"
+                          className="task-add"
+                          disabled={busy}
+                          onClick={() => setEditingTask({ task: null })}
+                        >
+                          + {t('works.task.add')}
+                        </button>
+                        {/* пустая ячейка — законное состояние: условие на
+                            бумаге или на доске, вбивать его незачем. Заполнить
+                            её можно потом, руками или из банка */}
+                        <button
+                          type="button"
+                          className="link"
+                          disabled={busy}
+                          onClick={() => run(() => createTask({ work: work.id }))}
+                        >
+                          + {t('works.task.blank')}
+                        </button>
+                      </div>
                     </div>
                   )}
                 </li>
@@ -393,6 +419,20 @@ export default function Works({ onLoggedOut }) {
           busy={busy}
           onSubmit={saveWork}
           onClose={() => setEditing(null)}
+        />
+      )}
+
+      {takingInto && (
+        <CellDialogBank
+          task={takingInto}
+          answered={
+            tasks.find((one) => one.id === takingInto.id)?.answered ?? 0
+          }
+          onClose={() => setTakingInto(null)}
+          onDone={() => {
+            setTakingInto(null)
+            run(() => Promise.resolve())
+          }}
         />
       )}
 
