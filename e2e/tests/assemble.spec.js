@@ -149,3 +149,41 @@ test('пустая ячейка заполняется потом — готов
   // соседи как были пустыми, так и остались: названо место, а не «в конец»
   await expect(rows.nth(0)).not.toContainText('Окружность')
 })
+
+test('дописать в оценённую работу можно, но цена названа и требует галочки', async ({
+  page,
+  signIn,
+  api,
+}) => {
+  const teacher = await api(PEOPLE.ivanova)
+  const courses = await teacher.get('/api/courses/')
+  // работа с одной задачей, ответом и отметкой
+  const found = await teacher.get('/api/bank/search/?text=Окружность')
+  const work = await teacher.post('/api/works/from-bank/', {
+    course: courses.body[0].id,
+    title: 'Уже проверенная',
+    problems: [found.body.problems[0].id],
+  })
+  // проверенная работа — та, где стоит балл, а не только комментарий
+  const table = await teacher.get(`/api/works/${work.body.id}/table/`)
+  const student = table.body.students[0].id
+  await teacher.post(`/api/works/${work.body.id}/grade/`, {
+    student,
+    scores: { [table.body.tasks[0].id]: 1 },
+  })
+
+  await signIn(PEOPLE.ivanova)
+  await page.goto('/bank/search')
+  await ready(page)
+  await page.locator('.problem-list li').first().getByRole('button', { name: 'Отложить задачу' }).click()
+  await page.getByRole('button', { name: 'Собрать работу' }).click()
+
+  await page.getByRole('radio', { name: 'Дописать в готовую' }).click()
+  await page.getByLabel('В какую работу').selectOption({ label: 'Уже проверенная' })
+
+  // пока не подтвердил — не даёт: знаменатель поедет у всех проверенных
+  const assemble = page.locator('.modal').getByRole('button', { name: 'Собрать' })
+  await expect(assemble).toBeDisabled()
+  await page.locator('.modal .checkbox.danger input').check()
+  await expect(assemble).toBeEnabled()
+})

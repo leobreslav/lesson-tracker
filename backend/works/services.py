@@ -158,14 +158,24 @@ def impact_of(work) -> dict:
     Тот же разговор, что при импорте плана: запрет здесь дороже ошибки
     (учитель нашёл опечатку в условии посреди урока), а молчание дешевле
     только на вид — «сейчас решают семнадцать человек» меняет решение.
+
+    **Оценки считаются наравне с отправками**, и это не мелочь: у бумажной
+    работы отправок нет вовсе, и цена, считавшая только их, сообщала «ничего
+    не затронуто» про полностью проверенный класс. А затронуто там самое
+    дорогое: дописанная задача поднимает `top` — сумму максимумов, — и доля
+    набранного у всех уже оценённых падает молча, без единой перепроверки.
     """
     submissions = Submission.objects.filter(task__work=work)
+    graded = work.students.filter(marks__isnull=False).distinct()
 
     return {
         "state": work.state(),
         "answers": submissions.count(),
         "students": submissions.values("student_id").distinct().count(),
         "checked": submissions.filter(is_correct__isnull=False).count(),
+        "graded": graded.count(),
+        # знаменатель: из скольки баллов считается работа сейчас
+        "top": sum(task.maximum for task in work.tasks.all()),
     }
 
 

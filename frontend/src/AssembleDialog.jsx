@@ -3,7 +3,14 @@ import { useTranslation } from 'react-i18next'
 
 import Modal from './Modal'
 import Switch from './Switch'
-import { addFromBank, assembleWork, fetchCourseSlots, fetchCourses, fetchWorks } from './api'
+import {
+  addFromBank,
+  assembleWork,
+  fetchCourseSlots,
+  fetchCourses,
+  fetchWorkImpact,
+  fetchWorks,
+} from './api'
 import { shortDate } from './dates'
 import { lastChoice, rememberChoice } from './remember'
 
@@ -31,6 +38,9 @@ export default function AssembleDialog({ problems, onClose, onDone }) {
   const [slot, setSlot] = useState('')
   const [works, setWorks] = useState([])
   const [work, setWork] = useState('')
+  // во что обойдётся дописывание в **эту** работу
+  const [cost, setCost] = useState(null)
+  const [understood, setUnderstood] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
 
@@ -61,6 +71,15 @@ export default function AssembleDialog({ problems, onClose, onDone }) {
       })
       .catch(() => setWorks([]))
   }, [course])
+
+  useEffect(() => {
+    setCost(null)
+    setUnderstood(false)
+    if (mode !== 'existing' || !work) return
+    fetchWorkImpact(Number(work))
+      .then(setCost)
+      .catch(() => setCost(null))
+  }, [mode, work])
 
   const send = async () => {
     setBusy(true)
@@ -148,23 +167,51 @@ export default function AssembleDialog({ problems, onClose, onDone }) {
         // пустой селект, который читается как поломка.
         <p className="hint">{t('bank.assemble.noWorks')}</p>
       ) : (
-        <label className="field">
-          <span>{t('bank.assemble.which')}</span>
-          <select value={work} onChange={(event) => setWork(event.target.value)}>
-            {works.map((one) => (
-              <option key={one.id} value={one.id}>
-                {one.title}
-              </option>
-            ))}
-          </select>
-        </label>
+        <>
+          <label className="field">
+            <span>{t('bank.assemble.which')}</span>
+            <select value={work} onChange={(event) => setWork(event.target.value)}>
+              {works.map((one) => (
+                <option key={one.id} value={one.id}>
+                  {one.title}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          {/* дописанная задача поднимает знаменатель: набранное считается из
+              суммы максимумов, и у всех уже оценённых доля падает — молча,
+              без единой перепроверки. Поэтому цена называется, а при
+              выставленных оценках ещё и требует галочки */}
+          {cost?.answers > 0 && (
+            <p className="hint warning">
+              {t('bank.assemble.answered', { count: cost.answers })}
+            </p>
+          )}
+          {cost?.graded > 0 && (
+            <label className="checkbox danger">
+              <input
+                type="checkbox"
+                checked={understood}
+                onChange={(event) => setUnderstood(event.target.checked)}
+              />
+              <span>
+                {t('bank.assemble.gradedCost', { count: cost.graded, top: cost.top })}
+              </span>
+            </label>
+          )}
+        </>
       )}
 
       <div className="row">
         <button
           type="button"
           onClick={send}
-          disabled={busy || !course || (mode === 'existing' && !work)}
+          disabled={
+            busy ||
+            !course ||
+            (mode === 'existing' && (!work || (cost?.graded > 0 && !understood)))
+          }
         >
           {t('bank.assemble.do')}
         </button>

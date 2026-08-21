@@ -274,7 +274,20 @@ class TeacherSideTests(WorkTestCase):
             format="json",
         )
 
-        self.assertEqual(impact, {"state": "open", "answers": 1, "students": 1, "checked": 0})
+        self.assertEqual(
+            impact,
+            {
+                "state": "open",
+                "answers": 1,
+                "students": 1,
+                "checked": 0,
+                # оценки считаются наравне с отправками: у бумажной работы
+                # отправок нет вовсе, и цена, слепая к оценкам, сообщала бы
+                # «ничего не затронуто» про проверенный класс
+                "graded": 0,
+                "top": 1,
+            },
+        )
         self.assertEqual(renamed.status_code, 200)
 
     def test_rechecking_a_task_clears_the_verdicts_and_keeps_the_answers(self):
