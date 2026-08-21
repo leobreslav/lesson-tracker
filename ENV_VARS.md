@@ -9,7 +9,8 @@
 |---|---|---|---|
 | `.env` | разработка | нет | `scripts/dev-env.sh`, если файла нет |
 | `frontend/.env` | разработка, сборка Vite | нет | он же |
-| `~/secrets/lesson-tracker.env.prod` | боевой | нет | человек; `push-deploy.sh` копирует на сервер |
+| `~/secrets/lesson-tracker.env.prod` | боевой | нет | человек; на сервер везёт `scripts/sync-env.sh prod` |
+| `~/secrets/lesson-tracker.env.staging` | стенд | нет | человек; на сервер везёт `scripts/sync-env.sh staging` |
 | `~/secrets/lesson-tracker.env.local-prod` | прод-сборка на localhost | нет | человек |
 | `.env.example`, `.env.prod.example` | форма файлов | да | человек |
 
@@ -142,6 +143,9 @@ HSTS оставлен нулём сознательно: включается л
 | `DEPLOY_DIR` | каталог проекта на сервере | `~/lesson-tracker` |
 | `DEPLOY_SITE` | что дёрнуть для проверки после выкатки | `https://lbreslav.com/` |
 | `DEPLOY_ENV_FILE` | главная копия боевого файла | `~/secrets/lesson-tracker.env.prod` |
+| `STAGING_ENV_FILE` | главная копия файла стенда | `~/secrets/lesson-tracker.env.staging` |
+| `STAGING_SERVER` | ssh стенда | `leobreslav@194.67.119.42` |
+| `STAGING_DIR` | каталог проекта на стенде | `apps/lesson-tracker` |
 
 ## Что никогда не уезжает в облако
 
