@@ -54,6 +54,8 @@
 │   ├── backup-db.sh          # ежедневный pg_dump: на диск и в R2, 7 дней
 │   ├── backup-files.sh       # ежедневная копия бакета вложений в резервный
 │   ├── check-orphaned-files.sh  # еженедельная сверка бакета с базой, молча
+│   ├── staging-seed.sh       # пересев стенда: окно DEBUG под ловушкой
+│   ├── staging-autodeploy.sh # опрос origin/main из crontab стенда
 │   └── reload-nginx.sh       # хук certbot: reload nginx после продления
 ├── backend/
 │   ├── Dockerfile            # python:3.12-slim, стадии base/dev/prod
