@@ -40,6 +40,12 @@ claude --cloud "прогнать питоновский набор и почин
 единственный образ, который в такой сессии скачается, — двухгигабайтный
 Playwright, потому что он не с Хаба. PyPI и npm тоже доступны.
 
+Причина названа в самой документации площадки, и она в двух буквах: в списке
+Trusted значится `production.cloudflare.docker.com` — **cloudflare**, — а
+слои приходят с `production.cloudfront.docker.com`, **cloudfront**. Docker
+Hub раздаёт их с двух разных CDN, и в умолчание попал не тот. Поэтому
+«Docker Hub в списке» было правдой и одновременно не работало.
+
 Встречено вживую 21 августа 2026 года, в сессии, где `docker compose` не
 поднимался вовсе. **До тех пор здесь было написано обратное** — «всё, куда мы
 ходим, уже в списке»: утверждение было выведено из названия уровня, а не
@@ -126,7 +132,8 @@ R2_ENDPOINT_URL`, — а `files.storage.configured()` рядом отвечае�
   | адрес | зачем |
   |---|---|
   | `registry-1.docker.io`, `auth.docker.io` | манифесты и токен Docker Hub |
-  | `production.cloudfront.docker.com` | сами слои — **на нём и падает** |
+  | `production.cloudfront.docker.com` | сами слои — **на нём и падает**; в умолчании только `cloudflare`, а это другой CDN |
+  | `deb.debian.org`, `security.debian.org` | больше не нужны: слой `apt` из образа убран |
   | `mcr.microsoft.com` | образ Playwright; обычно доступен и так |
 
   Галочку «Also include default list of common package managers» оставьте
