@@ -43,7 +43,25 @@ esac
 # git fetch дёшев и не трогает рабочее дерево; сравниваем то, что есть, с тем,
 # что приехало. Пока они совпадают, не запускается ничего — иначе стенд
 # пересобирался бы каждые три минуты.
-git fetch --quiet origin main
+# Отказ fetch'а должен быть виден. При `set -e` неудачная команда завершает
+# скрипт молча: в логе не появляется ничего, и «стенд не обновляется» не
+# отличить от «нечего обновлять». Проверено жизнью — GitHub на пару минут
+# перестал принимать ssh, и автовыкатка эти минуты падала беззвучно.
+#
+# Про частоту: жалуемся раз в час, а не каждые три минуты, иначе лог
+# заплывёт двадцатью строками в час на любой сетевой заминке.
+if ! git fetch --quiet origin main 2>/tmp/staging-fetch.err; then
+    stamp_file="$HOME/.staging-autodeploy.fetchfail"
+    now=$(date +%s)
+    last=$(cat "$stamp_file" 2>/dev/null || echo 0)
+    if [ $((now - last)) -gt 3600 ]; then
+        say "НЕ МОГУ СВЯЗАТЬСЯ С GITHUB: $(head -1 /tmp/staging-fetch.err)"
+        echo "$now" > "$stamp_file"
+    fi
+    exit 1
+fi
+rm -f "$HOME/.staging-autodeploy.fetchfail"
+
 local_head="$(git rev-parse HEAD)"
 remote_head="$(git rev-parse origin/main)"
 [ "$local_head" = "$remote_head" ] && exit 0
