@@ -2,8 +2,10 @@
 # прогоняет /etc/nginx/templates/*.template через envsubst при старте и
 # кладёт результат в /etc/nginx/conf.d/.
 #
-# Подставляются ТОЛЬКО ${DOMAIN}, ${DOMAIN_ALIASES}, ${AUTH_BASIC} и
-# ${AUTH_BASIC_FILE}: список задан
+# Подставляются ТОЛЬКО DOMAIN, DOMAIN_ALIASES, AUTH_BASIC и
+# AUTH_BASIC_FILE — имена тут написаны без знака доллара намеренно:
+# со знаком envsubst подставил бы их и в этот комментарий, и в
+# отрисованном конфиге он перестал бы что-либо объяснять. Список задан
 # переменной NGINX_ENVSUBST_FILTER в compose. Без неё envsubst подставил бы
 # всё подряд — и $host, $uri, $backend_addr превратились бы в пустые строки,
 # то есть конфиг сломался бы молча, а не с ошибкой.
