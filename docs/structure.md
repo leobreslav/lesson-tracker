@@ -55,6 +55,7 @@
 │   ├── backup-files.sh       # ежедневная копия бакета вложений в резервный
 │   ├── check-orphaned-files.sh  # еженедельная сверка бакета с базой, молча
 │   ├── staging-seed.sh       # пересев стенда: окно DEBUG под ловушкой
+│   ├── check-secrets.sh     # сверка ключей по контурам отпечатками, без значений
 │   ├── staging-autodeploy.sh # опрос origin/main из crontab стенда
 │   └── reload-nginx.sh       # хук certbot: reload nginx после продления
 ├── backend/
