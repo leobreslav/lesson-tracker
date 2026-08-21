@@ -20,6 +20,18 @@ hand against the development bucket.
 проверял бы не код, а `.env` того, кто запустил тесты. Поэтому прогон всегда
 идёт с закрытой дверью; браузерному стенду это не мешает — там работает
 gunicorn, а не тест-раннер.
+
+**И денег ни один тест не тратит.** Чтение сканов ходит в платный API
+Anthropic, а ключ у прогона тот же, что у разработки, — то есть настоящий.
+Тест, случайно позвавший `vision.client`, платил бы за каждый запуск, на
+каждом шаге работы, и молча: в выводе это выглядит обычным зелёным тестом.
+Поэтому ключ на весь прогон пуст, и такой вызов упирается в честный отказ
+`ai_key_missing` вместо счёта.
+
+Настоящее чтение этим, разумеется, не проверить — его вообще нельзя
+проверить без настоящего запроса. Такой запрос делается руками и только с
+разрешения человека; почему именно так — в CLAUDE.md, «Живые запросы к
+Anthropic».
 """
 
 from django.test.runner import DiscoverRunner
@@ -46,8 +58,12 @@ class Runner(DiscoverRunner):
         # импорте urls.py, и позже флаг уже ничего не решает
         self._door = override_settings(E2E_TEST_LOGIN=False)
         self._door.enable()
+        # платный API: пустой ключ превращает случайный вызов в отказ
+        self._purse = override_settings(ANTHROPIC_API_KEY="")
+        self._purse.enable()
 
     def teardown_test_environment(self, **kwargs):
+        self._purse.disable()
         self._door.disable()
         self._storages.disable()
         super().teardown_test_environment(**kwargs)

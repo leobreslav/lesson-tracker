@@ -18,9 +18,40 @@
 """
 
 from django.apps import apps
+from django.conf import settings
 from django.test import SimpleTestCase
 from rest_framework.test import APITestCase
 from schools.testing import SchoolTestMixin
+
+
+class NoTestSpendsMoneyTests(SimpleTestCase):
+    """
+    Ни один тест не платит за запрос к Anthropic.
+
+    Чтение сканов — единственное место в проекте, где код тратит деньги, и
+    ключ у прогона тот же, что у разработки: настоящий. Тест, случайно
+    позвавший `vision.client`, списывал бы деньги на каждом прогоне — а
+    гоняются они на каждом шаге работы, четырьмя шардами в CI и ночью.
+
+    Хуже всего, что снаружи это ничем не выдаёт себя: платящий тест выглядит
+    обычным зелёным тестом, и узнают о нём по счёту в конце месяца.
+
+    Поэтому `config/testing.py` обнуляет ключ на весь прогон, а этот сторож
+    следит, что обнуление не отменили: без него любой вызов упирается в
+    `ai_key_missing`, то есть в громкий отказ вместо тихой траты.
+
+    Проверять настоящее чтение так нельзя, и это не потеря: без настоящего
+    запроса его не проверить никак. Такой запрос делается руками и с
+    разрешения человека — CLAUDE.md, «Живые запросы к Anthropic».
+    """
+
+    def test_the_anthropic_key_is_empty_for_the_whole_run(self):
+        self.assertEqual(
+            getattr(settings, "ANTHROPIC_API_KEY", ""),
+            "",
+            "Ключ Anthropic виден тестам: прогон способен тратить деньги. "
+            "Верните обнуление в config/testing.py.",
+        )
 
 
 class StatementLivesInOnePlaceTests(SimpleTestCase):
