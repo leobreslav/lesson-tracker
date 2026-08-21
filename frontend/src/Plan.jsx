@@ -725,7 +725,32 @@ export default function Plan({ user, onLoggedOut }) {
    */
   const waiting = supervised.filter((row) => row.review?.status === 'pending')
   const watched = supervised.filter((row) => row.review?.status !== 'pending')
-  const asCourse = (row) => ({ id: row.id, name: row.name, year: row.year })
+  /*
+   * Учитель и предмет едут с каждым курсом — по ним селект и сужают.
+   *
+   * Три списка приходят из трёх ответов и называют эти две вещи по-разному:
+   * у своего курса ведущие списком (`teachers`), у поднадзорного — один
+   * человек объектом, а предмет у первого зовётся `subject_name`, у второго
+   * `subject`. Приводится это здесь и один раз: разбираться в трёх формах
+   * внутри `CoursePicker` значило бы поселить в нём знание про три ответа
+   * сервера.
+   *
+   * Имя поля — `subjectName`, а не `subject`: у своего курса `subject` это
+   * **номер** предмета, и по нему ищется свой шаблон на полке. Положить
+   * туда название значило бы сломать поиск молча.
+   */
+  const asCourse = (row) => ({
+    id: row.id,
+    name: row.name,
+    year: row.year,
+    teacher: row.teacher?.name ?? null,
+    subjectName: row.subject ?? null,
+  })
+  const asOwn = (item) => ({
+    ...item,
+    teacher: item.teachers?.[0]?.name ?? null,
+    subjectName: item.subject_name ?? null,
+  })
 
   /**
    * Свой курс — свой, даже если методист у него я же.
@@ -758,18 +783,18 @@ export default function Plan({ user, onLoggedOut }) {
   const schoolOnly = schoolCourses.filter((item) => !knownIds.has(item.id))
 
   const pickable = [
-    ...(classes ?? []),
+    ...(classes ?? []).map(asOwn),
     ...others.map(asCourse),
-    ...schoolOnly,
+    ...schoolOnly.map(asOwn),
   ]
 
   const groups =
     others.length || schoolOnly.length
       ? [
-          { key: 'mine', items: classes ?? [] },
+          { key: 'mine', items: (classes ?? []).map(asOwn) },
           { key: 'waiting', items: otherWaiting.map(asCourse) },
           { key: 'supervised', items: otherWatched.map(asCourse) },
-          { key: 'school', items: schoolOnly },
+          { key: 'school', items: schoolOnly.map(asOwn) },
         ].filter((group) => group.items.length)
       : []
 
@@ -1109,6 +1134,9 @@ export default function Plan({ user, onLoggedOut }) {
           onChange={pickClass}
           label={classLabel}
           groups={groups}
+          /* сужение по учителю и предмету: у администратора школы в этом
+             селекте лежат все курсы школы, и их несколько десятков */
+          narrow="plan"
         />
         {/*
           Всё про утверждение — одной группой в шапке, рядом с тумблером.

@@ -40,7 +40,7 @@ def own_courses(user) -> list:
     """Свои курсы, в порядке года и названия."""
     return list(
         Course.objects.for_teacher(user)
-        .select_related("year")
+        .select_related("year", "subject")
         .prefetch_related("year__terms")
         .order_by("year__start_date", "name")
     )
@@ -79,9 +79,9 @@ def rows_for(courses, today, ahead: int = 2) -> list[dict]:
     """
     Строка состояния на каждый курс — то, из чего собраны обе страницы.
 
-    Поля одни и те же, включая `teacher`: у себя на главной учитель его не
-    показывает, но два ответа с разными наборами полей развели бы и два
-    компонента, которые сейчас один.
+    Поля одни и те же, включая `teacher` и `subject`: у себя на главной
+    учитель их не показывает, но два ответа с разными наборами полей развели
+    бы и два компонента, которые сейчас один.
     """
     courses = list(courses)
     if not courses:
@@ -115,6 +115,10 @@ def rows_for(courses, today, ahead: int = 2) -> list[dict]:
                 "name": course.name,
                 "year": course.year.name,
                 "year_end": course.year.end_date,
+                # предмет — рядом с учителем и по той же причине: в чужом
+                # списке курсов сужают именно по этим двум, а у методиста
+                # школы в списке их несколько десятков
+                "subject": course.subject.name if course.subject else None,
                 "teacher": person(teacher) if teacher else None,
                 # метрики считаются только от **утверждённого** эталона:
                 # пока план не приняли, сравнивать не с чем

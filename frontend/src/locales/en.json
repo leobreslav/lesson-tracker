@@ -507,6 +507,10 @@
     "openLesson": "Open the lesson",
     "courseLabel": "Course",
     "unclosedHint": "The lesson is past and unmarked",
+    "filters": {
+      "anyTeacher": "Any teacher",
+      "anySubject": "Any subject"
+    },
     "groups": {
       "mine": "My courses",
       "waiting": "Waiting for a reply",

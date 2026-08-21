@@ -2253,6 +2253,41 @@ a.link-button:hover {
   color: #5f6368;
 }
 
+/*
+ * Курс и то, чем его ищут, — одной группой в шапке.
+ *
+ * Сужение по учителю и предмету появляется только там, где в селекте лежат
+ * чужие курсы (у методиста и администратора школы их несколько десятков), и
+ * стоять оно обязано вплотную к самому селекту: это не фильтр к странице, а
+ * способ добраться до одного пункта в длинном списке.
+ *
+ * `margin-right: auto` переезжает сюда с селекта — иначе свободное место
+ * шапки встало бы между ним и его же фильтрами.
+ */
+.page-header .course-choice {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+  margin-right: auto;
+}
+
+.page-header .course-choice .course-picker {
+  margin-right: 0;
+}
+
+.page-header .course-filter {
+  height: var(--control-height);
+  max-width: min(12rem, 40vw);
+  padding: 0.2rem 0.4rem;
+  font: inherit;
+  font-size: 0.9rem;
+  color: #5f6368;
+  background: #fff;
+  border: 1px solid #dadce0;
+  border-radius: 4px;
+}
+
 /* --- календарь --- */
 
 .calendar-layout {

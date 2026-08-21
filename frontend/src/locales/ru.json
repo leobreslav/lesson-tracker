@@ -520,6 +520,10 @@
     "openLesson": "Открыть занятие",
     "courseLabel": "Курс",
     "unclosedHint": "Занятие прошло, но не отмечено",
+    "filters": {
+      "anyTeacher": "Любой учитель",
+      "anySubject": "Любой предмет"
+    },
     "groups": {
       "mine": "Мои курсы",
       "waiting": "Ждут ответа",
