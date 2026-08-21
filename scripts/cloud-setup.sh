@@ -22,7 +22,11 @@
 #                    ключей и токенов тут не нужно. Проверять это стоит не
 #                    по имени реестра: слои Docker Hub отдаёт с отдельного
 #                    хоста (`production.cloudfront.docker.com`), и политика
-#                    сети умеет пускать первый, но не второй.
+#                    сети умеет пускать первый, но не второй;
+#   чужой корень TLS весь исходящий HTTPS перевыпускается шлюзом
+#                    окружения, и контейнеры этого корня не знают. Отсюда
+#                    шаг «корень площадки в базовые образы» ниже — без него
+#                    не встаёт ни `pip install`, ни `npm ci`.
 #
 # Что даёт снимок: образы остаются на диске, и следующая сессия начинает с
 # готовыми. Запущенные процессы снимок не хранит — стек в каждой сессии
@@ -70,6 +74,70 @@ for image in postgres:16-alpine python:3.12-slim node:22-alpine \
 done
 
 wait
+
+# Корень площадки в базовые образы.
+#
+# Весь исходящий TLS облачной машины перевыпускается шлюзом окружения: и у
+# хоста, и у контейнеров `pypi.org` предъявляет сертификат, подписанный
+# «Anthropic Egress Gateway CA», а не своим настоящим корнем. Хост про это
+# знает — корень лежит в `/root/.ccr/ca-bundle.crt` и роздан переменными
+# (`SSL_CERT_FILE`, `PIP_CERT`, `NODE_EXTRA_CA_CERTS`). Контейнер не знает
+# ничего: у него чистое системное хранилище, и `pip install` падает на
+# «self-signed certificate in certificate chain», а `npm ci` следом.
+#
+# Проверять это стоит не по имени хоста и не по тексту ошибки, а по цепочке:
+# `openssl s_client -connect pypi.org:443` изнутри контейнера показывает
+# издателя прямо. Прошлый диагноз («не пускают deb.debian.org») сюда не
+# годится вовсе — слой apt из образа убран, а ломается TLS, а не список
+# доменов.
+#
+# Dockerfile трогать нельзя: те же образы едут в бой, где перехвата нет и
+# чужому корню в доверенных делать нечего. Поэтому корень дописывается не в
+# наш образ, а в базовый, из которого тот собирается, — и дальше про него не
+# знает никто: ни `dev-up.sh`, ни `e2e.sh`, ни оба compose-файла. Сюда же
+# попадает образ Playwright: `e2e.sh` ставит в нём зависимости на ходу, то
+# есть тоже ходит в сеть, хотя ничего не собирает.
+#
+# Чем платим, названо прямо: тег локально перестаёт быть точной копией
+# официального образа. Следующий `docker pull` того же тега молча вернёт
+# всё как было — потому шаг и стоит ПОСЛЕ прогрева, а не до него, и потому
+# он идемпотентен по метке, а не по факту «образ на месте».
+ccr_ca=/root/.ccr/ca-bundle.crt
+
+if [ -f "$ccr_ca" ]; then
+    ca_ctx="$(mktemp -d)"
+    cp "$ccr_ca" "$ca_ctx/ccr-ca-bundle.crt"
+    cat > "$ca_ctx/Dockerfile" <<'CADOCKERFILE'
+ARG BASE
+FROM ${BASE}
+COPY ccr-ca-bundle.crt /usr/local/share/ccr-ca-bundle.crt
+RUN cat /usr/local/share/ccr-ca-bundle.crt >> /etc/ssl/certs/ca-certificates.crt
+ENV SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt \
+    REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt \
+    PIP_CERT=/etc/ssl/certs/ca-certificates.crt \
+    NODE_EXTRA_CA_CERTS=/etc/ssl/certs/ca-certificates.crt
+CADOCKERFILE
+
+    for base in python:3.12-slim node:22-alpine \
+                mcr.microsoft.com/playwright:v1.56.0-noble; do
+        marked="$(docker image inspect \
+            -f '{{index .Config.Labels "com.lesson-tracker.ccr-ca"}}' \
+            "$base" 2>/dev/null)"
+        if [ "$marked" = "1" ]; then
+            printf 'корень площадки уже в образе: %s\n' "$base"
+            continue
+        fi
+        if docker build -t "$base" --build-arg BASE="$base" \
+                --label com.lesson-tracker.ccr-ca=1 \
+                "$ca_ctx" >/dev/null 2>&1; then
+            printf 'корень площадки дописан в образ: %s\n' "$base"
+        else
+            printf 'ПРОГРЕВ НЕ ПРОШЁЛ: корень площадки не лёг в %s\n' "$base"
+        fi
+    done
+
+    rm -rf "$ca_ctx"
+fi
 
 # Сборка своих образов кладёт в снимок и колёса pip, и node_modules —
 # самую долгую часть первого запуска.
