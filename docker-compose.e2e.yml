@@ -84,7 +84,7 @@ services:
     # просто то, как к нему обращаются тесты. Значения фиксированы, а не
     # из env-файла: у e2e-стека его нет.
     environment:
-      NGINX_ENVSUBST_FILTER: "^(DOMAIN|DOMAIN_ALIASES)$$"
+      NGINX_ENVSUBST_FILTER: "^(DOMAIN|DOMAIN_ALIASES|AUTH_BASIC|AUTH_BASIC_FILE)$$"
       DOMAIN: localhost
       DOMAIN_ALIASES: nginx 127.0.0.1
       AUTH_BASIC: "off"

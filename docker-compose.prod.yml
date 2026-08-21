@@ -57,11 +57,11 @@ services:
     image: nginx:1.27-alpine
     restart: unless-stopped
     # Домен приходит из env-файла и подставляется в шаблон при старте.
-    # NGINX_ENVSUBST_FILTER ограничивает подстановку двумя именами: без него
+    # NGINX_ENVSUBST_FILTER перечисляет, что подставлять: без него
     # envsubst съел бы $$host, $$uri и $$backend_addr — переменные самого
     # nginx, — и конфиг сломался бы молча.
     environment:
-      NGINX_ENVSUBST_FILTER: "^(DOMAIN|DOMAIN_ALIASES)$$"
+      NGINX_ENVSUBST_FILTER: "^(DOMAIN|DOMAIN_ALIASES|AUTH_BASIC|AUTH_BASIC_FILE)$$"
       DOMAIN: ${DOMAIN:?не задан DOMAIN — добавьте его в .env.prod}
       DOMAIN_ALIASES: ${DOMAIN_ALIASES:-}
       # Пароль на весь контур. Умолчания дают выключённый auth_basic,
