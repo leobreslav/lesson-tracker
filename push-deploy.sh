@@ -25,8 +25,6 @@ BRANCH="main"
 
 # главный .env.prod: вне папки проекта, чтобы git add -A не мог его подобрать
 ENV_SOURCE="${DEPLOY_ENV_FILE:-$HOME/secrets/lesson-tracker.env.prod}"
-# сколько прошлых версий держать на сервере
-ENV_BACKUPS=3
 
 # то, что не должно уехать в репозиторий ни при каких обстоятельствах
 FORBIDDEN=(
@@ -177,119 +175,16 @@ fi
 # Уезжает он до deploy.sh, а не после: сборка фронта читает оттуда
 # VITE_GOOGLE_CLIENT_ID, и новый ключ должен быть на месте раньше сборки.
 
-sha_of() {
-    if command -v sha256sum >/dev/null; then
-        sha256sum "$1" | cut -d' ' -f1
-    else
-        shasum -a 256 "$1" | cut -d' ' -f1
-    fi
-}
-
-# только имена, по одному в строке, отсортированные
-NAMES_CMD="grep -oE '^[A-Za-z_][A-Za-z0-9_]*=' .env.prod | tr -d '=' | sort"
-
-env_names() {
-    grep -oE '^[A-Za-z_][A-Za-z0-9_]*=' "$1" | tr -d '=' | sort || true
-}
-
-# что появилось и что исчезло; значения не сравниваем и не показываем
-show_name_changes() {
-    local remote_names="$1" added removed
-    local remote_file
-    remote_file="$(mktemp)"
-    printf '%s\n' "$remote_names" | sed '/^$/d' > "$remote_file"
-
-    added="$(comm -23 <(env_names "$ENV_SOURCE") "$remote_file")"
-    removed="$(comm -13 <(env_names "$ENV_SOURCE") "$remote_file")"
-    rm -f "$remote_file"
-
-    if [ -z "$added" ] && [ -z "$removed" ]; then
-        info "набор переменных тот же, различаются значения"
-        return
-    fi
-
-    [ -z "$added" ]   || printf '    \033[32m+ %s (новая)\033[0m\n' $added
-    [ -z "$removed" ] || printf '    \033[33m− %s (исчезла)\033[0m\n' $removed
-}
-
+# Перенос .env.prod живёт в scripts/sync-env.sh — он же возит файл стенда.
+# Реализация одна намеренно: две копии одного и того же разъезжаются, а
+# расхождение здесь значит затёртый ключ на боевом сервере.
 sync_env() {
-    local local_sum remote_sum remote_names stamp answer
-
     if [ "$SKIP_ENV" -eq 1 ]; then
         log "Синхронизация .env.prod пропущена (--skip-env)"
         return
     fi
-
-    log "Проверяю .env.prod на сервере"
-
-    if [ ! -f "$ENV_SOURCE" ]; then
-        warn "Нет локального файла $ENV_SOURCE — шаг пропущен."
-        info "На сервере останется тот .env.prod, что там уже лежит."
-        info "Путь задаётся переменной DEPLOY_ENV_FILE."
-        return
-    fi
-
-    # один CR вместо перевода строки — и compose прочитает файл как одну
-    # переменную, а Django не сойдётся с базой по паролю (см. CLAUDE.md)
-    if grep -q $'\r' "$ENV_SOURCE"; then
-        fail "в $ENV_SOURCE концы строк CR или CRLF.
-compose прочитает такой файл как одну переменную. Лечится:
-  tr -d '\\r' < \"$ENV_SOURCE\" > /tmp/env && mv /tmp/env \"$ENV_SOURCE\""
-    fi
-
-    local_sum="$(sha_of "$ENV_SOURCE")"
-    remote_sum="$(ssh "$SERVER" "cd $REMOTE_DIR && sha256sum .env.prod 2>/dev/null | cut -d' ' -f1" || true)"
-
-    if [ "$local_sum" = "$remote_sum" ]; then
-        ok "    .env.prod актуален"
-        return
-    fi
-
-    if [ -z "$remote_sum" ]; then
-        info "на сервере .env.prod ещё нет — будет создан"
-    else
-        remote_names="$(ssh "$SERVER" "cd $REMOTE_DIR && $NAMES_CMD" || true)"
-        show_name_changes "$remote_names"
-    fi
-
-    if [ ! -t 0 ]; then
-        fail "нужно подтверждение на перезапись .env.prod, а терминала нет.
-Запустите вручную или добавьте --skip-env"
-    fi
-
-    if [ -z "$remote_sum" ]; then
-        printf '    Скопировать .env.prod на сервер? [y/N] '
-    else
-        printf '    Перезаписать .env.prod на сервере? [y/N] '
-    fi
-    IFS= read -r answer || fail "ввод прерван"
-
-    case "$answer" in
-        y|Y|yes|Yes|д|Д|да|Да) ;;
-        *)
-            warn "Оставляю .env.prod на сервере как есть."
-            return
-            ;;
-    esac
-
-    if [ -n "$remote_sum" ]; then
-        stamp="$(date '+%Y-%m-%d_%H%M%S')"
-        # копия делается до перезаписи и до всего остального: если scp
-        # оборвётся на середине, откатываться будет к чему
-        ssh "$SERVER" "cd $REMOTE_DIR && cp -p .env.prod .env.prod.bak.$stamp &&
-            chmod 600 .env.prod.bak.$stamp &&
-            ls -1t .env.prod.bak.* | tail -n +$((ENV_BACKUPS + 1)) | xargs -r rm -f"
-        info "резервная копия: .env.prod.bak.$stamp (храним последние $ENV_BACKUPS)"
-    fi
-
-    scp -q "$ENV_SOURCE" "$SERVER:$REMOTE_DIR/.env.prod"
-    ssh "$SERVER" "chmod 600 $REMOTE_DIR/.env.prod"
-
-    remote_sum="$(ssh "$SERVER" "cd $REMOTE_DIR && sha256sum .env.prod | cut -d' ' -f1")"
-    [ "$local_sum" = "$remote_sum" ] ||
-        fail "файл скопировался, но контрольные суммы не сошлись — проверьте вручную"
-
-    ok "    .env.prod обновлён"
+    DEPLOY_ENV_FILE="$ENV_SOURCE" DEPLOY_SERVER="$SERVER" DEPLOY_DIR="$REMOTE_DIR" \
+        ./scripts/sync-env.sh prod
 }
 
 sync_env
