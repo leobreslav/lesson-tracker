@@ -24,5 +24,8 @@ urlpatterns = [
     path('api/works/', include('works.urls')),
     path('api/bank/', include('bank.urls')),
     path('api/', include('files.urls')),
+    # обращения к разработчику: не школьный раздел, поэтому и адрес свой,
+    # а не под /api/school/
+    path('api/feedback/', include('feedback.urls')),
     path('api/schools/', include('schools.admin_urls')),
 ]

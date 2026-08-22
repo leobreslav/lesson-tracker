@@ -822,22 +822,27 @@ export default function LessonScreen({ onLoggedOut }) {
           закрывается по клику мимо, и поле ввода в нём жило бы до первого
           промаха */}
       {may && form === 'cancel' && (
-        <form className="row" onSubmit={submit}>
-          <input
-            autoFocus
-            value={text}
-            maxLength={200}
-            placeholder={t('agenda.menu.cancelReason')}
-            aria-label={t('agenda.menu.cancelReason')}
-            onChange={(event) => setText(event.target.value)}
-          />
-          <button type="submit" disabled={busy}>
-            {t('agenda.menu.cancelSubmit')}
-          </button>
-          <button type="button" className="secondary" onClick={() => setForm(null)}>
-            {t('agenda.menu.cancelAbort')}
-          </button>
-        </form>
+        <>
+          {/* та же фраза, что в меню клетки: отмена помечает час, а не
+              убирает его, и спрашивают об этом с обоих экранов */}
+          <p className="hint">{t('agenda.menu.cancelHint')}</p>
+          <form className="row" onSubmit={submit}>
+            <input
+              autoFocus
+              value={text}
+              maxLength={200}
+              placeholder={t('agenda.menu.cancelReason')}
+              aria-label={t('agenda.menu.cancelReason')}
+              onChange={(event) => setText(event.target.value)}
+            />
+            <button type="submit" disabled={busy}>
+              {t('agenda.menu.cancelSubmit')}
+            </button>
+            <button type="button" className="secondary" onClick={() => setForm(null)}>
+              {t('agenda.menu.cancelAbort')}
+            </button>
+          </form>
+        </>
       )}
 
       {adding && (

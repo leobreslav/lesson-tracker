@@ -61,6 +61,7 @@ class UserSerializer(serializers.ModelSerializer):
             "school",
             "is_school_admin",
             "is_superuser",
+            "forward_feedback",
             "methodist_courses",
         )
         # the email comes from Google and identifies the login — not editable;

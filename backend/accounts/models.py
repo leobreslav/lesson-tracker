@@ -132,6 +132,18 @@ class User(AbstractUser):
         verbose_name="school",
     )
     is_school_admin = models.BooleanField("school administrator", default=False)
+    # Пересылка сообщений разработчику — настройка **человека**, а не
+    # приложения: суперпользователей может быть несколько, и хотеть письмо
+    # на каждое обращение может не каждый. Адрес не спрашивается — он у
+    # учётки уже есть, и второй завёл бы вопрос, какой из них настоящий
+    forward_feedback = models.BooleanField(
+        "forward feedback by email",
+        default=False,
+        help_text=(
+            "Superusers only: send every new feedback message to this "
+            "account's address."
+        ),
+    )
 
     USERNAME_FIELD = "email"
     REQUIRED_FIELDS = []

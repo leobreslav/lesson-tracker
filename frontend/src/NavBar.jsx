@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link, NavLink, useLocation } from 'react-router-dom'
+import FeedbackButton from './FeedbackButton'
 import UserMenu, { useDismissable } from './UserMenu'
 
 const SECTIONS = [
@@ -19,6 +20,8 @@ const SECTIONS = [
   { to: '/school', key: 'school', needs: null, adminOnly: true },
   // the only place a Django superuser is visible in the ordinary interface
   { to: '/schools', key: 'schools', needs: null, superuserOnly: true },
+  // и второй его раздел: обращения пользователей копятся здесь
+  { to: '/feedback', key: 'feedback', needs: null, superuserOnly: true },
 ]
 
 /**
@@ -90,6 +93,11 @@ export default function NavBar({ user, status, onLoggedOut, onLanguageChange }) 
             )
           })}
         </nav>
+
+        {/* сказать разработчику — рядом с меню пользователя, а не пунктом
+            в нём: о поломке говорят в тот момент, когда её увидели, и
+            искать её под своим именем никто не станет */}
+        <FeedbackButton />
 
         <UserMenu
           user={user}

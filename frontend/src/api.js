@@ -1072,3 +1072,21 @@ export const sayOnProposal = (id, text) =>
 
 export const resolveProposal = (id, body) =>
   request(`/api/bank/proposals/${id}/`, { method: 'PATCH', body })
+
+/*
+ * Сообщения разработчику: «сломалось» и «хорошо бы».
+ *
+ * Пишут оба вида пользователей, читает суперпользователь — это единственная
+ * пара адресов в приложении с такой формой, и живёт она вне `/api/school/`
+ * намеренно: разговор с разработчиком идёт через школы, а не внутри одной.
+ */
+export const sendFeedback = (body) =>
+  request('/api/feedback/', { method: 'POST', body })
+
+export const fetchFeedback = (params = {}) =>
+  request(`/api/feedback/?${new URLSearchParams(params)}`)
+
+export const fetchFeedbackSummary = () => request('/api/feedback/summary/')
+
+export const markFeedbackHandled = (id) =>
+  request(`/api/feedback/${id}/handled/`, { method: 'POST' })

@@ -127,6 +127,12 @@
 | `AUTH_BASIC` | realm basic-auth одним словом; `off` — пароля нет | `off` |
 | `AUTH_BASIC_FILE` | файл паролей внутри контейнера | `/etc/nginx/auth/htpasswd` |
 | `HEALTHCHECK_AUTH` | `логин:пароль` для проверки в `deploy.sh` | пусто — проверка идёт без пароля |
+| `EMAIL_HOST` | SMTP для пересылки обращений; пусто — письма печатаются в лог | пусто |
+| `EMAIL_PORT` | порт SMTP | `587` |
+| `EMAIL_HOST_USER` | учётка SMTP | пусто |
+| `EMAIL_HOST_PASSWORD` | её пароль | пусто |
+| `EMAIL_USE_TLS` | TLS при отправке | `True` |
+| `DEFAULT_FROM_EMAIL` | обратный адрес писем | `EMAIL_HOST_USER`, иначе `lesson-tracker@localhost` |
 | `BOOTSTRAP_SUPERUSER_EMAIL` | суперпользователь при старте контейнера | пусто — шаг пропускается с предупреждением |
 | `BOOTSTRAP_SUPERUSER_PASSWORD` | его пароль | то же |
 

@@ -407,6 +407,10 @@ export function LessonMenu({
       <li className="context-form">
         {mode === 'cancel' && (
           <form onSubmit={handleCancel}>
+            {/* отмена и удаление стоят в меню рядом и по названию
+                неразличимы: «Отменить» одинаково читается и как «убрать
+                отсюда». Сказано прямо, как у переноса и ряда ниже */}
+            <p className="hint">{t('agenda.menu.cancelHint')}</p>
             <input
               autoFocus
               value={reason}

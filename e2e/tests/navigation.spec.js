@@ -92,12 +92,12 @@ test('переключение языка меняет интерфейс и п�
   )
   await page.getByRole('menuitem', { name: 'English' }).click()
 
-  await expect(page.locator('.topbar-nav a[href="/schedule"]')).toHaveText('My schedule')
+  await expect(page.locator('.topbar-nav a[href="/schedule"]')).toHaveText('Schedule')
   await saved
 
   await page.reload()
   await ready(page)
-  await expect(page.locator('.topbar-nav a[href="/schedule"]')).toHaveText('My schedule')
+  await expect(page.locator('.topbar-nav a[href="/schedule"]')).toHaveText('Schedule')
 })
 
 test('пропавшего куска бандла на месте index.html не оказывается', async ({

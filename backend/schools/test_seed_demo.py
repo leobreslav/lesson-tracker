@@ -23,6 +23,7 @@ from django.db.models import Count
 from django.utils import timezone
 
 from schools import rich_demo
+from schools.management.commands.seed_demo import COURSES, PEOPLE
 
 from works.models import Submission, Work
 
@@ -73,9 +74,22 @@ class SeedTests(TestCase):
         year = SchoolYear.objects.get(school=school)
         self.assertEqual(year.name, "2026/2027")
         self.assertEqual(Term.objects.filter(year=year).count(), 4)
-        self.assertEqual(Course.objects.filter(school=school).count(), 4)
-        self.assertEqual(User.objects.filter(school=school, kind="teacher").count(), 3)
-        self.assertEqual(User.objects.filter(is_school_admin=True).count(), 1)
+        # числа берутся у самих списков, а не переписываются сюда: набор
+        # растёт, и переписанное число отстаёт молча — этот тест уже отставал
+        self.assertEqual(Course.objects.filter(school=school).count(), len(COURSES))
+        self.assertEqual(
+            User.objects.filter(school=school, kind="teacher").count(), len(PEOPLE)
+        )
+
+        # администраторов двое, и второй — не украшение: он **ведёт курс**.
+        # Пока администратор в наборе был один и без своих часов, экраны, где
+        # право спорит с принадлежностью, проверялись только на нём
+        admins = User.objects.filter(school=school, is_school_admin=True)
+        self.assertEqual(admins.count(), 2)
+        self.assertTrue(
+            admins.filter(course_assignments__isnull=False).exists(),
+            "администратор, который сам ведёт курс, — обычная школа, а не редкость",
+        )
 
     def test_the_students_come_with_their_three_states(self):
         """
@@ -280,7 +294,7 @@ class FlushTests(TestCase):
         seed("--flush")
 
         self.assertFalse(Course.objects.filter(pk=stale.pk).exists())
-        self.assertEqual(Course.objects.count(), 4)
+        self.assertEqual(Course.objects.count(), len(COURSES))
         self.assertEqual(School.objects.count(), 1)
 
     def test_flush_keeps_superusers(self):
@@ -301,7 +315,7 @@ class MinimalTests(TestCase):
     def test_minimal_stops_after_the_courses(self):
         seed("--minimal")
 
-        self.assertEqual(Course.objects.count(), 4)
+        self.assertEqual(Course.objects.count(), len(COURSES))
         self.assertEqual(Term.objects.count(), 4)
         self.assertFalse(Slot.objects.exists())
         self.assertFalse(PlanNode.objects.exists())

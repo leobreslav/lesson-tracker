@@ -36,7 +36,7 @@
   },
   "nav": {
     "menu": "Sections menu",
-    "schedule": "My schedule",
+    "schedule": "Schedule",
     "plan": "Curriculum map",
     "profile": "Profile",
     "logout": "Sign out",
@@ -45,7 +45,8 @@
     "school": "School",
     "schools": "Schools",
     "works": "Assignments",
-    "bank": "Problem bank"
+    "bank": "Problem bank",
+    "feedback": "Feedback"
   },
   "auth": {
     "prompt": "Sign in to continue.",
@@ -645,7 +646,7 @@
     "delete": "Delete the class {{name}}"
   },
   "agenda": {
-    "title": "My schedule",
+    "title": "Schedule",
     "prevWeek": "Previous week",
     "nextWeek": "Next week",
     "today": "Today",
@@ -695,6 +696,7 @@
       "extra": "An extra lesson.",
       "cancelled": "Cancelled{{reason}}.",
       "cancelReason": "Reason for cancelling",
+      "cancelHint": "The hour stays in the timetable — struck through and with its reason. Cancelling marks the lesson as not taught; it does not delete it.",
       "cancelSubmit": "Cancel the lesson",
       "cancelAbort": "Never mind",
       "openPlan": "Open in the curriculum map",
@@ -1192,6 +1194,8 @@
   },
   "devSwitch": {
     "label": "Sign in as (dev only)",
+    "staff": "Staff",
+    "students": "Students",
     "teacher": "teacher",
     "admin": "administrator",
     "student": "student",
@@ -1528,5 +1532,31 @@
     "noneMine": "You have not proposed anything yet.",
     "open": "Proposals",
     "report": "Report a problem"
+  },
+  "feedback": {
+    "open": "Tell us",
+    "title": "Tell the developer",
+    "hint": "Something broken, or something missing? Write it here — it goes straight to the person who writes this program.",
+    "kind": "Kind:",
+    "bug": "Bug",
+    "idea": "Idea",
+    "text": "What happened",
+    "bugHint": "What you did, and what happened instead.",
+    "ideaHint": "What you would like the tracker to do.",
+    "send": "Send",
+    "thanksTitle": "Sent",
+    "thanks": "Thank you. There is no reply here — the answer comes as a fix.",
+    "pageTitle": "Feedback",
+    "pageHint": "Everything users have written: bugs and ideas, every school at once.",
+    "shown": "Shown:",
+    "waiting": "Waiting",
+    "handled": "Handled",
+    "anyKind": "any kind",
+    "forward": "email me each one",
+    "markHandled": "Mark handled",
+    "unhandle": "Back to waiting",
+    "gone": "account removed",
+    "emptyTitle": "Nothing here",
+    "emptyHint": "Messages from users show up here as they arrive."
   }
 }

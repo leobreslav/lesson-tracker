@@ -34,6 +34,7 @@ import Works from './Works'
 import WorkTable from './WorkTable'
 import SchoolTeachers from './SchoolTeachers'
 import StartHere, { hasSteps } from './StartHere'
+import Feedback from './Feedback'
 import Schools from './Schools'
 import {
   clearToken,
@@ -204,6 +205,12 @@ export default function App() {
             <Route path="reference" element={<SchoolReference />} />
           </Route>
           <Route path="/schools" element={guarded(Schools, { user })} />
+          {/* всё, что написали пользователи: второй раздел суперпользователя.
+              Права проверяет сервер — вьюха отвечает 403 всем остальным */}
+          <Route
+            path="/feedback"
+            element={guarded(Feedback, { user, onSaved: setUser })}
+          />
           {/* адрес остался жив: на него ведут ссылки из раздела «Школа» и
               закладки, а страница расписания теперь одна на оба вида */}
           <Route

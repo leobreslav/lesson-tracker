@@ -15,6 +15,7 @@ from datetime import date
 
 from calendars.models import DayException, SchoolYear, Term
 from django.urls import reverse
+from feedback.models import Message
 from django.utils import timezone
 from plans.models import PlanBaseline, PlanNode
 from rest_framework.test import APITestCase
@@ -1138,3 +1139,116 @@ class ActionDoorTests(AccessTestCase):
                         (unknown.status_code, self.without_id(unknown, 10**9)),
                         f"{name} выдаёт существование курса: {ours.content}",
                     )
+
+
+class FeedbackTests(AccessTestCase):
+    """
+    Сообщения разработчику: пишут все, читает один.
+
+    Форма доступа своя, пятая, и заведена она не для удобства: обращение —
+    единственный объект, который **не принадлежит школе**. Отсюда обе
+    половины правила, и обе проверяются здесь.
+
+    Писать может каждый вошедший, ученик наравне с учителем: поломку он
+    видит ту же, а сказать о ней ему было нечем вовсе.
+
+    Читать — только суперпользователь. Администратору школы чужие жалобы на
+    интерфейс не адресованы, и «мой завуч прочитает, что я написал» отбивает
+    желание писать вернее любого отказа.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.root = self.make_root()
+
+    def send(self, person, text="кнопка не нажимается"):
+        self.sign_in(person)
+        return self.client.post(
+            reverse("feedback-list"),
+            {"kind": "bug", "text": text, "page": "/schedule"},
+            format="json",
+        )
+
+    def test_everybody_signed_in_may_write(self):
+        for person in (self.user, self.admin, self.student, self.outsider):
+            with self.subTest(person.email):
+                self.assertEqual(self.send(person).status_code, 201)
+
+    def test_the_author_and_the_page_are_taken_not_asked(self):
+        """
+        Иначе «от кого» становится полем формы, то есть подставляемым.
+
+        Заодно проверяется страница: половина сообщений об ошибке — «тут
+        ничего не работает», и без адреса искать это негде.
+        """
+        self.sign_in(self.user)
+        response = self.client.post(
+            reverse("feedback-list"),
+            {"kind": "idea", "text": "хорошо бы кнопку", "author": self.admin.pk},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 201, response.content)
+        self.sign_in(self.root)
+        row = self.client.get(reverse("feedback-list")).json()[0]
+        self.assertEqual(row["author_email"], self.user.email)
+        self.assertEqual(row["school_name"], self.school.name)
+
+    def test_nobody_but_a_superuser_reads_them(self):
+        self.send(self.user)
+
+        for person in (self.user, self.admin, self.student, self.alien_admin):
+            with self.subTest(person.email):
+                self.sign_in(person)
+                self.assertCode(
+                    self.client.get(reverse("feedback-list")), 403, "superuser_required"
+                )
+                self.assertCode(
+                    self.client.get(reverse("feedback-summary")),
+                    403,
+                    "superuser_required",
+                )
+
+    def test_a_superuser_reads_every_school_at_once(self):
+        """Разговор с разработчиком идёт через школы, а не внутри одной."""
+        self.send(self.user)
+        self.send(self.stranger)
+
+        self.sign_in(self.root)
+        rows = self.client.get(reverse("feedback-list")).json()
+
+        self.assertEqual(len(rows), 2)
+        self.assertEqual(self.client.get(reverse("feedback-summary")).json()["waiting"], 2)
+
+    def test_handled_is_a_mark_and_the_same_press_takes_it_back(self):
+        """
+        Снять ошибочную отметку нечем иным — тем же приёмом, что в журнале.
+
+        Без этого список копит мусор, который нельзя убрать, и первым же
+        промахом становится «разобранным» то, что никто не разбирал.
+        """
+        self.send(self.user)
+        self.sign_in(self.root)
+        row = self.client.get(reverse("feedback-list")).json()[0]
+
+        marked = self.client.post(reverse("feedback-handled", args=[row["id"]]))
+        self.assertIsNotNone(marked.json()["handled_at"])
+        self.assertEqual(
+            self.client.get(reverse("feedback-summary")).json()["waiting"], 0
+        )
+
+        back = self.client.post(reverse("feedback-handled", args=[row["id"]]))
+        self.assertIsNone(back.json()["handled_at"])
+
+    def test_the_mark_is_a_superuser_action_too(self):
+        self.send(self.user)
+        message_id = Message.objects.get().pk
+
+        for person in (self.admin, self.student):
+            with self.subTest(person.email):
+                self.sign_in(person)
+                self.assertCode(
+                    self.client.post(reverse("feedback-handled", args=[message_id])),
+                    403,
+                    "superuser_required",
+                )

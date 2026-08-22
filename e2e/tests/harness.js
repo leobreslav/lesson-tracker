@@ -248,6 +248,9 @@ export const PEOPLE = {
   // второй ученик того же курса: им проверяется, что чужого не видно
   otherStudent: 'volkova@example.com',
   removedStudent: 'morozova@example.com',
+  // суперпользователь: два раздела, недостижимых изнутри школы, — список
+  // школ и обращения пользователей
+  developer: 'developer@example.com',
 }
 
 /**

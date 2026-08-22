@@ -124,8 +124,11 @@ test('семь курсов помещаются в экран, каждый о�
   const years = await admin.get('/api/calendar/years/')
   const subjects = await admin.get('/api/school/subjects/')
   const grades = await admin.get('/api/school/grades/')
-  // в демо-школе четыре курса; доводим до семи
-  for (const index of [1, 2, 3]) {
+  // доводим до семи, сколько бы их ни было в наборе: набор растёт, и
+  // «добавить ровно три» отстаёт от него молча — тест считал четыре, когда
+  // в посеве появился пятый курс
+  const seeded = (await admin.get('/api/courses/?scope=school')).body.length
+  for (let index = 1; index <= 7 - seeded; index += 1) {
     await admin.post('/api/courses/', {
       year: years.body[0].id,
       subject: subjects.body[0].id,
@@ -238,8 +241,11 @@ test('обзор считает школу и подсказывает след�
   await openSection(page, '/school')
 
   const cards = page.locator('.summary-cards li')
-  await expect(cards.filter({ hasText: 'учителей' })).toContainText('3')
-  await expect(cards.filter({ hasText: 'курсов' })).toContainText('4')
+  // четверо сотрудников и пять курсов: с тех пор как в наборе появился
+  // завуч со своим курсом, «администратор» и «ведущий» — не два разных
+  // человека по построению
+  await expect(cards.filter({ hasText: 'учителей' })).toContainText('4')
+  await expect(cards.filter({ hasText: 'курсов' })).toContainText('5')
 })
 
 test('расписание одно: вид переключается на месте', async ({ page, signIn }) => {
@@ -249,7 +255,7 @@ test('расписание одно: вид переключается на ме
   // как школьное расписание стало всеми расписаниями курсов.
   await signIn(PEOPLE.admin)
   await openSection(page, '/schedule')
-  await expect(page.locator('h1')).toHaveText('Моё расписание')
+  await expect(page.locator('h1')).toHaveText('Расписание')
 
   // `click`, а не `check`: переключение вида размонтирует сетку вместе с
   // её тумблером, и `check` проверял бы состояние уже отсоединённого поля.
@@ -263,7 +269,7 @@ test('расписание одно: вид переключается на ме
 
   // и обратно, тем же тумблером
   await page.getByRole('radio', { name: 'Мои', exact: true }).click()
-  await expect(page.locator('h1')).toHaveText('Моё расписание')
+  await expect(page.locator('h1')).toHaveText('Расписание')
 
   // старый адрес приводит сюда же, в школьный вид
   await openSection(page, '/school/schedule')
@@ -318,6 +324,7 @@ test('фильтры школьного расписания сужают дру
     'Grade 6 Geometry',
     'Grade 9 Algebra',
     'Grade 9 Geometry',
+    'Grade 9 Physics',
   ])
 
   // выбран курс — ведущий и предмет встают сами, и это тот самый случай:

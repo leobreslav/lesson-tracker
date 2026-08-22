@@ -79,7 +79,21 @@ PEOPLE = (
     ("director@example.com", "Ольга", "Дирекова", True),
     ("ivanova@example.com", "Мария", "Иванова", False),
     ("petrov@example.com", "Пётр", "Петров", False),
+    # Завуч, который сам ведёт курс, — и это не редкость, а обычная школа:
+    # администратор без единого своего часа был в наборе единственным, и на
+    # нём не проверялся ни один экран, где право и принадлежность спорят.
+    # «Мои курсы» у Дирековой пусты, у Ковалёвой — один, а видят они оба всё.
+    ("krylova@example.com", "Инна", "Крылова", True),
 )
+
+# Разработчик: суперпользователь без школы.
+#
+# Нужен ровно для двух разделов, которые изнутри школы недостижимы: список
+# школ и обращения пользователей. Без него на стенде их **некому открыть** —
+# посев суперпользователей не заводил вовсе, а `--flush` только сохраняет
+# уже существующих. Школы у него нет и быть не должно: в своей школе
+# суперпользователь — обычный её участник, и права его живут не здесь.
+DEVELOPER = ("developer@example.com", "Дмитрий", "Разработчиков")
 
 # Ученики: имя, фамилия и адрес. Шестеро на курс — столько же, сколько в
 # небольшой группе, и достаточно, чтобы сводная таблица работ выглядела как
@@ -119,9 +133,19 @@ COURSES = (
     ("Grade 9 Algebra", "Алгебра", 9, "petrov@example.com", ((0, 3), (2, 3), (4, 4))),
     # deliberately without a personal timetable: empty states need a course
     ("Grade 9 Geometry", "Геометрия", 9, "petrov@example.com", ()),
+    # курс завуча: у администратора должно быть и своё расписание, иначе
+    # «Мои · Вся школа» у него всегда показывает одно и то же — пустоту.
+    # Третий предмет заодно даёт случай «учитель ведёт ровно один предмет»,
+    # на котором держится сужение фильтров школьного расписания
+    # шестая параллель, а не девятая: «Grade 9 Physics» занят крупным
+    # набором (`--rich`), и одноимённый курс базового достался бы двум
+    # ведущим разом — `one_teacher_per_course` этого не допускает
+    ("Grade 6 Physics", "Физика", 6, "krylova@example.com", ((1, 5), (3, 6))),
 )
 
-SUBJECTS = ("Алгебра", "Геометрия")
+# «Информатику» тут не заводят намеренно: её заводит руками браузерный тест
+# справочников, и посеянная она сделала бы его проверку бессмысленной
+SUBJECTS = ("Алгебра", "Геометрия", "Физика")
 
 # Two of the eleven default year groups are renamed: «Grade 9» becomes an MYP
 # label whose number says 4 while its year of study is 9. Sorting has to keep
@@ -733,7 +757,41 @@ class Command(BaseCommand):
             )
             people[email] = user
 
+        people[DEVELOPER[0]] = self.developer()
         return people
+
+    def developer(self):
+        """
+        Суперпользователь стенда. Школы у него нет — и это не пропуск.
+
+        Права суперпользователя в приложении значат ровно два раздела:
+        список школ и обращения. Всё остальное он видит как участник своей
+        школы, а участником он тут не является — иначе в каждом списке
+        сотрудников появлялся бы человек, не ведущий ни одного урока.
+        """
+        email, first, last = DEVELOPER
+        user, _ = User.objects.get_or_create(
+            email=email,
+            defaults={
+                "first_name": first,
+                "last_name": last,
+                "is_superuser": True,
+                "is_staff": True,
+                "language": LANGUAGE,
+                "last_login": timezone.now(),
+            },
+        )
+        if not (user.is_superuser and user.is_staff):
+            user.is_superuser = True
+            user.is_staff = True
+            user.save(update_fields=["is_superuser", "is_staff"])
+
+        EmailAddress.objects.get_or_create(
+            user=user,
+            email=user.email,
+            defaults={"verified": True, "primary": True},
+        )
+        return user
 
     def year(self, school, *, rich=False):
         """

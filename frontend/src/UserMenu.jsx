@@ -166,11 +166,26 @@ function SwitchUser() {
     window.location.assign('/')
   }
 
-  return (
-    <li className="dropdown-switch" role="none">
-      <span className="hint">{t('devSwitch.label')}</span>
-      <ul>
-        {people.map((person) => (
+  /*
+   * Две группы, а не один список, и это чинит настоящую пропажу.
+   *
+   * Людей семнадцать, сотрудники идут первыми, а список прокручивается
+   * (`max-height`) — и учеников за краем **не было видно вовсе**: у
+   * прокрутки внутри выпадающего меню нет ни одного признака, что она
+   * есть. Выглядело это как «на стенде нет ни одного ученика», хотя их
+   * четырнадцать. Заголовок группы виден всегда (`sticky`) и говорит, что
+   * список продолжается.
+   */
+  const staff = people.filter((person) => person.kind !== 'student')
+  const students = people.filter((person) => person.kind === 'student')
+
+  const group = (title, list) =>
+    list.length > 0 && (
+      <>
+        <li className="switch-group" role="none">
+          {t(title)}
+        </li>
+        {list.map((person) => (
           <li key={person.email} role="none">
             <button type="button" role="menuitem" onClick={() => enter(person.email)}>
               {person.name}
@@ -178,6 +193,15 @@ function SwitchUser() {
             </button>
           </li>
         ))}
+      </>
+    )
+
+  return (
+    <li className="dropdown-switch" role="none">
+      <span className="hint">{t('devSwitch.label')}</span>
+      <ul>
+        {group('devSwitch.staff', staff)}
+        {group('devSwitch.students', students)}
       </ul>
     </li>
   )

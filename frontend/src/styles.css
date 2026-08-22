@@ -3270,11 +3270,32 @@ button.compact,
 }
 
 .dropdown-switch ul {
-  max-height: 14rem;
+  max-height: 18rem;
   margin: 0;
   padding: 0;
   overflow-y: auto;
   list-style: none;
+}
+
+/*
+ * Заголовок группы — единственное, что говорит о прокрутке.
+ *
+ * Людей на стенде семнадцать, в меню помещается семь, и учеников за краем
+ * не было видно вовсе: у прокрутки внутри выпадающего меню нет ни рамки,
+ * ни полосы, ни тени — она молчит. Липкий заголовок виден всегда, и по
+ * нему понятно и где ты, и что список на этом не кончился.
+ */
+.dropdown-switch .switch-group {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 0.3rem 0.75rem 0.15rem;
+  background: #fff;
+  color: #6b7480;
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
 }
 
 .dropdown-switch button {
@@ -6655,4 +6676,65 @@ button.dropzone:hover:not(:disabled) {
 
 .proposal-list blockquote {
   margin: 0.3rem 0;
+}
+
+/*
+ * Обращения к разработчику: кнопка в баре и список на своей странице.
+ *
+ * Кнопка стоит слева от меню пользователя и в баре ученика — там же. На
+ * узком экране от неё остаётся один значок: место в баре дороже слова, а
+ * подпись живёт в `title`.
+ */
+.feedback-open {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+@media (max-width: 640px) {
+  .feedback-word {
+    display: none;
+  }
+}
+
+.feedback-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--card-gap);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* вид обращения — метка, а не кнопка: нажимать на неё нечего */
+.feedback-kind {
+  padding: 0.1rem 0.5rem;
+  border-radius: 999px;
+  background: #eef1f4;
+  color: #46505a;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.feedback-kind.bug {
+  background: #fdecec;
+  color: #a33a3a;
+}
+
+.feedback-kind.idea {
+  background: #eaf3ff;
+  color: #2f5f9e;
+}
+
+/*
+ * Текст — как написали, с переносами строк.
+ *
+ * Сообщения пишут абзацами («нажимаю сюда — ничего; а ещё вот тут»), и
+ * склеенные в одну строку они читаются вдвое дольше. `pre-wrap`, а не `pre`:
+ * длинную строку всё равно надо переносить по ширине карточки.
+ */
+.feedback-text {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
