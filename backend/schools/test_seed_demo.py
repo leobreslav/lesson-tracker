@@ -651,29 +651,57 @@ class EveryModelIsSeededTests(TestCase):
         "accounts.UserUserPermissions": "то же самое про права",
     }
 
-    OURS = {
-        "accounts",
-        "bank",
-        "calendars",
-        "files",
-        "library",
-        "onboarding",
-        "plans",
-        "schedule",
-        "schools",
-        "vision",
-        "works",
-    }
+    @staticmethod
+    def ours():
+        """
+        Наши приложения — те, что лежат в дереве проекта.
+
+        Список был написан руками, и он тихо перестал быть полным: новое
+        приложение `feedback` в него никто не добавил, и сторож три недели
+        не проверял его вовсе. Обнаружилось это не здесь, а на стенде —
+        страницей обращений, которую ни разу не видели с данными.
+
+        Ручной список и не мог работать: он требует, чтобы автор нового
+        приложения вспомнил про чужой тест. Признак «лежит в дереве проекта»
+        ничего не требует и отвечает на тот же вопрос — чужое стоит в
+        site-packages.
+        """
+        from pathlib import Path
+
+        from django.apps import apps
+        from django.conf import settings
+
+        root = Path(settings.BASE_DIR).resolve()
+        return {
+            config.label
+            for config in apps.get_app_configs()
+            if Path(config.path).resolve().is_relative_to(root)
+        }
+
+    def test_the_list_of_our_apps_is_not_empty(self):
+        """
+        Сторож, который ничего не проверяет, выглядит как зелёный.
+
+        Признак «лежит в дереве проекта» зависит от расположения файлов, и
+        если однажды он перестанет срабатывать, набор станет пустым — а
+        основной тест ниже пройдёт, не проверив ни одной модели.
+        """
+        ours = self.ours()
+
+        self.assertIn("schools", ours)
+        self.assertIn("feedback", ours)
+        self.assertNotIn("admin", ours, "чужое приложение не наше")
 
     def test_no_model_is_left_empty(self):
         from django.apps import apps
 
         seed()
 
+        ours = self.ours()
         empty = []
         for model in apps.get_models():
             label = model._meta.app_label
-            if label not in self.OURS:
+            if label not in ours:
                 continue
             name = f"{label}.{model.__name__}"
             if name in self.EMPTY_ON_PURPOSE:

@@ -54,6 +54,7 @@ from schedule import services as schedule_services
 from schools import demo_extras, rich_demo, services as school_services
 from schools.models import Invitation, School
 from works import statements
+from feedback.models import Message
 from works.models import Submission, Task, Work
 
 User = get_user_model()
@@ -698,6 +699,12 @@ class Command(BaseCommand):
         Subject.objects.all().delete()
         SchoolYear.objects.all().delete()  # carries courses, terms, markup
         Invitation.objects.all().delete()
+        # Обращения — единственная таблица, не принадлежащая школе, поэтому
+        # каскад от неё сюда не доходит, а автор и школа у них под SET_NULL.
+        # После пересева стенда это выглядело как список сообщений от
+        # «удалённой учётки»: разговор с разработчиком пережил школу, о
+        # которой шёл. Сносим явно, как задачник выше.
+        Message.objects.all().delete()
         User.objects.filter(is_superuser=False).delete()
         User.objects.filter(is_superuser=True).update(school=None, is_school_admin=False)
         School.objects.all().delete()
