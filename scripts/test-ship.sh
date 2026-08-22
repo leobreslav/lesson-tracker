@@ -246,5 +246,121 @@ else
 fi
 rm -rf "$t"
 
+# --- ВТОРАЯ ДОРОГА: gh не годится --------------------------------------------
+#
+# Проверок тут столько же, сколько у первой, и это не перестраховка. Дорог две,
+# потому что gh есть не везде: в облачной сессии его как раз не оказалось, и
+# скрипт умирал первой строкой проверок — то есть был мёртв ровно там, ради
+# чего написан. Непроверенная вторая дорога повторила бы это молча.
+#
+# «Не годится», а не «нет»: заглушка отвечает отказом на `gh auth status`, и
+# это ровно то условие, по которому скрипт и ветвится — отсутствие и
+# неавторизованность он не различает намеренно, толку от них поровну. Убрать
+# gh из PATH по-настоящему нельзя: вместе с ним ушли бы git и всё остальное.
+# Поэтому каждая проверка заодно смотрит, что скрипт **сказал**, какой дорогой
+# идёт: без этого «прошло» значило бы только «ветка встала куда надо», а какой
+# из двух дорог — неизвестно.
+#
+# Смотрим на настоящий bare-репозиторий, а не на журнал заглушки: раз пуш идёт
+# git'ом, единственная правда о том, куда встала ветка, лежит в самом origin.
+
+run_bare() {
+    local root="$1"; shift
+    ( export HOME="$root" PATH="$root/nogh:$PATH"
+      cd "$root/work" && bash scripts/ship.sh "$@" ) >"$root/out" 2>&1
+    echo $?
+}
+# Каталог с отказывающей заглушкой встаёт первым в PATH и перекрывает
+# настоящий gh, если он на машине есть.
+hide_gh() { mkdir -p "$1/nogh"; printf '#!/bin/sh\nexit 127\n' > "$1/nogh/gh"; chmod +x "$1/nogh/gh"; }
+# Пошёл ли скрипт второй дорогой — по его собственным словам.
+by_git() { grep -q "обычным пушем" "$1/out" 2>/dev/null; }
+at() { git -C "$1/origin" rev-parse "$2" 2>/dev/null; }
+
+# --- перемотка main без gh ---------------------------------------------------
+t="$(make_fixture)"; hide_gh "$t"
+want="$(git -C "$t/work" rev-parse HEAD)"
+code="$(run_bare "$t")"
+if [ "$code" = 0 ] && by_git "$t" && [ "$(at "$t" main)" = "$want" ]; then
+    report ok "без gh: main перематывается обычным пушем"
+else
+    report FAIL "без gh: main перематывается обычным пушем" "код $code; $(tail -3 "$t/out")"
+fi
+rm -rf "$t"
+
+# --- без gh прод по-прежнему не двигается без просьбы ------------------------
+t="$(make_fixture)"; hide_gh "$t"
+was="$(at "$t" production)"
+run_bare "$t" >/dev/null
+if by_git "$t" && [ "$(at "$t" production)" = "$was" ]; then
+    report ok "без gh: без --prod прод не трогается"
+else
+    report FAIL "без gh: без --prod прод не трогается" "$(at "$t" production)"
+fi
+rm -rf "$t"
+
+# --- без gh --prod-only двигает прод на origin/main --------------------------
+t="$(make_fixture)"; hide_gh "$t"
+git -C "$t/work" push --quiet origin feature:refs/heads/main
+git -C "$t/work" fetch --quiet origin
+want="$(git -C "$t/work" rev-parse origin/main)"
+code="$(run_bare "$t" --prod-only --yes)"
+if [ "$code" = 0 ] && by_git "$t" && [ "$(at "$t" production)" = "$want" ]; then
+    report ok "без gh: --prod-only двигает прод на origin/main"
+else
+    report FAIL "без gh: --prod-only двигает прод на origin/main" "код $code; $(tail -3 "$t/out")"
+fi
+rm -rf "$t"
+
+# --- без gh перезаписи не-потомком тоже нет ----------------------------------
+# Самый важный из отказов: на том конце боевой сервер. Здесь он должен
+# случиться **до** пуша, а не разбиться о сервер, — иначе на настоящем GitHub
+# отказ выглядел бы чужой ошибкой посреди чужого вывода.
+t="$(make_fixture)"; hide_gh "$t"
+git -C "$t/work" checkout --quiet main
+git -C "$t/work" commit --quiet --allow-empty -m "чужое, уже на GitHub"
+git -C "$t/work" push --quiet origin main
+git -C "$t/work" checkout --quiet -B feature "$(git -C "$t/work" rev-parse main~1)"
+git -C "$t/work" commit --quiet --allow-empty -m "своё мимо чужого"
+git -C "$t/work" push --quiet --force origin feature 2>/dev/null
+was="$(at "$t" main)"
+code="$(run_bare "$t")"
+if [ "$code" != 0 ] && by_git "$t" && [ "$(at "$t" main)" = "$was" ]; then
+    report ok "без gh: main ушёл вперёд мимо ветки — отказ, перезаписи нет"
+else
+    report FAIL "без gh: main ушёл вперёд мимо ветки — отказ, перезаписи нет" \
+        "код $code; $(tail -3 "$t/out")"
+fi
+rm -rf "$t"
+
+# --- без gh просьба о пересеве — настоящий коммит ----------------------------
+t="$(make_fixture)"; hide_gh "$t"
+code="$(run_bare "$t" --reseed --flush --rich)"
+first="$(git -C "$t/origin" log -1 --format=%s staging-seed 2>/dev/null || true)"
+tree_ok=0
+[ "$(git -C "$t/origin" rev-parse 'staging-seed^{tree}' 2>/dev/null)" = \
+  "$(git -C "$t/origin" rev-parse 'main^{tree}' 2>/dev/null)" ] && tree_ok=1
+if [ "$code" = 0 ] && by_git "$t" && [ "$first" = "seed: --flush --rich" ] && [ "$tree_ok" = 1 ]; then
+    report ok "без gh: просьба о пересеве — коммит с деревом main и аргументами в шапке"
+else
+    report FAIL "без gh: просьба о пересеве — коммит с деревом main и аргументами в шапке" \
+        "код $code; «$first»; дерево совпало: $tree_ok; $(tail -3 "$t/out")"
+fi
+rm -rf "$t"
+
+# --- без gh вторая просьба встаёт поверх первой ------------------------------
+t="$(make_fixture)"; hide_gh "$t"
+run_bare "$t" --reseed >/dev/null
+first="$(at "$t" staging-seed)"
+code="$(run_bare "$t" --reseed --minimal)"
+second="$(at "$t" staging-seed)"
+if [ "$code" = 0 ] && by_git "$t" && [ "$second" != "$first" ] &&
+   [ "$(git -C "$t/origin" rev-parse 'staging-seed^' 2>/dev/null)" = "$first" ]; then
+    report ok "без gh: вторая просьба — потомок первой"
+else
+    report FAIL "без gh: вторая просьба — потомок первой" "код $code; $(tail -3 "$t/out")"
+fi
+rm -rf "$t"
+
 printf '\n%d прошло, %d упало\n' "$PASS" "$FAIL"
 [ "$FAIL" -eq 0 ]
