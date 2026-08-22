@@ -37,6 +37,12 @@ ASK = [
     ("heredoc, который ИСПОЛНЯЕТСЯ", "python3 - <<'PY'\nfrom vision import client\nclient.read_header(b'')\nPY"),
     ("конструктор клиента в heredoc", "python3 - <<'PY'\nimport anthropic\nc = anthropic.Anthropic(api_key=k)\nPY"),
     ("прямой вызов messages.create", 'python3 -c "c.messages.create(model=m)"'),
+    # `-c` делает код видимым, но только если он там есть: подстановка
+    # возвращает нас к «не видно, что выполнит».
+    ("shell -c с кодом из переменной", f'docker compose exec -T backend python {SH} -c "$SCRIPT"'),
+    ("shell -c с подстановкой команды", f'docker compose exec -T backend python {SH} -c "$(cat probe.py)"'),
+    ("shell -c, зовущий клиента", f'docker compose exec -T backend python {SH} -c "from vision import client; client.read_header(b\'\')"'),
+    ("shell --command, зовущий клиента", f'docker compose exec -T backend python {SH} --command "read_header(open(p,\'rb\').read())"'),
 ]
 
 QUIET = [
@@ -54,6 +60,14 @@ QUIET = [
     ("чтение исходника", "sed -n '1,20p' backend/vision/client.py"),
     ("браузерные тесты", "./e2e.sh --smoke"),
     ("состояние гита", "git status"),
+    # Ради этого различение и заведено: код виден целиком, вызова в нём нет,
+    # а сторож спрашивал — то есть про то, где тратить нечего.
+    ("shell -c читает пользователей",
+     f'docker compose exec -T backend python {SH} -c "from django.contrib.auth import get_user_model; print(get_user_model().objects.count())"'),
+    ("shell -c многострочный, без вызовов",
+     f'ssh server \'cd app && docker compose exec -T backend python {SH} -c "\nfrom feedback.services import recipients\nprint(recipients())\n"\''),
+    ("shell -c считает цену, наружу не ходит",
+     f'docker compose exec -T backend python {SH} -c "from vision import prices; print(prices.PRICES)"'),
 ]
 
 fails = 0
