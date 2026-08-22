@@ -48,6 +48,11 @@ jobs:
         # начиная ловить лишнее.
         run: python3 scripts/test-guard-anthropic-spend.py
 
+      - name: Сторож автовыкатки прода
+        # Секунда, и без контейнера. Скрипт выкатывает прод без человека, и
+        # проверяются обе стороны: и что выкатывает, и что отказывается.
+        run: bash scripts/test-prod-autodeploy.sh
+
       - name: Питоновский набор
         run: docker compose run --rm -T backend python manage.py test
 

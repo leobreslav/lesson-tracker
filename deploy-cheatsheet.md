@@ -152,6 +152,17 @@ Versioning у R2 нет — резерв это второй бакет; под�
 ./push-deploy.sh --skip-env "…"     # не трогать .env.prod на сервере
 ```
 
+Без ноутбука и без ssh — прод стоит на ветке `production` и подтягивает её
+сам раз в пять минут:
+
+```bash
+git push origin main:production                 # или PR на github.com
+```
+
+Автовыкаткой это не является: ветка сама не двигается. Но `.env.prod` таким
+путём не едет — меняли переменные, сначала `./scripts/sync-env.sh prod` с
+ноутбука.
+
 По дороге скрипт везёт на сервер `.env.prod` из
 `~/secrets/lesson-tracker.env.prod` (путь — `DEPLOY_ENV_FILE`). Главная копия
 файла живёт на ноутбуке; **на сервере его руками не правят**. Если всё-таки
@@ -169,5 +180,6 @@ scp leobreslav@194.67.111.40:~/lesson-tracker/.env.prod \
 
 ```bash
 ssh leobreslav@194.67.111.40 "cd ~/lesson-tracker && docker compose \
-  -f docker-compose.prod.yml -f docker-compose.ssl.yml logs --tail 50 backend"
+  --env-file .env.prod -f docker-compose.prod.yml -f docker-compose.ssl.yml \
+  logs --tail 50 backend"
 ```

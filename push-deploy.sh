@@ -13,6 +13,12 @@
 # переменной DEPLOY_ENV_FILE). Главная копия живёт на ноутбуке; на сервере
 # файл руками не правят — см. DEPLOY.md, раздел 2.
 #
+# На проде стоит не main, а ветка `production`: она и есть «то, что сейчас
+# выкачено». Скрипт двигает её сам, поэтому здесь ничего не изменилось — но
+# знать про неё надо, потому что двинуть её можно и без ноутбука (с github.com
+# или через gh), а сервер подхватит из своего crontab. См. scripts/
+# prod-autodeploy.sh и .claude/rules/deploy.md.
+#
 # Адрес сервера и домен можно подменить переменными окружения:
 # DEPLOY_SERVER, DEPLOY_DIR, DEPLOY_SITE.
 
@@ -24,6 +30,9 @@ set -Eeuo pipefail
 . "$(dirname "$(readlink -f "$0")")/scripts/contours.sh"
 contour prod || exit 1
 BRANCH="main"
+# Ветка, по которой живёт прод. Отдельная от main намеренно: main двигается
+# каждой задачей, а прод — только когда так решили.
+DEPLOY_BRANCH="production"
 
 # то, что не должно уехать в репозиторий ни при каких обстоятельствах
 FORBIDDEN=(
@@ -41,7 +50,9 @@ fail() { printf '\033[31mОшибка: %s\033[0m\n' "$*" >&2; exit 1; }
 trap 'fail "команда на строке $LINENO завершилась с ошибкой"' ERR
 
 usage() {
-    sed -n '3,17p' "$0" | sed 's/^# \{0,1\}//'
+    # До первой пустой строки, а не до номера 17: номер молча устаревает при
+    # любой правке шапки — уже устарел однажды.
+    sed -n '3,/^$/p' "$0" | sed 's/^# \{0,1\}//'
 }
 
 # --- аргументы --------------------------------------------------------------
@@ -165,6 +176,49 @@ else
     fi
 fi
 
+# --- ветка production -------------------------------------------------------
+#
+# Прод стоит на `production`, а не на main, и `deploy.sh` тянет **текущую**
+# ветку сервера. Значит после пуша в main прод не увидел бы ничего: выкатка
+# прошла бы, отчиталась «Готово» и не поменяла ровно ничего. Молчаливый успех
+# хуже отказа, поэтому ветку двигаем здесь, до ssh.
+#
+# Двигаем на origin/main, а не на локальный HEAD: с --deploy-only локальные
+# коммиты не запушены, и прод от них всё равно оторван — сервер тянет из
+# origin. Так `production` не может уехать вперёд `main`.
+move_deploy_branch() {
+    log "Двигаю ветку $DEPLOY_BRANCH"
+    git fetch --quiet origin "$BRANCH"
+
+    local target current
+    target="$(git rev-parse "origin/$BRANCH")"
+    # --verify --quiet, а не просто rev-parse: на несуществующей ветке
+    # `git rev-parse origin/production` печатает саму строку «origin/production»
+    # в stdout и уходит кодом 128. То есть при первом же создании ветки current
+    # оказался бы не пустым, а мусором, и проверка на предка отказала бы ровно
+    # там, где отказывать не должна.
+    current="$(git rev-parse --verify --quiet "origin/$DEPLOY_BRANCH" || true)"
+
+    if [ "$current" = "$target" ]; then
+        info "уже на ${target:0:8} — двигать нечего"
+        return
+    fi
+
+    # Не-перемотка означает, что production ушла вперёд main или её переписали.
+    # Форсить тут нельзя: на том конце живая школа, и «наверное, я знаю лучше»
+    # здесь стоит откатом чужих данных к чужому коду.
+    if [ -n "$current" ] &&
+       ! git merge-base --is-ancestor "$current" "$target"; then
+        fail "$DEPLOY_BRANCH (${current:0:8}) не является предком origin/$BRANCH (${target:0:8}).
+Кто-то передвинул её мимо main. Разберитесь руками — деплой остановлен."
+    fi
+
+    git push origin "$target:refs/heads/$DEPLOY_BRANCH"
+    info "${current:0:8}${current:+ -> }${target:0:8}"
+}
+
+move_deploy_branch
+
 # --- .env.prod --------------------------------------------------------------
 #
 # Файл вне git, поэтому его везёт scp, а не git pull. Здесь можно печатать
@@ -193,7 +247,11 @@ sync_env
 log "Запускаю деплой на $SERVER"
 info "вывод сервера идёт ниже как есть"
 
-if ! ssh "$SERVER" "cd $REMOTE_DIR && ./deploy.sh"; then
+# flock — тот же замок, что берёт scripts/prod-autodeploy.sh: опрос из crontab
+# может совпасть с выкаткой отсюда, а два `docker compose up` над одним стеком
+# это не гонка данных, а погашенный сайт. Ждём, а не отказываемся: чужая
+# выкатка идёт минуты, и правильный исход — пойти следом, а не бросить.
+if ! ssh "$SERVER" "cd $REMOTE_DIR && flock -w 900 ~/.prod-deploy.lock ./deploy.sh"; then
     fail "деплой на сервере не прошёл — код на сервере мог остаться прежним.
 Логи: ssh $SERVER 'cd $REMOTE_DIR && docker compose --env-file .env.prod -f docker-compose.prod.yml -f docker-compose.ssl.yml logs --tail 50 backend nginx'"
 fi

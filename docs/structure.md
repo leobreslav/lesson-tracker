@@ -10,7 +10,7 @@
 ├── docker-compose.yml        # dev: db + backend (runserver) + frontend (vite)
 ├── docker-compose.prod.yml   # prod: db + gunicorn + сборка фронта + nginx
 ├── docker-compose.ssl.yml    # оверлей: подменяет конфиг nginx на ssl.conf
-├── push-deploy.sh            # с ноутбука: коммит, пуш, .env.prod и деплой
+├── push-deploy.sh            # с ноутбука: коммит, пуш, ветка production, .env.prod, деплой
 ├── deploy.sh                 # git pull + пересборка + перезапуск на сервере
 ├── DEPLOY.md                 # пошаговая инструкция первого развёртывания
 ├── deploy-cheatsheet.md      # короткие команды: старт разработки и выкатка
@@ -62,6 +62,8 @@
 │   ├── staging-seed.sh       # пересев стенда: окно DEBUG под ловушкой
 │   ├── check-secrets.sh     # сверка ключей по контурам отпечатками, без значений
 │   ├── staging-autodeploy.sh # опрос origin/main из crontab стенда
+│   ├── prod-autodeploy.sh    # опрос ветки production из crontab прода
+│   ├── test-prod-autodeploy.sh # сторож: выкатывает, когда надо, и отказывается, когда нет
 │   └── reload-nginx.sh       # хук certbot: reload nginx после продления
 ├── backend/
 │   ├── Dockerfile            # python:3.12-slim, стадии base/dev/prod
