@@ -60,7 +60,17 @@ compose прочитает такой файл как одну переменн�
 fi
 
 sha_of() { sha256sum "$1" | cut -d' ' -f1; }
-NAMES_CMD="grep -oE '^[A-Za-z_][A-Za-z0-9_]*=' .env.prod | tr -d '=' | sort"
+
+# `LC_ALL=C` здесь обязателен с обеих сторон, и стоило это ложной тревоги.
+# `comm` требует, чтобы оба списка были отсортированы **одинаково**, а порядок
+# зависит от локали: в C локали подчёркивание (0x5F) идёт после букв, в
+# UTF-8 — не участвует в сравнении первого уровня вовсе. Поэтому
+# BOOTSTRAP_SUPERUSERS и BOOTSTRAP_SUPERUSER_EMAIL встают в разном порядке на
+# ноутбуке и на сервере, и `comm` докладывает о переменной, которая никуда не
+# девалась. Ошибка безобидна ровно до того дня, когда на такое сообщение
+# перестанут смотреть, — а это единственное место, которое говорит, что
+# меняется в секретах.
+NAMES_CMD="grep -oE '^[A-Za-z_][A-Za-z0-9_]*=' .env.prod | tr -d '=' | LC_ALL=C sort"
 
 local_sum="$(sha_of "$ENV_SOURCE")"
 remote_sum="$(ssh -o BatchMode=yes "$SERVER" "cd $REMOTE_DIR && sha256sum .env.prod 2>/dev/null | cut -d' ' -f1" || true)"
@@ -75,8 +85,9 @@ if [ -z "$remote_sum" ]; then
 else
     remote_names="$(ssh -o BatchMode=yes "$SERVER" "cd $REMOTE_DIR && $NAMES_CMD" || true)"
     remote_file="$(mktemp)"; printf '%s\n' "$remote_names" | sed '/^$/d' > "$remote_file"
-    added="$(comm -23 <(grep -oE '^[A-Za-z_][A-Za-z0-9_]*=' "$ENV_SOURCE" | tr -d '=' | sort) "$remote_file" || true)"
-    removed="$(comm -13 <(grep -oE '^[A-Za-z_][A-Za-z0-9_]*=' "$ENV_SOURCE" | tr -d '=' | sort) "$remote_file" || true)"
+    local_names="$(grep -oE '^[A-Za-z_][A-Za-z0-9_]*=' "$ENV_SOURCE" | tr -d '=' | LC_ALL=C sort)"
+    added="$(comm -23 <(printf '%s\n' "$local_names") "$remote_file" || true)"
+    removed="$(comm -13 <(printf '%s\n' "$local_names") "$remote_file" || true)"
     rm -f "$remote_file"
     if [ -z "$added" ] && [ -z "$removed" ]; then
         info "набор переменных тот же, различаются значения"
