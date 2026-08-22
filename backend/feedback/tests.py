@@ -6,8 +6,10 @@
 уходит письмо, что в нём написано и что бывает, когда почта молчит.
 """
 
+from django.conf import settings
 from django.core import mail
-from django.test import TestCase, override_settings
+from django.core.mail import get_connection
+from django.test import SimpleTestCase, TestCase, override_settings
 from django.urls import reverse
 from rest_framework.test import APITestCase
 from schools.testing import SchoolTestMixin, make_school, make_user, sign_in
@@ -99,6 +101,37 @@ class ForwardingTests(TestCase):
 
         self.assertEqual(forward(message), 0)
         self.assertTrue(Message.objects.filter(pk=message.pk).exists())
+
+
+class MailCannotHangTheRequestTests(SimpleTestCase):
+    """
+    У соединения с SMTP есть таймаут, и это условие, а не настройка.
+
+    Тест выше проверяет отказ почты — то есть исключение. Зависание это
+    другое: исключения нет вовсе, и `fail_silently` ловить нечего. Без
+    `EMAIL_TIMEOUT` `smtplib` ждёт соединения бесконечно, gunicorn убивает
+    воркер по своему таймауту, и человек получает 500 на отправке обращения
+    — ровно то, что `fail_silently` был призван исключить.
+
+    Так и случилось: хостер стенда режет исходящий SMTP, и соединение туда
+    не отбивается, а висит. Сообщение при этом записалось, а ответ пришёл
+    «не получилось» — то есть человека отправили писать заново то, что уже
+    дошло.
+    """
+
+    def test_the_smtp_connection_has_a_timeout(self):
+        self.assertTrue(
+            settings.EMAIL_TIMEOUT,
+            "без таймаута зависший SMTP роняет запрос вместе с воркером",
+        )
+
+    def test_the_timeout_reaches_the_connection(self):
+        """Настройка проверяется на самом соединении, а не на её имени."""
+        connection = get_connection(
+            backend="django.core.mail.backends.smtp.EmailBackend"
+        )
+
+        self.assertEqual(connection.timeout, settings.EMAIL_TIMEOUT)
 
 
 class BrokenBackend:

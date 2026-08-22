@@ -285,6 +285,15 @@ EMAIL_PORT = env.int("EMAIL_PORT", default=587)
 EMAIL_HOST_USER = env("EMAIL_HOST_USER", default="")
 EMAIL_HOST_PASSWORD = env("EMAIL_HOST_PASSWORD", default="")
 EMAIL_USE_TLS = env.bool("EMAIL_USE_TLS", default=True)
+# Таймаут — не тонкая настройка, а условие того, что письмо остаётся
+# уведомлением. Без него `smtplib` ждёт соединения **бесконечно**, и
+# `fail_silently` тут не помогает: он ловит исключение, а зависание — это
+# отсутствие исключения. Наружу это вышло пятисоткой на отправке обращения:
+# хостер стенда режет исходящий SMTP, соединение не отбивается, а висит, и
+# gunicorn убивает воркер по своему таймауту. То есть ровно то, что
+# `fail_silently` был призван исключить, — сообщение записано, а человеку
+# сказано «не получилось».
+EMAIL_TIMEOUT = env.int("EMAIL_TIMEOUT", default=10)
 DEFAULT_FROM_EMAIL = env(
     "DEFAULT_FROM_EMAIL", default=EMAIL_HOST_USER or "lesson-tracker@localhost"
 )

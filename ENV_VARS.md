@@ -132,6 +132,7 @@
 | `EMAIL_HOST_USER` | учётка SMTP | пусто |
 | `EMAIL_HOST_PASSWORD` | её пароль | пусто |
 | `EMAIL_USE_TLS` | TLS при отправке | `True` |
+| `EMAIL_TIMEOUT` | секунд на соединение с SMTP; без него зависший порт роняет воркер | `10` |
 | `DEFAULT_FROM_EMAIL` | обратный адрес писем | `EMAIL_HOST_USER`, иначе `lesson-tracker@localhost` |
 | `BOOTSTRAP_SUPERUSER_EMAIL` | суперпользователь при старте контейнера | пусто — шаг пропускается с предупреждением |
 | `BOOTSTRAP_SUPERUSER_PASSWORD` | его пароль | то же |
