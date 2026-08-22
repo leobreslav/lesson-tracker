@@ -322,9 +322,9 @@ test('фильтры школьного расписания сужают дру
     'все курсы',
     'Grade 6 Algebra',
     'Grade 6 Geometry',
+    'Grade 6 Physics',
     'Grade 9 Algebra',
     'Grade 9 Geometry',
-    'Grade 9 Physics',
   ])
 
   // выбран курс — ведущий и предмет встают сами, и это тот самый случай:
