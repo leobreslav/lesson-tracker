@@ -14,11 +14,11 @@
 from datetime import timedelta
 
 from django.urls import reverse
-from django.utils import timezone
 from rest_framework.test import APITestCase
 from schools.testing import (
     SchoolTestMixin,
     assign,
+    last_workday,
     live_year,
     make_course,
     make_node,
@@ -29,11 +29,20 @@ from .models import Slot
 
 
 class OrderPathsTestCase(SchoolTestMixin, APITestCase):
-    """Курс с тремя прошедшими часами, первый и второй записаны."""
+    """
+    Курс с тремя прошедшими часами, первый и второй записаны.
+
+    Точка отсчёта — **ближайший будний день**, а не буквально сегодня. Часы
+    стоят кратно семи дням назад, то есть в тот же день недели, что и она; в
+    субботу весь набор уезжал на выходные, а копирование в цели не находило
+    ни одного учебного дня и честно не создавало ничего. Тест про отказ
+    получал успех и падал — по субботам и воскресеньям, то есть ночным
+    прогоном на выходных и никогда в рабочий день.
+    """
 
     def setUp(self):
         super().setUp()
-        self.today = timezone.localdate()
+        self.anchor = last_workday()
         self.year = live_year(self.school)
         self.course = make_course(self.school, self.year, "9Б Алгебра")
         assign(self.user, self.course)
@@ -42,7 +51,7 @@ class OrderPathsTestCase(SchoolTestMixin, APITestCase):
             for number in range(1, 6)
         ]
         self.past = [
-            make_slot(self.user, self.course, self.today - timedelta(days=days), 1)
+            make_slot(self.user, self.course, self.anchor - timedelta(days=days), 1)
             for days in (21, 14, 7)
         ]
         for slot, row in zip(self.past[:2], self.rows):
@@ -75,7 +84,7 @@ class HolesInThePastTests(OrderPathsTestCase):
             reverse("slot-list"),
             {
                 "course": self.course.pk,
-                "date": str(self.today - timedelta(days=28)),
+                "date": str(self.anchor - timedelta(days=28)),
                 "lesson_number": 1,
             },
             format="json",
@@ -126,7 +135,7 @@ class RewritingThePastTests(OrderPathsTestCase):
         """`move` проверку знал, а правка даты полем шла мимо него."""
         response = self.client.patch(
             reverse("slot-detail", args=[self.past[0].pk]),
-            {"date": str(self.today)},
+            {"date": str(self.anchor)},
             format="json",
         )
 
@@ -174,7 +183,7 @@ class ClosingDebtsTests(OrderPathsTestCase):
         return self.client.post(reverse("slot-close"), {"closed": rows}, format="json")
 
     def test_a_future_hour_cannot_be_closed(self):
-        ahead = make_slot(self.user, self.course, self.today + timedelta(days=7), 1)
+        ahead = make_slot(self.user, self.course, self.anchor + timedelta(days=7), 1)
 
         response = self.close([{"slot": ahead.pk, "lesson": self.rows[2].pk}])
 
@@ -196,7 +205,7 @@ class ClosingDebtsTests(OrderPathsTestCase):
 
     def test_closing_out_of_order_is_refused(self):
         """Ответили на второй долг, оставив первый, — очередь не примет."""
-        later = make_slot(self.user, self.course, self.today, 1)
+        later = make_slot(self.user, self.course, self.anchor, 1)
 
         response = self.close([{"slot": later.pk, "lesson": self.rows[3].pk}])
 
@@ -205,7 +214,7 @@ class ClosingDebtsTests(OrderPathsTestCase):
 
     def test_nothing_is_written_when_one_row_is_refused(self):
         """Одна транзакция: половина закрытого списка хуже незакрытого."""
-        later = make_slot(self.user, self.course, self.today, 1)
+        later = make_slot(self.user, self.course, self.anchor, 1)
 
         self.close(
             [
