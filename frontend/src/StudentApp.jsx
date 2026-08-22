@@ -36,16 +36,18 @@ export default function StudentApp({ user, onLoggedOut, onLanguageChange }) {
           <Link to="/" className="brand">
             {t('app.name')}
           </Link>
-          {/* та же кнопка, что у учителя: поломку ученик видит ту же, а
-              сказать о ней ему было нечем — администратор школы интерфейс
-              не чинит */}
-          <FeedbackButton compact />
+          {/* тот же правый угол, что у учителя: поломку ученик видит ту
+              же, а сказать о ней ему было нечем — администратор школы
+              интерфейс не чинит */}
+          <div className="topbar-right">
+            <FeedbackButton compact />
 
-          <UserMenu
-            user={user}
-            onLoggedOut={onLoggedOut}
-            onLanguageChange={onLanguageChange}
-          />
+            <UserMenu
+              user={user}
+              onLoggedOut={onLoggedOut}
+              onLanguageChange={onLanguageChange}
+            />
+          </div>
         </div>
       </header>
 

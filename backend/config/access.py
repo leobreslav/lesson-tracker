@@ -144,7 +144,10 @@ class IsSuperuser(BasePermission):
         if not request.user.is_superuser:
             api_denied(
                 Codes.SUPERUSER_REQUIRED,
-                "Only a superuser can manage the list of schools.",
+                # не «список школ»: разделов у суперпользователя два —
+                # школы и обращения пользователей, — и отказ, называющий
+                # один из них, на втором отправляет искать не там
+                "This section is for superusers.",
             )
         return True
 

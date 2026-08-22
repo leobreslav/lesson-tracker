@@ -6,8 +6,13 @@ import UserMenu, { useDismissable } from './UserMenu'
 
 const SECTIONS = [
   // расписание первым и оно же корень: с него заходят в занятие, а
-  // «как идут курсы» смотрят раз в неделю
-  { to: '/schedule', key: 'schedule', needs: 'classes' },
+  // «как идут курсы» смотрят раз в неделю.
+  //
+  // Гаснет оно **только без календаря**, и это не мелочь: пустое
+  // расписание — законный повод зайти (человек идёт ставить в него часы),
+  // а приглушённый пункт читается как «сюда пока нельзя». Без учебного
+  // года расписания не создать вовсе — там гасить честно
+  { to: '/schedule', key: 'schedule', needs: 'year' },
   { to: '/plan', key: 'plan', needs: 'classes' },
   { to: '/works', key: 'works', needs: 'classes' },
   // задачник ни от чего не зависит: библиотека читается и без курсов
@@ -29,6 +34,12 @@ const SECTIONS = [
  *
  * The item still navigates: forbidding the click buys nothing, the page
  * explains what is missing. Dimming is a hint, not a barrier.
+ *
+ * Уровня два, и разница между ними содержательная. `year` — без учебного
+ * года раздела **не существует**: ни расписания, ни плана не построить.
+ * `classes` — курсов нет, то есть работать не с чем. Расписанию хватает
+ * первого: пустая сетка это приглашение поставить в неё часы, а не
+ * состояние «сюда пока нельзя».
  */
 function reasonKeyFor(needs, status) {
   if (!status || !needs) return null
@@ -94,17 +105,20 @@ export default function NavBar({ user, status, onLoggedOut, onLanguageChange }) 
           })}
         </nav>
 
-        {/* сказать разработчику — рядом с меню пользователя, а не пунктом
-            в нём: о поломке говорят в тот момент, когда её увидели, и
-            искать её под своим именем никто не станет */}
-        <FeedbackButton />
+        {/* правый угол — пара: «Написать» и меню пользователя. Сказать
+            разработчику стоит рядом с именем, а не пунктом внутри меню: о
+            поломке говорят в тот момент, когда её увидели, и искать её под
+            своим именем никто не станет */}
+        <div className="topbar-right">
+          <FeedbackButton />
 
-        <UserMenu
-          user={user}
-          profileTo="/profile"
-          onLoggedOut={onLoggedOut}
-          onLanguageChange={onLanguageChange}
-        />
+          <UserMenu
+            user={user}
+            profileTo="/profile"
+            onLoggedOut={onLoggedOut}
+            onLanguageChange={onLanguageChange}
+          />
+        </div>
       </div>
     </header>
   )

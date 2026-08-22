@@ -350,6 +350,36 @@ class AttachTests(TestCase):
         self.assertEqual(invitation.school, School.objects.get())
         self.assertIn("приглашение", output)
 
+    def test_root_makes_the_named_account_a_superuser(self):
+        """
+        Стать суперпользователем на стенде иначе нечем.
+
+        `bootstrap` повышает названного в переменной **только пока
+        суперпользователей нет вообще**, а посев заводит разработчика
+        набора — и первым же прогоном закрывает эту дверь. Отсюда флаг:
+        то же самое, но явно и по просьбе.
+        """
+        me = User.objects.create_user(email="me@example.com")
+
+        output = seed("--email=me@example.com", "--root")
+
+        me.refresh_from_db()
+        self.assertTrue(me.is_superuser)
+        self.assertTrue(me.is_staff)
+        # и школу он при этом не теряет: суперпользователь остаётся
+        # обычным участником своей школы везде, кроме двух разделов
+        self.assertTrue(me.is_school_admin)
+        self.assertIn("суперпользователь", output)
+
+    def test_without_root_the_account_stays_ordinary(self):
+        """Права раздаются по просьбе, а не заодно с посевом."""
+        me = User.objects.create_user(email="me@example.com")
+
+        seed("--email=me@example.com")
+
+        me.refresh_from_db()
+        self.assertFalse(me.is_superuser)
+
     def test_without_the_flag_nobody_is_attached(self):
         me = User.objects.create_user(email="me@example.com")
 

@@ -394,6 +394,14 @@ class Command(BaseCommand):
             help="привязать существующего пользователя к школе администратором",
         )
         parser.add_argument(
+            "--root",
+            action="store_true",
+            help=(
+                "сделать человека из --email ещё и суперпользователем: "
+                "разделы «Школы» и «Обращения» открыты только им"
+            ),
+        )
+        parser.add_argument(
             "--minimal",
             action="store_true",
             help="только школа, год и курсы — без расписания и планов",
@@ -444,7 +452,7 @@ class Command(BaseCommand):
                     school, year, people, subjects, grades, log=self.stdout.write
                 )
 
-            attached = self.attach(school, options["email"])
+            attached = self.attach(school, options["email"], root=options["root"])
 
         self.summary(school, people, courses, options, attached)
 
@@ -1248,12 +1256,23 @@ class Command(BaseCommand):
                 plan_row=node, kind=KIND_LINK, url=address, title=label
             )
 
-    def attach(self, school, email):
+    def attach(self, school, email, *, root=False):
         """
         Put the developer's own account into the school as an administrator.
 
         Without it the seeded school can only be looked at through the
         fictional accounts, which cannot sign in through Google.
+
+        `--root` добавляет к этому права суперпользователя, и нужен он ровно
+        для стенда. Разделы «Школы» и «Обращения» открыты только
+        суперпользователю, а стать им иначе на стенде нечем: `bootstrap`
+        повышает названного в `BOOTSTRAP_SUPERUSER_EMAIL` **только пока
+        суперпользователей нет вообще**, и посеянный разработчик набора
+        закрывает эту дверь первым же посевом. Отсюда флаг: он делает то
+        же самое, но явно и по просьбе.
+
+        На проде этого пути нет вовсе — `seed_demo` отказывается работать
+        при `DEBUG=False`, а `--root` живёт внутри него.
         """
         email = (email or "").strip().lower()
         if not email:
@@ -1273,8 +1292,15 @@ class Command(BaseCommand):
 
         user.school = school
         user.is_school_admin = True
-        user.save(update_fields=["school", "is_school_admin"])
-        return f"{email} (администратор школы)"
+        fields = ["school", "is_school_admin"]
+
+        if root:
+            user.is_superuser = True
+            user.is_staff = True
+            fields += ["is_superuser", "is_staff"]
+
+        user.save(update_fields=fields)
+        return f"{email} (администратор школы{', суперпользователь' if root else ''})"
 
     # --- what happened --------------------------------------------------------
 

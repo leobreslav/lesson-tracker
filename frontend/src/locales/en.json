@@ -166,7 +166,7 @@
     "invitation_exists": "«{{email}}» has already been invited to this school.",
     "already_member": "«{{email}}» already belongs to a school.",
     "last_admin": "This is the only administrator of the school. Give the role to somebody else first.",
-    "superuser_required": "Only a superuser can manage the list of schools.",
+    "superuser_required": "This section is for superusers.",
     "school_in_use": "«{{name}}» is still in use: {{blocked_by}}. Clear it first.",
     "year_required": "Pick a school year first.",
     "not_template_author": "Only the author can change this plan. Take a copy and edit that.",
