@@ -3527,9 +3527,29 @@ button.compact,
   background: #e3e8f0;
 }
 
-.work-table td.redone .cell {
+/* частичный балл — то, чего на прежней оси не было вовсе: не «верно» и не
+   «неверно», а «решил не всё». Цвет между зелёным и красным, чтобы столбец
+   читался через комнату так же, как раньше */
+.work-table td.partial .cell {
+  color: #7a5c00;
+  background: #fdf3cf;
+}
+
+/* пришёл новый ответ, а балл стоит за прошлый: балл виден, а точка зовёт
+   посмотреть. Гасить оценку за то, что ученик прислал ещё раз, нельзя */
+.work-table td.stale .cell {
   color: #8a4b00;
   background: #fde7c8;
+}
+
+.work-table .cell .review {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 6px;
+  height: 6px;
+  background: #b3261e;
+  border-radius: 50%;
 }
 
 .work-table .cell:hover:not(:disabled) {
@@ -3579,6 +3599,13 @@ button.compact,
 .verdict-buttons .chip.active.wrong {
   background: #b3261e;
   border-color: #b3261e;
+}
+
+/* балл числом — там, где кнопок было бы больше шести. Высота общая с
+   контролами: поле в ряду обязано быть одного роста с соседями */
+.verdict-buttons .mark-input {
+  width: 3.5rem;
+  height: var(--control-height);
 }
 
 /*

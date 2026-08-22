@@ -133,9 +133,9 @@ def my_answers(student, tasks) -> dict:
     return grouped
 
 
-def verdict_for(work, submission) -> bool | None:
+def mark_for(work, submission) -> int | None:
     """
-    Что ученику видно про проверку.
+    Балл за этот ответ — то, что ученику видно про проверку.
 
     `show_result` выключен — отметка скрыта до закрытия окна: учитель не
     хочет, чтобы её показали до срока и одноклассники узнали ответ по чужой
@@ -144,7 +144,8 @@ def verdict_for(work, submission) -> bool | None:
     if submission is None:
         return None
     if work.show_result or work.state() == CLOSED:
-        return submission.is_correct
+        mark = Mark.objects.filter(submission=submission).first()
+        return mark.value if mark else None
     return None
 
 
@@ -172,7 +173,7 @@ def impact_of(work) -> dict:
         "state": work.state(),
         "answers": submissions.count(),
         "students": submissions.values("student_id").distinct().count(),
-        "checked": submissions.filter(is_correct__isnull=False).count(),
+        "checked": Mark.objects.filter(task__work=work, submission__isnull=False).count(),
         "graded": graded.count(),
         # знаменатель: из скольки баллов считается работа сейчас
         "top": sum(task.maximum for task in work.tasks.all()),
@@ -193,7 +194,7 @@ def task_impact(task, *, user) -> dict:
     return {
         "answers": submissions.count(),
         "students": submissions.values("student_id").distinct().count(),
-        "checked": submissions.filter(is_correct__isnull=False).count(),
+        "checked": Mark.objects.filter(task=task).count(),
         "statement": {
             **statements.cost(task.problem),
             # чужое условие правится только копией: другого исхода нет
@@ -205,15 +206,21 @@ def task_impact(task, *, user) -> dict:
 
 def reset_verdicts(task) -> int:
     """
-    Снять отметки со всех отправок задачи — «перепроверить задачу».
+    Снять баллы со всех ответов на задачу — «перепроверить задачу».
 
     Нужно ровно тогда, когда в системе оказался неверный эталон и половина
     класса проверена неправильно. Ответы при этом не трогаются: они и есть
     то, что надо перечитать.
+
+    Снимаются только баллы **за ответы**: балл без ссылки поставлен за
+    бумагу, эталон к нему отношения не имеет.
     """
-    return Submission.objects.filter(task=task, is_correct__isnull=False).update(
-        is_correct=None, checked_at=None, checked_by=None
+    marks = Mark.objects.filter(task=task, submission__isnull=False)
+    Submission.objects.filter(pk__in=marks.values("submission_id")).update(
+        checked_at=None, checked_by=None
     )
+    count, _ = marks.delete()
+    return count
 
 
 # --- порядок задач ---------------------------------------------------------------
@@ -277,14 +284,20 @@ def totals_for(works, *, student=None) -> dict:
     if student is not None:
         submissions = submissions.filter(student=student)
 
-    for task_id, student_id, checked in submissions.values_list(
-        "task_id", "student_id", "is_correct"
+    judged = set(
+        Mark.objects.filter(submission__isnull=False).values_list(
+            "submission_id", flat=True
+        )
+    )
+
+    for submission_id, task_id, student_id in submissions.values_list(
+        "id", "task_id", "student_id"
     ):
         row = counts[task_to_work[task_id]]
         row["answers"] += 1
         row["students"].add(student_id)
         row["mine"].add(task_id)
-        if checked is None:
+        if submission_id not in judged:
             row["unchecked"] += 1
 
     return {
@@ -420,9 +433,11 @@ def build_table(work) -> dict:
         cells = []
         answered = correct = 0
 
+        verdicts = verdicts_of(graded.get(enrolment.student_id))
+
         for task in tasks:
             history = journal[(task.pk, enrolment.student_id)]
-            cell = cell_of(task, history)
+            cell = cell_of(task, history, verdicts.get(task.pk))
             # сколько раз он встречал это условие в **других** работах: по
             # нему видно, что задача не новая, — и учителю, и в разговоре
             cell["seen_before"] = seen_before.get(
@@ -433,15 +448,19 @@ def build_table(work) -> dict:
                 continue
 
             answered += 1
-            last = history[-1]
             per_task[task.pk]["answered"] += 1
-            if last.is_correct is True:
+
+            # «решил» — это полный балл. Частичный не был доступен вовсе, пока
+            # вердикт был галочкой, и складывать его с полным нельзя: колонка
+            # отвечает на «кто справился», а не «кто что-то написал»
+            value = cell["mark"]
+            if value is None:
+                per_task[task.pk]["unchecked"] += 1
+            elif value >= task.maximum:
                 correct += 1
                 per_task[task.pk]["correct"] += 1
-            elif last.is_correct is False:
-                per_task[task.pk]["wrong"] += 1
             else:
-                per_task[task.pk]["unchecked"] += 1
+                per_task[task.pk]["wrong"] += 1
 
         mine = graded.get(enrolment.student_id)
         students.append(
@@ -626,7 +645,7 @@ def marks_of(student_work) -> dict:
     }
 
 
-def grade(work, student, *, marks=None, scores=None, comment=None, by=None):
+def grade(work, student, *, marks=None, scores=None, comment=None, by=None, answers=None):
     """
     Поставить оценку и написать слова. Одним вызовом на ученика.
 
@@ -642,6 +661,11 @@ def grade(work, student, *, marks=None, scores=None, comment=None, by=None):
 
     `None` в значении снимает отметку. Каждое изменение дописывается в журнал
     (`MarkChange`) — исправленная оценка это событие, а не новое значение поля.
+
+    `answers` — `{вопрос: отправка}`, за какой именно ответ поставлен балл.
+    Приходит только с проверки онлайн-ответа; у бумаги отправки нет вовсе.
+    Не передали — прежняя ссылка **сохраняется**: учитель, поправивший балл
+    рукой, судит тот же ответ, что и раньше, а не отвязывает его от оценки.
     """
     from django.db import transaction
 
@@ -669,7 +693,15 @@ def grade(work, student, *, marks=None, scores=None, comment=None, by=None):
 
                 value = wanted[item.pk]
                 was = current.get(item.pk)
-                if (was.value if was else None) == value:
+                answer = (answers or {}).get(item.pk) if axis == "task" else None
+                # тот же балл, но за **другой** ответ — это новая проверка, а
+                # не пустая правка: учитель посмотрел присланное заново и
+                # оценил так же. Пропустить её значило бы оставить ячейку с
+                # пометкой «надо посмотреть» после того, как посмотрели
+                same = (was.value if was else None) == value and (
+                    answer is None or (was is not None and was.submission_id == answer.pk)
+                )
+                if same:
                     continue
 
                 if value is None:
@@ -677,10 +709,17 @@ def grade(work, student, *, marks=None, scores=None, comment=None, by=None):
                         was.delete()
                 elif was:
                     was.value = value
-                    was.save(update_fields=["value"])
+                    fields = ["value"]
+                    if answer is not None:
+                        was.submission = answer
+                        fields.append("submission")
+                    was.save(update_fields=fields)
                 else:
                     Mark.objects.create(
-                        student_work=row, value=value, **{axis: item}
+                        student_work=row,
+                        value=value,
+                        submission=answer,
+                        **{axis: item},
                     )
 
                 MarkChange.objects.create(
@@ -738,29 +777,93 @@ def summarise(students, columns) -> dict:
     }
 
 
-def cell_of(task, history) -> dict:
+def check_answer(submission, *, value, by):
     """
-    Одна клетка: последняя отправка и то, что о ней надо знать сразу.
+    Балл за **конкретный ответ**. Ставится и снимается одним вызовом.
 
-    `redone` — «переделал после проверки»: последняя отправка не проверена,
-    а раньше отметка уже стояла. Это и есть весь ответ на гонку «учитель
-    проверял, пока ученик отправлял»: отметка осталась на прошлой строке,
-    и видно, что смотрели не то.
+    Оценка живёт не на отправке, а на паре «ученик и вопрос» (`Mark`), и
+    ссылкой помнит, за какой ответ поставлена. Из этого следует главное:
+    ученик прислал новое — балл не перевешивается на него молча и не
+    исчезает. Он остаётся тем, чем был, а ячейка показывает, что пришёл
+    новый ответ и на него надо посмотреть. Решает человек.
+
+    `None` — снять: учитель передумал или увидел, что смотрел не ту
+    отправку. Попытку это не расходует, ответ ученика не трогает.
+
+    Время и имя проверявшего остаются на самой отправке: они отвечают на
+    другой вопрос — «когда и кто на неё смотрел», — и после снятия балла
+    остаются правдой.
     """
+    task = submission.task
+    if value is not None and not 0 <= value <= task.maximum:
+        api_error(
+            Codes.MARK_OUT_OF_RANGE,
+            f"The mark is above the maximum of {task.maximum}.",
+            field="mark",
+            maximum=task.maximum,
+        )
+
+    row = grade(
+        task.work,
+        submission.student,
+        scores={task.pk: value},
+        by=by,
+        answers={task.pk: submission},
+    )
+
+    submission.checked_at = timezone.now() if value is not None else None
+    submission.checked_by = by if value is not None else None
+    submission.save(update_fields=["checked_at", "checked_by"])
+    return row
+
+
+def verdicts_of(student_work) -> dict:
+    """`{id вопроса: (балл, за какой ответ)}` — то, из чего собирается клетка."""
+    if student_work is None:
+        return {}
+
+    return {
+        mark.task_id: (mark.value, mark.submission_id)
+        for mark in student_work.marks.all()
+        if mark.task_id is not None
+    }
+
+
+def cell_of(task, history, verdict=None) -> dict:
+    """
+    Одна клетка: последний ответ, балл за него и надо ли смотреть заново.
+
+    `stale` — «пришёл новый ответ после того, как балл поставлен». Это весь
+    ответ на гонку «учитель проверял, пока ученик отправлял», и решение тут
+    другое, чем было: раньше ячейка гасла в «не проверено», теряя из виду
+    поставленный балл. Теперь балл виден, а рядом с ним знак — надо
+    посмотреть. Гасить оценку за то, что ученик прислал ещё раз, значит
+    стирать работу учителя чужими руками.
+    """
+    value, judged = verdict if verdict else (None, None)
+
     if not history:
-        return {"task": task.pk, "submission": None, "attempts": 0}
+        # балл без единой отправки — это бумага: писали на листе, а не здесь
+        return {
+            "task": task.pk,
+            "submission": None,
+            "attempts": 0,
+            "mark": value,
+            "maximum": task.maximum,
+            "stale": False,
+        }
 
     last = history[-1]
-    checked_before = any(row.is_correct is not None for row in history[:-1])
 
     return {
         "task": task.pk,
         "submission": last.pk,
         "attempts": len(history),
         "answer": last.answer,
-        "verdict": last.is_correct,
+        "mark": value,
+        "maximum": task.maximum,
         "at": last.created_at,
-        "redone": last.is_correct is None and checked_before,
+        "stale": value is not None and judged is not None and judged != last.pk,
     }
 
 

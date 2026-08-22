@@ -53,6 +53,7 @@ from schedule.models import (
 from schedule import services as schedule_services
 from schools import demo_extras, rich_demo, services as school_services
 from schools.models import Invitation, School
+from works import services as works_services
 from works import statements
 from feedback.models import Message
 from works.models import Submission, Task, Work
@@ -644,7 +645,6 @@ class Command(BaseCommand):
                     task=task,
                     student=student,
                     answer=right if state in ("correct", "redone") else wrong,
-                    is_correct=None if state == "unchecked" else state == "correct",
                     checked_at=None if state == "unchecked" else now - timedelta(days=6),
                     checked_by=None if state == "unchecked" else teacher,
                 )
@@ -652,10 +652,18 @@ class Command(BaseCommand):
                     created_at=now - timedelta(days=7, minutes=-minutes)
                 )
 
+                # балл ставится тем же путём, каким его ставит учитель:
+                # оценкой за конкретный ответ, а не полем отправки
+                if state != "unchecked":
+                    works_services.check_answer(
+                        first,
+                        value=task.maximum if state == "correct" else 0,
+                        by=teacher,
+                    )
+
                 if state == "redone":
-                    # проверенный ответ переделали: отметка осталась на
-                    # прошлой строке, клетка вернулась в «не проверено»
-                    Submission.objects.filter(pk=first.pk).update(is_correct=False)
+                    # проверенный ответ переделали: балл остался за прошлым
+                    # ответом, и клетка показывает, что пришло новое
                     Submission.objects.create(
                         task=task, student=student, answer=right
                     )
@@ -1378,7 +1386,7 @@ class Command(BaseCommand):
             self.stdout.write(
                 f"  работы:    {Work.objects.count()} "
                 f"({Task.objects.count()} задач, {Submission.objects.count()} ответов, "
-                f"{Submission.objects.filter(is_correct__isnull=True).count()} не проверено)"
+                f"{Submission.objects.filter(marks__isnull=True).count()} не проверено)"
             )
         self.stdout.write(
             f"  библиотека: {PlanTemplate.objects.count()} шаблонов "

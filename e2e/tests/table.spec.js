@@ -90,7 +90,7 @@ test('история ячейки открывается кликом и отм�
   await expect(page.locator('.work-table td.sent')).not.toHaveCount(0)
 })
 
-test('таблица обновляется сама, а переделанный ответ помечен', async ({
+test('таблица обновляется сама, а новый ответ помечен без потери балла', async ({
   page,
   signIn,
   api,
@@ -117,9 +117,12 @@ test('таблица обновляется сама, а переделанны�
 
   await student.post(`/api/student/tasks/${task.id}/answer/`, { answer: 'передумал' })
 
-  // отметка осталась на прошлой строке, ячейка вернулась в «не проверено»
-  // и говорит, что смотрели не то
-  await expect(cell.locator('td').first()).toHaveClass(/redone/, { timeout: 15000 })
+  // Балл остался за тем ответом, за который поставлен, и **виден**: гасить
+  // оценку самим фактом новой отправки значило бы стирать работу учителя.
+  // Рядом встаёт точка «надо посмотреть», а решает человек.
+  await expect(cell.locator('td').first()).toHaveClass(/stale/, { timeout: 15000 })
+  await expect(cell.locator('td .cell').first()).toHaveText('✓')
+  await expect(cell.locator('td .review').first()).toBeVisible()
 })
 
 test('сводка над таблицей считает то, чего в ней не видно взглядом', async ({

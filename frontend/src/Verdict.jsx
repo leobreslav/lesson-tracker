@@ -1,25 +1,33 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { setVerdict } from './api'
+import { setMark } from './api'
 
 /**
- * Две кнопки отметки — «верно» и «неверно» — и снятие повторным нажатием.
+ * Балл за **этот** ответ, и снятие повторным нажатием.
+ *
+ * Ось одна — «что он решил», — и вопрос из одного балла это её частный
+ * случай: ✓ значит единицу, ✗ значит ноль. Поэтому у обычной задачи ничего
+ * не изменилось: те же две кнопки и то же движение. А там, где вопрос стоит
+ * трёх баллов, стало возможным то, чего раньше не было вовсе, — поставить
+ * два: галочка выражала только края шкалы.
  *
  * Третьей кнопки «снять» нет: нажать ту же второй раз — движение, которое
- * человек делает сам, не читая подписи. А снятие нужно: учитель передумал
- * или увидел, что смотрел не ту отправку.
+ * человек делает не читая. А снятие нужно — учитель передумал или увидел,
+ * что смотрел не ту отправку.
  *
- * Отметка приклеена к **этой** строке журнала. Пришла новая отправка — она
- * не проверена, и это не сбой, а то, как устроен ответ на переделку.
+ * Балл приклеен к этой строке журнала. Пришла новая отправка — балл
+ * **остаётся** за прошлой, а в таблице у клетки появляется точка «надо
+ * посмотреть». Гасить оценку за то, что ученик прислал ещё раз, значило бы
+ * стирать работу учителя чужими руками.
  */
-export default function Verdict({ submission, onChanged, onError }) {
+export default function Verdict({ submission, maximum = 1, onChanged, onError }) {
   const { t } = useTranslation()
   const [busy, setBusy] = useState(false)
 
-  const mark = async (value) => {
+  const put = async (value) => {
     setBusy(true)
     try {
-      await setVerdict(submission.id, submission.is_correct === value ? null : value)
+      await setMark(submission.id, submission.mark === value ? null : value)
       await onChanged()
     } catch (err) {
       onError(err.message)
@@ -28,28 +36,59 @@ export default function Verdict({ submission, onChanged, onError }) {
     }
   }
 
+  const chip = (value, label, extra = '', title = null) => (
+    <button
+      key={value}
+      type="button"
+      className={submission.mark === value ? `chip active ${extra}` : 'chip'}
+      disabled={busy}
+      aria-pressed={submission.mark === value}
+      title={title ?? t('table.markPoints', { value, maximum })}
+      onClick={() => put(value)}
+    >
+      {label}
+    </button>
+  )
+
+  // вопрос из одного балла — те же ✓ и ✗, к которым учитель привык
+  if (maximum === 1) {
+    return (
+      <span className="verdict-buttons">
+        {chip(1, '✓', '', t('table.markCorrect'))}
+        {chip(0, '✗', 'wrong', t('table.markWrong'))}
+      </span>
+    )
+  }
+
+  // до шести значений помещаются кнопками: нажатие дешевле ввода числа
+  if (maximum <= 5) {
+    return (
+      <span className="verdict-buttons">
+        {Array.from({ length: maximum + 1 }, (_, value) =>
+          chip(value, String(value), value === 0 ? 'wrong' : ''),
+        )}
+      </span>
+    )
+  }
+
   return (
     <span className="verdict-buttons">
-      <button
-        type="button"
-        className={submission.is_correct === true ? 'chip active' : 'chip'}
+      <input
+        type="number"
+        className="mark-input"
+        min="0"
+        max={maximum}
+        value={submission.mark ?? ''}
         disabled={busy}
-        aria-pressed={submission.is_correct === true}
-        title={t('table.markCorrect')}
-        onClick={() => mark(true)}
-      >
-        ✓
-      </button>
-      <button
-        type="button"
-        className={submission.is_correct === false ? 'chip active wrong' : 'chip'}
-        disabled={busy}
-        aria-pressed={submission.is_correct === false}
-        title={t('table.markWrong')}
-        onClick={() => mark(false)}
-      >
-        ✗
-      </button>
+        aria-label={t('table.markPoints', { value: '', maximum })}
+        onChange={(event) => {
+          const raw = event.target.value
+          if (raw === '') return put(null)
+          const value = Math.min(maximum, Math.max(0, Number(raw)))
+          return put(value)
+        }}
+      />
+      <span className="hint">/ {maximum}</span>
     </span>
   )
 }

@@ -725,10 +725,10 @@ export const fetchSubmissions = (params) =>
   request(`/api/works/submissions/?${new URLSearchParams(params)}`)
 
 /** Отметка. `null` — снять: попытку это не расходует, журнал не трогает. */
-export const setVerdict = (id, isCorrect) =>
+export const setMark = (id, value) =>
   request(`/api/works/submissions/${id}/`, {
     method: 'PATCH',
-    body: { is_correct: isCorrect },
+    body: { mark: value },
   })
 
 export const fetchTasks = (work) => request(`/api/works/tasks/?work=${work}`)

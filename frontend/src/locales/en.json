@@ -994,7 +994,8 @@
       "noAttempts": "No attempts left for this question.",
       "correct": "correct",
       "wrong": "wrong",
-      "unchecked": "not checked yet"
+      "unchecked": "not checked yet",
+      "scored": "{{mark}} of {{maximum}}"
     },
     "seenBefore": "You have solved this problem before — in “{{title}}”."
   },
@@ -1178,8 +1179,6 @@
     "questions": "The questions",
     "checking": "Checking the question",
     "noAnswers": "Nobody has answered this question yet.",
-    "markCorrect": "Mark as correct (press again to clear)",
-    "markWrong": "Mark as wrong (press again to clear)",
     "newAnswer": "The student has sent a new answer while you were reading.",
     "show": "Show it",
     "uncheckedLabel": "answers to check",
@@ -1190,7 +1189,10 @@
     "studentsTotal_one": "{{count}} student in the course",
     "studentsTotal_other": "{{count}} students in the course",
     "seenBefore_one": "already solved this problem {{count}} time elsewhere",
-    "seenBefore_other": "already solved this problem {{count}} times elsewhere"
+    "seenBefore_other": "already solved this problem {{count}} times elsewhere",
+    "markPoints": "Mark {{value}} of {{maximum}}",
+    "markCorrect": "Mark as correct",
+    "markWrong": "Mark as wrong"
   },
   "devSwitch": {
     "label": "Sign in as (dev only)",

@@ -629,16 +629,20 @@ class SubmissionViewSet(CourseScopedViewSet):
 
     def perform_update(self, serializer):
         """
-        Отметка ставится и снимается одним и тем же PATCH.
+        Балл ставится и снимается одним и тем же PATCH.
 
         `null` — «снять»: учитель передумал или увидел, что смотрел не ту
-        отправку. Попытку это не расходует и журнал не трогает: отметка
-        живёт на строке, а строка неизменна.
+        отправку. Попытку это не расходует и ответ ученика не трогает: он
+        неизменен по определению.
+
+        Сама отправка при этом не правится вовсе — меняется оценка на паре
+        «ученик и вопрос», а сюда PATCH приходит потому, что проверяют
+        **этот** ответ. `services.check_answer` и связывает одно с другим.
         """
-        checked = serializer.validated_data.get("is_correct") is not None
-        serializer.save(
-            checked_at=timezone.now() if checked else None,
-            checked_by=self.request.user if checked else None,
+        services.check_answer(
+            serializer.instance,
+            value=serializer.validated_data.get("mark"),
+            by=self.request.user,
         )
 
 
@@ -727,6 +731,10 @@ class StudentWorkView(APIView):
                     {
                         "id": task.pk,
                         "position": task.position,
+                        # сколько стоит вопрос: без этого числа балл ученику
+                        # не объяснить — «2» само по себе не говорит ничего,
+                        # а «2 из 3» говорит всё
+                        "maximum": task.maximum,
                         "question": statements.statement_of(task),
                         # ученику — с оглядкой на выключенную шапку: если её
                         # спрятали, не приезжает ни она сама, ни пометка,

@@ -25,6 +25,6 @@ class SubmissionAdmin(admin.ModelAdmin):
     запись о том, что он отправил в такую-то минуту.
     """
 
-    list_display = ("student", "task", "created_at", "is_correct")
-    list_filter = ("is_correct",)
+    list_display = ("student", "task", "created_at", "checked_at")
+    list_filter = ("checked_at",)
     readonly_fields = ("task", "student", "answer", "created_at")

@@ -218,7 +218,7 @@ test('отметка учителя доезжает до ученика сам�
   const answers = await teacher.get(`/api/works/submissions/?task=${task.id}`)
   const mine = answers.body.at(-1)
   expect(mine.answer).toBe('a^2+2ab+b^2')
-  await teacher.patch(`/api/works/submissions/${mine.id}/`, { is_correct: true })
+  await teacher.patch(`/api/works/submissions/${mine.id}/`, { mark: 1 })
 
   // страницу не трогаем: отметка приезжает опросом
   await expect(first.locator('.attempt-list .verdict')).toHaveText('верно', {

@@ -227,13 +227,21 @@ class WorkSerializer(serializers.ModelSerializer):
 
 class SubmissionSerializer(serializers.ModelSerializer):
     """
-    Отправка глазами учителя: ответ, время и отметка.
+    Отправка глазами учителя: ответ, время и балл за него.
 
-    Из полей меняется одно — `is_correct`. Ответ ученика не правится ни при
-    каких обстоятельствах: это его слова, а не наша запись о них.
+    Из полей меняется один — `mark`. Ответ ученика не правится ни при каких
+    обстоятельствах: это его слова, а не наша запись о них.
+
+    Балл лежит не здесь, а на паре «ученик и вопрос» (`Mark`), и сюда
+    приезжает потому, что проверка — это действие над **конкретным
+    ответом**: учитель смотрит вот этот текст и оценивает вот его. Ссылка на
+    отправку у оценки и хранит эту связь.
     """
 
     student_name = serializers.SerializerMethodField()
+    mark = serializers.IntegerField(
+        required=False, allow_null=True, min_value=0, max_value=MAX_MARK
+    )
 
     class Meta:
         model = Submission
@@ -244,7 +252,7 @@ class SubmissionSerializer(serializers.ModelSerializer):
             "student_name",
             "answer",
             "created_at",
-            "is_correct",
+            "mark",
             "checked_at",
         )
         read_only_fields = (
@@ -261,23 +269,31 @@ class SubmissionSerializer(serializers.ModelSerializer):
 
         return services.full_name(submission.student)
 
+    def to_representation(self, submission):
+        from .models import Mark
+
+        data = super().to_representation(submission)
+        mark = Mark.objects.filter(submission=submission).first()
+        data["mark"] = mark.value if mark else None
+        return data
+
 
 # --- то же самое, но для ученика --------------------------------------------------
 
 
 class StudentSubmissionSerializer(serializers.ModelSerializer):
-    """Одна отправка в истории ученика. Вердикт может быть скрыт настройкой."""
+    """Одна отправка в истории ученика. Балл может быть скрыт настройкой."""
 
-    verdict = serializers.SerializerMethodField()
+    mark = serializers.SerializerMethodField()
 
     class Meta:
         model = Submission
-        fields = ("id", "answer", "created_at", "verdict")
+        fields = ("id", "answer", "created_at", "mark")
 
-    def get_verdict(self, submission):
+    def get_mark(self, submission):
         from . import services
 
-        return services.verdict_for(self.context["work"], submission)
+        return services.mark_for(self.context["work"], submission)
 
 
 class CriterionSerializer(serializers.Serializer):

@@ -309,7 +309,7 @@ class MatrixTests(AccessTestCase):
             list_url="submission-list",
             detail_url="submission-detail",
             obj=submission,
-            patch={"is_correct": True},
+            patch={"mark": 1},
         )
 
 

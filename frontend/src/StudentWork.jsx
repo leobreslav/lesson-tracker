@@ -228,14 +228,16 @@ function TaskCard({ task, number, canAnswer, onSent, onError }) {
       {task.submissions.length > 0 && (
         <ul className="attempt-list">
           {task.submissions.map((submission, index) => (
-            <li key={submission.id} className={verdictClass(submission.verdict)}>
+            <li key={submission.id} className={verdictClass(submission.mark, task.maximum)}>
               <div className="cells">
                 <span className="attempt">
                   {t('student.work.attemptNumber', { number: index + 1 })}
                 </span>
                 <span className="answer">{submission.answer}</span>
                 <span className="hint">{dateTime(submission.created_at)}</span>
-                <span className="verdict">{verdictLabel(submission.verdict, t)}</span>
+                <span className="verdict">
+                  {verdictLabel(submission.mark, task.maximum, t)}
+                </span>
               </div>
             </li>
           ))}
@@ -273,14 +275,23 @@ function TaskCard({ task, number, canAnswer, onSent, onError }) {
   )
 }
 
-const verdictClass = (verdict) =>
-  verdict === true ? 'correct' : verdict === false ? 'wrong' : 'unchecked'
+/*
+ * Балл за ответ глазами ученика.
+ *
+ * У вопроса из одного балла это по-прежнему «верно» и «неверно» — слова, а
+ * не цифры: «1 из 1» ученику не говорит ничего. Там, где баллов больше,
+ * показывается дробь: «2 из 3» и есть ответ на «как меня проверили».
+ */
+const verdictClass = (mark, maximum) => {
+  if (mark === null || mark === undefined) return 'unchecked'
+  if (mark >= maximum) return 'correct'
+  return mark === 0 ? 'wrong' : 'partial'
+}
 
-const verdictLabel = (verdict, t) =>
-  t(
-    verdict === true
-      ? 'student.work.correct'
-      : verdict === false
-        ? 'student.work.wrong'
-        : 'student.work.unchecked',
-  )
+const verdictLabel = (mark, maximum, t) => {
+  if (mark === null || mark === undefined) return t('student.work.unchecked')
+  if (maximum === 1) {
+    return t(mark >= 1 ? 'student.work.correct' : 'student.work.wrong')
+  }
+  return t('student.work.scored', { mark, maximum })
+}

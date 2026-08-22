@@ -258,6 +258,10 @@ export default function WorkTable() {
                             }
                           >
                             {cellMark(item)}
+                            {/* пришёл новый ответ, а балл стоит за прошлый:
+                                точка зовёт посмотреть, но ничего не решает
+                                за учителя */}
+                            {item.stale && <i className="review" />}
                             {/* эту задачу он уже решал в другой работе:
                                 уголок, а не строка — в клетке нет места, а
                                 знать это надо при проверке */}
@@ -479,19 +483,38 @@ function MarkSummary({ summary }) {
   )
 }
 
+/*
+ * Клетка: балл, если он поставлен, и состояние ответа, если ещё нет.
+ *
+ * Ось одна — «что он решил», — и состояний у неё четыре: не присылал,
+ * прислал и ждёт, прислал и получил балл, получил балл и прислал ещё раз.
+ * Галочка выражала только два крайних, а частичный балл онлайн поставить
+ * было негде вовсе.
+ *
+ * `stale` — «пришёл новый ответ после того, как балл поставлен». Балл при
+ * этом **виден**, а не гаснет: стирать работу учителя за то, что ученик
+ * прислал ещё раз, нельзя. Рядом с баллом стоит точка «надо посмотреть», и
+ * решает человек.
+ */
 function cellClass(item) {
-  if (!item.submission) return 'empty'
-  if (item.redone) return 'redone'
-  if (item.verdict === true) return 'correct'
-  if (item.verdict === false) return 'wrong'
-  return 'sent'
+  if (!item.submission && item.mark === null) return 'empty'
+  if (item.stale) return 'stale'
+  if (item.mark === null) return 'sent'
+  if (item.mark >= item.maximum) return 'correct'
+  if (item.mark === 0) return 'wrong'
+  return 'partial'
 }
 
 function cellMark(item) {
-  if (!item.submission) return ''
-  if (item.verdict === true) return '✓'
-  if (item.verdict === false) return '✗'
-  return item.redone ? '↻' : '•'
+  if (item.mark === null || item.mark === undefined) {
+    return item.submission ? '•' : ''
+  }
+  // У вопроса из одного балла балл — это и есть галочка, и рисовать его
+  // цифрой значит сделать таблицу хуже: тридцать человек на десять задач
+  // читают через комнату, а «1» и «0» различаются слабее, чем ✓ и ✗.
+  // Цифра появляется там, где она что-то говорит, — где баллов больше.
+  if (item.maximum === 1) return item.mark >= 1 ? '✓' : '✗'
+  return item.mark
 }
 
 

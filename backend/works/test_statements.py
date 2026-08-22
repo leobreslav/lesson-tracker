@@ -18,7 +18,8 @@ from schools.testing import (
 )
 
 from . import assembling, services, statements
-from .models import Submission, Task
+from .models import Mark, Submission, Task
+from .services import check_answer
 
 
 class StatementTests(SchoolTestMixin, APITestCase):
@@ -208,20 +209,21 @@ class TakeIntoCellTests(SchoolTestMixin, APITestCase):
             [None, None],
         )
 
-    def test_swapping_the_statement_drops_the_verdicts_but_not_the_answers(self):
+    def test_swapping_the_statement_drops_the_marks_but_not_the_answers(self):
         student = make_user(self.school, "uchenik@example.com", student=True)
         statements.say(self.cells[0], text="Было", user=self.user)
         sent = Submission.objects.create(
-            task=self.cells[0], student=student, answer="4", is_correct=True
+            task=self.cells[0], student=student, answer="4"
         )
+        check_answer(sent, value=self.cells[0].maximum, by=self.user)
 
         self.take(self.cells[0], self.problem)
         sent.refresh_from_db()
 
-        # ответ — слова ученика, они на месте; вердикт — наше суждение о
-        # ответе на **тот** вопрос, и после подмены он ни о чём
+        # ответ — слова ученика, они на месте; балл — наше суждение об ответе
+        # на **тот** вопрос, и после подмены он ни о чём
         self.assertEqual(sent.answer, "4")
-        self.assertIsNone(sent.is_correct)
+        self.assertFalse(Mark.objects.filter(submission=sent).exists())
 
     def test_a_cell_can_be_emptied_again(self):
         self.take(self.cells[0], self.problem)

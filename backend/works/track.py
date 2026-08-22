@@ -53,8 +53,15 @@ def seen_by(student, problem, *, besides=None) -> list[dict]:
     found = (
         Submission.objects.filter(task__problem=problem, student=student)
         .exclude(task__work=besides)
-        .select_related("task__work", "task__work__course")
+        .select_related("task", "task__work", "task__work__course")
         .order_by("-created_at")
+    )
+
+    # «справился ли» — это полный балл за тот ответ. Отдельным запросом на всю
+    # выборку: по запросу на попытку экран открывался бы столько раз, сколько
+    # раз ученик встречал условие
+    judged = dict(
+        Mark.objects.filter(submission__in=found).values_list("submission_id", "value")
     )
 
     seen = {}
@@ -70,8 +77,13 @@ def seen_by(student, problem, *, besides=None) -> list[dict]:
                 "closed": work.state() == "closed",
                 "attempts": 0,
                 # вердикт последней попытки в той работе: он и есть ответ на
-                # «справился ли»
-                "was_right": row.is_correct,
+                # «справился ли». Полный балл — справился, неполный и ноль —
+                # нет, балла нет вовсе — не проверяли
+                "was_right": (
+                    None
+                    if row.pk not in judged
+                    else judged[row.pk] >= row.task.maximum
+                ),
             },
         )
         seen[work.pk]["attempts"] += 1
@@ -103,6 +115,12 @@ def track(student, *, courses=None) -> list[dict]:
         ).values("task_id", "value")
     }
 
+    judgements = dict(
+        Mark.objects.filter(submission__student=student).values_list(
+            "submission_id", "value"
+        )
+    )
+
     rows = {}
     for attempt in attempts.order_by("created_at"):
         problem = attempt.task.problem
@@ -128,10 +146,14 @@ def track(student, *, courses=None) -> list[dict]:
         )
         row["times"] += 1
         row["last"] = attempt.created_at
-        if attempt.is_correct is True:
-            row["right"] += 1
-        elif attempt.is_correct is False:
-            row["wrong"] += 1
+        # балл за **эту** попытку: полный — справился, неполный и ноль — нет.
+        # Балла нет вовсе — попытку не проверяли, и в счёт она не идёт
+        judged = judgements.get(attempt.pk)
+        if judged is not None:
+            if judged >= attempt.task.maximum:
+                row["right"] += 1
+            else:
+                row["wrong"] += 1
         if attempt.task.work_id not in [one["id"] for one in row["works"]]:
             row["works"].append(
                 {

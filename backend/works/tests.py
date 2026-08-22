@@ -23,7 +23,24 @@ from schools.testing import (
     make_year,
 )
 
-from .models import Submission, Task, Work
+from .models import Mark, Submission, Task, Work
+from .services import check_answer
+
+
+def mark_all(value=None):
+    """
+    Поставить балл всем отправкам — тем же путём, каким его ставит учитель.
+
+    Через службу, а не `objects.update`: оценка живёт не на отправке, а на
+    паре «ученик и вопрос», и запись мимо неё выражала бы состояние, которого
+    приложение не создаёт.
+    """
+    for row in Submission.objects.all():
+        check_answer(
+            row,
+            value=row.task.maximum if value is None else value,
+            by=row.task.work.created_by,
+        )
 
 
 class WorkTestCase(SchoolTestMixin, APITestCase):
@@ -125,7 +142,7 @@ class AttemptTests(WorkTestCase):
         self.work.save()
         self.answer("раз")
 
-        Submission.objects.update(is_correct=False, checked_at=timezone.now())
+        mark_all(0)
 
         self.assertEqual(self.answer("два").json()["attempts_left"], 0)
 
@@ -172,20 +189,22 @@ class JournalTests(WorkTestCase):
 
         self.assertEqual(Submission.objects.get().answer, typed)
 
-    def test_a_new_submission_leaves_the_cell_unchecked(self):
+    def test_a_new_submission_keeps_the_mark_on_the_answer_it_judged(self):
         """
-        Вердикт приклеен к отправке. Пришла новая — проверять надо заново.
+        Балл приклеен к тому ответу, за который поставлен.
 
-        Тут же и ответ на гонку: учитель видит, что ответ переделали после
-        его отметки, потому что отметка осталась на прошлой строке.
+        Пришла новая отправка — балл **не переезжает** на неё и не исчезает:
+        у новой его просто нет. Это и есть ответ на гонку «учитель проверял,
+        пока ученик отправлял», и он же не даёт молча объявить оценённым то,
+        чего учитель не видел.
         """
         self.answer("раз")
-        Submission.objects.update(is_correct=True, checked_at=timezone.now())
+        mark_all()
 
         self.answer("два")
 
         history = self.my_work().json()["tasks"][0]["submissions"]
-        self.assertEqual([row["verdict"] for row in history], [True, None])
+        self.assertEqual([row["mark"] for row in history], [1, None])
 
 
 # --- кто это видит ------------------------------------------------------------------
@@ -212,19 +231,21 @@ class VisibilityTests(WorkTestCase):
 
         self.assertEqual(titles, [self.work.title])
 
-    def test_a_hidden_verdict_waits_for_the_window_to_close(self):
-        """`show_result` выключен — отметка не видна до закрытия окна."""
+    def test_a_hidden_mark_waits_for_the_window_to_close(self):
+        """`show_result` выключен — балл не виден до закрытия окна."""
         self.work.show_result = False
         self.work.save()
         self.answer()
-        Submission.objects.update(is_correct=True, checked_at=timezone.now())
+        mark_all()
 
-        self.assertIsNone(self.my_work().json()["tasks"][0]["submissions"][0]["verdict"])
+        self.assertIsNone(self.my_work().json()["tasks"][0]["submissions"][0]["mark"])
 
         self.work.closes_at = timezone.now() - timedelta(minutes=1)
         self.work.save()
 
-        self.assertTrue(self.my_work().json()["tasks"][0]["submissions"][0]["verdict"])
+        self.assertEqual(
+            self.my_work().json()["tasks"][0]["submissions"][0]["mark"], 1
+        )
 
     def test_a_teacher_cannot_reach_the_student_half(self):
         self.sign_in(self.user)
@@ -295,13 +316,13 @@ class TeacherSideTests(WorkTestCase):
         self.sign_in(self.student)
         self.answer("x+3")
         self.sign_in(self.user)
-        Submission.objects.update(is_correct=False, checked_at=timezone.now())
+        mark_all(0)
 
         answer = self.client.post(reverse("task-recheck", args=[self.task.pk]))
 
         self.assertEqual(answer.json()["reset"], 1)
         row = Submission.objects.get()
-        self.assertIsNone(row.is_correct)
+        self.assertFalse(Mark.objects.filter(submission=row).exists())
         self.assertIsNone(row.checked_at)
         self.assertEqual(row.answer, "x+3")
 
@@ -414,7 +435,7 @@ class OwnershipTests(WorkTestCase):
 
         marked = self.client.patch(
             reverse("submission-detail", args=[submission.pk]),
-            {"is_correct": True},
+            {"mark": 1},
             format="json",
         )
         renamed = self.client.patch(
@@ -426,7 +447,7 @@ class OwnershipTests(WorkTestCase):
         self.assertEqual(marked.status_code, 200, marked.content)
         self.assertEqual(renamed.status_code, 200, renamed.content)
         submission.refresh_from_db()
-        self.assertTrue(submission.is_correct)
+        self.assertEqual(Mark.objects.get(submission=submission).value, 1)
         self.assertEqual(submission.checked_by, self.colleague)
 
     def test_a_colleague_who_does_not_lead_the_course_reaches_nothing(self):
@@ -523,26 +544,31 @@ class TableTests(WorkTestCase):
         self.assertEqual(cell["answer"], "потом")
         self.assertEqual(cell["attempts"], 2)
 
-    def test_redone_after_checking_is_marked(self):
+    def test_a_new_answer_after_checking_keeps_the_mark_and_asks_to_look(self):
         """
         Весь ответ на гонку «учитель проверял, пока ученик отправлял».
 
-        Отметка осталась на прошлой строке, ячейка вернулась в «не
-        проверено», и видно, что смотрели не то.
+        Балл остаётся за тем ответом, за который поставлен, — ячейка его
+        показывает, — а рядом встаёт признак `stale`: пришло новое, надо
+        посмотреть. Гасить оценку самим фактом новой отправки нельзя: это
+        стирало бы работу учителя чужими руками, и решать, менять ли балл,
+        должен он.
         """
         self.answer_as(self.student, self.task, "раз")
         first = Submission.objects.get()
         self.client.patch(
             reverse("submission-detail", args=[first.pk]),
-            {"is_correct": True},
+            {"mark": 1},
             format="json",
         )
 
         self.answer_as(self.student, self.task, "два")
 
         cell = self.table().json()["students"][0]["cells"][0]
-        self.assertTrue(cell["redone"])
-        self.assertIsNone(cell["verdict"])
+        self.assertTrue(cell["stale"])
+        # балл виден, а не погашен: стирать работу учителя за то, что ученик
+        # прислал ещё раз, значило бы решать за него
+        self.assertEqual(cell["mark"], 1)
 
     def test_a_removed_student_stays_a_row_and_is_marked(self):
         """Его ответы никуда не делись, и смешивать их с работающими нельзя."""
@@ -559,7 +585,7 @@ class TableTests(WorkTestCase):
         self.answer_as(self.student, self.task, "верно")
         self.client.patch(
             reverse("submission-detail", args=[Submission.objects.get().pk]),
-            {"is_correct": False},
+            {"mark": 0},
             format="json",
         )
 
@@ -587,7 +613,7 @@ class TableTests(WorkTestCase):
 
         self.client.patch(
             reverse("submission-detail", args=[Submission.objects.get().pk]),
-            {"is_correct": True},
+            {"mark": 1},
             format="json",
         )
         after_verdict = self.table().json()["version"]
@@ -632,25 +658,45 @@ class VerdictTests(WorkTestCase):
     def patch(self, value):
         return self.client.patch(
             reverse("submission-detail", args=[self.submission.pk]),
-            {"is_correct": value},
+            {"mark": value},
             format="json",
         )
 
-    def test_a_verdict_stamps_who_and_when(self):
-        self.patch(True)
+    def test_a_mark_stamps_who_and_when(self):
+        self.patch(1)
 
         self.submission.refresh_from_db()
-        self.assertTrue(self.submission.is_correct)
+        self.assertEqual(Mark.objects.get(submission=self.submission).value, 1)
         self.assertEqual(self.submission.checked_by, self.user)
         self.assertIsNotNone(self.submission.checked_at)
 
-    def test_a_verdict_can_be_taken_back(self):
-        self.patch(False)
+    def test_a_partial_mark_is_a_state_of_its_own(self):
+        """
+        Ради этого ось и сведена к одной: «решил половину» не выражалось
+        галочкой вовсе, и учителю приходилось округлять до верного или
+        неверного.
+        """
+        self.task.maximum = 3
+        self.task.save(update_fields=["maximum"])
+
+        self.patch(2)
+
+        self.assertEqual(Mark.objects.get(submission=self.submission).value, 2)
+
+    def test_a_mark_above_the_maximum_is_refused(self):
+        """Иначе процент за работу перевалит за сто, и объяснить это некому."""
+        answer = self.patch(5)
+
+        self.assertEqual(answer.status_code, 400)
+        self.assertFalse(Mark.objects.filter(submission=self.submission).exists())
+
+    def test_a_mark_can_be_taken_back(self):
+        self.patch(0)
 
         self.patch(None)
 
         self.submission.refresh_from_db()
-        self.assertIsNone(self.submission.is_correct)
+        self.assertFalse(Mark.objects.filter(submission=self.submission).exists())
         self.assertIsNone(self.submission.checked_at)
         self.assertIsNone(self.submission.checked_by)
 
@@ -716,7 +762,7 @@ class SummaryTests(WorkTestCase):
     def mark(self, submission, value):
         self.client.patch(
             reverse("submission-detail", args=[submission.pk]),
-            {"is_correct": value},
+            {"mark": value},
             format="json",
         )
 
@@ -788,21 +834,21 @@ class StudentPollingTests(WorkTestCase):
         self.assertFalse(answer["changed"])
         self.assertNotIn("tasks", answer)
 
-    def test_a_verdict_moves_the_version(self):
+    def test_a_mark_moves_the_version(self):
         self.answer("ответ")
         before = self.version()
 
         self.sign_in(self.user)
         self.client.patch(
             reverse("submission-detail", args=[Submission.objects.get().pk]),
-            {"is_correct": True},
+            {"mark": 1},
             format="json",
         )
         self.sign_in(self.student)
 
         self.assertNotEqual(self.version(), before)
         self.assertTrue(
-            self.my_work().json()["tasks"][0]["submissions"][0]["verdict"]
+            self.my_work().json()["tasks"][0]["submissions"][0]["mark"]
         )
 
     def test_an_edited_task_moves_the_version_too(self):

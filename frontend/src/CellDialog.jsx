@@ -70,7 +70,7 @@ export default function CellDialog({ student, task, onChanged, onClose }) {
       ) : (
         <ul className="attempt-list">
           {rows.map((row, index) => (
-            <li key={row.id} className={verdictClass(row.is_correct)}>
+            <li key={row.id} className={verdictClass(row, task.maximum)}>
               <div className="cells">
                 <span className="attempt">
                   {t('student.work.attemptNumber', { number: index + 1 })}
@@ -78,7 +78,12 @@ export default function CellDialog({ student, task, onChanged, onClose }) {
                 <span className="answer">{row.answer}</span>
                 <span className="hint">{dateTime(row.created_at)}</span>
               </div>
-              <Verdict submission={row} onChanged={checked} onError={setError} />
+              <Verdict
+                submission={row}
+                maximum={task.maximum}
+                onChanged={checked}
+                onError={setError}
+              />
             </li>
           ))}
         </ul>
@@ -90,5 +95,10 @@ export default function CellDialog({ student, task, onChanged, onClose }) {
   )
 }
 
-const verdictClass = (value) =>
-  value === true ? 'correct' : value === false ? 'wrong' : 'unchecked'
+/* Полный балл — «верно», ноль — «неверно», между ними частично: у оси одно
+   имя, а вид у неё три. Балла нет вовсе — эту попытку не смотрели. */
+const verdictClass = (row, maximum) => {
+  if (row.mark === null || row.mark === undefined) return 'unchecked'
+  if (row.mark >= maximum) return 'correct'
+  return row.mark === 0 ? 'wrong' : 'partial'
+}

@@ -25,16 +25,25 @@ from django.utils import timezone
 from schools import rich_demo
 from schools.management.commands.seed_demo import COURSES, PEOPLE
 
-from works.models import Submission, Work
+from works.models import Mark, Submission, Work
 
 
 def state_of(history):
-    """Состояние клетки по её журналу — как его считает сводная таблица."""
+    """
+    Состояние клетки по её журналу — как его считает сводная таблица.
+
+    Балл живёт на паре «ученик и вопрос» и ссылкой помнит, за какой ответ
+    поставлен. Отсюда и `stale`: балл есть, но за прошлую отправку — значит
+    пришло новое и надо посмотреть.
+    """
     last = history[-1]
-    if last.is_correct is None:
-        checked_before = any(row.is_correct is not None for row in history[:-1])
-        return "redone" if checked_before else "unchecked"
-    return "correct" if last.is_correct else "wrong"
+    mark = Mark.objects.filter(task=last.task, student_work__student=last.student).first()
+
+    if mark is None:
+        return "unchecked"
+    if mark.submission_id != last.pk:
+        return "stale"
+    return "correct" if mark.value >= last.task.maximum else "wrong"
 
 from .models import Invitation, School
 
@@ -256,7 +265,8 @@ class WorksTests(TestCase):
         """
         Пустая сетка не проверяет ничего, а ровная — проверяет только один
         случай из пяти. В демо есть все: пусто, отправлено, верно, неверно
-        и переделано после проверки.
+        и то, что переделали после проверки: балл за прошлый ответ и
+        просьба посмотреть новый.
         """
         seed()
 
@@ -268,7 +278,7 @@ class WorksTests(TestCase):
             cells[(row.task_id, row.student_id)].append(row)
 
         states = {state_of(history) for history in cells.values()}
-        self.assertEqual(states, {"correct", "wrong", "unchecked", "redone"})
+        self.assertEqual(states, {"correct", "wrong", "unchecked", "stale"})
         # и пустые клетки: не у всех есть ответ на каждую задачу
         self.assertLess(len(cells), closed.tasks.count() * CourseStudent.objects.count())
 

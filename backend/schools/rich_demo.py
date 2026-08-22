@@ -901,6 +901,7 @@ def answer(tasks, students, teacher, now, *, checked, salt) -> None:
     pattern = ("correct", "wrong", "unchecked", "skip", "correct", "redone", "correct")
     rows = []
     redone = []
+    judged = []
 
     for index, student in enumerate(students):
         for position, task in enumerate(tasks):
@@ -916,17 +917,29 @@ def answer(tasks, students, teacher, now, *, checked, salt) -> None:
                     task=task,
                     student=student,
                     answer=right if state in ("correct", "redone") else "не знаю",
-                    is_correct=None if state == "unchecked" else state == "correct",
                     checked_at=None if state == "unchecked" else now - timedelta(days=1),
                     checked_by=None if state == "unchecked" else teacher,
                 )
             )
+            if state != "unchecked":
+                judged.append((len(rows) - 1, task, student, state))
             if state == "redone":
                 redone.append((task, student, right))
 
-    Submission.objects.bulk_create(rows)
-    # переделанный ответ — вторая строка журнала: отметка осталась на
-    # прошлой, а клетка честно вернулась в «не проверено»
+    made = Submission.objects.bulk_create(rows)
+
+    # Баллы ставятся после вставки и по одному: оценка живёт не на отправке,
+    # а на паре «ученик и вопрос», и ставит её тот же путь, что у учителя.
+    # Пакетно тут не выйдет — у каждой оценки своя строка «работа ученика».
+    from works.services import check_answer
+
+    for index, task, student, state in judged:
+        check_answer(
+            made[index], value=task.maximum if state == "correct" else 0, by=teacher
+        )
+
+    # переделанный ответ — вторая строка журнала: балл остался за прошлой, а
+    # клетка показывает, что пришло новое и надо посмотреть
     Submission.objects.bulk_create(
         Submission(task=task, student=student, answer=right)
         for task, student, right in redone

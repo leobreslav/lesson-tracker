@@ -71,7 +71,9 @@ class Work(models.Model):
     отправки учеников и все отметки.
 
     Проверка при этом остаётся именным действием: у отправки есть
-    `checked_by`, и кто поставил отметку, видно всегда.
+    `checked_by`, и кто поставил отметку, видно всегда. Сама отметка —
+    балл (`Mark`) со ссылкой на этот ответ; полем отправки она была, пока
+    вердикт был галочкой.
 
     **Бумажная работа — та же работа, у которой не задействованы задачи и
     отправки**, а у каждого ученика лежит скан. Различаются виды работ тем,
@@ -313,12 +315,6 @@ class Submission(models.Model):
     answer = models.TextField("answer as it was typed", blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
-    is_correct = models.BooleanField(
-        "verdict",
-        null=True,
-        blank=True,
-        help_text="Пусто — не проверено. Смена отметки попытку не расходует.",
-    )
     checked_at = models.DateTimeField("checked at", null=True, blank=True)
     checked_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -344,7 +340,8 @@ class Submission(models.Model):
 
     @property
     def is_checked(self) -> bool:
-        return self.is_correct is not None
+        """Проверен тот ответ, за который стоит балл."""
+        return self.marks.exists()
 
 
 class Criterion(models.Model):
@@ -482,6 +479,32 @@ class Mark(models.Model):
         verbose_name="criterion",
     )
     value = models.PositiveSmallIntegerField("value")
+    # За какой именно ответ поставлен балл.
+    #
+    # Пусто у бумажной работы: отправки там нет и не будет, балл просто
+    # стоит. У онлайновой ссылка обязательна по смыслу, и держится на ней
+    # единственная вещь, которую нельзя потерять: **балл принадлежит тому
+    # ответу, за который поставлен**. Ученик прислал новый — старый балл не
+    # перевешивается на него молча и не исчезает; он остаётся тем, чем был, а
+    # ячейка показывает, что пришло новое и надо посмотреть.
+    #
+    # Ровно этого опасалось прежнее устройство, где вердикт был полем самой
+    # отправки: «отдельная модель добавила бы соблазн перевесить вердикт на
+    # новую попытку, чего делать как раз нельзя». Соблазн снимает не место
+    # хранения, а эта ссылка.
+    #
+    # `SET_NULL`: отправку сносит только каскад от задачи или ученика — вместе
+    # с самим баллом, — а если она исчезнет иначе, запись учителя должна
+    # пережить ответ ученика.
+    submission = models.ForeignKey(
+        "Submission",
+        related_name="marks",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        verbose_name="submission",
+        help_text="Ответ, за который поставлен балл. Пусто — работа на бумаге.",
+    )
 
     class Meta:
         verbose_name = "mark"

@@ -38,8 +38,8 @@ export default function ColumnDialog({ task, onChanged, onClose }) {
   // в столбце у ученика может быть несколько попыток: проверяют последнюю,
   // прошлые открываются из ячейки
   const latest = lastPerStudent(rows ?? [])
-  const waiting = latest.filter((row) => row.is_correct === null)
-  const done = latest.filter((row) => row.is_correct !== null)
+  const waiting = latest.filter((row) => row.mark === null)
+  const done = latest.filter((row) => row.mark !== null)
 
   return (
     <Modal className="shelf" onClose={onClose} title={t('table.checking')}>
@@ -63,7 +63,7 @@ export default function ColumnDialog({ task, onChanged, onClose }) {
           </span>
           <ul className="attempt-list checking">
             {[...waiting, ...done].map((row) => (
-              <li key={row.id} className={verdictClass(row.is_correct)}>
+              <li key={row.id} className={verdictClass(row, task.maximum)}>
                 <div className="cells">
                   <span className="hint">{row.student_name}</span>
                   <span className="answer">{row.answer}</span>
@@ -85,5 +85,9 @@ function lastPerStudent(rows) {
   return [...seen.values()]
 }
 
-const verdictClass = (value) =>
-  value === true ? 'correct' : value === false ? 'wrong' : 'unchecked'
+/* Полный балл — «верно», ноль — «неверно», между ними частично. */
+const verdictClass = (row, maximum) => {
+  if (row.mark === null || row.mark === undefined) return 'unchecked'
+  if (row.mark >= maximum) return 'correct'
+  return row.mark === 0 ? 'wrong' : 'partial'
+}
