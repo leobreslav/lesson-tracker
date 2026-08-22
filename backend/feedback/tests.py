@@ -103,6 +103,63 @@ class ForwardingTests(TestCase):
         self.assertTrue(Message.objects.filter(pk=message.pk).exists())
 
 
+class SilentMailLeavesATraceTests(TestCase):
+    """
+    Проглоченный отказ почты обязан оставить строку в логе.
+
+    `fail_silently` гасит исключение — и вместе с ним всякий признак того,
+    что письмо не ушло: обращение лежит на своей странице, лог чист, и
+    снаружи это неотличимо от доставленного. «Почему мне ничего не
+    приходит» становится вопросом без единой зацепки, а начинается он не с
+    поломки, а с опечатки в пароле.
+
+    Поэтому считаем не адресатов, а то, что вернул `send_mail`.
+    """
+
+    def setUp(self):
+        self.school = make_school("Test school")
+        self.root = make_user(self.school, "root@example.com", root=True)
+        self.root.forward_feedback = True
+        self.root.save(update_fields=["forward_feedback"])
+
+    def message(self):
+        return Message.objects.create(
+            kind=Message.Kind.BUG, text="не работает", school=self.school
+        )
+
+    @override_settings(EMAIL_BACKEND="feedback.tests.SilentBackend")
+    def test_a_mailer_that_swallows_the_message_says_so_in_the_log(self):
+        message = self.message()
+
+        with self.assertLogs("feedback.services", level="WARNING") as log:
+            self.assertEqual(forward(message), 0)
+
+        self.assertIn("не переслано", log.output[0])
+        self.assertIn(str(message.pk), log.output[0])
+
+    def test_a_delivered_message_counts_what_left_and_logs_nothing(self):
+        message = self.message()
+
+        with self.assertNoLogs("feedback.services", level="WARNING"):
+            self.assertEqual(forward(message), 1)
+
+
+class SilentBackend:
+    """
+    Почта, которая всё принимает и ничего не отправляет.
+
+    Так выглядит `fail_silently` над сломанным SMTP — и так же выглядел бы
+    молчащий сервер на localhost, ради которого в проекте выбран вывод в
+    лог, а не подставная отправка.
+    """
+
+    def __init__(self, *args, **kwargs):
+        pass
+
+    def send_messages(self, messages):
+        return 0
+
+
 class MailCannotHangTheRequestTests(SimpleTestCase):
     """
     У соединения с SMTP есть таймаут, и это условие, а не настройка.

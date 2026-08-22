@@ -52,7 +52,10 @@ def describe(message) -> tuple[str, str]:
 
 def forward(message) -> int:
     """
-    Разослать уведомление. Возвращает число адресатов.
+    Разослать уведомление. Возвращает число **ушедших** писем.
+
+    Не число адресатов: с `fail_silently` они расходятся молча, и разошлись
+    бы ровно там, где это важно знать.
 
     `fail_silently` здесь обязателен и объяснён: почта — внешняя система,
     и её недоступность не должна отменять уже принятое обращение. Человек
@@ -65,7 +68,7 @@ def forward(message) -> int:
 
     subject, body = describe(message)
     try:
-        send_mail(
+        sent = send_mail(
             subject,
             body,
             getattr(settings, "DEFAULT_FROM_EMAIL", None) or None,
@@ -76,4 +79,18 @@ def forward(message) -> int:
         logger.exception("feedback: не удалось переслать обращение %s", message.pk)
         return 0
 
-    return len(people)
+    # `fail_silently` гасит отказ — и вместе с ним всякий след того, что
+    # письмо не ушло. Отказ проглочен, лог чист, обращение лежит на своей
+    # странице: снаружи это неотличимо от доставленного письма, и «почему мне
+    # ничего не приходит» становится вопросом без единой зацепки. Поэтому
+    # смотрим, что вернул сам `send_mail`, а не считаем адресатов: он и есть
+    # ответ «сколько ушло».
+    if not sent:
+        logger.warning(
+            "feedback: обращение %s не переслано — почта промолчала, адресатов %d",
+            message.pk,
+            len(people),
+        )
+        return 0
+
+    return sent
