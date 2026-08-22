@@ -1,0 +1,134 @@
+# Стек для браузерных тестов: как прод, но одноразовый.
+#
+# Своё имя проекта — иначе compose переиспользовал бы контейнеры и том dev.
+# База живёт в tmpfs и исчезает вместе со стеком: тесты гоняют её начисто
+# десятки раз, и диску тут делать нечего.
+#
+# Отличия от docker-compose.prod.yml ровно два, оба вынужденные:
+#   * DEBUG=True — иначе seed_demo откажется работать, а его защита от
+#     запуска на живой базе стоит дороже, чем совпадение этого флага;
+#   * E2E_TEST_LOGIN=true — дверь для тестов, см. accounts/e2e.py.
+# Всё остальное как в проде: gunicorn, собранный бандл, nginx перед ними.
+name: lesson-tracker-e2e
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: lessons
+      POSTGRES_USER: lessons
+      POSTGRES_PASSWORD: lessons
+    # база одноразовая: том не нужен, а в памяти она заметно быстрее
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U lessons -d lessons"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+
+  backend:
+    build:
+      context: ./backend
+      target: prod
+    command: >
+      sh -c "python manage.py migrate --noinput &&
+             python manage.py seed_demo --flush &&
+             python manage.py collectstatic --noinput &&
+             gunicorn config.wsgi:application --bind 0.0.0.0:8000 --workers 2"
+    environment:
+      DEBUG: "True"
+      E2E_TEST_LOGIN: "true"
+      SECRET_KEY: e2e-insecure-key
+      ALLOWED_HOSTS: nginx,localhost,127.0.0.1
+      POSTGRES_DB: lessons
+      POSTGRES_USER: lessons
+      POSTGRES_PASSWORD: lessons
+      POSTGRES_HOST: db
+      CSRF_TRUSTED_ORIGINS: http://localhost:8080
+    volumes:
+      - static_files:/app/staticfiles
+    healthcheck:
+      # «gunicorn отвечает» значит и «migrate с seed_demo прошли»: команда
+      # выше выполняет их последовательно. Без этой проверки nginx считался
+      # здоровым сам по себе, и первый тест успевал получить 502 — при
+      # retries: 0 это падение всего прогона на пустом месте
+      test:
+        - CMD-SHELL
+        - >
+          python -c "import urllib.request;
+          urllib.request.urlopen('http://127.0.0.1:8000/admin/login/')"
+      interval: 2s
+      timeout: 5s
+      retries: 60
+    depends_on:
+      db:
+        condition: service_healthy
+
+  frontend-build:
+    build:
+      context: ./frontend
+    command: sh -c "npm run build"
+    environment:
+      # тестам GIS не нужен, но пустая переменная роняет кнопку входа в
+      # ошибку — а её текст мы как раз проверяем на отсутствие
+      VITE_GOOGLE_CLIENT_ID: e2e-client-id.apps.googleusercontent.com
+    volumes:
+      - frontend_dist:/app/dist
+    restart: "no"
+
+  nginx:
+    image: nginx:1.27-alpine
+    # Конфиг тот же, что в проде, но домена у стенда нет: сервер объявлен
+    # default_server и отвечает на любой Host, так что имена здесь —
+    # просто то, как к нему обращаются тесты. Значения фиксированы, а не
+    # из env-файла: у e2e-стека его нет.
+    environment:
+      NGINX_ENVSUBST_FILTER: "^(DOMAIN|DOMAIN_ALIASES|AUTH_BASIC|AUTH_BASIC_FILE)$$"
+      DOMAIN: localhost
+      DOMAIN_ALIASES: nginx 127.0.0.1
+      AUTH_BASIC: "off"
+      AUTH_BASIC_FILE: /etc/nginx/auth/htpasswd
+    ports:
+      - "8080:80"
+    volumes:
+      - ./nginx/default.conf.template:/etc/nginx/templates/default.conf.template:ro
+      - ./nginx/proxy_params.conf:/etc/nginx/proxy_params.conf:ro
+      - ./nginx/auth:/etc/nginx/auth:ro
+      - frontend_dist:/var/www/frontend:ro
+      - static_files:/var/www/static:ro
+      - ./certbot/www:/var/www/certbot:ro
+    healthcheck:
+      # 127.0.0.1, не localhost: busybox-wget сначала пробует ::1, а nginx
+      # слушает только IPv4 — проверка падала бы на пустом месте
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1/ || exit 1"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+    depends_on:
+      backend:
+        condition: service_healthy
+      frontend-build:
+        condition: service_completed_successfully
+
+  e2e:
+    # официальный образ Playwright: браузеры уже внутри, ставить их в WSL
+    # не нужно и версии не разъезжаются
+    image: mcr.microsoft.com/playwright:v1.56.0-noble
+    working_dir: /e2e
+    command: sh -c "npm ci && npx playwright test"
+    environment:
+      BASE_URL: http://nginx
+      CI: "1"
+    volumes:
+      - ./e2e:/e2e
+      # бланк лежит в репозитории один, и тест берёт именно его: копия в
+      # фикстурах разошлась бы с печатью в первую же правку геометрии
+      - ./blank:/blank:ro
+    depends_on:
+      nginx:
+        condition: service_healthy
+
+volumes:
+  static_files:
+  frontend_dist:

@@ -1,0 +1,112 @@
+# ВНИМАНИЕ: это шаблон, а не готовый конфиг. Официальный образ nginx
+# прогоняет /etc/nginx/templates/*.template через envsubst при старте и
+# кладёт результат в /etc/nginx/conf.d/.
+#
+# Подставляются ТОЛЬКО DOMAIN, DOMAIN_ALIASES, AUTH_BASIC и
+# AUTH_BASIC_FILE — имена тут написаны без знака доллара намеренно:
+# со знаком envsubst подставил бы их и в этот комментарий, и в
+# отрисованном конфиге он перестал бы что-либо объяснять. Список задан
+# переменной NGINX_ENVSUBST_FILTER в compose. Без неё envsubst подставил бы
+# всё подряд — и $host, $uri, $backend_addr превратились бы в пустые строки,
+# то есть конфиг сломался бы молча, а не с ошибкой.
+
+# встроенный DNS docker'а. Короткий TTL: после пересоздания backend nginx
+# должен быстро увидеть новый IP.
+resolver 127.0.0.11 valid=10s ipv6=off;
+
+# Vite собирает воркеры отдельными `.mjs`, а mime.types про это расширение не
+# знает и отдаёт octet-stream. Браузер такой файл как модуль не берёт —
+# «Strict MIME type checking» — и лениво подгружаемый модуль молча не
+# запускается: в сборке ошибки нет, потому что код не выполняется.
+types {
+    application/javascript mjs;
+}
+
+server {
+    listen 80 default_server;
+    server_name ${DOMAIN} ${DOMAIN_ALIASES};
+
+    # продление сертификата ходит по http, поэтому редирект стоит после.
+    # Пароля тут нет и быть не должно: certbot приходит без него.
+    location /.well-known/acme-challenge/ {
+        root /var/www/certbot;
+    }
+
+    location / {
+        return 301 https://$host$request_uri;
+    }
+}
+
+server {
+    listen 443 ssl default_server;
+    http2 on;
+    server_name ${DOMAIN} ${DOMAIN_ALIASES};
+
+    client_max_body_size 25m;
+
+    # Пароль на весь контур. На проде переменных нет, и умолчание в compose
+    # даёт `off` — то есть ровно прежнее поведение, ничего не спрашивается.
+    # Realm пишется одним словом: кавычек тут нет намеренно, иначе значение
+    # `off` перестало бы означать «выключено».
+    auth_basic ${AUTH_BASIC};
+    auth_basic_user_file ${AUTH_BASIC_FILE};
+
+    # адрес в переменной, а не в блоке upstream: имя в upstream резолвится
+    # один раз при старте, и после пересоздания backend nginx продолжает
+    # ходить на старый IP, отдавая 502
+    set $backend_addr backend:8000;
+
+    ssl_certificate     /etc/letsencrypt/live/${DOMAIN}/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/${DOMAIN}/privkey.pem;
+
+    # параметры заданы явно: certbot с certonly не создаёт
+    # options-ssl-nginx.conf, на который обычно ссылаются примеры
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_prefer_server_ciphers off;
+    ssl_session_cache shared:SSL:10m;
+    ssl_session_timeout 1d;
+    ssl_session_tickets off;
+
+    location / {
+        root /var/www/frontend;
+        try_files $uri /index.html;
+    }
+
+    # куски бандла — только сами файлы, без фолбэка на index.html; почему
+    # так, подробно написано в default.conf.template
+    location /assets/ {
+        root /var/www/frontend;
+        try_files $uri =404;
+        access_log off;
+        expires 1y;
+        add_header Cache-Control "public, immutable";
+    }
+
+    # index.html — список актуальных имён кусков, кэшировать его нельзя
+    location = /index.html {
+        root /var/www/frontend;
+        add_header Cache-Control "no-cache";
+    }
+
+    location /static/ {
+        alias /var/www/static/;
+        access_log off;
+        expires 30d;
+    }
+
+    # Пароля тут нет, и это вынужденно: basic-auth и токен приложения делят
+    # один заголовок Authorization. Приложение ставит `Authorization: Token …`
+    # на каждый запрос, явный заголовок вытесняет basic-auth — и весь API
+    # отвечал бы 401 от nginx. Страницу и /admin/ пароль закрывает
+    # по-прежнему: там кука сессии, а не заголовок.
+    location /api/ {
+        auth_basic off;
+        proxy_pass http://$backend_addr;
+        include /etc/nginx/proxy_params.conf;
+    }
+
+    location /admin/ {
+        proxy_pass http://$backend_addr;
+        include /etc/nginx/proxy_params.conf;
+    }
+}

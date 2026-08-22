@@ -1,0 +1,6770 @@
+/*
+ * Карточки и расстояние между ними.
+ *
+ * Значения собраны здесь, потому что раньше их не было нигде: карточка
+ * (`.panel`) не несла никакого внешнего отступа вовсе, и две подряд
+ * слипались — их разделяло только то, что случайно оказывалось между ними.
+ * Контейнеры, у которых gap был (`.cards`, `.months`, `.calendar-side`),
+ * сговорились на 1rem, так что новое значение не изобретается: оно просто
+ * получает имя.
+ *
+ * Уровней ровно два. Карточка страницы — белая, с тенью и радиусом 8;
+ * строка внутри неё — легче: радиус 6 и тень слабее, иначе список внутри
+ * карточки читался бы как десяток карточек.
+ */
+:root {
+  --card-gap: 1rem;
+  --card-pad: 1rem;
+  /* плотные карточки-сетки: календарный месяц и недельная сетка, где
+     каждые лишние 0.25rem съедают колонку */
+  --card-pad-tight: 0.75rem;
+  --card-radius: 8px;
+  --card-shadow: 0 1px 4px rgba(0, 0, 0, 0.12);
+  --row-radius: 6px;
+  --row-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  --row-gap: 0.4rem;
+  /* ритм внутри карточки: заголовок, подсказка, форма, список */
+  --panel-gap: 0.5rem;
+  /* и внутри окна: полей больше, воздуха тоже нужно больше */
+  --modal-gap: 0.75rem;
+  /* высота контрола, стоящего в строке с другими */
+  --control-height: 2.25rem;
+  /* зазор между ячейками строки плана */
+  --plan-row-gap: 0.4rem;
+  /* на столько сдвинуто название урока, лежащего внутри темы */
+  --plan-indent: 1.25rem;
+  /*
+   * Сетка строки плана — одна на все строки: и уроки, и главы, и что
+   * появится дальше. Выравнивание не может разъехаться, потому что
+   * разъезжаться нечему: колонки заданы один раз.
+   *
+   * неделя · дата и день · маркер · номер · название · кнопки
+   */
+  /* неделя · пометка · дата · флажок · ручка · номер · название · кнопки.
+     Флажок стоит **после** дат: по левому краю взгляд должен встречать
+     данные, а не служебный контрол — по этому же правилу тут и ручка */
+  --plan-columns: 44px 14px 86px 24px 24px 26px 1fr auto;
+  --plan-columns-bare: 24px 24px 26px 1fr auto;
+  /* колонки строки курса: стрелка · название · карандаш · предмет и
+     параллель · люди. Одна переменная на строку и на раскрытую карточку —
+     иначе зоны внутри не совпадают с зонами заголовка, и это читается как
+     кривая вёрстка.
+     Карандаш стоит третьей колонкой, вплотную к названию, а не в дальнем
+     конце строки: там он читался как «правка курса», хотя правит одно
+     название. Своя колонка нужна ему потому, что кнопка раскрытия занимает
+     всю строку, а вложенных кнопок не бывает: карандаш кладётся поверх
+     пустой колейки той же сетки.
+     Колонка названия — `fit-content`, а не `1fr`: растянутая, она отодвигала
+     карандаш к предмету, и тот читался как правка предмета. Теперь колонка
+     по самому длинному имени (с потолком, чтобы одно длинное название не
+     съело строку), карандаши стоят столбиком сразу за ним, а лишняя ширина
+     достаётся людям справа */
+  --course-columns: 1.5rem fit-content(20rem) 1.25rem minmax(8rem, 1fr)
+    minmax(10rem, 2fr);
+  /* приглушённая подложка: ею закрашена каждая вторая неделя */
+  --surface-1: #f4f5f7;
+}
+
+body {
+  margin: 0;
+  font-family: system-ui, sans-serif;
+  background: #f5f5f5;
+  color: #222;
+  /* Прописные цифры на всё приложение.
+     В старостильных начертаниях у 6 и 9 выносные элементы: рядом с 1, 2, 3
+     они кажутся мельче и сползают вниз. Здесь почти всюду числа — данные
+     (номера уроков, счётчики, даты), а не текст, и им нужен ровный рост. */
+  font-variant-numeric: lining-nums;
+  font-feature-settings: 'lnum';
+}
+
+/*
+ * Числа, стоящие колонкой, — ещё и одинаковой ширины.
+ *
+ * Список в одном месте намеренно: правило, разбросанное по местам, к
+ * следующей колонке забыли бы дописать, и «10» снова уехало бы относительно
+ * «9». Ширину даёт tnum, ровный рост — lnum из body.
+ */
+.tabular,
+.grade-list .level,
+.plan-number,
+.row-head,
+.day,
+.summary-cards .value,
+.card-stat h2,
+.block-count {
+  font-variant-numeric: lining-nums tabular-nums;
+  font-feature-settings: 'lnum', 'tnum';
+}
+
+/*
+ * ─── СТРОКА ФОРМЫ ───────────────────────────────────────────────────────
+ *
+ * Всё про поля, селекты, кнопки и их выравнивание в ряду — здесь и только
+ * здесь. Правило для контрола в строке, написанное в другом месте файла, —
+ * это ошибка: раскладку в этом разделе так ломали три раза подряд, и каждый
+ * раз следующая правка чинила один ряд и портила соседний.
+ *
+ * Что здесь решается:
+ *
+ * 1. Одна высота. Мерили: поле выходило 36px, кнопка 39, а `select` без
+ *    стилей и вовсе 19 — три разные причины, и подгонять их порознь
+ *    бессмысленно, следующий контрол снова окажется своего роста.
+ * 2. `min-height` у кнопки, жёсткая `height` у поля и селекта. Кнопка с
+ *    длинной подписью на узком экране переносится, и жёсткая высота
+ *    обрезала бы вторую строку; поле однострочно всегда, и без жёсткой
+ *    высоты дата остаётся на 0.2px выше соседей.
+ * 3. Кнопка от длины подписи становится шире, а не выше.
+ * 4. Ряд переносится, только когда иначе вылезет за карточку, и ужимается
+ *    сначала поле — иначе кнопка уезжала бы вниз там, где место ещё было.
+ *
+ * Список контейнеров явный, потому что «кнопка» в этом приложении — это и
+ * клетка календаря, и ячейка недельной сетки, и крестик в строке списка:
+ * общее правило растянуло бы их все.
+ *
+ * И главная ловушка, на которой всё сломалось в прошлый раз: поле с
+ * подписью (`.field-with-hint`) — это **колонка**. Внутри неё `flex-basis`
+ * задаёт не ширину, а высоту, и `flex: 1 1 8rem`, написанное для ряда,
+ * растянуло поле до 128px. Поэтому правила растяжения адресованы только
+ * ПРЯМЫМ детям ряда (`>`), а поле внутри подписи явно снимает флекс.
+ */
+
+/*
+ * Контейнеры, которые являются строкой контролов. Список написан один раз:
+ * всё остальное — вложенные правила, они не могут разойтись с ним.
+ */
+.add-form,
+.inline-form,
+.agenda-bar,
+.class-filter,
+.year-picker,
+/*
+ * `.row` — сам по себе, а не пятью путями до него.
+ *
+ * Перечислялись раньше именно пути (`.term-form .row`, `.modal-body .row`
+ * и ещё три), и это значило, что **голый `.row` не значит ничего**: ни
+ * флекса, ни зазора. Класс, который выглядит общим и молча не работает,
+ * ловит каждого следующего — поймал и на странице урока, где ссылка,
+ * поставленная в такой ряд, слиплась с соседней кнопкой.
+ *
+ * Класс пишут руками и ровно в одном смысле — «ряд контролов», — поэтому
+ * пусть он его и означает. Кнопкой бывает и клетка календаря, и ячейка
+ * недельной сетки, и крестик в списке, но `.row` на них никто не вешает.
+ */
+.row,
+.preset-row,
+.plan-add-form,
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.5rem;
+
+  /* высота, отступы, отказ от переноса подписи */
+  & :is(
+      input:not([type='checkbox']):not([type='radio']):not([type='file']),
+      select,
+      textarea,
+      button:not(.link)
+    ) {
+    box-sizing: border-box;
+    min-height: var(--control-height);
+    padding-top: 0.35rem;
+    padding-bottom: 0.35rem;
+    white-space: nowrap;
+  }
+
+  /* поле и селект однострочны всегда — им высота жёсткая */
+  & :is(
+      input:not([type='checkbox']):not([type='radio']):not([type='file']),
+      select
+    ) {
+    height: var(--control-height);
+  }
+
+  & :is(input:not([type='checkbox']):not([type='radio']), select, textarea) {
+    padding-left: 0.5rem;
+    padding-right: 0.5rem;
+    font: inherit;
+    color: inherit;
+    background: #fff;
+    border: 1px solid #c6c6c6;
+    border-radius: 4px;
+  }
+
+  & :is(input, select, textarea):focus {
+    outline: 2px solid #1a73e8;
+    outline-offset: -1px;
+    border-color: #1a73e8;
+  }
+
+  /*
+   * Выключенный контрол должен выглядеть выключенным.
+   *
+   * Правило было только у `.field input`, то есть у поля с подписью, — а
+   * поле в ряду его не получало и выключенным выглядело точно так же, как
+   * рабочее. Наружу это выходит худшим из возможных способов: человек
+   * набирает в поле, а оно не набирается, и решает, что сломалась
+   * страница. Поймано на выборе курса в карточке учителя, где поле
+   * выключается, когда свободных курсов не осталось.
+   */
+  & :is(input, select, textarea):disabled {
+    color: #888;
+    background: #f0f0f0;
+    cursor: not-allowed;
+  }
+
+  /* растягивается только то, что лежит в ряду непосредственно: внутри
+     колонки с подписью flex-basis стал бы высотой */
+  & > :is(input:not([type='checkbox']):not([type='radio']), .field-with-hint) {
+    flex: 1 1 8rem;
+    min-width: 6rem;
+  }
+
+  /* Поле с поиском по списку — исключение: в нём одно имя, и растянутое
+     на всю карточку оно читается как ошибка вёрстки. Поэтому 24rem — это
+     **потолок**, а не заданная ширина: в форме создания курса таких полей
+     два (ведущий и методист), и при жёсткой ширине ряд переносился —
+     методист с кнопкой «Добавить» уезжали на вторую строку, хотя места в
+     карточке хватало обоим.
+     Селектор нарочно с классом и атрибутом: у общего правила выше
+     `:is(input:not([type=…]):not([type=…]))`, и весит оно больше одного
+     атрибута — порядком тут не обойтись. */
+  & > input.search[list] {
+    /* не растёт, но ужимается: лишнюю ширину ряда забирает соседнее поле,
+       которому есть что показать, — название курса, а не подпись человека */
+    flex: 0 1 14rem;
+    max-width: 24rem;
+  }
+
+  /* Панель управления планом: восемь кнопок и три чекбокса в одном ряду.
+     Ужимаем по горизонтали — высоту не трогаем, её держит ряд. Правило
+     живёт здесь, а не рядом с `.plan-tools`: всё про контрол в ряду в
+     одном месте, иначе следующая правка починит один ряд и сломает
+     соседний. */
+  .plan-tools & > button:not(.link) {
+    padding-left: 0.7rem;
+    padding-right: 0.7rem;
+  }
+
+  /* «?» — тоже кнопка ряда, и рост у неё общий: круглая 22-пиксельная
+     пуговица рядом с 36-пиксельными кнопками читается как промах вёрстки,
+     а сторож высот на ней падает — и правильно делает */
+  & .help-toggle {
+    width: var(--control-height);
+    height: var(--control-height);
+    min-height: var(--control-height);
+    /* своя `line-height: 1` тут лишняя: сторож считает по ней, не
+       перенеслась ли подпись, и на однопиксельной строке видит перенос */
+    line-height: inherit;
+  }
+
+  /* кроме числа: в нём две цифры — максимум шкалы, число попыток, — и
+     растянутое на восемь ремов оно читается как незаполненное поле.
+     Место в ряду забирает сосед, которому есть что показать */
+  & > input[type='number'] {
+    flex: 0 0 5rem;
+    min-width: 0;
+  }
+
+  /*
+   * Подпись в ряду — не абзац.
+   *
+   * У `.hint` свой верхний отступ (0.35rem), и в ряду он ничего не
+   * значит, пока ряд выровнен по низу. Стоит ряду встать по центру — и
+   * подпись уезжает вниз ровно на этот отступ: центрируется внешняя
+   * коробка, а текст в ней сидит не посередине.
+   */
+  & > .hint {
+    margin: 0;
+  }
+
+  /*
+   * Подпись и контрол — по центру друг друга.
+   *
+   * Умолчание `flex-end` верно там, где в ряду поля с подписями сверху:
+   * контролы встают на одну линию понизу. А в ряду «слово и селект» по
+   * низу выравниваются их базовые линии, и слово оказывается прибитым к
+   * нижнему краю селекта — это и видно как «не отцентровано».
+   */
+  &.middle {
+    align-items: center;
+  }
+
+  /*
+   * Ряд остаётся рядом и внутри окна — тот же капкан, что с полем внутри
+   * подписи, и ловится он тоже только глазами.
+   *
+   * `.modal-body form` кладёт детей колонкой: это правило для настоящих
+   * форм окна, где поля идут одно под другим. `.inline-form` попадала под
+   * него просто потому, что она `<form>`, — а в колонке `flex-basis`
+   * контрола задаёт не ширину, а высоту, и `flex: 1 1 8rem` выше
+   * превращалось в поле ростом с ладонь. Форма добавления ссылки вставала
+   * столбиком у правого края и занимала пол-окна.
+   *
+   * Класс удвоен ради веса: `.inline-form.inline-form` перевешивает
+   * `.modal-body form`, и правило остаётся в этом блоке, а не уезжает к
+   * стилям окна, где его никто не свяжет с рядом.
+   */
+  &.inline-form {
+    flex-direction: row;
+    align-items: center;
+  }
+}
+
+/* поле с подписью сверху: колонка, и поле в ней своей высоты */
+.field-with-hint {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  font-size: 0.85rem;
+  color: #5f6368;
+}
+
+.field-with-hint > :is(input, select) {
+  flex: none;
+  width: 100%;
+}
+
+/* --- верхний бар --- */
+
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  background: #fff;
+  border-bottom: 1px solid #e0e0e0;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+}
+
+.topbar-inner {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  max-width: 72rem;
+  margin: 0 auto;
+  padding: 0.5rem 1.5rem;
+}
+
+.brand {
+  font-weight: 700;
+  color: #1a73e8;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.topbar-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+}
+
+.nav-link {
+  padding: 0.35rem 0.6rem;
+  font-size: 0.9rem;
+  color: #444;
+  text-decoration: none;
+  border-radius: 4px;
+  border-bottom: 2px solid transparent;
+}
+
+.nav-link:hover {
+  background: #f1f5fd;
+}
+
+/* активный раздел: заливка плюс подчёркивание */
+.nav-link.active {
+  color: #1a73e8;
+  font-weight: 600;
+  background: #eaf1fd;
+  border-bottom-color: #1a73e8;
+}
+
+.burger {
+  display: none;
+  padding: 0.3rem 0.6rem;
+}
+
+.user-menu {
+  position: relative;
+}
+
+/*
+ * Правый угол бара — **пара**: «Написать» и меню пользователя.
+ *
+ * Распорку (`margin: auto`) носит теперь она целиком, а не каждый по
+ * отдельности. Порознь их было двое, и свободное место делилось между
+ * ними: кнопка «Написать» вставала посреди пустоты между разделами и
+ * именем — ни к чему не прижатая и оттого выглядящая потерянной.
+ *
+ * В баре ученика разделов нет вовсе, и без этой распорки пара уехала бы
+ * влево, к названию.
+ */
+.topbar-right {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-left: auto;
+}
+
+/*
+ * Кнопка меню пользователя: имя и адрес в две строки, стрелка сбоку.
+ *
+ * Обрезается адрес, а не имя: длинный адрес — обычное дело, а имя короткое
+ * и по нему кнопку узнают. Обе строки на одной кнопке, потому что тёзки в
+ * школе бывают, а адрес у каждого свой.
+ */
+.user-menu > button {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  max-width: 16rem;
+  padding-block: 0.3rem;
+  text-align: left;
+}
+
+.user-menu .who {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  line-height: 1.2;
+}
+
+.user-menu .name {
+  font-size: 0.9rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.user-menu .email {
+  font-size: 0.75rem;
+  font-weight: 400;
+  color: #5f6368;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dropdown {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 0.35rem);
+  z-index: 30;
+  min-width: 10rem;
+  margin: 0;
+  padding: 0.25rem;
+  list-style: none;
+  background: #fff;
+  border: 1px solid #e0e0e0;
+  border-radius: var(--row-radius);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.14);
+}
+
+.dropdown a,
+.dropdown button {
+  display: block;
+  width: 100%;
+  padding: 0.45rem 0.6rem;
+  font: inherit;
+  font-size: 0.9rem;
+  color: #222;
+  text-align: left;
+  text-decoration: none;
+  background: none;
+  border: none;
+  border-radius: 4px;
+}
+
+.dropdown a:hover,
+.dropdown button:hover {
+  color: #1a73e8;
+  background: #f1f5fd;
+}
+
+/*
+ * Меню у курсора: тот же выпадающий список, только стоящий не под кнопкой,
+ * а там, где нажали. Поэтому `fixed` и координаты из события — `absolute`
+ * считался бы от ближайшего позиционированного предка, то есть от клетки.
+ */
+.context-menu {
+  position: fixed;
+  min-width: 12rem;
+  /* с формой внутри меню шире: в переносе дата, номер и причина */
+  max-width: 22rem;
+}
+
+/* шапка меню: чей это час и какая в нём тема — не пункт, а подпись */
+.context-menu .context-head {
+  padding: 0.35rem 0.6rem 0.45rem;
+  border-bottom: 1px solid #eee;
+}
+
+.context-menu .context-head .hint {
+  display: block;
+  margin: 0;
+}
+
+.context-menu .context-head .menu-topic {
+  overflow: hidden;
+  color: #444;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/*
+ * Форма внутри меню: причина отмены и перенос спрашиваются там же, где
+ * нажали, — окном они были, и на один разговор приходилось две поверхности.
+ *
+ * Поэтому у контролов внутри формы свои правила: пункты меню растянуты во
+ * всю ширину и без рамок, а поле ввода и кнопки в форме должны выглядеть
+ * полем ввода и кнопками. Правило про ряд контролов («СТРОКА ФОРМЫ») их
+ * догоняет само — `.row` и `.actions` в этом списке есть.
+ */
+.context-menu .context-form {
+  padding: 0.5rem 0.6rem 0.6rem;
+}
+
+.context-menu .context-form > * + *,
+.context-menu .context-form form > * + * {
+  margin-top: 0.5rem;
+}
+
+.context-menu .context-form :is(input, button) {
+  display: inline-block;
+  width: auto;
+}
+
+.context-menu .context-form input:not([type='checkbox']):not([type='radio']) {
+  width: 100%;
+  color: inherit;
+  background: #fff;
+  border: 1px solid #c6c6c6;
+  border-radius: 4px;
+}
+
+/* кнопка в форме — обычная кнопка проекта, а не пункт списка */
+.context-menu .context-form button {
+  padding: 0.5rem 1rem;
+  color: #fff;
+  text-align: center;
+  background: #1a73e8;
+  border: 1px solid transparent;
+  border-radius: 4px;
+}
+
+.context-menu .context-form button.secondary {
+  color: #1a73e8;
+  background: #fff;
+  border-color: #c6c6c6;
+}
+
+.context-menu .context-form button:hover:not(:disabled) {
+  background: #1765cc;
+}
+
+.context-menu .context-form button.secondary:hover:not(:disabled) {
+  background: #f1f5fd;
+}
+
+.context-menu .context-form button:disabled {
+  background: #a8c7f5;
+}
+
+.context-menu .context-form button.secondary:disabled {
+  color: #999;
+  background: #fff;
+  border-color: #e0e0e0;
+}
+
+/* черта между группами пунктов: файл, полка, утверждение — три разговора,
+   и подряд идущими строками они читаются как один список из шести дел */
+.dropdown-sep {
+  display: block;
+  margin: 0.25rem 0;
+  border-top: 1px solid #eee;
+}
+
+/* переключатель языка: строка меню, но кнопки в ней — чипы в ряд, а не
+   пункты во всю ширину, как остальное содержимое выпадающего списка */
+.dropdown-languages {
+  padding: 0.45rem 0.6rem;
+  border-top: 1px solid #eee;
+}
+
+.dropdown-languages .hint {
+  display: block;
+  margin-bottom: 0.35rem;
+  font-size: 0.75rem;
+}
+
+.dropdown-languages .actions {
+  display: flex;
+  gap: 0.35rem;
+  margin: 0;
+}
+
+.dropdown-languages button.chip {
+  display: inline-block;
+  width: auto;
+  padding: 0.2rem 0.7rem;
+  font-size: 0.85rem;
+  border: 1px solid #c6c6c6;
+}
+
+.dropdown-languages button.chip.active {
+  border-color: #1a73e8;
+}
+
+@media (max-width: 48rem) {
+  .burger {
+    display: block;
+    order: 2;
+    margin-left: auto;
+  }
+
+  .user-menu {
+    order: 3;
+    margin-left: 0;
+  }
+
+  /* пункты уезжают в выпадающий список поверх содержимого */
+  .topbar-nav {
+    display: none;
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 100%;
+    z-index: 30;
+    flex-direction: column;
+    gap: 0;
+    margin: 0;
+    padding: 0.25rem;
+    background: #fff;
+    border-bottom: 1px solid #e0e0e0;
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.14);
+  }
+
+  .topbar-nav.open {
+    display: flex;
+  }
+
+  .nav-link {
+    padding: 0.6rem;
+    border-bottom: none;
+  }
+}
+
+.card {
+  max-width: 26rem;
+  margin: 2rem auto;
+  padding: 2rem;
+  background: #fff;
+  border-radius: var(--card-radius);
+  box-shadow: var(--card-shadow);
+}
+
+h1 {
+  margin-top: 0;
+  font-size: 1.4rem;
+}
+
+/* --- форма --- */
+
+.field {
+  margin-bottom: 1.25rem;
+}
+
+.field label {
+  display: block;
+  margin-bottom: 0.35rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.field input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0.5rem 0.65rem;
+  font: inherit;
+  color: inherit;
+  border: 1px solid #c6c6c6;
+  border-radius: 4px;
+  background: #fff;
+}
+
+.field input:focus {
+  outline: 2px solid #1a73e8;
+  outline-offset: -1px;
+  border-color: #1a73e8;
+}
+
+.field input:read-only {
+  background: #f0f0f0;
+  color: #555;
+  cursor: default;
+}
+
+.field input:disabled {
+  background: #f0f0f0;
+  color: #888;
+}
+
+.hint {
+  margin: 0.35rem 0 0;
+  font-size: 0.8125rem;
+  color: #666;
+}
+
+/* --- кнопки --- */
+
+.actions {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+}
+
+/* панель с переносом: подписи у кнопок разной длины, и одна может занять
+   две строки. Растягиваем их до высоты соседей, иначе ряд выглядит рваным */
+.actions.wrap {
+  flex-wrap: wrap;
+  align-items: stretch;
+}
+
+button {
+  padding: 0.5rem 1rem;
+  font: inherit;
+  color: #fff;
+  background: #1a73e8;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+button:hover:not(:disabled) {
+  background: #1765cc;
+}
+
+button:disabled {
+  background: #a8c7f5;
+  cursor: not-allowed;
+}
+
+button.secondary {
+  color: #1a73e8;
+  background: #fff;
+  border-color: #c6c6c6;
+}
+
+button.secondary:hover:not(:disabled) {
+  background: #f1f5fd;
+}
+
+button.secondary:disabled {
+  color: #999;
+  background: #fff;
+  border-color: #e0e0e0;
+}
+
+/* --- сообщения --- */
+
+.error {
+  color: #b00020;
+}
+
+.success {
+  color: #1c7a34;
+}
+
+form .error,
+form .success {
+  margin: 1rem 0 0;
+  font-size: 0.9375rem;
+}
+
+/* --- главная: шаги первого входа --- */
+
+.steps {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: step;
+}
+
+.step {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
+  background: #fff;
+  /* рамка вместо тени намеренно: это чек-лист, а не набор карточек, и
+     текущий шаг обводится синим — поверх тени это читалось бы грязно */
+  border: 1px solid #e6e6e6;
+  border-radius: var(--card-radius);
+}
+
+.step + .step {
+  margin-top: var(--row-gap);
+}
+
+.step-mark {
+  display: flex;
+  flex: 0 0 1.6rem;
+  align-items: center;
+  justify-content: center;
+  height: 1.6rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #777;
+  background: #f0f0f0;
+  border-radius: 50%;
+}
+
+.step.done .step-mark {
+  color: #fff;
+  background: #4caf50;
+}
+
+.step.next {
+  border-color: #1a73e8;
+  box-shadow: 0 0 0 1px #1a73e8;
+}
+
+.step.next .step-mark {
+  color: #fff;
+  background: #1a73e8;
+}
+
+/* предыдущий шаг не сделан: пункт бледный и объясняет причину */
+.step.blocked {
+  opacity: 0.6;
+  background: #fafafa;
+}
+
+.step-body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+}
+
+.step-body a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.step-body a:hover {
+  color: #1a73e8;
+}
+
+.step-body .hint {
+  margin: 0;
+}
+
+.step-action {
+  align-self: center;
+  padding: 0.35rem 0.75rem;
+  font-size: 0.85rem;
+  color: #fff;
+  text-decoration: none;
+  background: #1a73e8;
+  border-radius: 4px;
+  white-space: nowrap;
+}
+
+.step-action:hover {
+  background: #1765cc;
+}
+
+/* Курсы ученика: строка — название и предмет, снятые приглушены.
+   Своё имя, а не `.course-list` из раздела «Школа»: там это свёрнутая
+   строка с рамкой и раскрытием, и общего у них только слово. */
+.student-courses .name {
+  font-weight: 500;
+}
+
+.student-courses.past li {
+  background: var(--surface-1);
+  box-shadow: none;
+}
+
+.empty-state {
+  margin: 0;
+}
+
+.empty-state .hint {
+  margin: 0 0 0.75rem;
+  font-size: 0.9rem;
+}
+
+/* раздел, для которого ещё нет данных: приглушён, но кликается */
+.nav-link.unavailable {
+  opacity: 0.45;
+}
+
+/* --- широкая страница --- */
+
+/*
+ * Страница — колонка с одним расстоянием между всем, что в ней лежит.
+ *
+ * Ритм задаётся здесь и только здесь: карточка, добавленная завтра, окажется
+ * отделена сама, без строчки margin рядом с ней. Поэтому же собственные
+ * вертикальные поля прямых детей обнулены — иначе они складывались бы с gap
+ * и один и тот же зазор был бы то 1rem, то 2.5rem. Внутри карточек всё
+ * по-прежнему при своих отступах.
+ */
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--card-gap);
+  max-width: 72rem;
+  margin: 2rem auto;
+  padding: 0 1.5rem 3rem;
+}
+
+.page > * {
+  margin-top: 0;
+  margin-bottom: 0;
+}
+
+.page.narrow {
+  max-width: 34rem;
+}
+
+/*
+ * Широкая страница — для таблиц и сеток.
+ *
+ * 72rem хватает тексту и формам, но не таблице с датами: названия уроков
+ * обрезались, а справа оставалось пустое место. 88rem — примерно 1400 px,
+ * дальше строка становится слишком длинной, чтобы читать её глазами.
+ */
+.page.wide {
+  max-width: 88rem;
+}
+
+.page-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+/* Заголовок блока внутри страницы: главная собрана из двух — шаги первого
+   входа и состояние курсов, — и второму нужно имя, а не ещё один <h1>. */
+.section-title {
+  margin: 0.5rem 0 0;
+  font-size: 1.3rem;
+}
+
+/* Шапка урока — колонка: «когда и у кого» мелким, под ним сама тема.
+   В `.page-header` они вставали по краям страницы, потому что тот ряд, а
+   ряд там ради кнопки справа от заголовка. */
+.lesson-title-head {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.lesson-title-head h1 {
+  margin: 0;
+}
+
+/*
+ * Название урока правится кликом по нему — как в таблице плана.
+ *
+ * Кнопкой в ряду действий это стояло с тех пор, когда карточка приехала с
+ * «Сегодня», где заголовок был просто заголовком. Одна операция, сделанная
+ * двумя разными способами на двух экранах, — та ещё загадка для того, кто
+ * ищет, где же тут править.
+ */
+.lesson-title-head h1 button.name {
+  padding: 0.1rem 0.35rem;
+  margin-left: -0.35rem;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+}
+
+/* поле переименования занимает строку: названия бывают длинными */
+.lesson-title-head .row input {
+  flex: 1 1 16rem;
+}
+
+/*
+ * Название и состояние — одной строкой.
+ *
+ * Карточкой под заголовком состояние стояло, и это было лишним разрывом:
+ * «урок проведён» относится к теме, написанной строкой выше, а не к
+ * чему-то, что идёт следом. На узком экране состояние переносится под
+ * название, а не жмёт его.
+ */
+.lesson-title-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+}
+
+.lesson-title-row h1 {
+  flex: 1 1 20rem;
+}
+
+/*
+ * Состояние записи: плашка, кнопка подтверждения и ссылка в план.
+ *
+ * Не `.row`: там контролы выравниваются по общей высоте, а здесь половина
+ * ряда — плашка, и растянутая до 2.25rem она перестаёт быть плашкой.
+ */
+.lesson-state {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+/* «⋯»: действия над самим занятием — редкие и разрушительные */
+.lesson-menu {
+  position: relative;
+}
+
+.lesson-menu .more {
+  padding: 0 0.3rem;
+  font-size: 1.1rem;
+  line-height: 1;
+}
+
+/*
+ * Пять блоков одной колонкой.
+ *
+ * Обёртка нужна не для вида, а чтобы адресовать наведение; шаг она задаёт
+ * сама — иначе пять карточек стали бы одним ребёнком `.page`, у которого
+ * вертикальные поля обнулены, и слиплись бы.
+ */
+.lesson-blocks {
+  display: flex;
+  flex-direction: column;
+  gap: var(--card-gap);
+}
+
+/*
+ * «Почему тут нет кнопок правки» — прямо над разделами, которых это
+ * касается.
+ *
+ * Серым `.hint` в шапке это уже стояло и не читалось: мелкий текст рядом с
+ * названием выглядит примечанием к названию. Поэтому полоса с заливкой и
+ * чертой слева — не предупреждение (ничего не сломалось), но и не шёпот.
+ */
+.lesson-locked {
+  padding: 0.5rem 0.75rem;
+  color: #3c4043;
+  font-size: 0.85rem;
+  background: var(--surface-1);
+  border-left: 3px solid #c6c6c6;
+  border-radius: 4px;
+}
+
+/*
+ * Действия разделов появляются при наведении — как кнопки строки в таблице
+ * плана, и по той же причине: одиннадцать кнопок на странице, где содержания
+ * две строки, не дают увидеть само содержание.
+ *
+ * Прячем только там, где есть чем навести: на сенсорном экране наведения не
+ * бывает. `visibility`, а не `display`: место остаётся занятым, и шапка не
+ * дёргается под курсором.
+ */
+@media (hover: hover) {
+  .lesson-blocks .panel-actions {
+    visibility: hidden;
+  }
+
+  .lesson-blocks .panel:hover .panel-actions,
+  .lesson-blocks .panel:focus-within .panel-actions {
+    visibility: visible;
+  }
+
+  /*
+   * Кроме «Правка в плане…»: она видна всегда.
+   *
+   * Прячется под курсор то, что человек и так знает, что оно есть, —
+   * кнопка правки на месте. А эта ссылка отвечает на вопрос «почему тут
+   * нельзя править», и спрятать ответ под наведение значит не ответить:
+   * заказчик и без того сказал дважды, что запрет не считывается.
+   */
+  .lesson-blocks .panel-actions:has(> .link-button) {
+    visibility: visible;
+  }
+}
+
+/*
+ * Раздел, в котором нечего показывать, — одна строка.
+ *
+ * Пустота занимала столько же места, сколько содержимое: четыре карточки с
+ * тенью, заголовком и фразой «тут ничего нет». Отступы карточки при этом
+ * остаются — иначе строка прилипала бы к рамке.
+ */
+.panel.empty {
+  padding-top: 0.6rem;
+  padding-bottom: 0.6rem;
+}
+
+.panel.empty .panel-title {
+  color: #555;
+}
+
+/* заголовок пустого раздела не кнопка: разворачивать в нём нечего */
+.panel-label {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  flex: 0 1 auto;
+}
+
+/* Заголовок карточки: меньше <h1> страницы, но крупнее текста в ней.
+   Двух классов хватает, чтобы перебить `.panel h2` с двумя ремами (это
+   крупные числа плашек) — и заодно правило накрывает заголовок, который
+   лежит не в <h2>, а в кнопке сворачивания: <h2> внутри <button> не
+   разрешён разметкой. */
+.panel .panel-title {
+  margin: 0;
+  font-size: 1.05rem;
+  /* вес задан явно: у <h2> он свой, а у заголовка в кнопке сворачивания
+     это <span>, и без правила один блок читался бы легче остальных */
+  font-weight: 600;
+}
+
+/* Шапка сворачиваемой карточки: треугольник, название и число справа.
+   Кнопка во всю ширину — нажимать в заголовок удобнее, чем в значок. */
+.panel-toggle {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  /* не во всю ширину: рядом в шапке живут действия карточки, и переключатель
+     не должен их выталкивать */
+  flex: 0 1 auto;
+  min-height: 0;
+  padding: 0;
+  background: none;
+  border: none;
+  /* цвет обязателен: у кнопок в проекте он белый по синему, и заголовок
+     внутри такой кнопки оказывается белым по белой карточке */
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.panel-actions {
+  display: flex;
+  flex-shrink: 0;
+  gap: 0.3rem;
+}
+
+.panel-toggle .caret {
+  color: #999;
+  font-size: 0.8rem;
+}
+
+.panel-toggle:hover .panel-title {
+  color: #1a73e8;
+}
+
+.page-header h1 {
+  margin: 0;
+}
+
+/*
+ * Карточка — такая же колонка, как страница, только шаг мельче.
+ *
+ * Иначе внутренние отступы жили бы на самих блоках, а они односторонние:
+ * `.add-form` носила margin-bottom, и стоило поставить её ПОД список, как
+ * она к нему прилипала. Здесь порядок блоков ни на что не влияет.
+ */
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--panel-gap);
+  padding: var(--card-pad);
+  background: #fff;
+  border-radius: var(--card-radius);
+  box-shadow: var(--card-shadow);
+}
+
+.panel > * {
+  margin-top: 0;
+  margin-bottom: 0;
+}
+
+.panel h2 {
+  margin: 0;
+  font-size: 2rem;
+}
+
+.panel h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+/* кнопка прямо в карточке: колонка растянула бы её во всю ширину, а
+   кнопка на всю карточку читается как полоса, а не как кнопка */
+.panel > button {
+  align-self: flex-start;
+}
+
+/* заголовок карточки, у которого справа кнопка: «?» стоит у названия, а не
+   уезжает в ряд кнопок — там его приняли бы за ещё одно действие */
+.panel-head {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+/* заголовок и действие по краям: кнопка под заголовком читается как первая
+   строка содержимого, а не как то, что делают с карточкой */
+.panel-head.spread {
+  justify-content: space-between;
+}
+
+.help-toggle {
+  width: 1.4rem;
+  min-height: 0;
+  height: 1.4rem;
+  padding: 0;
+  font-size: 0.85rem;
+  line-height: 1;
+  color: #1a73e8;
+  background: #fff;
+  border: 1px solid #cfd8e3;
+  border-radius: 999px;
+}
+
+.help-toggle:hover:not(:disabled) {
+  background: #eef3fd;
+  border-color: #1a73e8;
+}
+
+/* :not(:disabled) — не украшение, а вес: у правила выше он такой же, и без
+   него наведение перебивало бы раскрытое состояние */
+.help-toggle[aria-expanded='true']:not(:disabled) {
+  color: #fff;
+  background: #1a73e8;
+  border-color: #1a73e8;
+}
+
+/* карточка-счётчик: число и подпись — одно целое, им ритм не нужен */
+.panel.card-stat {
+  gap: 0.15rem;
+}
+
+/* --- выбор года и формы --- */
+
+.year-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+button.chip {
+  padding: 0.35rem 0.85rem;
+  color: #1a73e8;
+  background: #fff;
+  border-color: #c6c6c6;
+  border-radius: 999px;
+}
+
+/* «Просмотр» включён: та же кнопка, только вдавленная. Круглой таблеткой
+   она была, и рядом с прямоугольным «Сохранить» это читалось как два
+   разных сорта органов управления */
+button.secondary.pressed {
+  color: #1a73e8;
+  border-color: #1a73e8;
+  background: #e8f0fe;
+}
+
+button.chip:hover:not(:disabled) {
+  background: #f1f5fd;
+}
+
+button.chip.active {
+  color: #fff;
+  background: #1a73e8;
+  border-color: #1a73e8;
+}
+
+/* у наведения вес больше, чем у `.active`, и без своей строки оно красило
+   нажатый чип бледной заливкой под белым текстом — надпись пропадала.
+   Нажатый темнеет, а не светлеет */
+button.chip.active:hover:not(:disabled) {
+  background: #1557b0;
+  border-color: #1557b0;
+}
+
+/*
+ * ТУМБЛЕР — выбор из двух видов одним контролом (см. `Switch.jsx`).
+ *
+ * Сегменты равной ширины: подписи бывают разной длины («План» и
+ * «Сравнение»), а орган управления от этого перекашиваться не должен.
+ * Ширину бегунка считает число сегментов, поэтому третий вариант не
+ * потребует новой строки в стилях — только новой `data-active`.
+ */
+.switch {
+  position: relative;
+  display: inline-grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  box-sizing: border-box;
+  height: var(--control-height);
+  padding: 2px;
+  font-size: 0.85rem;
+  background: #f1f3f4;
+  border: 1px solid #c6c6c6;
+  border-radius: 999px;
+}
+
+.switch-thumb {
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  left: 2px;
+  width: calc((100% - 4px) / var(--switch-count));
+  background: #fff;
+  border-radius: 999px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.18);
+  transition: transform 0.15s ease;
+}
+
+/* бегунок едет на свою собственную ширину, то есть ровно на сегмент */
+.switch[data-active='1'] .switch-thumb {
+  transform: translateX(100%);
+}
+
+.switch[data-active='2'] .switch-thumb {
+  transform: translateX(200%);
+}
+
+.switch-option {
+  /* поверх бегунка: он в потоке первый и иначе накрыл бы подписи */
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 0.85rem;
+  color: #5f6368;
+  white-space: nowrap;
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.switch-option.active {
+  color: #1a73e8;
+  font-weight: 600;
+}
+
+/* сама радиокнопка — прозрачная и во весь сегмент */
+.switch-input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  opacity: 0;
+  cursor: inherit;
+}
+
+/* поле прозрачное, и рамка фокуса должна достаться подписи — иначе выбор
+   с клавиатуры не виден вовсе */
+.switch-option:has(input:focus-visible) {
+  outline: 2px solid #1a73e8;
+  outline-offset: -2px;
+}
+
+.switch:has(input:disabled) {
+  opacity: 0.6;
+}
+
+.switch:has(input:disabled) .switch-option {
+  cursor: default;
+}
+
+.inline-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: flex-end;
+  padding: var(--card-pad);
+  background: #fff;
+  border-radius: var(--card-radius);
+  box-shadow: var(--card-shadow);
+}
+
+/*
+ * Ряд внутри раздела — просто ряд, а не карточка.
+ *
+ * `.inline-form` задумана карточкой и живёт так на странице года; внутри
+ * серого блока материалов та же карточка читалась как вложенное окно —
+ * своя заливка, свой радиус, своя тень.
+ */
+.inline-form.bare {
+  padding: 0.5rem 0.65rem;
+  background: none;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.inline-form .field {
+  margin-bottom: 0;
+}
+
+/* --- модальное окно --- */
+
+/* dialog.showModal() сам центрирует окно по области просмотра, поэтому
+   диалог виден и при выделении в самом низу длинного календаря */
+.modal {
+  /* padding нулевой: только так клик по фону отличим от клика по форме */
+  padding: 0;
+  border: none;
+  border-radius: var(--card-radius);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.25);
+}
+
+.modal::backdrop {
+  background: rgba(0, 0, 0, 0.45);
+}
+
+.modal-body,
+.modal-body form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--modal-gap);
+}
+
+/* как и на странице: ритм задаёт контейнер, а не сами блоки */
+.modal-body > *,
+.modal-body form > * {
+  margin-top: 0;
+  margin-bottom: 0;
+}
+
+.modal-body {
+  width: min(30rem, calc(100vw - 3rem));
+  max-height: calc(100vh - 6rem);
+  overflow-y: auto;
+  padding: 1.25rem;
+}
+
+/*
+ * Шапка окна: заголовок и крестик, один на все окна (см. `Modal.jsx`).
+ *
+ * `align-items: start` — заголовок бывает в две строки, и крестик должен
+ * остаться у верхнего края, а не уехать в середину. `margin-left: auto`
+ * держит его справа и когда заголовка нет вовсе: у окна со своей шапкой
+ * (панель урока, надзор методиста) в этом ряду один крестик.
+ */
+.modal-head {
+  display: flex;
+  gap: 0.5rem;
+  align-items: start;
+}
+
+.modal-head h3 {
+  margin: 0;
+  /* заголовок отдаёт лишнее место действиям, а не растягивает ряд */
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.modal-actions {
+  display: flex;
+  flex: none;
+  gap: 0.4rem;
+  align-items: center;
+  margin-left: auto;
+}
+
+/* крестик и так прижат вправо; с соседями слева ему хватает своего зазора */
+.modal-actions + button.modal-close {
+  margin-left: 0.4rem;
+}
+
+/* цель у крестика 1.75rem: меньше — и на телефоне в неё не попасть */
+button.modal-close {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 1.75rem;
+  min-height: 1.75rem;
+  height: 1.75rem;
+  margin-left: auto;
+  padding: 0;
+  color: #5f6368;
+  font-size: 1rem;
+  line-height: 1;
+  background: none;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+button.modal-close:hover {
+  color: #202124;
+  background: var(--surface-1);
+}
+
+/* полка планов: строка тут — название, описание и три действия, и в
+   тридцати ремах они складываются в гармошку */
+.modal-body.shelf {
+  width: min(46rem, calc(100vw - 3rem));
+}
+
+/*
+ * Сетка вставки: три колонки с закреплённой шапкой.
+ *
+ * Она нарочно скромная — это поле для вставки, а не редактор таблиц.
+ * Прокручивается внутри себя: пятьсот строк не должны растягивать окно.
+ */
+.paste-grid {
+  border: 1px solid #e0e0e0;
+  border-radius: var(--row-radius);
+}
+
+/* прокручивается таблица, а не вся сетка: кнопка «добавить строку» и
+   подсказка под ней должны оставаться на виду, сколько бы строк ни
+   вставили — иначе их прячет собственный скролл */
+.paste-scroll {
+  max-height: 40vh;
+  overflow: auto;
+}
+
+.paste-grid table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+.paste-grid th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 0.3rem 0.5rem;
+  font-size: 0.85rem;
+  text-align: left;
+  background: var(--surface-1);
+  border-bottom: 1px solid #e0e0e0;
+}
+
+.paste-grid th.id,
+.paste-grid td.id {
+  width: 4.5rem;
+}
+
+.paste-grid th.drop,
+.paste-grid td.drop {
+  width: 2rem;
+  text-align: center;
+}
+
+.paste-grid td {
+  padding: 0;
+  border-bottom: 1px solid #f1f1f1;
+}
+
+/* поле во всю ячейку и без рамки: рамку рисует сама сетка, иначе на
+   пятистах строках это тысяча пятьсот прямоугольников */
+.paste-grid td input {
+  width: 100%;
+  min-width: 0;
+  height: auto;
+  padding: 0.25rem 0.5rem;
+  font: inherit;
+  font-size: 0.9rem;
+  background: none;
+  border: 0;
+  border-radius: 0;
+}
+
+.paste-grid input:focus {
+  outline: 2px solid #1a73e8;
+  outline-offset: -2px;
+}
+
+/* выделенный прямоугольник: стереть его целиком — Delete */
+.paste-grid td.picked {
+  background: #e4edfc;
+}
+
+.paste-grid > .row {
+  padding: 0.4rem 0.5rem;
+  border-top: 1px solid #e0e0e0;
+}
+
+/*
+ * Откуда брать план — один переключатель, а не две кнопки рядом.
+ *
+ * Двумя отдельными таблетками это читалось как два действия («нажать
+ * Файл», «нажать Вставку»), хотя вопрос один и ответов у него два. Общая
+ * рамка и черта между половинами говорят это без слов.
+ */
+.source-switch {
+  align-self: start;
+  border: 1px solid #c6c6c6;
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.source-switch button.chip {
+  border: 0;
+  border-radius: 0;
+}
+
+.source-switch button.chip + button.chip {
+  border-left: 1px solid #c6c6c6;
+}
+
+/*
+ * Сравнение с эталоном: цвет слева, а не заливка строки.
+ *
+ * Заливка на сорока строках рябит и спорит с полосами недель, а глазами
+ * ведут по левому краю — там и стоит полоса с одним знаком: «+» добавлено,
+ * «−» удалено, «±» правка, «↕» переехало. Цвета те же, что везде в
+ * приложении: зелёный записи, красный долга, янтарный правки, синий ссылок.
+ */
+.plan-diff .diff-rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.diff-row {
+  display: flex;
+  gap: 0.5rem;
+  align-items: baseline;
+  padding: 0.15rem 0.5rem;
+  border-left: 3px solid transparent;
+}
+
+.diff-row .diff-mark {
+  width: 0.9rem;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+  color: #9aa0a6;
+}
+
+.diff-row .diff-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* тема — тем же шрифтом, что в самом плане: строка, под которой список */
+.diff-row.section .diff-title {
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.diff-row.added {
+  border-left-color: #1c7a34;
+  background: #eef7f0;
+}
+
+.diff-row.removed {
+  border-left-color: #c5221f;
+  background: #fdecea;
+}
+
+/* удалённой строки в плане уже нет — и читается она как след, а не как урок */
+.diff-row.removed .diff-title {
+  color: #80868b;
+  text-decoration: line-through;
+}
+
+.diff-row.changed {
+  border-left-color: #b06000;
+  background: #fdf6e9;
+}
+
+.diff-row.moved {
+  border-left-color: #1a73e8;
+  background: #eef3fd;
+}
+
+.diff-counts {
+  display: flex;
+  gap: 1rem;
+}
+
+.diff-count b {
+  color: #202124;
+}
+
+.diff-count.added b {
+  color: #1c7a34;
+}
+
+.diff-count.removed b {
+  color: #c5221f;
+}
+
+/* сетке вставки нужна ширина: три колонки в узком окне обрезают названия */
+.modal-body.paste-window {
+  width: min(44rem, calc(100vw - 3rem));
+}
+
+/* ячейка сетки — не поле окна: рамку рисует сама таблица, иначе на пятистах
+   строках это полторы тысячи прямоугольников со скруглениями */
+.modal-body .paste-grid input[type='text'] {
+  /* поле шириной в ячейку **вместе** с полями: без этого 100% + padding
+     выезжали за колонку, и правый край id налезал на «Тему» */
+  box-sizing: border-box;
+  height: auto;
+  padding: 0.25rem 0.5rem;
+  font-size: 0.9rem;
+  background: none;
+  border: 0;
+  border-radius: 0;
+}
+
+/*
+ * Состав курса: три списка одной формы и поле для вставки.
+ *
+ * Списка три — учатся, ждут первого входа, сняты, — и различаются они не
+ * вёрсткой, а тем, что стоит справа: крестик, крестик и «вернуть». Одна
+ * форма на все три намеренно: это один и тот же вопрос «кто в курсе», и
+ * три разных строки читались бы как три разные сущности.
+ *
+ * Строка — сетка, а не флекс: имя и адрес разной длины, и во флексе адрес
+ * отжимал бы имя в перенос, пока справа пусто.
+ */
+.modal-body.roster-window {
+  width: min(38rem, calc(100vw - 3rem));
+}
+
+.roster {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.roster li {
+  display: grid;
+  grid-template-columns: minmax(6rem, 1fr) minmax(8rem, 1.2fr) auto;
+  align-items: baseline;
+  gap: 0.3rem 0.6rem;
+  padding: 0.3rem 0.5rem;
+  border-radius: var(--row-radius);
+}
+
+/* заливка через строку вместо линий: на тридцати строках линии рябят */
+.roster li:nth-child(even) {
+  background: var(--surface-1);
+}
+
+/* снятые: то же самое, только приглушённее — курс для них в прошлом */
+.roster.past .name {
+  color: #666;
+}
+
+.roster-paste textarea {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 0.5rem 0.65rem;
+  font: inherit;
+  color: inherit;
+  background: #fff;
+  border: 1px solid #c6c6c6;
+  border-radius: 4px;
+  resize: vertical;
+}
+
+.roster-paste textarea:focus {
+  outline: 2px solid #1a73e8;
+  outline-offset: -1px;
+  border-color: #1a73e8;
+}
+
+.modal-body h3 {
+  margin: 0;
+  font-size: 1.1rem;
+}
+
+.modal-body h3:not(:first-child) {
+  margin-top: 0.5rem;
+}
+
+.modal-body .hint {
+  margin: 0;
+}
+
+.modal-body input[type='text'],
+.modal-body input[type='date'],
+.modal-body input:not([type]) {
+  padding: 0.5rem 0.65rem;
+  font: inherit;
+  color: inherit;
+  border: 1px solid #c6c6c6;
+  border-radius: 4px;
+}
+
+.modal-body input:focus {
+  outline: 2px solid #1a73e8;
+  outline-offset: -1px;
+  border-color: #1a73e8;
+}
+
+.modal-body label {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.9rem;
+}
+
+.modal-body label.checkbox {
+  gap: 0.4rem;
+  font-weight: 400;
+}
+
+/* правило выше — про строку «чекбокс и подпись», и в колонке оно
+   центрирует подпись над полем. Поле с подписью сверху раскладывает себя
+   само, поэтому исключение стоит здесь же, рядом с причиной */
+.modal-body label.field-with-hint {
+  align-items: stretch;
+}
+
+.modal-body textarea {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 0.5rem 0.65rem;
+  font: inherit;
+  color: inherit;
+  background: #fff;
+  border: 1px solid #c6c6c6;
+  border-radius: 4px;
+  resize: vertical;
+}
+
+.modal-body select {
+  padding: 0.35rem 0.4rem;
+  font: inherit;
+  border: 1px solid #c6c6c6;
+  border-radius: 4px;
+  background: #fff;
+}
+
+/*
+ * Списки карточек: колонка с тем же шагом, что и у страницы.
+ *
+ * Список без своего правила остаётся при браузерных умолчаниях — сорок
+ * пикселей слева и маркеры, — и тогда карточки в нём стоят уже формы над
+ * ними. Ровно это и было в разделе «Школы».
+ */
+.school-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--card-gap);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* просмотр шаблона в библиотеке: заголовки тем и уроки под ними. Отступ
+   уроку даёт не браузерный маркер, а собственное правило ниже */
+.plan-preview {
+  margin: 0;
+  padding: 0;
+  max-height: 18rem;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.plan-preview li {
+  padding: 0.15rem 0;
+  font-size: 0.9rem;
+}
+
+.plan-preview li.lesson {
+  padding-left: 1rem;
+}
+
+.plan-preview .hint {
+  margin: 0 0 0 0.4rem;
+}
+
+/* --- список классов --- */
+
+.class-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.class-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.6rem 0.75rem;
+  background: #fff;
+  border-radius: var(--row-radius);
+  box-shadow: var(--row-shadow);
+}
+
+.class-list li + li {
+  margin-top: var(--row-gap);
+}
+
+/*
+ * Полка планов внутри окна: название с описанием слева, действия справа.
+ *
+ * Строка держится сеткой, а не флексом: в ней четыре разных по природе
+ * ячейки, и во флексе они делили место пропорционально содержимому —
+ * название ломалось в три строки, пока справа оставалось пусто.
+ *
+ * Выбранная запись подсвечена рамкой: выбирают нажатием на название, и без
+ * пометки нажатие выглядит как «ничего не произошло».
+ */
+.template-list li {
+  display: grid;
+  grid-template-columns: minmax(8rem, 1fr) minmax(9rem, 1.2fr) auto;
+  align-items: baseline;
+  gap: 0.35rem 0.6rem;
+}
+
+.template-list button.link.name {
+  text-align: left;
+  font-weight: 600;
+}
+
+.template-list .hint {
+  min-width: 0;
+}
+
+.template-list .badge {
+  grid-column: 1;
+  grid-row: 2;
+  justify-self: start;
+}
+
+.template-list li.chosen {
+  background: #e8f0fe;
+}
+
+.template-list .row-actions {
+  display: flex;
+  gap: 0.6rem;
+  white-space: nowrap;
+}
+
+.class-list input {
+  flex: 1;
+  padding: 0.25rem 0.4rem;
+  font: inherit;
+  border: 1px solid #1a73e8;
+  border-radius: 4px;
+}
+
+/* --- раздел «Школа»: подменю и карточки --- */
+
+.subnav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-bottom: 1rem;
+  border-bottom: 1px solid #e0e0e0;
+}
+
+.subnav a {
+  padding: 0.4rem 0.7rem;
+  color: #5f6368;
+  text-decoration: none;
+  border-bottom: 2px solid transparent;
+}
+
+.subnav a:hover {
+  color: #1a73e8;
+}
+
+.subnav a.active {
+  color: #1a73e8;
+  font-weight: 600;
+  border-bottom-color: #1a73e8;
+}
+
+.summary-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(8rem, 1fr));
+  gap: 0.6rem;
+  /* ритм внутри карточки задаёт .panel; свой отступ его удваивал */
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.summary-cards li {
+  display: flex;
+  flex-direction: column;
+  padding: 0.6rem 0.75rem;
+  background: #fff;
+  border-radius: var(--row-radius);
+  box-shadow: var(--row-shadow);
+}
+
+.summary-cards .value {
+  font-size: 1.6rem;
+  font-weight: 600;
+  line-height: 1.1;
+}
+
+.summary-cards .label {
+  color: #5f6368;
+  font-size: 0.85rem;
+}
+
+.hint.warning {
+  color: #b26500;
+}
+
+.next-step {
+  margin-top: 0.8rem;
+  padding: 0.5rem 0.7rem;
+  background: #e8f0fe;
+  border-radius: var(--row-radius);
+}
+
+/* строка человека или курса: несколько рядов внутри одной карточки —
+   имя и роль сверху, назначения под ними */
+.people-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.people-list > li {
+  padding: 0.6rem 0.75rem;
+  background: #fff;
+  border-radius: var(--row-radius);
+  box-shadow: var(--row-shadow);
+}
+
+.people-list > li + li {
+  margin-top: var(--row-gap);
+}
+
+.people-list .row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.people-list .row + .row {
+  margin-top: 0.35rem;
+}
+
+.people-list .row.courses {
+  gap: 0.3rem;
+}
+
+.people-list .name {
+  font-weight: 600;
+}
+
+/* отвязка от школы — второстепенное действие строки: прижато вправо и
+   набрано как подпись, иначе читается заголовком рядом с именем */
+.people-list .detach {
+  margin-left: auto;
+  font-size: 0.8125rem;
+}
+
+.people-list .hint.level {
+  min-width: 4rem;
+}
+
+/*
+ * Справочник параллелей: число слева от названия.
+ *
+ * Одна и та же колонка рисуется двумя разными элементами: год обучения
+ * правится, только пока на параллели нет курсов, — иначе это `span`, а не
+ * `button`. У `button.link` свой кегль (1rem) и `line-height: 1`, поэтому
+ * числа у занятых параллелей выходили мельче соседних и сидели ниже: в
+ * демо-школе курсы как раз у 6 и 9, и виноватыми выглядели цифры.
+ *
+ * Поэтому размер, высота строки и отступы задаются здесь — колонке целиком,
+ * а не каждому из двух её обличий.
+ */
+.grade-list .level {
+  min-width: 2rem;
+  padding: 0;
+  font-size: 0.8125rem;
+  line-height: inherit;
+  text-align: right;
+}
+
+button.link.hint.level {
+  flex: 0 0 auto;
+}
+
+.level-input {
+  width: 4rem;
+}
+
+.field-with-hint abbr {
+  margin-left: 0.25rem;
+  padding: 0 0.3rem;
+  color: #1a73e8;
+  border: 1px solid #cfd8e3;
+  border-radius: 999px;
+  text-decoration: none;
+  cursor: help;
+}
+
+.empty-inline {
+  padding: 0.6rem 0.75rem;
+  background: #f8f9fa;
+  border-radius: var(--row-radius);
+}
+
+.preset-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.6rem;
+}
+
+.empty-inline .row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: 0.5rem 0;
+}
+
+/*
+ * Плашка: короткое значение в скруглённой заливке.
+ *
+ * Отступы симметричные — иначе текст стоит не по центру, и на «5» в
+ * кружке это видно сразу. Урезан правый отступ только там, где справа
+ * действительно есть крестик: он сам добавляет воздух, и с полным
+ * отступом плашка становится вдвое шире содержимого.
+ */
+.tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  padding: 0.15rem 0.5rem;
+  line-height: 1.35;
+  background: #f1f3f4;
+  border-radius: 999px;
+  font-size: 0.85rem;
+}
+
+.tag:has(button) {
+  padding-right: 0.2rem;
+}
+
+/* курс, из которого ученика сняли: он остаётся в списке, потому что
+   сделанное там никуда не делось, но говорит о прошлом */
+.tag.past {
+  padding-right: 0.5rem;
+  color: #666;
+  background: transparent;
+  border: 1px dashed #c6c6c6;
+}
+
+button.link.name {
+  flex: 1;
+  padding: 0.25rem 0.4rem;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  border: 1px solid transparent;
+  border-radius: 4px;
+}
+
+button.link.name:hover:not(:disabled) {
+  color: inherit;
+  background: #f1f5fd;
+  border-color: #dbe4f5;
+}
+
+/*
+ * Кнопка-ссылка наследует кегль соседей, а не навязывает свой.
+ *
+ * Пока здесь стояли font-size: 1rem и line-height: 1, такая кнопка рядом с
+ * подписью (0.8125rem) была крупнее её и сидела на другой базовой линии.
+ * Заметили это на колонке лет обучения, но случай общий: кнопка-ссылка
+ * встречается и в тегах, и в строках плана, где кегль свой.
+ */
+button.link {
+  padding: 0.1rem 0.4rem;
+  color: #777;
+  background: none;
+  border: none;
+  font-size: inherit;
+  line-height: inherit;
+}
+
+button.link:hover:not(:disabled) {
+  color: #b00020;
+  background: none;
+}
+
+/*
+ * Ссылка, стоящая в ряду с кнопками, выглядит кнопкой.
+ *
+ * В одном ряду одинаковая форма важнее разницы «действие или переход»:
+ * подчёркнутый текст между двумя кнопками читается как сбой вёрстки, что и
+ * было видно на странице урока. Прецедент рядом — `.step-action` на главной,
+ * там такая же ссылка нарисована кнопкой.
+ *
+ * Отдельный класс, а не `button.secondary`: селекторы кнопок в проекте
+ * привязаны к элементу, и `<a>` в них не попадает. Именно на этом
+ * обжигаются — `className="link"` на ссылке не значит **ничего**, потому
+ * что правило одно и то же зовётся `button.link`.
+ */
+a.link-button {
+  display: inline-flex;
+  align-items: center;
+  min-height: 1.75rem;
+  padding: 0.15rem 0.6rem;
+  color: #1a73e8;
+  font-size: 0.85rem;
+  text-decoration: none;
+  white-space: nowrap;
+  background: #fff;
+  border: 1px solid #c6c6c6;
+  border-radius: 4px;
+}
+
+a.link-button:hover {
+  background: #f1f5fd;
+}
+
+/*
+ * Курс в строке заголовка: «Учебный план — 7Б Физика».
+ *
+ * Чипами это было, и на пятнадцати курсах учителя музыки полтора десятка
+ * кнопок занимали две строки над содержимым — ради выбора, который делают
+ * раз за заход. Селект не растёт от их числа вовсе.
+ */
+.page-header .course-picker {
+  /* рядом с заголовком, а не у дальнего края: у шапки `space-between`, и
+     свободное место должно уйти после селекта, а не перед ним */
+  margin-right: auto;
+  height: var(--control-height);
+  max-width: min(20rem, 60vw);
+  padding: 0.2rem 0.5rem;
+  font: inherit;
+  font-size: 1rem;
+  color: inherit;
+  background: #fff;
+  border: 1px solid #c6c6c6;
+  border-radius: 4px;
+}
+
+.page-header .course-picked {
+  margin-right: auto;
+  font-size: 1rem;
+  color: #5f6368;
+}
+
+/*
+ * Курс и то, чем его ищут, — одной группой в шапке.
+ *
+ * Сужение по учителю и предмету появляется только там, где в селекте лежат
+ * чужие курсы (у методиста и администратора школы их несколько десятков), и
+ * стоять оно обязано вплотную к самому селекту: это не фильтр к странице, а
+ * способ добраться до одного пункта в длинном списке.
+ *
+ * `margin-right: auto` переезжает сюда с селекта — иначе свободное место
+ * шапки встало бы между ним и его же фильтрами.
+ */
+.page-header .course-choice {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+  margin-right: auto;
+}
+
+.page-header .course-choice .course-picker {
+  margin-right: 0;
+}
+
+.page-header .course-filter {
+  height: var(--control-height);
+  max-width: min(12rem, 40vw);
+  padding: 0.2rem 0.4rem;
+  font: inherit;
+  font-size: 0.9rem;
+  color: #5f6368;
+  background: #fff;
+  border: 1px solid #dadce0;
+  border-radius: 4px;
+}
+
+/* --- календарь --- */
+
+.calendar-layout {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.5rem;
+  align-items: flex-start;
+}
+
+.calendar {
+  flex: 1 1 32rem;
+}
+
+.calendar-side {
+  flex: 0 1 18rem;
+  display: flex;
+  flex-direction: column;
+  gap: var(--card-gap);
+}
+
+.months {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr));
+  gap: var(--card-gap);
+}
+
+.month {
+  padding: var(--card-pad-tight);
+  background: #fff;
+  border-radius: var(--card-radius);
+  box-shadow: var(--card-shadow);
+}
+
+.month h3 {
+  margin: 0 0 0.5rem;
+  font-size: 0.95rem;
+  text-transform: capitalize;
+}
+
+.month-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 2px;
+  /* протягивание мышью не должно выделять текст */
+  user-select: none;
+}
+
+.weekday {
+  padding-bottom: 0.25rem;
+  font-size: 0.7rem;
+  color: #777;
+  text-align: center;
+}
+
+.day {
+  padding: 0;
+  aspect-ratio: 1;
+  font-size: 0.8rem;
+  color: #222;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  background: #eceff1;
+}
+
+.day.blank {
+  background: none;
+}
+
+.day.study {
+  background: #d7ecd9;
+}
+
+.day.holiday {
+  background: #f6c6c2;
+}
+
+.day.vacation {
+  background: #fde3a7;
+}
+
+.day.weekend {
+  background: #e6e6e6;
+  color: #888;
+}
+
+.day:hover:not(:disabled):not(.blank) {
+  border-color: #1a73e8;
+}
+
+.day.selected {
+  outline: 2px solid #1a73e8;
+  outline-offset: -2px;
+}
+
+/* выходной, на котором всё-таки стоит праздник или каникулы */
+.day.noted {
+  position: relative;
+}
+
+.day.noted::after {
+  content: '';
+  position: absolute;
+  right: 2px;
+  bottom: 2px;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: #e57373;
+}
+
+.day:disabled {
+  cursor: progress;
+}
+
+/* --- термы --- */
+
+/* цвет привязан к порядку терма в году, см. termColors.js */
+.swatch.term-1, .day.term-1 { --term: #cfe3ff; }
+.swatch.term-2, .day.term-2 { --term: #d6f0d8; }
+.swatch.term-3, .day.term-3 { --term: #ffe6c7; }
+.swatch.term-4, .day.term-4 { --term: #e8d9f7; }
+.swatch.term-5, .day.term-5 { --term: #ffd6e0; }
+
+.swatch.term-1,
+.swatch.term-2,
+.swatch.term-3,
+.swatch.term-4,
+.swatch.term-5 {
+  background: var(--term);
+}
+
+.swatch.no-term {
+  background: repeating-linear-gradient(
+    45deg,
+    #eee,
+    #eee 3px,
+    #fff 3px,
+    #fff 6px
+  );
+}
+
+.swatch.noted {
+  position: relative;
+  background: #e6e6e6;
+}
+
+.swatch.noted::after {
+  content: '';
+  position: absolute;
+  right: 1px;
+  bottom: 1px;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: #e57373;
+}
+
+/* полоса терма сверху ячейки: сам день красится по статусу */
+.day.term-1,
+.day.term-2,
+.day.term-3,
+.day.term-4,
+.day.term-5 {
+  box-shadow: inset 0 3px 0 var(--term);
+}
+
+.day.no-term:not(.blank) {
+  /* вне термов — приглушаем: это каникулы между четвертями */
+  opacity: 0.75;
+}
+
+.terms {
+  margin: 0 0 0.5rem;
+  padding: 0;
+  list-style: none;
+}
+
+.terms li {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.35rem 0 0.35rem 0.5rem;
+  border-left: 4px solid #ccc;
+}
+
+.terms li.term-1 { border-left-color: #7aa8ea; }
+.terms li.term-2 { border-left-color: #7fbe86; }
+.terms li.term-3 { border-left-color: #e0a75c; }
+.terms li.term-4 { border-left-color: #a98bd4; }
+.terms li.term-5 { border-left-color: #e08098; }
+
+.terms strong {
+  display: block;
+  font-size: 0.9rem;
+}
+
+.terms .hint {
+  margin: 0;
+}
+
+.terms li > div {
+  flex: 1;
+}
+
+.term-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.term-form input[type='text'],
+.term-form input:not([type]) {
+  padding: 0.35rem 0.5rem;
+  font: inherit;
+  border: 1px solid #c6c6c6;
+  border-radius: 4px;
+}
+
+.term-form .row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+  font-size: 0.85rem;
+}
+
+.term-form input[type='date'] {
+  padding: 0.3rem 0.4rem;
+  font: inherit;
+  border: 1px solid #c6c6c6;
+  border-radius: 4px;
+}
+
+/* --- раскладка --- */
+
+.cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+  gap: var(--card-gap);
+}
+
+.card-stat h2 {
+  margin: 0;
+  font-size: 2rem;
+}
+
+.card-stat h2.small {
+  font-size: 1.1rem;
+}
+
+.card-stat.good h2 {
+  color: #1c7a34;
+}
+
+.card-stat.bad h2 {
+  color: #b00020;
+}
+
+/*
+ * «Раскладка» — строка на курс и подробности под ней.
+ *
+ * Ленты уроков здесь больше нет: она уехала в план, где её правят. Осталось
+ * то, что отвечает на три вопроса за секунду — где я, успеваю ли, что
+ * дальше, — и по всем курсам сразу.
+ */
+.progress-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--card-gap);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* строка курса — кнопка, поэтому вес селектора выше базового `button`:
+   иначе наведение красит её синим, как обычную кнопку */
+button.progress-head {
+  display: grid;
+  grid-template-columns: minmax(9rem, 1.2fr) minmax(10rem, 1.4fr) minmax(11rem, 1.2fr) auto;
+  gap: 0.5rem;
+  align-items: baseline;
+  width: 100%;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+
+/* Чей это план: имя под названием курса, пометка рядом с именем.
+   Отдельной ячейкой — иначе пятый ребёнок сетки растягивается на колонку
+   соседа, и «ждёт ответа» превращается в полосу во всю строку. */
+.progress-head .whose {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  grid-column: 1;
+  justify-self: start;
+  color: #5f6368;
+  font-size: 0.9rem;
+}
+
+.badge.waiting {
+  background: #fde7c8;
+  color: #8a4b00;
+}
+
+button.progress-head:hover:not(:disabled) {
+  background: #f8faff;
+}
+
+.progress-head .course {
+  font-weight: 600;
+}
+
+.progress-head .where,
+.progress-head .reserve {
+  font-size: 0.9rem;
+  color: #5f6368;
+}
+
+/* плашка состояния: одна на курс, и промежуточных состояний у неё нет */
+.badge.state {
+  justify-self: end;
+  padding: 0.1rem 0.6rem;
+  font-size: 0.8rem;
+  white-space: nowrap;
+}
+
+.badge.state.good {
+  color: #1c7a34;
+  background: #e6f4ea;
+}
+
+.badge.state.bad {
+  color: #b00020;
+  background: #fce8e6;
+}
+
+/*
+ * Плашка, которую можно нажать: «записано» отзывает запись.
+ *
+ * Форма остаётся плашкой — кнопочные умолчания (синяя заливка, рост в
+ * 2.25rem, белый текст) снимаются, — потому что нажатие тут не действие
+ * рядом с состоянием, а само состояние: повторное нажатие снимает, как
+ * отметка в журнале и вердикт в проверке работ.
+ */
+button.badge {
+  color: inherit;
+  font: inherit;
+  border: 1px solid transparent;
+  cursor: pointer;
+}
+
+button.badge:hover:not(:disabled) {
+  border-color: currentColor;
+}
+
+.progress-details .card-stat.good h2 {
+  color: #1c7a34;
+}
+
+.progress-details .card-stat.bad h2 {
+  color: #b00020;
+}
+
+/* два числа в одной плашке: они разные по смыслу, и сальдо тут врёт */
+/*
+ * Плашка в две строки — сетка, а не два абзаца.
+ *
+ * Числа в ней разной длины (93 и 102), и пока каждая строка считала свою
+ * ширину сама, подписи начинались на разной вертикали, а числа стояли
+ * враскачку. Строки поэтому раскрываются в общую сетку (`display:
+ * contents`): колонка чисел одна на обе, и выключка у неё правая.
+ */
+.card-stat.pairs {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  align-items: baseline;
+  column-gap: 0.35rem;
+  /* строки почти вплотную: это одна плашка в две строки, а не две плашки.
+     На странице плана то же значение приходится повторять — там у соседей
+     `gap: 0`, и он перебивает этот */
+  row-gap: 0.1rem;
+}
+
+/* со значком колонок три: значок, число, подпись */
+.card-stat.pairs.marked {
+  grid-template-columns: max-content max-content 1fr;
+}
+
+.card-stat .pair {
+  display: contents;
+  margin: 0;
+  font-size: 0.9rem;
+  color: #5f6368;
+}
+
+.card-stat .pair b {
+  justify-self: end;
+  font-size: 1.2rem;
+  font-variant-numeric: lining-nums tabular-nums;
+  color: #202124;
+}
+
+/* подпись — обычный текст плашки: числу свой размер, ей свой */
+.card-stat .pair > span:not(.plan-state) {
+  font-size: 0.9rem;
+  color: #5f6368;
+}
+
+/* дефицит в шапке курса — словами и красным */
+.progress-head .reserve.overflow {
+  color: #b00020;
+}
+
+/* резерв — единственный, у кого заливка значит смысл, а не форму */
+.progress-details .cards .card-stat.good[data-card='reserve'] {
+  background: #e9f6ec;
+}
+
+.progress-details .cards .card-stat.bad[data-card='reserve'] {
+  background: #fdecea;
+}
+
+.progress-themes {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.progress-themes li {
+  display: flex;
+  gap: 0.5rem;
+  justify-content: space-between;
+  max-width: 24rem;
+}
+
+.progress-themes b {
+  font-variant-numeric: lining-nums tabular-nums;
+}
+
+/* состояние утверждения над планом: одна строка, цвет по состоянию */
+.hint.approval.pending {
+  color: #1967d2;
+}
+
+.hint.approval.returned {
+  color: #b00020;
+}
+
+/* «методист этого курса — вы»: та же полоса, что у ожидания, но своим
+   классом — иначе на странице оказываются две одинаковые строки, и ни
+   тест, ни глаз не отличают их друг от друга */
+.hint.approval.self {
+  color: #8a6d00;
+}
+
+.hint.approval.draft {
+  color: #b06000;
+}
+
+/* счётчик в баре: методист должен видеть, что его ждут, не заходя в раздел */
+.nav-count {
+  margin-left: 0.35rem;
+  padding: 0 0.35rem;
+  font-size: 0.75rem;
+  color: #fff;
+  background: #b00020;
+  border-radius: 999px;
+}
+
+/* присланный план в окне методиста: тот снимок, что прислали */
+.review-plan {
+  max-height: 40vh;
+  margin: 0;
+  padding: 0.5rem 0.75rem;
+  overflow-y: auto;
+  list-style: none;
+  background: #f8f9fa;
+  border-radius: var(--row-radius);
+}
+
+.review-plan .section {
+  margin-top: 0.4rem;
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.review-plan .lesson {
+  padding-left: 1.25rem;
+}
+
+.people-list .row.methodist {
+  gap: 0.75rem;
+  font-size: 0.9rem;
+}
+
+.progress-details {
+  display: flex;
+  flex-direction: column;
+  gap: var(--card-gap);
+  margin-top: var(--card-gap);
+  padding-top: var(--card-gap);
+  border-top: 1px solid #eee;
+}
+
+/* подробности лежат внутри карточки курса, и свои карточки им ни к чему */
+.progress-details .panel {
+  padding: 0;
+  box-shadow: none;
+}
+
+/*
+ * Четыре метрики — четыре одинаковые плашки.
+ *
+ * Плашка была только у резерва, остальные стояли голым текстом, и ряд
+ * читался как случайный набор. Одинаковые отступ, заливка и высота говорят
+ * обратное: это четыре ответа на один вопрос, и различаться им положено
+ * только числом. Цветом выделен один резерв — единственный показатель, у
+ * которого «плюс» и «минус» значат разное.
+ */
+.progress-details .cards {
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 0.7rem;
+}
+
+.progress-details .cards .card-stat {
+  gap: 0.15rem;
+  padding: 0.8rem;
+  background: var(--surface-1);
+  border-radius: var(--card-radius);
+}
+
+.progress-next {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.progress-next li {
+  display: grid;
+  grid-template-columns: 6rem 1fr;
+  gap: 0.5rem;
+  align-items: baseline;
+}
+
+.progress-next .when {
+  font-size: 0.85rem;
+  color: #5f6368;
+}
+
+.progress-next .when em {
+  font-style: normal;
+  color: #9aa0a6;
+}
+
+/* --- учебный план --- */
+
+/* тонкая черта в ряду кнопок: слева файл, справа библиотека. Ряд
+   переносится, и на узком экране черта уезжает вместе с ним — это лучше,
+   чем разбивать четыре кнопки на две карточки ради одного различия */
+.actions-divider {
+  align-self: center;
+  width: 1px;
+  height: 1.4rem;
+  background: #e0e0e0;
+}
+
+/* формат выгрузки: две кнопки, читающиеся как один переключатель. Рост у
+   них общий с соседними кнопками — иначе ряд ломает сторож высот, и
+   правильно делает: разновысокие контролы в ряду и есть поломка */
+.format-switch {
+  display: flex;
+  gap: 0.25rem;
+}
+
+/* только по горизонтали: вертикальные отступы задаёт строка формы, и
+   переписать их значит выбиться из ряда по высоте — сторож это ловит */
+.format-switch button.chip {
+  padding-left: 0.7rem;
+  padding-right: 0.7rem;
+  font-size: 0.8rem;
+}
+
+.format-switch button.chip.active {
+  color: #fff;
+  background: #1a73e8;
+  border-color: #1a73e8;
+}
+
+/* у наведения вес больше, чем у `.active`, и без своей строки оно красило
+   нажатый чип бледной заливкой под белым текстом — надпись пропадала.
+   Нажатый темнеет, а не светлеет */
+button.chip.active:hover:not(:disabled) {
+  background: #1557b0;
+  border-color: #1557b0;
+}
+
+/*
+ * Заголовок темы — полоса с заливкой, как в раскладке.
+ *
+ * Раньше он выглядел обычной строкой с теми же кнопками, и границы блока
+ * не читались вовсе: сорок строк подряд сливались в одну ленту.
+ */
+/*
+ * Глава отличается от урока только шрифтом.
+ *
+ * Заливка, полоса и рамка сдвигали её маркер относительно маркеров уроков
+ * и делали из строки плашку. Прописные, полужирный и лёгкая разрядка
+ * читаются как разделитель не хуже, а колонки остаются общими.
+ */
+.plan-row.section-head {
+  padding-top: 0.5rem;
+}
+
+.plan-row.section-head .title {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: #3c4043;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+/* заголовок терма и черта «сегодня» — те же, что на «Раскладке»: две
+   страницы про одно и то же не должны выглядеть по-разному */
+.plan-term {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: baseline;
+  margin: 0.6rem 0 0.25rem;
+  padding: 0.2rem 0.1rem;
+  border-bottom: 2px solid #d7dce3;
+}
+
+.plan-term strong {
+  font-size: 0.85rem;
+}
+
+/*
+ * Разделитель недели — самый лёгкий из трёх: терм > тема > неделя.
+ *
+ * Неделя удобнее как единица планирования, чем отдельная дата, а число
+ * уроков рядом говорит больше, чем кажется: меньше обычного — значит там
+ * праздник или короткая неделя перед каникулами.
+ */
+.plan-week {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  align-items: baseline;
+  margin: 0.35rem 0 0.1rem;
+  padding: 0 0.4rem;
+  font-size: 0.75rem;
+  color: #80868b;
+}
+
+.plan-week > span:first-child {
+  font-weight: 600;
+}
+
+.plan-week .hint {
+  font-size: 0.75rem;
+}
+
+/*
+ * Черта «сегодня». Прописных на ней больше нет: слово и так стоит красным
+ * поперёк ленты, и капс добавлял к этому только крик.
+ *
+ * Набрана она **вся одинаково** — «Сегодня – понедельник, 17 августа» это
+ * одна фраза, а не подпись со значением. Слово было мельче и жирнее, дата
+ * крупнее и приглушённее (она приезжала классом `.hint`), и на одной
+ * короткой строке эта разница читалась как случайность вёрстки.
+ */
+.plan-today {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  margin: 0.4rem 0;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #b00020;
+}
+
+.plan-today::after {
+  content: '';
+  flex: 1;
+  height: 2px;
+  background: #b00020;
+  border-radius: 2px;
+}
+
+/* Своих правил у половинок черты нет ни одного, и это тоже решение: обе
+   берут размер, вес и цвет у строки. Пока дата приезжала классом `.hint`,
+   она несла и свой кегль, и свой верхний отступ — из-за него, при
+   центрировании по внешней коробке, она сидела ниже слова. */
+
+/* плашка, по которой можно щёлкнуть: ведёт на «Раскладку» */
+.card-stat.link-card {
+  align-items: flex-start;
+  min-height: 0;
+  color: inherit;
+  text-align: left;
+  background: #fff;
+  cursor: pointer;
+  border: 1px solid transparent;
+}
+
+.card-stat.link-card:hover:not(:disabled) {
+  background: #f8faff;
+  border-color: #c3d5f5;
+}
+
+/* плашки плана мельче, чем на «Раскладке»: там они и есть страница, здесь
+   над ними ещё сорок строк, ради которых всё и затевалось */
+.plan-cards {
+  grid-template-columns: repeat(auto-fit, minmax(7.5rem, 1fr));
+  gap: 0.5rem;
+  margin-bottom: 0.25rem;
+}
+
+.plan-cards .card-stat {
+  padding: 0.4rem 0.6rem;
+  gap: 0;
+}
+
+/* плашка в две строки — сетка, и зазор ей нужен по горизонтали: у соседей
+   он обнулён, потому что там число и подпись стоят друг под другом */
+.plan-cards .card-stat.pairs {
+  column-gap: 0.35rem;
+  row-gap: 0.1rem;
+}
+
+.plan-cards .card-stat h2 {
+  font-size: 1.5rem;
+}
+
+.plan-cards .card-stat h2.small {
+  font-size: 0.95rem;
+}
+
+.plan-cards .hint {
+  font-size: 0.75rem;
+}
+
+/*
+ * Список курсов школы — строки в одной рамке, а не карточки с тенями.
+ *
+ * У каждого курса две роли и два списка людей; развёрнутые формы у семи
+ * курсов давали четырнадцать селектов на экране, и страница переставала
+ * читаться. Поэтому строка свёрнута до колонок, а формы открываются по
+ * нажатию — раскрыт всегда ровно один курс.
+ */
+.course-list {
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  list-style: none;
+  border: 1px solid #e0e0e0;
+  border-radius: var(--card-radius);
+}
+
+.course-row + .course-row {
+  border-top: 1px solid #eee;
+}
+
+.course-row.open {
+  background: var(--surface-1);
+}
+
+/*
+ * Строка курса: раскрывается кликом по себе.
+ *
+ * Раскрытие — то, чего от строки списка ждут, и целиться ради него в
+ * стрелку шириной в полтора десятка пикселей приходилось каждый раз. А по
+ * названию открывалось переименование, то есть самый крупный элемент
+ * строки делал не то, чего от него ждут.
+ *
+ * Поэтому вся строка, кроме кнопок, — одна кнопка раскрытия; действия над
+ * курсом лежат рядом с ней, а не внутри (вложенные кнопки невозможны).
+ * Колонки при этом остались постоянной ширины: семь строк должны читаться
+ * столбцами, а не лесенкой из имён разной длины.
+ */
+.course-head {
+  display: grid;
+  grid-template-columns: var(--course-columns) auto;
+  column-gap: 0.5rem;
+  align-items: center;
+  padding: 0.3rem 0.6rem;
+}
+
+/*
+ * Кнопка раскрытия занимает все колонки, кроме последней: строку
+ * раскрывают кликом по ней самой, а действия лежат рядом с кнопкой, а не
+ * внутри неё.
+ *
+ * Сетка у неё `subgrid`, то есть колонки те же, что у строки. Иначе
+ * колонок было бы две независимых системы — своя у кнопки и своя у
+ * строки, — и карандаш, живущий в строке, не встал бы вплотную к
+ * названию, живущему в кнопке.
+ */
+.course-open {
+  display: grid;
+  grid-row: 1;
+  grid-column: 1 / -2;
+  grid-template-columns: subgrid;
+  align-items: center;
+  width: 100%;
+  padding: 0.2rem 0;
+  color: inherit;
+  text-align: left;
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+
+.course-head .toggle {
+  grid-column: 1;
+}
+
+.course-head .name {
+  grid-column: 2;
+}
+
+.course-head .what {
+  grid-column: 4;
+}
+
+.course-head .who {
+  grid-column: 5;
+}
+
+/* цвет фона у кнопок задан правилом с `:hover:not(:disabled)`, а оно
+   специфичнее одного класса — поэтому прозрачность приходится назвать и
+   для наведения, иначе раскрытая строка загорается синим */
+.course-open:hover:not(:disabled),
+.course-open:disabled {
+  background: none;
+}
+
+.course-open:hover .name {
+  text-decoration: underline;
+}
+
+.course-open:disabled {
+  cursor: default;
+}
+
+.course-head .name {
+  overflow: hidden;
+  font-weight: 500;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.course-head .what,
+.course-head .who {
+  overflow: hidden;
+  font-size: 0.9rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.course-head .toggle {
+  padding: 0;
+  color: #666;
+}
+
+.course-rename {
+  grid-row: 1;
+  grid-column: 1 / -2;
+  margin: 0.15rem 0;
+}
+
+/*
+ * Карандаш — у названия, которое он и правит.
+ *
+ * Стоял он в дальнем конце строки, рядом с крестиком, и оттуда читался как
+ * «править курс»: у крестика по соседству область действия именно такая —
+ * весь курс. Правит же он одно название, и стоять должен при нём.
+ *
+ * Лежит он поверх собственной колонки сетки, а не внутри кнопки
+ * раскрытия: вложенных кнопок не бывает. Колонка под него пустая, так что
+ * ничего он собой не закрывает, а `z-index` держит его выше кнопки, чтобы
+ * клик доставался ему, а не раскрытию строки.
+ */
+.course-pencil {
+  position: relative;
+  z-index: 1;
+  /* строка названа явно, и это не украшение: сама сетка items не
+     накладывает — увидев занятую кнопкой раскрытия клетку, она унесла бы
+     карандаш на вторую строку, и строка курса стала бы вдвое выше */
+  grid-row: 1;
+  grid-column: 3;
+  justify-self: center;
+}
+
+.course-head-actions {
+  display: flex;
+  grid-row: 1;
+  grid-column: -2 / -1;
+  gap: 0.25rem;
+  align-items: center;
+}
+
+/* правят название редко, а раскрывают строку постоянно: карандаш
+   появляется при наведении, как кнопки строки в учебном плане. Место под
+   него занято всегда — у него своя колонка, — поэтому строка под курсором
+   не дёргается */
+@media (hover: hover) {
+  .course-pencil {
+    visibility: hidden;
+  }
+
+  .course-row:hover .course-pencil,
+  .course-pencil:focus-visible {
+    visibility: visible;
+  }
+}
+
+/*
+ * Сводная таблица: ученики по строкам, задачи по столбцам.
+ *
+ * Здесь это настоящая `<table>`, в отличие от плана: у плана дерево с
+ * перетаскиванием, а тут именно таблица — заголовки столбцов, заголовки
+ * строк и клетка на пересечении. Ширину столбца держим узкой: в клетке
+ * стоит значок состояния, а не ответ, иначе тридцать на десять не влезет
+ * ни на один экран.
+ */
+/*
+ * Кнопка вполсилы: действие второго ряда, стоящее внутри строки текста.
+ *
+ * Обычная кнопка ростом с поле ввода — правильная величина для формы, но
+ * внутри карточки таких кнопок три-четыре, и вместе они читаются как ряд
+ * прямоугольников, а не как действия у своей строки. Здесь важнее, чтобы
+ * они не спорили с содержимым.
+ */
+button.compact,
+.row button.compact {
+  min-height: 1.75rem;
+  padding: 0.15rem 0.6rem;
+  font-size: 0.85rem;
+}
+
+/*
+ * «Войти как» в меню пользователя — только на стенде разработки.
+ *
+ * Список длинный (класс целиком), поэтому он прокручивается внутри себя, а
+ * не растягивает меню на весь экран. Отделён чертой: это не действие над
+ * своим аккаунтом, а смена личности.
+ */
+/* с переключателем меню шире: имена в нём длиннее «Профиля» и «Выйти», а
+   перенос имени на две строки читается как две записи */
+.user-menu:has(.dropdown-switch) .dropdown {
+  min-width: 16rem;
+}
+
+.dropdown-switch {
+  margin-top: 0.3rem;
+  padding-top: 0.3rem;
+  border-top: 1px solid #e6e9eb;
+}
+
+.dropdown-switch > .hint {
+  display: block;
+  padding: 0.2rem 0.75rem;
+  font-size: 0.75rem;
+}
+
+/*
+ * Дорога домой — над списком и вне его прокрутки.
+ *
+ * «Посмотреть чужими глазами» было билетом в один конец: чтобы вернуться,
+ * надо было узнать себя среди семнадцати человек, а суперпользователь
+ * стоял между учителями и ничем не отличался. Кнопка возврата стоит там,
+ * где её ищут — сразу под подписью «Войти как», — и в прокрутку не уезжает.
+ */
+.dropdown-switch .switch-home {
+  width: 100%;
+  text-align: left;
+  font-weight: 600;
+}
+
+.dropdown-switch ul {
+  max-height: 18rem;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+}
+
+/*
+ * Заголовок группы — единственное, что говорит о прокрутке.
+ *
+ * Людей на стенде семнадцать, в меню помещается семь, и учеников за краем
+ * не было видно вовсе: у прокрутки внутри выпадающего меню нет ни рамки,
+ * ни полосы, ни тени — она молчит. Липкий заголовок виден всегда, и по
+ * нему понятно и где ты, и что список на этом не кончился.
+ */
+.dropdown-switch .switch-group {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 0.3rem 0.75rem 0.15rem;
+  background: #fff;
+  color: #6b7480;
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.dropdown-switch button {
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+  white-space: nowrap;
+}
+
+.dropdown-switch button .hint {
+  margin-left: auto;
+  font-size: 0.75rem;
+}
+
+/*
+ * Название работы — прописными, как заголовок темы в учебном плане.
+ *
+ * Это одна и та же роль: строка, под которой лежит список. Раз роль одна,
+ * и вид один — иначе два экрана про одно и то же выглядят по-разному.
+ */
+.work-list button.link.name {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: #3c4043;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+/* переключатель эталонов — чипом в шапке, рядом с действиями: отдельной
+   строкой он съедал высоту ради одного слова. Ростом с соседей: в ряду
+   разновысокие контролы ловит сторож, и правильно делает */
+.work-list .course-head .chip {
+  justify-self: end;
+  min-height: 1.75rem;
+  padding: 0.15rem 0.6rem;
+  font-size: 0.85rem;
+}
+
+/*
+ * Кнопки задачи появляются при наведении — как в таблице плана.
+ *
+ * Три задачи по четыре кнопки это двенадцать значков, из-за которых не
+ * видно самих условий. На сенсорном экране наведения не бывает, там они
+ * остаются на месте.
+ */
+@media (hover: hover) {
+  .task-list .task-actions {
+    visibility: hidden;
+  }
+
+  .task-list li:hover .task-actions,
+  .task-list li:focus-within .task-actions {
+    visibility: visible;
+  }
+}
+
+/* фокус на названии работы: браузерная рамка по умолчанию чёрная и толстая,
+   и кнопка-ссылка в ней выглядит полем ввода */
+.work-list button.link:focus-visible {
+  outline: 2px solid #1a73e8;
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* сводка над таблицей: плашки как у плана, только уже — их четыре, и
+   каждая отвечает на свой вопрос одним числом */
+.work-summary {
+  margin-bottom: var(--card-gap);
+}
+
+.work-summary .card-stat button.link {
+  padding: 0;
+  font: inherit;
+  text-align: left;
+}
+
+/* число в плашке остаётся числом: синим оно читалось бы как ссылка, а
+   соседние плашки — как выключенные. Кликабельность показывает наведение */
+.work-summary .card-stat button.link h2 {
+  color: var(--text, #202124);
+}
+
+.work-summary .card-stat button.link:hover h2 {
+  text-decoration: underline;
+}
+
+.work-summary .card-stat h2 {
+  margin: 0;
+}
+
+/*
+ * Плашка в две строки: число и подпись, число и подпись.
+ *
+ * Обе строки одного веса — это два разных вопроса к одному классу
+ * («сколько взялись» и «сколько дошли»), и меньшая не подпись к большей.
+ * Числа в своей колонке и с табличными цифрами: дроби должны стоять
+ * столбиком, иначе глаз их не сравнивает.
+ */
+/* `.panel.card-stat` задаёт свой gap и весом выше — поэтому селектор с
+   двумя классами, иначе подпись липнет к числу */
+.card-stat.stat-rows {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: baseline;
+  gap: 0.2rem 0.6rem;
+}
+
+/* знаменатель обеих строк — внизу и мелким: в самих строках он
+   повторялся бы дважды и ничего не добавлял */
+.stat-rows .total {
+  grid-column: 1 / -1;
+  margin-top: 0.15rem;
+  font-size: 0.75rem;
+}
+
+.stat-rows b {
+  font-size: 1.5rem;
+  font-weight: 500;
+  font-variant-numeric: lining-nums tabular-nums;
+  text-align: right;
+}
+
+/* таблица живёт в карточке и занимает её целиком: узкая таблица рядом с
+   плашками во всю ширину читалась как обрезанная */
+.table-scroll {
+  overflow-x: auto;
+}
+
+.work-table {
+  /* фиксированная раскладка: имя и итог заданы, а лишнюю ширину поровну
+     делят колонки задач. Иначе её забирало бы имя, и значки сбивались бы
+     в кучу у правого края — таблица перестаёт читаться как сетка */
+  width: 100%;
+  table-layout: fixed;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+.work-table th,
+.work-table td {
+  padding: 0.2rem 0.3rem;
+  text-align: center;
+  border-bottom: 1px solid #eceff1;
+}
+
+.work-table thead th {
+  vertical-align: bottom;
+}
+
+.work-table th.who {
+  width: 30%;
+  min-width: 10rem;
+  font-weight: 400;
+  text-align: left;
+}
+
+.work-table .total {
+  width: 5rem;
+  padding-left: 0.6rem;
+  color: #666;
+}
+
+/* строка снятого приглушена целиком: его ответы читают, но в «кто не
+   справился» он не входит */
+.work-table tr.past th.who,
+.work-table tr.past td {
+  color: #888;
+}
+
+.work-table .cell {
+  width: 1.8rem;
+  height: 1.6rem;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.work-table .cell:disabled {
+  cursor: default;
+}
+
+/* цвет — это и есть содержимое таблицы: по нему её и читают через комнату */
+.work-table td.correct .cell {
+  color: #1a6b23;
+  background: #d7f0d9;
+}
+
+.work-table td.wrong .cell {
+  color: #b3261e;
+  background: #fadad7;
+}
+
+.work-table td.sent .cell {
+  color: #45526b;
+  background: #e3e8f0;
+}
+
+.work-table td.redone .cell {
+  color: #8a4b00;
+  background: #fde7c8;
+}
+
+.work-table .cell:hover:not(:disabled) {
+  border-color: #1a73e8;
+}
+
+/* шапка окна проверки: условие и эталоны отделены от ответов чертой —
+   выше «что спрашивали», ниже «что ответили», и путать их нельзя */
+.task-brief {
+  padding-bottom: 0.7rem;
+  border-bottom: 1px solid #eceff1;
+}
+
+.task-brief .answers {
+  align-items: center;
+  margin-top: 0.5rem;
+  gap: 0.3rem;
+}
+
+.task-brief .hint {
+  font-size: 0.75rem;
+}
+
+/* проверка столбцом: ответы подряд, отметка справа от каждого */
+.attempt-list.checking .cells {
+  grid-template-columns: minmax(8rem, 10rem) 1fr;
+}
+
+/* имя в проверке столбцом отрезано так же, как номер попытки: слева «кто»,
+   справа «что ответил», и путать их нельзя */
+.attempt-list.checking .hint {
+  padding-right: 0.5rem;
+  text-align: right;
+  border-right: 1px solid #dfe3e6;
+}
+
+.verdict-buttons {
+  display: flex;
+  gap: 0.25rem;
+}
+
+.verdict-buttons .chip.active {
+  background: #1a6b23;
+  border-color: #1a6b23;
+}
+
+.verdict-buttons .chip.active.wrong {
+  background: #b3261e;
+  border-color: #b3261e;
+}
+
+/*
+ * Работы у ученика: список под названием курса и экран решения.
+ *
+ * Попытки показаны все и подряд: ученик их сам и писал, а спрятать историю
+ * значило бы делать вид, что новая попытка стирает прошлую. Она не стирает
+ * её нигде — ни здесь, ни у учителя.
+ */
+/* курс ученика — сетка, а не строка: работы идут **под** названием, а во
+   флексе они уезжали в правую половину и жались там в столбик */
+.class-list.student-courses > li {
+  display: grid;
+  grid-template-columns: minmax(8rem, 1fr) auto;
+  align-items: baseline;
+  gap: 0.2rem 0.6rem;
+}
+
+/*
+ * Экран «Сегодня»: столбец часов слева, выбранное занятие справа.
+ *
+ * Ради левого столбца всё и переделывалось. Список карточек отвечал только
+ * на «какие занятия есть», а спрашивают утром другое — «как устроен день»:
+ * с какого урока начинается, где окна, когда кончается. Окно в списке не
+ * видно вовсе, потому что его в нём нет.
+ *
+ * Столбец узкий и фиксированной ширины: он читается сверху вниз как
+ * расписание, и номера в нём обязаны стоять на одной вертикали.
+ */
+.day-grid {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.day-grid > li {
+  display: flex;
+  align-items: stretch;
+  gap: 0.4rem;
+  min-height: 2.6rem;
+}
+
+/* номер часа — колонка, а не подпись: столбец читается по левому краю */
+.day-grid .hour {
+  flex: 0 0 1.4rem;
+  padding-top: 0.55rem;
+  color: #999;
+  font-size: 0.8rem;
+  text-align: right;
+}
+
+.day-grid .taken {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+/* окно: пунктир, а не пустота. Пустое место и «мы сюда ничего не
+   нарисовали» на экране неразличимы, а разница вся */
+.day-grid .window {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  padding: 0 0.5rem;
+  border: 1px dashed #d8d8d8;
+  border-radius: var(--row-radius);
+  color: #aaa;
+  font-size: 0.85rem;
+}
+
+.day-grid .slot {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(8rem, 14rem) 1fr auto;
+  align-items: baseline;
+  gap: 0 0.6rem;
+  padding: 0.45rem 0.6rem;
+  text-align: left;
+  background: var(--surface-1);
+  border: 1px solid transparent;
+  border-radius: var(--row-radius);
+  cursor: pointer;
+}
+
+.day-grid .slot:hover {
+  border-color: #c9d8f0;
+}
+
+.day-grid .slot.picked {
+  border-color: #1a73e8;
+  background: #eaf1fd;
+}
+
+.day-grid .slot .course {
+  font-size: 0.9rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.day-grid .slot .topic {
+  color: #777;
+  font-size: 0.85rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* «докуда день закрыт» видно по столбцу — того и не хватало списку */
+.day-grid .slot .done {
+  color: #1e8e3e;
+  font-size: 0.85rem;
+}
+
+.day-grid .slot.cancelled .course,
+.day-grid .slot.cancelled .topic {
+  text-decoration: line-through;
+  color: #aaa;
+}
+
+.day-grid .slot.extra {
+  background: #fff6e5;
+}
+
+.work-links {
+  grid-column: 1 / -1;
+  margin: 0.3rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* прямым потомком: `.class-list li` и правило выше матчат и вложенный
+   список тоже — на нём работы разъезжались по углам вместе с плашками */
+.work-links > li {
+  display: grid;
+  grid-template-columns: minmax(10rem, 1fr) auto auto auto;
+  align-items: baseline;
+  gap: 0.3rem 0.6rem;
+  padding: 0.25rem 0;
+}
+
+.work-links > li > .badge {
+  justify-self: start;
+}
+
+/*
+ * Учебный план на странице ученика.
+ *
+ * Три колонки фиксированной раскладки — номер, название, дата, — как в
+ * таблице у учителя и по той же причине: без них номера и даты пляшут от
+ * длины названия, и сорок строк перестают читаться сверху вниз. Ширины
+ * скромнее учительских: правок здесь нет, значит нет ни ручки, ни кнопок.
+ *
+ * Прошедшее приглушено, а не вычеркнуто: это не отмена, а «уже было».
+ */
+.student-plan {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.student-plan > li {
+  display: grid;
+  grid-template-columns: 2rem 1fr auto;
+  align-items: baseline;
+  gap: 0.5rem;
+  padding: 0.2rem 0;
+}
+
+.student-plan > li.past {
+  opacity: 0.55;
+}
+
+/* тема — только типографика, как в таблице у учителя: любая заливка или
+   полоса сдвинула бы её относительно уроков */
+.student-plan > li.section {
+  grid-template-columns: 1fr;
+  margin-top: 0.6rem;
+}
+
+.student-plan .theme {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: #3c4043;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.student-plan > li.section:first-child {
+  margin-top: 0;
+}
+
+.student-plan .number {
+  font-variant-numeric: tabular-nums;
+  color: #666;
+  text-align: right;
+  font-size: 0.85rem;
+}
+
+.student-plan .date {
+  color: #666;
+  font-size: 0.85rem;
+  white-space: nowrap;
+}
+
+/* столбец оценки в сводной таблице: числа столбиком, как итог рядом */
+.work-table th.mark,
+.work-table td.mark {
+  text-align: center;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+/* строка шкалы над таблицей: фраза и ссылка «настроить» в одну строку */
+.scale-line {
+  margin: 0;
+}
+
+/* критерии в окне шкалы: имя тянется, максимум узкий, крестик по краю */
+.criteria {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.criteria > li + li {
+  margin-top: 0.35rem;
+}
+
+/* карточка урока на «Сегодня»: поля плана одно под другим, с подписями */
+.lesson-field + .lesson-field {
+  margin-top: 0.5rem;
+}
+
+.lesson-field > .hint {
+  display: block;
+  padding: 0.4rem 0.65rem 0.3rem;
+}
+
+/*
+ * Правка содержания — прямо в блоке, который его показывает.
+ *
+ * Окном (`LessonPanel`, общим с таблицей плана) это было на странице урока,
+ * и оттуда брался вопрос «куда я попал»: из плашки домашнего задания
+ * открывался редактор всех четырёх полей сразу. В таблице плана окно нужно
+ * — строка там в одну линию, места нет; здесь блок и так карточка во всю
+ * ширину, и правка ложится в неё без всякого перехода.
+ */
+.lesson-edit {
+  display: flex;
+  flex-direction: column;
+  gap: var(--panel-gap);
+}
+
+/*
+ * Страницы скана: сетка миниатюр, где отмечают начало каждой работы.
+ *
+ * Мелко намеренно — лист бумаги в спичечный коробок: смотрят на них, чтобы
+ * отличить титульную от прочих, а не читать. Отмеченная выделена рамкой и
+ * несёт под собой выбор ученика, поэтому её ячейка выше остальных, и сетка
+ * выравнивается по верху, а не растягивает соседей.
+ */
+.scan-pages {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(8rem, 1fr));
+  align-items: start;
+  gap: 0.75rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
+.scan-pages > li {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.scan-pages .page {
+  position: relative;
+  display: block;
+  width: 100%;
+  padding: 0;
+  background: #fff;
+  border: 2px solid transparent;
+  border-radius: var(--row-radius);
+  box-shadow: var(--row-shadow);
+  cursor: pointer;
+}
+
+.scan-pages .page img {
+  display: block;
+  width: 100%;
+  border-radius: var(--row-radius);
+}
+
+/* номер страницы поверх угла: рядом он занял бы строку на каждой из сорока */
+.scan-pages .number {
+  position: absolute;
+  left: 0.25rem;
+  top: 0.25rem;
+  padding: 0 0.3rem;
+  font-size: 0.75rem;
+  color: #fff;
+  background: rgba(0, 0, 0, 0.55);
+  border-radius: 3px;
+}
+
+.scan-pages > li.starts .page {
+  border-color: #1a73e8;
+}
+
+.scan-pages .continues {
+  text-align: center;
+}
+
+/* оценка у ученика: числа крупно, слова учителя обычным текстом под ними */
+.student-grade .marks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 1.25rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.student-grade .marks li {
+  display: flex;
+  flex-direction: column;
+}
+
+.student-grade .marks b {
+  font-size: 1.35rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.student-grade .comment {
+  margin: 0;
+  white-space: pre-wrap;
+}
+
+.student-tasks {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: task;
+}
+
+.student-task {
+  position: relative;
+  padding-left: 2.4rem;
+}
+
+/* номер задачи слева от условия: в тексте он потерялся бы среди формул */
+.student-task::before {
+  position: absolute;
+  left: 1rem;
+  counter-increment: task;
+  content: counter(task) ".";
+  color: #666;
+}
+
+.attempt-list {
+  margin: 0.3rem 0;
+  padding: 0;
+  list-style: none;
+}
+
+/*
+ * Строка журнала: слева ряд текстовых ячеек, справа кнопки отметки.
+ *
+ * Два уровня, а не один грид на всё, и это единственное, что здесь
+ * работает. Буквы в строке разного кегля — подпись мельче, ответ
+ * моноширинный, — и ровно они стоят на общей **базовой линии**. Кнопки
+ * выше текста, и внутри того же грида они задавали бы строке рост, а
+ * базовая линия прижимала бы буквы к её верху. Снаружи же группа букв
+ * центрируется целиком, как один блок.
+ */
+.attempt-list li {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  min-height: 2.3rem;
+  padding: 0.3rem 0.5rem;
+  border-radius: var(--row-radius);
+  background: var(--surface-1);
+}
+
+.attempt-list .cells {
+  display: grid;
+  /* номер попытки в колонке своей ширины: у всех строк он одинаков, и
+     ответ должен начинаться на одной вертикали, а не съезжать за ним */
+  grid-template-columns: 4.5rem 1fr auto auto;
+  align-items: baseline;
+  flex: 1;
+  gap: 0.3rem 0.8rem;
+}
+
+/*
+ * «попытка 2» — пометка, а не часть ответа.
+ *
+ * Стояла вплотную к ответу тем же кеглем, и строка читалась как «попытка 2
+ * пять»: глаз не отделял подпись от того, что написал ученик. Поэтому она
+ * мельче, приглушена и отрезана чертой — ответ начинается за ней.
+ */
+.attempt-list .attempt {
+  padding-right: 0.5rem;
+  white-space: nowrap;
+  border-right: 1px solid #dfe3e6;
+}
+
+/* всё мелкое и приглушённое в строке — одного размера: подпись, время,
+   словесная отметка. Три размера подряд читаются как три разных сорта
+   текста, хотя это один и тот же шёпот на полях */
+.attempt-list .attempt,
+.attempt-list .hint,
+.attempt-list .verdict {
+  font-size: 0.75rem;
+  color: #80868b;
+}
+
+.attempt-list li + li {
+  margin-top: 0.2rem;
+}
+
+/*
+ * Текст ответа — один вид на эталон и на то, что написал ученик.
+ *
+ * Моноширинный он ровно по одной причине: «x + 3» и «x+3» должны
+ * отличаться на глаз, а в обычном шрифте пробел почти не виден. Раз
+ * причина одна, то и вид один: два разных начертания для одного и того же
+ * читались бы как две разные сущности.
+ */
+.answer-text,
+.attempt-list .answer {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.875rem;
+  color: #202124;
+  overflow-wrap: anywhere;
+}
+
+
+
+/* цветом только вердикт: у строки его роль — «что я ответил», а не оценка */
+.attempt-list .correct .verdict {
+  color: #1a6b23;
+}
+
+.attempt-list .wrong .verdict {
+  color: #b3261e;
+}
+
+/*
+ * Работы: та же строка, что у курса, только колонки другие.
+ *
+ * Пять колонок вместо четырёх — название, состояние, окно, число задач, — и
+ * состояние отдельной плашкой: «открыта» это первое, что ищут глазами, и
+ * искать его внутри даты пришлось бы читая.
+ */
+/* имя, переключатель ответов, два действия и крестик: в шапке работы
+   больше ничего нет — окно и попытки живут в настройках, где их и правят */
+.work-list .course-head {
+  /* зазор между колонками завела строка курса — там между названием и
+     карандашом он и нужен; здесь колонки свои, и раздвигать кнопки, у
+     которых есть собственные поля, незачем */
+  grid-template-columns: 1.5rem 1fr auto auto auto auto;
+  column-gap: 0;
+}
+
+/* у курса в теле две колонки ролей, у работы — одна лента задач: условия
+   многострочные, и в колонку шириной в треть экрана они не читаются */
+.work-list .course-body {
+  display: block;
+}
+
+.work-list .course-body > * + * {
+  margin-top: 0.5rem;
+}
+
+.badge.state-open {
+  background: #d7f0d9;
+  color: #1a6b23;
+}
+
+.badge.state-planned {
+  background: #e3e8f0;
+  color: #45526b;
+}
+
+.badge.state-closed {
+  background: #f1f3f4;
+  color: #666;
+}
+
+/*
+ * Задачи: условие во всю ширину, эталоны плашками, кнопки справа.
+ *
+ * Номер полужирный: по нему ищут задачу глазами, когда учитель говорит
+ * «во второй опечатка», и в обычном начертании он теряется среди условий.
+ */
+.task-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* номер и содержимое — две колонки: условия бывают в две строки, и без
+   колонки они подтекали бы под номер. Всё, кроме номера, живёт во второй
+   колонке — иначе автоместа кладут вторую строку под номер, и плашки
+   ответов оказываются шириной в него */
+.task-list li {
+  display: grid;
+  grid-template-columns: 1.75rem 1fr;
+  align-items: baseline;
+}
+
+.task-list li > :not(.task-number) {
+  grid-column: 2;
+}
+
+.task-number {
+  font-weight: 600;
+}
+
+/* последняя строка списка, а не кнопка в стороне: добавляют после
+   последней задачи, и стоять это должно там же. Пунктир — то же «сюда
+   добавится», что у пустой клетки расписания */
+.task-add {
+  display: block;
+  width: 100%;
+  margin-top: 0.5rem;
+  padding: 0.35rem 0.5rem;
+  color: #1a73e8;
+  font: inherit;
+  text-align: left;
+  background: none;
+  border: 1px dashed #cfd8e3;
+  border-radius: var(--row-radius);
+}
+
+.task-add:hover:not(:disabled) {
+  background: #eef3fd;
+  border-color: #1a73e8;
+}
+
+.task-list li {
+  padding: 0.4rem 0;
+  border-top: 1px solid #eceff1;
+}
+
+.task-list li:first-child {
+  border-top: none;
+}
+
+.task-question p:first-child {
+  margin-top: 0;
+}
+
+.task-question p:last-child {
+  margin-bottom: 0;
+}
+
+.task-list .answers {
+  margin-top: 0.2rem;
+}
+
+/* эталон — это строка, с которой сверяются посимвольно: моноширинный шрифт
+   и рамка, потому что «x + 3» и «x+3» должны отличаться на глаз */
+.task-list .answers .tag {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.875rem;
+  background: #fff;
+  border: 1px solid #dfe3e6;
+}
+
+/* условие и кнопки в одной строке: кнопки прижаты к правому краю, а
+   условие занимает всё остальное */
+.task-head {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+}
+
+.task-head .task-question {
+  flex: 1;
+}
+
+.task-list .answers {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  margin-top: 0.2rem;
+}
+
+.task-actions {
+  display: flex;
+  gap: 0.4rem;
+}
+
+/* окно задачи: условие и эталоны, оба на всю ширину окна */
+.task-preview {
+  min-height: 6rem;
+  padding: 0.5rem 0.65rem;
+  background: var(--surface-1);
+  border-radius: 4px;
+}
+
+.answer-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.answer-list li + li {
+  margin-top: 0.3rem;
+}
+
+.answer-list input {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 0.4rem 0.6rem;
+  font: inherit;
+  border: 1px solid #c6c6c6;
+  border-radius: 4px;
+}
+
+/*
+ * Три роли курса — три колонки, и строки у них общие.
+ *
+ * Устроены роли одинаково (подпись · состояние · действие), а
+ * выстраивались каждая сама по себе: у «Ведёт курс» действия нет вовсе, у
+ * «Учеников» счёт стоял в одной строке с кнопкой, — и кнопки соседних
+ * колонок оказывались на разной высоте, а счёт прижимался к нижнему краю
+ * своей кнопки. Общая сетка строк (`subgrid`) чинит это раз и навсегда:
+ * подписи на одной линии, состояния на одной, кнопки на одной.
+ */
+.course-body {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
+  grid-template-rows: auto auto auto;
+  gap: 0.5rem;
+  /* слева — ровно под названием курса: ширина стрелки плюс зазор строки.
+     Считается из той же переменной, что и колонки заголовка, иначе зоны
+     карточки не совпадают с зонами строки и это читается как кривая
+     вёрстка */
+  padding: 0.1rem 0.6rem 0.6rem 2.6rem;
+}
+
+/*
+ * Роль — плашка, а не кусок сплошного поля.
+ *
+ * Раскрытая карточка была одной заливкой того же цвета, что и строка
+ * заголовка: границы зон внутри ничем не обозначены, и три блока
+ * читались как один сплошной прямоугольник с текстом враздрай. Теперь у
+ * каждой роли своя белая плашка с рамкой — тот же приём, что у строк
+ * внутри карточки в остальном приложении.
+ */
+.course-role {
+  /* строки у трёх плашек общие: подписи на одной линии, состояния на
+     одной, кнопки на одной. Отступ у карточек одинаковый, поэтому общая
+     сетка строк переживает и его */
+  display: grid;
+  grid-template-rows: subgrid;
+  grid-row: span 3;
+  gap: 0.35rem;
+  align-items: center;
+  padding: 0.5rem 0.7rem;
+  background: #fff;
+  border-radius: var(--row-radius);
+  box-shadow: var(--row-shadow);
+}
+
+/* подпись роли — заголовок плашки, а не одна из строк в ней */
+.course-role > .hint:first-child {
+  margin: 0 0 0.35rem;
+  font-weight: 600;
+  color: #444;
+}
+
+
+
+.course-role .row.courses {
+  min-height: 1.6rem;
+}
+
+/* приглашённый, который ещё ни разу не входил: место занято, но пока
+   обещанием — поэтому плашка бледнее назначенного и обведена пунктиром */
+.tag.pending {
+  background: transparent;
+  border: 1px dashed #c6c6c6;
+  color: #666;
+}
+
+/* справка о формате CSV: раскрывается кнопкой «?» у заголовка карточки */
+.csv-help {
+  display: flex;
+  flex-direction: column;
+  gap: var(--panel-gap);
+  padding: 0.75rem;
+  font-size: 0.9rem;
+  background: #f8f9fa;
+  border-radius: var(--row-radius);
+}
+
+.csv-sample {
+  margin: 0;
+  padding: 0.6rem 0.75rem;
+  overflow-x: auto;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.8rem;
+  line-height: 1.5;
+  white-space: pre;
+  background: #fff;
+  border: 1px solid #e6e6e6;
+  border-radius: var(--row-radius);
+}
+
+.csv-rules {
+  margin: 0;
+  padding-left: 1.1rem;
+  color: #3c4043;
+}
+
+.csv-rules li + li {
+  margin-top: 0.15rem;
+}
+
+.csv-modes-help {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.15rem 0.5rem;
+  margin: 0;
+}
+
+.csv-modes-help > div {
+  display: contents;
+}
+
+.csv-modes-help dt {
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.csv-modes-help dd {
+  margin: 0;
+  color: #5f6368;
+}
+
+.plan-counts {
+  margin: 0 0 1rem;
+}
+
+.plan,
+.plan-children {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/*
+ * Строка плана — одна линия, как в раскладке.
+ *
+ * Сорок уроков должны помещаться на экран: перенос названия на две строки
+ * растягивал главу вдвое, и глава переставала читаться целиком. Поэтому
+ * `nowrap` и обрезка многоточием, а полное название — в подсказке.
+ */
+/*
+ * Одна сетка на все строки — и уроки, и главы, и что появится дальше.
+ *
+ * Пока строки раскладывались флексом, выравнивание держалось на
+ * договорённости: ячейка отступа тут, нулевой padding там. Договорённость
+ * ломалась каждой второй правкой. Колонки заданы один раз переменной, и
+ * разъезжаться больше нечему.
+ */
+.plan-row {
+  display: grid;
+  grid-template-columns: var(--plan-columns);
+  align-items: center;
+  gap: var(--plan-row-gap);
+  padding: 0.1rem 0.4rem;
+  line-height: 1.4;
+}
+
+/* без дат левых колонок нет вовсе, и правая зона встаёт к краю */
+.plan.no-dates .plan-row {
+  grid-template-columns: var(--plan-columns-bare);
+}
+
+/*
+ * Флажок выбора — как остальные кнопки строки: виден при наведении.
+ *
+ * Режима «Выбрать» не стало: кнопка на панели была контринтуитивной —
+ * чтобы отметить строку, надо было догадаться, что где-то вверху есть
+ * слово, включающее флажки. Держать сорок флажков постоянно тоже нельзя,
+ * вся история этой таблицы про то, что любой декор множится на десять и
+ * рябит. Ответ тот же, что у кнопок строки: место занято всегда, а сам
+ * контрол появляется под курсором.
+ *
+ * `visibility`, а не `display`: убранный из потока флажок сдвигал бы
+ * строку под курсором. Отмеченный виден всегда — иначе набранное
+ * выделение исчезало бы, стоит увести мышь.
+ */
+.plan-pick {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.plan-pick input {
+  margin: 0;
+  cursor: pointer;
+}
+
+@media (hover: hover) {
+  .plan-pick input {
+    visibility: hidden;
+  }
+
+  .plan-row:hover .plan-pick input,
+  .plan-pick.picked input,
+  .plan-pick input:focus-visible {
+    visibility: visible;
+  }
+}
+
+/*
+ * Полоса выбранного липнет к низу окна.
+ *
+ * План длинный — сорок уроков это полторы тысячи пикселей, — а строки
+ * выбирают где угодно, чаще всего в середине и в конце. Полоса, стоящая
+ * над таблицей, требовала бы прокрутки туда и обратно ради каждого
+ * нажатия «Удалить».
+ */
+/* метка о чужой правке: своя строка под панелью, но негромкая — это
+   сообщение, а не тревога */
+.plan-intervention {
+  margin: 0;
+  padding-top: 0.15rem;
+}
+
+.plan-selection {
+  position: sticky;
+  bottom: 0.75rem;
+  z-index: 3;
+}
+
+/* название, пометки и заметка — одна колонка: они про один урок */
+/*
+ * Название и число уроков рядом с ним — по базовой линии, а не по центру.
+ *
+ * Заголовок темы набран прописными и без выносных, счётчик — обычным
+ * текстом с «у» и «р»; выключка по центру опускала его на пару пикселей
+ * ниже, и это было видно на каждой теме.
+ */
+.plan-title-cell {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  gap: var(--plan-row-gap);
+}
+
+/*
+ * Вложенность показывает отступ **названия**, а не строки.
+ *
+ * Маркеры и номера остаются в своих колонках — их выравнивание важнее, —
+ * а по левому краю названий сразу видно: вот тема, вот уроки внутри неё,
+ * а вот урок сам по себе. Без этого отступа урок вне темы был неотличим
+ * от вложенного, хотя от этого зависит и структура плана, и счётчик темы.
+ */
+.plan-title-cell.nested {
+  padding-left: var(--plan-indent);
+}
+
+/*
+ * Свободный слот — дата, на которую урока плана не хватило.
+ *
+ * Строка та же самая, только без ручки и номера: это не элемент плана, а
+ * пустое место в расписании. Курсив и приглушённый цвет говорят то же самое
+ * ещё раз — с двух шагов видно, где план кончился.
+ */
+.plan-row.free .title {
+  font-style: italic;
+  color: #80868b;
+}
+
+.plan-row.free:hover .title {
+  color: #1a73e8;
+}
+
+/* свёрнутый хвост: одна строка вместо восьмидесяти */
+button.link.free-summary {
+  align-self: flex-start;
+  padding: 0.25rem 0.4rem;
+  font-size: 0.8rem;
+  color: #5f6368;
+}
+
+.plan.free {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* строки вплотную: скобка недели идёт через них сплошной линией, а зазор
+   разорвал бы её на пунктир */
+.plan > .plan-row,
+.plan-section {
+  margin-bottom: 0;
+}
+
+/*
+ * Даты в строке плана.
+ *
+ * Колонки жёсткой ширины и в конце строки, сразу перед кнопками: включение
+ * дат не должно двигать название урока — за ним следят глазами, и прыжок
+ * текста при переключении читается как перерисовка всей страницы. Ширина
+ * задана в rem, а не по содержимому: «14.10» и «3.11» иначе давали бы
+ * разные колонки на соседних строках.
+ */
+/*
+ * Номер недели — в самой левой колонке, в первой строке недели.
+ *
+ * Группу показывает заливка каждой второй недели: горизонтальных линий
+ * между неделями нет, потому что на сорока строках любая линия множится
+ * на десять и рябит.
+ */
+.plan-weekmark {
+  font-size: 0.7rem;
+  color: #9aa0a6;
+  white-space: nowrap;
+}
+
+.plan-row.week-even {
+  background: var(--surface-1);
+}
+
+/*
+ * Строка под курсором.
+ *
+ * Была `#f4f7fd` — от полосы недели (`--surface-1`, `#f4f5f7`) её не
+ * отличить, а на самой полосе она и не показывалась вовсе: правило стояло
+ * **до** `.week-even`, вес у них одинаковый, и заливка недели побеждала.
+ * То есть на каждой второй неделе подсветки не было совсем.
+ *
+ * Стоит поэтому после полосы и заметно голубее: строка тянется на всю
+ * ширину, и вести по ней глазами надо от даты до кнопок.
+ */
+.plan-row:hover,
+.plan-row.week-even:hover {
+  background: #dbe7fa;
+}
+
+/*
+ * Строка «в руке» и стрелки, оторванные от списка.
+ *
+ * Курсор двигать нельзя, страницу под него — не всегда есть куда, поэтому
+ * стоит контрол, а ходит строка. Подсветка сильнее наведения: под курсором
+ * в этот момент чужая строка, и надо видеть, какая своя.
+ */
+.plan-row.held,
+.plan-row.held:hover,
+.plan-section.held > .plan-row.section-head {
+  background: #cfe0fb;
+}
+
+.plan-held {
+  position: fixed;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  padding: 2px 4px;
+  background: #fff;
+  border: 1px solid #cfd8e3;
+  border-radius: var(--row-radius);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.16);
+}
+
+.plan-held button.link {
+  padding: 0;
+  color: #1a73e8;
+}
+
+/* у непоместившейся строки свой красный фон — подсветка его не стирает,
+   а притемняет: иначе наведение выглядело бы как «ошибка исчезла» */
+.plan-row.no-slot:hover {
+  background: #fbdedb;
+}
+
+/* дата и день недели — левая зона, всё про календарь. В правой зоне дат
+   нет ни одной: там план */
+.plan-date {
+  font-size: 0.8rem;
+  font-variant-numeric: lining-nums tabular-nums;
+  color: #5f6368;
+  white-space: nowrap;
+}
+
+.plan-date em {
+  font-style: normal;
+  color: #9aa0a6;
+}
+
+/*
+ * Дата — ссылка на занятие, но выглядеть должна датой.
+ *
+ * Синий подчёркнутый текст в сорока строках подряд превратил бы левую
+ * колонку в лестницу; подчёркивание появляется под курсором, когда человек
+ * уже целится.
+ */
+a.plan-date {
+  text-decoration: none;
+  color: #5f6368;
+}
+
+/*
+ * Записан час или это долг — значком **перед** датой, и в своей колонке
+ * сетки, а не внутри ячейки с датой.
+ *
+ * Внутри ячейки они уже стояли, и столбика не получалось: глиф шире
+ * отведённого ему места, и дата у помеченной строки съезжала вправо
+ * относительно непомеченных. Своя колонка снимает вопрос — и у значков, и
+ * у дат один левый край на всю таблицу.
+ *
+ * Красная точка, а не янтарная, как было сначала: со строгой очередью
+ * незакрытый час держит всё, что после него, и «просто пропуском» быть
+ * перестал. Тот же цвет и та же точка стоят в сетке расписания — один факт
+ * должен выглядеть одинаково везде, где его показывают.
+ */
+.plan-state {
+  font-size: 0.8rem;
+  font-weight: 700;
+  line-height: 1;
+  text-align: center;
+}
+
+.plan-state.unclosed {
+  color: #c5221f;
+}
+
+.plan-state.recorded {
+  color: #1c7a34;
+}
+
+/*
+ * Долг в сетке расписания: точка в углу клетки.
+ *
+ * Углом, а не подписью: в клетке уже лежат название курса и, если включены,
+ * тема урока, и третья строка текста туда не влезет. Точка же читается
+ * периферийным зрением — за тем её и ставят.
+ */
+.cell.lesson.debt::after {
+  content: '';
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 6px;
+  height: 6px;
+  background: #c5221f;
+  border-radius: 50%;
+}
+
+/* записанный час: галочка тем же углом и тем же зелёным, что в таблице
+   плана. Долгом и записью один час быть не может, так что угол общий */
+.cell.lesson.recorded::after {
+  content: '\2713';
+  position: absolute;
+  top: 0;
+  right: 3px;
+  font-size: 0.7rem;
+  line-height: 1.2;
+  color: #1c7a34;
+}
+
+a.plan-date:hover {
+  color: #1a73e8;
+  text-decoration: underline;
+}
+
+a.plan-date:hover em {
+  color: #1a73e8;
+}
+
+/* урок, которому слота не досталось: строка целиком, а не одна ячейка —
+   иначе на длинном плане это незаметно */
+.plan-row.no-slot {
+  background: #fdecea;
+}
+
+.plan-date.missing {
+  color: #c5221f;
+}
+
+/*
+ * Черта между строками: конец четверти или каникулы.
+ *
+ * Ради неё всё и затевалось: даты без неё бесполезны — надо помнить, когда
+ * кончается четверть. Поэтому она заметная, с подписью посередине.
+ */
+.plan-divider {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0.35rem 0;
+  font-size: 0.78rem;
+  color: #b06000;
+  white-space: nowrap;
+}
+
+.plan-divider::before,
+.plan-divider::after {
+  content: '';
+  flex: 1;
+  height: 0;
+  border-top: 2px solid #f0b429;
+}
+
+.plan-divider.break {
+  color: #1967d2;
+}
+
+.plan-divider.break::before,
+.plan-divider.break::after {
+  border-top-style: dashed;
+  border-top-color: #8ab4f8;
+}
+
+/* переключатели показа живут рядом с плашками, справа */
+/*
+ * Полоса между сводкой и таблицей: слева сказанное про план, справа —
+ * что показывать в ней.
+ *
+ * Строк было три, каждая своим блоком страницы, то есть с зазором в рем
+ * сверху и снизу: чекбоксы у правого края, «Утверждён 15 авг.» и «уроков
+ * вне тем: 2». Вместе они занимали высоту таблицы из шести уроков и ничего
+ * друг о друге не сообщали.
+ */
+/* «⋯» в панели плана: редкое — обмен файлами, полка, утверждение — живёт
+   под ним, как отмена занятия под таким же на странице урока */
+.plan-menu {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+/*
+ * Два меню рядом — «Файл» и «Библиотека».
+ *
+ * Одно на них было, и под одной чертой в нём лежали две разные темы: обмен
+ * файлами и полка. Черта — слабый разделитель, и чтобы найти «Из
+ * библиотеки», приходилось прочитать все шесть пунктов; теперь тема названа
+ * на самой кнопке.
+ *
+ * Обёртка одна на оба: клик мимо закрывает открытое, каким бы из двух оно
+ * ни было, — а зазор между ними тот же, что у соседних кнопок ряда.
+ */
+.plan-menus {
+  display: flex;
+  align-items: center;
+  gap: var(--row-gap, 0.5rem);
+}
+
+/* «⋯» — контрол, а не текст: бледное многоточие между двумя обведёнными
+   кнопками читается как опечатка. Рамка и рост общие с соседями */
+.plan-menu .more {
+  width: var(--control-height);
+  height: var(--control-height);
+  padding: 0;
+  font-size: 1.1rem;
+  line-height: 1;
+  color: #1a73e8;
+  background: #fff;
+  border: 1px solid #c6c6c6;
+  border-radius: 4px;
+}
+
+.plan-menu .more:hover:not(:disabled) {
+  background: #f1f5fd;
+  border-color: #1a73e8;
+}
+
+.plan-menu .more[aria-expanded='true'] {
+  color: #fff;
+  background: #1a73e8;
+  border-color: #1a73e8;
+}
+
+/* открывается вправо: кнопка стоит у левого края панели */
+.plan-menu .dropdown {
+  right: auto;
+  left: 0;
+  min-width: 12rem;
+}
+
+/* пункт меню — строка списка, а не контрол ряда: рост ему задаёт текст */
+.plan-menu .dropdown button {
+  min-height: 0;
+}
+
+/* значки состояния в сводке: те же ✓ и •, что в таблице, и стоят они там
+   заодно легендой — поэтому им нужна колонка постоянной ширины, иначе
+   числа в двух строках плашки не встанут друг под друга */
+.card-stat .pair .plan-state {
+  width: 0.9rem;
+  text-align: center;
+}
+
+/* число-кнопка («разобрать долги») занимает ту же колонку, что обычное
+   число, и выключена так же вправо: иначе две строки плашки разъезжаются */
+.card-stat .pair .link {
+  justify-self: end;
+  padding: 0;
+}
+
+/*
+ * Утверждение — одной группой в шапке, рядом с тумблером вида.
+ *
+ * Состояние, отправка и сравнение это один разговор, и стояли они в трёх
+ * разных местах страницы. Здесь они в ряд и по центру друг друга: подпись
+ * `.hint` свой верхний отступ в таком ряду носить не должна — он уводил бы
+ * текст вниз относительно кнопки.
+ */
+.plan-approval {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+  /* прижата вправо, что бы ни стояло слева */
+  margin-left: auto;
+}
+
+.plan-approval > .hint {
+  margin: 0;
+  /* длинное замечание методиста не растягивает шапку на пол-экрана */
+  max-width: 28rem;
+}
+
+/* номер — своя колонка сетки, выключка вправо: названия начинаются с одной
+   вертикали и при однозначном номере, и при двузначном */
+.plan-row .plan-number {
+  font-size: 0.8rem;
+  color: #80868b;
+  text-align: right;
+}
+
+/* треугольник свёртки стоит в колонке номера */
+.plan-row.section-head .toggle {
+  justify-self: end;
+}
+
+/* название не растягивается: на широком экране пометки и заметка должны
+   стоять рядом с ним, а не уезжать к правому краю */
+.plan-row .title {
+  flex: 0 1 auto;
+  min-width: 2rem;
+  font-size: 0.95rem;
+  overflow: hidden;
+  padding: 0 0.3rem;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  border-radius: 3px;
+}
+
+/* прошедшее приглушено — это только оформление, на расчёт не влияет */
+.plan-row.past {
+  opacity: 0.55;
+}
+
+/*
+ * Строка, на которую привели со страницы урока.
+ *
+ * Гаснет сама, и это важнее, чем кажется: подсветка, живущая до ухода со
+ * страницы, через три правки читается как выделение, а выделение
+ * обещает действие над собой. Одноразовая вспышка отвечает ровно на
+ * вопрос «где эта строка» и больше ни на что не претендует.
+ *
+ * Анимация не перезапускается от перечитывания дерева: ключ строки —
+ * id узла, элемент не пересоздаётся.
+ */
+@keyframes plan-spotlight {
+  from {
+    background: #fde9a9;
+  }
+  to {
+    background: transparent;
+  }
+}
+
+.plan-row.spotlight,
+.plan-section.spotlight > .plan-row {
+  animation: plan-spotlight 2.5s ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .plan-row.spotlight,
+  .plan-section.spotlight > .plan-row {
+    animation: none;
+    background: #fde9a9;
+  }
+}
+
+.plan-row .title:hover:not(:disabled) {
+  color: inherit;
+  background: #e8effb;
+}
+
+.plan-number {
+  min-width: 1.6rem;
+  font-size: 0.8rem;
+  color: #777;
+  text-align: right;
+}
+
+.row-actions {
+  display: flex;
+  gap: 0.1rem;
+  margin-left: auto;
+}
+
+/*
+ * Кнопки строки появляются при наведении.
+ *
+ * Четыре кнопки на сорока строках — сто шестьдесят значков, из-за которых
+ * не виден сам план. Прячем только там, где есть чем навести: на сенсорном
+ * экране наведения не бывает, и кнопки остаются на месте — «долгое нажатие»
+ * там уже занято перетаскиванием.
+ */
+@media (hover: hover) {
+  .plan-row .row-actions {
+    visibility: hidden;
+  }
+
+  .plan-row:hover .row-actions,
+  .plan-row:focus-within .row-actions {
+    visibility: visible;
+  }
+}
+
+/*
+ * Тема — полоса и строки под ней, без своей карточки.
+ *
+ * Карточка вокруг каждой темы съедала по полсотни пикселей на блок: шесть
+ * тем — треть экрана рамок. Полоса читается как разделитель не хуже, а
+ * место оставляет плану.
+ */
+.plan-section {
+  padding: 0;
+  background: none;
+  border: none;
+}
+
+.section-head .title {
+  font-weight: 600;
+}
+
+.section-head:hover {
+  background: none;
+}
+
+.plan-children .empty {
+  padding: 0.2rem 0.4rem;
+  font-size: 0.85rem;
+}
+
+/*
+ * Плашка-состояние: «открыта», «ждёт ответа», «черновик».
+ *
+ * `inline-flex` и своя высота строки — не украшение. У строчного элемента
+ * вертикальные отступы на высоту строки не влияют, а заливка рисуется по
+ * области содержимого шрифта, в которую входит весь его нижний вынос: текст
+ * оказывается прижат к верху плашки, и на «открыта» с её «р» и «у» это
+ * видно сразу.
+ */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  /* размеры целыми пикселями (16px в rem): 12px шрифт, 15px строка, 2px
+     отступ. Дробные значения браузер округляет при отрисовке фона и текста
+     по-разному, и плашка съезжает на пиксель — заметно как раз на ней.
+     Высота строки при этом не меньше области содержимого шрифта (~1.25),
+     иначе центрируется коробка строки, а буквы в ней сидят несимметрично */
+  /* сверху меньше, чем снизу, и это не опечатка. Плашки набраны строчными
+     («открыта», «ждёт ответа»): прописных в них нет, а выносные есть —
+     буквы занимают полосу от строчной высоты до нижнего выноса, и при
+     равных отступах над ними остаётся пустой этаж прописных. Измерено:
+     6 пикселей сверху против 3 снизу. Здесь центрируется то, что видно */
+  padding: 0.0625rem 0.5rem 0.25rem;
+  font-size: 0.75rem;
+  line-height: 1.25;
+  border-radius: 999px;
+  background: #e0e0e0;
+  color: #444;
+}
+
+button.link.toggle {
+  min-width: 1rem;
+  color: #555;
+}
+
+/* --- импорт CSV --- */
+
+/*
+ * Зона выбора файла — ряд, а не столбик.
+ *
+ * Кнопка стояла сверху, имя файла подписью под ней, и рядом с кнопкой оно
+ * читалось как съехавшее вниз. В одну строку с центрированием видно, что
+ * это одно целое: чем выбрать, что выбрано и чем убрать.
+ */
+.drop-zone {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 0.6rem;
+  padding: 0.9rem 1rem;
+  /* один кегль на всю зону, и это не косметика: коробки кнопки и надписи
+     центрируются друг по другу точно, а глаз читает базовые линии — при
+     разном размере шрифта они расходятся на пару пикселей, и надпись
+     выглядит съехавшей вниз, хотя посчитана ровно по центру */
+  font-size: 0.85rem;
+  color: #666;
+  text-align: center;
+  background: #fafafa;
+  border: 1px dashed #c6c6c6;
+  border-radius: var(--row-radius);
+  cursor: pointer;
+}
+
+/* файл выбран: рамка перестаёт звать и просто держит строку */
+.drop-zone.chosen {
+  color: #202124;
+  border-style: solid;
+}
+
+.drop-zone.over {
+  color: #1a73e8;
+  background: #eef3fd;
+  border-color: #1a73e8;
+  border-style: solid;
+}
+
+/* поле спрятано, но доступно с клавиатуры: метка кликает по нему сама */
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.drop-pick {
+  display: inline-block;
+  flex: none;
+  padding: 0.35rem 0.9rem;
+  /* размер берётся у зоны: два кегля в одной строке и были причиной */
+  font-size: inherit;
+  color: #1a73e8;
+  background: #fff;
+  border: 1px solid #c6c6c6;
+  border-radius: 4px;
+}
+
+.drop-zone:hover .drop-pick {
+  border-color: #1a73e8;
+  background: #f1f5fd;
+}
+
+.drop-name {
+  min-width: 0;
+}
+
+/* длинное имя жмётся многоточием, а не переносит кнопку на вторую строку;
+   целиком оно остаётся в подсказке. Приглашение «перетащите сюда» под это
+   правило не попадает: ему перенос как раз к лицу */
+.drop-zone.chosen .drop-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* крестик рядом с именем: сбросить выбор было нечем вовсе */
+.drop-clear {
+  flex: none;
+  align-self: center;
+  padding: 0 0.2rem;
+  font-size: inherit;
+  line-height: 1;
+  color: #5f6368;
+}
+
+.drop-clear:hover {
+  color: #b00020;
+}
+
+/* нативная кнопка выбора файла серая и чужая — приводим её к виду
+   вторичной кнопки приложения; для старых WebKit правило продублировано */
+.drop-zone input[type='file']::file-selector-button {
+  margin-right: 0.6rem;
+  padding: 0.35rem 0.9rem;
+  font: inherit;
+  font-size: 0.85rem;
+  color: #1a73e8;
+  background: #fff;
+  border: 1px solid #c6c6c6;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.drop-zone input[type='file']::-webkit-file-upload-button {
+  margin-right: 0.6rem;
+  padding: 0.35rem 0.9rem;
+  font: inherit;
+  font-size: 0.85rem;
+  color: #1a73e8;
+  background: #fff;
+  border: 1px solid #c6c6c6;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.drop-zone input[type='file']::file-selector-button:hover {
+  background: #f1f5fd;
+  border-color: #1a73e8;
+}
+
+.drop-zone input[type='file']::-webkit-file-upload-button:hover {
+  background: #f1f5fd;
+  border-color: #1a73e8;
+}
+
+.drop-zone.over input[type='file']::file-selector-button {
+  border-color: #1a73e8;
+}
+
+.csv-preview,
+.csv-warnings {
+  margin: 0;
+  padding: 0;
+  max-height: 14rem;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.csv-preview li {
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+  padding: 0.15rem 0;
+  font-size: 0.85rem;
+}
+
+.csv-preview li.lesson {
+  padding-left: 1rem;
+}
+
+.csv-preview li.section {
+  font-weight: 600;
+}
+
+.csv-preview .hint {
+  margin: 0;
+}
+
+/* режимы импорта: у каждого пояснение в строку, иначе «заменить» и
+   «синхронизовать» различимы только по опыту */
+.csv-modes {
+  margin: 0.6rem 0;
+  padding: 0;
+  list-style: none;
+}
+
+.csv-modes li + li {
+  margin-top: 0.35rem;
+}
+
+.csv-modes label {
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+
+.csv-modes label.disabled {
+  opacity: 0.55;
+}
+
+.csv-modes .hint {
+  margin: 0;
+}
+
+/* цена импорта: что именно будет потеряно */
+.csv-cost {
+  padding: 0.5rem 0.7rem;
+  border: 1px solid #e0e0e0;
+  border-radius: var(--row-radius);
+  font-size: 0.9rem;
+}
+
+.csv-cost p {
+  margin: 0 0 0.35rem;
+}
+
+/* что унесёт операция: список, а не абзац — пять чисел подряд в строку
+   не читаются, а глазами считают именно их */
+.loss-list {
+  margin: 0;
+  padding-left: 1.1rem;
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+.csv-cost.losing {
+  border-color: #e57373;
+  background: #fff5f5;
+}
+
+/* «понимаю, что теряю» — там, где удаление уносит содержание и вложения.
+   Правило общее: вопрос один и тот же у импорта и у сноса темы, и второй
+   его копии в файле быть не должно */
+.checkbox.danger {
+  margin-top: 0.4rem;
+  font-weight: 600;
+}
+
+.csv-lost {
+  margin: 0.3rem 0;
+  padding-left: 1.1rem;
+  max-height: 10rem;
+  overflow-y: auto;
+  font-size: 0.85rem;
+}
+
+.csv-lost .mark {
+  margin-left: 0.3rem;
+}
+
+/* --- журнал занятия --- */
+
+/* Строка на человека: имя слева, три отметки справа. Кнопки, а не список:
+   на двадцати учениках выпадающий список это двадцать открываний, а
+   отметка ставится взглядом. */
+.attendance {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.attendance > li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.1rem 0.4rem;
+  border-radius: var(--row-radius);
+}
+
+/* отмеченная строка заливается: по столбцу видно, докуда дошли */
+.attendance > li.present {
+  background: #eaf7ec;
+}
+
+.attendance > li.absent {
+  background: #fdeceb;
+}
+
+.attendance > li.late {
+  background: #fff6e5;
+}
+
+.attendance .name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.attendance .marks {
+  display: flex;
+  flex-shrink: 0;
+  gap: 0.2rem;
+}
+
+/* нативный выбор файла: подпись ему рисует браузер, своим языком и своей
+   кнопкой, поэтому в ряду его прячут за обычной кнопкой */
+.hidden-file {
+  display: none;
+}
+
+/* --- долги по записи --- */
+
+/* Список короткий (две недели прошедших занятий), поэтому строка, а не
+   таблица: колонок хватает грид-шаблона, и он же держит их ровными. */
+.debt-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.debt-list > li {
+  display: grid;
+  grid-template-columns: 10rem 8rem 1fr auto;
+  gap: 0.5rem;
+  align-items: center;
+  padding: 0.35rem 0.5rem;
+  background: var(--surface-1);
+  border-radius: var(--row-radius);
+}
+
+.debt-list .debt-day,
+.debt-list .debt-course {
+  color: #666;
+  font-size: 0.85rem;
+  white-space: nowrap;
+}
+
+.debt-list .debt-topic {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.debt-list .debt-choice {
+  display: flex;
+  gap: 0.25rem;
+}
+
+/* причина занимает всю ширину строки под выбором: она появляется редко и
+   рвать ради неё сетку не стоит */
+.debt-list > li > input {
+  grid-column: 1 / -1;
+}
+
+/* --- перетаскивание --- */
+
+button.link.handle {
+  padding: 0 0.2rem;
+  color: #b0b0b0;
+  font-size: 0.9rem;
+  cursor: grab;
+  /* только ручка блокирует жест: сам список пальцем прокручивается */
+  touch-action: none;
+}
+
+button.link.handle:hover:not(:disabled) {
+  color: #1a73e8;
+  background: none;
+}
+
+/* Проведённый урок: ручки нет, а место под неё есть.
+   Убрать её из разметки нельзя — строка съехала бы относительно соседних;
+   бледная тоже не годится — она предлагает движение, которого не будет. */
+.handle.locked {
+  visibility: hidden;
+  padding: 0 0.2rem;
+  font-size: 0.9rem;
+}
+
+.plan-row.dragging,
+.plan-section.dragging {
+  opacity: 0.4;
+}
+
+/* линия в месте будущей вставки */
+.plan-row.drop-before,
+.plan-section.drop-before,
+.plan-row.drop-after,
+.plan-section.drop-after {
+  position: relative;
+}
+
+.plan-row.drop-before::before,
+.plan-section.drop-before::before,
+.plan-row.drop-after::after,
+.plan-section.drop-after::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: #1a73e8;
+  border-radius: 2px;
+}
+
+.plan-row.drop-before::before,
+.plan-section.drop-before::before {
+  top: -2px;
+}
+
+.plan-row.drop-after::after,
+.plan-section.drop-after::after {
+  bottom: -2px;
+}
+
+/* тема как контейнер: подсвечивается, когда урок кладут внутрь */
+.plan-section.drop-inside {
+  border-color: #1a73e8;
+  background: #f1f5fd;
+}
+
+.plan-empty-zone {
+  padding: 0.4rem 0.5rem;
+  font-size: 0.8rem;
+  color: #8a8a8a;
+  text-align: center;
+  border: 1px dashed #c6c6c6;
+  border-radius: 4px;
+}
+
+.plan-empty-zone.over {
+  color: #1a73e8;
+  border-color: #1a73e8;
+  border-style: solid;
+  background: #eaf1fd;
+}
+
+.drag-overlay {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.3rem 0.5rem;
+  background: #fff;
+  border: 1px solid #1a73e8;
+  border-radius: 4px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.22);
+  cursor: grabbing;
+}
+
+.plan-edit,
+.plan-add-form {
+  display: flex;
+  flex: 1;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  align-items: center;
+}
+
+.plan-add-form {
+  padding: 0.3rem 0.4rem;
+}
+
+/*
+ * Поле названия — **прямой** ребёнок формы, и только оно.
+ *
+ * Селектор был потомковый, и тем самым ловил любой input внутри формы. С
+ * приходом тумблера это стало видно сразу: его радиокнопки получили
+ * `min-width: 8rem`, разъехались на всю ширину ряда и накрыли друг друга —
+ * нажатие по левому сегменту попадало в правый. Тот самый капкан, о
+ * котором предупреждает раздел «СТРОКА ФОРМЫ»: правило для контрола в
+ * ряду, написанное в стороне от него.
+ */
+.plan-edit > input,
+.plan-add-form > input {
+  flex: 1;
+  min-width: 8rem;
+  padding: 0.3rem 0.45rem;
+  font: inherit;
+  border: 1px solid #c6c6c6;
+  border-radius: 4px;
+}
+
+.plan-edit select {
+  padding: 0.3rem;
+  font: inherit;
+  border: 1px solid #c6c6c6;
+  border-radius: 4px;
+  background: #fff;
+}
+
+.plan-edit button,
+.plan-add-form button {
+  padding: 0.3rem 0.6rem;
+  font-size: 0.85rem;
+}
+
+/* --- сводное расписание --- */
+
+/* номер урока: в сетке, в ленте раскладки и в диалогах */
+.slot {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: #1b5e20;
+}
+
+.slot.cancelled {
+  color: #8a8a8a;
+  text-decoration: line-through;
+}
+
+.slot.extra {
+  color: #b45309;
+}
+
+/*
+ * Обновляемая сетка: содержимое на месте, только приглушено.
+ *
+ * Замена сетки на строку «Загрузка…» схлопывала страницу и уносила
+ * прокрутку в начало — см. «Моё расписание» в CLAUDE.md.
+ */
+.refreshing {
+  opacity: 0.6;
+  transition: opacity 0.12s ease-in;
+  pointer-events: none;
+}
+
+/* панель операций над выделенными днями */
+.selection-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.6rem 0.9rem;
+  background: #fff;
+  border-radius: var(--card-radius);
+  box-shadow: var(--card-shadow);
+}
+
+.selection-bar span {
+  margin-right: auto;
+  font-size: 0.9rem;
+}
+
+/*
+ * Выбор курсов для массовой операции: группы, а не россыпь чекбоксов.
+ *
+ * Россыпью это было, и на девятнадцати курсах «скопировать всем, кроме
+ * одного» стоило восемнадцати нажатий. Теперь колонка групп: в строке
+ * группы — её галочка и счёт, под ней сами курсы с отступом.
+ */
+/* подсказка под сеткой: два нажатия названы словами, потому что оба
+   беззвучны — ни правой кнопки, ни долгого нажатия на экране не видно */
+.grid-hint {
+  margin-top: 0.5rem;
+}
+
+.class-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.class-picker .hint {
+  margin: 0;
+}
+
+/* шапка — обычный ряд контролов: подпись, «все», «никого», счёт, тумблер */
+.class-picker-head {
+  margin-bottom: 0.2rem;
+}
+
+.class-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+/* имя группы весомее курсов внутри: по нему и целятся, когда берут пятерых
+   разом */
+.class-picker .checkbox.group {
+  font-weight: 500;
+}
+
+.class-picker .checkbox.group .hint {
+  font-variant-numeric: lining-nums tabular-nums;
+}
+
+/* курсы группы — в ряд с переносом: их по три-пять, и колонкой они
+   растянули бы окно на весь экран */
+.class-items {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.2rem 0.75rem;
+  padding-left: 1.4rem;
+}
+
+.class-stats {
+  margin: 0;
+  white-space: nowrap;
+}
+
+.agenda-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.agenda-bar strong {
+  margin: 0 0.5rem;
+}
+
+.agenda-bar input[type='date'] {
+  padding: 0.35rem 0.5rem;
+  font: inherit;
+  border: 1px solid #c6c6c6;
+  border-radius: 4px;
+}
+
+.class-filter {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.class-filter .hint {
+  margin: 0;
+}
+
+label.checkbox {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.9rem;
+}
+
+.week-grid {
+  display: grid;
+  gap: 2px;
+  padding: var(--card-pad-tight);
+  background: #fff;
+  border-radius: var(--card-radius);
+  box-shadow: var(--card-shadow);
+}
+
+.day-head {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 0.25rem;
+  font-size: 0.8rem;
+  color: #555;
+  border-radius: 4px;
+}
+
+.day-head strong {
+  font-size: 1rem;
+  color: #222;
+}
+
+.day-head em {
+  font-size: 0.7rem;
+  font-style: normal;
+  text-align: center;
+  color: #8a6d3b;
+}
+
+.day-head.locked {
+  background: #f0f0f0;
+}
+
+.day-head.today {
+  background: #e3edfd;
+  box-shadow: inset 0 0 0 1px #1a73e8;
+}
+
+/* заголовок дня кликабелен: он выделяет день под массовые операции */
+button.day-head {
+  border: none;
+  cursor: pointer;
+}
+
+button.day-head:hover {
+  background: #eef3fd;
+}
+
+.day-head.selected {
+  background: #d7e6fb;
+  box-shadow: inset 0 0 0 2px #1a73e8;
+}
+
+.row-head {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.8rem;
+  color: #777;
+}
+
+.week-grid .cell {
+  min-height: 2.1rem;
+  padding: 0.2rem 0.3rem;
+  font-size: 0.8rem;
+  color: #222;
+  background: #f7f7f7;
+  border: 1px solid transparent;
+  border-radius: 4px;
+}
+
+.cell.free {
+  color: transparent;
+  cursor: pointer;
+}
+
+.cell.free:hover:not(:disabled) {
+  color: #1a73e8;
+  background: #eef3fd;
+  border-color: #c3d5f5;
+}
+
+.cell.locked {
+  background: #ececec;
+  /* неучебный день: ставить уроки некуда */
+  cursor: default;
+}
+
+/* в одном окне могут лежать отмена и поставленный вместо неё урок */
+.cell-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.cell-stack.multi .cell {
+  min-height: 1.5rem;
+  font-size: 0.72rem;
+}
+
+/* место свободно (остались одни отмены) — приглашение видно сразу */
+.cell.add-more {
+  min-height: 1.2rem;
+  color: #9aa0a6;
+  background: none;
+  border: 1px dashed #c6c6c6;
+}
+
+.cell.add-more:hover:not(:disabled) {
+  color: #1a73e8;
+  background: #eef3fd;
+  border-style: solid;
+  border-color: #c3d5f5;
+}
+
+.cell.lesson {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  /* точка долга ставится в угол абсолютом — ей нужен этот угол */
+  position: relative;
+  min-width: 0;
+  font-weight: 600;
+  color: #1b5e20;
+  background: #d7ecd9;
+}
+
+/* название курса: в одну строку с обрезкой — колонка узкая, а имя курса
+   длиной с предмет, и полное видно в подсказке ячейки */
+.cell-course {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* тема из плана: мельче, приглушённее и в одну строку с обрезкой */
+.cell-topic {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  font-size: 0.68rem;
+  font-weight: 400;
+  line-height: 1.2;
+  opacity: 0.75;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* слоту не досталось урока плана — говорим об этом прямо */
+.cell-topic.missing {
+  font-style: italic;
+  opacity: 0.55;
+}
+
+.topics-toggle {
+  margin-left: 0.5rem;
+  padding-left: 0.75rem;
+  border-left: 1px solid #ddd;
+}
+
+.cell.lesson:hover:not(:disabled) {
+  border-color: #1a73e8;
+  background: #cbe6ce;
+}
+
+.cell.lesson.cancelled {
+  color: #7a7a7a;
+  background: #ededed;
+  text-decoration: line-through;
+}
+
+.cell.lesson.extra {
+  color: #7c3d00;
+  background: #fde3a7;
+}
+
+/* --- легенда и статистика --- */
+
+/* легенда над обеими колонками: статусы одной строкой, термы — другой */
+.legends {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 0.8125rem;
+  color: #555;
+}
+
+.legend li {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.swatch {
+  width: 0.9rem;
+  height: 0.9rem;
+  border-radius: 3px;
+  background: #eceff1;
+}
+
+.swatch.study {
+  background: #d7ecd9;
+}
+
+.swatch.holiday {
+  background: #f6c6c2;
+}
+
+.swatch.vacation {
+  background: #fde3a7;
+}
+
+.swatch.weekend {
+  background: #e6e6e6;
+}
+
+.weekday-stats {
+  width: 100%;
+  margin-top: 0.75rem;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+}
+
+.weekday-stats th {
+  text-align: left;
+  font-weight: 600;
+  color: #555;
+}
+
+.weekday-stats td {
+  text-align: right;
+}
+
+.status-stats {
+  margin-top: 0.5rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid #eee;
+}
+
+.status-stats th {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-weight: 400;
+}
+
+/* --- список исключений --- */
+
+.exceptions {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.exceptions li {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.4rem 0 0.4rem 0.5rem;
+  border-left: 3px solid #ccc;
+}
+
+.exceptions li + li {
+  margin-top: 0.35rem;
+}
+
+.exceptions li.holiday {
+  border-left-color: #e57373;
+}
+
+.exceptions li.vacation {
+  border-left-color: #f0ad4e;
+}
+
+.exceptions li.workday {
+  border-left-color: #4caf50;
+}
+
+.exceptions strong {
+  display: block;
+  font-size: 0.9rem;
+}
+
+.exceptions .hint {
+  margin: 0;
+}
+
+/* --- содержание урока: боковая панель --- */
+
+/* Тот же <dialog>, что и остальные окна проекта (top layer, Escape и
+   затемнение — от браузера), но прижатый к правому краю во всю высоту:
+   урок — это страница текста, и её неудобно читать в коробочке по центру. */
+.modal.sheet {
+  margin: 0 0 0 auto;
+  max-height: 100vh;
+  height: 100vh;
+  border-radius: var(--card-radius) 0 0 var(--card-radius);
+}
+
+.modal-body.sheet {
+  width: min(46rem, calc(100vw - 2rem));
+  max-height: 100vh;
+  height: 100vh;
+  box-sizing: border-box;
+  gap: 0.6rem;
+}
+
+/*
+ * Шапка панели урока: название, «Правка/Просмотр» и состояние черновика.
+ *
+ * Прижата к верху, потому что содержание длинное, а название и переключатель
+ * нужны на любой его высоте.
+ *
+ * Отрицательный отступ сверху был рассчитан на то, что этот блок — **первый**
+ * в окне, и он им быть перестал: над ним встала строка с крестиком, и шапка
+ * наползла на неё, съев половину. Поэтому прижимаются теперь обе, стопкой:
+ * крестик выше (`z-index` больше), шапка встаёт ровно под ним.
+ *
+ * Число `1.25rem` в `top` шапки — это где кончается прижатая строка
+ * крестика: −1.25 (её вынос за поле окна) + 0.75 (её верхний отступ) + 1.75
+ * (рост самого крестика).
+ */
+.modal-body.sheet > .modal-head h3 {
+  /* рост шапки задаёт крестик (1.75rem), и заголовок не должен его
+     перерастать: под него посчитан `top` у прижатой шапки панели */
+  font-size: 1rem;
+  line-height: 1.75rem;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.modal-body.sheet > .modal-head {
+  position: sticky;
+  top: -1.25rem;
+  z-index: 2;
+  margin: -1.25rem -1.25rem calc(0rem - 0.6rem);
+  padding: 0.75rem 1.25rem 0;
+  background: #fff;
+}
+
+/* шапка в две строки: сперва «что это», потом само название. Кнопки уехали
+   в строку заголовка окна, и ряда для них здесь больше нет */
+.lesson-where {
+  margin-bottom: 0.4rem;
+}
+
+.lesson-head {
+  display: block;
+  position: sticky;
+  top: 1.25rem;
+  z-index: 1;
+  margin: 0 -1.25rem 0;
+  padding: 0.5rem 1.25rem 0.75rem;
+  background: #fff;
+  border-bottom: 1px solid #eee;
+}
+
+input.lesson-title {
+  width: 100%;
+  box-sizing: border-box;
+  min-width: 0;
+  padding: 0.4rem 0.5rem;
+  font: inherit;
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: inherit;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: transparent;
+}
+
+/* рамка под курсором — обещание правки по клику, и в просмотре её быть не
+   должно: правится всё одной кнопкой наверху */
+input.lesson-title:hover {
+  border-color: #ddd;
+}
+
+input.lesson-title:focus {
+  outline: 2px solid #1a73e8;
+  outline-offset: -1px;
+  background: #fff;
+}
+
+/*
+ * Просмотр — значит просмотр: название и заметка перестают быть полями.
+ *
+ * Поле ввода обещает правку, а её в этом режиме нет; и рамка вокруг текста,
+ * который нельзя тронуть, — самое частое «почему у меня не печатается».
+ */
+.lesson-title.static {
+  padding: 0.4rem 0;
+  font-size: 1.1rem;
+  font-weight: 600;
+  border: none;
+  background: none;
+}
+
+.lesson-note.static {
+  color: #5f6368;
+  font-size: 0.9rem;
+}
+
+.lesson-note {
+  padding: 0.4rem 0.5rem;
+  font: inherit;
+  color: #555;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+}
+
+.lesson-status {
+  margin: 0;
+  font-size: 0.8125rem;
+  min-height: 1.2em;
+}
+
+.lesson-status .unsaved {
+  color: #b26a00;
+  font-weight: 600;
+}
+
+/* строка состояния теперь говорит две вещи: сохранено ли и чем сохранить.
+   Подпись прижата вправо — она справочная и не должна спорить с
+   состоянием, которое читают первым */
+.lesson-status {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.lesson-status .keys {
+  font-size: 0.75rem;
+  white-space: nowrap;
+}
+
+.lesson-field {
+  border: 1px solid #e6e6e6;
+  border-radius: var(--row-radius);
+  background: #fafafa;
+}
+
+.lesson-field-head {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  width: 100%;
+  padding: 0.5rem 0.65rem;
+  font: inherit;
+  text-align: left;
+  color: inherit;
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+
+/* шапка раздела, который не разворачивается: та же строка, но не кнопка —
+   ни каретки, ни отклика под курсором. Место каретки при этом занято:
+   названия разделов стоят на одной вертикали, разворачивается он или нет */
+.lesson-field-head.static {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  padding: 0.5rem 0.65rem 0.5rem 1.6rem;
+}
+
+.lesson-field-head:hover {
+  background: #f0f0f0;
+}
+
+.lesson-field-name {
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+.lesson-field-head .caret {
+  color: #888;
+  width: 1em;
+}
+
+.lesson-field-head .dot {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  background: #1a73e8;
+}
+
+.lesson-field-head .hint {
+  margin: 0;
+}
+
+.lesson-field textarea {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0.6rem 0.7rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.85rem;
+  line-height: 1.5;
+  color: inherit;
+  border: none;
+  border-top: 1px solid #e6e6e6;
+  border-radius: 0 0 6px 6px;
+  background: #fff;
+  resize: vertical;
+}
+
+.lesson-field textarea:focus {
+  outline: 2px solid #1a73e8;
+  outline-offset: -2px;
+}
+
+.lesson-field .markdown {
+  padding: 0.3rem 0.7rem 0.7rem;
+  border-top: 1px solid #e6e6e6;
+  background: #fff;
+  border-radius: 0 0 6px 6px;
+}
+
+/* --- отрисованный markdown --- */
+
+.markdown {
+  font-size: 0.95rem;
+  line-height: 1.55;
+  overflow-x: auto;
+}
+
+.markdown h1,
+.markdown h2,
+.markdown h3 {
+  margin: 0.9rem 0 0.4rem;
+  font-size: 1.05rem;
+}
+
+.markdown p,
+.markdown ul,
+.markdown ol {
+  margin: 0.5rem 0;
+}
+
+.markdown code {
+  padding: 0.1rem 0.25rem;
+  font-size: 0.85em;
+  background: #f0f0f0;
+  border-radius: 3px;
+}
+
+.markdown pre {
+  padding: 0.6rem;
+  overflow-x: auto;
+  background: #f5f5f5;
+  border-radius: 4px;
+}
+
+.markdown pre code {
+  padding: 0;
+  background: none;
+}
+
+.markdown table {
+  border-collapse: collapse;
+}
+
+.markdown th,
+.markdown td {
+  padding: 0.3rem 0.5rem;
+  border: 1px solid #ddd;
+}
+
+.markdown blockquote {
+  margin: 0.5rem 0;
+  padding-left: 0.75rem;
+  border-left: 3px solid #ddd;
+  color: #555;
+}
+
+/* формула шире панели должна прокручиваться, а не растягивать окно */
+.markdown .katex-display {
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 0.2rem 0;
+}
+
+/* --- вложения --- */
+
+.lesson-files h3 {
+  margin: 0.5rem 0 0;
+  font-size: 1rem;
+}
+
+.attachments {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.attachment {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  padding: 0.35rem 0.25rem;
+  border-bottom: 1px solid #eee;
+}
+
+.attachment .title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
+}
+
+.attachment .hint {
+  margin: 0;
+  white-space: nowrap;
+}
+
+.attachment .remove {
+  color: #b00020;
+}
+
+/*
+ * Зона перетаскивания — она же кнопка выбора файла.
+ *
+ * Стояла она в панели всегда, отчего файл вёл себя не как два соседних
+ * вида материала, а как исключение; теперь она появляется по кнопке
+ * «Добавить файл…» и занимает ряд, как форма ссылки или записи. Кнопкой
+ * она стала не ради вида: тащить умеют не все и не везде, а нажать —
+ * везде.
+ */
+button.dropzone {
+  /* во всю ширину раздела: обрезанная по содержимому зона выглядела
+     случайным куском, а не целью, в которую метят */
+  display: block;
+  width: calc(100% - 1.3rem);
+  margin: 0 0.65rem;
+  padding: 0.9rem;
+  text-align: center;
+  font: inherit;
+  font-size: 0.85rem;
+  color: #777;
+  background: none;
+  border: 2px dashed #d0d0d0;
+  border-radius: var(--row-radius);
+  cursor: pointer;
+  white-space: normal;
+}
+
+button.dropzone:hover:not(:disabled) {
+  color: #1a73e8;
+  border-color: #1a73e8;
+}
+
+.dropzone {
+  padding: 0.9rem;
+  text-align: center;
+  font-size: 0.85rem;
+  color: #777;
+  border: 2px dashed #d0d0d0;
+  border-radius: var(--row-radius);
+}
+
+.dropzone.over {
+  color: #1a73e8;
+  border-color: #1a73e8;
+  background: #eaf2fe;
+}
+
+/* значки в таблице плана: содержание и вложения — разные вещи */
+.plan-row .mark {
+  font-size: 0.8rem;
+  line-height: 1;
+  opacity: 0.75;
+}
+
+/* --- РАЗБОР ПАЧКИ СКАНОВ ---------------------------------------------------
+   Окно во всю ширину: внутри таблица на тридцать учеников и полоски шапок,
+   которые читают глазами. Полоска — главный элемент экрана: по ней человек
+   решает, чья это работа, и ужимать её нельзя. */
+.scan-strip {
+  display: block;
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: var(--row-radius);
+  background: #fff;
+}
+
+.scan-progress progress {
+  width: 100%;
+  height: 0.75rem;
+}
+
+.scan-cards {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--modal-gap);
+}
+
+/* Таблица шире окна не растягивает страницу, а прокручивается внутри себя:
+   пятнадцать колонок задач на узком экране иначе выносят вёрстку. */
+.scan-table-wrap {
+  overflow-x: auto;
+}
+
+.scan-table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 0.9rem;
+}
+
+.scan-table th,
+.scan-table td {
+  border: 1px solid var(--border);
+  padding: 0.2rem 0.4rem;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.scan-table th:first-child,
+.scan-table td:first-child {
+  text-align: left;
+}
+
+/* Ученик, которому не досталось ни одной страницы, приглушён: он не ошибка,
+   но и не результат — на контрольной его просто не было. */
+.scan-table tr.empty td {
+  color: var(--muted);
+}
+
+.scan-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.15rem;
+  font-size: 0.8rem;
+}
+
+.scan-cell input {
+  width: 3rem;
+  text-align: center;
+}
+
+/* Журнал трат: дата, за что, кто и сколько — четыре колонки, выровненные по
+   сетке, чтобы суммы читались столбиком, а не искались глазами. */
+.ai-log {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: auto 1fr auto auto;
+  gap: 0.15rem 0.75rem;
+  font-size: 0.9rem;
+}
+
+.ai-log li {
+  display: contents;
+}
+
+.ai-log b {
+  text-align: right;
+}
+
+/* Самая трудная задача в шапке таблицы: подсвечена, но не криком — она
+   ответ на вопрос «где класс просел», а не тревога. */
+.work-table th.hardest {
+  background: var(--surface-1);
+  box-shadow: inset 0 -2px 0 var(--danger);
+}
+
+/* Справочник систем оценивания: строка на систему, полосы мелким. */
+.grading-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.grading-list li {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.grading-list .name {
+  font-weight: 600;
+  min-width: 8rem;
+}
+
+.grading-list .bands {
+  font-family: var(--mono, monospace);
+}
+
+/* Разговор о задаче: реплики строками, своя выделена. */
+.task-thread {
+  margin-top: var(--panel-gap);
+}
+
+.thread-list {
+  list-style: none;
+  margin: 0 0 var(--panel-gap);
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.9rem;
+}
+
+.thread-list li {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 0.5rem;
+}
+
+.thread-list .who {
+  font-weight: 600;
+}
+
+.thread-list li.mine .said {
+  color: var(--accent, inherit);
+}
+
+/* --- ЗАДАЧНИК --------------------------------------------------------------
+   Две колонки: оглавление узкое и фиксированное, задачи занимают остальное.
+   На узком экране колонки схлопываются — оглавление становится строкой сверху,
+   как и всюду в проекте, где две колонки не помещаются. */
+.bank-columns {
+  display: grid;
+  grid-template-columns: 18rem 1fr;
+  gap: var(--card-gap);
+  align-items: start;
+}
+
+@media (max-width: 60rem) {
+  .bank-columns {
+    grid-template-columns: 1fr;
+  }
+}
+
+.bank-columns .outline ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.bank-columns .outline .active {
+  font-weight: 600;
+}
+
+.source-list,
+.problem-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.source-list li {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  padding: 0.15rem 0;
+}
+
+.source-list .count {
+  margin-left: auto;
+}
+
+/* Задача строкой: номер узкой колонкой слева, условие рядом. Номер — это
+   адрес, и он должен стоять столбиком, а не теряться в тексте. */
+.problem-list li {
+  display: grid;
+  grid-template-columns: 3.5rem 1fr auto;
+  gap: 0.5rem;
+  align-items: baseline;
+  padding: 0.25rem 0;
+  border-top: 1px solid var(--border);
+}
+
+.problem-list li:first-child {
+  border-top: none;
+}
+
+.problem-list .label {
+  font-weight: 600;
+}
+
+.problem-list .text p:first-child {
+  margin-top: 0;
+}
+
+/* Тег решения: отрицание видно знаком, а не только цветом — цвет читается
+   не всеми. */
+.tag {
+  display: inline-block;
+  margin-right: 0.4rem;
+  padding: 0 0.35rem;
+  border: 1px solid var(--border);
+  border-radius: var(--row-radius);
+}
+
+.tag.avoids {
+  border-style: dashed;
+  color: var(--muted);
+}
+
+/* Грани поиска: подпись слева, число справа — по числу и выбирают, поэтому
+   оно выключено вправо и стоит столбиком. */
+.facet-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.facet-list li {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  padding: 0.1rem 0;
+}
+
+.facet-list .count {
+  margin-left: auto;
+  color: var(--muted);
+}
+
+.chosen-facets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+/* Дерево выражения: вложенность видно отступом и левой чертой — без неё на
+   третьем уровне непонятно, к какой группе относится строка. */
+.expression-group {
+  padding: 0.35rem 0;
+}
+
+.expression-group:not(.top) {
+  border-left: 2px solid var(--border);
+  padding-left: 0.6rem;
+}
+
+.expression-parts {
+  list-style: none;
+  margin: 0;
+  padding: 0 0 0 0.6rem;
+}
+
+.expression-leaf select {
+  max-width: 14rem;
+}
+
+/* Хронология: номер урока, название, понятия. Колонки те же, что у списка
+   задач, — это один и тот же способ читать список сверху вниз. */
+.chronology {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.chronology li {
+  display: grid;
+  grid-template-columns: 2.5rem minmax(0, 1fr) auto;
+  gap: 0.5rem;
+  align-items: baseline;
+  padding: 0.2rem 0;
+  border-top: 1px solid var(--border);
+}
+
+.chronology li:first-child {
+  border-top: none;
+}
+
+.chronology .label {
+  color: var(--muted);
+  text-align: right;
+}
+
+.chronology .text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chronology .tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  align-items: baseline;
+}
+
+/* Полоска тегов: сами теги и кнопка «+ тег» в одну строку с переносом. */
+.tag-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  align-items: baseline;
+  margin-top: 0.4rem;
+}
+
+.tag-strip .tag button {
+  margin-left: 0.25rem;
+}
+
+/* Отобранное: полоса под шапкой банка. Заливка тут не украшение — набор
+   переживает переход между экранами, и его должно быть видно сразу. */
+.basket {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.4rem 0.75rem;
+  background: var(--surface-1);
+  border-radius: var(--row-radius);
+}
+
+/* Кнопка отбора: место под неё занято всегда, иначе строки списка съезжают
+   друг относительно друга, стоит отметить одну. */
+.pick {
+  min-width: 1.6rem;
+  padding: 0 0.35rem;
+}
+
+.pick.taken {
+  font-weight: 700;
+}
+
+/* «Условие в банке изменилось» — пометка под условием, а не отдельная
+   карточка: она про эту строку и читается вместе с ней. */
+.task-question .stale {
+  margin-top: 0.2rem;
+}
+
+/* Условие с шапкой сюжета: шапка приглушена и отбита, потому что читают её
+   один раз, а вопрос — каждый. Полоса слева говорит, что это общее условие,
+   а не первый абзац вопроса. */
+.statement-stem {
+  border-left: 3px solid var(--border);
+  padding-left: 0.6rem;
+  margin-bottom: 0.4rem;
+  color: var(--muted);
+}
+
+/* «Эту задачу он уже решал в другой работе» — уголок в клетке: строке там
+   места нет, а при проверке это знать надо. */
+.cell .again {
+  position: absolute;
+  right: 2px;
+  bottom: 2px;
+  width: 0;
+  height: 0;
+  border-left: 5px solid transparent;
+  border-bottom: 5px solid var(--muted);
+}
+
+.cell {
+  position: relative;
+}
+
+/* Предложения: карточка на разговор, как в списке работ. */
+.proposal-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--card-gap);
+}
+
+.proposal-list blockquote {
+  margin: 0.3rem 0;
+}
+
+/*
+ * Обращения к разработчику: кнопка в баре и список на своей странице.
+ *
+ * Кнопка стоит слева от меню пользователя и в баре ученика — там же. На
+ * узком экране от неё остаётся один значок: место в баре дороже слова, а
+ * подпись живёт в `title`.
+ */
+.feedback-open {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+@media (max-width: 640px) {
+  .feedback-word {
+    display: none;
+  }
+}
+
+.feedback-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--card-gap);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* вид обращения — метка, а не кнопка: нажимать на неё нечего */
+.feedback-kind {
+  padding: 0.1rem 0.5rem;
+  border-radius: 999px;
+  background: #eef1f4;
+  color: #46505a;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.feedback-kind.bug {
+  background: #fdecec;
+  color: #a33a3a;
+}
+
+.feedback-kind.idea {
+  background: #eaf3ff;
+  color: #2f5f9e;
+}
+
+/*
+ * Текст — как написали, с переносами строк.
+ *
+ * Сообщения пишут абзацами («нажимаю сюда — ничего; а ещё вот тут»), и
+ * склеенные в одну строку они читаются вдвое дольше. `pre-wrap`, а не `pre`:
+ * длинную строку всё равно надо переносить по ширине карточки.
+ */
+.feedback-text {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}

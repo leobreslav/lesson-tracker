@@ -1,0 +1,134 @@
+# Проверка на GitHub: те же три набора и теми же командами, что на машине.
+#
+# Главное решение тут одно и то же, что в облачных сессиях: **CI гоняет
+# docker compose**, а не собирает рядом «нативную» установку. Второй способ
+# запустить те же тесты однажды разошёлся бы с первым, и узнали бы мы об
+# этом по зелёному CI при красном ноутбуке.
+#
+# Отсюда же бесплатная выгода: раннер начинает с чистого клона без единого
+# ключа — то есть ровно с того, с чего начинается облачная сессия. Поломку
+# «сторож пустоты падает без ключей R2» такой прогон нашёл бы сам.
+#
+# Уровни повторяют CLAUDE.md: на каждый пуш — питон, узловые и дымовой
+# браузерный; полный браузерный — ночью и по кнопке.
+
+name: tests
+
+on:
+  push:
+  pull_request:
+  schedule:
+    # 02:00 UTC — ночь у разработчика; ночной прогон на ноутбуке этим и
+    # заменяется, а стенд там больше никто не занимает
+    - cron: "0 2 * * *"
+  workflow_dispatch:
+
+concurrency:
+  # новый пуш отменяет прошлый прогон той же ветки; расписание и ручной
+  # запуск в эту группу не попадают, иначе пуш гасил бы ночной прогон
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  python:
+    name: python
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      # тот же скрипт, что зовёт хук сессии: без `.env` compose не поднимет
+      # ничего — `env_file` объявлен, а DEBUG в settings.py без умолчания
+      - name: Файл окружения
+        run: bash scripts/dev-env.sh
+
+      - name: Сторож трат в Anthropic
+        # Секунда, и без контейнера: scripts/ никуда не примонтирован.
+        # Регулярка портится молча в обе стороны — и переставая ловить, и
+        # начиная ловить лишнее.
+        run: python3 scripts/test-guard-anthropic-spend.py
+
+      - name: Сторож автовыкатки прода
+        # Секунда, и без контейнера. Скрипт выкатывает прод без человека, и
+        # проверяются обе стороны: и что выкатывает, и что отказывается.
+        run: bash scripts/test-prod-autodeploy.sh
+
+      - name: Сторож переноса веток
+        # gh подменён заглушкой, сети не надо. Большинство проверок — про
+        # отказ: этим скриптом двигают ветку, которую тянет боевой сервер.
+        run: bash scripts/test-ship.sh
+
+      - name: Сторож пересева стенда по просьбе
+        # Секунда, и без контейнера. Скрипт сносит базу стенда без человека
+        # перед экраном, поэтому проверяется и то, что просьба исполняется
+        # ровно один раз: повтор упавшего посева сносил бы базу по кругу.
+        run: bash scripts/test-staging-seed-watch.sh
+
+      - name: Питоновский набор
+        run: docker compose run --rm -T backend python manage.py test
+
+  node:
+    name: node
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Файл окружения
+        run: bash scripts/dev-env.sh
+
+      # тесты клиентской логики — встроенным в node раннером; словарь ошибок
+      # они читают из backend/config/errors.py, и compose монтирует его сам
+      - name: Узловые тесты
+        run: docker compose run --rm -T frontend npm test
+
+  smoke:
+    name: browser-smoke
+    if: github.event_name == 'push' || github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      # два файла, обходящих все экраны: маршруты и ряды контролов в обеих
+      # локалях. Ловит ошибку в консоли, которой не видит `vite build`
+      - name: Дымовой браузерный
+        run: ./e2e.sh --smoke
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: browser-smoke
+          path: |
+            e2e/test-results/
+            e2e/playwright-report/
+          retention-days: 7
+
+  browser:
+    name: browser-${{ matrix.shard }}-of-4
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      # без этого первый упавший шард отменяет остальные, и картина прогона
+      # оказывается неполной ровно тогда, когда она нужна
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
+    steps:
+      - uses: actions/checkout@v4
+
+      # `--shard` уезжает в playwright насквозь: e2e.sh отдаёт ему всё, чего
+      # не разобрал сам. Шарды идут на разных раннерах, поэтому одинаковое
+      # имя compose-проекта им не мешает — на одной машине мешало бы
+      - name: Полный браузерный
+        run: ./e2e.sh --shard=${{ matrix.shard }}/4
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: browser-shard-${{ matrix.shard }}
+          path: |
+            e2e/test-results/
+            e2e/playwright-report/
+          retention-days: 7

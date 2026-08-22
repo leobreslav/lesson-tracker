@@ -1,0 +1,31 @@
+__pycache__/
+*.py[cod]
+.env
+.env.prod
+# резервные копии, которые push-deploy.sh оставляет на сервере рядом с ним:
+# без этой строки deploy.sh считал бы рабочее дерево грязным
+.env.prod.bak.*
+staticfiles/
+media/
+node_modules/
+dist/
+.idea/
+# следы браузерных прогонов: снимки и трассы пишет контейнер, и они
+# root'овы — `git add -A` утаскивал их в коммит вместе с работой
+e2e/test-results/
+e2e/tmp-*.png
+# следы компиляции бланка: pdflatex пишет их рядом с исходником, а в репозиторий
+# едут только сам .tex и собранный .pdf
+blank/*.aux
+blank/*.log
+blank/*.synctex.gz
+blank/preview*.png
+blank/decode_src.png
+
+# личные настройки Claude Code: права и хуки замеров — они про машину, а не
+# про проект; общие настройки лежат рядом в settings.json и едут в git
+.claude/settings.local.json
+
+# файл паролей basic-auth: свой на каждом контуре
+nginx/auth/*
+!nginx/auth/.gitkeep
