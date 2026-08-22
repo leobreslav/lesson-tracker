@@ -102,6 +102,10 @@ class TaskSerializer(serializers.ModelSerializer):
         # склеенный текст — иначе пропадёт и пометка, и разница между тем, что
         # видит учитель и что ученик.
         data["shown"] = statements.shown(instance)
+        # Как вопрос зовётся: своё имя или номер по порядку. Считает это
+        # модель, а не экран, — иначе правило «пусто значит номер» жило бы в
+        # пяти местах клиента и разъехалось бы при первой же правке.
+        data["name"] = instance.name
         return data
 
     class Meta:
@@ -113,6 +117,7 @@ class TaskSerializer(serializers.ModelSerializer):
             "id",
             "work",
             "position",
+            "label",
             "question",
             "answers",
             "maximum",
@@ -308,6 +313,15 @@ class QuestionSerializer(serializers.Serializer):
 
     question = serializers.CharField(
         required=False, allow_blank=True, trim_whitespace=False, default=""
+    )
+    # Своё имя вопроса; пусто — зовётся номером по порядку.
+    #
+    # Умолчания нарочно нет, в отличие от `maximum`: с `default=""` ключ
+    # приезжал бы всегда, и всякий, кто правит вопросы не ради имён, стирал бы
+    # их молча. Отсутствие ключа значит «не трогай», пустая строка — «сними
+    # имя», и это два разных намерения.
+    label = serializers.CharField(
+        required=False, allow_blank=True, max_length=16
     )
     maximum = serializers.IntegerField(min_value=1, max_value=MAX_MARK, default=1)
     answers = serializers.ListField(

@@ -290,6 +290,11 @@ class WorkViewSet(CourseScopedViewSet):
                     {
                         "id": task.pk,
                         "position": task.position,
+                        # имя вопроса и то, что его задаёт: экран показывает
+                        # `name`, а правит `label` — пустое значит «зовусь
+                        # номером по порядку»
+                        "label": task.label,
+                        "name": task.name,
                         "question": statements.statement_of(task),
                         "shown": statements.shown(task),
                         "maximum": task.maximum,
@@ -719,6 +724,10 @@ class StudentWorkView(APIView):
                     {
                         "id": task.pk,
                         "position": task.position,
+                        # как вопрос назван в работе. Ученику важнее, чем
+                        # учителю: он слышит «второй пункт первой задачи» на
+                        # уроке и должен найти на экране «1б», а не «2»
+                        "name": task.name,
                         # сколько стоит вопрос: без этого числа балл ученику
                         # не объяснить — «2» само по себе не говорит ничего,
                         # а «2 из 3» говорит всё

@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { longDate } from './dates'
 import Modal from './Modal'
 import Rendered from './Markdown'
+import Switch from './Switch'
 import { formatSize, iconFor, looksLikeUrl } from './fileKind'
 import {
   addLinkAttachment,
@@ -374,17 +375,22 @@ export default function LessonPanel({ nodeId, where = null, onClose, onSaved }) 
       })}
       actions={
         <>
-          {/* обе кнопки одной формы: круглая «таблетка» рядом с
-              прямоугольной читалась как два разных сорта органов
-              управления, хотя это просто переключатель и подтверждение */}
-          <button
-            type="button"
-            className={preview ? 'secondary compact pressed' : 'secondary compact'}
-            aria-pressed={preview}
-            onClick={() => setPreview(!preview)}
-          >
-            {t(preview ? 'lesson.edit' : 'lesson.preview')}
-          </button>
+          {/* Выбор вида — тумблером, а не кнопкой. Вдавленной кнопкой это
+              было, и вопрос «включено ли сейчас» решался по заливке: рядом с
+              «Сохранить» она читалась вторым действием, а не переключателем.
+              Тот же контрол стоит в окне задачи — там правят такой же
+              Markdown с формулами, и два разных органа для одного вопроса
+              были ровно тем, чем выглядели: двумя разными решениями */}
+          <Switch
+            className="compact"
+            value={preview ? 'preview' : 'write'}
+            label={t('lesson.viewMode')}
+            options={[
+              { value: 'write', label: t('lesson.edit') },
+              { value: 'preview', label: t('lesson.preview') },
+            ]}
+            onChange={(mode) => setPreview(mode === 'preview')}
+          />
           <button
             type="button"
             className="compact"

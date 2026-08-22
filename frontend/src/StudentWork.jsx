@@ -96,11 +96,15 @@ export default function StudentWork() {
 
       {work.tasks.length > 0 && (
         <ol className="student-tasks">
-          {work.tasks.map((task, index) => (
+          {work.tasks.map((task) => (
             <TaskCard
               key={task.id}
               task={task}
-              number={index + 1}
+              // имя вопроса, а не его место в списке: учитель говорит на уроке
+              // «второй пункт первой задачи», и на экране ученик должен найти
+              // «1б». Пока номер считался здесь, переименование до ученика не
+              // доезжало вовсе — и два экрана называли один вопрос по-разному
+              number={task.name}
               canAnswer={work.can_answer}
               onSent={load}
               onError={setError}
@@ -235,7 +239,9 @@ function TaskCard({ task, number, canAnswer, onSent, onError }) {
   }
 
   return (
-    <li className="panel student-task">
+    // номер рисует CSS из `data-number`, а не счётчик списка: счётчик умеет
+    // считать только по порядку, а вопрос зовётся так, как его назвали
+    <li className="panel student-task" data-number={number}>
       <div className="task-question">
         {/* пункт показывается вместе со своим сюжетом — или без него, если
             учитель шапку выключил: данные он написал на доске */}

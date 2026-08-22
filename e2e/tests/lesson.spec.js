@@ -78,7 +78,7 @@ test('превью отрисовывает формулы через KaTeX', as
   await openPlan(page)
   const panel = await openLesson(page, WITH_CONTENT)
 
-  await panel.getByRole('button', { name: 'Просмотр' }).click()
+  await panel.getByRole('radio', { name: 'Просмотр' }).click()
 
   const rendered = panel.locator('[data-field="body"] .markdown')
   await expect(rendered).toBeVisible()
@@ -102,7 +102,7 @@ test('в просмотре не правится ничего, включая �
   const panel = await openLesson(page, WITH_CONTENT)
 
   await expect(panel.locator('input.lesson-title')).toBeVisible()
-  await panel.getByRole('button', { name: 'Просмотр' }).click()
+  await panel.getByRole('radio', { name: 'Просмотр' }).click()
 
   await expect(panel.locator('input.lesson-title')).toHaveCount(0)
   await expect(panel.locator('input.lesson-note')).toHaveCount(0)
@@ -120,7 +120,7 @@ test('в просмотре не правится ничего, включая �
   await expect(empty.locator('.caret')).toHaveCount(0)
 
   // «Правка» возвращает поля
-  await panel.getByRole('button', { name: 'Правка' }).click()
+  await panel.getByRole('radio', { name: 'Правка' }).click()
   await expect(panel.locator('input.lesson-title')).toBeVisible()
 })
 

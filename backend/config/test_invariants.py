@@ -123,6 +123,12 @@ class TheCellHasNoTextOfItsOwnTests(SimpleTestCase):
     PLACE = {"id", "work", "position", "maximum", "created_at"}
     LINKS = {"problem", "submissions", "marks", "mark_changes", "threads"}
     SHOWING = {"show_stem"}
+    # Как ячейка **зовётся**, а не где стоит. Разряд отдельный от PLACE
+    # намеренно: пока имени не было, эту роль исполняла позиция — вопросы
+    # звались номерами по порядку, — и работа с пунктами «1а, 1б, 1в» была
+    # невыразима. Имя не двигает ячейку и не решает, что видно; оно решает,
+    # каким словом про неё говорят на уроке.
+    NAMING = {"label"}
     # Что ученик вправе делать с этой ячейкой. Разряд заведён под
     # `open_for_answers` и назван отдельно от показа намеренно: показ решает,
     # что видно, а это — что можно, и разница видна на бумажной работе, где
@@ -134,13 +140,21 @@ class TheCellHasNoTextOfItsOwnTests(SimpleTestCase):
         task = apps.get_model("works", "Task")
         names = {field.name for field in task._meta.get_fields()}
 
-        unknown = names - self.PLACE - self.LINKS - self.SHOWING - self.ANSWERING
+        unknown = (
+            names
+            - self.PLACE
+            - self.NAMING
+            - self.LINKS
+            - self.SHOWING
+            - self.ANSWERING
+        )
         self.assertEqual(
             unknown,
             set(),
-            "новое поле у ячейки: решите, это место (PLACE), связь (LINKS), "
-            "показ (SHOWING) или право ученика (ANSWERING) — и допишите сюда. "
-            "Текста у ячейки быть не может: он живёт в bank.Problem",
+            "новое поле у ячейки: решите, это место (PLACE), имя (NAMING), "
+            "связь (LINKS), показ (SHOWING) или право ученика (ANSWERING) — и "
+            "допишите сюда. Текста у ячейки быть не может: он живёт в "
+            "bank.Problem",
         )
 
 

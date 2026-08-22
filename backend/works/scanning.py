@@ -519,12 +519,19 @@ def troubles(
     return out
 
 
-def merge_marks(pages: list[Page]) -> tuple[dict, list[str]]:
+def merge_marks(pages: list[Page]) -> tuple[dict, list[int]]:
     """
     Баллы одного ученика со всех его страниц в один набор.
 
     Конфликт — это одна задача с разными баллами на двух страницах: молча
     выбрать одно из двух нельзя, поэтому он называется и идёт человеку.
+
+    Возвращаются **номера клеток**, а не готовые подписи. Подпись зависит от
+    того, как учитель назвал вопрос («1а», «324 из Галицкого»), а здесь про
+    работу не известно ничего: сюда приезжают только прочитанные страницы.
+    Пока функция клеила «Q1» сама, переименование вопроса до этого места не
+    доходило — и в списке конфликтов оставались номера, которых на экране уже
+    не было.
     """
     marks: dict[int, int] = {}
     conflicts: set[int] = set()
@@ -534,4 +541,4 @@ def merge_marks(pages: list[Page]) -> tuple[dict, list[str]]:
             if q in marks and marks[q] != value:
                 conflicts.add(q)
             marks[q] = value
-    return marks, [f"Q{q + 1}" for q in sorted(conflicts)]
+    return marks, sorted(conflicts)

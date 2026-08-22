@@ -85,8 +85,11 @@ class ScanApplyTests(SchoolTestMixin, APITestCase):
 
         packet = next(p for p in state["packets"] if p["student"] == self.student.pk)
         self.assertIn("mark_differs", packet["trouble"])
+        # вопрос назван так, как его зовёт работа: пусто в `label` значит
+        # «зовусь номером по порядку», и это строка, а не число — иначе
+        # переименованный вопрос («1а») выпал бы из типа
         self.assertEqual(
-            packet["overwrites"], [{"question": 1, "was": 3, "now": 1}]
+            packet["overwrites"], [{"question": "1", "was": 3, "now": 1}]
         )
 
     def test_the_same_mark_read_again_is_not_a_doubt(self):

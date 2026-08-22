@@ -189,7 +189,7 @@ export default function WorkTable() {
                     были третьей строкой мелким шрифтом и делали шапку
                     шумной. Кто справился — видно по самой колонке, а
                     подробности живут в окне проверки и в сводке */}
-                {table.tasks.map((task, index) => (
+                {table.tasks.map((task) => (
                   <th
                     key={task.id}
                     className={hasMarks && task.id === marks.hardest ? 'hardest' : ''}
@@ -214,7 +214,7 @@ export default function WorkTable() {
                           : setQuestion(statsOf(task.id))
                       }
                     >
-                      {index + 1}
+                      {task.name}
                     </button>
                   </th>
                 ))}
@@ -311,10 +311,10 @@ export default function WorkTable() {
       <details className="panel">
         <summary>{t('table.questions')}</summary>
         <ol className="task-list">
-          {table.tasks.map((task, index) => (
+          {table.tasks.map((task) => (
             <li key={task.id}>
-              {/* номер тот же, что в шапке столбца: по нему их и сличают */}
-              <span className="task-number">{index + 1}.</span>
+              {/* имя то же, что в шапке столбца: по нему их и сличают */}
+              <span className="task-number">{task.name}.</span>
               <div className="task-question">
                 <Markdown text={task.question} />
               </div>

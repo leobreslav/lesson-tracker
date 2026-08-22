@@ -158,7 +158,9 @@ class MergeTests(SimpleTestCase):
             [page(0, marks={0: 1}), page(1, marks={0: 3})]
         )
 
-        self.assertEqual(conflicts, ["Q1"])
+        # номер клетки, а не готовая подпись: как вопрос зовётся, знает работа,
+        # а сюда приезжают только страницы
+        self.assertEqual(conflicts, [0])
 
 
 class TroubleTests(SimpleTestCase):

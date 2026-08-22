@@ -29,6 +29,8 @@ import { fetchTaskImpact } from './api'
 export default function TaskDialog({ task, busy, onSubmit, onRecheck, onClose }) {
   const { t } = useTranslation()
   const [question, setQuestion] = useState(task?.question ?? '')
+  // как вопрос зовётся в этой работе; пусто — зовётся номером по порядку
+  const [label, setLabel] = useState(task?.label ?? '')
   const [answers, setAnswers] = useState(() => [...(task?.answers ?? []), ''])
   const [impact, setImpact] = useState(null)
   const [preview, setPreview] = useState(false)
@@ -66,6 +68,7 @@ export default function TaskDialog({ task, busy, onSubmit, onRecheck, onClose })
 
     onSubmit({
       question,
+      label: label.trim(),
       answers: answers.filter((answer) => answer.trim()),
       ...(mode ? { mode } : {}),
       ...(task?.shown?.stem || task?.shown?.is_part ? { show_stem: withStem } : {}),
@@ -109,15 +112,44 @@ export default function TaskDialog({ task, busy, onSubmit, onRecheck, onClose })
           </div>
         )}
 
-        <div className="row">
+        {/* Как вопрос зовётся: «1а», «324 из Галицкого». Поле необязательное,
+            и подпись говорит, что будет, если его не трогать, — иначе пустое
+            место в форме читается как забытое, а не как выбранное. Узкое
+            намеренно: сюда пишут номер, а не название */}
+        <label className="field-with-hint task-label">
+          {t('works.task.label')}
+          <input
+            value={label}
+            maxLength={16}
+            placeholder={task ? String(task.position + 1) : ''}
+            onChange={(event) => setLabel(event.target.value)}
+          />
+        </label>
+        <p className="hint">{t('works.task.labelHint')}</p>
+
+        {/* Правка и просмотр — один тумблер, тот же, что в панели урока.
+            Двумя разными органами это было: тут ссылка, там вдавленная
+            кнопка, — и читалось как два разных решения одного вопроса.
+            Ссылка вдобавок спорила с подписью поля: подпись мелкая (и это
+            правильно), а надпись на ссылке — в рост текста, отчего она
+            выглядела главнее того, что подписывает. У тумблера подписи того
+            же роста, что подсказка, и по форме видно, что это выбор вида, а
+            не действие */}
+        <div className="row middle">
           <span className="hint">{t('works.task.question')}</span>
-          <button
-            type="button"
-            className="link"
-            onClick={() => setPreview((current) => !current)}
-          >
-            {t(preview ? 'works.task.write' : 'works.task.preview')}
-          </button>
+          <Switch
+            className="compact"
+            value={preview ? 'preview' : 'write'}
+            /* своя подпись, не «Условие»: тем же словом подписана textarea,
+               и один и тот же ярлык на двух контролах — это два ответа на
+               вопрос «какой из них вы имеете в виду» */
+            label={t('works.task.viewMode')}
+            options={[
+              { value: 'write', label: t('works.task.write') },
+              { value: 'preview', label: t('works.task.preview') },
+            ]}
+            onChange={(mode) => setPreview(mode === 'preview')}
+          />
         </div>
 
         {preview ? (

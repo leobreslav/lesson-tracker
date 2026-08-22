@@ -30,7 +30,7 @@ export default function CellDialogBank({ task, answered, onClose, onDone }) {
 
   return (
     <Modal
-      title={t('works.task.fromBank', { number: task.position + 1 })}
+      title={t('works.task.fromBank', { number: task.name })}
       onClose={onClose}
     >
       {error && <p className="error">{error}</p>}

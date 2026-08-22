@@ -518,6 +518,8 @@ def build_table(work) -> dict:
         {
             "id": task.pk,
             "position": task.position,
+            # как вопрос назван: «1а», «324 из Галицкого» или номер по порядку
+            "name": task.name,
             "question": statements.statement_of(task),
             "answers": statements.answers_of(task),
             "maximum": task.maximum,
@@ -618,7 +620,7 @@ def mark_stats(students, questions) -> dict:
         columns.append(
             {
                 "id": item.pk,
-                "name": f"Q{item.position + 1}",
+                "name": item.name,
                 "maximum": item.maximum,
                 "question": statements.statement_of(item),
                 "graded": len(values),
@@ -946,17 +948,21 @@ def set_questions(work, items, *, by):
             if position < len(existing):
                 row = existing[position]
                 row.position = position
+                row.label = item.get("label", row.label)
                 row.maximum = item.get("maximum", row.maximum)
                 row.open_for_answers = item.get(
                     "open_for_answers", row.open_for_answers
                 )
                 row.save(
-                    update_fields=["position", "maximum", "open_for_answers"]
+                    update_fields=[
+                        "position", "label", "maximum", "open_for_answers"
+                    ]
                 )
             else:
                 row = Task.objects.create(
                     work=work,
                     position=position,
+                    label=item.get("label", ""),
                     maximum=item.get("maximum", 1),
                     open_for_answers=item.get("open_for_answers", True),
                 )
@@ -1193,7 +1199,7 @@ def standing_marks(work) -> dict:
     }
 
 
-def differing_marks(standing, student_id, read) -> list:
+def differing_marks(standing, student_id, read, names=None) -> list:
     """
     Что скан перепишет, и на что именно.
 
@@ -1213,8 +1219,29 @@ def differing_marks(standing, student_id, read) -> list:
     for position, value in sorted(read.items()):
         was = standing.get((student_id, position))
         if was is not None and was != value:
-            out.append({"question": position + 1, "was": was, "now": value})
+            out.append(
+                {"question": question_name(names, position), "was": was, "now": value}
+            )
     return out
+
+
+def question_names(work) -> list[str]:
+    """
+    Как зовутся вопросы работы, по порядку клеток бланка.
+
+    Клетка и вопрос связаны позицией, а не именем: третья клетка листа — это
+    третий вопрос, как бы учитель его ни назвал. Поэтому имена едут отдельным
+    списком рядом с баллами, а не ключами в них: ключ должен оставаться местом,
+    иначе переименование вопроса потеряло бы уже прочитанные баллы.
+    """
+    return [task.name for task in work.tasks.all()]
+
+
+def question_name(names, position: int) -> str:
+    """Имя клетки: своё, если работа его знает, иначе номер по порядку."""
+    if names and 0 <= position < len(names):
+        return names[position]
+    return str(position + 1)
 
 
 def scan_state(work) -> dict:
@@ -1234,7 +1261,8 @@ def scan_state(work) -> dict:
     roster = scan_roster(work)
     packets = scanning.arrange(pages, roster)
     limit = max_mark_of(work)
-    questions = work.tasks.count() or scanning.QUESTIONS
+    names = question_names(work)
+    questions = len(names) or scanning.QUESTIONS
 
     owner_of = {}
     for packet in packets:
@@ -1268,7 +1296,8 @@ def scan_state(work) -> dict:
     out_packets = []
     for number, packet in enumerate(packets):
         marks, conflicts = scanning.merge_marks(packet.pages)
-        overwrites = differing_marks(standing, packet.student_id, marks)
+        conflicts = [question_name(names, q) for q in conflicts]
+        overwrites = differing_marks(standing, packet.student_id, marks, names)
         trouble = sorted(
             {code for page in packet.pages for code in by_index[page.index]["trouble"]}
         )
@@ -1306,6 +1335,7 @@ def scan_state(work) -> dict:
     for person in roster:
         packet = mine.get(person.id)
         marks, conflicts = scanning.merge_marks(packet.pages if packet else [])
+        conflicts = [question_name(names, q) for q in conflicts]
         students.append(
             {
                 "id": person.id,
@@ -1324,6 +1354,10 @@ def scan_state(work) -> dict:
         "packets": out_packets,
         "students": students,
         "questions": questions,
+        # подписи столбцов таблицы разбора: «1а», «324 из Галицкого» или номер
+        # по порядку. Пустой список у работы, где вопросы ещё не заведены, —
+        # тогда клетки зовутся своими номерами
+        "question_names": names,
         "max_mark": limit,
         "conditions": sum(len(packet.conditions) for packet in packets),
         "doubts": [

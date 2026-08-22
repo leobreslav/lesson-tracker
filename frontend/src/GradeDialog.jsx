@@ -189,7 +189,7 @@ export default function GradeDialog({
             <div className="score-row">
               {tasks.map((item) => (
                 <label className="field-with-hint" key={item.id}>
-                  {`Q${item.position + 1} · 0–${item.maximum}`}
+                  {`${item.name} · 0–${item.maximum}`}
                   <input
                     type="number"
                     min={0}

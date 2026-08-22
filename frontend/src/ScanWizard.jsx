@@ -196,7 +196,7 @@ export default function ScanWizard({ work, onClose, onDone }) {
       )}
 
       {stage === 'reading' && (
-        <section className="scan-progress">
+        <section className="scan-step scan-progress">
           <p>{t('scan.reading', { done, total: total || '…' })}</p>
           <progress value={done} max={total || 1} />
           <p className="hint">{t('scan.readingHint')}</p>
@@ -264,12 +264,15 @@ function QuestionsStep({ onSave, busy }) {
   const [count, setCount] = useState(15)
   const [max, setMax] = useState(3)
   const [each, setEach] = useState(null)
+  // как вопросы зовутся: «1а», «324 из Галицкого». Пусто — зовутся номерами
+  const [names, setNames] = useState({})
 
   const numbers = Array.from({ length: count }, (_, i) => i + 1)
   const maxOf = (number) => each?.[number] ?? max
+  const nameOf = (number) => names[number] ?? ''
 
   return (
-    <section>
+    <section className="scan-step">
       <p className="hint">{t('scan.questionsHint')}</p>
       <div className="row">
         <label className="field">
@@ -296,23 +299,39 @@ function QuestionsStep({ onSave, busy }) {
         </label>
       </div>
 
+      {/* по одному: имя и цена. Имя тут, а не только в окне задачи, потому
+          что бумажную работу заводят именно здесь и целиком — пятнадцать
+          ячеек сразу; переименовывать их потом по одной, открывая пятнадцать
+          окон, значило бы не дать этой возможности вовсе */}
       <details>
         <summary>{t('scan.perQuestion')}</summary>
+        <p className="hint">{t('scan.perQuestionHint')}</p>
         <div className="row">
           {numbers.map((number) => (
-            <label key={number} className="scan-cell">
-              <span>Q{number}</span>
+            <div key={number} className="scan-cell">
+              <input
+                className="scan-cell-name"
+                maxLength={16}
+                placeholder={String(number)}
+                value={nameOf(number)}
+                disabled={busy}
+                aria-label={t('scan.questionName', { number })}
+                onChange={(event) =>
+                  setNames({ ...names, [number]: event.target.value })
+                }
+              />
               <input
                 type="number"
                 min="1"
                 max="99"
                 value={maxOf(number)}
                 disabled={busy}
+                aria-label={t('scan.questionMax', { number })}
                 onChange={(event) =>
                   setEach({ ...(each ?? {}), [number]: Math.max(1, Number(event.target.value) || 1) })
                 }
               />
-            </label>
+            </div>
           ))}
         </div>
       </details>
@@ -322,7 +341,12 @@ function QuestionsStep({ onSave, busy }) {
           type="button"
           disabled={busy}
           onClick={() =>
-            onSave(numbers.map((number) => ({ maximum: maxOf(number) })))
+            onSave(
+              numbers.map((number) => ({
+                label: nameOf(number).trim(),
+                maximum: maxOf(number),
+              })),
+            )
           }
         >
           {t('common.save')}
@@ -338,18 +362,50 @@ function FileStep({ onPick, busy, questions, read, onReset, readQuestions, onRea
   const [over, setOver] = useState(false)
 
   return (
-    <section>
+    <section className="scan-step">
       <p className="hint">{t('scan.pickHint')}</p>
       {questions > 0 && (
         <p className="hint">{t('scan.questionsSet', { count: questions })}</p>
       )}
 
-      {/* бланк печатают раз в год пачкой, но взять его должно быть откуда */}
-      <p className="hint">
-        <a href="/blank.pdf" target="_blank" rel="noreferrer">
-          {t('scan.printBlank')}
-        </a>
-      </p>
+      {/* Ссылки на бланк тут нет намеренно: печатают его до контрольной, а
+          мастер открывают после, со стопкой исписанных листов в руках.
+          Живёт она теперь на самой странице работ — см. `Works.jsx` */}
+
+      {/* Как сложена пачка — главное, что человек должен знать до нажатия:
+          переделывать после чтения дорого, оно платное. Раскрыто, а не в
+          «подробностях»: первый раз это читают все, а второй раз читать
+          необязательно — глаз проскочит три коротких блока быстрее, чем
+          рука откроет каретку */}
+      <div className="scan-about">
+        <p className="hint">
+          <b>{t('scan.about.pileTitle')}</b>
+        </p>
+        <ul className="hint">
+          <li>{t('scan.about.pileOrder')}</li>
+          <li>{t('scan.about.pileSheets')}</li>
+          <li>{t('scan.about.pileConditions')}</li>
+        </ul>
+
+        <p className="hint">
+          <b>{t('scan.about.limitsTitle')}</b>
+        </p>
+        <ul className="hint">
+          <li>{t('scan.about.limitsOneWork')}</li>
+          <li>{t('scan.about.limitsHeader')}</li>
+          <li>{t('scan.about.limitsCells')}</li>
+        </ul>
+
+        <p className="hint">
+          <b>{t('scan.about.afterTitle')}</b>
+        </p>
+        <ul className="hint">
+          <li>{t('scan.about.afterStrip')}</li>
+          <li>{t('scan.about.afterSplit')}</li>
+          <li>{t('scan.about.afterMarks')}</li>
+          <li>{t('scan.about.afterSource')}</li>
+        </ul>
+      </div>
 
       {/* условия читаются по просьбе: страница целиком дороже полоски шапки,
           а нужна она один раз на пачку */}
@@ -420,7 +476,7 @@ function DoubtStep({
   const stuck = doubts.filter((packet) => packet.trouble.includes('no_owner'))
 
   return (
-    <section className="scan-doubts">
+    <section className="scan-step scan-doubts">
       {/* сколько листов условий нашлось — по ним и разрезана пачка */}
       {conditions > 0 && (
         <p className="hint">{t('scan.conditions', { count: conditions, packets })}</p>
@@ -540,11 +596,16 @@ function CheckStep({ state, pages, busy, onFix, onBack, onApply }) {
   const { t } = useTranslation()
   const [open, setOpen] = useState(null)
   const questions = Array.from({ length: state.questions }, (_, i) => i + 1)
+  // клетка и вопрос связаны местом, а не именем: третья клетка листа — это
+  // третий вопрос, как бы учитель его ни назвал. Поэтому имена лежат
+  // отдельным списком, а искать по нему надо по номеру клетки
+  const nameOfQuestion = (number) =>
+    state.question_names?.[number - 1] ?? String(number)
 
   const cellsOf = (index) => state.pages.find((page) => page.index === index)?.cells ?? []
 
   return (
-    <section className="scan-check">
+    <section className="scan-step scan-check">
       <p className="hint">{t('scan.checkHint')}</p>
 
       <div className="scan-table-wrap">
@@ -554,7 +615,7 @@ function CheckStep({ state, pages, busy, onFix, onBack, onApply }) {
               <th>{t('scan.student')}</th>
               <th>{t('scan.pagesColumn')}</th>
               {questions.map((number) => (
-                <th key={number}>Q{number}</th>
+                <th key={number}>{nameOfQuestion(number)}</th>
               ))}
               <th>{t('scan.total')}</th>
             </tr>
@@ -602,7 +663,7 @@ function CheckStep({ state, pages, busy, onFix, onBack, onApply }) {
           <div className="row">
             {questions.map((number) => (
               <label key={number} className="scan-cell">
-                <span>Q{number}</span>
+                <span>{nameOfQuestion(number)}</span>
                 <input
                   type="number"
                   min="0"

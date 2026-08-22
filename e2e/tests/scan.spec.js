@@ -167,8 +167,10 @@ test('после разбора видно, кто что решил и что �
   await expect(page.locator('.work-table th.hardest')).toBeVisible()
   await expect(page.locator('.work-table td.correct').first()).toHaveText('3')
 
-  // сводка называет самую трудную задачу и разброс
-  await expect(page.locator('[data-card="hardest"] h2')).toHaveText('Q3')
+  // сводка называет самую трудную задачу и разброс. Зовут её так же, как
+  // столбец в таблице: имя вопроса, а у безымянного — номер по порядку.
+  // «Q3» тут было третьим написанием одного и того же числа
+  await expect(page.locator('[data-card="hardest"] h2')).toHaveText('3')
   await expect(page.locator('[data-card="graded"]')).toContainText('2')
   await expect(page.locator('[data-card="spread"]')).toBeVisible()
 
