@@ -57,8 +57,32 @@ case "$1 $2" in
   "auth status") exit 0 ;;
   "repo view")   echo "test/repo"; exit 0 ;;
 esac
+path="$2"
+
+# Просьба о пересеве — это созданный коммит и ветка, указанная на него.
+# Заглушка выдаёт предсказуемые sha по счётчику и записывает первую строку
+# сообщения: именно она и есть смысл просьбы.
+case "$path" in
+  */git/commits)
+      msg="$(printf '%s\n' "$@" | sed -n 's/^message=//p' | head -1)"
+      parent="$(printf '%s\n' "$@" | sed -n 's/^parents\[\]=//p' | head -1)"
+      n=$(( $(cat "$GH_STATE/counter" 2>/dev/null || echo 0) + 1 ))
+      echo "$n" > "$GH_STATE/counter"
+      printf 'сообщение=%s родитель=%s\n' "$msg" "${parent:-нет}" >> "$GH_STATE/commits"
+      printf 'c%039d\n' "$n"
+      exit 0 ;;
+  */git/commits/*)
+      echo treesha; exit 0 ;;                      # дерево у коммита одно
+  */git/refs)
+      ref="$(printf '%s\n' "$@" | sed -n 's/^ref=//p')"
+      sha="$(printf '%s\n' "$@" | sed -n 's/^sha=//p')"
+      echo "${ref##*/} $sha" >> "$GH_STATE/patches"
+      echo "$sha" > "$GH_STATE/ref-${ref##*/}"
+      echo '{}'; exit 0 ;;
+esac
+
 # gh api repos/test/repo/git/refs/heads/<branch> [--jq …] [-X PATCH -f sha=…]
-path="$2"; branch="${path##*/}"
+branch="${path##*/}"
 file="$GH_STATE/ref-$branch"
 if printf '%s\n' "$@" | grep -q PATCH; then
     sha="$(printf '%s\n' "$@" | sed -n 's/^sha=//p')"
@@ -166,6 +190,54 @@ code="$(run_in "$t")"
 if [ "$code" != 0 ] && ! patched "$t" main; then
     report ok "main ушёл вперёд мимо ветки — отказ, перезаписи нет"
 else report FAIL "main ушёл вперёд мимо ветки — отказ, перезаписи нет" "код $code; $(cat "$t/out" | tail -3)"; fi
+rm -rf "$t"
+
+# --- --reseed без аргументов: просьба заведена, аргументы оставлены стенду ---
+t="$(make_fixture)"
+code="$(run_in "$t" --reseed)"
+if [ "$code" = 0 ] && patched "$t" staging-seed &&
+   grep -q 'сообщение=seed: родитель=нет' "$t/commits" && ! patched "$t" main; then
+    report ok "--reseed без аргументов — просьба «seed:», main не трогается"
+else
+    report FAIL "--reseed без аргументов — просьба «seed:», main не трогается" \
+        "код $code; $(cat "$t/commits" 2>/dev/null)"
+fi
+rm -rf "$t"
+
+# --- --reseed с аргументами: они уезжают в сообщение -------------------------
+# Всё после флага уходит в seed_demo целиком, чтобы список его флагов не
+# пришлось держать вторым экземпляром здесь.
+t="$(make_fixture)"
+code="$(run_in "$t" --reseed --flush --rich)"
+if [ "$code" = 0 ] && grep -q 'сообщение=seed: --flush --rich' "$t/commits"; then
+    report ok "--reseed с аргументами — они в первой строке просьбы"
+else
+    report FAIL "--reseed с аргументами — они в первой строке просьбы" \
+        "код $code; $(cat "$t/commits" 2>/dev/null)"
+fi
+rm -rf "$t"
+
+# --- вторая просьба встаёт поверх первой -------------------------------------
+# Ветка просьб — история пересевов, и родитель делает её читаемой.
+t="$(make_fixture)"
+run_in "$t" --reseed >/dev/null
+code="$(run_in "$t" --reseed --minimal)"
+if [ "$code" = 0 ] && [ "$(grep -c . "$t/commits")" = 2 ] &&
+   grep -q 'сообщение=seed: --minimal родитель=c0*1$' "$t/commits"; then
+    report ok "вторая просьба — потомок первой"
+else
+    report FAIL "вторая просьба — потомок первой" "код $code; $(cat "$t/commits" 2>/dev/null)"
+fi
+rm -rf "$t"
+
+# --- пересев не трогает прод -------------------------------------------------
+t="$(make_fixture)"
+run_in "$t" --reseed --flush >/dev/null
+if ! patched "$t" production && ! patched "$t" main; then
+    report ok "--reseed не двигает ни main, ни production"
+else
+    report FAIL "--reseed не двигает ни main, ни production" "$(cat "$t/patches" 2>/dev/null)"
+fi
 rm -rf "$t"
 
 printf '\n%d прошло, %d упало\n' "$PASS" "$FAIL"
