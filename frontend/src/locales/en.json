@@ -1297,8 +1297,8 @@
     "maxMark": "Top mark for one",
     "perQuestion": "Different for some questions",
     "perQuestionHint": "The top box is what the question is called, the bottom one is its top mark. Leave the name empty and the question is called by its place in the list.",
-    "questionName": "Name of question {{number}}",
-    "questionMax": "Top mark for question {{number}}",
+    "questionName": "Question {{number}}: name",
+    "questionMax": "Question {{number}}: top mark",
     "printBlankHint": "— blank sheets are printed in advance, a year's worth at a time.",
     "about": {
       "pileTitle": "How to stack the pile",
