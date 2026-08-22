@@ -20,6 +20,7 @@ User = get_user_model()
 ENV = {
     "BOOTSTRAP_SUPERUSER_EMAIL": "root@example.com",
     "BOOTSTRAP_SUPERUSER_PASSWORD": "S3cret-pass-123",
+    "BOOTSTRAP_SUPERUSERS": "",
 }
 
 
@@ -101,6 +102,101 @@ class SuperuserTests(TestCase):
 
         self.assertFalse(User.objects.filter(is_superuser=True).exists())
         self.assertIn("не заданы", output)
+
+
+class NamedSuperusersTests(TestCase):
+    """
+    `BOOTSTRAP_SUPERUSERS` — список тех, кто суперпользователь всегда.
+
+    Существует он ради стенда, где базу сносят и сеют заново. Посев заводит
+    своего `developer@example.com`, и первый же прогон закрывает дверь
+    `ensure_superuser`: живого человека тот больше не повысит. Здесь
+    проверяется, что вторая дверь открывается каждый старт и не умеет
+    ничего, кроме как давать права.
+    """
+
+    def test_a_named_account_is_promoted_although_a_superuser_exists(self):
+        """Та самая ловушка: посев уже завёл своего суперпользователя."""
+        User.objects.create_superuser(email="developer@example.com")
+        person = User.objects.create_user(email="teacher@example.com")
+
+        output = run(BOOTSTRAP_SUPERUSERS="teacher@example.com")
+
+        person.refresh_from_db()
+        self.assertTrue(person.is_superuser)
+        self.assertTrue(person.is_staff)
+        self.assertIn("повышен до суперпользователя teacher@example.com", output)
+
+    def test_a_named_address_without_an_account_gets_one(self):
+        """
+        Разворот с нуля: базу снесли, человек ещё ни разу не входил.
+
+        Учётка заводится без пароля — вход сюда идёт через Google, как у
+        всех, а подтверждённый адрес нужен, чтобы первый же вход не
+        обнулил его сам.
+        """
+        output = run(BOOTSTRAP_SUPERUSERS="newcomer@example.com")
+
+        user = User.objects.get(email="newcomer@example.com")
+        self.assertTrue(user.is_superuser)
+        self.assertFalse(user.has_usable_password())
+        self.assertTrue(EmailAddress.objects.filter(user=user, verified=True).exists())
+        self.assertIn("создан суперпользователь newcomer@example.com", output)
+
+    def test_it_never_takes_rights_away(self):
+        """
+        Выкатка, отбирающая права, — это выкатка, запирающая хозяина снаружи.
+
+        Поэтому исчезнувший из списка адрес не значит «понизить»: шаг умеет
+        только давать.
+        """
+        stays = User.objects.create_superuser(email="old@example.com")
+
+        run(BOOTSTRAP_SUPERUSERS="somebody-else@example.com")
+
+        stays.refresh_from_db()
+        self.assertTrue(stays.is_superuser)
+
+    def test_a_promotion_does_not_reset_the_password(self):
+        """Пароль от /admin/ — не дело этого шага, и трогать его нельзя."""
+        person = User.objects.create_user(
+            email="teacher@example.com", password="Original-pass-1"
+        )
+
+        run(BOOTSTRAP_SUPERUSERS="teacher@example.com")
+
+        person.refresh_from_db()
+        self.assertTrue(person.check_password("Original-pass-1"))
+
+    def test_the_list_survives_commas_spaces_and_case(self):
+        """Список пишет человек в env-файле, а не программа."""
+        User.objects.create_user(email="one@example.com")
+        User.objects.create_user(email="two@example.com")
+
+        run(BOOTSTRAP_SUPERUSERS="  One@Example.COM ,\n two@example.com  ")
+
+        self.assertEqual(User.objects.filter(is_superuser=True).count(), 2)
+
+    def test_an_empty_list_is_a_setting_and_not_a_warning(self):
+        """
+        На проде переменной нет, и это конфигурация, а не недонастройка.
+
+        Предупреждение, печатаемое каждый старт, — то, от чего отмахиваются;
+        отмахнувшись, его не увидят и в тот раз, когда оно право.
+        """
+        output = run(**ENV)
+
+        self.assertIn("BOOTSTRAP_SUPERUSERS пуст", output)
+        self.assertNotIn("! BOOTSTRAP_SUPERUSERS", output)
+
+    def test_the_second_run_changes_nothing_and_says_so(self):
+        User.objects.create_user(email="teacher@example.com")
+
+        run(BOOTSTRAP_SUPERUSERS="teacher@example.com")
+        output = run(BOOTSTRAP_SUPERUSERS="teacher@example.com")
+
+        self.assertIn("уже суперпользователь: teacher@example.com", output)
+        self.assertNotIn("повышен", output)
 
 
 class VerifiedEmailTests(TestCase):

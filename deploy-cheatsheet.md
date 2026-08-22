@@ -177,7 +177,9 @@ scp leobreslav@194.67.111.40:~/lesson-tracker/.env.prod \
 На сервере при старте контейнера сами выполняются `migrate`, `bootstrap` и
 `collectstatic`. `bootstrap` идемпотентен: заводит суперпользователя, только
 если его нет вообще (адрес и пароль — `BOOTSTRAP_SUPERUSER_*` в `.env.prod`),
-и никогда ничего не удаляет.
+и никогда ничего не удаляет. Список `BOOTSTRAP_SUPERUSERS` — про другое: он
+повышает названных **каждый** старт, и заведён ради стенда, где база
+одноразовая.
 
 ```bash
 ssh leobreslav@194.67.111.40 "cd ~/lesson-tracker && docker compose \

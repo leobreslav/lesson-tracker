@@ -14,6 +14,7 @@ that refuses to start is worse than one missing an optional account.
 """
 
 import os
+import re
 
 from allauth.account.models import EmailAddress
 from django.contrib.auth import get_user_model
@@ -71,6 +72,71 @@ def ensure_superuser():
     return report(CHANGED, f"создан суперпользователь {email}")
 
 
+def ensure_named_superusers():
+    """
+    Keep every account named in BOOTSTRAP_SUPERUSERS a superuser, at every start.
+
+    `ensure_superuser` gives up as soon as anybody is a superuser, and that
+    is right for a live installation: a deploy is not the place to decide
+    who holds the keys. It is wrong for a stand whose database is thrown
+    away and seeded again — and there it has a trap. Seeding creates its own
+    `developer@example.com`, so the very first seed closes that door: the
+    live person is never promoted again, however many variables are set.
+    Twice we answered this with a flag on the seeding command, and twice it
+    was forgotten by the next reseed.
+
+    So this step answers a different question. Not "who becomes the first
+    superuser" but "who is a superuser on this contour, always" — a standing
+    declaration, re-applied on every container start. Naming an address in
+    the env file is not an escalation: whoever can edit that file owns the
+    machine already.
+
+    Two limits keep it from becoming the thing `ensure_superuser` refuses to
+    be. It only ever grants: an address dropped from the list leaves the
+    account exactly as it is, because demoting people during a deploy is how
+    a deploy locks its owner out. And it never touches a password — an
+    account created here signs in through Google like everyone else, and
+    /admin/ stays the business of `BOOTSTRAP_SUPERUSER_*`.
+
+    Empty on production, and that is the configuration rather than an
+    oversight: there the superuser is made once and changed by hand.
+    """
+    names = [
+        part.lower()
+        for part in re.split(r"[,\s]+", os.environ.get("BOOTSTRAP_SUPERUSERS") or "")
+        if part
+    ]
+    # An empty list is a legitimate setting, not a half-configured one, so it
+    # reports neutrally. A warning printed at every production start is a
+    # warning people learn to skip, and then it is missed where it matters.
+    if not names:
+        return report(ALREADY, "BOOTSTRAP_SUPERUSERS пуст — список прав не трогаю")
+
+    created, promoted, already = [], [], []
+
+    for email in names:
+        user = User.objects.filter(email__iexact=email).first()
+        if user is None:
+            created.append(User.objects.create_superuser(email=email).email)
+        elif user.is_superuser and user.is_staff:
+            already.append(user.email)
+        else:
+            user.is_superuser = True
+            user.is_staff = True
+            user.save(update_fields=["is_superuser", "is_staff"])
+            promoted.append(user.email)
+
+    said = []
+    if created:
+        said.append(f"создан суперпользователь {', '.join(created)}")
+    if promoted:
+        said.append(f"повышен до суперпользователя {', '.join(promoted)}")
+    if already:
+        said.append(f"уже суперпользователь: {', '.join(already)}")
+
+    return report(CHANGED if created or promoted else ALREADY, "; ".join(said))
+
+
 def ensure_verified_emails():
     """
     Give every staff account a verified EmailAddress row.
@@ -101,7 +167,7 @@ def ensure_verified_emails():
 
 # The steps, in the order they run. Each one is independent: it works out
 # what it needs from the database rather than from the step before it.
-STEPS = (ensure_superuser, ensure_verified_emails)
+STEPS = (ensure_superuser, ensure_named_superusers, ensure_verified_emails)
 
 MARKS = {CHANGED: "+", ALREADY: "=", SKIPPED: "!"}
 
