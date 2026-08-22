@@ -47,6 +47,7 @@ def build(school, courses, people, students, *, log=print):
     made.append(_scan_page(course, teacher))
     made.append(_spending(school, teacher, course))
     made.append(_bank_variety(school, teacher, admin, course))
+    made.append(_feedback(school, teacher, students))
 
     log("  досев:     " + ", ".join(one for one in made if one))
 
@@ -295,6 +296,54 @@ def _spending(school, teacher, course):
             cost_micros=2300 + number * 400,
         )
     return "траты на чтение"
+
+
+def _feedback(school, teacher, students):
+    """
+    Обращения к разработчику: неразобранное и разобранное.
+
+    Раздел этот видит один человек на всю установку, и увидеть его с данными
+    иначе негде: пишут в него из интерфейса, а посев его не заводил. Пустая
+    страница обращений выглядит одинаково и когда всё разобрано, и когда
+    запрос молча отдаёт не то.
+
+    Два состояния, а не одно, ровно поэтому: список по умолчанию показывает
+    ждущее, и вкладка «разобранные» без единой строки не отвечает на вопрос,
+    работает ли она.
+
+    Пишут оба вида пользователей — учитель и ученик, — потому что это и есть
+    главное решение раздела: ученик видит те же поломки, а сказать о них ему
+    было нечем.
+    """
+    from feedback.models import Message
+
+    if Message.objects.exists():
+        return ""
+
+    Message.objects.create(
+        kind=Message.Kind.BUG,
+        text="В расписании неделя листается стрелками, а с клавиатуры нет.",
+        author=teacher,
+        school=school,
+        page="/schedule",
+    )
+    Message.objects.create(
+        kind=Message.Kind.IDEA,
+        text="Хорошо бы видеть дедлайн работы прямо в списке курсов.",
+        author=students[0],
+        school=school,
+        page="/",
+    )
+    # разобранное помечается так же, как это делает вьюха: отметкой времени
+    Message.objects.create(
+        kind=Message.Kind.IDEA,
+        text="Пусть журнал занятия открывается по клику на самом уроке.",
+        author=teacher,
+        school=school,
+        page="/lesson/1",
+        handled_at=timezone.now() - timedelta(days=3),
+    )
+    return "обращения к разработчику"
 
 
 def _bank_variety(school, teacher, admin, course):
