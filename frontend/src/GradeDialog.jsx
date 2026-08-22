@@ -23,7 +23,7 @@ export default function GradeDialog({
   work,
   student,
   criteria,
-  onPaper,
+  tasks = [],
   busy,
   onSubmit,
   onChanged,
@@ -33,6 +33,17 @@ export default function GradeDialog({
   const [marks, setMarks] = useState(() =>
     Object.fromEntries(
       criteria.map((item) => [item.id, String(student.marks[item.id] ?? '')]),
+    ),
+  )
+  /*
+   * Баллы за вопросы — вторая ось, и правятся они здесь по одной причине:
+   * иначе их негде править вовсе. Ставит их либо проверка ответа, либо
+   * разбор скана, и ошибку чтения — «модель увидела 8 вместо 3» — чинить
+   * было нечем.
+   */
+  const [scores, setScores] = useState(() =>
+    Object.fromEntries(
+      tasks.map((item) => [item.id, String(student.scores?.[item.id] ?? '')]),
     ),
   )
   const [comment, setComment] = useState(student.comment ?? '')
@@ -52,6 +63,14 @@ export default function GradeDialog({
         criteria.map((item) => [
           item.id,
           marks[item.id] === '' ? null : Number(marks[item.id]),
+        ]),
+      ),
+      // пустое поле снимает балл, а не ставит ноль: ноль — это оценка, и
+      // различать их обязательно, как и у критериев
+      scores: Object.fromEntries(
+        tasks.map((item) => [
+          item.id,
+          scores[item.id] === '' ? null : Number(scores[item.id]),
         ]),
       ),
     })
@@ -102,8 +121,9 @@ export default function GradeDialog({
           </p>
         )}
 
-        {(onPaper || papers.length > 0) && (
-          <section className="papers">
+        {/* приложить работу можно к любой: класс писал онлайн, а сдал на
+            бумаге — обычный случай, и раньше его запирал флаг */}
+        <section className="papers">
             <span className="hint">{t('paper.scans')}</span>
             <ul className="attachments">
               {papers.map((paper) => {
@@ -160,6 +180,31 @@ export default function GradeDialog({
                   event.target.value = ''
                 }}
               />
+            </div>
+          </section>
+
+        {tasks.length > 0 && (
+          <section className="panel">
+            <p className="hint">{t('grading.questionScores')}</p>
+            <div className="score-row">
+              {tasks.map((item) => (
+                <label className="field-with-hint" key={item.id}>
+                  {`Q${item.position + 1} · 0–${item.maximum}`}
+                  <input
+                    type="number"
+                    min={0}
+                    max={item.maximum}
+                    value={scores[item.id]}
+                    disabled={busy}
+                    onChange={(event) =>
+                      setScores((current) => ({
+                        ...current,
+                        [item.id]: event.target.value,
+                      }))
+                    }
+                  />
+                </label>
+              ))}
             </div>
           </section>
         )}

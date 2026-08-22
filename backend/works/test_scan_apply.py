@@ -64,6 +64,53 @@ class ScanApplyTests(SchoolTestMixin, APITestCase):
             format="multipart",
         )
 
+    def test_a_scan_that_would_change_a_standing_mark_says_so_first(self):
+        """
+        Молча переписать поставленное нельзя — об этом спрашивают человека.
+
+        Прежний балл мог прийти откуда угодно: с проверки онлайн-ответа или
+        с прошлого разбора той же пачки. Оба числа показываются, а решение
+        остаётся за тем, кто нажимает «Записать всё».
+        """
+        row, _ = StudentWork.objects.get_or_create(
+            work=self.work, student=self.student
+        )
+        first_task = self.work.tasks.order_by("position").first()
+        Mark.objects.create(student_work=row, task=first_task, value=3)
+
+        self.read(0, "Fil", "Burmov", {0: 1})
+        state = self.client.get(
+            reverse("work-scan-state", args=[self.work.pk])
+        ).json()
+
+        packet = next(p for p in state["packets"] if p["student"] == self.student.pk)
+        self.assertIn("mark_differs", packet["trouble"])
+        self.assertEqual(
+            packet["overwrites"], [{"question": 1, "was": 3, "now": 1}]
+        )
+
+    def test_the_same_mark_read_again_is_not_a_doubt(self):
+        """
+        Повторный разбор той же пачки — обычное дело.
+
+        «Было 3, пришло 3» пятнадцатью строками превратило бы список
+        сомнений в шум, а сомнением это не является вовсе.
+        """
+        row, _ = StudentWork.objects.get_or_create(
+            work=self.work, student=self.student
+        )
+        first_task = self.work.tasks.order_by("position").first()
+        Mark.objects.create(student_work=row, task=first_task, value=3)
+
+        self.read(0, "Fil", "Burmov", {0: 3})
+        state = self.client.get(
+            reverse("work-scan-state", args=[self.work.pk])
+        ).json()
+
+        packet = next(p for p in state["packets"] if p["student"] == self.student.pk)
+        self.assertEqual(packet["overwrites"], [])
+        self.assertNotIn("mark_differs", packet["trouble"])
+
     def test_pages_become_attachments_and_cells_become_marks(self):
         self.read(0, "Fil", "Burmov", {0: 3, 1: 1})
         self.read(1, "Peter", "Tibora", {0: 2})
@@ -162,9 +209,17 @@ class ScanApplyTests(SchoolTestMixin, APITestCase):
             StudentWork.objects.filter(work=self.work, student=self.student).exists()
         )
 
-    def test_an_online_work_has_nothing_to_scan(self):
+    def test_a_work_with_online_tasks_opens_the_scan_wizard_too(self):
+        """
+        Отказ «эта работа не на бумаге» снят: обычный случай он и запирал.
+
+        Класс писал онлайн, а сдал на бумаге; или работу завели пустой и
+        принесли пачку. Флаг требовал решить это **заранее**, когда ещё
+        неизвестно, чем работа окажется.
+        """
         online = make_work(self.user, self.course)
 
         response = self.client.get(reverse("work-scan-state", args=[online.pk]))
 
-        self.assertEqual(response.json()["code"], "not_on_paper")
+        self.assertEqual(response.status_code, 200, response.content)
+        self.assertEqual(response.json()["pages"], [])

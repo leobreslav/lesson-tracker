@@ -244,18 +244,21 @@ export default function Works({ onLoggedOut }) {
                       {t('works.settings')}
                     </button>
 
-                    {/* сканы — только у бумажной: у онлайновой резать нечего,
-                        и кнопка, умеющая только отказать, честнее не рисуется */}
-                    {work.on_paper && (
-                      <button
-                        type="button"
-                        className="secondary compact"
-                        disabled={busy}
-                        onClick={() => setScanning(work)}
-                      >
-                        {t('scan.open')}
-                      </button>
-                    )}
+                    {/* Сканы у любой работы. Прежде кнопка была только у
+                        бумажной, и это запирало обычный случай: класс писал
+                        онлайн, а сдал на бумаге — или учитель завёл работу
+                        пустой и принёс пачку. Резать при этом есть что
+                        всегда: скан ложится на строку «работа и ученик», а
+                        онлайн-ответы живут на отправках и друг другу не
+                        мешают */}
+                    <button
+                      type="button"
+                      className="secondary compact"
+                      disabled={busy}
+                      onClick={() => setScanning(work)}
+                    >
+                      {t('scan.open')}
+                    </button>
 
                     {/* проверка — своя страница: таблица на тридцать человек
                         в раскрытой строке не помещается */}

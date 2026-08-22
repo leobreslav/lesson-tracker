@@ -3603,6 +3603,19 @@ button.compact,
 
 /* балл числом — там, где кнопок было бы больше шести. Высота общая с
    контролами: поле в ряду обязано быть одного роста с соседями */
+/* баллы за вопросы в окне оценки: пятнадцать полей в столбик — это окно на
+   два экрана, поэтому они идут рядом и переносятся сами */
+.score-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.score-row .field-with-hint {
+  flex: 0 0 auto;
+  width: 5rem;
+}
+
 .verdict-buttons .mark-input {
   width: 3.5rem;
   height: var(--control-height);

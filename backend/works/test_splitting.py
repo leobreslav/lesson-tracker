@@ -11,6 +11,7 @@
 """
 
 from io import BytesIO
+from json import dumps
 
 from django.core.files.storage import storages
 from django.core.files.uploadedfile import SimpleUploadedFile
@@ -169,17 +170,33 @@ class RefusalTests(SplitTestCase):
         self.assertEqual(response.status_code, 400)
         self.assertEqual(response.json()["code"], "file_not_pdf")
 
-    def test_an_online_work_has_nothing_to_split(self):
+    def test_a_work_with_online_tasks_can_be_split_too(self):
+        """
+        Отказа «эта работа не на бумаге» больше нет, и это не послабление.
+
+        Класс писал онлайн, а сдал на бумаге; или учитель завёл работу
+        пустой и принёс пачку. Оба случая обычные, а запирал их флаг,
+        который приходилось выставить **заранее**, до того как станет
+        известно, чем работа окажется.
+
+        Мешать друг другу нечему: скан ложится на строку «работа и ученик»,
+        онлайн-ответы живут на отправках.
+        """
         online = make_work(self.user, self.course, title="Онлайн")
 
         response = self.client.post(
             reverse("work-split", args=[online.pk]),
-            {"file": SimpleUploadedFile("s.pdf", book(1)), "plan": "[]"},
+            {
+                "file": SimpleUploadedFile("s.pdf", book(1)),
+                "plan": dumps([{"student": self.student.pk, "first": 1, "last": 1}]),
+            },
             format="multipart",
         )
 
-        self.assertEqual(response.status_code, 400)
-        self.assertEqual(response.json()["code"], "not_on_paper")
+        self.assertEqual(response.status_code, 200, response.content)
+        self.assertTrue(
+            StudentWork.objects.filter(work=online, student=self.student).exists()
+        )
 
     def test_nothing_is_written_when_one_piece_is_wrong(self):
         """Половина разобранной пачки хуже неразобранной."""

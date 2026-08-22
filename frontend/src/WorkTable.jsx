@@ -98,15 +98,27 @@ export default function WorkTable() {
   }
   // столбец «работа ученика» нужен и без оценок: у бумажной работы в нём
   // лежит скан, и это единственное место, где он есть
-  const onPaper = Boolean(table.work.on_paper)
-  const showRow = scale.graded || onPaper
+  /*
+   * Что показывать, решают **данные**, а не флаг работы.
+   *
+   * `on_paper` решал это раньше, и потому смешанный случай был недостижим:
+   * у работы, где класс писал онлайн, а сдал на бумаге, половина таблицы
+   * оказывалась невидимой. Спрашиваем прямо: есть ли ответы, есть ли
+   * приложенные работы, стоит ли шкала.
+   */
+  const hasPapers = table.students.some((row) => row.papers?.length)
+  const hasAnswers = table.tasks.some((task) => task.answered > 0)
+  const showRow = scale.graded || hasPapers
   /* У бумажной работы задач нет по определению, а вопросы есть — они и есть
      критерии шкалы. Столбцы по ним отвечают на то, ради чего таблицу и
      открывают: кто что решил и с чем не справился класс. */
   const marks = table.marks_summary
   /* У бумажной работы вопросы те же, что у онлайновой, — колонки общие. В
      ячейке только другое: там балл, а не состояние отправки. */
-  const byMark = onPaper && marks && marks.columns.length > 0
+  const hasMarks = Boolean(marks && marks.columns.length > 0)
+  // сумма баллов осмысленна там, где вопрос стоит больше единицы; иначе
+  // «сколько верно из скольки» говорит больше
+  const pointed = table.tasks.some((task) => task.maximum > 1)
   const statsOf = (id) => marks?.columns.find((column) => column.id === id)
 
   return (
@@ -129,15 +141,16 @@ export default function WorkTable() {
         </p>
       )}
 
-      {byMark ? (
-        <MarkSummary summary={marks} />
-      ) : (
+      {/* две сводки отвечают на разные вопросы — «как идёт сдача» и «как
+          справились», — и работа может иметь обе половины разом */}
+      {(hasAnswers || !hasMarks) && (
         <Summary
           summary={table.summary}
           tasks={table.tasks}
           onOpen={(task) => setColumn({ task })}
         />
       )}
+      {hasMarks && <MarkSummary summary={marks} />}
 
       {/* шкала стоит здесь, а не в настройках работы: настраивают её тогда
           же, когда садятся проверять, и это то же самое место */}
@@ -151,19 +164,15 @@ export default function WorkTable() {
         >
           {t('grading.configure')}
         </button>
-        {onPaper && (
-          <>
-            {' · '}
-            <button
-              type="button"
-              className="link"
-              disabled={busy}
-              onClick={() => setSplitting(true)}
-            >
-              {t('split.action')}
-            </button>
-          </>
-        )}
+        {' · '}
+        <button
+          type="button"
+          className="link"
+          disabled={busy}
+          onClick={() => setSplitting(true)}
+        >
+          {t('split.action')}
+        </button>
       </p>
 
       {/* таблица нужна и без задач: у бумажной работы в ней сканы и
@@ -183,10 +192,10 @@ export default function WorkTable() {
                 {table.tasks.map((task, index) => (
                   <th
                     key={task.id}
-                    className={byMark && task.id === marks.hardest ? 'hardest' : ''}
+                    className={hasMarks && task.id === marks.hardest ? 'hardest' : ''}
                     title={
                       task.question ||
-                      (byMark
+                      (hasMarks
                         ? t('grading.facility', {
                             percent: statsOf(task.id)?.facility ?? 0,
                           })
@@ -197,7 +206,12 @@ export default function WorkTable() {
                       type="button"
                       className="link"
                       onClick={() =>
-                        byMark ? setQuestion(statsOf(task.id)) : setColumn({ task })
+                        /* есть ответы — открываем колонку ответов, их и
+                           проверяют; нет — сводку по вопросу: на бумаге
+                           смотреть в столбце нечего, кроме баллов */
+                        task.answered > 0
+                          ? setColumn({ task })
+                          : setQuestion(statsOf(task.id))
                       }
                     >
                       {index + 1}
@@ -223,21 +237,9 @@ export default function WorkTable() {
                       <span className="hint"> {t('table.removed')}</span>
                     )}
                   </th>
-                  {/* в ячейке балл у бумажной работы и состояние отправки
-                      у онлайновой: колонки те же, ответ на них разный */}
-                  {byMark
-                    ? table.tasks.map((task) => {
-                        const value = student.scores[task.id]
-                        return (
-                          <td
-                            key={task.id}
-                            className={markClass(value, task.maximum)}
-                          >
-                            {value ?? ''}
-                          </td>
-                        )
-                      })
-                    : student.cells.map((item) => (
+                  {/* клетка одна на оба случая: в ней балл, а если его нет —
+                      состояние ответа. Двух видов таблицы больше нет */}
+                  {student.cells.map((item) => (
                         <td key={item.task} className={cellClass(item)}>
                           <button
                             type="button"
@@ -247,14 +249,21 @@ export default function WorkTable() {
                                 ? t('table.seenBefore', { count: item.seen_before })
                                 : (item.answer ?? t('table.empty'))
                             }
-                            disabled={!item.submission}
                             onClick={() =>
-                              setCell({
-                                student,
-                                task: table.tasks.find(
-                                  (row) => row.id === item.task,
-                                ),
-                              })
+                              /* Есть ответ — открываем его историю: балл
+                                 ставится за конкретный ответ, и смотреть надо
+                                 на него. Ответа нет (писали на бумаге) —
+                                 открываем работу ученика целиком: там балл и
+                                 правится, в том числе когда его ошибочно
+                                 прочитала модель */
+                              item.submission
+                                ? setCell({
+                                    student,
+                                    task: table.tasks.find(
+                                      (row) => row.id === item.task,
+                                    ),
+                                  })
+                                : setGrading({ student })
                             }
                           >
                             {cellMark(item)}
@@ -268,7 +277,7 @@ export default function WorkTable() {
                             {item.seen_before > 0 && <i className="again" />}
                           </button>
                         </td>
-                      ))}
+                  ))}
                   {showRow && (
                     <td className="mark">
                       <button
@@ -284,7 +293,7 @@ export default function WorkTable() {
                   )}
                   {table.tasks.length > 0 && (
                     <td className="total">
-                      {byMark
+                      {pointed
                         ? Object.values(student.scores).reduce(
                             (sum, one) => sum + one,
                             0,
@@ -386,7 +395,7 @@ export default function WorkTable() {
             grading.student
           }
           criteria={criteria}
-          onPaper={onPaper}
+          tasks={table.tasks}
           busy={busy}
           onSubmit={(body) => run(() => gradeStudent(table.work.id, body))}
           onChanged={refresh}
@@ -422,13 +431,6 @@ function describeScale(scale, t) {
  * Те же три состояния, что у проверки онлайн, и те же классы — один факт
  * должен выглядеть одинаково везде, где его показывают.
  */
-function markClass(value, maximum) {
-  if (value === undefined || value === null) return 'empty'
-  if (value >= maximum) return 'correct'
-  if (value === 0) return 'wrong'
-  return 'sent'
-}
-
 /**
  * Сводка по оценкам бумажной работы.
  *

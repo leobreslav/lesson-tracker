@@ -255,13 +255,6 @@ class WorkViewSet(CourseScopedViewSet):
         был бы одним файлом со всеми работами класса.
         """
         work = self.get_object()
-        if not work.on_paper:
-            api_error(
-                Codes.NOT_ON_PAPER,
-                "This work is not written on paper: there is nothing to split.",
-                field="work",
-            )
-
         form = SplitSerializer(data=request.data, context={"work": work})
         form.is_valid(raise_exception=True)
 
@@ -322,7 +315,6 @@ class WorkViewSet(CourseScopedViewSet):
         же страницу не должна платить снова.
         """
         work = self.get_object()
-        self.refuse_unless_paper(work)
 
         form = ScanReadSerializer(data=request.data)
         form.is_valid(raise_exception=True)
@@ -351,7 +343,6 @@ class WorkViewSet(CourseScopedViewSet):
     def scan_state(self, request, pk=None):
         """Что уже прочитано и как оно разложилось. DELETE — начать пачку заново."""
         work = self.get_object()
-        self.refuse_unless_paper(work)
         if request.method == "DELETE":
             work.scan_pages.all().delete()
         return Response(services.scan_state(work))
@@ -367,7 +358,6 @@ class WorkViewSet(CourseScopedViewSet):
         ряд безшапочных листов размечает пачку.
         """
         work = self.get_object()
-        self.refuse_unless_paper(work)
 
         form = ScanPageSerializer(data=request.data, context={"work": work})
         form.is_valid(raise_exception=True)
@@ -390,7 +380,6 @@ class WorkViewSet(CourseScopedViewSet):
         раздают одинаковые, и второй экземпляр ничего нового не скажет.
         """
         work = self.get_object()
-        self.refuse_unless_paper(work)
 
         form = ScanQuestionsSerializer(data=request.data)
         form.is_valid(raise_exception=True)
@@ -413,7 +402,6 @@ class WorkViewSet(CourseScopedViewSet):
         что второй отправки это стоит ровно ничего.
         """
         work = self.get_object()
-        self.refuse_unless_paper(work)
 
         form = ScanApplySerializer(data=request.data)
         form.is_valid(raise_exception=True)
@@ -422,14 +410,6 @@ class WorkViewSet(CourseScopedViewSet):
                 work, data=form.validated_data["file"].read(), by=request.user
             )
         )
-
-    def refuse_unless_paper(self, work):
-        if not work.on_paper:
-            api_error(
-                Codes.NOT_ON_PAPER,
-                "This work is not written on paper: there is nothing to scan.",
-                field="work",
-            )
 
     @action(detail=True, methods=["post"])
     def reassign(self, request, pk=None):

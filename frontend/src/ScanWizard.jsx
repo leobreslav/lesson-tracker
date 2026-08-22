@@ -465,6 +465,25 @@ function DoubtStep({
                   {packet.student ? ` → ${nameOf(packet.student)}` : ''}
                 </p>
 
+                {/* балл уже стоял, и скан принёс другой. Решать за человека
+                    нельзя: прежний мог быть поставлен за онлайн-ответ или
+                    прошлым разбором этой же пачки. Показываем оба числа */}
+                {packet.overwrites?.length > 0 && (
+                  <p className="hint warning">
+                    {t('scan.overwrites', {
+                      list: packet.overwrites
+                        .map((one) =>
+                          t('scan.overwrite', {
+                            question: one.question,
+                            was: one.was,
+                            now: one.now,
+                          }),
+                        )
+                        .join(', '),
+                    })}
+                  </p>
+                )}
+
                 <div className="row">
                   {(packet.candidates.length
                     ? packet.candidates

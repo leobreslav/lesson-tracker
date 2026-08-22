@@ -236,7 +236,6 @@
     "split_overlap": "Page {{page}} is given to two students at once.",
     "split_student_twice": "One student is named twice: a work is one piece, however many sheets it takes.",
     "split_not_in_course": "That student does not study in this course.",
-    "not_on_paper": "This work is not written on paper: there is nothing to split.",
     "plan_lesson_taught": "«{{title}}» was taught on {{date}}: a lesson already given keeps its place.",
     "slot_lesson_taken": "«{{title}}» is already recorded on {{date}}.",
     "attachment_title_required": "A text resource is its title — it cannot be empty.",
@@ -1131,7 +1130,8 @@
       "points": "sum of marks, bands in percent",
       "levels": "levels per criterion, bands on the sum",
       "passfail": "pass or fail"
-    }
+    },
+    "questionScores": "Marks per question. An empty field clears the mark."
   },
   "paper": {
     "scans": "Scanned work",
@@ -1279,7 +1279,8 @@
       "sum_mismatch": "the page total does not add up",
       "beyond_questions": "a mark in a cell this work does not use",
       "first_name_only": "signed with a first name only",
-      "placed_by_guess": "placed by a guess, not by a name"
+      "placed_by_guess": "placed by a guess, not by a name",
+      "mark_differs": "the mark differs from the one already there"
     },
     "questionsHint": "How many questions were in this work, and what is the top mark for one? The blank always has fifteen cells; the extra ones must stay empty — that is how a shifted reading gets caught.",
     "questionCount": "Questions",
@@ -1299,7 +1300,9 @@
     "readQuestionsHint": "The first run of question sheets is read once for the whole pile and written into the scale. A full page costs a few cents — a header strip costs a fraction of one.",
     "questionsRead": "Questions written into the scale: {{count}} of {{found}} found.",
     "questionsExtra": "no room in the scale for: {{list}}",
-    "questionsMarks": "the paper says a different top mark: {{list}}"
+    "questionsMarks": "the paper says a different top mark: {{list}}",
+    "overwrites": "A mark is already there and will be replaced: {{list}}",
+    "overwrite": "Q{{question}} was {{was}}, will be {{now}}"
   },
   "ai": {
     "title": "Reading scans",

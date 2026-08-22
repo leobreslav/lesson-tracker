@@ -1141,6 +1141,43 @@ def max_mark_of(work) -> int | None:
     return max(values) if values else None
 
 
+def standing_marks(work) -> dict:
+    """`{(ученик, позиция вопроса): балл}` — то, что уже стоит в базе."""
+    positions = {task.pk: task.position for task in work.tasks.all()}
+
+    return {
+        (mark.student_work.student_id, positions[mark.task_id]): mark.value
+        for mark in Mark.objects.filter(
+            student_work__work=work, task__isnull=False
+        ).select_related("student_work")
+        if mark.task_id in positions
+    }
+
+
+def differing_marks(standing, student_id, read) -> list:
+    """
+    Что скан перепишет, и на что именно.
+
+    Спрашивают об этом человека, а не решают за него, и по той же причине, по
+    какой спрашивают о конфликте внутри пачки: одна задача с двумя разными
+    баллами — не задача выбора, а факт, о котором надо знать. Здесь второй
+    балл к тому же чужого происхождения: он мог быть поставлен за онлайн-ответ
+    или прошлым разбором той же пачки.
+
+    Совпадение молчит: повторный разбор той же пачки — обычное дело, и
+    пятнадцать строк «было 3, пришло 3» превратили бы список в шум.
+    """
+    if student_id is None:
+        return []
+
+    out = []
+    for position, value in sorted(read.items()):
+        was = standing.get((student_id, position))
+        if was is not None and was != value:
+            out.append({"question": position + 1, "was": was, "now": value})
+    return out
+
+
 def scan_state(work) -> dict:
     """
     Всё, что экран должен знать о пачке: страницы, пакеты, сомнения.
@@ -1185,9 +1222,14 @@ def scan_state(work) -> dict:
         )
     by_index = {row["index"]: row for row in rows}
 
+    # что уже стоит в базе по этим ученикам: балл мог быть поставлен онлайн
+    # или прошлым разбором пачки, и молча переписать его нельзя
+    standing = standing_marks(work)
+
     out_packets = []
     for number, packet in enumerate(packets):
         marks, conflicts = scanning.merge_marks(packet.pages)
+        overwrites = differing_marks(standing, packet.student_id, marks)
         trouble = sorted(
             {code for page in packet.pages for code in by_index[page.index]["trouble"]}
         )
@@ -1213,9 +1255,10 @@ def scan_state(work) -> dict:
                 "student": packet.student_id,
                 "candidates": packet.candidates,
                 "conflicts": conflicts,
+                "overwrites": overwrites,
                 "marks": {q + 1: value for q, value in marks.items()},
                 "total": sum(marks.values()) if marks else 0,
-                "trouble": trouble,
+                "trouble": trouble + (["mark_differs"] if overwrites else []),
             }
         )
 

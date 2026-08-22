@@ -187,7 +187,6 @@ class Codes:
     SPLIT_OVERLAP = "split_overlap"
     SPLIT_STUDENT_TWICE = "split_student_twice"
     SPLIT_NOT_IN_COURSE = "split_not_in_course"
-    NOT_ON_PAPER = "not_on_paper"
     CRITERION_UNKNOWN = "criterion_unknown"
     MARK_OUT_OF_RANGE = "mark_out_of_range"
 
