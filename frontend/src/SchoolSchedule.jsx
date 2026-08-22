@@ -31,6 +31,13 @@ import { dateRange, firstWeekday } from './dates'
 import { weekdayIndex } from './weekStart'
 import { useKept } from './remember'
 import { MAX_LESSON_NUMBER } from './scheduleLogic'
+import {
+  emptyFilters,
+  filterOptions,
+  pick,
+  reconcile,
+  slotMatches,
+} from './scheduleFilters'
 
 const NUMBERS = Array.from({ length: MAX_LESSON_NUMBER }, (_, index) => index + 1)
 
@@ -58,8 +65,15 @@ export default function SchoolSchedule({ views = null, onLoggedOut }) {
    * ради них сюда и заходили. Живёт это во вкладке, а не в настройках.
    */
   const [anchor, setAnchor] = useKept('school.schedule.week', today())
-  const [teacherFilter, setTeacherFilter] = useKept('school.schedule.teacher', '')
-  const [courseFilter, setCourseFilter] = useKept('school.schedule.course', '')
+  /*
+   * Три уровня сужения — одним значением, а не тремя.
+   *
+   * Выбор на одном уровне меняет соседние (`pick`), и разложенные по трём
+   * ключам они писались бы тремя вызовами подряд — то есть промежуточное
+   * состояние, в котором учитель уже новый, а курс ещё старый, попадало бы
+   * в хранилище. Здесь состояние одно, и оно всегда согласовано.
+   */
+  const [chosen, setChosen] = useKept('school.schedule.filters', emptyFilters())
   const [dialog, setDialog] = useState(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
@@ -126,14 +140,27 @@ export default function SchoolSchedule({ views = null, onLoggedOut }) {
     load()
   }, [load])
 
+  /*
+   * Сохранённый выбор сверяется с приехавшими курсами: за время отсутствия
+   * курс могли удалить, а ведущего — сменить. Считается это на лету, а
+   * записывается при следующем выборе: лишний `setState` в отрисовке ради
+   * состояния, которое и так не показывается, того не стоит.
+   */
+  const filters = useMemo(() => reconcile(courses, chosen), [courses, chosen])
+  const options = useMemo(
+    () => filterOptions(courses, members, filters),
+    [courses, members, filters],
+  )
+  const courseById = useMemo(
+    () => new Map(courses.map((course) => [course.id, course])),
+    [courses],
+  )
+  const choose = (level) => (event) =>
+    setChosen(pick(courses, filters, level, event.target.value))
+
   const visible = useMemo(
-    () =>
-      slots.filter(
-        (slot) =>
-          (!teacherFilter || String(slot.teacher) === teacherFilter) &&
-          (!courseFilter || String(slot.course) === courseFilter),
-      ),
-    [slots, teacherFilter, courseFilter],
+    () => slots.filter((slot) => slotMatches(slot, courseById, filters)),
+    [slots, courseById, filters],
   )
 
   const lessonsOn = (date) => visible.filter((slot) => slot.date === date)
@@ -286,15 +313,29 @@ export default function SchoolSchedule({ views = null, onLoggedOut }) {
         </button>
       </div>
 
+      {/*
+        Предмет → учитель → курс: не три условия, а одна цепочка.
+        Правила сужения и доназначения — в `scheduleFilters.js`, здесь
+        только три списка и одно состояние на них.
+      */}
       <div className="class-filter">
         <label className="checkbox">
+          {t('schoolSchedule.bySubject')}
+          <select value={filters.subject} onChange={choose('subject')}>
+            <option value="">{t('schoolSchedule.allSubjects')}</option>
+            {options.subjects.map((subject) => (
+              <option key={subject.id} value={subject.id}>
+                {subject.name}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <label className="checkbox">
           {t('schoolSchedule.byTeacher')}
-          <select
-            value={teacherFilter}
-            onChange={(event) => setTeacherFilter(event.target.value)}
-          >
+          <select value={filters.teacher} onChange={choose('teacher')}>
             <option value="">{t('schoolSchedule.everyone')}</option>
-            {members.map((member) => (
+            {options.teachers.map((member) => (
               <option key={member.id} value={member.id}>
                 {[member.first_name, member.last_name].filter(Boolean).join(' ') ||
                   member.email}
@@ -305,12 +346,9 @@ export default function SchoolSchedule({ views = null, onLoggedOut }) {
 
         <label className="checkbox">
           {t('schoolSchedule.byCourse')}
-          <select
-            value={courseFilter}
-            onChange={(event) => setCourseFilter(event.target.value)}
-          >
+          <select value={filters.course} onChange={choose('course')}>
             <option value="">{t('schoolSchedule.allCourses')}</option>
-            {courses.map((course) => (
+            {options.courses.map((course) => (
               <option key={course.id} value={course.id}>
                 {course.name}
               </option>

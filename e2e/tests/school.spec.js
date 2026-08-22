@@ -280,6 +280,67 @@ test('учителю тумблера видов не показывают', asy
   await expect(page.getByRole('radio', { name: 'Вся школа' })).toHaveCount(0)
 })
 
+test('фильтры школьного расписания сужают друг друга, а не пересекаются', async ({
+  page,
+  signIn,
+  api,
+}) => {
+  // Фильтров было два, и складывались они условием: выбрав учителя и курс
+  // другого, человек получал пустую неделю — а пустая неделя выглядит ровно
+  // как неделя, в которую ничего не поставили. Теперь это одна цепочка:
+  // предмет сужает учителей, учитель — курсы, а выбранный курс называет
+  // обоих сам.
+  const admin = await api(PEOPLE.admin)
+  const courses = await admin.get('/api/courses/?scope=school')
+  const named = (name) => courses.body.find((course) => course.name === name)
+
+  await signIn(PEOPLE.admin)
+  await openSection(page, '/school/schedule')
+
+  const subject = page.getByLabel('Предмет:')
+  const teacher = page.getByLabel('Учитель:')
+  const course = page.getByLabel('Курс:')
+
+  // выбран учитель — курсов чужих в списке больше нет, и выбрать их нечем
+  await teacher.selectOption({ label: 'Мария Иванова' })
+  await expect(course.locator('option')).toHaveText([
+    'все курсы',
+    'Grade 6 Algebra',
+    'Grade 6 Geometry',
+  ])
+
+  // «все учителя» — шаг назад по цепочке, а не второе условие: курсы
+  // возвращаются все
+  await teacher.selectOption({ label: 'все' })
+  await expect(course.locator('option')).toHaveText([
+    'все курсы',
+    'Grade 6 Algebra',
+    'Grade 6 Geometry',
+    'Grade 9 Algebra',
+    'Grade 9 Geometry',
+  ])
+
+  // выбран курс — ведущий и предмет встают сами, и это тот самый случай:
+  // раньше выбранный курс молча противоречил бы выбранному учителю
+  await course.selectOption({ label: 'Grade 9 Algebra' })
+  await expect(teacher).toHaveValue(String(named('Grade 9 Algebra').teachers[0].id))
+  await expect(subject).toHaveValue(String(named('Grade 9 Algebra').subject))
+
+  // сменили предмет — курс другого предмета снят, а ведущий остался: он
+  // ведёт и геометрию тоже
+  await subject.selectOption({ label: 'Геометрия' })
+  await expect(teacher).toHaveValue(String(named('Grade 9 Algebra').teachers[0].id))
+  await expect(course.locator('option')).toHaveText(['все курсы', 'Grade 9 Geometry'])
+
+  // в учителях — те, кто ведёт этот предмет; завуча, не ведущего ничего,
+  // среди них нет: выбрать его значило бы получить пустую неделю
+  await expect(teacher.locator('option')).toHaveText([
+    'все',
+    'Мария Иванова',
+    'Пётр Петров',
+  ])
+})
+
 test('в школьном расписании урок ставится в обычный будний день', async ({
   page,
   signIn,
