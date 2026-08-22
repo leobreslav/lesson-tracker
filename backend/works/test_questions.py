@@ -19,7 +19,7 @@ class QuestionTests(SchoolTestMixin, APITestCase):
         super().setUp()
         self.year = make_year(self.school)
         self.course = make_course(self.school, self.year)
-        self.work = make_work(self.user, self.course, on_paper=True)
+        self.work = make_work(self.user, self.course)
         services.set_questions(
             self.work, [{"maximum": 3} for _ in (1, 2, 3)], by=self.user
         )

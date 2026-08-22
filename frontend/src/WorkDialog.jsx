@@ -85,7 +85,6 @@ export default function WorkDialog({
       closes_at: fromLocalInput(form.closes_at),
       attempts: form.limited ? Number(form.attempts) : null,
       show_result: form.show_result,
-      on_paper: form.on_paper,
       is_homework: form.is_homework ?? false,
       is_summative: form.is_summative ?? false,
       grading_system: form.grading_system ?? null,
@@ -177,19 +176,10 @@ export default function WorkDialog({
         </label>
         <p className="hint">{t('works.summativeHint')}</p>
 
-        {/* бумажная работа не решается онлайн, и попытки для неё значат
-            ровно ничего — поэтому строка с ними прячется целиком */}
-        <label className="checkbox">
-          <input
-            type="checkbox"
-            checked={form.on_paper}
-            onChange={change('on_paper')}
-          />
-          {t('paper.onPaperSetting')}
-        </label>
-        <p className="hint">{t('paper.onPaperHint')}</p>
-
-        {!form.on_paper && (
+        {/* попытки — про работу целиком, а не про отдельный вопрос: чекбокса
+            «на бумаге» тут больше нет, и прятать эту строку стало не по чему.
+            Работа, все ячейки которой пишут на бумаге, попыток не тратит, и
+            число в них ничего не портит */}
         <div className="row">
           <label className="checkbox">
             <input
@@ -210,8 +200,7 @@ export default function WorkDialog({
             />
           )}
         </div>
-        )}
-        {!form.on_paper && <p className="hint">{t('works.attemptsHint')}</p>}
+        <p className="hint">{t('works.attemptsHint')}</p>
 
         <label className="checkbox">
           <input
@@ -245,7 +234,6 @@ function initial(work) {
       limited: work.attempts !== null,
       attempts: work.attempts ?? 1,
       show_result: work.show_result,
-      on_paper: work.on_paper,
       is_summative: work.is_summative ?? false,
       grading_system: work.grading_system ?? null,
       description: work.description ?? '',
@@ -264,7 +252,6 @@ function initial(work) {
     limited: true,
     attempts: 1,
     show_result: true,
-    on_paper: false,
     is_summative: false,
     grading_system: null,
     description: '',

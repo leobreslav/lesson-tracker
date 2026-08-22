@@ -314,6 +314,18 @@ export default function Works({ onLoggedOut }) {
                                       {t('works.task.stemHidden')}
                                     </p>
                                   )}
+                                  {/* закрытая ячейка — обычное состояние, а
+                                      не беда, поэтому пометка, а не
+                                      предупреждение. Стоит она в строке
+                                      условия, а не в кнопках: кнопки
+                                      спрятаны до наведения, и состояние,
+                                      которое видно только под курсором, —
+                                      это состояние, которого не видно */}
+                                  {!task.open_for_answers && (
+                                    <p className="hint">
+                                      {t('works.task.onPaper')}
+                                    </p>
+                                  )}
                                 </div>
                                 <div className="task-actions">
                                 <button
@@ -351,6 +363,27 @@ export default function Works({ onLoggedOut }) {
                                   onClick={() => setTakingInto(task)}
                                 >
                                   {t('works.task.bank')}
+                                </button>
+                                {/* открыть или закрыть ответы — поштучно:
+                                    «Q1 и Q2 решайте онлайн, Q3 сдайте на
+                                    листе» флагом работы не выражалось вовсе */}
+                                <button
+                                  type="button"
+                                  className="link"
+                                  disabled={busy}
+                                  onClick={() =>
+                                    run(() =>
+                                      updateTask(task.id, {
+                                        open_for_answers: !task.open_for_answers,
+                                      }),
+                                    )
+                                  }
+                                >
+                                  {t(
+                                    task.open_for_answers
+                                      ? 'works.task.closeAnswers'
+                                      : 'works.task.openAnswers',
+                                  )}
                                 </button>
                                 <button
                                   type="button"

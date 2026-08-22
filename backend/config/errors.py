@@ -181,6 +181,7 @@ class Codes:
     ATTEMPTS_EXHAUSTED = "attempts_exhausted"
     WORK_DATES_REVERSED = "work_dates_reversed"
     TASK_QUESTION_REQUIRED = "task_question_required"
+    TASK_CLOSED = "task_closed"
     TOO_MANY_CRITERIA = "too_many_criteria"
     SPLIT_EMPTY = "split_empty"
     SPLIT_OUT_OF_RANGE = "split_out_of_range"

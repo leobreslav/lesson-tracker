@@ -10,7 +10,7 @@ from collections import defaultdict
 
 from config.errors import Codes, api_error
 from django.core.files.uploadedfile import SimpleUploadedFile
-from django.db.models import Count, Max
+from django.db.models import Count, Max, Q
 from django.utils import timezone
 
 from bank.models import Problem
@@ -103,6 +103,16 @@ def answer(task, student, text: str, *, now=None) -> Submission:
     """
     work = task.work
     may_answer(work, student, now=now)
+
+    # открыт ли **этот** вопрос. Спрашивается после окна и зачисления, потому
+    # что закрытая ячейка — не запрет ученику, а способ решать: «Q3 сдайте на
+    # листе». Раньше на это отвечал флаг работы, и ответ был один на все
+    # вопросы разом.
+    if not task.open_for_answers:
+        api_error(
+            Codes.TASK_CLOSED,
+            "This question does not take answers online.",
+        )
 
     used = Submission.objects.filter(task=task, student=student).count()
     if work.attempts is not None and used >= work.attempts:
@@ -270,15 +280,25 @@ def totals_for(works, *, student=None) -> dict:
     if not works:
         return {}
 
-    tasks = Task.objects.filter(work__in=works).values_list("id", "work_id")
-    task_to_work = dict(tasks)
+    tasks = Task.objects.filter(work__in=works).values_list(
+        "id", "work_id", "open_for_answers"
+    )
+    task_to_work = {task_id: work_id for task_id, work_id, _ in tasks}
 
     counts = {
-        work.pk: {"tasks": 0, "answers": 0, "unchecked": 0, "students": set(), "mine": set()}
+        work.pk: {
+            "tasks": 0,
+            "open": 0,
+            "answers": 0,
+            "unchecked": 0,
+            "students": set(),
+            "mine": set(),
+        }
         for work in works
     }
-    for _, work_id in tasks:
+    for _, work_id, open_for_answers in tasks:
         counts[work_id]["tasks"] += 1
+        counts[work_id]["open"] += 1 if open_for_answers else 0
 
     submissions = Submission.objects.filter(task_id__in=task_to_work)
     if student is not None:
@@ -303,6 +323,9 @@ def totals_for(works, *, student=None) -> dict:
     return {
         work_id: {
             "tasks": row["tasks"],
+            # сколько вопросов принимают ответы: «есть ли тут что делать»
+            # считается по ним, а не по числу задач вообще
+            "open_tasks": row["open"],
             "answers": row["answers"],
             "unchecked": row["unchecked"],
             "students": len(row["students"]),
@@ -365,7 +388,15 @@ def student_version(work, student) -> str:
     `updated_at` работы и число задач в метке потому, что учитель правит
     открытую работу — это разрешено и названо ценой, — и ученик должен
     увидеть новое условие, а не то, которое было при загрузке страницы.
+
+    Открытых вопросов в метке ровно по той же причине: учитель открывает
+    ячейку тогда, когда классу пора отвечать, — и поле ответа должно
+    появиться само. Без этого числа опрос не замечал бы открытия вовсе:
+    задач столько же, работу никто не сохранял.
     """
+    cells = work.tasks.aggregate(
+        total=Count("id"), open=Count("id", filter=Q(open_for_answers=True))
+    )
     numbers = Submission.objects.filter(task__work=work, student=student).aggregate(
         total=Count("id"), last=Max("created_at"), checked=Max("checked_at")
     )
@@ -375,7 +406,8 @@ def student_version(work, student) -> str:
     return "|".join(
         str(part)
         for part in (
-            work.tasks.count(),
+            cells["total"],
+            cells["open"],
             work.updated_at.timestamp(),
             numbers["total"],
             numbers["last"] and numbers["last"].timestamp(),
@@ -502,7 +534,6 @@ def build_table(work) -> dict:
             "title": work.title,
             "state": work.state(),
             "course_name": work.course.name,
-            "on_paper": work.on_paper,
         },
         "tasks": columns,
         "criteria": [
@@ -916,10 +947,18 @@ def set_questions(work, items, *, by):
                 row = existing[position]
                 row.position = position
                 row.maximum = item.get("maximum", row.maximum)
-                row.save(update_fields=["position", "maximum"])
+                row.open_for_answers = item.get(
+                    "open_for_answers", row.open_for_answers
+                )
+                row.save(
+                    update_fields=["position", "maximum", "open_for_answers"]
+                )
             else:
                 row = Task.objects.create(
-                    work=work, position=position, maximum=item.get("maximum", 1)
+                    work=work,
+                    position=position,
+                    maximum=item.get("maximum", 1),
+                    open_for_answers=item.get("open_for_answers", True),
                 )
             statements.say(
                 row,

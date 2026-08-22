@@ -52,6 +52,8 @@ export default function StudentWork() {
     return () => clearInterval(timer)
   }, [load])
 
+  const quiet = work && silence(work)
+
   if (work === null) {
     return (
       <main className="page">
@@ -76,11 +78,7 @@ export default function StudentWork() {
         </p>
       )}
 
-      {!work.can_answer && (
-        <p className="hint warning">
-          {t(work.state === 'closed' ? 'student.work.closed' : 'student.work.readonly')}
-        </p>
-      )}
+      {quiet && <p className="hint warning">{t(quiet)}</p>}
 
       {work.description && (
         <section className="panel">
@@ -90,11 +88,13 @@ export default function StudentWork() {
 
       <Grade work={work} />
 
-      {work.tasks.length === 0 ? (
-        <p className="hint">
-          {t(work.on_paper ? 'paper.onPaper' : 'student.work.noTasks')}
-        </p>
-      ) : (
+      {/* «задач пока нет» — про работу, которую ещё не наполнили. Если
+          молчание уже объяснено сверху, второй раз объяснять нечего */}
+      {work.tasks.length === 0 && !quiet && (
+        <p className="hint">{t('student.work.noTasks')}</p>
+      )}
+
+      {work.tasks.length > 0 && (
         <ol className="student-tasks">
           {work.tasks.map((task, index) => (
             <TaskCard
@@ -114,6 +114,29 @@ export default function StudentWork() {
       </p>
     </main>
   )
+}
+
+/*
+ * Почему в этой работе нельзя отвечать — или `null`, если можно.
+ *
+ * Причин три, и они разные: окно закрылось, его сняли с курса, вопросы
+ * решают на бумаге. Раньше их было две, и различал их `work.state`; третью
+ * знал флаг работы (`on_paper`), а теперь она складывается из самих ячеек —
+ * ни одна не принимает ответы.
+ *
+ * Пустая работа молчит: «задач пока нет» стоит на месте списка и говорит всё.
+ */
+const silence = (work) => {
+  if (work.can_answer) return null
+  if (work.state === 'closed') return 'student.work.closed'
+  if (!work.enrolled) return 'student.work.readonly'
+
+  // отвечать негде — но это ещё не значит «на бумаге»: работу могли просто
+  // не наполнить. Различает их то, есть ли тут вообще что-нибудь его: ячейки
+  // или его собственный скан. Пустая работа без скана молчит, и за неё
+  // говорит «задач пока нет» на месте списка.
+  const papers = work.papers ?? []
+  return work.tasks.length > 0 || papers.length > 0 ? 'paper.onPaper' : null
 }
 
 /**
@@ -191,6 +214,9 @@ function TaskCard({ task, number, canAnswer, onSent, onError }) {
   const [text, setText] = useState('')
   const [busy, setBusy] = useState(false)
 
+  // ответить можно, когда открыты **и** работа, и сама ячейка: закрытая
+  // ячейка — это «решайте на листе», а не запрет
+  const open = canAnswer && task.open_for_answers
   const out = task.attempts_left === 0
   const send = async (event) => {
     event.preventDefault()
@@ -244,7 +270,7 @@ function TaskCard({ task, number, canAnswer, onSent, onError }) {
         </ul>
       )}
 
-      {canAnswer && !out && (
+      {open && !out && (
         <form className="row" onSubmit={send}>
           <input
             value={text}
@@ -264,8 +290,14 @@ function TaskCard({ task, number, canAnswer, onSent, onError }) {
         </form>
       )}
 
-      {canAnswer && out && (
+      {open && out && (
         <p className="hint warning">{t('student.work.noAttempts')}</p>
+      )}
+
+      {/* работа принимает ответы, а этот вопрос нет: значит его сдают на
+          листе. У работы, где на бумаге всё, это сказано один раз сверху */}
+      {canAnswer && !task.open_for_answers && (
+        <p className="hint">{t('student.work.onPaperQuestion')}</p>
       )}
 
       {/* спросить учителя можно прямо тут: вопрос про эту задачу, а не про

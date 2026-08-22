@@ -661,9 +661,12 @@ class StudentWorksView(APIView):
                         "opens_at": work.opens_at,
                         "closes_at": work.closes_at,
                         # снятый с курса видит работу и свои ответы, но
-                        # решать в ней больше не может
+                        # решать в ней больше не может. Второе условие — про
+                        # сами вопросы: работа, все ячейки которой пишутся на
+                        # бумаге, открыта и доступна, а отвечать в ней негде
                         "can_answer": work.state() == "open"
-                        and work.course_id in active,
+                        and work.course_id in active
+                        and totals[work.pk]["open_tasks"] > 0,
                         "tasks": totals[work.pk]["tasks"],
                         "answered": totals[work.pk]["answered_tasks"],
                     }
@@ -705,8 +708,13 @@ class StudentWorkView(APIView):
                 "opens_at": work.opens_at,
                 "closes_at": work.closes_at,
                 "attempts": work.attempts,
-                "on_paper": work.on_paper,
-                "can_answer": work.state() == "open" and active and not work.on_paper,
+                # зачислен ли он сейчас — отдельно от «есть ли что отвечать»:
+                # экран говорит разное про «вы больше не в курсе» и «эти
+                # вопросы пишут на бумаге», и одним флагом их не различить
+                "enrolled": active,
+                "can_answer": work.state() == "open"
+                and active
+                and any(task.open_for_answers for task in tasks),
                 "tasks": [
                     {
                         "id": task.pk,
@@ -715,6 +723,10 @@ class StudentWorkView(APIView):
                         # не объяснить — «2» само по себе не говорит ничего,
                         # а «2 из 3» говорит всё
                         "maximum": task.maximum,
+                        # принимает ли этот вопрос ответы. Свойство ячейки, а
+                        # не работы: «Q1 и Q2 решайте онлайн, Q3 сдайте на
+                        # листе» — обычный случай, невыразимый флагом работы
+                        "open_for_answers": task.open_for_answers,
                         "question": statements.statement_of(task),
                         # ученику — с оглядкой на выключенную шапку: если её
                         # спрятали, не приезжает ни она сама, ни пометка,

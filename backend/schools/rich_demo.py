@@ -955,10 +955,14 @@ def ask(work, teacher, position, question, answers):
 
 def paper_work(course, teacher, group, now, *, salt) -> int:
     """
-    Контрольная на бумаге: задач и отправок нет, зато есть оценки.
+    Контрольная на бумаге: ячеек и отправок нет, зато есть оценки.
 
     Шкала настоящая — четыре критерия MYP: обычная отметка одним числом не
     показала бы, как читается рубрика, а именно она в этих школах и стоит.
+
+    Ячеек здесь нет намеренно, и это второй законный вид бумажной работы:
+    оценивают её **по критериям**, а не по вопросам, и `Q1…Qn` в ней не
+    значили бы ничего. Первый вид — с закрытыми ячейками — стоит в досеве.
     """
     work = Work.objects.create(
         course=course,
@@ -966,7 +970,6 @@ def paper_work(course, teacher, group, now, *, salt) -> int:
         title="Контрольная на бумаге",
         opens_at=now - timedelta(days=35),
         closes_at=now - timedelta(days=34),
-        on_paper=True,
     )
     criteria = Criterion.objects.bulk_create(
         Criterion(work=work, position=position, name=name, maximum=maximum)

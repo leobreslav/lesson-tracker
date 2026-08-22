@@ -29,7 +29,7 @@ class ScanApplyTests(SchoolTestMixin, APITestCase):
         super().setUp()
         self.year = make_year(self.school)
         self.course = make_course(self.school, self.year)
-        self.work = make_work(self.user, self.course, on_paper=True)
+        self.work = make_work(self.user, self.course)
         services.set_questions(
             self.work,
             [{"question": f"Задача {n}", "maximum": 3} for n in range(1, 4)],

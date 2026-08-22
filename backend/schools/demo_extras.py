@@ -21,6 +21,7 @@
 
 from datetime import timedelta
 
+from django.db.models import Count
 from django.utils import timezone
 
 
@@ -39,6 +40,7 @@ def build(school, courses, people, students, *, log=print):
     made = []
     made.append(_grading(school, courses, teacher))
     made.append(_marks(course, teacher, students))
+    made.append(_mixed(course))
     made.append(_talk(course, teacher, students))
     made.append(_attendance(course, teacher, students))
     methodist = people["petrov@example.com"]
@@ -52,13 +54,30 @@ def build(school, courses, people, students, *, log=print):
     log("  досев:     " + ", ".join(one for one in made if one))
 
 
+def _paper(works):
+    """
+    Работа, которую писали на бумаге: ячейки есть, ни одна не принимает ответы.
+
+    Флага у работы больше нет, и находить её приходится так же, как это
+    делает экран, — по самим ячейкам. Это не обход правила, а его следствие:
+    «бумажная» перестала быть свойством работы и стала суммой свойств её
+    вопросов.
+    """
+    return (
+        works.filter(tasks__isnull=False)
+        .exclude(tasks__open_for_answers=True)
+        .distinct()
+        .first()
+    )
+
+
 def _grading(school, courses, teacher):
     """Системы оценивания и шкала у бумажной работы."""
     from works import grading, services
     from works.models import Work
 
     grading.add_typical(school, "ru")
-    paper = Work.objects.filter(course__school=school, on_paper=True).first()
+    paper = _paper(Work.objects.filter(course__school=school))
     if paper is None:
         paper = Work.objects.create(
             course=courses["Grade 6 Algebra"],
@@ -66,11 +85,18 @@ def _grading(school, courses, teacher):
             title="Работа на бумаге",
             opens_at=timezone.now() - timedelta(days=2),
             closes_at=timezone.now() + timedelta(days=5),
-            on_paper=True,
         )
     if not paper.tasks.exists():
+        # ячейки у бумажной работы есть — это `Q1…Q3`, просто без условий и
+        # закрытые для ответов: лист лежит у ученика на парте
         services.set_questions(
-            paper, [{"maximum": 5}, {"maximum": 5}, {"maximum": 10}], by=teacher
+            paper,
+            [
+                {"maximum": 5, "open_for_answers": False},
+                {"maximum": 5, "open_for_answers": False},
+                {"maximum": 10, "open_for_answers": False},
+            ],
+            by=teacher,
         )
     if paper.grading_system_id is None:
         paper.grading_system = school.grading_systems.filter(kind="points").first()
@@ -85,7 +111,6 @@ def _grading(school, courses, teacher):
             "created_by": teacher,
             "opens_at": timezone.now() - timedelta(days=3),
             "closes_at": timezone.now() + timedelta(days=10),
-            "on_paper": True,
             "is_summative": True,
             "grading_system": school.grading_systems.filter(kind="levels").first(),
         },
@@ -111,7 +136,7 @@ def _marks(course, teacher, students):
     from works import services
     from works.models import Work
 
-    paper = Work.objects.filter(course=course, on_paper=True).first()
+    paper = _paper(Work.objects.filter(course=course))
     if paper is None or not paper.tasks.exists():
         return ""
 
@@ -138,6 +163,39 @@ def _marks(course, teacher, students):
     return "оценки и журнал правок"
 
 
+def _mixed(course):
+    """
+    Работа, где часть вопросов решают онлайн, а последний — на листе.
+
+    Ради неё флаг работы и снимали: «Q1 и Q2 решайте онлайн, Q3 сдайте на
+    бумаге» — обычная контрольная, и выразить её было нечем. Пока такой
+    работы нет в посеве, экран смешанного случая никто ни разу не видел
+    глазами — а он выглядит иначе, чем оба крайних.
+    """
+    from works.models import Task, Work
+
+    already = Task.objects.filter(
+        work__course=course, open_for_answers=False, problem__isnull=False
+    ).exists()
+    if already:
+        return ""
+
+    work = (
+        Work.objects.filter(course=course, tasks__open_for_answers=True)
+        .annotate(cells=Count("tasks"))
+        .filter(cells__gte=2)
+        .distinct()
+        .first()
+    )
+    if work is None:
+        return ""
+
+    last = work.tasks.order_by("position").last()
+    last.open_for_answers = False
+    last.save(update_fields=["open_for_answers"])
+    return "смешанная работа"
+
+
 def _talk(course, teacher, students):
     """Разговор о задаче: ученик спросил, учитель ответил."""
     from works import threads
@@ -146,7 +204,7 @@ def _talk(course, teacher, students):
     # работа **с задачами**: домашняя «на каникулы» их не имеет, и первая
     # попавшаяся онлайновая оказалась именно ею
     work = (
-        Work.objects.filter(course=course, on_paper=False, tasks__isnull=False)
+        Work.objects.filter(course=course, tasks__open_for_answers=True)
         .distinct()
         .first()
     )
@@ -252,7 +310,7 @@ def _scan_page(course, teacher):
     """
     from works.models import ScanPage, Work
 
-    paper = Work.objects.filter(course=course, on_paper=True).first()
+    paper = _paper(Work.objects.filter(course=course))
     if paper is None or ScanPage.objects.filter(work=paper).exists():
         return ""
 
@@ -283,7 +341,7 @@ def _spending(school, teacher, course):
 
     from works.models import Work
 
-    work = Work.objects.filter(course=course, on_paper=True).first()
+    work = _paper(Work.objects.filter(course=course))
     for number in range(3):
         AiSpend.objects.create(
             school=school,

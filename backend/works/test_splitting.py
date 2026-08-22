@@ -49,7 +49,7 @@ class SplitTestCase(SchoolTestMixin, APITestCase):
         super().setUp()
         self.year = make_year(self.school)
         self.course = make_course(self.school, self.year)
-        self.work = make_work(self.user, self.course, on_paper=True)
+        self.work = make_work(self.user, self.course)
 
         self.second = make_user(self.school, "second@example.com", student=True)
         enrol(self.student, self.course, by=self.admin)
@@ -245,7 +245,7 @@ class ReassignTests(SplitTestCase):
         self.assertEqual(self.paper.stored_file_id, before)
 
     def test_an_attachment_of_another_work_cannot_be_moved_here(self):
-        other = make_work(self.user, self.course, title="Другая", on_paper=True)
+        other = make_work(self.user, self.course, title="Другая")
         row = StudentWork.objects.create(work=other, student=self.second)
         alien = Attachment.objects.create(
             student_work=row, kind="link", url="https://example.com", title="x"

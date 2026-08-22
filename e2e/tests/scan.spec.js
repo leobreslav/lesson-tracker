@@ -29,7 +29,6 @@ async function paperWork(teacher, { title = 'Контрольная на бум�
   const work = await teacher.post('/api/works/', {
     course: course.id,
     title,
-    on_paper: true,
     opens_at: new Date(Date.now() - day).toISOString(),
     closes_at: new Date(Date.now() + day).toISOString(),
   })
@@ -54,7 +53,16 @@ const openScan = async (page, title = 'Контрольная на бумаге'
   await row.getByRole('button', { name: 'Сканы' }).click()
 }
 
-test('у онлайновой работы кнопки сканов нет вовсе', async ({ page, signIn }) => {
+test('кнопка сканов есть и у онлайновой работы', async ({ page, signIn }) => {
+  /*
+   * Стоял тут обратный тест — «у онлайновой кнопки нет вовсе», — и он
+   * пережил своё правило: кнопку открыли всем, когда сняли отказ «эта работа
+   * не на бумаге». Запирал он обычные случаи: класс писал онлайн, а сдал на
+   * бумаге; учитель завёл работу пустой и принёс пачку.
+   *
+   * Мешать друг другу нечему, и видно это по тому, где что лежит: скан — на
+   * строке «работа и ученик», онлайн-ответ — на отправке.
+   */
   await signIn(PEOPLE.ivanova)
   await page.goto('/works')
   await ready(page)
@@ -64,7 +72,7 @@ test('у онлайновой работы кнопки сканов нет во
   const first = page.locator('.work-list .course-row').first()
   await first.locator('.name').click()
 
-  await expect(first.getByRole('button', { name: 'Сканы' })).toHaveCount(0)
+  await expect(first.getByRole('button', { name: 'Сканы' })).toHaveCount(1)
 })
 
 test('шкала спрашивается один раз, а потом сразу файл', async ({ page, signIn, api }) => {

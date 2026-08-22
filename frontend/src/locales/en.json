@@ -226,6 +226,7 @@
     "attempts_exhausted": "No attempts left for this task.",
     "work_dates_reversed": "The work closes before it opens.",
     "task_question_required": "A task needs a question.",
+    "task_closed": "This question is not open for online answers: it is answered on paper.",
     "not_course_teacher": "Only the teacher of this course or a school administrator can change this.",
     "file_not_pdf": "That file is not a PDF, or it cannot be read.",
     "too_many_criteria": "A work is graded by at most {{limit}} criteria.",
@@ -991,6 +992,7 @@
       "attemptsLeft_one": "{{count}} attempt left",
       "attemptsLeft_other": "{{count}} attempts left",
       "noAttempts": "No attempts left for this question.",
+      "onPaperQuestion": "This question is answered on paper.",
       "correct": "correct",
       "wrong": "wrong",
       "unchecked": "not checked yet",
@@ -1075,7 +1077,10 @@
       "isPart": "a question to a shared statement · ",
       "whole": "show the whole problem",
       "showStem": "Show the shared statement to the student",
-      "stemHidden": "The shared statement is hidden: the student sees only the question."
+      "stemHidden": "The shared statement is hidden: the student sees only the question.",
+      "onPaper": "on paper",
+      "closeAnswers": "Close for answers",
+      "openAnswers": "Open for answers"
     },
     "answers": "Answers",
     "description": "What to do",
@@ -1137,9 +1142,7 @@
     "scans": "Scanned work",
     "addScan": "Add a scan",
     "column": "Work",
-    "onPaper": "This work was written on paper. Your marked copy appears here once the teacher uploads it.",
-    "onPaperSetting": "Written on paper",
-    "onPaperHint": "No online questions: each student gets the scan of their own work."
+    "onPaper": "This work was written on paper. Your marked copy appears here once the teacher uploads it."
   },
   "split": {
     "action": "split a scan",

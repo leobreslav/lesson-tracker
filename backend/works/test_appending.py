@@ -82,7 +82,7 @@ class AppendingCostTests(SchoolTestMixin, APITestCase):
         self.student = make_user(self.school, "uchenik@example.com", student=True)
         CourseStudent.objects.create(course=self.course, student=self.student)
 
-        self.work = make_work(self.user, self.course, on_paper=True)
+        self.work = make_work(self.user, self.course)
         grading.add_typical(self.school, "ru")
         self.work.grading_system = GradingSystem.objects.filter(
             school=self.school, kind=GradingSystem.POINTS

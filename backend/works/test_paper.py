@@ -6,9 +6,11 @@
 контрольная одноклассника с отметками у него на экране, и заметить это
 некому, кроме теста.
 
-Сама бумажная работа — та же `Work`, у которой не задействованы задачи и
-отправки. Признак явный (`on_paper`), потому что пустая онлайн-работа и
-пустая бумажная в данных неразличимы, а показывать ученику надо разное.
+Сама бумажная работа — та же `Work`, у которой не задействованы отправки.
+Своего признака у неё больше нет: «принимает ли ответы онлайн» — свойство
+**ячейки** (`Task.open_for_answers`), и бумажная работа это просто работа, у
+которой закрыты все ячейки. Флагом работы (`on_paper`) это было, пока ответ
+был один на все вопросы разом.
 """
 
 from django.urls import reverse
@@ -32,7 +34,7 @@ class PaperTestCase(SchoolTestMixin, APITestCase):
         super().setUp()
         self.year = make_year(self.school)
         self.course = make_course(self.school, self.year)
-        self.work = make_work(self.user, self.course, on_paper=True)
+        self.work = make_work(self.user, self.course)
 
         self.classmate = make_user(self.school, "classmate@example.com", student=True)
         enrol(self.student, self.course, by=self.admin)
@@ -183,9 +185,14 @@ class StudentViewTests(PaperTestCase):
         self.assertEqual(papers[self.student.pk], 1)
         self.assertEqual(papers[self.classmate.pk], 1)
 
-    def test_a_paper_work_says_so(self):
-        self.assertTrue(
-            self.client.get(reverse("work-detail", args=[self.work.pk])).json()[
-                "on_paper"
-            ]
-        )
+    def test_a_work_no_longer_carries_a_paper_flag(self):
+        """
+        «На бумаге» перестало быть свойством работы, и в ответе его нет.
+
+        Сторож на снос, а не на поведение: поле, оставшееся в сериализаторе
+        после того, как его перестали считать, читается клиентом как правда
+        и молча возвращает старую развилку.
+        """
+        body = self.client.get(reverse("work-detail", args=[self.work.pk])).json()
+
+        self.assertNotIn("on_paper", body)

@@ -115,25 +115,32 @@ class TheCellHasNoTextOfItsOwnTests(SimpleTestCase):
     У ячейки работы нет своего текста, и новое поле должно об этом сказать.
 
     Приём тот же, что у `LessonFieldsTests` в расписании: каждое поле названо
-    либо местом (позиция, цена), либо связью, либо показом. Забытое поле — это
-    ровно та тихая правка, из-за которой условие когда-то расползлось.
+    либо местом (позиция, цена), либо связью, либо показом, либо правом
+    ученика. Забытое поле — это ровно та тихая правка, из-за которой условие
+    когда-то расползлось.
     """
 
     PLACE = {"id", "work", "position", "maximum", "created_at"}
     LINKS = {"problem", "submissions", "marks", "mark_changes", "threads"}
     SHOWING = {"show_stem"}
+    # Что ученик вправе делать с этой ячейкой. Разряд заведён под
+    # `open_for_answers` и назван отдельно от показа намеренно: показ решает,
+    # что видно, а это — что можно, и разница видна на бумажной работе, где
+    # условие показано, а ответить нельзя. Флагом работы (`on_paper`) на тот
+    # же вопрос отвечали одним ответом на все ячейки разом.
+    ANSWERING = {"open_for_answers"}
 
     def test_every_field_of_a_cell_is_classified(self):
         task = apps.get_model("works", "Task")
         names = {field.name for field in task._meta.get_fields()}
 
-        unknown = names - self.PLACE - self.LINKS - self.SHOWING
+        unknown = names - self.PLACE - self.LINKS - self.SHOWING - self.ANSWERING
         self.assertEqual(
             unknown,
             set(),
-            "новое поле у ячейки: решите, это место (PLACE), связь (LINKS) или "
-            "показ (SHOWING) — и допишите сюда. Текста у ячейки быть не может: "
-            "он живёт в bank.Problem",
+            "новое поле у ячейки: решите, это место (PLACE), связь (LINKS), "
+            "показ (SHOWING) или право ученика (ANSWERING) — и допишите сюда. "
+            "Текста у ячейки быть не может: он живёт в bank.Problem",
         )
 
 

@@ -26,7 +26,7 @@ class MarkStatsTests(SchoolTestMixin, APITestCase):
         super().setUp()
         self.year = make_year(self.school)
         self.course = make_course(self.school, self.year)
-        self.work = make_work(self.user, self.course, on_paper=True)
+        self.work = make_work(self.user, self.course)
         services.set_questions(
             self.work,
             [{"question": f"Задача {n}", "maximum": 3} for n in (1, 2, 3)],
@@ -94,7 +94,7 @@ class MarkStatsTests(SchoolTestMixin, APITestCase):
 
     def test_a_work_without_questions_says_nothing(self):
         """Работа может не иметь вопросов вовсе, и это не «ноль»."""
-        plain = make_work(self.user, self.course, title="Без вопросов", on_paper=True)
+        plain = make_work(self.user, self.course, title="Без вопросов")
 
         self.assertIsNone(services.build_table(plain)["marks_summary"])
 

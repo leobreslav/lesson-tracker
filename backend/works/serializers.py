@@ -119,6 +119,7 @@ class TaskSerializer(serializers.ModelSerializer):
             "mode",
             "problem",
             "show_stem",
+            "open_for_answers",
             "created_at",
         )
         read_only_fields = ("id", "position", "problem", "created_at")
@@ -164,7 +165,6 @@ class WorkSerializer(serializers.ModelSerializer):
             "closes_at",
             "attempts",
             "show_result",
-            "on_paper",
             "is_homework",
             "is_summative",
             "grading_system",

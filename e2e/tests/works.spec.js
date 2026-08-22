@@ -260,7 +260,6 @@ test('скан бумажной работы достаётся только с�
     title: 'Контрольная на бумаге',
     opens_at: new Date(Date.now() - 3600e3).toISOString(),
     closes_at: new Date(Date.now() + 3600e3).toISOString(),
-    on_paper: true,
   })
 
   // ученика берём из самой таблицы работы: там он уже есть по составу курса
@@ -331,7 +330,6 @@ test('скан читается в браузере, и границы рабо�
     title: 'Разбор пачки',
     opens_at: new Date(Date.now() - 3600e3).toISOString(),
     closes_at: new Date(Date.now() + 3600e3).toISOString(),
-    on_paper: true,
   })
 
   await signIn(PEOPLE.ivanova)
