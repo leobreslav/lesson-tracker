@@ -62,6 +62,8 @@
 │   ├── staging-seed.sh       # пересев стенда: окно DEBUG под ловушкой
 │   ├── check-secrets.sh     # сверка ключей по контурам отпечатками, без значений
 │   ├── staging-autodeploy.sh # опрос origin/main из crontab стенда
+│   ├── ship.sh               # унести ветку на стенд и прод: git + gh, без ssh
+│   ├── test-ship.sh          # сторож ship.sh: семь отказов из восьми проверок
 │   ├── prod-autodeploy.sh    # опрос ветки production из crontab прода
 │   ├── test-prod-autodeploy.sh # сторож: выкатывает, когда надо, и отказывается, когда нет
 │   └── reload-nginx.sh       # хук certbot: reload nginx после продления

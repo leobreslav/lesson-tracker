@@ -53,6 +53,11 @@ jobs:
         # проверяются обе стороны: и что выкатывает, и что отказывается.
         run: bash scripts/test-prod-autodeploy.sh
 
+      - name: Сторож переноса веток
+        # gh подменён заглушкой, сети не надо. Семь проверок из восьми — про
+        # отказ: этим скриптом двигают ветку, которую тянет боевой сервер.
+        run: bash scripts/test-ship.sh
+
       - name: Питоновский набор
         run: docker compose run --rm -T backend python manage.py test
 

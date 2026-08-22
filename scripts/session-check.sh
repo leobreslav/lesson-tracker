@@ -31,13 +31,39 @@ git rev-parse --git-dir >/dev/null 2>&1 || exit 0
 
 say() { printf '%s\n' "$*"; }
 
+# --- вы точно не на production? ----------------------------------------------
+# Эту ветку тянет боевой сервер, и на ноутбуке она не нужна никогда. Оказаться
+# на ней можно ровно одним способом — посмотреть, «что там сейчас на проде», и
+# забыть вернуться; дальше коммит уходит не туда, куда думали. Проверка стоит
+# первой и не требует сети.
+if [ "$(git rev-parse --abbrev-ref HEAD 2>/dev/null)" = "production" ]; then
+    say "⚠ Вы на ветке production — её тянет боевой сервер. Работают на main:"
+    say "  git checkout main"
+fi
+
 # --- отстали ли от origin/main ------------------------------------------------
 # Таймаут обязателен: без сети `git fetch` висит, а вместе с ним и старт сессии.
-if timeout 10 git fetch --quiet origin main 2>/dev/null; then
+#
+# --prune: работа приезжает ветками claude/*, они сливаются и удаляются на
+# GitHub, а локально остаются висеть. Прунится только remote-tracking ссылка —
+# ни рабочее дерево, ни локальные ветки это не трогает, обещание «ничего молча»
+# в силе.
+if timeout 10 git fetch --quiet --prune origin 2>/dev/null; then
     behind="$(git rev-list --count HEAD..origin/main 2>/dev/null || echo 0)"
-    if [ "${behind:-0}" -gt 0 ]; then
+    ahead="$(git rev-list --count origin/main..HEAD 2>/dev/null || echo 0)"
+
+    # Разошлись — это не то же самое, что отстали, и лечится не тем же. Здесь
+    # `git pull --ff-only` откажет, и совет из соседней ветки этого сообщения
+    # завёл бы в тупик ровно в тот момент, когда некогда разбираться.
+    if [ "${behind:-0}" -gt 0 ] && [ "${ahead:-0}" -gt 0 ]; then
+        say "⚠ Дерево разошлось с origin/main: своих $ahead, чужих $behind."
+        say "  git pull --rebase   (--ff-only здесь откажет)"
+    elif [ "${behind:-0}" -gt 0 ]; then
         say "⚠ Дерево отстаёт от origin/main на $behind коммит(ов) — работа из облака уже влита."
         say "  Перед первой правкой: git pull --ff-only"
+    fi
+
+    if [ "${behind:-0}" -gt 0 ]; then
         # Миграции среди приехавшего — отдельная беда: их надо применить к
         # долгоживущей базе разработки, и это единственная база, которая
         # умеет отставать.
@@ -45,6 +71,13 @@ if timeout 10 git fetch --quiet origin main 2>/dev/null; then
             grep -c '/migrations/.*\.py$' || true)"
         [ "${migrations:-0}" -gt 0 ] &&
             say "  Среди них миграции ($migrations шт.): после pull нужен migrate."
+    fi
+
+    # Ветки, которых больше нет на GitHub. Молчит, пока их нет.
+    gone="$(git branch -vv 2>/dev/null | grep -c ': gone\]' || true)"
+    if [ "${gone:-0}" -gt 0 ]; then
+        say "⚠ Локальных веток без origin: $gone (влиты и удалены)."
+        say "  Посмотреть: git branch -vv | grep ': gone]'"
     fi
 fi
 

@@ -651,12 +651,14 @@ prod-autodeploy.sh` в crontab, раз в пять минут. Пока ветк
 машины, где лежит ssh-ключ.
 
 ```bash
-git push origin main:production                  # с ноутбука, без ssh
-gh pr create --base production --head main       # или PR и кнопка на github.com
+./scripts/ship.sh              # влить текущую ветку в main => стенд
+./scripts/ship.sh --prod       # и выкатить на прод         => прод
+./scripts/ship.sh --prod-only  # main в порядке, двинуть только прод
 ```
 
-`push-deploy.sh` двигает эту ветку сам, поэтому команда из предыдущего
-раздела работает как работала.
+Нужны `git` и `gh`, ssh не нужен — поэтому работает и из облачной сессии, и с
+телефона. `push-deploy.sh` зовёт этот же скрипт, так что команда из
+предыдущего раздела работает как работала.
 
 **Меняли набор переменных — сначала ноутбук.** Опрос не возит `.env.prod`:
 файл лежит вне git. Порядок тогда `./scripts/sync-env.sh prod`, и только
