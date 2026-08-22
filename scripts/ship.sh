@@ -81,12 +81,32 @@ gh auth status >/dev/null 2>&1 || fail "gh не авторизован: gh auth 
 
 SLUG="$(gh repo view --json nameWithOwner --jq .nameWithOwner)"
 
+# Вершина ветки на GitHub — или пустая строка, если ветки там нет.
+#
+# Пустая строка получается не сама собой, и это стоило падения на первом же
+# запуске `--reseed`. При ошибке `gh` печатает **тело ответа** в stdout, минуя
+# `--jq`, — то есть на несуществующую ветку возвращает не «ничего» и не «null»,
+# а json с «Not Found» длиной в сто тридцать символов. Дальше он уезжал в
+# параметр `parents`, и GitHub отвечал 422 про сорок символов.
+#
+# Поэтому ответ проверяется на форму, а не на код возврата: sha — это сорок
+# знаков из [0-9a-f], всё остальное значит «ветки нет».
+ref_sha() {
+    local answer
+    answer="$(gh api "repos/$SLUG/git/refs/heads/$1" --jq .object.sha 2>/dev/null || true)"
+    case "$answer" in
+        *[!0-9a-f]*) answer="" ;;
+    esac
+    [ "${#answer}" = 40 ] || answer=""
+    printf '%s' "$answer"
+}
+
 # Двигает ветку на GitHub. Только перемотка: sha обязан быть потомком того, что
 # там лежит. force здесь нет и быть не должно — на том конце контуры, которые
 # этот ref считают правдой.
 move_ref() {
     local branch="$1" sha="$2" current
-    current="$(gh api "repos/$SLUG/git/refs/heads/$branch" --jq .object.sha 2>/dev/null || true)"
+    current="$(ref_sha "$branch")"
 
     if [ "$current" = "$sha" ]; then
         info "$branch уже на ${sha:0:8} — двигать нечего"
@@ -108,9 +128,10 @@ move_ref() {
 seed_request() {
     local args="$1" main_sha tree parent message body sha
 
-    main_sha="$(gh api "repos/$SLUG/git/refs/heads/$MAIN" --jq .object.sha)"
+    main_sha="$(ref_sha "$MAIN")"
+    [ -n "$main_sha" ] || fail "не вижу ветки $MAIN на GitHub"
     tree="$(gh api "repos/$SLUG/git/commits/$main_sha" --jq .tree.sha)"
-    parent="$(gh api "repos/$SLUG/git/refs/heads/$SEED" --jq .object.sha 2>/dev/null || true)"
+    parent="$(ref_sha "$SEED")"                       # пусто — просьба первая
 
     message="seed:${args:+ $args}"
     # Кто и когда — не для скрипта, а для того, кто через неделю откроет

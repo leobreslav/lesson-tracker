@@ -90,7 +90,13 @@ if printf '%s\n' "$@" | grep -q PATCH; then
     echo "$sha" > "$file"
     echo '{}'; exit 0
 fi
-[ -f "$file" ] || exit 1
+# Настоящий gh при ошибке печатает **тело ответа** в stdout, минуя --jq.
+# Заглушка обязана врать так же: иначе «ветки нет» выглядит здесь пустой
+# строкой, а в жизни — стосимвольным json, который уезжает дальше по коду.
+if [ ! -f "$file" ]; then
+    echo '{"message":"Not Found","status":"404"}'
+    exit 1
+fi
 cat "$file"
 STUB
     chmod +x "$root/bin/gh"
