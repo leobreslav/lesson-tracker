@@ -1199,7 +1199,9 @@
     "teacher": "teacher",
     "admin": "administrator",
     "student": "student",
-    "root": "superuser"
+    "root": "superuser",
+    "back": "Back to {{name}}",
+    "roots": "Superusers"
   },
   "debts": {
     "title": "Close the days nobody said anything about",

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link, useLocation } from 'react-router-dom'
 import { fetchTestPeople, loginAsTestUser, logout } from './api'
+import { forgetOrigin, rememberOrigin, wayHome } from './devSwitch'
 import { LANGUAGES } from './i18n'
 
 /**
@@ -64,6 +65,9 @@ export default function UserMenu({ user, profileTo = null, onLoggedOut, onLangua
     try {
       await logout()
     } finally {
+      // выйдя, домой возвращаться некуда: следующий вход — уже другая
+      // история, и подсунутая ему чужая дорога назад увела бы не туда
+      forgetOrigin()
       onLoggedOut()
     }
   }
@@ -124,7 +128,7 @@ export default function UserMenu({ user, profileTo = null, onLoggedOut, onLangua
             </button>
           </li>
 
-          <SwitchUser />
+          <SwitchUser user={user} />
         </ul>
       )}
     </div>
@@ -140,9 +144,10 @@ export default function UserMenu({ user, profileTo = null, onLoggedOut, onLangua
  * пользователя решается на входе, и половинчатая смена личности без
  * перезагрузки означала бы учительскую оболочку вокруг ученика.
  */
-function SwitchUser() {
+function SwitchUser({ user }) {
   const { t } = useTranslation()
   const [people, setPeople] = useState(null)
+  const home = wayHome(user)
 
   useEffect(() => {
     let cancelled = false
@@ -161,8 +166,38 @@ function SwitchUser() {
   if (!people?.length) return null
 
   const enter = async (email) => {
+    /*
+     * Уходя, оставляем дорогу назад.
+     *
+     * Без неё «посмотреть чужими глазами» — билет в один конец: чтобы
+     * вернуться, надо узнать себя в списке из семнадцати человек, а
+     * суперпользователь там ничем не отмечен и стоит между учителями. На
+     * стенде это выглядело как «я не могу вернуться в свою учётку».
+     */
+    if (user) {
+      rememberOrigin({
+        email: user.email,
+        name:
+          [user.first_name, user.last_name].filter(Boolean).join(' ') || user.email,
+        token: localStorage.getItem('authToken'),
+      })
+    }
+
     const { key } = await loginAsTestUser(email)
     localStorage.setItem('authToken', key)
+    window.location.assign('/')
+  }
+
+  /** Вернуться домой: свой токен цел, спрашивать дверь незачем. */
+  const goHome = async () => {
+    if (home?.token) {
+      localStorage.setItem('authToken', home.token)
+    } else if (home?.email) {
+      // токен могли и не сохранить (приватный режим) — тогда та же дверь
+      const { key } = await loginAsTestUser(home.email)
+      localStorage.setItem('authToken', key)
+    }
+    forgetOrigin()
     window.location.assign('/')
   }
 
@@ -176,7 +211,10 @@ function SwitchUser() {
    * четырнадцать. Заголовок группы виден всегда (`sticky`) и говорит, что
    * список продолжается.
    */
-  const staff = people.filter((person) => person.kind !== 'student')
+  const roots = people.filter((person) => person.is_superuser)
+  const staff = people.filter(
+    (person) => !person.is_superuser && person.kind !== 'student',
+  )
   const students = people.filter((person) => person.kind === 'student')
 
   const group = (title, list) =>
@@ -199,7 +237,19 @@ function SwitchUser() {
   return (
     <li className="dropdown-switch" role="none">
       <span className="hint">{t('devSwitch.label')}</span>
+
+      {/* дорога домой — над списком и вне его прокрутки: искать её там же,
+          где чужие лица, значит не найти */}
+      {home && (
+        <button type="button" role="menuitem" className="switch-home" onClick={goHome}>
+          {t('devSwitch.back', { name: home.name })}
+        </button>
+      )}
+
       <ul>
+        {/* суперпользователи первыми: их два раздела — школы и обращения —
+            изнутри школы недостижимы, и возвращаются обычно именно сюда */}
+        {group('devSwitch.roots', roots)}
         {group('devSwitch.staff', staff)}
         {group('devSwitch.students', students)}
       </ul>
