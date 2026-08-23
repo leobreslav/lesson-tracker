@@ -9,9 +9,11 @@ import Statement from './Statement'
 import ScanWizard from './ScanWizard'
 import TaskDialog from './TaskDialog'
 import WorkDialog from './WorkDialog'
+import { iconFor } from './fileKind'
 import {
   createTask,
   createWork,
+  openAttachment,
   deleteTask,
   deleteWork,
   fetchCourses,
@@ -126,6 +128,27 @@ export default function Works({ onLoggedOut }) {
         () => setEditing(null),
       ),
     )
+
+  /**
+   * Работа, к которой уже можно что-то приложить.
+   *
+   * Файл ложится на строку в базе, а задание пишут в окне создания, где
+   * строки ещё нет. Поэтому первый файл (или первая вставленная картинка)
+   * заводит работу с тем, что набрано, и окно продолжает править её же —
+   * «Сохранить» после этого уже правка, а не создание.
+   *
+   * `run` здесь не годится: он гасит форму на время запроса, а запрос идёт
+   * посреди загрузки файла — и человек смотрел бы на выключенное окно,
+   * гадая, что происходит. Ошибку показывает то место, откуда позвали.
+   */
+  const ensureWork = async (fields) => {
+    if (editing.work) return editing.work
+
+    const created = await createWork(fields)
+    setEditing({ work: created })
+    reload().catch(handleError)
+    return created
+  }
 
   const removeWork = (work) => {
     // ответы уходят вместе с работой, поэтому спрашиваем числом, а не «точно?»
@@ -312,6 +335,45 @@ export default function Works({ onLoggedOut }) {
 
                   {open && (
                     <div className="course-body">
+                      {/* Задание — над задачами, и видит его тут учитель, а
+                          не только ученик.
+
+                          Прежде текст задания жил ровно в одном месте: в окне
+                          настроек, куда заходят, чтобы что-то поправить.
+                          Поэтому написанное в нём было не видно ниоткуда, и
+                          работа, ведённая без задач (условие текстом, решения
+                          фотографиями), выглядела на этом экране пустой —
+                          «задач пока нет» и ничего больше. Показывать ученику
+                          то, чего не видит учитель, нельзя: они говорят об
+                          одном и том же задании и должны видеть одно и то же */}
+                      {work.description && (
+                        <div className="work-brief">
+                          <Markdown text={work.description} />
+                        </div>
+                      )}
+
+                      {(work.files ?? []).length > 0 && (
+                        <ul className="attachments work-files">
+                          {work.files.map((item) => (
+                            <li key={item.id} className="attachment">
+                              <span className="attachment-icon" aria-hidden="true">
+                                {iconFor(item)}
+                              </span>
+                              <button
+                                type="button"
+                                className="link title"
+                                title={t('lesson.download')}
+                                onClick={() =>
+                                  openAttachment(item.id).catch(handleError)
+                                }
+                              >
+                                {item.title}
+                              </button>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+
                       {tasks.length === 0 ? (
                         <p className="hint">{t('works.task.none')}</p>
                       ) : (
@@ -450,7 +512,17 @@ export default function Works({ onLoggedOut }) {
 
                       {/* «добавить» — последняя строка списка, а не третья
                           кнопка в стороне: добавляют после последней задачи,
-                          там ей и место */}
+                          там ей и место.
+
+                          Кнопок здесь было две: «Добавить задачу» и «пустая
+                          ячейка» рядом. Отвечали они на один вопрос — «нужна
+                          ещё одна ячейка» — и различались только тем, зайдёт
+                          ли человек в окно. То есть вторая кнопка была не
+                          отдельным действием, а обходом окна, которое не
+                          отпускало без условия. Отпускать его научили
+                          (`TaskDialog`), и обход стал не нужен: пустая ячейка
+                          заводится тем же путём, что и всякая другая, —
+                          нажать «Сохранить», ничего не заполнив. */}
                       <div className="row">
                         <button
                           type="button"
@@ -459,17 +531,6 @@ export default function Works({ onLoggedOut }) {
                           onClick={() => setEditingTask({ task: null })}
                         >
                           + {t('works.task.add')}
-                        </button>
-                        {/* пустая ячейка — законное состояние: условие на
-                            бумаге или на доске, вбивать его незачем. Заполнить
-                            её можно потом, руками или из банка */}
-                        <button
-                          type="button"
-                          className="link"
-                          disabled={busy}
-                          onClick={() => run(() => createTask({ work: work.id }))}
-                        >
-                          + {t('works.task.blank')}
                         </button>
                       </div>
                     </div>
@@ -508,6 +569,7 @@ export default function Works({ onLoggedOut }) {
           courseId={courseId}
           busy={busy}
           onSubmit={saveWork}
+          onEnsure={ensureWork}
           onClose={() => setEditing(null)}
         />
       )}

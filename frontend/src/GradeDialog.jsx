@@ -48,6 +48,14 @@ export default function GradeDialog({
     ),
   )
   const [comment, setComment] = useState(student.comment ?? '')
+  /*
+   * Итог за работу, поставленный руками.
+   *
+   * Пусто — считает система по своим полосам, и это самый частый случай.
+   * Написанное перебивает вывод: что бы ни было заложено в пороги, отвечает
+   * за отметку учитель, а не таблица.
+   */
+  const [final, setFinal] = useState(student.grade?.by_teacher ? student.grade.label : '')
   const [uploading, setUploading] = useState(false)
   const [error, setError] = useState(null)
   // просмотрщик листает снимки **всей работы**: сюда приходят с вопросом «а
@@ -63,6 +71,7 @@ export default function GradeDialog({
     onSubmit({
       student: student.id,
       comment,
+      final,
       marks: Object.fromEntries(
         criteria.map((item) => [
           item.id,
@@ -207,6 +216,44 @@ export default function GradeDialog({
             />
           </label>
         ))}
+
+        {/* Итог за работу — и он же то место, где правило про отметку
+            наконец записано в интерфейсе.
+
+            Система выводит отметку из набранного по полосам школы, и это
+            хороший умолчательный ответ. Но только умолчательный: работа
+            бывает решена и списана, бывает на границе, где видно, что
+            человек понял, — и перед родителем за отметку отвечает учитель,
+            а не таблица. Поэтому поле пустое по умолчанию (считает система)
+            и перебивает вывод, как только в нём что-то написано.
+
+            Выведенное при этом стоит рядом и не прячется: учитель должен
+            видеть, от чего он отступил. Спрятать значило бы превратить
+            осознанное решение в незаметное расхождение.
+
+            Раскрытая подсказка про пороги отсюда убрана — она была в форме
+            работы и объясняла устройство полос, то есть отвечала на вопрос,
+            которого никто не задаёт; полосы задаёт школа в своём
+            справочнике. */}
+        {student.grade && (
+          <div className="final-grade">
+            <label className="field-with-hint">
+              {t('grading.finalGrade')}
+              <input
+                value={final}
+                maxLength={40}
+                placeholder={student.grade.derived ?? ''}
+                disabled={busy}
+                onChange={(event) => setFinal(event.target.value)}
+              />
+            </label>
+            <p className="hint">
+              {student.grade.derived
+                ? t('grading.derived', { label: student.grade.derived })
+                : t('grading.noDerived')}
+            </p>
+          </div>
+        )}
 
         <label className="field-with-hint">
           {t('grading.comment')}

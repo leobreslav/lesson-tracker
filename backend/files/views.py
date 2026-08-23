@@ -1,4 +1,4 @@
-from config.access import IsSchoolMember, IsTeacher
+from config.access import IsSchoolMember
 from config.errors import Codes, api_denied, api_error, api_unavailable
 from django.http import Http404, HttpResponseRedirect
 from django.shortcuts import get_object_or_404
@@ -9,7 +9,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from . import access, services, storage
-from .models import KIND_FILE, Attachment
+from .models import KIND_FILE, OWNER_FIELDS, Attachment
 from .serializers import (
     AttachmentCreateSerializer,
     AttachmentSerializer,
@@ -49,7 +49,7 @@ class AttachmentViewSet(viewsets.ModelViewSet):
         # где эта картинка и зачем.
         queryset = queryset.filter(inline=False)
 
-        for name in ("plan_row", "template_row", "student_work"):
+        for name in OWNER_FIELDS:
             raw = params.get(name)
             if not raw:
                 continue
@@ -96,9 +96,7 @@ class AttachmentViewSet(viewsets.ModelViewSet):
         data = form.validated_data
 
         owner = {
-            name: data[name]
-            for name in ("plan_row", "template_row", "student_work")
-            if data.get(name) is not None
+            name: data[name] for name in OWNER_FIELDS if data.get(name) is not None
         }
 
         inline = data.get("inline", False)
@@ -189,9 +187,9 @@ class AttachmentViewSet(viewsets.ModelViewSet):
         return HttpResponseRedirect(url)
 
 
-class LessonImageView(APIView):
+class ContentImageView(APIView):
     """
-    Адрес картинки, стоящей **в содержании** урока.
+    Адрес картинки, стоящей **в тексте**: в содержании урока или в задании.
 
     Отдельная дверь от `/attachments/<id>/download/`, и не ради удобства:
     текст называет файл, а не вложение, потому что id вложения у каждой
@@ -203,11 +201,21 @@ class LessonImageView(APIView):
     поэтому страница берёт адрес сама и подставляет его в `src`. Ради
     перехода руками редирект тут был бы, но руками сюда никто не ходит.
 
-    Учительская дверь: содержание урока читают учитель и методист, ученику
-    оно не показывается нигде.
+    **Учительской эта дверь быть перестала, и звалась она поэтому
+    `LessonImageView`.** Пока текст с картинками был только у урока, «читают
+    его учитель и методист» было правдой, и `IsTeacher` стоял здесь честно.
+    Пояснения к работе эту правду отменили: их пишут ровно затем, чтобы
+    прочитал класс, и снимок доски в них — часть условия, а не заметка на
+    полях. С `IsTeacher` ученик получал бы 403 на каждой картинке задания и
+    видел пустое место там, где написано, что делать.
+
+    Вид спрашивать вместо права было бы вторым ответом на тот же вопрос:
+    кому что видно, отвечает `readable_stored_file` — по **своей** читаемой
+    ссылке на файл. Ученику своими оказываются ровно две: работы, которые ему
+    открыты, и его собственная тетрадь; ни урока, ни полки он не читает.
     """
 
-    permission_classes = [IsAuthenticated, IsSchoolMember, IsTeacher]
+    permission_classes = [IsAuthenticated, IsSchoolMember]
 
     def get(self, request, file_id: int):
         stored = access.readable_stored_file(request.user, file_id)

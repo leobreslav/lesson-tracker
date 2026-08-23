@@ -40,6 +40,7 @@ from schools.testing import (
     make_subject,
     make_template,
     make_upload,
+    make_user,
 )
 
 from . import services, storage
@@ -1216,7 +1217,7 @@ class InlineImageTests(FilesTestCase):
     def test_the_address_of_a_picture_is_asked_for_by_file(self):
         picture = self.paste().data
 
-        answer = self.client.get(reverse("lesson-image", args=[picture["file"]]))
+        answer = self.client.get(reverse("content-image", args=[picture["file"]]))
         self.assertEqual(answer.status_code, 200)
         self.assertIn("url", answer.data)
 
@@ -1229,7 +1230,7 @@ class InlineImageTests(FilesTestCase):
         picture = self.paste().data
         self.client.force_authenticate(self.colleague)
 
-        answer = self.client.get(reverse("lesson-image", args=[picture["file"]]))
+        answer = self.client.get(reverse("content-image", args=[picture["file"]]))
         self.assertEqual(answer.status_code, 404)
 
     def test_a_picture_survives_the_trip_through_the_library(self):
@@ -1296,4 +1297,222 @@ class ContentImageTests(SimpleTestCase):
         self.assertEqual(
             content.images_in({"body": "![](file:1)", "homework": "![](file:2)"}),
             {1, 2},
+        )
+
+
+class WorkHandoutTests(FilesTestCase):
+    """
+    Приложенное к **заданию**: четвёртый владелец ссылки.
+
+    Владельцев было три, и все три отвечали на вопрос «чей это материал»:
+    урок, строка полки, тетрадь ученика. Четвёртый отвечает на другой —
+    «что здесь задано»: условия одним pdf'ом, бланк для печати, снимок
+    доски, вставленный в пояснения к работе.
+
+    Отличать его от тетради ученика (`student_work`) обязательно, и разница
+    вся в праве: сюда смотрит **весь класс**, туда — один человек и его
+    семья. Сложи их в одного владельца — и либо условия не увидит никто,
+    кроме автора, либо чужая контрольная с отметками окажется у соседа.
+    """
+
+    def setUp(self):
+        super().setUp()
+        from schools.services import enrol
+        from schools.testing import make_work
+
+        self.work = make_work(self.user, self.course, title="Контрольная за четверть")
+        enrol(self.student, self.course, by=self.user)
+
+    def attach(self, work=None, **kwargs):
+        return self.client.post(
+            reverse("attachment-list"),
+            {"work": (work or self.work).pk, "file": make_upload(**kwargs)},
+            format="multipart",
+        )
+
+    def test_a_teacher_hangs_the_handout_off_the_work(self):
+        answer = self.attach(name="variants.pdf")
+
+        self.assertEqual(answer.status_code, 201)
+        self.assertEqual(self.work.attachments.get().title, "variants.pdf")
+
+    def test_the_work_is_the_only_owner_of_that_reference(self):
+        """
+        Владелец ровно один — и это ограничение таблицы, а не соглашение.
+
+        Проверяется здесь потому, что владельцев стало четыре: пока их было
+        три, забытая ветка ограничения означала бы ссылку, висящую сразу на
+        двух местах, и вопрос «чья она» перестал бы иметь ответ.
+        """
+        self.attach()
+        reference = self.work.attachments.get()
+
+        self.assertIsNone(reference.plan_row_id)
+        self.assertIsNone(reference.template_row_id)
+        self.assertIsNone(reference.student_work_id)
+
+    def test_a_colleague_may_not_hang_anything_off_somebody_else_s_work(self):
+        self.sign_in(self.colleague)
+        answer = self.attach()
+
+        # не «нельзя», а «нет такой работы»: чужой курс в его выборе не
+        # значится вовсе
+        self.assertEqual(answer.status_code, 400)
+        self.assertFalse(self.work.attachments.exists())
+
+    def test_the_class_reads_what_is_attached_to_an_open_work(self):
+        """
+        Условия задания читает весь класс — иначе их незачем прикладывать.
+
+        Это и есть главное отличие от тетради ученика: там «моё», здесь
+        «наше», и одинаковое у всех.
+        """
+        handout = self.attach().data
+        self.sign_in(self.student)
+
+        answer = self.client.get(reverse("attachment-list"), {"work": self.work.pk})
+        self.assertEqual([item["id"] for item in answer.data], [handout["id"]])
+
+    def test_a_work_that_has_not_opened_yet_hides_its_handout_too(self):
+        """
+        До открытия работы для ученика не существует вовсе — вместе с
+        приложенным. Иначе вариант контрольной уезжал бы классу накануне.
+        """
+        handout = self.attach().data
+        self.work.opens_at = timezone.now() + timedelta(days=1)
+        self.work.closes_at = timezone.now() + timedelta(days=2)
+        self.work.save(update_fields=["opens_at", "closes_at"])
+
+        self.sign_in(self.student)
+        answer = self.client.get(reverse("attachment-detail", args=[handout["id"]]))
+        self.assertEqual(answer.status_code, 404)
+
+    def test_a_student_of_another_course_sees_nothing(self):
+        handout = self.attach().data
+        outsider = make_user(self.school, "another-student@example.com", student=True)
+
+        self.sign_in(outsider)
+        answer = self.client.get(reverse("attachment-detail", args=[handout["id"]]))
+        self.assertEqual(answer.status_code, 404)
+
+    def test_a_student_may_not_remove_the_handout(self):
+        """Его дело — сдать, а не переписать условие."""
+        handout = self.attach().data
+        self.sign_in(self.student)
+
+        answer = self.client.delete(reverse("attachment-detail", args=[handout["id"]]))
+        self.assertEqual(answer.status_code, 403)
+        self.assertTrue(Attachment.objects.filter(pk=handout["id"]).exists())
+
+    def test_a_picture_pasted_into_the_explanation_stands_in_the_text(self):
+        answer = self.client.post(
+            reverse("attachment-list"),
+            {
+                "work": self.work.pk,
+                "file": make_upload(name="board.png", kind="image/png"),
+                "inline": "true",
+            },
+            format="multipart",
+        )
+
+        self.assertEqual(answer.status_code, 201)
+        self.assertTrue(self.work.attachments.get().inline)
+
+    def test_a_picture_in_the_explanation_is_shown_to_the_class(self):
+        """
+        Дверь картинок перестала быть учительской ровно из-за этого случая.
+
+        Снимок доски в пояснениях — часть условия, а не заметка на полях:
+        с `IsTeacher` ученик получал бы 403 на каждой картинке задания и
+        видел пустое место там, где написано, что делать.
+        """
+        picture = self.client.post(
+            reverse("attachment-list"),
+            {
+                "work": self.work.pk,
+                "file": make_upload(name="board.png", kind="image/png"),
+                "inline": "true",
+            },
+            format="multipart",
+        ).data
+
+        self.sign_in(self.student)
+        answer = self.client.get(reverse("content-image", args=[picture["file"]]))
+
+        self.assertEqual(answer.status_code, 200)
+        self.assertIn("url", answer.data)
+
+    def test_the_lesson_of_a_teacher_stays_shut_to_the_student(self):
+        """
+        Открытая дверь открыла ровно одно. Содержание урока ученику
+        по-прежнему не принадлежит ничем: своей ссылки на его картинку у
+        него нет, и файл не находится.
+        """
+        picture = self.client.post(
+            reverse("attachment-list"),
+            {
+                "plan_row": self.lesson.pk,
+                "file": make_upload(name="scheme.png", kind="image/png"),
+                "inline": "true",
+            },
+            format="multipart",
+        ).data
+
+        self.sign_in(self.student)
+        answer = self.client.get(reverse("content-image", args=[picture["file"]]))
+        self.assertEqual(answer.status_code, 404)
+
+    def test_deleting_the_work_takes_its_handout_with_it(self):
+        self.attach()
+
+        with self.captureOnCommitCallbacks(execute=True):
+            self.work.delete()
+
+        self.assertFalse(Attachment.objects.exists())
+        self.assertEqual(self.stored_keys(), [])
+
+    def test_the_handout_travels_with_the_work(self):
+        """
+        Список работ везёт приложенное с собой.
+
+        Не ради экономии запроса: окно правки и карточка показывают один и
+        тот же список, и второй источник для него разошёлся бы с первым в
+        первую же правку.
+        """
+        handout = self.attach(name="variants.pdf").data
+
+        answer = self.client.get(reverse("work-list"), {"course": self.course.pk})
+        mine = next(item for item in answer.data if item["id"] == self.work.pk)
+
+        self.assertEqual([item["id"] for item in mine["files"]], [handout["id"]])
+
+    def test_a_picture_in_the_text_is_not_in_the_list_of_files(self):
+        """
+        Картинкой из пояснений распоряжается текст, а не список материалов:
+        строкой «board.png» рядом с «условия.pdf» её нельзя было бы понять,
+        не открыв пояснения. Тот же довод, что у содержания урока.
+        """
+        self.client.post(
+            reverse("attachment-list"),
+            {
+                "work": self.work.pk,
+                "file": make_upload(name="board.png", kind="image/png"),
+                "inline": "true",
+            },
+            format="multipart",
+        )
+
+        answer = self.client.get(reverse("work-list"), {"course": self.course.pk})
+        mine = next(item for item in answer.data if item["id"] == self.work.pk)
+
+        self.assertEqual(mine["files"], [])
+
+    def test_the_student_gets_the_same_list_on_his_own_page(self):
+        handout = self.attach(name="variants.pdf").data
+
+        self.sign_in(self.student)
+        answer = self.client.get(reverse("student-work", args=[self.work.pk]))
+
+        self.assertEqual(
+            [item["id"] for item in answer.data["files"]], [handout["id"]]
         )

@@ -60,6 +60,21 @@ def visible_works(student, *, now=None):
     )
 
 
+def visible_works_for(people, *, now=None):
+    """
+    То же правило, но на нескольких человек разом: семья смотрит одним списком.
+
+    Заведено ради вложений работы: родитель видит работы **своих детей**, и
+    спрашивается это одной выборкой. Правило при этом не переписывается —
+    складываются те же самые `visible_works`, иначе «что видно ученику» имело
+    бы два ответа, и разошлись бы они молча.
+    """
+    queryset = Work.objects.none()
+    for person in people:
+        queryset = queryset | visible_works(person, now=now)
+    return queryset
+
+
 def may_answer(work, student, *, now=None) -> None:
     """Молчит или отказывает: окно, зачисление и попытки — три причины."""
     state = work.state(now)
@@ -425,6 +440,13 @@ def student_version(work, student) -> str:
         attachment__student_work__work=work,
         attachment__student_work__student=student,
     ).aggregate(total=Count("id"), last=Max("updated_at"))
+    # приложенное к самому заданию: условия pdf'ом кладут ровно тогда, когда
+    # классу пора их открыть, и ждать от ученика F5 тут значит не дать ему
+    # условий вовсе. `updated_at` работы этого не ловит — вложение живёт
+    # своей строкой и работу не трогает
+    handout = Attachment.objects.filter(work=work).aggregate(
+        total=Count("id"), last=Max("id")
+    )
 
     return "|".join(
         str(part)
@@ -440,6 +462,8 @@ def student_version(work, student) -> str:
             shots["last"],
             pinned["total"],
             pinned["last"] and pinned["last"].timestamp(),
+            handout["total"],
+            handout["last"],
         )
     )
 
@@ -549,6 +573,11 @@ def build_table(work) -> dict:
                 "marks": marks_of(mine),
                 "scores": scores_of(mine),
                 "comment": mine.comment if mine else "",
+                # итог за работу: выведенный системой или поставленный
+                # руками. Считается здесь, а не в браузере, по той же
+                # причине, по которой там не считается состояние работы:
+                # пороги живут в базе, и второй расчёт разошёлся бы с первым
+                "grade": final_grade(work, mine),
                 "papers": shots.get(enrolment.student_id, photos.empty_sheet())[
                     "work"
                 ],
@@ -624,6 +653,63 @@ def grade_for(system, *, earned: int, top: int) -> dict | None:
                 "value": value,
             }
     return None
+
+
+def grade_source(work, row) -> tuple[int, int]:
+    """
+    Из чего система считает отметку: уровни по критериям или баллы за вопросы.
+
+    Ось выбирает **вид системы**, а не наличие данных: у уровневой (MYP)
+    отметка получается из суммы уровней, у балльной — из процента набранного
+    за вопросы. Работа может нести обе оси разом, и спрашивать «где что-то
+    есть» значило бы считать отметку то так, то этак у двух соседних учеников
+    одной работы.
+    """
+    system = work.grading_system
+    if system is None:
+        return 0, 0
+
+    if system.kind == GradingSystem.LEVELS:
+        values, rows = marks_of(row), work.criteria.all()
+    else:
+        values, rows = scores_of(row), work.tasks.all()
+
+    return sum(values.values()), sum(item.maximum for item in rows)
+
+
+def final_grade(work, row) -> dict | None:
+    """
+    Итог за работу: что вывела система — и что сказал учитель.
+
+    **Мнение учителя сильнее, и это правило, а не поблажка.** Пороги системы
+    — хороший умолчательный ответ, но только умолчательный: работа бывает
+    решена и списана, бывает на границе, где видно, что человек понял, и
+    отвечает за отметку перед родителем учитель, а не таблица. Поэтому
+    поставленное руками показывается вместо выведенного везде, где итог
+    вообще показывается.
+
+    Выведенное при этом **не прячется**: оно приезжает рядом (`derived`), и
+    учитель видит, от чего отступил. Спрятать его значило бы превратить
+    осознанное решение в незаметное расхождение.
+
+    `None` — сказать нечего: системы нет и руками ничего не поставлено.
+    """
+    earned, top = grade_source(work, row)
+    derived = grade_for(work.grading_system, earned=earned, top=top)
+    mine = ((row.grade if row else "") or "").strip()
+
+    if not mine and derived is None:
+        return None
+
+    return {
+        "label": mine or derived["label"],
+        # то, что вывела бы система: не подсказка, а вторая половина ответа
+        "derived": derived["label"] if derived else None,
+        "by_teacher": bool(mine),
+        "system": work.grading_system.name if work.grading_system_id else None,
+        "earned": earned,
+        "top": top,
+    }
 
 
 def mark_stats(students, questions) -> dict:
@@ -719,7 +805,17 @@ def marks_of(student_work) -> dict:
     }
 
 
-def grade(work, student, *, marks=None, scores=None, comment=None, by=None, answers=None):
+def grade(
+    work,
+    student,
+    *,
+    marks=None,
+    scores=None,
+    comment=None,
+    by=None,
+    answers=None,
+    final=None,
+):
     """
     Поставить оценку и написать слова. Одним вызовом на ученика.
 
@@ -748,6 +844,13 @@ def grade(work, student, *, marks=None, scores=None, comment=None, by=None, answ
         if comment is not None:
             row.comment = comment
             row.save(update_fields=["comment", "updated_at"])
+
+        # Итог руками. Пустая строка **снимает** его и возвращает работу
+        # системе — то же движение, что и пустое поле у балла: снять и
+        # поставить ноль это разные вещи, а «0» бывает отметкой.
+        if final is not None:
+            row.grade = final.strip()[:40]
+            row.save(update_fields=["grade", "updated_at"])
 
         if not marks and not scores:
             return row
@@ -1084,6 +1187,11 @@ def my_grade(work, student, *, viewer=None) -> dict:
         "graded": scale["graded"],
         "simple": scale["simple"],
         "marks": marks_of(row) if (row and visible) else {},
+        # итог — по тому же правилу, что и баллы: `show_result` выключен —
+        # до закрытия окна не видно ничего. Показывается ровно один ответ,
+        # тот, что действует; «система вывела 4, а учитель поставил 5» —
+        # разговор учителя с собой, а не с классом
+        "grade": final_grade(work, row) if visible else None,
         "comment": (row.comment if row and visible else ""),
         "papers": photos.of_student(work, student, viewer=viewer)["work"],
     }

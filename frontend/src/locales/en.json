@@ -1144,7 +1144,6 @@
       "everywhere": "Everywhere",
       "copy": "Make a copy",
       "bank": "From the bank…",
-      "blank": "a blank cell",
       "fromBank": "A statement for cell {{number}}",
       "putHere": "Put it here",
       "empty": "Leave the cell blank",
@@ -1159,10 +1158,15 @@
     },
     "answers": "Answers",
     "description": "Notes for the students",
-    "descriptionHint": "The text the students see above the questions.",
-    "descriptionHintMore": "For homework this is the whole of it: what is set and how to hand it in. For a test it is usually empty — the questions carry their own statements.",
+    "descriptionHint": "What the students see above the questions — and what you see there too.",
+    "descriptionHintMore": "Questions are optional: write the whole assignment here, and the students send their work back as photos or files attached to the work itself. Paste a screenshot straight into the text with Ctrl+V; anything else — a pdf with the questions, a sheet to print — goes below as a file.",
     "summative": "Counts towards the term result",
-    "summativeHint": "A formative work is graded however you like and does not count."
+    "summativeHint": "A formative work is graded however you like and does not count.",
+    "files": "Files of this assignment",
+    "addFile": "Attach a file",
+    "dropHere": "Drop files here, or click to choose",
+    "attaching": "Attaching…",
+    "saveBeforeFiles": "Name the work and set its dates first — files hang off a saved work."
   },
   "grading": {
     "title": "Grading",
@@ -1198,7 +1202,6 @@
     "questionTitle": "Question {{name}}",
     "system": "Grading system",
     "systemHint": "The work gets a final grade, not just the marks for each question.",
-    "systemHintMore": "The grade is worked out from what was scored, by the system's own bands: a points system sets them as a percentage of the work's top mark, a levels system on the total itself. The school sets the bands — they live in the grading systems reference under «School». Without a system the marks stay as they are, per question and as a total, and the work has no final grade.",
     "noSystem": "Marks only, no grade",
     "catalogue": "Grading systems",
     "catalogueHint": "A teacher picks one on each work. Here you say which ones the school allows and which is recommended.",
@@ -1215,7 +1218,10 @@
       "levels": "levels per criterion, bands on the sum",
       "passfail": "pass or fail"
     },
-    "questionScores": "Marks per question. An empty field clears the mark."
+    "questionScores": "Marks per question. An empty field clears the mark.",
+    "finalGrade": "Final grade",
+    "derived": "The system works out {{label}} from the marks. Leave the field empty to keep it.",
+    "noDerived": "No system is set for this work, so the final grade is yours to write."
   },
   "paper": {
     "scans": "Scanned work",

@@ -44,23 +44,45 @@ def watched_students(user):
     return []
 
 
+def family_attachments(user):
+    """
+    Что семья видит вообще: сданное своим учеником и заданное ему.
+
+    Два владельца, и они отвечают на разные вопросы. `student_work` — «что
+    сдал этот человек», то есть его тетрадь; `work` — «что здесь задано»,
+    общее на весь класс: условия одним pdf'ом, картинка в пояснениях.
+    Первое личное, второе одинаковое у всех, и не показать второе значило бы
+    отдать ученику задание, из которого вырезаны условия.
+
+    Видимость работы при этом не изобретается заново: `visible_works_for` —
+    то же правило, по которому работа вообще попадает ученику на экран.
+    Ненаступившая работа не существует для него целиком, вместе с
+    приложенным.
+    """
+    from works.services import visible_works_for
+
+    people = watched_students(user)
+    return Attachment.objects.filter(
+        Q(student_work__student__in=people) | Q(work__in=visible_works_for(people))
+    )
+
+
 def school_attachments(user):
     """Everything hanging off a lesson row of this person's school."""
     if user is None or not user.is_authenticated or user.school_id is None:
         return Attachment.objects.none()
 
     if getattr(user, "is_family", False):
-        # у семьи «школьные вложения» это работы ученика: остальные для неё
-        # не существуют, и разница «нет такого» / «не ваше» тут ни к чему —
+        # у семьи «школьные вложения» это её работы: остальные для неё не
+        # существуют, и разница «нет такого» / «не ваше» тут ни к чему —
         # знать, что у одноклассника что-то лежит, ей тоже незачем
-        return Attachment.objects.filter(
-            student_work__student__in=watched_students(user)
-        )
+        return family_attachments(user)
 
     return Attachment.objects.filter(
         Q(plan_row__course__school_id=user.school_id)
         | Q(template_row__template__school_id=user.school_id)
         | Q(student_work__work__course__school_id=user.school_id)
+        | Q(work__course__school_id=user.school_id)
     )
 
 
@@ -77,12 +99,11 @@ def readable_attachments(user):
         return Attachment.objects.none()
 
     if getattr(user, "is_family", False):
-        # семье виден ровно один вид вложений — то, что лежит на работах
-        # ученика: и скан от учителя, и его собственные фотографии. Ни
-        # плана, ни полки она не читает вовсе
-        return Attachment.objects.filter(
-            student_work__student__in=watched_students(user)
-        )
+        # семье видны два вида вложений — то, что лежит на работах ученика
+        # (скан от учителя и его собственные фотографии), и то, что приложено
+        # к самой работе, то есть к заданию. Ни плана, ни полки она не читает
+        # вовсе
+        return family_attachments(user)
 
     return Attachment.objects.filter(
         # вложения строки плана и сканы работ — часть содержания курса,
@@ -90,6 +111,7 @@ def readable_attachments(user):
         Q(plan_row__course__in=Course.objects.writable_by(user))
         | Q(template_row__template__in=visible_templates(user))
         | Q(student_work__work__course__in=Course.objects.writable_by(user))
+        | Q(work__course__in=Course.objects.writable_by(user))
     )
 
 
@@ -118,6 +140,20 @@ def readable_stored_file(user, file_id: int):
 
 def can_read(user, attachment) -> bool:
     from schedule.models import Course
+    from works.services import visible_works_for
+
+    if attachment.work_id is not None:
+        # приложенное к заданию: ведущий курса и весь класс, которому эта
+        # работа уже открыта. До открытия работы не существует ни для кого из
+        # них, и вложение исчезает вместе с ней
+        people = watched_students(user)
+        if people and visible_works_for(people).filter(pk=attachment.work_id).exists():
+            return True
+        return (
+            Course.objects.writable_by(user)
+            .filter(pk=attachment.work.course_id)
+            .exists()
+        )
 
     if attachment.student_work_id is not None:
         # работа ученика: он сам, его родитель и ведущий курса, и больше
@@ -153,6 +189,13 @@ def can_write(user, attachment) -> bool:
     """
     from schedule.models import CourseAssignment
 
+    if attachment.work_id is not None:
+        # задание правит тот, кто его задал: ведущий курса. Ученику сюда
+        # нельзя вовсе — его дело сдать, а не переписать условие
+        return CourseAssignment.objects.filter(
+            course_id=attachment.work.course_id, teacher=user
+        ).exists()
+
     if attachment.student_work_id is not None:
         # Учительская дверь, и в неё семья не проходит **вовсе** — даже за
         # своей же фотографией. Своё она снимает своей дверью
@@ -185,6 +228,17 @@ def writable_student_works(user):
     return StudentWork.objects.filter(
         work__course__in=Course.objects.writable_by(user)
     )
+
+
+def writable_works(user):
+    """Работы, к которым этот человек может приложить условия и картинки."""
+    from schedule.models import Course
+    from works.models import Work
+
+    if user is None or not user.is_authenticated:
+        return Work.objects.none()
+
+    return Work.objects.filter(course__in=Course.objects.writable_by(user))
 
 
 def writable_plan_rows(user):

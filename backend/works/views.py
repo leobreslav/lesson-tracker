@@ -44,6 +44,8 @@ from .serializers import (
     SubmissionSerializer,
     TaskSerializer,
     WorkSerializer,
+    files_of,
+    work_files_prefetch,
 )
 
 
@@ -95,11 +97,20 @@ class WorkViewSet(CourseScopedViewSet):
     """
 
     serializer_class = WorkSerializer
+    # приложенное к заданию едет вместе с работой: списком его показывает
+    # карточка, а окно правки берёт его оттуда же. Выборка готовая — с
+    # фильтром и счётом ссылок внутри (`work_files_prefetch`), иначе на
+    # каждую работу курса пришёлся бы свой запрос
     queryset = Work.objects.select_related("course")
     course_path = "course"
 
     def get_queryset(self):
-        queryset = super().get_queryset().annotate(task_count=Count("tasks"))
+        queryset = (
+            super()
+            .get_queryset()
+            .annotate(task_count=Count("tasks"))
+            .prefetch_related(work_files_prefetch())
+        )
 
         course = self.request.query_params.get("course")
         if course:
@@ -230,6 +241,7 @@ class WorkViewSet(CourseScopedViewSet):
             marks=data.get("marks"),
             scores=data.get("scores"),
             comment=data.get("comment"),
+            final=data.get("final"),
             by=request.user,
         )
 
@@ -240,6 +252,10 @@ class WorkViewSet(CourseScopedViewSet):
                 "comment": row.comment,
                 "marks": services.marks_of(row),
                 "scores": services.scores_of(row),
+                # итог после правки: выведенное системой могло измениться
+                # вместе с баллами, и пересчитывать его в браузере значило бы
+                # завести второй расчёт
+                "grade": services.final_grade(work, row),
             }
         )
 
@@ -763,6 +779,10 @@ class StudentWorkView(APIView):
                 "id": work.pk,
                 "title": work.title,
                 "description": work.description,
+                # приложенное к заданию: условия pdf'ом, бланк, что угодно.
+                # Тем же составом, что видит учитель, — `files_of` одна на
+                # обе стороны
+                "files": files_of(work),
                 "course_name": work.course.name,
                 "state": work.state(),
                 "opens_at": work.opens_at,

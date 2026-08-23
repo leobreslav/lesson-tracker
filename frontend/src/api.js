@@ -480,6 +480,9 @@ export const uploadAttachment = ({
   planRow,
   templateRow,
   studentWork,
+  // сама работа: условия pdf'ом и картинка в пояснениях. Не путать с
+  // `studentWork` — то тетрадь одного человека, а это задание на весь класс
+  work,
   file,
   title,
   inline = false,
@@ -488,6 +491,7 @@ export const uploadAttachment = ({
   if (planRow) form.append('plan_row', planRow)
   if (templateRow) form.append('template_row', templateRow)
   if (studentWork) form.append('student_work', studentWork)
+  if (work) form.append('work', work)
   form.append('file', file)
   if (title) form.append('title', title)
   // «эта картинка встала в текст»: в списке материалов её не будет, и

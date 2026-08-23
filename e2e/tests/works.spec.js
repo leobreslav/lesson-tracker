@@ -99,6 +99,42 @@ test('новая работа заводится с окном времени и
   await expect(page.locator('.page-header')).toContainText('запланирована')
 })
 
+test('задание видно над задачами, а пустая ячейка заводится обычной кнопкой', async ({
+  page,
+  signIn,
+}) => {
+  /*
+   * Две правки одним тестом, потому что беда у них общая: то, что человек
+   * написал в окне, должно быть видно **вне** окна.
+   *
+   * Текст задания жил только в настройках, куда заходят что-то поправить, —
+   * и работа, ведённая без задач, выглядела на экране учителя пустой. А
+   * пустую ячейку заводила вторая кнопка рядом со списком, существовавшая
+   * ровно затем, чтобы обойти окно, не отпускавшее без условия.
+   */
+  await signIn(PEOPLE.ivanova)
+  const list = await openWorks(page, 'Grade 6 Geometry')
+
+  await page.getByRole('button', { name: 'Новая работа' }).click()
+  const dialog = page.locator('dialog.modal')
+  await dialog.getByLabel('Название').fill('Работа без задач')
+  await dialog
+    .getByLabel('Пояснения к работе')
+    .fill('Решите номера 12–18 из учебника, сдайте фотографией.')
+  await dialog.getByRole('button', { name: 'Сохранить' }).click()
+
+  const work = list.locator('.course-row', { hasText: 'Работа без задач' })
+  await work.locator('.toggle').click()
+  // задание — над списком задач, у учителя, а не только у ученика
+  await expect(work.locator('.work-brief')).toContainText('номера 12–18')
+
+  // ячейка без условия: та же кнопка, окно отпускает пустым
+  await work.getByRole('button', { name: 'Добавить задачу' }).click()
+  const task = page.locator('dialog.modal')
+  await task.getByRole('button', { name: 'Сохранить' }).click()
+  await expect(work.locator('.task-list li')).toHaveCount(1)
+})
+
 test('правка работы, в которой уже отвечали, называет цену', async ({
   page,
   signIn,

@@ -2,7 +2,15 @@ from config.errors import Codes, api_error
 from django.db.models import Count
 from rest_framework import serializers
 
-from .models import Attachment, KIND_FILE, KIND_LINK, KIND_TEXT, KINDS, StoredFile
+from .models import (
+    Attachment,
+    KIND_FILE,
+    KIND_LINK,
+    KIND_TEXT,
+    KINDS,
+    OWNER_FIELDS,
+    StoredFile,
+)
 from .services import INLINE_EXTENSIONS, shows_in_text
 
 
@@ -74,6 +82,9 @@ class AttachmentCreateSerializer(serializers.Serializer):
     student_work = serializers.PrimaryKeyRelatedField(
         queryset=Attachment.objects.none(), required=False, allow_null=True
     )
+    work = serializers.PrimaryKeyRelatedField(
+        queryset=Attachment.objects.none(), required=False, allow_null=True
+    )
     title = serializers.CharField(max_length=200, required=False, allow_blank=True)
     url = serializers.URLField(max_length=500, required=False, allow_blank=True)
     file = serializers.FileField(required=False)
@@ -88,6 +99,7 @@ class AttachmentCreateSerializer(serializers.Serializer):
             writable_plan_rows,
             writable_student_works,
             writable_template_rows,
+            writable_works,
         )
 
         fields = super().get_fields()
@@ -95,20 +107,18 @@ class AttachmentCreateSerializer(serializers.Serializer):
         fields["plan_row"].queryset = writable_plan_rows(user)
         fields["template_row"].queryset = writable_template_rows(user)
         fields["student_work"].queryset = writable_student_works(user)
+        fields["work"].queryset = writable_works(user)
         return fields
 
     def validate(self, attrs):
-        owners = {
-            name: attrs.get(name)
-            for name in ("plan_row", "template_row", "student_work")
-        }
+        owners = {name: attrs.get(name) for name in OWNER_FIELDS}
         named = [name for name, value in owners.items() if value is not None]
 
         if len(named) != 1:
             api_error(
                 Codes.ATTACHMENT_OWNER_REQUIRED,
-                "Name exactly one of «plan_row», «template_row» and "
-                "«student_work».",
+                "Name exactly one owner: «plan_row», «template_row», «work» "
+                "or «student_work».",
                 field="plan_row",
             )
 
@@ -135,6 +145,11 @@ class AttachmentCreateSerializer(serializers.Serializer):
                     allowed=sorted(INLINE_EXTENSIONS),
                 )
             if owners["student_work"] is not None:
+                # у работы ученика текста нет — есть его тетрадь. Ставить
+                # картинку «в текст» тут некуда, и `inline` означал бы
+                # фотографию, которую не видно ни в списке, ни в содержании.
+                # У самой работы (`work`) текст есть — пояснения к заданию, —
+                # и картинка в них законна
                 api_error(
                     Codes.ATTACHMENT_KIND_MISMATCH,
                     "A student's work has no text to stand in.",

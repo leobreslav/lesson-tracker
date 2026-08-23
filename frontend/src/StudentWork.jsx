@@ -250,16 +250,26 @@ function Grade({ work }) {
   const criteria = work.criteria ?? []
   const marks = work.marks ?? {}
   const given = criteria.some((item) => marks[item.id] !== undefined)
+  // итог за работу: один ответ, тот, что действует. Откуда он взялся —
+  // вывела система или поставил учитель — разговор учителя с собой, и
+  // классу этого знать незачем
+  const grade = work.grade ?? null
 
   // Приложенное к работе отсюда ушло в свою полосу под этой плашкой:
   // теперь это не только скан от учителя, но и снимки, присланные самим
   // учеником, а к оценке они отношения не имеют. Плашка молчит, пока
   // оценки и слов нет: «ещё не оценено» на пустом месте читается как
   // обещание, которого никто не давал.
-  if (!given && !work.comment) return null
+  if (!given && !work.comment && !grade) return null
 
   return (
     <section className="panel student-grade">
+      {grade && (
+        <p className="final-grade-shown">
+          <span className="hint">{t('grading.finalGrade')}</span>
+          <b>{grade.label}</b>
+        </p>
+      )}
       {given && (
         <ul className="marks">
           {criteria.map((item) => (

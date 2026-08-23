@@ -1,9 +1,17 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import Hint from './Hint'
+import MarkdownField from './MarkdownField'
 import Modal from './Modal'
-import { fetchGradingSystems, fetchWorkImpact } from './api'
+import {
+  deleteAttachment,
+  fetchGradingSystems,
+  fetchWorkImpact,
+  openAttachment,
+  uploadAttachment,
+} from './api'
 import { fromLocalInput, toLocalInput } from './dates'
+import { formatSize, iconFor } from './fileKind'
 
 /**
  * Настройки работы: название, окно времени, попытки, показ отметки.
@@ -16,6 +24,26 @@ import { fromLocalInput, toLocalInput } from './dates'
  * дано M ответов». Не запрещает — запрет здесь дороже ошибки, опечатку в
  * условии находят посреди урока, — но и молчать нельзя: правка, сделанная
  * вслепую, ломает то, что люди пишут прямо сейчас.
+ *
+ * **Задание пишется здесь целиком, и это не «пояснения на всякий случай».**
+ * Позадачная структура — путь для тех, кому нужна проверка по ячейкам; тот,
+ * кому она не нужна, пишет условие текстом в одно поле, а решения получает
+ * фотографиями в саму работу. Оба пути законны, и текст в них один и тот же:
+ * его видит ученик над задачами и видит учитель — там же.
+ *
+ * Отсюда две вещи, которых у формы раньше не было: картинка в текст (Ctrl+V,
+ * тем же полем, что содержание урока) и файлы, приложенные к работе.
+ *
+ * **Работа заводится по требованию.** Приложить файл можно только к тому,
+ * что уже есть строкой в базе, а пишут задание в окне **создания**, где
+ * работы ещё нет. Поэтому первая вставка картинки или первый файл сохраняют
+ * работу — с тем, что уже набрано, — и окно продолжает править её же. Тот же
+ * приём, что у оценки ученика: строка «работа и ученик» там заводится ровно
+ * так же, первым же скан-файлом.
+ *
+ * Цена названа прямо: до сохранения нужны название и даты, и пока их нет,
+ * файл не берётся, а окно говорит почему. Молча проглоченный файл — худший
+ * из исходов: человек уверен, что приложил.
  */
 export default function WorkDialog({
   work,
@@ -24,6 +52,9 @@ export default function WorkDialog({
   homework = false,
   busy,
   onSubmit,
+  // завести работу прямо сейчас, если её ещё нет: возвращает сохранённую.
+  // Нужен ровно затем, чтобы было к чему прикладывать
+  onEnsure,
   onClose,
 }) {
   const { t } = useTranslation()
@@ -41,6 +72,18 @@ export default function WorkDialog({
     ...(homework ? { is_homework: true } : {}),
   }))
   const [impact, setImpact] = useState(null)
+  // приложенное к заданию. Приезжает вместе с работой (`files` у неё же) и
+  // дальше правится здесь: список меняет только это окно, и спрашивать
+  // сервер после каждой правки значило бы спрашивать его о том, что мы
+  // только что ему и сказали
+  const [files, setFiles] = useState(() => work?.files ?? [])
+  const [attaching, setAttaching] = useState(false)
+  const [fileError, setFileError] = useState(null)
+  const chooseFile = useRef(null)
+  // id уже заведённой работы. Ссылкой, а не состоянием: между заведением и
+  // следующей строкой той же функции перерисовки не будет, а без свежего id
+  // вторая картинка пачки завела бы вторую работу
+  const saved = useRef(work?.id ?? null)
 
   /* Список систем школы: показываются только разрешённые — сервер их и не
      отдаёт другими, а форма не должна предлагать то, чего он не примет. */
@@ -73,23 +116,74 @@ export default function WorkDialog({
     setForm((current) => ({ ...current, [field]: value }))
   }
 
+  const fields = () => ({
+    course: courseId,
+    slot: form.slot ?? null,
+    title: form.title.trim(),
+    description: form.description,
+    opens_at: fromLocalInput(form.opens_at),
+    closes_at: fromLocalInput(form.closes_at),
+    attempts: form.limited ? Number(form.attempts) : null,
+    show_result: form.show_result,
+    is_homework: form.is_homework ?? false,
+    is_summative: form.is_summative ?? false,
+    grading_system: form.grading_system ?? null,
+  })
+
   const submit = (event) => {
     event.preventDefault()
     if (busy || !ready(form)) return
 
-    onSubmit({
-      course: courseId,
-      slot: form.slot ?? null,
-      title: form.title.trim(),
-      description: form.description,
-      opens_at: fromLocalInput(form.opens_at),
-      closes_at: fromLocalInput(form.closes_at),
-      attempts: form.limited ? Number(form.attempts) : null,
-      show_result: form.show_result,
-      is_homework: form.is_homework ?? false,
-      is_summative: form.is_summative ?? false,
-      grading_system: form.grading_system ?? null,
-    })
+    onSubmit(fields())
+  }
+
+  /**
+   * Работа, к которой можно что-то приложить, — заведённая при надобности.
+   *
+   * Отказ здесь исключением, а не тихим `null`: и вставка картинки, и выбор
+   * файла показывают его строкой ошибки, и человек видит, чего не хватает,
+   * вместо файла, который «как будто приложился».
+   */
+  const ensureWork = async () => {
+    if (saved.current) return saved.current
+    if (!ready(form)) throw new Error(t('works.saveBeforeFiles'))
+
+    const created = await onEnsure(fields())
+    saved.current = created.id
+    return created.id
+  }
+
+  const attach = async (chosen) => {
+    if (!chosen.length) return
+
+    setAttaching(true)
+    setFileError(null)
+    try {
+      const id = await ensureWork()
+      for (const file of chosen) {
+        const added = await uploadAttachment({ work: id, file })
+        setFiles((current) => [...current, added])
+      }
+    } catch (failure) {
+      setFileError(failure.message)
+    } finally {
+      setAttaching(false)
+    }
+  }
+
+  const removeFile = async (item) => {
+    if (!window.confirm(t('lesson.removeAttachment', { title: item.title }))) return
+
+    setAttaching(true)
+    setFileError(null)
+    try {
+      await deleteAttachment(item.id)
+      setFiles((current) => current.filter((one) => one.id !== item.id))
+    } catch (failure) {
+      setFileError(failure.message)
+    } finally {
+      setAttaching(false)
+    }
   }
 
   return (
@@ -115,21 +209,115 @@ export default function WorkDialog({
           />
         </label>
 
-        {/* текст работы: у домашнего задания это оно и есть, у контрольной
-            обычно пусто. Подставляется из плана кнопкой «задать как
-            домашнее» — рекомендованное оттуда, фактическое здесь.
+        {/* Текст задания — то, что увидит ученик над задачами, и то же
+            самое видит над ними учитель.
 
-            Звалось поле «Что делать», и это читалось вопросом к учителю —
-            «что мне сейчас делать в этой форме?», — а не заголовком того,
-            что увидит ученик. «Пояснения к работе» вопросом не читается */}
-        <label className="field-with-hint">
-          {t('works.description')}
-          <textarea rows={3} value={form.description} onChange={change('description')} />
-        </label>
-        <Hint
-          short={t('works.descriptionHint')}
-          more={t('works.descriptionHintMore')}
+            Прежняя подсказка объясняла его через домашнее задание («у
+            домашнего это оно и есть»), и объяснение было неверным дважды:
+            домашняя работа ничем, кроме признака, от контрольной не
+            отличается, а поле нужно им обеим одинаково. Нужно оно затем,
+            чтобы **не заводить задачи**: кто пишет условие текстом, тот
+            получает решения фотографиями в саму работу, и это законный
+            способ вести работу целиком.
+
+            Поле — такое же, как содержание урока: Markdown с формулами и
+            картинка по Ctrl+V. Своего редактора у него нет и не будет — см.
+            `MarkdownField.jsx` */}
+        <span className="hint">{t('works.description')}</span>
+        <MarkdownField
+          value={form.description}
+          onChange={(text) => setForm((current) => ({ ...current, description: text }))}
+          rows={4}
+          label={t('works.description')}
+          ensureOwner={async () => ({ work: await ensureWork() })}
+          disabled={busy}
         />
+        <Hint short={t('works.descriptionHint')} more={t('works.descriptionHintMore')} />
+
+        {/* Файлы работы: условия одним pdf'ом, бланк для печати, разбор.
+            Стоят рядом с текстом, а не в отдельном окне, потому что
+            прикладывают их в тот же заход, что и пишут задание.
+
+            Ссылок и записей тут нет намеренно — в отличие от материалов
+            урока. Материал урока это то, чем пользуется учитель («принести
+            линейку»); здесь же всё, что лежит, увидит класс, и «запись без
+            цели» была бы строкой, на которую ученику нечего нажать */}
+        <div className="row middle">
+          <span className="hint">{t('works.files')}</span>
+          {files.length > 0 && <span className="hint">{files.length}</span>}
+        </div>
+
+        {files.length > 0 && (
+          <ul className="attachments">
+            {files.map((item) => {
+              const size = formatSize(item.size)
+
+              return (
+                <li key={item.id} className="attachment">
+                  <span className="attachment-icon" aria-hidden="true">
+                    {iconFor(item)}
+                  </span>
+                  <button
+                    type="button"
+                    className="link title"
+                    title={t('lesson.download')}
+                    onClick={() => openAttachment(item.id).catch((failure) =>
+                      setFileError(failure.message),
+                    )}
+                  >
+                    {item.title}
+                  </button>
+                  {size && (
+                    <span className="hint">
+                      {t(`lesson.size.${size.unit}`, { value: size.value })}
+                    </span>
+                  )}
+                  <button
+                    type="button"
+                    className="link remove"
+                    title={t('common.delete')}
+                    disabled={attaching || busy}
+                    onClick={() => removeFile(item)}
+                  >
+                    ✕
+                  </button>
+                </li>
+              )
+            })}
+          </ul>
+        )}
+
+        <input
+          ref={chooseFile}
+          type="file"
+          multiple
+          hidden
+          aria-label={t('works.addFile')}
+          onChange={(event) => {
+            attach([...event.target.files])
+            event.target.value = ''
+          }}
+        />
+        {/* зона перетаскивания — она же кнопка выбора: тащить умеют не все и
+            не везде, а нажать везде. Та же, что в панели урока */}
+        <button
+          type="button"
+          className="dropzone"
+          disabled={attaching || busy}
+          onClick={() => chooseFile.current.click()}
+          onDragOver={(event) => event.preventDefault()}
+          onDrop={(event) => {
+            event.preventDefault()
+            attach([...(event.dataTransfer?.files ?? [])])
+          }}
+        >
+          {attaching ? t('works.attaching') : t('works.dropHere')}
+        </button>
+        {fileError && (
+          <p className="error" role="alert">
+            {fileError}
+          </p>
+        )}
 
         <div className="row">
           <label className="field-with-hint">
@@ -181,14 +369,16 @@ export default function WorkDialog({
         </label>
         {/* пояснение нужно самому первому пункту списка: «Только баллы, без
             отметки» — это отказ от системы, и по подписи не видно, что при
-            этом остаётся. Внутрь `<option>` подсказку не положить, поэтому
-            она стоит под селектом и говорит про оба случая сразу.
+            этом остаётся.
 
-            Правила перевода у системы настоящие — полосы с порогами
-            (`GradingSystem.bands`, считает `services.grade_for`), и в
-            подробностях сказано, где их смотреть: задаёт их школа, а не эта
-            форма, и искать их иначе негде */}
-        <Hint short={t('grading.systemHint')} more={t('grading.systemHintMore')} />
+            Развёрнутого под «?» здесь больше нет, и снято оно по просьбе:
+            оно пересказывало устройство порогов, то есть отвечало на вопрос,
+            которого в этой форме никто не задаёт, — пороги задаёт школа в
+            своём справочнике. А главное, что про них стоило бы сказать, в
+            форме про работу не помещается вовсе: **итог ставит учитель**.
+            Что бы система ни вывела из баллов, его отметка сильнее, и живёт
+            это правило там, где отметку и ставят, — в окне работы ученика */}
+        <p className="hint">{t('grading.systemHint')}</p>
 
         {/* формативную оценивают как придётся, и в итог она не идёт */}
         <label className="checkbox">

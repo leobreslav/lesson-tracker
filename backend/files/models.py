@@ -25,6 +25,20 @@ KIND_LINK = "link"
 KIND_TEXT = "text"
 KINDS = ((KIND_FILE, "file"), (KIND_LINK, "link"), (KIND_TEXT, "text"))
 
+# У ссылки ровно один владелец, и вот все, кем он бывает.
+#
+# Список написан один раз намеренно: владельцев было три, стало четыре, и
+# перечисление их по месту — в ограничении, в `clean`, в сериализаторе, во
+# вьюхе — означало бы четыре списка, расходящихся молча. Забытый в
+# ограничении владелец не запрещает ничего, забытый в `clean` — молчит,
+# забытый в сериализаторе — не даёт приложить вовсе.
+OWNER_FIELDS = ("plan_row", "template_row", "student_work", "work")
+
+
+def owned_by(field: str) -> Q:
+    """«Владелец ровно этот»: он назван, остальные пусты."""
+    return Q(**{f"{name}__isnull": name != field for name in OWNER_FIELDS})
+
 
 class StoredFile(models.Model):
     """
@@ -135,6 +149,21 @@ class Attachment(models.Model):
         on_delete=models.CASCADE,
         verbose_name="student's work",
     )
+    # Сама работа — то, что учитель приложил **к заданию**, а не к чьей-то
+    # тетради: условия одним pdf'ом, бланк для печати, картинка, вставленная
+    # в пояснения.
+    #
+    # Не путать с `student_work`: тот отвечает «что сдал этот ученик», а
+    # этот — «что здесь задано». Владельцы разные, и право у них разное: сюда
+    # смотрит **весь класс**, а туда — один человек и его семья.
+    work = models.ForeignKey(
+        "works.Work",
+        related_name="attachments",
+        null=True,
+        blank=True,
+        on_delete=models.CASCADE,
+        verbose_name="work",
+    )
     # Куда **внутри** работы ученика это приложено: к вопросу или ко всей
     # работе разом.
     #
@@ -220,21 +249,10 @@ class Attachment(models.Model):
         constraints = [
             models.CheckConstraint(
                 condition=(
-                    Q(
-                        plan_row__isnull=False,
-                        template_row__isnull=True,
-                        student_work__isnull=True,
-                    )
-                    | Q(
-                        plan_row__isnull=True,
-                        template_row__isnull=False,
-                        student_work__isnull=True,
-                    )
-                    | Q(
-                        plan_row__isnull=True,
-                        template_row__isnull=True,
-                        student_work__isnull=False,
-                    )
+                    owned_by("plan_row")
+                    | owned_by("template_row")
+                    | owned_by("student_work")
+                    | owned_by("work")
                 ),
                 name="attachment_has_exactly_one_owner",
             ),
@@ -269,6 +287,9 @@ class Attachment(models.Model):
             models.Index(
                 fields=("student_work", "position"), name="attachment_student_idx"
             ),
+            # «что приложено к этому заданию» спрашивают и учитель в окне
+            # работы, и весь класс, открывший её
+            models.Index(fields=("work", "position"), name="attachment_work_idx"),
             # просмотрщик спрашивает «что приложено к этому вопросу этого
             # ученика», и спрашивает по разу на клетку таблицы
             models.Index(fields=("task", "position"), name="attachment_task_idx"),
@@ -288,11 +309,11 @@ class Attachment(models.Model):
         super().clean()
         problems = {}
 
-        owners = [self.plan_row_id, self.template_row_id, self.student_work_id]
+        owners = [getattr(self, f"{name}_id") for name in OWNER_FIELDS]
         if sum(1 for owner in owners if owner is not None) != 1:
             problems["plan_row"] = (
-                "An attachment belongs to a plan lesson, a template row or a "
-                "student's work — to exactly one of them."
+                "An attachment belongs to a plan lesson, a template row, a "
+                "work or a student's work — to exactly one of them."
             )
 
         if self.task_id is not None and self.student_work_id is None:

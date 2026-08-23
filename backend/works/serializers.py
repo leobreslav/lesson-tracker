@@ -142,6 +142,54 @@ class TaskSerializer(serializers.ModelSerializer):
         return fields
 
 
+def work_files_prefetch():
+    """
+    Вложения задания, готовые к показу, — одной выборкой на весь список.
+
+    `prefetch_related("attachments")` сам по себе тут не помогает, и это тот
+    случай, когда «оптимизация» есть, а действия у неё нет: `files_of`
+    спрашивал `work.attachments.filter(...)`, а **фильтр по связи ходит в
+    базу заново** — кэш prefetch отдаёт только `.all()`. То есть на список из
+    тридцати работ выходило тридцать запросов при живом prefetch'е.
+
+    Поэтому и фильтр, и `select_related`, и счёт ссылок (для «файл лежит ещё
+    где-то») стоят внутри самого `Prefetch`, а `files_of` разбирает уже
+    готовое.
+    """
+    from django.db.models import Count, Prefetch
+    from files.models import Attachment
+
+    return Prefetch(
+        "attachments",
+        queryset=Attachment.objects.filter(inline=False)
+        .select_related("stored_file")
+        .annotate(reference_count=Count("stored_file__attachments")),
+    )
+
+
+def files_of(work) -> list:
+    """
+    Что приложено **к заданию**: условия одним pdf'ом, бланк, разбор.
+
+    Одна функция на обе стороны — на список работ учителя и на страницу
+    ученика. Порознь они разошлись бы молча в первую же правку: ученик
+    увидел бы не то, что приложил учитель, и заметил бы это он, а не мы.
+
+    Картинки, стоящие **в тексте** пояснений, сюда не попадают: ими
+    распоряжается текст, и строкой в списке материалов они были бы записью,
+    которую нельзя понять, не открыв пояснения. Тот же довод, что у урока.
+
+    Отсев inline идёт **в питоне**, а не выборкой, и это не мелочь: так
+    функция одинаково работает и над готовым prefetch'ем (список работ), и
+    над одной работой без него (страница ученика). Спроси она базу — prefetch
+    списка не значил бы ничего.
+    """
+    from files.serializers import AttachmentSerializer
+
+    rows = [item for item in work.attachments.all() if not item.inline]
+    return AttachmentSerializer(rows, many=True).data
+
+
 class WorkSerializer(serializers.ModelSerializer):
     """
     Работа глазами учителя.
@@ -156,6 +204,7 @@ class WorkSerializer(serializers.ModelSerializer):
     state = serializers.SerializerMethodField()
     grade = serializers.SerializerMethodField()
     tasks_count = serializers.SerializerMethodField()
+    files = serializers.SerializerMethodField()
 
     class Meta:
         model = Work
@@ -177,6 +226,7 @@ class WorkSerializer(serializers.ModelSerializer):
             "slot",
             "state",
             "tasks_count",
+            "files",
             "created_at",
         )
         read_only_fields = ("id", "created_at")
@@ -192,6 +242,9 @@ class WorkSerializer(serializers.ModelSerializer):
             if system
             else None
         )
+
+    def get_files(self, work) -> list:
+        return files_of(work)
 
     def get_tasks_count(self, work) -> int:
         # аннотация вьюсета; у только что созданной работы задач ноль, и это
@@ -388,6 +441,11 @@ class GradeSerializer(serializers.Serializer):
         required=False,
     )
     comment = serializers.CharField(required=False, allow_blank=True)
+    # итог, поставленный руками. Пустая строка снимает его и возвращает
+    # работу системе; не прислали поле вовсе — не трогаем
+    final = serializers.CharField(
+        required=False, allow_blank=True, max_length=40, trim_whitespace=False
+    )
 
     def get_fields(self):
         fields = super().get_fields()

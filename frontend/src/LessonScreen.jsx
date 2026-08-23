@@ -17,6 +17,7 @@ import {
   openAttachment,
   updatePlanNode,
   updateSlot,
+  updateWork,
   uploadAttachment,
 } from './api'
 import { today } from './calendarLogic'
@@ -105,6 +106,11 @@ export default function LessonScreen({ onLoggedOut }) {
   // вопрос «что сейчас сохранится»
   const [editing, setEditing] = useState(null)
   const [adding, setAdding] = useState(null) // 'work' | 'homework'
+  // Работа, заведённая **по требованию**: окно создания просит её, как
+  // только к ней пробуют приложить файл или вставить картинку — прикладывать
+  // не к чему, пока нет строки в базе (см. `WorkDialog.jsx`). Дальше окно
+  // правит уже её, и «Сохранить» становится правкой, а не вторым созданием.
+  const [draft, setDraft] = useState(null)
   const [form, setForm] = useState(null) // 'rename' | 'cancel'
   const [text, setText] = useState('')
   // материал заводится одним полем: вид виден из написанного
@@ -860,17 +866,28 @@ export default function LessonScreen({ onLoggedOut }) {
 
       {adding && (
         <WorkDialog
+          work={draft}
           courseId={card.course.id}
           slot={card.id}
           homework={adding === 'homework'}
           busy={busy}
+          onEnsure={async (fields) => {
+            const created = await createWork(fields)
+            setDraft(created)
+            load()
+            return created
+          }}
           onSubmit={(fields) =>
             run(async () => {
-              await createWork(fields)
+              await (draft ? updateWork(draft.id, fields) : createWork(fields))
               setAdding(null)
+              setDraft(null)
             })
           }
-          onClose={() => setAdding(null)}
+          onClose={() => {
+            setAdding(null)
+            setDraft(null)
+          }}
         />
       )}
 

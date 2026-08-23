@@ -162,6 +162,20 @@ export default function MarkdownField({
   placeholder,
   planRow = null,
   templateRow = null,
+  /**
+   * Владелец, которого в момент вставки ещё нет.
+   *
+   * Урок и строка полки существуют раньше своего текста — их правят, уже
+   * заведёнными. А пояснения к работе пишут **в окне создания**, где работы
+   * ещё нет ни одной строкой, и приложить картинку не к чему. Поэтому окно
+   * умеет завести её по требованию и вернуть сюда владельца; здесь же — то
+   * место, где это требование возникает.
+   *
+   * Возвращает то же, что принимает загрузка: `{ work }`, `{ planRow }` и
+   * так далее. Отказ (не заполнено название) прилетает исключением и
+   * показывается строкой ошибки — как и любой другой отказ загрузки.
+   */
+  ensureOwner = null,
   disabled = false,
 }) {
   const { t } = useTranslation()
@@ -198,10 +212,13 @@ export default function MarkdownField({
 
     let caret = at
     try {
+      // владельца спрашиваем **до** первого файла и один раз на всю пачку:
+      // иначе три вставленных снимка завели бы три работы
+      const owner = ensureOwner ? await ensureOwner() : { planRow, templateRow }
+
       for (const file of files) {
         const added = await uploadAttachment({
-          planRow,
-          templateRow,
+          ...owner,
           file: named(file),
           inline: true,
         })
