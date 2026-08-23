@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import GradingPanel from './GradingPanel'
 import { useTranslation } from 'react-i18next'
+import Hint from './Hint'
 import {
   addGradePreset,
   clearUnusedGrades,
@@ -296,18 +297,20 @@ export default function SchoolReference() {
         )}
 
         <form className="add-form" onSubmit={addGrade}>
+          {/* Пояснение к году обучения — тем же приёмом, что подсказки в
+              форме работы (`Hint.jsx`), а не всплывающей `title`. Текст тут
+              длинный, а `title` не вызвать ни пальцем, ни с клавиатуры, и
+              система обрезает его по своему усмотрению — то есть на телефоне
+              этого объяснения не существовало вовсе. Одна форма на два места:
+              второй ответ на тот же вопрос разъехался бы с первым. */}
           <label className="field-with-hint">
-            <span>
-              {t('school.reference.level')}
-              <abbr title={t('school.reference.levelExplain')}>?</abbr>
-            </span>
+            <span>{t('school.reference.level')}</span>
             <input
               type="number"
               min={1}
               value={grade.level}
               placeholder={t('school.reference.levelPlaceholder')}
               aria-label={t('school.reference.level')}
-              title={t('school.reference.levelExplain')}
               disabled={busy}
               onChange={(event) => takeLevel(event.target.value)}
             />
@@ -333,6 +336,10 @@ export default function SchoolReference() {
             {t('common.add')}
           </button>
         </form>
+        <Hint
+          short={t('school.reference.levelShort')}
+          more={t('school.reference.levelExplain')}
+        />
 
         {/* наборы доступны всегда, а не только в пустом состоянии: школа,
             заведшая четыре параллели, не должна вбивать девять руками.

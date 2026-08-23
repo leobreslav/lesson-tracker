@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import Hint from './Hint'
 import Modal from './Modal'
 import { fetchGradingSystems, fetchWorkImpact } from './api'
 import { fromLocalInput, toLocalInput } from './dates'
@@ -118,14 +119,17 @@ export default function WorkDialog({
             обычно пусто. Подставляется из плана кнопкой «задать как
             домашнее» — рекомендованное оттуда, фактическое здесь.
 
-            Подпись «Что делать» без пояснения читалась вопросом к учителю
-            («что мне сейчас делать в этой форме?»), а не заголовком поля:
-            это слова, которые увидит ученик, и сказать об этом надо прямо */}
+            Звалось поле «Что делать», и это читалось вопросом к учителю —
+            «что мне сейчас делать в этой форме?», — а не заголовком того,
+            что увидит ученик. «Пояснения к работе» вопросом не читается */}
         <label className="field-with-hint">
           {t('works.description')}
           <textarea rows={3} value={form.description} onChange={change('description')} />
         </label>
-        <p className="hint">{t('works.descriptionHint')}</p>
+        <Hint
+          short={t('works.descriptionHint')}
+          more={t('works.descriptionHintMore')}
+        />
 
         <div className="row">
           <label className="field-with-hint">
@@ -145,7 +149,13 @@ export default function WorkDialog({
             />
           </label>
         </div>
-        <p className="hint">{t('works.windowHint')}</p>
+        {/* Окно решает не «видно ли работу», а «принимаются ли решения», и
+            это две разные вещи. Строка обещала первое — «ученик видит работу
+            только пока окно открыто», — а на деле после закрытия у него
+            остаётся всё: условия, свои ответы, баллы и переписка с учителем
+            по задаче (треды окна не знают вовсе, право там по участию).
+            Пропадает ровно одно — возможность прислать новое решение */}
+        <Hint short={t('works.windowHint')} more={t('works.windowHintMore')} />
 
         {/* Система оценивания — решение учителя, на каждой работе своё:
             маленькая проверочная по пятибалльной рядом с контрольной по MYP
@@ -172,8 +182,13 @@ export default function WorkDialog({
         {/* пояснение нужно самому первому пункту списка: «Только баллы, без
             отметки» — это отказ от системы, и по подписи не видно, что при
             этом остаётся. Внутрь `<option>` подсказку не положить, поэтому
-            она стоит под селектом и говорит про оба случая сразу */}
-        <p className="hint">{t('grading.systemHint')}</p>
+            она стоит под селектом и говорит про оба случая сразу.
+
+            Правила перевода у системы настоящие — полосы с порогами
+            (`GradingSystem.bands`, считает `services.grade_for`), и в
+            подробностях сказано, где их смотреть: задаёт их школа, а не эта
+            форма, и искать их иначе негде */}
+        <Hint short={t('grading.systemHint')} more={t('grading.systemHintMore')} />
 
         {/* формативную оценивают как придётся, и в итог она не идёт */}
         <label className="checkbox">
@@ -216,13 +231,17 @@ export default function WorkDialog({
             />
           )}
         </div>
-        <p className="hint">{t('works.attemptsHint')}</p>
+        {/* «Один: ученик отправляет…» читалось как начало фразы, а не как
+            пример: число в поле и число в тексте связывались не сразу.
+            Теперь оба случая названы одинаково — «Стоит 1 — …», «Стоит 3 — …» */}
+        <Hint short={t('works.attemptsHint')} more={t('works.attemptsHintMore')} />
 
         {/* «отметка» — слово из школьного обихода, и в форме оно ничего не
-            называет: что именно увидит ученик — галочку на ответе, оценку
-            за работу или и то и другое, — по подписи не восстановить.
-            Подсказка называет обе половины и второй случай тоже: выключенный
-            флажок не прячет отметку навсегда, а откладывает до закрытия окна */}
+            называет. Скрывает флажок не «верно/неверно», а **баллы**: балл за
+            каждую задачу, итоговую отметку за работу и комментарий учителя —
+            всё разом (`show_result` у модели, `services.mark_for`). Первая
+            версия подсказки говорила про вердикт, и это осталось от времён,
+            когда вердикт был галочкой; баллом он стал давно */}
         <label className="checkbox">
           <input
             type="checkbox"
@@ -231,7 +250,10 @@ export default function WorkDialog({
           />
           {t('works.showResult')}
         </label>
-        <p className="hint">{t('works.showResultHint')}</p>
+        <Hint
+          short={t('works.showResultHint')}
+          more={t('works.showResultHintMore')}
+        />
 
         <div className="actions">
           <button type="submit" disabled={busy || !ready(form)}>

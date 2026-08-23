@@ -2118,14 +2118,54 @@ button.link.hint.level {
   width: 4rem;
 }
 
-.field-with-hint abbr {
-  margin-left: 0.25rem;
-  padding: 0 0.3rem;
+/*
+ * ПОДСКАЗКА В ДВА РОСТА — короткая строка и «?» рядом (см. `Hint.jsx`).
+ *
+ * Кружок был здесь и раньше, `<abbr title=…>`, и выглядел так же. Менялось
+ * не оформление, а поведение: `title` не вызвать ни пальцем, ни с
+ * клавиатуры, а длинный текст система обрезает по своему усмотрению.
+ * Поэтому теперь это кнопка, а вид оставлен прежним — он был хорош.
+ */
+.hint-more {
+  margin-left: 0.3rem;
+  padding: 0 0.35rem;
+  font: inherit;
+  line-height: 1.1;
   color: #1a73e8;
+  background: none;
   border: 1px solid #cfd8e3;
   border-radius: 999px;
-  text-decoration: none;
-  cursor: help;
+  cursor: pointer;
+}
+
+.hint-more:hover {
+  background: #f1f5fd;
+}
+
+.hint-more[aria-expanded='true'] {
+  color: #fff;
+  background: #1a73e8;
+  border-color: #1a73e8;
+}
+
+/* Короткая строка и её подробности — один блок, а не два абзаца подряд.
+   Ритм окна раздвигает прямых детей формы на `--modal-gap`, и раскрытое
+   уезжало бы от того, что раскрыли, ровно на этот зазор. */
+.hint-block {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.hint-block > .hint {
+  margin: 0;
+}
+
+/* Подробности отбиты слева: так видно, что это продолжение строки над ними,
+   а не следующая мысль того же веса. */
+.hint-detail {
+  padding-left: 0.6rem;
+  border-left: 2px solid #e6e9eb;
 }
 
 .empty-inline {
