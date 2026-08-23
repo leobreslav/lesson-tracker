@@ -19,6 +19,21 @@ const openWorks = async (page, course = 'Grade 6 Algebra') => {
   return page.locator('.work-list')
 }
 
+/**
+ * Страница работы: правку унесли со списка туда.
+ *
+ * В списке задачи только показывают — там же, где задание, и без единой
+ * кнопки. Правят их на странице, и второго места для одного действия быть
+ * не должно.
+ */
+const openWorkPage = async (page, list, title) => {
+  await list
+    .locator('.course-row', { hasText: title })
+    .getByRole('button', { name: 'Править' })
+    .click()
+  await ready(page)
+}
+
 test('в списке — имя и два действия, состояние видно в проверке', async ({
   page,
   signIn,
@@ -60,14 +75,20 @@ test('задачи видны с формулами и эталонами, по�
   // два эталона у одной задачи: «x+3» и «3+x» верны одинаково
   await expect(second.locator('.answers .tag')).toHaveCount(2)
 
-  const first = work.locator('.task-list li').first()
-  await expect(first).toContainText('Раскройте скобки')
+  // в списке задачи только показывают: ни одной кнопки правки на строке
+  await expect(work.locator('.task-actions')).toHaveCount(0)
+
+  // порядок меняют там же, где правят, — на странице работы
+  await openWorkPage(page, list, 'Проверочная')
+
+  const rows = page.locator('.task-list li')
+  await expect(rows.first()).toContainText('Раскройте скобки')
   // кнопки строки появляются при наведении: двенадцать значков разом
   // заслоняли сами условия
-  await second.hover()
-  await second.getByRole('button', { name: 'Ниже' }).click()
+  await rows.nth(1).hover()
+  await rows.nth(1).getByRole('button', { name: 'Ниже' }).click()
 
-  await expect(work.locator('.task-list li').nth(2)).toContainText('Упростите')
+  await expect(rows.nth(2)).toContainText('Упростите')
 })
 
 test('новая работа заводится с окном времени и получает задачу', async ({
@@ -82,20 +103,24 @@ test('новая работа заводится с окном времени и
   await dialog.getByLabel('Название').fill('Проверочная по углам')
   await dialog.getByRole('button', { name: 'Сохранить' }).click()
 
-  const work = list.locator('.course-row', { hasText: 'Проверочная по углам' })
-  await work.locator('.toggle').click()
-  await work.getByRole('button', { name: 'Добавить задачу' }).click()
+  await openWorkPage(page, list, 'Проверочная по углам')
+
+  await page.getByRole('button', { name: 'Добавить задачу' }).click()
   const task = page.locator('dialog.modal')
   await task.getByLabel('Условие').fill('Сумма углов треугольника?')
   await task.getByLabel('Ответ 1').fill('180')
   await task.getByRole('button', { name: 'Сохранить' }).click()
 
-  await expect(work.locator('.task-list li')).toHaveCount(1)
-  await work.getByRole('button', { name: 'Ответы' }).click()
-  await expect(work).toContainText('180')
+  await expect(page.locator('.task-list li')).toHaveCount(1)
+  await page.getByRole('button', { name: 'Ответы' }).click()
+  await expect(page.locator('.task-list')).toContainText('180')
 
   // окно в будущем и есть «черновик»: работа запланирована, а не открыта
-  await work.getByRole('button', { name: 'Проверка' }).click()
+  const again = await openWorks(page, 'Grade 6 Geometry')
+  await again
+    .locator('.course-row', { hasText: 'Проверочная по углам' })
+    .getByRole('button', { name: 'Проверка' })
+    .click()
   await expect(page.locator('.page-header')).toContainText('запланирована')
 })
 
@@ -129,10 +154,11 @@ test('задание видно над задачами, а пустая яче�
   await expect(work.locator('.work-brief')).toContainText('номера 12–18')
 
   // ячейка без условия: та же кнопка, окно отпускает пустым
-  await work.getByRole('button', { name: 'Добавить задачу' }).click()
+  await openWorkPage(page, list, 'Работа без задач')
+  await page.getByRole('button', { name: 'Добавить задачу' }).click()
   const task = page.locator('dialog.modal')
   await task.getByRole('button', { name: 'Сохранить' }).click()
-  await expect(work.locator('.task-list li')).toHaveCount(1)
+  await expect(page.locator('.task-list li')).toHaveCount(1)
 })
 
 test('правка работы, в которой уже отвечали, называет цену', async ({
@@ -155,7 +181,13 @@ test('правка работы, в которой уже отвечали, на
 
   // не запрет, а число: правка проходит, но человек знает, чего она стоит
   await expect(page.locator('main')).toContainText('уже отвечали')
-  await expect(page.getByRole('button', { name: 'Сохранить' })).toBeEnabled()
+
+  // «Сохранить» ждёт правки, а не запрещает её: пока ничего не тронуто,
+  // сохранять нечего — тронули, и кнопка ожила
+  const save = page.getByRole('button', { name: 'Сохранить' })
+  await expect(save).toBeDisabled()
+  await page.getByLabel('Название').fill('Контрольная (поправлено)')
+  await expect(save).toBeEnabled()
 })
 
 /**

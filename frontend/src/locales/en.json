@@ -1095,6 +1095,7 @@
     "add": "New assignment",
     "edit": "Assignment settings",
     "editAction": "Edit",
+    "settings": "Settings",
     "workTitle": "Title",
     "opensAt": "Opens",
     "closesAt": "Closes",
@@ -1120,6 +1121,7 @@
       "hint": "An assignment belongs to a course, and courses are created by the school administrator."
     },
     "task": {
+      "title": "Questions",
       "add": "Add a question",
       "edit": "Question",
       "none": "No questions yet — an assignment without them shows the students an empty page.",
@@ -1158,6 +1160,7 @@
     },
     "answers": "Answers",
     "description": "Notes for the students",
+    "noDescription": "Nothing written here yet.",
     "descriptionHint": "What the students see above the questions — and what you see there too.",
     "descriptionHintMore": "Questions are optional: write the whole assignment here, and the students send their work back as photos or files attached to the work itself. Paste a screenshot straight into the text with Ctrl+V; anything else — a pdf with the questions, a sheet to print — goes below as a file.",
     "summative": "Counts towards the term result",

@@ -69,7 +69,12 @@ test('сюжет разворачивается по ячейкам, а шапк
   await signIn(PEOPLE.ivanova)
   await page.goto('/works')
   await ready(page)
-  await page.getByRole('button', { name: 'С пунктами' }).first().click()
+  // правка ячеек живёт на странице работы, а не в строке списка
+  await page
+    .locator('.course-row', { hasText: 'С пунктами' })
+    .getByRole('button', { name: 'Править' })
+    .click()
+  await ready(page)
 
   const rows = page.locator('.task-list li')
   await expect(rows).toHaveCount(2)

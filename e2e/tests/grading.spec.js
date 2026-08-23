@@ -72,16 +72,19 @@ test('учитель выбирает систему сам, а запрещён
   await row.getByRole('button', { name: 'Править' }).click()
   await ready(page)
 
+  // система оценивания — из тех полей, что задают один раз: на странице
+  // работы они за кнопкой «Настройки», а на виду задание и задачи
+  await page.getByRole('button', { name: 'Настройки' }).click()
+
   const select = page.getByLabel('Система оценивания')
   await expect(select).toBeVisible()
   // запрещённой в списке нет вовсе: форма не предлагает того, чего сервер не примет
   await expect(select.locator('option', { hasText: five.name })).toHaveCount(0)
 
   await select.selectOption({ label: 'MYP 1–7' })
-  await page.getByRole('button', { name: 'Сохранить' }).click()
-  // со страницы правки уходят в список, и уходят по ответу сервера:
-  // читать работу раньше — гонка
-  await expect(page.locator('.work-list')).toBeVisible()
+  await page.locator('dialog.modal').getByRole('button', { name: 'Сохранить' }).click()
+  // окно закрывается по ответу сервера: читать работу раньше — гонка
+  await expect(page.locator('dialog.modal')).toHaveCount(0)
 
   const after = await teacher.get(`/api/works/${work.id}/`)
   expect(after.body.grade.name).toBe('MYP 1–7')

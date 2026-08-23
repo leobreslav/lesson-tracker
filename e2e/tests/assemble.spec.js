@@ -94,7 +94,12 @@ test('условие ячейки — то же самое условие: пр�
   await signIn(PEOPLE.ivanova)
   await page.goto('/works')
   await ready(page)
-  await page.getByRole('button', { name: 'Первая' }).first().click()
+  // правят задачи на странице работы: в списке они только показаны
+  await page
+    .locator('.course-row', { hasText: 'Первая' })
+    .getByRole('button', { name: 'Править' })
+    .click()
+  await ready(page)
 
   // кнопки строки появляются при наведении — как в таблице плана
   const row = page.locator('.task-list li').first()
@@ -109,7 +114,10 @@ test('условие ячейки — то же самое условие: пр�
 
   await expect(page.locator('.task-list')).toContainText('Поправленное условие')
 
-  // и во второй работе — оно же: второго текста у работы нет
+  // и во второй работе — оно же: второго текста у работы нет. Смотрим
+  // списком: он для того и разворачивается, чтобы глянуть, не уходя
+  await page.goto('/works')
+  await ready(page)
   await page.getByRole('button', { name: 'Вторая' }).first().click()
   await expect(page.locator('.task-list')).toContainText('Поправленное условие')
 })
@@ -133,7 +141,11 @@ test('пустая ячейка заполняется потом — готов
   await signIn(PEOPLE.ivanova)
   await page.goto('/works')
   await ready(page)
-  await page.getByRole('button', { name: 'Пустые ячейки' }).first().click()
+  await page
+    .locator('.course-row', { hasText: 'Пустые ячейки' })
+    .getByRole('button', { name: 'Править' })
+    .click()
+  await ready(page)
 
   const rows = page.locator('.task-list li')
   await expect(rows).toHaveCount(3)
