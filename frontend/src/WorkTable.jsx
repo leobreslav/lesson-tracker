@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Link, useParams } from 'react-router-dom'
+import { useParams } from 'react-router-dom'
 import CellDialog from './CellDialog'
 import ColumnDialog from './ColumnDialog'
 import GradeDialog from './GradeDialog'
@@ -332,10 +332,6 @@ export default function WorkTable() {
           ))}
         </ol>
       </details>
-
-      <p>
-        <Link to="/works">{t('nav.works')}</Link>
-      </p>
 
       {question && (
         <Modal

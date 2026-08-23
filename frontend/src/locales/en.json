@@ -422,7 +422,7 @@
     "title": "Curriculum map",
     "titleLabel": "Title",
     "noteLabel": "Note",
-    "notePlaceholder": "note",
+    "notePlaceholder": "a note to yourself about this lesson",
     "sectionPlaceholder": "Theme name",
     "lessonPlaceholder": "Lesson title",
     "done": "Done",
@@ -1158,6 +1158,8 @@
     },
     "answers": "Answers",
     "description": "Notes for the students",
+    "briefEdit": "Edit the assignment",
+    "briefWrite": "Write the assignment",
     "descriptionHint": "What the students see above the questions — and what you see there too.",
     "descriptionHintMore": "Questions are optional: write the whole assignment here, and the students send their work back as photos or files attached to the work itself. Paste a screenshot straight into the text with Ctrl+V; anything else — a pdf with the questions, a sheet to print — goes below as a file.",
     "summative": "Counts towards the term result",
@@ -1176,8 +1178,9 @@
     "outOf": "Graded out of {{maximum}}.",
     "byCriteria": "Graded by criteria: {{names}}.",
     "markOf": "Mark out of {{maximum}}",
+    "noMark": "no mark",
     "comment": "Teacher's comment",
-    "emptyClears": "An empty field removes the mark — zero is a mark of its own.",
+    "emptyClears": "«No mark» removes it — zero is a mark of its own.",
     "maximum": "Maximum",
     "criterionName": "criterion",
     "addCriterion": "Add criterion",
@@ -1218,7 +1221,7 @@
       "levels": "levels per criterion, bands on the sum",
       "passfail": "pass or fail"
     },
-    "questionScores": "Marks per question. An empty field clears the mark.",
+    "questionScores": "Marks per question. «No mark» clears it.",
     "finalGrade": "Final grade",
     "derived": "The system works out {{label}} from the marks. Leave the field empty to keep it.",
     "noDerived": "No system is set for this work, so the final grade is yours to write."
@@ -1226,6 +1229,7 @@
   "paper": {
     "scans": "Scanned work",
     "addScan": "Add a scan",
+    "dropScan": "Drop a scan here, or click to choose",
     "column": "Work",
     "onPaper": "This work was written on paper. Your marked copy appears here once the teacher uploads it."
   },

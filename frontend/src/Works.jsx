@@ -346,11 +346,32 @@ export default function Works({ onLoggedOut }) {
                           «задач пока нет» и ничего больше. Показывать ученику
                           то, чего не видит учитель, нельзя: они говорят об
                           одном и том же задании и должны видеть одно и то же */}
-                      {work.description && (
-                        <div className="work-brief">
-                          <Markdown text={work.description} />
-                        </div>
-                      )}
+                      {/* Отсюда же в задание и возвращаются.
+
+                          Правка у него была ровно одна — окно настроек, — и
+                          ниоткуда на неё не показывало: текст стоял здесь
+                          как отпечатанный, а «Настройки» в шапке строки
+                          обещают окно, срок и попытки, а не задание. Кто
+                          написал задание при создании работы, второй раз его
+                          уже не находил.
+
+                          Пустое задание показывает то же место пустым, а не
+                          прячется вовсе: возможность, которой не видно, пока
+                          ею не воспользовались, не отличается от
+                          отсутствующей — а задание текстом это законный
+                          способ вести работу целиком, без единой задачи. */}
+                      <div className={work.description ? 'work-brief' : 'work-brief empty'}>
+                        {work.description && <Markdown text={work.description} />}
+
+                        <button
+                          type="button"
+                          className="link brief-edit"
+                          disabled={busy}
+                          onClick={() => setEditing({ work })}
+                        >
+                          {t(work.description ? 'works.briefEdit' : 'works.briefWrite')}
+                        </button>
+                      </div>
 
                       {(work.files ?? []).length > 0 && (
                         <ul className="attachments work-files">

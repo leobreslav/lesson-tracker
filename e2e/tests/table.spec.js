@@ -181,7 +181,8 @@ test('шкала настраивается, и оценка попадает в
   await row.locator('td.mark button').click()
 
   const grade = page.locator('dialog.modal')
-  await grade.getByLabel('Оценка из 5').fill('4')
+  // отметка — выбор из шкалы, а не набранное число
+  await grade.getByLabel('Оценка из 5').selectOption('4')
   await grade.getByLabel('Комментарий учителя').fill('Разобрался с формулой')
   await grade.getByRole('button', { name: 'Сохранить' }).click()
 

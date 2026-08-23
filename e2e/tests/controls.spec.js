@@ -51,6 +51,11 @@ const problems = (page) =>
       '.add-form, .inline-form, .agenda-bar, .class-filter, .year-picker,' +
       '.term-form .row, .people-list .row, .course-role .row, .preset-row,' +
       '.plan-add-form,' +
+      // правый угол бара — такой же ряд контролов, как форма: «Написать» и
+      // кнопка с именем стоят рядом, и рост у них общий. Порознь они его
+      // считали, и различались на несколько пикселей — непостоянно, потому
+      // что у имени, совпавшего с адресом, строка одна вместо двух
+      '.topbar-right,' +
       '.actions, .modal-body .row'
     const CONTROLS =
       'input:not([type=checkbox]):not([type=radio]):not([type=file]),' +

@@ -1,9 +1,52 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import Modal from './Modal'
 import PhotoStrip from './PhotoStrip'
 import PhotoViewer from './PhotoViewer'
 import { deleteAttachment, gradeStudent, uploadAttachment } from './api'
+
+/**
+ * Отметка — **выбор из шкалы**, а не набранное число.
+ *
+ * Полем со стрелочками это было, и форма противоречила смыслу: счётчик
+ * говорит «наберите сколько угодно, соседние значения рядом», а у отметки
+ * значений ровно столько, сколько в шкале, и все они известны заранее.
+ * Практическая цена той формы — набранное мимо шкалы (стрелки ограничивают,
+ * клавиатура нет) и лишний вопрос «а до скольки тут вообще».
+ *
+ * Пустой выбор снимает отметку и **не ставит ноль**: ноль — это оценка, и
+ * различать их обязательно. Поэтому первая строка списка своя, а не пустая:
+ * пустую строку читают как «ещё не выбрал», а тут это осознанное «снять».
+ */
+function MarkSelect({ value, maximum, disabled, onChange }) {
+  const { t } = useTranslation()
+
+  /*
+   * Шкалу правят и после того, как отметки по ней уже стоят: опустили
+   * максимум с восьми до пяти — и восьмёрка перестала быть значением
+   * списка. Показать её всё равно надо. Списком без неё поставленная
+   * отметка выглядит как «её нет», а сохранение сняло бы её молча — то
+   * есть правка шкалы стирала бы работу проверявшего, ничего об этом не
+   * сказав. Лишняя строка дешевле такой пропажи.
+   */
+  const marks = Array.from({ length: maximum + 1 }, (unused, mark) => mark)
+  if (value !== '' && !marks.includes(Number(value))) marks.push(Number(value))
+
+  return (
+    <select
+      value={value}
+      disabled={disabled}
+      onChange={(event) => onChange(event.target.value)}
+    >
+      <option value="">{t('grading.noMark')}</option>
+      {marks.map((mark) => (
+        <option key={mark} value={String(mark)}>
+          {mark}
+        </option>
+      ))}
+    </select>
+  )
+}
 
 /**
  * Работа одного ученика: скан, оценка и слова учителя — в одном окне.
@@ -13,8 +56,8 @@ import { deleteAttachment, gradeStudent, uploadAttachment } from './api'
  * и оценке жить было негде.
  *
  * Оценки ставятся всем набором сразу: у MYP критериев четыре, и
- * выставляются они за один взгляд на работу. Пустое поле снимает отметку, а
- * не ставит ноль — ноль это оценка, и различать их обязательно.
+ * выставляются они за один взгляд на работу. Выбор «без отметки» снимает
+ * её, а не ставит ноль — ноль это оценка, и различать их обязательно.
  *
  * Скан применяется **сразу**, а оценка и комментарий ждут «Сохранить». Так
  * же, как в панели урока: файл, ждущий кнопки, — это загрузка, которая тихо
@@ -124,6 +167,8 @@ export default function GradeDialog({
 
   const papers = student.papers ?? []
 
+  const chooseFile = useRef(null)
+
   return (
     <Modal onClose={onClose} title={student.name}>
       <form onSubmit={submit}>
@@ -151,17 +196,40 @@ export default function GradeDialog({
               onOpen={(photo) => setViewing(photo.id)}
               onRemove={busy || uploading ? null : remove}
             />
-            <div className="row">
-              <input
-                type="file"
-                aria-label={t('paper.addScan')}
-                disabled={busy || uploading}
-                onChange={(event) => {
-                  upload(event.target.files?.[0])
-                  event.target.value = ''
-                }}
-              />
-            </div>
+            {/* Поле выбора файла — то же, что у материалов урока и файлов
+                работы: скрытый `input` и зона, которая и кнопка, и место
+                для перетаскивания.
+
+                Голым `input type="file"` это стояло, и браузер рисовал его
+                сам: кнопка «Choose File» по-английски при любом языке
+                интерфейса — её подпись приходит от браузера, и `t()` до неё
+                не дотягивается, — своя рамка мимо всех прочих и никакого
+                перетаскивания. Последнее здесь обиднее всего: сюда приходят
+                со снимком тетради, только что сделанным телефоном, и тащат
+                его из папки. */}
+            <input
+              ref={chooseFile}
+              type="file"
+              hidden
+              aria-label={t('paper.addScan')}
+              onChange={(event) => {
+                upload(event.target.files?.[0])
+                event.target.value = ''
+              }}
+            />
+            <button
+              type="button"
+              className="dropzone"
+              disabled={busy || uploading}
+              onClick={() => chooseFile.current.click()}
+              onDragOver={(event) => event.preventDefault()}
+              onDrop={(event) => {
+                event.preventDefault()
+                upload(event.dataTransfer?.files?.[0])
+              }}
+            >
+              {uploading ? t('works.attaching') : t('paper.dropScan')}
+            </button>
           </section>
 
         {viewing && (
@@ -180,17 +248,12 @@ export default function GradeDialog({
               {tasks.map((item) => (
                 <label className="field-with-hint" key={item.id}>
                   {`${item.name} · 0–${item.maximum}`}
-                  <input
-                    type="number"
-                    min={0}
-                    max={item.maximum}
+                  <MarkSelect
                     value={scores[item.id]}
+                    maximum={item.maximum}
                     disabled={busy}
-                    onChange={(event) =>
-                      setScores((current) => ({
-                        ...current,
-                        [item.id]: event.target.value,
-                      }))
+                    onChange={(mark) =>
+                      setScores((current) => ({ ...current, [item.id]: mark }))
                     }
                   />
                 </label>
@@ -204,15 +267,11 @@ export default function GradeDialog({
             {simple
               ? t('grading.markOf', { maximum: item.maximum })
               : `${item.name} · 0–${item.maximum}`}
-            <input
-              type="number"
-              min={0}
-              max={item.maximum}
+            <MarkSelect
               value={marks[item.id]}
+              maximum={item.maximum}
               disabled={busy}
-              onChange={(event) =>
-                setMarks((current) => ({ ...current, [item.id]: event.target.value }))
-              }
+              onChange={(mark) => setMarks((current) => ({ ...current, [item.id]: mark }))}
             />
           </label>
         ))}
