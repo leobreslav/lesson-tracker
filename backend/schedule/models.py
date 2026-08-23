@@ -156,15 +156,28 @@ class CourseQuerySet(models.QuerySet):
         оба ответа даёт одно место, разойтись им негде; разложенные по
         queryset'ам, они разойдутся в первом же забытом фильтре — с
         учительскими выборками это уже происходило.
+
+        **Оба условия стоят в одном `filter`, и это не оформление.** Зачисление
+        — связь «многие ко многим», и второй вызов `filter` по той же связи
+        Django заводит **вторым join'ом**: «курс, где есть строка этого
+        ученика, и где есть какая-нибудь строка без даты снятия». В курсе с
+        одним учеником это неотличимо от нужного, а в курсе с тридцатью —
+        всегда истина: строка соседа и есть та, что без даты. То есть снятый
+        с курса оставался бы действующим ровно там, где ошибка стоит дороже
+        всего, — в настоящем классе.
+
+        Пойман он был не здесь: снятый ученик, у которого в курсе есть
+        одноклассник, спокойно присылал фотографию работы. Отсюда и тест с
+        одноклассником — без него подделка выглядит рабочей.
         """
         if user is None or not user.is_authenticated or user.school_id is None:
             return self.none()
 
-        enrolled = self.filter(students__student=user, school_id=user.school_id)
+        mine = {"students__student": user}
         if active_only:
-            enrolled = enrolled.filter(students__removed_at__isnull=True)
+            mine["students__removed_at__isnull"] = True
 
-        return enrolled.distinct()
+        return self.filter(school_id=user.school_id, **mine).distinct()
 
 
 class Course(models.Model):

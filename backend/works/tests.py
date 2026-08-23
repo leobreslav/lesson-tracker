@@ -223,6 +223,30 @@ class VisibilityTests(WorkTestCase):
         self.assertEqual(refused.json()["code"], "not_in_course")
         self.assertEqual(len(self.my_work().json()["tasks"][0]["submissions"]), 1)
 
+    def test_a_removed_student_stops_answering_even_in_a_class_full_of_others(self):
+        """
+        Тот же отказ, но в курсе, где остались одноклассники.
+
+        Подтест выглядит копией соседнего и ею не является: снятие
+        проверяется через `Course.objects.for_student`, а зачисление — связь
+        «многие ко многим». Пока условия «строка этого ученика» и «строка без
+        даты снятия» стояли в двух вызовах `filter`, Django складывал их
+        **разными join'ами** — и второе выполняла строка соседа. В курсе с
+        одним учеником это неотличимо от верного, поэтому соседний тест
+        зеленел; в настоящем классе снятый оставался действующим всегда.
+
+        Обнаружилось это на фотографиях работы: снятый ученик присылал
+        снимок, и никто ему не мешал.
+        """
+        classmate = make_user(self.school, "classmate@example.com", student=True)
+        enrol(classmate, self.course, by=self.admin)
+        remove_from_course(self.enrolment)
+
+        refused = self.answer("уже нет")
+
+        self.assertEqual(refused.status_code, 400)
+        self.assertEqual(refused.json()["code"], "not_in_course")
+
     def test_another_courses_work_is_invisible(self):
         other = make_course(self.school, self.year, name="9В")
         make_work(self.user, other, title="Чужая")
