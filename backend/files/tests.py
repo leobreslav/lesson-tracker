@@ -26,7 +26,8 @@ from django.test import SimpleTestCase, TestCase, override_settings
 from django.utils import timezone
 from django.urls import reverse
 from library.models import PlanTemplateRow
-from library.services import import_into_course
+from library.services import import_into_course, plan_as_rows, write_rows
+from plans import content, history
 from plans.models import PlanNode
 from rest_framework.test import APITestCase
 from schools.testing import (
@@ -1087,3 +1088,212 @@ class StorageIsConfiguredAnswersInsteadOfCrashingTests(SimpleTestCase):
             R2_ENDPOINT_URL="https://example.r2.cloudflarestorage.com",
         ):
             self.assertIs(storage.configured(), True)
+
+
+# --- картинки в содержании ------------------------------------------------------
+
+
+class InlineImageTests(FilesTestCase):
+    """
+    Картинка, вставленная **в текст**, а не приложенная к уроку списком.
+
+    Проверяется здесь не HTTP, а два свойства, ради которых у неё вообще
+    завёлся отдельный признак: в списке материалов её нет, а живёт она ровно
+    столько, сколько в тексте стоит ссылка на неё.
+    """
+
+    def paste(self, row=None, name="pasted.png", content=b"\x89PNG demo"):
+        """Вставить картинку так, как это делает поле содержания."""
+        target = row or self.lesson
+        field = "template_row" if hasattr(target, "is_header") else "plan_row"
+
+        return self.client.post(
+            reverse("attachment-list"),
+            {
+                field: target.pk,
+                "file": make_upload(name=name, content=content, kind="image/png"),
+                "inline": "true",
+            },
+            format="multipart",
+        )
+
+    def write(self, **fields):
+        return self.client.patch(
+            reverse("plannode-detail", args=[self.lesson.pk]), fields, format="json"
+        )
+
+    def test_a_pasted_picture_is_not_a_resource_of_the_lesson(self):
+        """
+        Список материалов — то, чем на уроке пользуются, и открывают его
+        строкой. Картинка же стоит в тексте: строка «pasted.png» рядом с
+        «карточки.pdf» не сказала бы ни где эта картинка, ни зачем.
+        """
+        answer = self.paste()
+        self.assertEqual(answer.status_code, 201, answer.data)
+        self.assertTrue(answer.data["inline"])
+
+        listed = self.client.get(reverse("attachment-list"), {"plan_row": self.lesson.pk})
+        self.assertEqual(listed.data, [])
+
+        panel = self.client.get(reverse("plannode-detail", args=[self.lesson.pk]))
+        self.assertEqual(panel.data["attachments"], [])
+
+    def test_the_paperclip_in_the_plan_counts_resources_and_not_pictures(self):
+        self.paste()
+
+        tree = self.client.get(reverse("plannode-list"), {"course": self.course.pk})
+        drawn = [row for row in tree.data["nodes"] if row["id"] == self.lesson.pk]
+        self.assertEqual(drawn[0]["attachments"], 0)
+
+    def test_the_same_picture_pasted_twice_is_one_picture(self):
+        """
+        Байты сводит дедупликация, а вторая ссылка на них не дала бы ничего,
+        кроме строки, которую нечем убрать: текст называет файл, и обе
+        ссылки для него неразличимы.
+        """
+        first = self.paste()
+        second = self.paste()
+
+        self.assertEqual(first.data["id"], second.data["id"])
+        self.assertEqual(Attachment.objects.filter(plan_row=self.lesson).count(), 1)
+
+    def test_only_an_image_may_stand_in_the_text(self):
+        answer = self.client.post(
+            reverse("attachment-list"),
+            {
+                "plan_row": self.lesson.pk,
+                "file": make_upload(),
+                "inline": "true",
+            },
+            format="multipart",
+        )
+
+        self.assertEqual(answer.status_code, 400)
+        self.assertEqual(answer.data["code"], "attachment_not_an_image")
+
+    def test_a_picture_lives_as_long_as_the_text_points_at_it(self):
+        """
+        У материала и у картинки разные часы, и это главное свойство здесь.
+        Материал применяется сразу — файл, ждущий «Сохранить», это загрузка,
+        которая тихо не случилась. А картинка часть текста: её убирают,
+        стирая разметку, и до сохранения она возвращается нажатием Ctrl+Z.
+        """
+        picture = self.paste().data
+        self.write(body=f"Смотрите:\n\n![](file:{picture['file']})")
+        self.assertTrue(Attachment.objects.filter(pk=picture["id"]).exists())
+
+        with self.captureOnCommitCallbacks(execute=True):
+            self.write(body="Смотрите: ничего")
+
+        self.assertFalse(Attachment.objects.filter(pk=picture["id"]).exists())
+        # а байты остались: перед правкой снят снимок плана, и он держит
+        # объект своей ссылкой — иначе отмена вернула бы текст с картинкой,
+        # которая отвечает 404
+        self.assertEqual(len(self.stored_keys()), 1)
+
+    def test_a_picture_mentioned_in_any_of_the_four_fields_stays(self):
+        picture = self.paste().data
+
+        with self.captureOnCommitCallbacks(execute=True):
+            self.write(homework=f"![](file:{picture['file']}){{width=320 .right}}")
+
+        self.assertTrue(Attachment.objects.filter(pk=picture["id"]).exists())
+
+    def test_renaming_the_lesson_does_not_take_its_pictures(self):
+        """
+        Уборка смотрит на строку, а не на присланное: PATCH с одним
+        названием не несёт содержания вовсе, и решать по нему значило бы
+        стереть все картинки урока за то, что их не упомянули.
+        """
+        picture = self.paste().data
+        self.write(body=f"![](file:{picture['file']})")
+
+        with self.captureOnCommitCallbacks(execute=True):
+            self.write(title="Другое название")
+
+        self.assertTrue(Attachment.objects.filter(pk=picture["id"]).exists())
+
+    def test_the_address_of_a_picture_is_asked_for_by_file(self):
+        picture = self.paste().data
+
+        answer = self.client.get(reverse("lesson-image", args=[picture["file"]]))
+        self.assertEqual(answer.status_code, 200)
+        self.assertIn("url", answer.data)
+
+    def test_a_picture_of_somebody_else_s_lesson_is_not_shown(self):
+        """
+        Право осталось правом на **ссылку**: показывается тот файл, на
+        который у спрашивающего есть своя читаемая ссылка. Тот же объект в
+        чужом уроке ответа не даёт.
+        """
+        picture = self.paste().data
+        self.client.force_authenticate(self.colleague)
+
+        answer = self.client.get(reverse("lesson-image", args=[picture["file"]]))
+        self.assertEqual(answer.status_code, 404)
+
+    def test_a_picture_survives_the_trip_through_the_library(self):
+        """
+        Разметка называет файл, а не вложение, и держится это на том, что
+        копия смотрит на тот же объект. Поэтому текст переносится **как
+        есть**: переписывать в нём нечего, и забыть переписать негде.
+        """
+        picture = self.paste().data
+        body = f"Разбор:\n\n![](file:{picture['file']}){{width=200}}"
+        self.write(body=body)
+
+        template = make_template(self.school, self.user, title="С картинкой")
+        write_rows(template, plan_as_rows(self.course.pk))
+
+        copied = PlanTemplateRow.objects.get(template=template, title=self.lesson.title)
+        self.assertEqual(copied.body, body)
+        self.assertTrue(copied.attachments.get().inline)
+
+        other = make_course(self.school, year=self.course.year, name="9А Алгебра")
+        assign(self.user, other)
+        import_into_course(template=template, course_id=other.pk, append=False)
+
+        arrived = PlanNode.objects.get(course=other, title=self.lesson.title)
+        self.assertEqual(arrived.body, body)
+        self.assertTrue(arrived.attachments.get().inline)
+        # и байты те же: копия смотрит на тот же объект
+        self.assertEqual(StoredFile.objects.count(), 1)
+
+    def test_undo_brings_a_picture_back_as_a_picture(self):
+        """
+        Снимок заводит вложения заново, и без признака отмена вернула бы
+        картинку строкой в списке материалов — при том, что в тексте она
+        по-прежнему нарисована.
+        """
+        picture = self.paste().data
+        self.write(body=f"![](file:{picture['file']})")
+
+        snapshot = history.take(self.course, self.user, "edit", self.lesson.title)
+        with self.captureOnCommitCallbacks(execute=True):
+            self.write(body="")
+
+        history.restore(snapshot)
+
+        restored = Attachment.objects.get(plan_row=self.lesson)
+        self.assertTrue(restored.inline)
+
+
+class ContentImageTests(SimpleTestCase):
+    """Разбор ссылок на картинки в самом тексте — без базы и без HTTP."""
+
+    def test_a_picture_is_found_with_and_without_attributes(self):
+        self.assertEqual(
+            content.image_files("![](file:3)\n\n![схема](file:12){width=320 .right}"),
+            {3, 12},
+        )
+
+    def test_something_that_only_looks_like_one_is_not_a_picture(self):
+        # ссылка, а не картинка: восклицательного знака нет, показывать
+        # нечего, и уборка не должна считать её упоминанием
+        self.assertEqual(content.image_files("[тут](file:3)"), set())
+
+    def test_all_four_fields_are_asked_at_once(self):
+        self.assertEqual(
+            content.images_in({"body": "![](file:1)", "homework": "![](file:2)"}),
+            {1, 2},
+        )

@@ -153,6 +153,9 @@ class PlanSnapshotFile(models.Model):
         verbose_name="stored file",
     )
     kind = models.CharField("kind", max_length=8)
+    # стояла ли она **в тексте**: без этого отмена вернула бы картинку
+    # строкой в списке материалов — при том, что в тексте она нарисована
+    inline = models.BooleanField("inline in the text", default=False)
     title = models.CharField("title", max_length=200, blank=True)
     url = models.URLField("external address", blank=True, max_length=500)
 
@@ -218,6 +221,7 @@ def take(course, user, action: str, detail: str = "") -> PlanSnapshot:
                 row=by_node[item.plan_row_id],
                 stored_file_id=item.stored_file_id,
                 kind=item.kind,
+                inline=item.inline,
                 title=item.title,
                 url=item.url,
             )
@@ -349,10 +353,12 @@ def restore_files(rows) -> int:
         current = Attachment.objects.filter(plan_row_id=row.node_id)
 
         same = [
-            (item.kind, item.stored_file_id, item.url, item.title) for item in current
+            (item.kind, item.stored_file_id, item.url, item.title, item.inline)
+            for item in current
         ]
         expected = [
-            (item.kind, item.stored_file_id, item.url, item.title) for item in wanted
+            (item.kind, item.stored_file_id, item.url, item.title, item.inline)
+            for item in wanted
         ]
         if same == expected:
             continue
@@ -364,6 +370,7 @@ def restore_files(rows) -> int:
                 kind=item.kind,
                 stored_file_id=item.stored_file_id,
                 url=item.url,
+                inline=item.inline,
                 title=item.title,
                 position=position,
             )

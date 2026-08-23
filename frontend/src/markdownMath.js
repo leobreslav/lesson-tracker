@@ -57,7 +57,12 @@ export function promote(node) {
     const math = loneMath(child)
     if (math) {
       changed += 1
-      return asDisplay(math.value)
+      const promoted = asDisplay(math.value)
+      // где этот абзац стоял в исходнике: по этому месту редактор находит
+      // строку, которой соответствует нарисованное (`markdownImages.js`).
+      // Новый узел о нём знать неоткуда, а старый — знает
+      if (child.position) promoted.position = child.position
+      return promoted
     }
     changed += promote(child)
     return child

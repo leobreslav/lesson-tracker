@@ -134,6 +134,12 @@ def write_rows(template, rows) -> int:
     for source, target in zip(rows, created):
         if source.attachments:
             file_services.copy_attachments(source.attachments, template_row=target)
+        # то же правило, что у строки плана: картинка живёт ровно столько,
+        # сколько в тексте стоит ссылка на неё. Обычно тут не срабатывает
+        # ничего — содержание и вложения приехали из одной строки, — но
+        # переписать строки шаблона можно и списком, и тогда картинка,
+        # выпавшая из текста, осталась бы висеть ссылкой ни на что
+        file_services.prune_inline(target)
 
     # touch updated_at so the list can show when the shelf last moved
     template.save(update_fields=["updated_at"])

@@ -3,6 +3,7 @@ from django.db.models import Count
 from rest_framework import serializers
 
 from .models import Attachment, KIND_FILE, KIND_LINK, KIND_TEXT, KINDS, StoredFile
+from .services import INLINE_EXTENSIONS, shows_in_text
 
 
 def with_sharing(queryset):
@@ -27,6 +28,9 @@ class AttachmentSerializer(serializers.ModelSerializer):
         source="stored_file.content_type", default=None
     )
     is_shared = serializers.SerializerMethodField()
+    # объект в бакете, а не ссылка на него: разметка содержания называет
+    # именно его, потому что переживает копирование плана и откат
+    file = serializers.IntegerField(source="stored_file_id", read_only=True)
 
     class Meta:
         model = Attachment
@@ -36,12 +40,14 @@ class AttachmentSerializer(serializers.ModelSerializer):
             "title",
             "url",
             "position",
+            "inline",
+            "file",
             "file_name",
             "size",
             "content_type",
             "is_shared",
         )
-        read_only_fields = ("id", "kind", "url", "position")
+        read_only_fields = ("id", "kind", "url", "position", "inline")
 
     def get_is_shared(self, obj) -> bool:
         # the annotation when it is there, the model's own answer otherwise
@@ -74,6 +80,8 @@ class AttachmentCreateSerializer(serializers.Serializer):
     # вид называется только у записи: у файла и ссылки он и так виден по
     # тому, что прислали, а у записи присылать нечего
     kind = serializers.ChoiceField(choices=KINDS, required=False)
+    # «эта картинка встала в текст» — про распоряжение ею, а не про вид
+    inline = serializers.BooleanField(required=False, default=False)
 
     def get_fields(self):
         from .access import (
@@ -115,6 +123,23 @@ class AttachmentCreateSerializer(serializers.Serializer):
 
         upload = attrs.get("file")
         url = attrs.get("url")
+
+        if attrs.get("inline"):
+            # в текст встаёт картинка, и только она: показать ссылку или
+            # запись нечем, а из файлов показывается не всякий
+            if upload is None or not shows_in_text(upload.name):
+                api_error(
+                    Codes.ATTACHMENT_NOT_AN_IMAGE,
+                    "Only an image can stand inside the lesson text.",
+                    field="file",
+                    allowed=sorted(INLINE_EXTENSIONS),
+                )
+            if owners["student_work"] is not None:
+                api_error(
+                    Codes.ATTACHMENT_KIND_MISMATCH,
+                    "A student's work has no text to stand in.",
+                    field="student_work",
+                )
 
         if attrs.get("kind") == KIND_TEXT:
             if upload or url:

@@ -948,9 +948,18 @@ class PlanNodeViewSet(CourseScopedViewSet):
         return history.take(course, self.request.user, action, detail)
 
     def perform_update(self, serializer):
+        """
+        Правка строки — и уборка картинок, которых в тексте больше нет.
+
+        Уборка стоит **после** сохранения и смотрит на строку, а не на
+        присланное: PATCH с одним названием не несёт содержания вовсе, и
+        решать по нему значило бы стереть все картинки урока за то, что их
+        не упомянули.
+        """
         node = serializer.instance
         self.snapshot(node.course, "edit", node.title)
-        serializer.save()
+        node = serializer.save()
+        file_services.prune_inline(node)
 
     def perform_create(self, serializer):
         """

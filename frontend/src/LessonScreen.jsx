@@ -4,6 +4,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom'
 import Collapsible from './Collapsible'
 import LessonAttendance from './LessonAttendance'
 import Markdown from './Markdown'
+import MarkdownField from './MarkdownField'
 import WorkDialog from './WorkDialog'
 import { useDismissable } from './UserMenu'
 import { iconFor, looksLikeUrl } from './fileKind'
@@ -220,21 +221,33 @@ export default function LessonScreen({ onLoggedOut }) {
         })
       }}
     >
+      {/*
+        Поле тут то же самое, что в окне плана, — и ведёт себя так же:
+        картинку в него вставляют из буфера и правят её там, где она видна
+        (`MarkdownField.jsx`). Текст один, мест правки два, и разное
+        поведение читалось бы поломкой.
+
+        `div`, а не `label`: подпись, обнимающая поле, ловит нажатия по
+        всему, что внутри, и переводит их в фокус на первом контроле — то
+        есть отбирала бы клик у кнопок картинки.
+      */}
       {editing?.fields.map((name) => (
-        <label className="lesson-field" key={name}>
+        <div className="lesson-field" key={name}>
           <span className="hint">{t(`lesson.fields.${name}`)}</span>
-          <textarea
-            rows={name === 'body' ? 10 : 4}
+          <MarkdownField
             value={editing.draft[name]}
+            rows={name === 'body' ? 10 : 4}
+            label={t(`lesson.fields.${name}`)}
             placeholder={t(`lesson.placeholders.${name}`)}
-            onChange={(event) =>
+            planRow={topic.id}
+            onChange={(text) =>
               setEditing((current) => ({
                 ...current,
-                draft: { ...current.draft, [name]: event.target.value },
+                draft: { ...current.draft, [name]: text },
               }))
             }
           />
-        </label>
+        </div>
       ))}
       <div className="row">
         <button type="submit" disabled={busy}>

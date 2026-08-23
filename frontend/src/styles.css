@@ -6326,6 +6326,179 @@ input.lesson-title:focus {
   padding: 0.2rem 0;
 }
 
+/*
+ * ─── КАРТИНКА В СОДЕРЖАНИИ ──────────────────────────────────────────────
+ *
+ * Два состояния у одной и той же картинки: нарисованная (`.md-image`) и
+ * взятая в рамку для правки (`.md-image-frame`). Размер задаёт атрибут
+ * `width` из разметки, обтекание — класс оттуда же; здесь только то, как
+ * это выглядит.
+ *
+ * Обтекание живёт на **рамке**, когда рамка есть, и на самой картинке,
+ * когда её нет. Иначе плавала бы картинка внутри неподвижной рамки, и
+ * ручка размера оставалась бы висеть в стороне.
+ */
+
+.md-image {
+  max-width: 100%;
+  height: auto;
+  border-radius: 4px;
+}
+
+.md-image-block {
+  display: block;
+  margin: 0.5rem 0;
+}
+
+.md-image-center {
+  display: block;
+  margin: 0.5rem auto;
+}
+
+.md-image-left {
+  float: left;
+  margin: 0.25rem 1rem 0.5rem 0;
+}
+
+.md-image-right {
+  float: right;
+  margin: 0.25rem 0 0.5rem 1rem;
+}
+
+/* адрес ещё едет / его не дали: место занято, страница не прыгает */
+.md-image.waiting,
+.md-image.gone {
+  display: inline-block;
+  min-width: 8rem;
+  min-height: 4rem;
+  padding: 0.4rem 0.6rem;
+  box-sizing: border-box;
+  font-size: 0.85rem;
+  color: #777;
+  background: #f2f2f2;
+  border: 1px dashed #ccc;
+  border-radius: 4px;
+}
+
+/* --- поле, в котором картинку правят --- */
+
+.md-canvas {
+  position: relative;
+  max-height: 26rem;
+  padding: 0.35rem 0.7rem 0.7rem;
+  overflow: auto;
+  background: #fbfbfb;
+  border-top: 1px dashed #dcdcdc;
+  border-radius: 0 0 6px 6px;
+}
+
+.md-canvas-hint {
+  margin: 0 0 0.25rem;
+}
+
+.md-canvas .markdown {
+  font-size: 0.9rem;
+}
+
+/* абзацы вида — цели перетаскивания, и между ними должно быть куда целить */
+.md-canvas .markdown > * {
+  min-height: 1rem;
+}
+
+.md-image-frame {
+  position: relative;
+  display: inline-block;
+  max-width: 100%;
+  vertical-align: top;
+  cursor: grab;
+}
+
+.md-image-frame > .md-image {
+  display: block;
+  float: none;
+  margin: 0;
+}
+
+.md-image-frame:hover {
+  outline: 1px solid #9dc0f0;
+  outline-offset: 1px;
+}
+
+.md-image-frame.chosen {
+  outline: 2px solid #1a73e8;
+  outline-offset: 1px;
+}
+
+.md-image-grip {
+  position: absolute;
+  right: -6px;
+  bottom: -6px;
+  width: 13px;
+  height: 13px;
+  background: #fff;
+  border: 2px solid #1a73e8;
+  border-radius: 3px;
+  cursor: nwse-resize;
+  opacity: 0;
+}
+
+.md-image-frame:hover .md-image-grip,
+.md-image-frame.chosen .md-image-grip {
+  opacity: 1;
+}
+
+/*
+ * Ряд кнопок поверх картинки.
+ *
+ * Своя высота и свой отступ намеренно: это не «строка формы» — тут не поля
+ * и не действия карточки, а значки размером с картинку, которую они не
+ * должны загораживать.
+ */
+.md-image-tools {
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  background: rgba(255, 255, 255, 0.94);
+  border: 1px solid #d8d8d8;
+  border-radius: 5px;
+}
+
+.md-image-tools button {
+  min-width: 1.5rem;
+  padding: 0.1rem 0.3rem;
+  font-size: 0.8rem;
+  line-height: 1.3;
+  color: #444;
+  background: none;
+  border-color: transparent;
+}
+
+.md-image-tools button:hover:not(:disabled) {
+  background: #eef3fd;
+}
+
+.md-image-tools button.chosen {
+  color: #fff;
+  background: #1a73e8;
+}
+
+.md-image-tools button.remove {
+  color: #c5221f;
+}
+
+/* куда встанет картинка, если отпустить её здесь */
+.md-drop {
+  position: absolute;
+  left: 0.7rem;
+  right: 0.7rem;
+  height: 2px;
+  background: #1a73e8;
+  pointer-events: none;
+}
+
 /* --- вложения --- */
 
 .lesson-files h3 {

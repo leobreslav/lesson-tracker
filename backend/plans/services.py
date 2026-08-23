@@ -1423,9 +1423,11 @@ def plan_nodes(course_id: int):
     """
     from .models import PlanNode
 
-    return PlanNode.objects.filter(
-        course_id=course_id
-    ).annotate(attachment_count=Count("attachments"))
+    return PlanNode.objects.filter(course_id=course_id).annotate(
+        # скрепка означает материалы; картинка в тексте — не материал, и
+        # рисовать её скрепкой значило бы обещать список, где её нет
+        attachment_count=Count("attachments", filter=Q(attachments__inline=False))
+    )
 
 
 def get_tree(course_id: int) -> list[Branch]:
@@ -1449,7 +1451,7 @@ def lessons_by_course(course_ids: Iterable[int]) -> dict:
 
     grouped = defaultdict(list)
     for node in PlanNode.objects.filter(course_id__in=course_ids).annotate(
-        attachment_count=Count("attachments")
+        attachment_count=Count("attachments", filter=Q(attachments__inline=False))
     ):
         grouped[node.course_id].append(node)
 

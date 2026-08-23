@@ -15,6 +15,8 @@ from pathlib import PurePosixPath
 from django.conf import settings
 from django.db.models import Count, Sum
 
+from plans import content
+
 from . import storage
 from .models import Attachment, KIND_FILE, StoredFile
 
@@ -46,6 +48,16 @@ ALLOWED = {
     ".zip": {"application/zip", "application/x-zip-compressed"},
 }
 
+# Что можно поставить **в текст** урока, а не приложить к нему списком.
+#
+# Список уже: показывать картинку в чужой странице — не то же самое, что
+# отдать её файлом. `.svg` сюда не входит намеренно: он умеет нести скрипт,
+# и всё, что его спасает как вложение, — отдача с чужого домена и
+# `Content-Disposition: attachment`, то есть ровно «браузер его не
+# показывает». Инлайновая картинка просит обратного.
+INLINE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".gif", ".webp"}
+
+
 # A browser that does not recognise a file sends this, and the file is
 # perfectly fine. Refusing it would reject real uploads for no gain, so an
 # unknown type passes when the extension is on the list — the extension is
@@ -65,6 +77,11 @@ class UploadRefused(Exception):
 
 def extension_of(name: str) -> str:
     return PurePosixPath((name or "").replace("\\", "/")).suffix.lower()
+
+
+def shows_in_text(name: str) -> bool:
+    """Годится ли этот файл на то, чтобы стоять в содержании урока."""
+    return extension_of(name) in INLINE_EXTENSIONS
 
 
 def quota_used(school_id: int) -> int:
@@ -172,6 +189,11 @@ def copy_attachments(sources, *, plan_row=None, template_row=None) -> int:
     downloaded, `stored_file` is carried across unchanged. Two teachers who
     took the same template are then reading one object in the bucket, and
     either of them removing it from their plan leaves the other's intact.
+
+    `inline` едет вместе с остальным, и это не мелочь: картинка, вставленная
+    в текст, при переносе шаблона обязана остаться картинкой в тексте. Иначе
+    копия показала бы её строкой в списке материалов — при том, что в тексте
+    она по-прежнему нарисована.
     """
     copies = [
         Attachment(
@@ -180,6 +202,7 @@ def copy_attachments(sources, *, plan_row=None, template_row=None) -> int:
             kind=source.kind,
             stored_file_id=source.stored_file_id,
             url=source.url,
+            inline=source.inline,
             title=source.title,
             position=position,
         )
@@ -188,6 +211,35 @@ def copy_attachments(sources, *, plan_row=None, template_row=None) -> int:
 
     Attachment.objects.bulk_create(copies)
     return len(copies)
+
+
+def prune_inline(row) -> int:
+    """
+    Убрать картинки, на которые содержание больше не ссылается.
+
+    У материала и у картинки в тексте разные часы, и это записано прямо
+    здесь. Материал — отдельная строка на сервере: его заводят и убирают
+    сразу, потому что файл, ждущий кнопки «Сохранить», это загрузка, которая
+    тихо не случилась. А картинка **часть текста**: её убирают, стирая
+    разметку, и до сохранения она может вернуться нажатием Ctrl+Z. Поэтому
+    вопрос «нужна ли ещё эта картинка» задаётся ровно один раз — когда текст
+    сохранён, — и ответ на него даёт сам текст.
+
+    Отсюда же следует, что стёртая руками разметка убирает картинку так же,
+    как крестик на ней: другого источника правды нет и заводить его нельзя —
+    два разошлись бы молча.
+
+    Уборка безопасна, потому что перед каждой правкой плана снимается
+    снимок, а снимок держит объект в бакете своей ссылкой (`PROTECT`).
+    Отмена вернёт и текст, и картинку.
+    """
+    used = content.images_in(row)
+    doomed = list(
+        row.attachments.filter(inline=True).exclude(stored_file_id__in=used)
+    )
+    if doomed:
+        Attachment.objects.filter(pk__in=[item.pk for item in doomed]).delete()
+    return len(doomed)
 
 
 def attachments_of(row) -> list[Attachment]:

@@ -476,13 +476,23 @@ export const downloadPlan = async (classId, format = 'xlsx') => {
 /** The whole of one lesson, content included — the tree only carries flags. */
 export const fetchPlanNode = (id) => request(`/api/plan/${id}/`)
 
-export const uploadAttachment = ({ planRow, templateRow, studentWork, file, title }) => {
+export const uploadAttachment = ({
+  planRow,
+  templateRow,
+  studentWork,
+  file,
+  title,
+  inline = false,
+}) => {
   const form = new FormData()
   if (planRow) form.append('plan_row', planRow)
   if (templateRow) form.append('template_row', templateRow)
   if (studentWork) form.append('student_work', studentWork)
   form.append('file', file)
   if (title) form.append('title', title)
+  // «эта картинка встала в текст»: в списке материалов её не будет, и
+  // распоряжается ею содержание, а не список
+  if (inline) form.append('inline', 'true')
 
   return request('/api/attachments/', { method: 'POST', body: form })
 }
@@ -524,6 +534,16 @@ export const openAttachment = async (id) => {
   const { url } = await request(`/api/attachments/${id}/download/?json=1`)
   window.location.assign(url)
 }
+
+/**
+ * Адрес картинки, стоящей в содержании урока.
+ *
+ * Спрашивается по объекту в бакете, а не по вложению: разметка называет
+ * файл, потому что он один на все копии плана (`imageMarkdown.js`). Ответ
+ * подписан на пять минут, и `<img>` берёт его в `src` — заголовок с токеном
+ * картинка нести не умеет, поэтому за адресом ходит страница.
+ */
+export const fetchImageUrl = (fileId) => request(`/api/images/${fileId}/`)
 
 /**
  * Как идут дела по всем курсам сразу — страница «Раскладка».

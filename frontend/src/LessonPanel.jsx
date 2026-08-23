@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { longDate } from './dates'
+import MarkdownField from './MarkdownField'
 import Modal from './Modal'
 import Rendered from './Markdown'
 import Switch from './Switch'
@@ -297,13 +298,16 @@ export default function LessonPanel({ nodeId, where = null, onClose, onSaved }) 
           (preview ? (
             <Rendered text={value} />
           ) : (
-            <textarea
+            // не просто textarea: сюда вставляют картинки из буфера, и
+            // править их размер и место приходится там, где они видны —
+            // см. `MarkdownField.jsx`
+            <MarkdownField
               value={value}
               rows={name === 'body' ? 12 : 4}
-              spellCheck
-              aria-label={t(`lesson.fields.${name}`)}
+              label={t(`lesson.fields.${name}`)}
               placeholder={t(`lesson.placeholders.${name}`)}
-              onChange={(event) => set(name, event.target.value)}
+              planRow={nodeId}
+              onChange={(text) => set(name, text)}
             />
           ))}
       </section>

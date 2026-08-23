@@ -15,6 +15,8 @@ A section header has no content — it is a folder, not a lesson — which
 `content_problems` says once for the models, the serializers and the admin.
 """
 
+import re
+
 from django.db import models
 
 CONTENT_FIELDS = ("objectives", "body", "formative", "homework")
@@ -43,6 +45,43 @@ class LessonContent(models.Model):
     @property
     def has_content(self) -> bool:
         return any(getattr(self, name) for name in CONTENT_FIELDS)
+
+
+#: Картинка внутри содержания: обычная картинка Markdown, чей адрес называет
+#: объект в бакете — `![](file:12)`. При желании с размером и обтеканием в
+#: фигурных скобках, по правилу Pandoc: `![](file:12){width=320 .right}`.
+#:
+#: Адресуется **файл**, а не вложение, и это выбор, а не мелочь. Одна и та же
+#: картинка живёт в стольких `Attachment`, сколько раз план сняли с полки, и
+#: у каждой копии свой id — а снимок плана при откате заводит ссылки заново,
+#: с третьими номерами. Текст, называющий вложение, пришлось бы переписывать
+#: в каждом таком месте, и первое же забытое ломало бы картинку молча. Файл
+#: же переживает и копирование, и откат: копии для того и заводятся, чтобы
+#: смотреть на один объект.
+#:
+#: Право при этом остаётся правом на **ссылку**: показать картинку можно
+#: тому, у кого есть своё вложение на этот файл (`files.access`).
+IMAGE_REF = re.compile(r"!\[[^\]]*\]\(\s*file:(\d+)\b")
+
+
+def image_files(text: str) -> set[int]:
+    """Объекты бакета, на которые ссылается один кусок содержания."""
+    return {int(match) for match in IMAGE_REF.findall(text or "")}
+
+
+def images_in(values) -> set[int]:
+    """
+    То же по всем четырём полям сразу.
+
+    `values` — что угодно, отвечающее на `.get(field)` или на имя поля:
+    проверенная полезная нагрузка или сама строка плана.
+    """
+    read = (
+        values.get
+        if hasattr(values, "get")
+        else lambda field: getattr(values, field, "")
+    )
+    return set().union(*(image_files(read(field)) for field in CONTENT_FIELDS))
 
 
 def content_problems(*, is_section: bool, values) -> dict:

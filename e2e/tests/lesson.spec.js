@@ -1,4 +1,4 @@
-import { PEOPLE, expect, ready, test } from './harness.js'
+import { PEOPLE, expect, expectConsoleError, ready, test } from './harness.js'
 
 /**
  * The lesson panel: content, maths and attachments.
@@ -258,4 +258,55 @@ test('Enter в названии сохраняет и закрывает, Ctrl+E
   await expect(
     rowFor(page, 'Признаки делимости на 3 и 9 (повторение)'),
   ).toBeVisible()
+})
+
+test('картинку в тексте двигают и меряют там, где она видна', async ({
+  page,
+  signIn,
+}) => {
+  /*
+   * Загрузки здесь нет и быть не может: у браузерного стенда нет хранилища
+   * объектов. Зато есть ровно то, ради чего вид под полем и заведён, —
+   * круг «буквы → нарисованное → буквы»: разметку набирают руками, картинку
+   * правят мышью, и правка обязана вернуться в поле разметкой.
+   *
+   * Номер файла заведомо ничей: у стенда есть и посеянные вложения, и
+   * своё хранилище на диске, так что `file:1` вполне мог бы открыться — и
+   * тест проверял бы тогда картинку, а не разметку. Вместо неё встанет
+   * отказ; рамка, ручка и кнопки от байтов не зависят.
+   *
+   * Отсюда и разрешённая ошибка в консоли: 404 за адресом этого файла —
+   * то, чего тест и добивается. Разрешение выдано **на один тест**, а не
+   * строкой в общем списке: там оно глушило бы пропавшие картинки во всём
+   * наборе.
+   */
+  expectConsoleError(page, /Failed to load resource/)
+  await signIn(PEOPLE.ivanova)
+  await openPlan(page)
+  const panel = await openLesson(page, 'Простые и составные числа')
+
+  const body = panel.locator('[data-field="body"] textarea')
+  await body.fill('Смотрите:\n\n![](file:900001)\n\nи дальше словами')
+
+  // вид появляется сам — но только потому, что в тексте есть картинка
+  const canvas = panel.locator('[data-field="body"] .md-canvas')
+  await expect(canvas).toBeVisible()
+  await expect(panel.locator('[data-field="homework"] .md-canvas')).toHaveCount(0)
+
+  // выбрали картинку — появился ряд кнопок
+  const frame = canvas.locator('.md-image-frame')
+  await frame.click()
+  await expect(frame.locator('.md-image-tools')).toBeVisible()
+
+  // обтекание уехало в разметку, а не осталось состоянием на экране
+  await frame.getByRole('button', { name: 'Справа, текст обтекает' }).click()
+  await expect(body).toHaveValue(/!\[\]\(file:900001\)\{\.right\}/)
+  await expect(canvas.locator('.md-image-frame.md-image-right')).toBeVisible()
+
+  // и крестик убирает её из текста вместе с пустым абзацем. Второй раз по
+  // рамке не нажимаем: выбор — тумблер, и нажатие сняло бы его вместе с
+  // кнопками
+  await canvas.getByRole('button', { name: 'Убрать картинку из текста' }).click()
+  await expect(body).toHaveValue('Смотрите:\n\nи дальше словами')
+  await expect(canvas).toHaveCount(0)
 })

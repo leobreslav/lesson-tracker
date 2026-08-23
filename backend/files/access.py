@@ -70,6 +70,29 @@ def readable_attachments(user):
     )
 
 
+def readable_stored_file(user, file_id: int):
+    """
+    Объект в бакете, который этому человеку **есть чем** открыть.
+
+    Картинка в содержании урока называет файл, а не вложение (см.
+    `plans.content.IMAGE_REF`): id вложения у каждой копии свой, и разметка,
+    пережившая перенос плана с полки, назвала бы чужой номер.
+
+    Право от этого не размывается. Спрашивается по-прежнему про ссылку:
+    показать можно тот файл, на который у спрашивающего есть **своя**
+    читаемая ссылка. Чужой урок, где стоит та же картинка, ответа не даёт —
+    и наоборот, свой урок даёт его независимо от того, чей файл был первым.
+    """
+    from .models import StoredFile
+
+    if user is None or not user.is_authenticated:
+        return None
+
+    return StoredFile.objects.filter(
+        pk=file_id, attachments__in=readable_attachments(user)
+    ).first()
+
+
 def can_read(user, attachment) -> bool:
     from schedule.models import Course
 

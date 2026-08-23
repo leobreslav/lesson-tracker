@@ -248,8 +248,9 @@ class PlanNodeDetailSerializer(PlanNodeUpdateSerializer):
     def get_attachments(self, obj):
         from files.serializers import AttachmentSerializer, with_sharing
 
+        # без картинок текста: они часть содержания, а не список материалов
         return AttachmentSerializer(
-            with_sharing(obj.attachments.all()), many=True
+            with_sharing(obj.attachments.filter(inline=False)), many=True
         ).data
 
 

@@ -135,6 +135,16 @@ class Attachment(models.Model):
         verbose_name="file",
     )
     url = models.URLField("address", max_length=500, blank=True)
+    # Картинка, вставленная **в текст** урока, а не приложенная к нему.
+    #
+    # Разница не косметическая: материал — это то, чем на уроке пользуются
+    # («карточки.pdf», «принести линейку»), и человек правит его списком. А
+    # картинка в содержании — часть самого содержания: её ставят, двигают и
+    # убирают в тексте, и в списке материалов она была бы строкой, которую
+    # нельзя понять, не открыв текст. Отсюда отдельный признак, а не
+    # четвёртый `kind`: вид отвечает на «на что ссылка», а этот — на «кто ею
+    # распоряжается».
+    inline = models.BooleanField("inline in the text", default=False)
     title = models.CharField("title", max_length=200)
     position = models.PositiveIntegerField("position", default=0)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -172,6 +182,13 @@ class Attachment(models.Model):
                 ),
                 name="attachment_kind_matches_target",
             ),
+            # в текст ставится картинка, то есть файл. Ссылка и запись
+            # показать нечего, и «инлайновая ссылка» была бы ссылкой,
+            # которую человек не видит ни в списке, ни в тексте
+            models.CheckConstraint(
+                condition=Q(inline=False) | Q(kind=KIND_FILE),
+                name="inline_attachment_is_a_file",
+            ),
         ]
         indexes = [
             models.Index(fields=("plan_row", "position"), name="attachment_plan_idx"),
@@ -206,6 +223,8 @@ class Attachment(models.Model):
 
         if self.kind == KIND_FILE and self.stored_file_id is None:
             problems["stored_file"] = "A file attachment must name a file."
+        if self.inline and self.kind != KIND_FILE:
+            problems["inline"] = "Only a file can stand inside the text."
         if self.kind == KIND_LINK:
             if self.stored_file_id is not None:
                 problems["stored_file"] = "A link attachment must not name a file."

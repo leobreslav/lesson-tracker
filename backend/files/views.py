@@ -1,11 +1,12 @@
 from config.access import IsSchoolMember, IsTeacher
 from config.errors import Codes, api_denied, api_error, api_unavailable
-from django.http import HttpResponseRedirect
+from django.http import Http404, HttpResponseRedirect
 from django.shortcuts import get_object_or_404
 from rest_framework import viewsets
 from rest_framework.decorators import action
 from rest_framework.permissions import SAFE_METHODS, IsAuthenticated
 from rest_framework.response import Response
+from rest_framework.views import APIView
 
 from . import access, services, storage
 from .models import KIND_FILE, Attachment
@@ -40,6 +41,13 @@ class AttachmentViewSet(viewsets.ModelViewSet):
         """The list: only what this person may actually read."""
         queryset = with_sharing(access.readable_attachments(self.request.user))
         params = self.request.query_params
+
+        # Картинка, стоящая в содержании, в список материалов не попадает.
+        # Список — это то, чем на уроке пользуются и что человек правит
+        # строкой за строкой; картинкой же распоряжается текст, и строка
+        # «image.png» рядом с «карточки.pdf» ничего не сказала бы о том,
+        # где эта картинка и зачем.
+        queryset = queryset.filter(inline=False)
 
         for name in ("plan_row", "template_row", "student_work"):
             raw = params.get(name)
@@ -93,6 +101,8 @@ class AttachmentViewSet(viewsets.ModelViewSet):
             if data.get(name) is not None
         }
 
+        inline = data.get("inline", False)
+
         stored = None
         if data["kind"] == KIND_FILE:
             upload = data["file"]
@@ -108,10 +118,26 @@ class AttachmentViewSet(viewsets.ModelViewSet):
                     "The file store is not answering. The file was not saved.",
                 )
 
+        if inline:
+            # Та же картинка, вставленная в тот же урок дважды, — одна
+            # картинка. Байты уже свела дедупликация, а вторая ссылка на них
+            # не дала бы ничего, кроме строки, которую нечем убрать: текст
+            # называет файл, и обе ссылки для него неразличимы.
+            twin = Attachment.objects.filter(
+                **owner, inline=True, stored_file=stored
+            ).first()
+            if twin is not None:
+                return Response(
+                    AttachmentSerializer(
+                        with_sharing(Attachment.objects.filter(pk=twin.pk)).first()
+                    ).data
+                )
+
         attachment = Attachment.objects.create(
             **owner,
             kind=data["kind"],
             stored_file=stored,
+            inline=inline,
             url=data.get("url", ""),
             title=(
                 data.get("title")
@@ -161,3 +187,42 @@ class AttachmentViewSet(viewsets.ModelViewSet):
             return Response({"url": url})
 
         return HttpResponseRedirect(url)
+
+
+class LessonImageView(APIView):
+    """
+    Адрес картинки, стоящей **в содержании** урока.
+
+    Отдельная дверь от `/attachments/<id>/download/`, и не ради удобства:
+    текст называет файл, а не вложение, потому что id вложения у каждой
+    копии плана свой (см. `plans.content.IMAGE_REF`). Спрашивать по номеру
+    вложения значило бы переписывать разметку при каждом копировании и
+    откате — и молча ломать картинку в первом же забытом месте.
+
+    Отвечает только JSON: `<img>` не умеет нести заголовок с токеном,
+    поэтому страница берёт адрес сама и подставляет его в `src`. Ради
+    перехода руками редирект тут был бы, но руками сюда никто не ходит.
+
+    Учительская дверь: содержание урока читают учитель и методист, ученику
+    оно не показывается нигде.
+    """
+
+    permission_classes = [IsAuthenticated, IsSchoolMember, IsTeacher]
+
+    def get(self, request, file_id: int):
+        stored = access.readable_stored_file(request.user, file_id)
+        if stored is None:
+            # ни «не ваше», ни «нет такого» по отдельности тут не сказать:
+            # спрашивают не про объект, а про то, есть ли на него своя
+            # ссылка, и отсутствие ссылки и есть отсутствие картинки
+            raise Http404
+
+        try:
+            url = storage.download_url(stored)
+        except storage.StorageUnavailable:
+            api_unavailable(
+                Codes.STORAGE_UNAVAILABLE,
+                "The file store is not answering. Try again in a moment.",
+            )
+
+        return Response({"url": url})

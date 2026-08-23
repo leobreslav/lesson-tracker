@@ -180,6 +180,7 @@ class Codes:
     ATTACHMENT_KIND_MISMATCH = "attachment_kind_mismatch"
     ATTACHMENT_TITLE_REQUIRED = "attachment_title_required"
     ATTACHMENT_FORBIDDEN = "attachment_forbidden"
+    ATTACHMENT_NOT_AN_IMAGE = "attachment_not_an_image"
     URL_REQUIRED = "url_required"
     FILE_TYPE_NOT_ALLOWED = "file_type_not_allowed"
     SCHOOL_QUOTA_EXCEEDED = "school_quota_exceeded"
