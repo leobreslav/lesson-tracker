@@ -44,6 +44,7 @@ KEYS=(
     R2_BACKUP_ACCESS_KEY_ID R2_BACKUP_BUCKET_NAME
     ANTHROPIC_API_KEY
     DOMAIN
+    LOGIN_ALLOWED_EMAILS
 )
 
 # --- сбор ---------------------------------------------------------------------

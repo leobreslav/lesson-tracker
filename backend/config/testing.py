@@ -58,12 +58,20 @@ class Runner(DiscoverRunner):
         # импорте urls.py, и позже флаг уже ничего не решает
         self._door = override_settings(E2E_TEST_LOGIN=False)
         self._door.enable()
+        # Список допущенных — по той же причине, что и дверь выше. У стенда
+        # разработки он может стоять в `.env`, и тогда прогон проверял бы не
+        # код, а окружение запустившего: половина тестов входа получила бы
+        # `not_allowed_here` на ровном месте. Тесты самого списка ставят его
+        # себе сами, через `override_settings`.
+        self._guest_list = override_settings(LOGIN_ALLOWED_EMAILS=[])
+        self._guest_list.enable()
         # платный API: пустой ключ превращает случайный вызов в отказ
         self._purse = override_settings(ANTHROPIC_API_KEY="")
         self._purse.enable()
 
     def teardown_test_environment(self, **kwargs):
         self._purse.disable()
+        self._guest_list.disable()
         self._door.disable()
         self._storages.disable()
         super().teardown_test_environment(**kwargs)
