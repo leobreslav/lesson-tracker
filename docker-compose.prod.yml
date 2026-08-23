@@ -61,21 +61,15 @@ services:
     # envsubst съел бы $$host, $$uri и $$backend_addr — переменные самого
     # nginx, — и конфиг сломался бы молча.
     environment:
-      NGINX_ENVSUBST_FILTER: "^(DOMAIN|DOMAIN_ALIASES|AUTH_BASIC|AUTH_BASIC_FILE)$$"
+      NGINX_ENVSUBST_FILTER: "^(DOMAIN|DOMAIN_ALIASES)$$"
       DOMAIN: ${DOMAIN:?не задан DOMAIN — добавьте его в .env.prod}
       DOMAIN_ALIASES: ${DOMAIN_ALIASES:-}
-      # Пароль на весь контур. Умолчания дают выключённый auth_basic,
-      # поэтому прод работает как раньше и правки .env.prod не требует.
-      AUTH_BASIC: ${AUTH_BASIC:-off}
-      AUTH_BASIC_FILE: ${AUTH_BASIC_FILE:-/etc/nginx/auth/htpasswd}
     ports:
       - "80:80"
       - "443:443"
     volumes:
       - ./nginx/default.conf.template:/etc/nginx/templates/default.conf.template:ro
       - ./nginx/proxy_params.conf:/etc/nginx/proxy_params.conf:ro
-      # каталог с файлом паролей: на проде он пуст и не читается вовсе
-      - ./nginx/auth:/etc/nginx/auth:ro
       - frontend_dist:/var/www/frontend:ro
       - static_files:/var/www/static:ro
       - ./certbot/www:/var/www/certbot:ro

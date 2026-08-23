@@ -590,6 +590,7 @@ MSG` — сообщение коммита, которое git никуда не
 | после посева ни одна модель не пуста | `schools/demo_extras.py` | `EveryModelIsSeededTests` |
 | «настроено ли хранилище» отвечает, а не падает | `files/storage.py` | `StorageIsConfiguredAnswersInsteadOfCrashingTests` |
 | **ни один тест не платит за запрос к Anthropic** | `config/testing.py` | `NoTestSpendsMoneyTests` |
+| **каждая дверь спрашивает, кого контур пускает** | `accounts/door.py` | `EveryDoorAsksWhoIsComingTests` |
 
 Последние четыре появились после того, как условие успело пожить в трёх
 местах разом и это стоило дня работы. `config/test_invariants.py` — реестр

@@ -4,6 +4,7 @@ from config.errors import Codes, api_error
 from rest_framework import serializers
 
 from .adapter import EmailNotVerifiedError
+from .door import NotAllowedHereError
 from .models import User
 
 
@@ -35,6 +36,15 @@ class GoogleLoginSerializer(SocialLoginSerializer):
             api_error(
                 Codes.EMAIL_NOT_VERIFIED,
                 "Google has not verified this email address.",
+            )
+        except NotAllowedHereError as exc:
+            # Адрес называется в ответе намеренно: человек видит, каким
+            # аккаунтом Google его подписал, — а браузер помнит не тот из
+            # трёх сильно чаще, чем кажется. Списка это не раскрывает.
+            api_error(
+                Codes.NOT_ALLOWED_HERE,
+                "This installation does not admit this address.",
+                email=exc.email,
             )
 
 

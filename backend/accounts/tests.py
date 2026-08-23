@@ -4,6 +4,7 @@ from allauth.account.models import EmailAddress
 from allauth.socialaccount.models import SocialAccount
 from django.conf import settings
 from django.contrib.auth import authenticate, get_user_model
+from django.test import override_settings
 from django.urls import reverse
 from rest_framework.authtoken.models import Token
 from rest_framework.test import APIRequestFactory, APITestCase
@@ -275,3 +276,138 @@ class E2EDoorTests(APITestCase):
 
         self.assertEqual(response.status_code, 404)
         self.assertEqual(listing.status_code, 404)
+
+
+@override_settings(LOGIN_ALLOWED_EMAILS=["me@example.com"])
+class AllowedAddressesTests(APITestCase):
+    """
+    Контур со списком допущенных пускает только их — обеими дверями.
+
+    Список нужен контуру, у которого своей публики нет: стенду. У прода
+    список пуст, допуск даёт приглашение школы, и всё это правило для него —
+    пустая проверка.
+
+    Дверей две, и вторая опаснее первой. `/api/auth/google/` хотя бы требует
+    настоящего аккаунта Google; `/api/test/login/` выдаёт токен **кому угодно
+    по адресу** — она для браузерных тестов и живёт за флагом. Пока стенд был
+    закрыт паролем nginx, снаружи её было не достать; пароля больше нет.
+    Правило, написанное только у первой двери, оставило бы вторую открытой, и
+    выглядело бы это как «контур закрыт», пока кто-нибудь не наберёт второй
+    адрес.
+    """
+
+    def test_a_stranger_is_refused_at_the_google_door(self):
+        response = google_login({"email": "somebody@example.com"})
+
+        self.assertEqual(response.status_code, 400, response.content)
+        self.assertEqual(response.json()["code"], "not_allowed_here")
+
+    def test_the_refused_stranger_leaves_no_account_behind(self):
+        """
+        Отказ идёт до авторегистрации, а не после.
+
+        Иначе каждый чужой вход оставлял бы заготовку пользователя, и убирать
+        их пришлось бы руками — а список бы всё равно не пустил.
+        """
+        google_login({"email": "somebody@example.com"})
+
+        self.assertFalse(User.objects.filter(email="somebody@example.com").exists())
+
+    def test_the_allowed_address_gets_in(self):
+        response = google_login({"email": "me@example.com"})
+
+        self.assertEqual(response.status_code, 200, response.content)
+        self.assertTrue(User.objects.filter(email="me@example.com").exists())
+
+    @override_settings(LOGIN_ALLOWED_EMAILS=["Me@Example.COM"])
+    def test_the_case_of_the_address_does_not_matter(self):
+        """Адрес пишут как придётся, а Google отдаёт канонический."""
+        self.assertEqual(google_login({"email": "me@example.com"}).status_code, 200)
+
+    @override_settings(LOGIN_ALLOWED_EMAILS=[])
+    def test_an_empty_list_admits_everybody(self):
+        """Прод: список пуст, и правило не действует вовсе."""
+        self.assertEqual(
+            google_login({"email": "somebody@example.com"}).status_code, 200
+        )
+
+
+@override_settings(E2E_TEST_LOGIN=True, LOGIN_ALLOWED_EMAILS=["me@example.com"])
+class DevDoorAsksWhoIsKnockingTests(APITestCase):
+    """
+    Дев-дверь на контуре со списком требует токен допущенного.
+
+    Вьюхи зовутся напрямую: маршруты добавляются в таблицу по флагу в момент
+    импорта, и `override_settings` их туда уже не добавит. Проверять всё
+    равно надо саму вьюху — замок стоит в ней, а не в маршрутизации.
+    """
+
+    def setUp(self):
+        self.owner = User.objects.create_user(email="me@example.com")
+        self.somebody = User.objects.create_user(email="somebody@example.com")
+        self.factory = APIRequestFactory()
+
+    def knock(self, view, *, token=None):
+        headers = {"HTTP_AUTHORIZATION": f"Token {token}"} if token else {}
+        request = self.factory.post("/", {"email": "somebody@example.com"}, **headers)
+        return view.as_view()(request)
+
+    def test_without_a_token_the_door_refuses(self):
+        from accounts.e2e import TestLoginView
+
+        response = self.knock(TestLoginView)
+
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response.data["code"], "not_allowed_here")
+
+    def test_a_token_of_somebody_else_does_not_open_it(self):
+        """
+        Подменившийся ученическим токеном обратно этой дверью не ходит.
+
+        Отсюда правило на клиенте: переключатель «войти как» стучится
+        **домашним** токеном (`devSwitch.homeToken`). Спроси он текущий —
+        подмена работала бы ровно один раз.
+        """
+        from accounts.e2e import TestLoginView
+
+        key = Token.objects.create(user=self.somebody).key
+
+        self.assertEqual(self.knock(TestLoginView, token=key).status_code, 403)
+
+    def test_the_owner_of_the_contour_walks_in(self):
+        from accounts.e2e import TestLoginView
+
+        key = Token.objects.create(user=self.owner).key
+        response = self.knock(TestLoginView, token=key)
+
+        self.assertEqual(response.status_code, 200, response.data)
+
+    def test_the_list_of_people_is_closed_too(self):
+        """Список людей — это перечень адресов школы, и он не для всех."""
+        from accounts.e2e import TestPeopleView
+
+        response = TestPeopleView.as_view()(self.factory.get("/"))
+
+        self.assertEqual(response.status_code, 403)
+
+    def test_the_reset_is_closed_too(self):
+        """А эта дверь сносит базу целиком."""
+        from accounts.e2e import TestResetView
+
+        response = TestResetView.as_view()(self.factory.post("/"))
+
+        self.assertEqual(response.status_code, 403)
+
+    @override_settings(LOGIN_ALLOWED_EMAILS=[])
+    def test_without_a_list_the_door_stays_as_it_was(self):
+        """
+        Контур браузерных тестов: списка нет, и дверь открыта, как была.
+
+        Без этого набор `e2e` перестал бы входить вовсе — он стучится сюда до
+        того, как у него появился хоть какой-нибудь токен.
+        """
+        from accounts.e2e import TestPeopleView
+
+        response = TestPeopleView.as_view()(self.factory.get("/"))
+
+        self.assertEqual(response.status_code, 200)

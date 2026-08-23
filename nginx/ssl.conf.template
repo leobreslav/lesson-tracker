@@ -2,8 +2,8 @@
 # прогоняет /etc/nginx/templates/*.template через envsubst при старте и
 # кладёт результат в /etc/nginx/conf.d/.
 #
-# Подставляются ТОЛЬКО DOMAIN, DOMAIN_ALIASES, AUTH_BASIC и
-# AUTH_BASIC_FILE — имена тут написаны без знака доллара намеренно:
+# Подставляются ТОЛЬКО DOMAIN и DOMAIN_ALIASES — имена тут
+# написаны без знака доллара намеренно:
 # со знаком envsubst подставил бы их и в этот комментарий, и в
 # отрисованном конфиге он перестал бы что-либо объяснять. Список задан
 # переменной NGINX_ENVSUBST_FILTER в compose. Без неё envsubst подставил бы
@@ -26,8 +26,7 @@ server {
     listen 80 default_server;
     server_name ${DOMAIN} ${DOMAIN_ALIASES};
 
-    # продление сертификата ходит по http, поэтому редирект стоит после.
-    # Пароля тут нет и быть не должно: certbot приходит без него.
+    # продление сертификата ходит по http, поэтому редирект стоит после
     location /.well-known/acme-challenge/ {
         root /var/www/certbot;
     }
@@ -43,13 +42,6 @@ server {
     server_name ${DOMAIN} ${DOMAIN_ALIASES};
 
     client_max_body_size 25m;
-
-    # Пароль на весь контур. На проде переменных нет, и умолчание в compose
-    # даёт `off` — то есть ровно прежнее поведение, ничего не спрашивается.
-    # Realm пишется одним словом: кавычек тут нет намеренно, иначе значение
-    # `off` перестало бы означать «выключено».
-    auth_basic ${AUTH_BASIC};
-    auth_basic_user_file ${AUTH_BASIC_FILE};
 
     # адрес в переменной, а не в блоке upstream: имя в upstream резолвится
     # один раз при старте, и после пересоздания backend nginx продолжает
@@ -94,13 +86,13 @@ server {
         expires 30d;
     }
 
-    # Пароля тут нет, и это вынужденно: basic-auth и токен приложения делят
-    # один заголовок Authorization. Приложение ставит `Authorization: Token …`
-    # на каждый запрос, явный заголовок вытесняет basic-auth — и весь API
-    # отвечал бы 401 от nginx. Страницу и /admin/ пароль закрывает
-    # по-прежнему: там кука сессии, а не заголовок.
+    # Пароля на контуре нет ни у одного адреса, и вернуть его сюда нельзя:
+    # basic-auth и токен приложения делят заголовок Authorization, а
+    # приложение ставит `Authorization: Token …` на каждый запрос — явный
+    # заголовок вытесняет basic-auth, и весь API отвечал бы 401 от nginx.
+    # Дверь, которую нельзя поставить там, где входят, закрывает не то;
+    # закрывает вход список допущенных адресов (backend/accounts/door.py).
     location /api/ {
-        auth_basic off;
         proxy_pass http://$backend_addr;
         include /etc/nginx/proxy_params.conf;
     }

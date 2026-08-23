@@ -17,6 +17,8 @@
 объясняющий только «как», через полгода нельзя ни починить, ни выбросить.
 """
 
+from pathlib import Path
+
 from django.apps import apps
 from django.conf import settings
 from django.test import SimpleTestCase
@@ -216,3 +218,100 @@ class AStemIsNotAQuestionTests(SchoolTestMixin, APITestCase):
             statements.take(
                 Task.objects.create(work=work, position=0), stem, user=self.user
             )
+
+
+class EveryDoorAsksWhoIsComingTests(SimpleTestCase):
+    """
+    Каждое место, выдающее токен приложения, спрашивает список допущенных.
+
+    Токен — это и есть вход: получивший его ходит по API как свой. Мест,
+    которые его выдают, в проекте два, и второе легко упустить из виду —
+    `/api/test/login/` заведена ради браузерных тестов, живёт за флагом и
+    выглядит служебной. Ровно поэтому она и опасна: она выдаёт токен **кому
+    угодно по адресу**, без Google и без пароля.
+
+    Пока стенд был закрыт паролем nginx, второй двери снаружи не существовало.
+    Пароля больше нет (на `/api/` он и не мог стоять: basic-auth и токен
+    приложения делят заголовок `Authorization`), и закрывает вход теперь
+    список допущенных — `accounts/door.py`. Правило, написанное у одной двери,
+    оставило бы вторую открытой, и выглядело бы это как «контур закрыт», пока
+    кто-нибудь не наберёт второй адрес.
+
+    Сторож поверх **текста**, а не поведения, потому что ловить надо не
+    сломанную дверь, а **новую**: третье место, выдающее токен, само о себе не
+    скажет, а его тест напишут про то, что оно выдаёт токен, — не про то, кому.
+    """
+
+    # Место, выдающее токен, и чем оно оправдано.
+    DOORS = {
+        "accounts/e2e.py": "дев-дверь браузерных тестов: токен по адресу",
+    }
+
+    # Токен тут раздаётся, но входом это не является.
+    NOT_A_DOOR = {
+        "schools/testing.py": "фикстура тестов: токен для клиента APITestCase",
+    }
+
+    def _minting_modules(self):
+        backend = Path(settings.BASE_DIR)
+        found = {}
+
+        for path in sorted(backend.rglob("*.py")):
+            relative = path.relative_to(backend).as_posix()
+            name = Path(relative).name
+            # Фильтр по имени, а не по «начинается на test»: `testing.py` —
+            # это фикстуры, и первая же версия сторожа проглядела их именно
+            # так, посчитав тестовым модулем то, что тестами не является.
+            if "/migrations/" in relative or name == "tests.py" or name.startswith(
+                "test_"
+            ):
+                continue
+            text = path.read_text(encoding="utf-8")
+            if "Token.objects" in text:
+                found[relative] = text
+
+        return found
+
+    def test_no_new_place_hands_out_a_token_unnoticed(self):
+        found = self._minting_modules()
+        known = set(self.DOORS) | set(self.NOT_A_DOOR)
+
+        self.assertEqual(
+            set(found),
+            known,
+            "Список мест, выдающих токен приложения, изменился. Решите, что это: "
+            "дверь — тогда она обязана спросить accounts.door и попасть в DOORS; "
+            "или не вход вовсе — тогда в NOT_A_DOOR с причиной.",
+        )
+
+    def test_every_door_consults_the_list(self):
+        found = self._minting_modules()
+
+        for module, why in self.DOORS.items():
+            with self.subTest(module):
+                self.assertIn(
+                    "door",
+                    found.get(module, ""),
+                    f"{module} ({why}) выдаёт токен, не спросив accounts.door: "
+                    "на контуре со списком допущенных это открытый вход.",
+                )
+
+    def test_the_google_door_consults_the_list_too(self):
+        """
+        Вход через Google токен не выдаёт сам — его выдаёт dj-rest-auth.
+
+        Поэтому по слову `Token.objects` эта дверь не находится, и в общий
+        обход она не попадает. Спрашивает список адаптер allauth, до
+        авторегистрации, и проверяется он отдельно — иначе обход выглядел бы
+        полным, не покрывая как раз ту дверь, которой входят люди.
+        """
+        adapter = (Path(settings.BASE_DIR) / "accounts" / "adapter.py").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn(
+            "refuse_unless_allowed",
+            adapter,
+            "Адаптер allauth перестал спрашивать список допущенных: вход через "
+            "Google открыт всем, кого пустил Google.",
+        )

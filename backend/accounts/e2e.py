@@ -14,16 +14,32 @@ near production, so it is closed three times over:
 
 The production `.env.prod` never sets the flag, and `.env.prod.example` says
 so out loud.
+
+Четвёртый замок — для контура, где дверь открыта, но публика чужая.
+
+Стенд держит флаг включённым нарочно: своих гугл-аккаунтов на четырнадцать
+учеников не напасёшься, и «войти как» в меню ходит именно сюда. Пока стенд
+был закрыт паролем nginx, этого хватало; пароля больше нет, а дверь,
+выдающая токен **кому угодно по адресу**, без пароля равна открытому входу
+учителем — и тремя замками выше она не закрывается ни одним: флаг включён,
+маршруты есть, `seed_demo` про вход не спрашивают вовсе.
+
+Поэтому: **есть список допущенных — дверь требует токен допущенного**
+(`accounts/door.py`). Пустой список ничего не меняет, и это важно для
+браузерных тестов: у их контура списка нет, они входят как входили.
 """
 
+from config.errors import Codes, api_denied
 from django.conf import settings
 from django.core.management import call_command
 from django.http import Http404
+from rest_framework.authentication import TokenAuthentication
 from rest_framework.authtoken.models import Token
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from .door import may_enter, open_to_everyone
 from .models import User
 
 
@@ -34,13 +50,28 @@ def enabled() -> bool:
 class E2EView(APIView):
     """Open to anyone — but only when the flag is on, and it never is."""
 
-    authentication_classes = []
+    # Токен читается, но не требуется: на контуре без списка допущенных дверь
+    # открыта, и браузерные тесты входят ею, ещё не имея никакого токена.
+    # Список нужен ровно затем, чтобы было **кого** спросить, когда он есть.
+    authentication_classes = [TokenAuthentication]
     permission_classes = [AllowAny]
 
     def initial(self, request, *args, **kwargs):
         if not enabled():
             # 404 rather than 403: a closed door should look like no door
             raise Http404
+
+        if not open_to_everyone() and not may_enter(
+            getattr(request.user, "email", None)
+        ):
+            # 403 с кодом, а не 404: дверь тут есть, и человек, у которого
+            # токен уже подменён на ученический, должен понимать, почему
+            # переключатель перестал работать, — а не думать, что стенд слёг
+            api_denied(
+                Codes.NOT_ALLOWED_HERE,
+                "This door answers only to the addresses this installation admits.",
+            )
+
         return super().initial(request, *args, **kwargs)
 
 

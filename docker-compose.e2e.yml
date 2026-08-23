@@ -84,17 +84,14 @@ services:
     # просто то, как к нему обращаются тесты. Значения фиксированы, а не
     # из env-файла: у e2e-стека его нет.
     environment:
-      NGINX_ENVSUBST_FILTER: "^(DOMAIN|DOMAIN_ALIASES|AUTH_BASIC|AUTH_BASIC_FILE)$$"
+      NGINX_ENVSUBST_FILTER: "^(DOMAIN|DOMAIN_ALIASES)$$"
       DOMAIN: localhost
       DOMAIN_ALIASES: nginx 127.0.0.1
-      AUTH_BASIC: "off"
-      AUTH_BASIC_FILE: /etc/nginx/auth/htpasswd
     ports:
       - "8080:80"
     volumes:
       - ./nginx/default.conf.template:/etc/nginx/templates/default.conf.template:ro
       - ./nginx/proxy_params.conf:/etc/nginx/proxy_params.conf:ro
-      - ./nginx/auth:/etc/nginx/auth:ro
       - frontend_dist:/var/www/frontend:ro
       - static_files:/var/www/static:ro
       - ./certbot/www:/var/www/certbot:ro

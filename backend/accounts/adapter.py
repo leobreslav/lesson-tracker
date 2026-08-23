@@ -1,5 +1,7 @@
 from allauth.socialaccount.adapter import DefaultSocialAccountAdapter
 
+from .door import refuse_unless_allowed
+
 
 class EmailNotVerifiedError(Exception):
     """Google returned the address with email_verified=false."""
@@ -20,4 +22,13 @@ class SocialAccountAdapter(DefaultSocialAccountAdapter):
     def pre_social_login(self, request, sociallogin):
         if not any(email.verified for email in sociallogin.email_addresses):
             raise EmailNotVerifiedError
+
+        # Список допущенных спрашивается здесь, а не в сериализаторе, и это
+        # выбор: `pre_social_login` идёт **до** авторегистрации, поэтому
+        # отказ не оставляет за собой заведённого пользователя. Проверка
+        # после входа означала бы, что чужой в базе уже есть, — и убирать его
+        # пришлось бы руками. Адрес берём у провайдера, а не из тела запроса:
+        # своим он назваться не может.
+        refuse_unless_allowed(sociallogin.user.email)
+
         return super().pre_social_login(request, sociallogin)

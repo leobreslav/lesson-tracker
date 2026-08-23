@@ -185,6 +185,7 @@
     "token_required": "An id_token or access_token is required.",
     "token_invalid": "The Google token is invalid or expired.",
     "email_not_verified": "Google has not verified this email address.",
+    "not_allowed_here": "This installation admits only certain addresses, and {{email}} is not one of them.",
     "no_school": "You do not belong to any school yet.",
     "school_admin_required": "Only a school administrator can change this.",
     "course_teacher_busy": "{{teacher}} already teaches «{{course}}» at that hour — {{count}} hours of this course collide with their timetable. Sort the timetable out first.",

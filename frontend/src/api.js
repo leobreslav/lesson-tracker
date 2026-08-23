@@ -39,13 +39,17 @@ function humanMessage(data) {
   return data?.detail || fieldError || i18n.t('errors.unknown')
 }
 
-async function request(path, { method = 'GET', body, auth = true } = {}) {
+async function request(path, { method = 'GET', body, auth = true, as } = {}) {
   const headers = {}
   // FormData has its own Content-Type with a boundary; the browser sets it
   const isForm = body instanceof FormData
   if (body && !isForm) headers['Content-Type'] = 'application/json'
 
-  const token = getToken()
+  // `as` — запрос от имени не того, кем мы сейчас ходим. Нужен ровно
+  // переключателю «войти как» на стенде: подменившись учеником, вернуться
+  // и переключиться дальше он должен **своим** токеном, а текущий уже
+  // ученический. Обычные вызовы про это не знают и берут токен из хранилища.
+  const token = as ?? getToken()
   if (auth && token) headers['Authorization'] = `Token ${token}`
 
   /*
@@ -971,10 +975,10 @@ export const deleteSlots = ({ classId, start, end, onlyRegular, weekday, number 
 // вовсе — поэтому «есть ли дверь» проверяется запросом, а не переменной
 // сборки: в проде он честно отвечает 404, и переключателя не будет.
 
-export const fetchTestPeople = () => request('/api/test/people/')
+export const fetchTestPeople = (as) => request('/api/test/people/', { as })
 
-export const loginAsTestUser = (email) =>
-  request('/api/test/login/', { method: 'POST', body: { email } })
+export const loginAsTestUser = (email, as) =>
+  request('/api/test/login/', { method: 'POST', body: { email }, as })
 
 /**
  * Поиск задач: слова и грани идут одним запросом, потому что сужают один и тот

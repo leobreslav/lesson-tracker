@@ -50,6 +50,13 @@ DOMAIN="$(env_value DOMAIN)"
 Добавьте строку DOMAIN=<домен этого контура>, а при нескольких именах —
 ещё DOMAIN_ALIASES=<остальные через пробел>. Пример: .env.prod.example"
 
+# Второй отказ до того, как тронуто хоть что-то, и по той же причине:
+# контур с открытой дев-дверью и пустым списком допущенных — это публичный
+# вход учителем, а код и env-файл приезжают сюда порознь. Разбор — в самом
+# скрипте. При перезапуске новой версией (DEPLOY_REEXEC) проверка идёт
+# заново, уже по новым правилам, и всё ещё до пересборки.
+./scripts/check-login-door.sh "$ENV_FILE"
+
 log "Режим: $SCHEME, домен: $DOMAIN"
 
 # --- обновление кода --------------------------------------------------------
@@ -136,18 +143,10 @@ fi
 
 # --- проверка ---------------------------------------------------------------
 
-# Контур может быть закрыт basic-auth (стенд). Тогда без пароля проверка
-# получит 401 и до backend'а не дойдёт вовсе — auth_basic срабатывает
-# раньше proxy_pass, и мёртвый backend остался бы незамеченным. Пароль
-# берётся из того же env-файла; на проде переменной нет, и всё как было.
-CURL_AUTH=()
-HEALTHCHECK_AUTH="$(env_value HEALTHCHECK_AUTH)"
-[ -n "$HEALTHCHECK_AUTH" ] && CURL_AUTH=(-u "$HEALTHCHECK_AUTH")
-
 log "Жду ответа приложения"
 for i in $(seq "$HEALTHCHECK_RETRIES"); do
     # -k: локально сертификат проверяется по localhost, а выписан на домен
-    code=$(curl -sk "${CURL_AUTH[@]}" -o /dev/null -w '%{http_code}' "$SCHEME://localhost/" || true)
+    code=$(curl -sk -o /dev/null -w '%{http_code}' "$SCHEME://localhost/" || true)
     if [ "$code" = "200" ]; then
         log "Приложение отвечает: $SCHEME://localhost/ -> 200"
         break
@@ -155,9 +154,6 @@ for i in $(seq "$HEALTHCHECK_RETRIES"); do
     if [ "$i" = "$HEALTHCHECK_RETRIES" ]; then
         docker compose "${COMPOSE_FILES[@]}" ps
         docker compose "${COMPOSE_FILES[@]}" logs --tail 50 backend nginx
-        [ "$code" = "401" ] && fail "приложение отвечает 401: контур закрыт
-basic-auth, а пароль проверке не дан. Добавьте в $ENV_FILE строку
-HEALTHCHECK_AUTH=<пользователь>:<пароль>"
         fail "приложение не ответило 200 (последний код: ${code:-нет ответа})"
     fi
     sleep 2

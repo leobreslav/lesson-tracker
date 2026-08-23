@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link, useLocation } from 'react-router-dom'
 import { fetchTestPeople, loginAsTestUser, logout } from './api'
-import { forgetOrigin, rememberOrigin, wayHome } from './devSwitch'
+import { forgetOrigin, homeToken, rememberOrigin, wayHome } from './devSwitch'
 import { LANGUAGES } from './i18n'
 
 /**
@@ -152,7 +152,7 @@ function SwitchUser({ user }) {
   useEffect(() => {
     let cancelled = false
 
-    fetchTestPeople()
+    fetchTestPeople(homeToken())
       .then((result) => !cancelled && setPeople(result.people))
       .catch(() => {
         // двери нет — значит это не стенд разработки, и пункта тоже нет
@@ -183,7 +183,9 @@ function SwitchUser({ user }) {
       })
     }
 
-    const { key } = await loginAsTestUser(email)
+    // домашним токеном, а не текущим: на закрытом контуре дверь спрашивает,
+    // кто стучится, а стучится тут уже подменённый
+    const { key } = await loginAsTestUser(email, homeToken())
     localStorage.setItem('authToken', key)
     window.location.assign('/')
   }
@@ -194,7 +196,7 @@ function SwitchUser({ user }) {
       localStorage.setItem('authToken', home.token)
     } else if (home?.email) {
       // токен могли и не сохранить (приватный режим) — тогда та же дверь
-      const { key } = await loginAsTestUser(home.email)
+      const { key } = await loginAsTestUser(home.email, homeToken())
       localStorage.setItem('authToken', key)
     }
     forgetOrigin()

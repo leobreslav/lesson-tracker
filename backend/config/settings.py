@@ -29,6 +29,11 @@ DEBUG = env("DEBUG")
 # A door for browser tests: a token by email, and a database reset. Never on
 # in production — see accounts/e2e.py for why it is closed three times over.
 E2E_TEST_LOGIN = env.bool("E2E_TEST_LOGIN", default=False)
+
+# Кого этот контур пускает внутрь. Пусто — всех, кого пустил Google: так
+# живёт прод, где допуск даёт приглашение школы. Список адресов закрывает
+# контур, у которого своей публики нет, — стенд. Разбор в accounts/door.py.
+LOGIN_ALLOWED_EMAILS = env.list("LOGIN_ALLOWED_EMAILS", default=[])
 ALLOWED_HOSTS = env.list("ALLOWED_HOSTS", default=["localhost", "127.0.0.1"])
 
 

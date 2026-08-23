@@ -64,6 +64,12 @@ jobs:
         # ровно один раз: повтор упавшего посева сносил бы базу по кругу.
         run: bash scripts/test-staging-seed-watch.sh
 
+      - name: Сторож замка на дверь контура
+        # Секунда, и без контейнера. Замок решает, можно ли открывать контур
+        # выкаткой; ошибка в любую сторону — либо публичный стенд, либо
+        # переставший выкатываться прод.
+        run: bash scripts/test-check-login-door.sh
+
       - name: Питоновский набор
         run: docker compose run --rm -T backend python manage.py test
 

@@ -242,6 +242,9 @@ class Codes:
     TOKEN_REQUIRED = "token_required"
     TOKEN_INVALID = "token_invalid"
     EMAIL_NOT_VERIFIED = "email_not_verified"
+    # контур пускает не всех: список допущенных адресов задан, и этого в
+    # нём нет. Не «неверный пароль» и не «нет учётки» — сюда просто не вам
+    NOT_ALLOWED_HERE = "not_allowed_here"
 
 
 def error_payload(code: str, detail: str, *, field: str | None = None, **params) -> dict:

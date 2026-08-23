@@ -26,6 +26,3 @@ blank/decode_src.png
 # про проект; общие настройки лежат рядом в settings.json и едут в git
 .claude/settings.local.json
 
-# файл паролей basic-auth: свой на каждом контуре
-nginx/auth/*
-!nginx/auth/.gitkeep

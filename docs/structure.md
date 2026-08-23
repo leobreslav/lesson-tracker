@@ -66,6 +66,8 @@
 │   ├── test-staging-seed-watch.sh # сторож его: просьба исполняется один раз
 │   ├── ship.sh               # унести ветку на стенд и прод и попросить пересев: git + gh, без ssh
 │   ├── test-ship.sh          # сторож ship.sh: отказы и просьбы о пересеве
+│   ├── check-login-door.sh   # замок: не выкатывать открытую дев-дверь без списка допущенных
+│   ├── test-check-login-door.sh # сторож замка: обе стороны, формы «да», кавычки, CRLF
 │   ├── prod-autodeploy.sh    # опрос ветки production из crontab прода
 │   ├── test-prod-autodeploy.sh # сторож: выкатывает, когда надо, и отказывается, когда нет
 │   └── reload-nginx.sh       # хук certbot: reload nginx после продления
@@ -187,7 +189,9 @@
 │       ├── management/       # bootstrap: нулевая инициализация прода
 │       ├── models.py         # User(AbstractUser) + UserManager
 │       ├── admin.py          # UserAdmin без username
-│       ├── adapter.py        # SocialAccountAdapter: только верифицированные email
+│       ├── adapter.py        # SocialAccountAdapter: верифицированный email и список допущенных
+│       ├── door.py           # кого этот контур пускает: LOGIN_ALLOWED_EMAILS, одно место на обе двери
+│       ├── e2e.py            # дев-дверь браузерных тестов: за флагом и за списком допущенных
 │       ├── signals.py        # добор имени из Google, если поля пустые
 │       ├── serializers.py    # GoogleLoginSerializer, UserSerializer
 │       ├── views.py          # GoogleLoginView, MeView
@@ -296,7 +300,7 @@
         ├── scheduleLogic.js  # клиентская копия раскладки и счётчиков
         ├── scheduleFilters.js # сужение расписания школы: предмет → учитель → курс
         ├── FeedbackButton.jsx # «написать разработчику»: кнопка в баре и окно
-        ├── devSwitch.js      # «войти как»: дорога домой из чужой учётки
+        ├── devSwitch.js      # «войти как»: дорога домой и домашний токен для дев-двери
         ├── Feedback.jsx      # всё написанное: раздел суперпользователя
         ├── Modal.jsx         # обёртка над <dialog> для всех окон
         ├── Switch.jsx        # тумблер: выбор из двух видов одним контролом
