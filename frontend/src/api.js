@@ -1,3 +1,4 @@
+import { childParam } from './viewedChild'
 import i18n from './i18n'
 
 const TOKEN_KEY = 'authToken'
@@ -756,18 +757,47 @@ export const recheckTask = (id) =>
 // Единственный пока адрес его половины приложения: где учусь и где учился.
 // Снятый курс из ответа не исчезает, у него стоит `active: false`.
 
-export const fetchStudentCourses = () => request('/api/student/courses/')
+//
+// Все четыре читающих адреса ученика носят `?child=`, когда смотрит родитель.
+// Подставляет его `viewedChild`, а не страницы: вопрос «чей экран» один, и
+// ответ на него должен быть один — на сервере это `families.viewing`, здесь
+// этот модуль. Ученику подставлять нечего, и сервер параметр от него не
+// читает.
+const withChild = (url) => {
+  const child = childParam()
+  if (!child) return url
+  return url.includes('?') ? `${url}&${child}` : `${url}?${child}`
+}
+
+export const fetchStudentCourses = () => request(withChild('/api/student/courses/'))
 
 /** Курс ученика целиком: учебный план с датами. Работы приходят отдельно. */
-export const fetchStudentCourse = (id) => request(`/api/student/courses/${id}/`)
+export const fetchStudentCourse = (id) =>
+  request(withChild(`/api/student/courses/${id}/`))
 
 /** Работы ученика: открытые и закрытые, с его продвижением по ним. */
-export const fetchStudentWorks = () => request('/api/student/works/')
+export const fetchStudentWorks = () => request(withChild('/api/student/works/'))
 
 export const fetchStudentWork = (id, version) =>
   request(
-    `/api/student/works/${id}/${version ? `?version=${encodeURIComponent(version)}` : ''}`,
+    withChild(
+      `/api/student/works/${id}/${version ? `?version=${encodeURIComponent(version)}` : ''}`,
+    ),
   )
+
+// --- родитель: дети, собеседники, разговоры ------------------------------------
+
+export const fetchChildren = () => request('/api/family/children/')
+
+export const fetchChildTeachers = () => request(withChild('/api/family/teachers/'))
+
+export const fetchFamilyThreads = () => request('/api/family/threads/')
+
+export const startFamilyThread = (fields) =>
+  request('/api/family/threads/', { method: 'POST', body: fields })
+
+export const sendFamilyMessage = (thread, text) =>
+  request(`/api/family/threads/${thread}/`, { method: 'POST', body: { text } })
 
 export const sendAnswer = (task, answer) =>
   request(`/api/student/tasks/${task}/answer/`, { method: 'POST', body: { answer } })
@@ -1090,3 +1120,14 @@ export const fetchFeedbackSummary = () => request('/api/feedback/summary/')
 
 export const markFeedbackHandled = (id) =>
   request(`/api/feedback/${id}/handled/`, { method: 'POST' })
+
+// --- расписание звонков ---------------------------------------------------------
+//
+// Читают все в школе, правит администратор; список приходит и уходит целиком —
+// номер урока и есть ключ, и построчная правка потребовала бы разговора про
+// удаление там, где удаляют ровно при сокращении дня.
+
+export const fetchBells = () => request('/api/school/bells/')
+
+export const saveBells = (bells) =>
+  request('/api/school/bells/', { method: 'PUT', body: { bells } })

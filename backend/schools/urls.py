@@ -3,6 +3,7 @@ from rest_framework.routers import DefaultRouter
 # назначения, методисты и состав — модели расписания, но принадлежат школе,
 # поэтому отвечают под /api/school/ рядом с курсами и людьми
 from schedule.views import (
+    BellsView,
     CourseAssignmentViewSet,
     CourseMethodistViewSet,
     CourseStudentViewSet,
@@ -28,6 +29,9 @@ router.register("invitations", InvitationViewSet, basename="invitation")
 
 urlpatterns = [
     path("", MySchoolView.as_view(), name="my-school"),
+    # звонки — справочник школы рядом с предметами и параллелями, но правятся
+    # целиком, поэтому своя вьюха, а не вьюсет: номер урока и есть ключ
+    path("bells/", BellsView.as_view(), name="school-bells"),
     path("overview/", SchoolOverviewView.as_view(), name="school-overview"),
     path("", include(router.urls)),
 ]

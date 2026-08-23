@@ -70,7 +70,8 @@ class IsSchoolMember(BasePermission):
 
 class IsTeacher(BasePermission):
     """
-    Учитель, а не ученик. Стоит рядом с `IsSchoolMember`, а не вместо него.
+    Учитель — по виду, а не «все, кто не ученик». Стоит рядом с
+    `IsSchoolMember`, а не вместо него.
 
     Разделены нарочно: школы у человека может ещё не быть (никто не
     пригласил), и учительские экраны обязаны это состояние объяснять, а не
@@ -78,13 +79,20 @@ class IsTeacher(BasePermission):
     применима там, где школа необязательна — например к статусу первого
     входа.
 
-    Ученику отвечаем 403 с кодом, а не 404: он законный пользователь этой
+    **Проверка спрашивает вид прямо, и это не придирка.** Пока видов было два,
+    она читала «не ученик», и это совпадало с «учитель». Родитель совпадение
+    сломал: он не ученик — и по прежнему правилу прошёл бы в учебный план,
+    расписание и работы всей школы. Ошибка при этом была бы молчаливой:
+    ни один существующий тест не покраснел бы, потому что все они спрашивают
+    про ученика. Теперь добавление вида ничего не открывает само.
+
+    Не своему отвечаем 403 с кодом, а не 404: он законный пользователь этой
     школы, просто раздел не его. Прятать существование учительских разделов
     смысла нет — про них он и так знает.
     """
 
     def has_permission(self, request, view):
-        if getattr(request.user, "is_student", False):
+        if not getattr(request.user, "is_teacher", False):
             api_denied(
                 Codes.TEACHERS_ONLY,
                 "This section is for teachers.",
@@ -93,13 +101,67 @@ class IsTeacher(BasePermission):
 
 
 class IsStudent(BasePermission):
-    """Зеркало `IsTeacher`: разделы ученика учителю тоже незачем."""
+    """Зеркало `IsTeacher`: разделы ученика ни учителю, ни родителю незачем."""
 
     def has_permission(self, request, view):
         if not getattr(request.user, "is_student", False):
             api_denied(
                 Codes.STUDENTS_ONLY,
                 "This section is for students.",
+            )
+        return True
+
+
+class IsParent(BasePermission):
+    """Разделы родителя: свой разговор с учителем и выбор ребёнка."""
+
+    def has_permission(self, request, view):
+        if not getattr(request.user, "is_parent", False):
+            api_denied(
+                Codes.PARENTS_ONLY,
+                "This section is for parents.",
+            )
+        return True
+
+
+class IsParentOrTeacher(BasePermission):
+    """
+    Две стороны разговора о ребёнке. Ученик в него не входит.
+
+    Класс на пару видов, а не проверка внутри вьюхи: «мои разговоры» — один
+    вопрос для родителя и для учителя, и отвечает на него участие в треде, а
+    не вид. Разведи это на две вьюхи — и они разойдутся в первой же правке,
+    как уже расходились выборки курсов.
+    """
+
+    def has_permission(self, request, view):
+        user = request.user
+        if not (
+            getattr(user, "is_parent", False) or getattr(user, "is_teacher", False)
+        ):
+            api_denied(
+                Codes.PARENTS_ONLY,
+                "This section is for parents and teachers.",
+            )
+        return True
+
+
+class IsFamily(BasePermission):
+    """
+    Ученик или его родитель — те, кому показывают ученическое.
+
+    Отдельный класс, а не `IsStudent | IsParent`: вопрос «кому этот раздел»
+    задаётся в одном месте, и ответ на него читается словом, а не выражением.
+    **Чьи именно данные показывать — вопрос другой**, и отвечает на него
+    `families.viewing.subject_of`: у ученика это он сам, у родителя — названный
+    ребёнок, и чужой ребёнок для него не существует.
+    """
+
+    def has_permission(self, request, view):
+        if not getattr(request.user, "is_family", False):
+            api_denied(
+                Codes.STUDENTS_ONLY,
+                "This section is for students and their parents.",
             )
         return True
 

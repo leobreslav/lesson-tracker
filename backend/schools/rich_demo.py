@@ -418,7 +418,7 @@ def make_grades(school) -> dict:
     return made
 
 
-def person(school, email, first, last, *, student=False):
+def person(school, email, first, last, *, student=False, kind=None):
     """Учётка с подтверждённым адресом: без него вход через Google не найдёт её."""
     user, _ = User.objects.get_or_create(
         email=email,
@@ -427,7 +427,7 @@ def person(school, email, first, last, *, student=False):
             "last_name": last,
             "school": school,
             "language": LANGUAGE,
-            "kind": User.Kind.STUDENT if student else User.Kind.TEACHER,
+            "kind": kind or (User.Kind.STUDENT if student else User.Kind.TEACHER),
             # уже входили: «ещё не входил» в этом наборе принадлежит троим
             # приглашённым, и на остальных пометка стоять не должна
             "last_login": timezone.now(),

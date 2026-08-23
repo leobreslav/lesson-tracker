@@ -10,6 +10,7 @@ import WeekGrid from './WeekGrid'
 import {
   deleteSlots,
   copySlots,
+  fetchBells,
   fetchLayoutAgenda,
   createSlot,
   deleteSlot,
@@ -92,6 +93,22 @@ export default function Agenda({ views = null, onLoggedOut }) {
 
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
+  // Звонки школы: номер урока → время. Тянутся один раз и молча — сетка без
+  // них рисуется как рисовалась, а падать из-за подписи к ряду она не должна
+  const [bells, setBells] = useState({})
+
+  useEffect(() => {
+    let cancelled = false
+    fetchBells()
+      .then((answer) => {
+        if (cancelled) return
+        setBells(Object.fromEntries(answer.bells.map((one) => [one.number, one])))
+      })
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [])
   const [error, setError] = useState(null)
   const [notice, setNotice] = useState(null)
   const [dialog, setDialog] = useState(null) // {type:'add'|'lesson'|'copy'|'clear', ...}
@@ -586,6 +603,7 @@ export default function Agenda({ views = null, onLoggedOut }) {
       dates={dates}
       days={data.days}
       numbers={NUMBERS}
+      bells={bells}
       busy={busy}
       selected={inSelection}
       lessonsOn={(date) =>
@@ -609,6 +627,21 @@ export default function Agenda({ views = null, onLoggedOut }) {
       onPickDay={pickDay}
       onMenu={openMenu}
       onAdd={openFreeCell}
+      /* Перетаскивание — ускоритель для того же самого, что делает пункт
+         «Перенести» в меню: тот же `moveLesson`, тот же запрос, та же
+         причина по умолчанию. Отменённое занятие не тащим — переносить
+         нечего, час уже свободен, и «перенос отмены» ничего не значит. */
+      onDrop={(lesson, from, target) =>
+        lesson.is_cancelled
+          ? undefined
+          : moveLesson(from, lesson, {
+              ...target,
+              // та же причина по умолчанию, что у пункта меню: она уезжает в
+              // базу как текст отмены на старом месте, и разойтись двум
+              // формулировкам одного действия негде
+              reason: t('agenda.menu.movedReason', { date: target.date }),
+            })
+      }
     />
   )
 

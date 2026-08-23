@@ -78,7 +78,10 @@ export default function StudentApp({ user, onLoggedOut, onLanguageChange }) {
  * вопрос «что делать сейчас», и закрытые в нём были бы архивом поверх
  * ответа. Архив живёт на странице курса, одним нажатием ниже.
  */
-function StudentCourses({ onLoggedOut }) {
+// Экспортируется ради родителя: он показывает **этот** экран, а не свою
+// копию. Копия разъехалась бы, и родитель увидел бы не то, что видит ребёнок,
+// — притом что весь смысл его интерфейса в том, чтобы видеть то же самое.
+export function StudentCourses({ onLoggedOut }) {
   const { t } = useTranslation()
   const [courses, setCourses] = useState(null)
   const [works, setWorks] = useState([])

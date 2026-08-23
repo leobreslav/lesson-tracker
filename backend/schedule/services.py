@@ -311,3 +311,31 @@ def suggested_topics(course) -> dict:
         if entry.slot is not None and entry.lesson is not None
     }
 
+
+def set_bells(school_id, rows) -> None:
+    """
+    Заменить расписание звонков целиком.
+
+    Тот же приём, что у шкалы работы: список приходит полностью, и «строки,
+    которой не стало» не бывает — есть новое расписание. Построчная правка
+    потребовала бы отдельного разговора про удаление, а удаляют тут ровно
+    тогда, когда школа сократила день.
+
+    Одной транзакцией: половина расписания звонков хуже отсутствующего —
+    по нему считают, успевает ли класс перейти между кабинетами.
+    """
+    from django.db import transaction
+
+    from .models import BellTime
+
+    with transaction.atomic():
+        BellTime.objects.filter(school_id=school_id).delete()
+        BellTime.objects.bulk_create(
+            BellTime(
+                school_id=school_id,
+                number=row["number"],
+                starts_at=row["starts_at"],
+                ends_at=row["ends_at"],
+            )
+            for row in rows
+        )

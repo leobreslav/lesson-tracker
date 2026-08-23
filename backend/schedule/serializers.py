@@ -990,3 +990,42 @@ class CourseMethodistSerializer(serializers.ModelSerializer):
             school_id=school_id
         )
         return fields
+
+
+class BellSerializer(serializers.Serializer):
+    """Одна строка звонков: номер урока и его границы."""
+
+    number = serializers.IntegerField(min_value=1, max_value=MAX_LESSON_NUMBER)
+    starts_at = serializers.TimeField()
+    ends_at = serializers.TimeField()
+
+
+class BellsSerializer(serializers.Serializer):
+    """
+    Расписание звонков целиком. Пустой список — «звонков нет», это законно.
+
+    Проверяется здесь то, чего не выразить ограничением строки: номер не
+    повторяется и урок не кончается раньше начала. Второе стоит и в базе —
+    отрицательная перемена ломает не показ, а расчёты по нему, — но сказать об
+    этом человеку словами должен сервер, а не пятисотка от Postgres.
+    """
+
+    bells = BellSerializer(many=True)
+
+    def validate_bells(self, value):
+        numbers = [one["number"] for one in value]
+        if len(numbers) != len(set(numbers)):
+            api_error(
+                Codes.BELL_NUMBER_TWICE,
+                "Each lesson number appears once.",
+                field="bells",
+            )
+        for one in value:
+            if one["ends_at"] <= one["starts_at"]:
+                api_error(
+                    Codes.BELL_ENDS_BEFORE_IT_STARTS,
+                    "A lesson ends after it starts.",
+                    field="bells",
+                    number=one["number"],
+                )
+        return value

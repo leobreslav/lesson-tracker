@@ -9,10 +9,12 @@
 from config.access import (
     CourseScopedViewSet,
     IsSchoolMember,
+    IsFamily,
     IsStudent,
     IsTeacher,
 )
 from config.errors import Codes, api_error
+from families.viewing import subject_of
 from django.db.models import Count
 from django.http import Http404
 from django.shortcuts import get_object_or_404
@@ -643,13 +645,17 @@ class StudentWorksView(APIView):
     всегда.
     """
 
-    permission_classes = [IsAuthenticated, IsSchoolMember, IsStudent]
+    # Родитель видит тот же список про своего ребёнка. Отправлять ответы он
+    # при этом не может — это другая вьюха и другое право (`IsStudent`):
+    # смотреть за учёбой и учиться вместо ребёнка — разные вещи.
+    permission_classes = [IsAuthenticated, IsSchoolMember, IsFamily]
 
     def get(self, request):
-        works = list(services.visible_works(request.user))
-        totals = services.totals_for(works, student=request.user)
+        student = subject_of(request)
+        works = list(services.visible_works(student))
+        totals = services.totals_for(works, student=student)
         active = set(
-            request.user.enrolments.filter(removed_at__isnull=True).values_list(
+            student.enrolments.filter(removed_at__isnull=True).values_list(
                 "course_id", flat=True
             )
         )
@@ -684,21 +690,22 @@ class StudentWorksView(APIView):
 class StudentWorkView(APIView):
     """Одна работа целиком: задачи, свои ответы и что ещё можно отправить."""
 
-    permission_classes = [IsAuthenticated, IsSchoolMember, IsStudent]
+    permission_classes = [IsAuthenticated, IsSchoolMember, IsFamily]
 
     def get(self, request, pk):
-        work = get_object_or_404(services.visible_works(request.user), pk=pk)
+        student = subject_of(request)
+        work = get_object_or_404(services.visible_works(student), pk=pk)
 
         # опрос у ученика такой же, как у учителя, и по той же причине:
         # отметка приходит к нему без его участия, а страница, которую
         # приходится обновлять руками, — это страница, которой не верят
-        version = services.student_version(work, request.user)
+        version = services.student_version(work, student)
         if request.query_params.get("version") == version:
             return Response({"version": version, "changed": False})
 
         tasks = list(work.tasks.all())
-        journal = services.my_answers(request.user, tasks)
-        active = request.user.enrolments.filter(
+        journal = services.my_answers(student, tasks)
+        active = student.enrolments.filter(
             course_id=work.course_id, removed_at__isnull=True
         ).exists()
 
@@ -747,7 +754,7 @@ class StudentWorkView(APIView):
                         # Иначе повторный вопрос теряет смысл: его задают,
                         # чтобы посмотреть, как человек решает сейчас.
                         "seen_before": track.seen_by(
-                            request.user, task.problem, besides=work
+                            student, task.problem, besides=work
                         )
                         if task.problem_id
                         else [],
@@ -762,7 +769,7 @@ class StudentWorkView(APIView):
                 ],
                 # оценка и слова учителя — по тому же правилу, что вердикт:
                 # `show_result` решает, видно ли сразу или после закрытия
-                **services.my_grade(work, request.user),
+                **services.my_grade(work, student),
             }
         )
 

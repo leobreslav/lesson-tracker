@@ -25,7 +25,9 @@ import Plan from './Plan'
 import Profile from './Profile'
 import Schedule from './Schedule'
 import School from './School'
+import ParentApp from './ParentApp'
 import StudentApp from './StudentApp'
+import { forgetViewedChild } from './viewedChild'
 import SchoolCourses from './SchoolCourses'
 import SchoolOverview from './SchoolOverview'
 import SchoolReference from './SchoolReference'
@@ -74,6 +76,10 @@ export default function App() {
     setTokenState(null)
     setUser(null)
     setStatus(null)
+    // выбранный ребёнок — про вышедшего, а не про браузер: следующий
+    // вошедший на этой машине не должен унаследовать чужого, и запрос с
+    // чужим номером ответил бы ему `not_your_child` на каждом экране
+    forgetViewedChild()
     window.google?.accounts?.id?.disableAutoSelect()
   }, [])
 
@@ -124,6 +130,20 @@ export default function App() {
   if (user.kind === 'student') {
     return (
       <StudentApp
+        user={user}
+        onLoggedOut={handleLoggedOut}
+        onLanguageChange={handleLanguageChange}
+      />
+    )
+  }
+
+  // родитель — третья ветка по той же причине, что ученик: учительские
+  // наблюдатели ему ответят отказом. Экраны про учёбу он берёт у ученика
+  // целиком, отличается только «про кого» (`viewedChild`), — но ветка нужна
+  // всё равно: у него свой бар с выбором ребёнка и свой раздел переписки
+  if (user.kind === 'parent') {
+    return (
+      <ParentApp
         user={user}
         onLoggedOut={handleLoggedOut}
         onLanguageChange={handleLanguageChange}

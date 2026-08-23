@@ -6938,3 +6938,167 @@ button.dropzone:hover:not(:disabled) {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+
+/*
+ * РОДИТЕЛЬ: выбор ребёнка и переписка с учителем.
+ *
+ * Выбор стоит в баре, слева от меню пользователя: он относится ко всему, что
+ * ниже, — курсы, работы, оценки все про одного ребёнка. Внутри страницы он
+ * читался бы фильтром списка, а это не фильтр, а «чей это экран».
+ */
+.child-picker {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.child-picker select {
+  height: 1.75rem;
+  max-width: 12rem;
+  font: inherit;
+  font-size: 0.9rem;
+}
+
+/* Список разговоров и сам разговор — как в почте. На узком экране колонки
+   схлопываются: выбирать собеседника и читать его одновременно на телефоне
+   всё равно негде. */
+.chat {
+  display: grid;
+  grid-template-columns: minmax(12rem, 18rem) 1fr;
+  gap: var(--card-gap);
+  align-items: start;
+}
+
+@media (max-width: 40rem) {
+  .chat {
+    grid-template-columns: 1fr;
+  }
+}
+
+.chat-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.chat-pick {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.1rem;
+  width: 100%;
+  padding: 0.5rem 0.6rem;
+  text-align: left;
+  color: inherit;
+  background: #fff;
+  border: 1px solid transparent;
+  border-radius: var(--row-radius);
+  box-shadow: var(--row-shadow);
+  cursor: pointer;
+}
+
+.chat-pick.active {
+  border-color: #1a73e8;
+}
+
+.chat-messages {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+/* Своё справа, чужое слева — единственный признак, по которому в переписке
+   разбираются не читая. Подпись с именем остаётся у обоих: разговор бывает
+   и втроём, когда к нему возвращаются через месяц. */
+.chat-message {
+  max-width: 80%;
+  padding: 0.4rem 0.6rem;
+  background: #f1f3f4;
+  border-radius: var(--row-radius);
+}
+
+.chat-message.mine {
+  align-self: flex-end;
+  background: #e8f0fe;
+}
+
+.chat-message p {
+  margin: 0.15rem 0 0;
+  white-space: pre-wrap;
+}
+
+/*
+ * ПЕРЕТАСКИВАНИЕ ЗАНЯТИЯ ПО СЕТКЕ НЕДЕЛИ.
+ *
+ * Клетка-приёмник обёрнута ради ссылки на узел и ничего не рисует, пока над
+ * ней ничего не держат: лишний контейнер не должен ни менять раскладку сетки,
+ * ни оставлять следа. Поэтому она `display: contents` — её дети встают в
+ * сетку так же, как вставали без неё.
+ */
+.cell-drop {
+  display: contents;
+}
+
+/* Держат над клеткой — она отзывается. Рамка, а не заливка: заливкой в этой
+   сетке уже сказано «сегодня» и «выбрано», и третий смысл того же приёма
+   читался бы одним из первых двух. */
+.cell-drop.over > * {
+  outline: 2px dashed #1a73e8;
+  outline-offset: -2px;
+  border-radius: var(--row-radius);
+}
+
+/* Взятое занятие бледнеет на своём месте: пока его несут, оно ещё там, и
+   полностью скрыть его значило бы показать дырку, которой в расписании нет. */
+.week-grid .dragging {
+  opacity: 0.4;
+}
+
+/* Курсор говорит, что клетку можно взять, — иначе жест не находится вовсе.
+   Меню при этом остаётся на нажатии, и `grab` его не обещает отменить. */
+.week-grid .cell-stack button[data-lesson] {
+  cursor: grab;
+}
+
+.week-grid .cell-stack button[data-lesson]:active {
+  cursor: grabbing;
+}
+
+/*
+ * РАСПИСАНИЕ ЗВОНКОВ.
+ *
+ * В сетке недели время стоит под номером ряда, мельче и бледнее его: номер
+ * — то, по чему ряд находят глазами, время — справка. Набранное вровень с
+ * номером спорило бы с ним за внимание в каждом из десяти рядов.
+ */
+.row-head .row-bell {
+  display: block;
+  font-size: 0.6rem;
+  font-style: normal;
+  line-height: 1.15;
+  color: #80868b;
+}
+
+/* Справочник: номер, начало, конец — строка на урок. Номер узкой колонкой,
+   чтобы поля времени стояли столбиком и десять строк читались сверху вниз. */
+.bell-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.bell-list > li + li {
+  margin-top: 0.35rem;
+}
+
+.bell-number {
+  min-width: 1.5rem;
+  font-weight: 600;
+  text-align: right;
+}

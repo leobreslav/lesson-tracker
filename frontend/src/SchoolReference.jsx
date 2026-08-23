@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import BellsPanel from './BellsPanel'
 import GradingPanel from './GradingPanel'
 import { useTranslation } from 'react-i18next'
 import Hint from './Hint'
@@ -376,6 +377,7 @@ export default function SchoolReference() {
         </div>
       </section>
 
+      <BellsPanel />
       <GradingPanel />
     </>
   )

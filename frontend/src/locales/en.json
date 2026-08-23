@@ -54,6 +54,33 @@
     "prompt": "Sign in to continue.",
     "missingClientId": "VITE_GOOGLE_CLIENT_ID is not set in frontend/.env"
   },
+  "parent": {
+    "study": "Study",
+    "chat": "Teachers",
+    "child": "Child",
+    "pickChild": "Choose a child",
+    "pickChildHint": "These screens show one child's study — choose whose to look at.",
+    "about": "about {{name}}",
+    "writeTo": "Write to a teacher:",
+    "message": "Message",
+    "send": "Send",
+    "noChildren": {
+      "title": "No children yet",
+      "hint": "A school administrator links a parent to a child — drop them a line."
+    },
+    "noThreads": {
+      "title": "No conversations yet",
+      "hint": "Write to a teacher first: they answer right here."
+    }
+  },
+  "bells": {
+    "title": "Bell times",
+    "hint": "When a lesson with this number starts and ends.",
+    "hintMore": "You need not fill them all in: a school with six lessons leaves the seventh row empty, and the week grid shows that number as before, without a time. The time labels the row of the grid, while a lesson still sits on its number — moving a bell does not rewrite the timetable already drawn.",
+    "startsAt": "Lesson {{number}}: start",
+    "endsAt": "Lesson {{number}}: end",
+    "saved": "Saved"
+  },
   "notFound": {
     "title": "Page not found",
     "hint": "There is no such address in the tracker — the link may be out of date.",
@@ -212,6 +239,15 @@
     "review_not_pending": "«{{course}}» has not been sent for approval — there is nothing to decide on yet.",
     "year_in_use": "The year is in use: its courses hold {{plan_rows}} curriculum rows and {{slots}} lessons. Clear them first.",
     "teachers_only": "This section is for teachers.",
+    "parents_only": "This section is for parents.",
+    "not_your_child": "No such child of yours.",
+    "child_required": "Say which of your children this is about.",
+    "not_a_parent": "Only a parent account can be linked as a parent.",
+    "not_a_student": "Only a student can be named as a child.",
+    "different_schools": "A parent and a child have to be in the same school.",
+    "not_a_teacher_of_this_child": "This teacher does not teach your child.",
+    "bell_number_twice": "A lesson number appears twice.",
+    "bell_ends_before_it_starts": "A lesson ends before it starts.",
     "students_only": "This section is for students.",
     "email_other_kind": "«{{email}}» is already used by an account of the other kind: one address is either a teacher or a student.",
     "not_a_student": "A student cannot be an administrator of the school.",

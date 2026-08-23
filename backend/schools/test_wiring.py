@@ -15,6 +15,9 @@ of a reviewer.
 
 from config.access import (
     CourseScopedViewSet,
+    IsFamily,
+    IsParent,
+    IsParentOrTeacher,
     IsStudent,
     IsSuperuser,
     IsTeacher,
@@ -69,7 +72,20 @@ EXEMPT = {
 # одни учителя, «состоит в школе» и значило «можно». С появлением учеников
 # это перестало быть правдой — членство есть и у них, — поэтому засчитывается
 # только явный ответ про вид пользователя.
-KIND_AWARE = (IsTeacher, IsStudent, IsSuperuser)
+#
+# Родитель добавил в список три ответа, и все три именно ответы, а не
+# послабления: `IsFamily` — «ученическое, и родителю про ребёнка тоже»,
+# `IsParent` — «только родителю», `IsParentOrTeacher` — «две стороны
+# разговора о ребёнке». Чей именно ребёнок, решает не право, а
+# `families.viewing.subject_of`; право отвечает только на «кому раздел».
+KIND_AWARE = (
+    IsTeacher,
+    IsStudent,
+    IsFamily,
+    IsParent,
+    IsParentOrTeacher,
+    IsSuperuser,
+)
 
 
 def api_views(prefix="api/"):

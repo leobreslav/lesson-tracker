@@ -5,9 +5,11 @@ from calendars import services as calendar_services
 from calendars.models import SchoolYear
 from config.access import (
     IsCourseTeacherOrSchoolAdmin,
+    IsSchoolAdminForWrite,
+    user_school_id,
     allowed_to_write_schedule,
     IsSchoolMember,
-    IsStudent,
+    IsFamily,
     IsTeacher,
     SchoolScopedViewSet,
     require_schedule_write,
@@ -35,6 +37,7 @@ from .services import sweepable
 from schools import roster, services as school_services
 
 from .models import (
+    BellTime,
     Course,
     CourseAssignment,
     CourseMethodist,
@@ -45,6 +48,7 @@ from .models import (
 )
 from .serializers import (
     AttendanceSerializer,
+    BellsSerializer,
     BulkDeleteSerializer,
     CloseDaySerializer,
     CourseMethodistSerializer,
@@ -99,6 +103,57 @@ class SubjectViewSet(SchoolScopedViewSet):
                 name=instance.name,
                 courses=instance.courses.count(),
             )
+
+
+class BellsView(APIView):
+    """
+    Расписание звонков школы: во сколько начинается и кончается каждый урок.
+
+    Читают все, правит администратор — как предметы и параллели рядом.
+
+    **Правится целиком**, одним PUT, а не по строке: тот же приём, что у шкалы
+    работы и строк шаблона, и по той же причине — это одна вещь, а не десять
+    независимых. Построчный CRUD потребовал бы своей нумерации ради формы, у
+    которой её нет: номер урока и есть ключ.
+
+    Пустой список законен и означает «звонков нет»: до них школа жила, и сетка
+    покажет номера, как показывала.
+    """
+
+    # `IsTeacher` рядом с админской проверкой, а не вместо: раздел стоит под
+    # `/api/school/`, то есть в учительской половине, и ученику он не
+    # предназначен. Ученический интерфейс сетки недели не показывает вовсе —
+    # понадобится, звонки поедут в его собственный адрес, а не сюда.
+    permission_classes = [
+        IsAuthenticated,
+        IsSchoolMember,
+        IsTeacher,
+        IsSchoolAdminForWrite,
+    ]
+
+    def get(self, request):
+        return Response(self._payload(user_school_id(request.user)))
+
+    def put(self, request):
+        school_id = user_school_id(request.user)
+        form = BellsSerializer(data=request.data)
+        form.is_valid(raise_exception=True)
+
+        services.set_bells(school_id, form.validated_data["bells"])
+        return Response(self._payload(school_id))
+
+    @staticmethod
+    def _payload(school_id) -> dict:
+        return {
+            "bells": [
+                {
+                    "number": bell.number,
+                    "starts_at": bell.starts_at.strftime("%H:%M"),
+                    "ends_at": bell.ends_at.strftime("%H:%M"),
+                }
+                for bell in BellTime.objects.filter(school_id=school_id)
+            ]
+        }
 
 
 class GradeLevelViewSet(SchoolScopedViewSet):
@@ -340,15 +395,21 @@ class StudentCoursesView(APIView):
     поломка.
     """
 
-    permission_classes = [IsAuthenticated, IsSchoolMember, IsStudent]
+    # Родителю то же самое, но про его ребёнка: экран отвечает на вопрос
+    # «как дела в курсах», и вопрос этот у родителя тот же самый. Чей
+    # именно экран, решает одно место на всё приложение.
+    permission_classes = [IsAuthenticated, IsSchoolMember, IsFamily]
 
     def get(self, request):
+        from families.viewing import subject_of
+
+        student = subject_of(request)
         rows = (
             # только курсы своей школы: строки прошлой школы остаются в базе
             # — они след того, что человек там учился, — но в его списке им
             # места нет
             CourseStudent.objects.filter(
-                student=request.user, course__school_id=request.user.school_id
+                student=student, course__school_id=student.school_id
             )
             .select_related("course", "course__subject", "course__grade")
             # активные сверху: снятые уезжают вниз, как их и показывают

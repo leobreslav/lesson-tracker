@@ -83,7 +83,13 @@ def make_school(name="Test school") -> School:
 
 
 def make_user(
-    school=None, email="teacher@example.com", *, admin=False, root=False, student=False
+    school=None,
+    email="teacher@example.com",
+    *,
+    admin=False,
+    root=False,
+    student=False,
+    parent=False,
 ):
     """
     A member of the school; `school=None` gives somebody nobody invited.
@@ -93,11 +99,19 @@ def make_user(
 
     `student` — второй вид пользователя. Он тоже в школе, но учительские
     разделы ему закрыты, и проверяет это матрица прав.
+
+    `parent` — третий. Он не ученик и не учитель, и это важно проверять
+    отдельно: пока видов было два, «не ученик» и «учитель» совпадали, и
+    родитель прошёл бы в учительские разделы насквозь.
     """
     return User.objects.create_user(
         email=email,
         school=school,
-        kind=User.Kind.STUDENT if student else User.Kind.TEACHER,
+        kind=(
+            User.Kind.PARENT
+            if parent
+            else User.Kind.STUDENT if student else User.Kind.TEACHER
+        ),
         is_school_admin=admin,
         is_superuser=root,
         is_staff=root,

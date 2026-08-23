@@ -360,6 +360,64 @@ class CourseStudent(models.Model):
         return self.removed_at is None
 
 
+class BellTime(models.Model):
+    """
+    Расписание звонков: во сколько начинается и кончается урок с этим номером.
+
+    Справочник **школы**, рядом с предметами и параллелями, и по той же
+    причине: звонки одни на всех, ставит их администратор, а читают все.
+
+    **Номер, а не время, остаётся ключом занятия.** Слот по-прежнему знает
+    только `lesson_number`, и это не упущение: перенос звонка на десять минут
+    не должен переписывать десять тысяч строк расписания. Время живёт здесь и
+    подставляется на показ — значит вчерашние занятия сегодня показываются по
+    сегодняшним звонкам, и это честно: расписание звонков одно, а не по
+    версии на каждый день.
+
+    **Заполнено может быть не всё.** Школа, у которой шесть уроков, заводит
+    шесть строк; седьмой номер остаётся без времени, и сетка показывает его
+    как раньше — одним номером. Пустой справочник — рабочее состояние, а не
+    незаконченная настройка: до звонков жили и так.
+
+    Хранится `TimeField`, а не строка: «8:30» и «08:30» — одно и то же время,
+    и решать это сравнением строк пришлось бы в каждом месте показа.
+    """
+
+    school = models.ForeignKey(
+        "schools.School",
+        related_name="bells",
+        on_delete=models.CASCADE,
+        verbose_name="school",
+    )
+    number = models.PositiveSmallIntegerField(
+        "lesson number",
+        validators=[MinValueValidator(1), MaxValueValidator(MAX_LESSON_NUMBER)],
+    )
+    starts_at = models.TimeField("starts at")
+    ends_at = models.TimeField("ends at")
+
+    class Meta:
+        verbose_name = "bell time"
+        verbose_name_plural = "bell times"
+        ordering = ("number",)
+        constraints = [
+            models.UniqueConstraint(
+                fields=("school", "number"), name="one_bell_per_lesson_number"
+            ),
+            # Урок, кончающийся раньше начала, — не опечатка показа, а
+            # сломанная длительность: по ней считают, успевает ли класс
+            # перейти, и отрицательная перемена читается как ошибка данных
+            # где-то ещё.
+            models.CheckConstraint(
+                condition=models.Q(ends_at__gt=models.F("starts_at")),
+                name="a_lesson_ends_after_it_starts",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.number}: {self.starts_at:%H:%M}–{self.ends_at:%H:%M}"
+
+
 class CourseAssignment(models.Model):
     """
     Who teaches this course. The one place that answers it.

@@ -4,7 +4,7 @@ from urllib.parse import quote
 from config.access import (
     CourseScopedViewSet,
     IsSchoolMember,
-    IsStudent,
+    IsFamily,
     IsTeacher,
 )
 from config.errors import Codes, api_error, error_payload
@@ -1402,10 +1402,14 @@ class StudentCourseView(APIView):
     незачем, это разговор учителя с методистом.
     """
 
-    permission_classes = [IsAuthenticated, IsSchoolMember, IsStudent]
+    # см. `families.viewing`: родитель смотрит тот же экран про ребёнка
+    permission_classes = [IsAuthenticated, IsSchoolMember, IsFamily]
 
     def get(self, request, pk):
+        from families.viewing import subject_of
         from schedule.models import Course, CourseStudent
+
+        student = subject_of(request)
 
         # строка зачисления и есть право видеть: снятый с курса читает
         # сделанное, поэтому берётся любая, а не только действующая
@@ -1413,9 +1417,9 @@ class StudentCourseView(APIView):
             CourseStudent.objects.select_related(
                 "course", "course__subject", "course__grade", "course__year"
             ).prefetch_related("course__year__terms"),
-            student=request.user,
+            student=student,
             course_id=pk,
-            course__school_id=request.user.school_id,
+            course__school_id=student.school_id,
         )
         course = enrolment.course
 

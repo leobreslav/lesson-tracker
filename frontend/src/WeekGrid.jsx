@@ -1,4 +1,13 @@
 import { Fragment } from 'react'
+import {
+  DndContext,
+  PointerSensor,
+  TouchSensor,
+  useDraggable,
+  useDroppable,
+  useSensor,
+  useSensors,
+} from '@dnd-kit/core'
 import { useTranslation } from 'react-i18next'
 import { parseDate, today } from './calendarLogic'
 import { shortWeekday } from './dates'
@@ -31,6 +40,22 @@ import { shortWeekday } from './dates'
  * Цена названа прямо: в занятие теперь два нажатия вместо одного. Первый
  * пункт меню — «Открыть урок», и стоит он первым как раз поэтому.
  *
+ * **Занятие переносится перетаскиванием**, если страница дала `onDrop`.
+ * Жест это ускоритель, а не единственный путь: то же самое делает «Перенести»
+ * в меню, и оно остаётся — с клавиатуры, с читалкой и там, где тащить неудобно,
+ * работает только оно. Заводить второй способ вместо первого было бы обменом
+ * доступности на скорость.
+ *
+ * Два решения, без которых жест мешал бы работе:
+ *
+ * * **порог в пять пикселей** (`PointerSensor`) и **задержка на касании**.
+ *   Нажатие по занятию открывает меню, и без порога любое нажатие с дрожью
+ *   руки превращалось бы в перенос — то есть в правку расписания вместо
+ *   разговора о нём;
+ * * **неучебный день не принимает**. На нём и «+» не предлагается: клетка
+ *   заперта, и молча положить туда занятие значило бы завести урок в
+ *   праздник в обход того же запрета.
+ *
  * Keeping one grid means a fix to the day header or the stacked-cell layout
  * lands on both pages at once, which is the whole reason it is here.
  */
@@ -48,8 +73,29 @@ export default function WeekGrid({
   onPickDay,
   onAdd,
   onMenu,
+  onDrop,
+  bells = {},
 }) {
   const { t } = useTranslation()
+
+  const sensors = useSensors(
+    // порог: без него нажатие «открыть меню» и перетаскивание неразличимы
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(TouchSensor, {
+      activationConstraint: { delay: 200, tolerance: 6 },
+    }),
+  )
+
+  const drop = ({ active, over }) => {
+    if (!over || !onDrop) return
+    const [date, number] = String(over.id).replace('cell:', '').split(':')
+    const from = active.data.current
+    if (!from) return
+    // то же место — не перенос: сервер принял бы, но занятие уехало бы в
+    // отмену и вернулось на ту же клетку, оставив ложный след
+    if (from.date === date && String(from.lesson.lesson_number) === number) return
+    onDrop(from.lesson, from.date, { date, lesson_number: Number(number) })
+  }
 
   /*
    * Меню встаёт у курсора, а не посреди экрана, — значит нужны координаты.
@@ -77,7 +123,7 @@ export default function WeekGrid({
     )
   }
 
-  return (
+  const grid = (
     <div
       className="week-grid"
       style={{ gridTemplateColumns: `2.5rem repeat(${dates.length}, minmax(0, 1fr))` }}
@@ -105,7 +151,20 @@ export default function WeekGrid({
 
       {numbers.map((number) => (
         <Fragment key={number}>
-          <div className="row-head">{number}</div>
+          {/* Номер и, если школа завела звонки, время под ним. Время
+              подписывает **строку**, а не каждую клетку: оно одно на весь
+              ряд, и повторённое семь раз оно закрыло бы собой расписание.
+              Звонков нет — ряд выглядит как раньше, одним номером. */}
+          <div className="row-head">
+            <span>{number}</span>
+            {bells[number] && (
+              <em className="row-bell">
+                {bells[number].starts_at}
+                <br />
+                {bells[number].ends_at}
+              </em>
+            )}
+          </div>
           {dates.map((date) => {
             const inCell = lessonsOn(date).filter(
               (item) => item.lesson_number === number,
@@ -115,6 +174,17 @@ export default function WeekGrid({
             if (!inCell.length && locked) {
               return <div key={date} className="cell locked" />
             }
+
+            // клетка принимает занятие только там, где перенос разрешён:
+            // без `onDrop` обёртка не нужна и лишнего узла в сетке не будет
+            const inDrop = (content) =>
+              onDrop ? (
+                <DropCell key={date} date={date} number={number} locked={locked}>
+                  {content}
+                </DropCell>
+              ) : (
+                <Fragment key={date}>{content}</Fragment>
+              )
 
             const addButton = (
               <button
@@ -129,17 +199,19 @@ export default function WeekGrid({
               </button>
             )
 
-            if (!inCell.length) return <Fragment key={date}>{addButton}</Fragment>
+            if (!inCell.length) return inDrop(addButton)
 
-            return (
+            const Lesson = onDrop ? DraggableLesson : PlainLesson
+
+            return inDrop(
               <div
-                key={date}
                 className={inCell.length > 1 ? 'cell-stack multi' : 'cell-stack'}
               >
                 {inCell.map((lesson) => (
-                  <button
-                    type="button"
+                  <Lesson
                     key={lesson.id}
+                    lesson={lesson}
+                    date={date}
                     data-lesson={`${date}:${number}`}
                     className={lessonClassName(lesson)}
                     title={lessonTitle(lesson)}
@@ -154,14 +226,79 @@ export default function WeekGrid({
                     }}
                   >
                     {renderLesson(lesson)}
-                  </button>
+                  </Lesson>
                 ))}
                 {isFree(inCell) && !locked && addButton}
-              </div>
+              </div>,
             )
           })}
         </Fragment>
       ))}
     </div>
+  )
+
+  // Контекст заводится только там, где перенос разрешён: страница, не давшая
+  // `onDrop`, получает прежнюю сетку без единого обработчика.
+  return onDrop ? (
+    <DndContext sensors={sensors} onDragEnd={drop}>
+      {grid}
+    </DndContext>
+  ) : (
+    grid
+  )
+}
+
+/**
+ * Клетка, принимающая занятие.
+ *
+ * Обёртка, а не `useDroppable` в теле сетки: хуки нельзя звать в цикле, а
+ * клеток в неделе полсотни.
+ */
+function DropCell({ date, number, locked, children }) {
+  const { isOver, setNodeRef } = useDroppable({
+    id: `cell:${date}:${number}`,
+    disabled: locked,
+  })
+
+  return (
+    <div ref={setNodeRef} className={isOver && !locked ? 'cell-drop over' : 'cell-drop'}>
+      {children}
+    </div>
+  )
+}
+
+/** Занятие без перетаскивания: та же кнопка, что была до жеста. */
+function PlainLesson({ lesson, date, children, ...rest }) {
+  return (
+    <button type="button" {...rest}>
+      {children}
+    </button>
+  )
+}
+
+/**
+ * Занятие, которое можно взять.
+ *
+ * Кнопка остаётся кнопкой: нажатие открывает меню, и перетаскивание её не
+ * заменяет — сенсор отдаёт нажатие форме, пока палец не проехал пять
+ * пикселей.
+ */
+function DraggableLesson({ lesson, date, children, ...rest }) {
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
+    id: `slot:${lesson.id}`,
+    data: { lesson, date },
+  })
+
+  return (
+    <button
+      ref={setNodeRef}
+      type="button"
+      {...rest}
+      {...listeners}
+      {...attributes}
+      className={`${rest.className || ''}${isDragging ? ' dragging' : ''}`}
+    >
+      {children}
+    </button>
   )
 }

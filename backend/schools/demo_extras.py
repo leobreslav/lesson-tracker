@@ -50,6 +50,8 @@ def build(school, courses, people, students, *, log=print):
     made.append(_spending(school, teacher, course))
     made.append(_bank_variety(school, teacher, admin, course))
     made.append(_feedback(school, teacher, students))
+    made.append(_families(school, students))
+    made.append(_bells(school))
 
     log("  досев:     " + ", ".join(one for one in made if one))
 
@@ -548,3 +550,119 @@ def _bank_variety(school, teacher, admin, course):
     proposals.decline(отклонено, admin, answer="Нет, она нужна на зачёте.")
 
     return "задачник во всех формах"
+
+
+# Сколько детей у какой семьи. Числа разные намеренно: одиночка, двое и трое —
+# три разных экрана у родителя, и увидеть их можно только на данных.
+FAMILY_SIZES = (3, 2, 1)
+
+
+def _families(school, students):
+    """
+    Родители, их дети и по разговору с учителем.
+
+    Три решения набора, и каждое существует, чтобы его было **видно**:
+
+    * **у первой семьи трое детей, у последней один.** Выбор ребёнка на экране
+      родителя появляется только при нескольких, и без многодетной семьи этот
+      экран никто бы не увидел с данными;
+    * **у первых двух семей взрослых по двое.** Мама и папа — две независимые
+      учётки на одних и тех же детей, и это решение видно только там, где они
+      стоят рядом;
+    * **разговор заводится тем же путём, что в приложении** — через
+      `conversations.open_thread`, который проверяет и родство, и то, что
+      учитель действительно ведёт курс ребёнка. Посев в обход выразил бы
+      состояние, которого в жизни не бывает.
+    """
+    from accounts.models import User
+    from allauth.account.models import EmailAddress
+    from families import conversations, viewing
+    from families.models import link
+
+    if not students:
+        return ""
+
+    made, taken = 0, 0
+    for number, size in enumerate(FAMILY_SIZES, start=1):
+        children = students[taken : taken + size]
+        taken += size
+        if not children:
+            break
+
+        surname = (children[0].last_name or "Родителев").rstrip("а")
+        adults = (("Марина", "мама"), ("Олег", "папа")) if number <= 2 else (
+            (("Ирина", "мама"),)
+        )
+
+        for first, relation in adults:
+            email = f"parent{number}.{'mother' if relation == 'мама' else 'father'}@example.com"
+            parent, _ = User.objects.get_or_create(
+                email=email,
+                defaults={
+                    "first_name": first,
+                    "last_name": f"{surname}а" if relation == "мама" else surname,
+                    "school": school,
+                    "kind": User.Kind.PARENT,
+                    "last_login": timezone.now(),
+                },
+            )
+            EmailAddress.objects.get_or_create(
+                user=parent,
+                email=parent.email,
+                defaults={"verified": True, "primary": True},
+            )
+            made += 1
+            for child in children:
+                link(parent, child, relation=relation)
+
+    # по одному разговору на родителя: пустой раздел не показывает ни списка,
+    # ни реплик, а посмотреть на него глазами хочется с содержимым
+    for parent in User.objects.filter(school=school, kind=User.Kind.PARENT):
+        for child in viewing.children_of(parent):
+            teachers = conversations.teachers_for(child)
+            if not teachers:
+                continue
+            thread = conversations.open_thread(
+                parent=parent, teacher=teachers[0], child=child
+            )
+            if not thread.messages.exists():
+                conversations.say(
+                    thread,
+                    author=parent,
+                    text=f"Здравствуйте! Как у {child.first_name} с последней работой?",
+                )
+                conversations.say(
+                    thread,
+                    author=teachers[0],
+                    text="Добрый день! Работу сдал, ошибки разберём на уроке.",
+                )
+            break
+
+    return f"родителей {made}" if made else ""
+
+
+# Звонки обычной школы: сорок пять минут урока, десять перемены, большая после
+# третьего. Числа не выдуманы ради красоты — по ним видно, что перемены бывают
+# разной длины, а расписание, где все они одинаковы, ничего об этом не говорит.
+BELLS = (
+    ("08:30", "09:15"),
+    ("09:25", "10:10"),
+    ("10:20", "11:05"),
+    ("11:25", "12:10"),
+    ("12:20", "13:05"),
+    ("13:15", "14:00"),
+)
+
+
+def _bells(school):
+    """Расписание звонков: без него сетка недели показывает голые номера."""
+    from schedule.services import set_bells
+
+    set_bells(
+        school.pk,
+        [
+            {"number": number, "starts_at": starts, "ends_at": ends}
+            for number, (starts, ends) in enumerate(BELLS, start=1)
+        ],
+    )
+    return f"звонков {len(BELLS)}"

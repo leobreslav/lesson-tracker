@@ -26,6 +26,17 @@ class Codes:
     NO_SCHOOL = "no_school"
     TEACHERS_ONLY = "teachers_only"
     STUDENTS_ONLY = "students_only"
+    PARENTS_ONLY = "parents_only"
+    # родитель назвал ребёнка, который не его — или не назвал вовсе, а детей
+    # у него несколько, и угадывать тут нечего
+    NOT_YOUR_CHILD = "not_your_child"
+    CHILD_REQUIRED = "child_required"
+    NOT_A_PARENT = "not_a_parent"
+    NOT_A_STUDENT = "not_a_student"
+    DIFFERENT_SCHOOLS = "different_schools"
+    NOT_A_TEACHER_OF_THIS_CHILD = "not_a_teacher_of_this_child"
+    BELL_NUMBER_TWICE = "bell_number_twice"
+    BELL_ENDS_BEFORE_IT_STARTS = "bell_ends_before_it_starts"
     EMAIL_OTHER_KIND = "email_other_kind"
     NOT_A_STUDENT = "not_a_student"
     SUPERUSER_REQUIRED = "superuser_required"
