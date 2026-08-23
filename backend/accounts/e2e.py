@@ -34,6 +34,7 @@ from django.conf import settings
 from django.core.management import call_command
 from django.http import Http404
 from rest_framework.authentication import TokenAuthentication
+from rest_framework.exceptions import AuthenticationFailed
 from rest_framework.authtoken.models import Token
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
@@ -47,13 +48,35 @@ def enabled() -> bool:
     return bool(getattr(settings, "E2E_TEST_LOGIN", False))
 
 
+class TokenIfItIsAnyGood(TokenAuthentication):
+    """
+    Токен, если он есть и годен; иначе аноним, а не отказ.
+
+    Штатная `TokenAuthentication` на неизвестном токене отвечает 401 и до
+    вьюхи не пускает вовсе. Для этой двери это была бы поломка на ровном
+    месте: после пересева стенда в браузере остаётся токен от снесённой базы,
+    и дверь, которой токен не нужен вообще (списка допущенных нет), ответила
+    бы отказом — а выглядело бы это как «переключатель аккаунтов пропал».
+
+    На контуре со списком ничего не теряется: без токена запрос всё равно
+    получает 403 с нашим кодом, то есть тот отказ, который тут и надо
+    показать, — а не 401 от чужого механизма.
+    """
+
+    def authenticate(self, request):
+        try:
+            return super().authenticate(request)
+        except AuthenticationFailed:
+            return None
+
+
 class E2EView(APIView):
     """Open to anyone — but only when the flag is on, and it never is."""
 
     # Токен читается, но не требуется: на контуре без списка допущенных дверь
     # открыта, и браузерные тесты входят ею, ещё не имея никакого токена.
     # Список нужен ровно затем, чтобы было **кого** спросить, когда он есть.
-    authentication_classes = [TokenAuthentication]
+    authentication_classes = [TokenIfItIsAnyGood]
     permission_classes = [AllowAny]
 
     def initial(self, request, *args, **kwargs):

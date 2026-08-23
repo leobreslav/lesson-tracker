@@ -398,6 +398,35 @@ class DevDoorAsksWhoIsKnockingTests(APITestCase):
 
         self.assertEqual(response.status_code, 403)
 
+    def test_a_stale_token_is_a_refusal_of_ours_and_not_a_401(self):
+        """
+        Токен от снесённой базы — не повод отвечать чужим механизмом.
+
+        Штатная `TokenAuthentication` на неизвестном токене даёт 401 ещё до
+        вьюхи. Здесь ответить должен наш отказ: человеку надо понять, что его
+        не пускает список, а не что «что-то с авторизацией».
+        """
+        from accounts.e2e import TestLoginView
+
+        response = self.knock(TestLoginView, token="0" * 40)
+
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response.data["code"], "not_allowed_here")
+
+    @override_settings(LOGIN_ALLOWED_EMAILS=[])
+    def test_a_stale_token_does_not_shut_an_open_door(self):
+        """
+        Пересеяли стенд — в браузере остался токен от прошлой базы.
+
+        Дверь на таком контуре открыта и токена не спрашивает вовсе; ответь
+        она 401, и переключатель аккаунтов пропал бы после каждого пересева.
+        """
+        from accounts.e2e import TestPeopleView
+
+        request = self.factory.get("/", HTTP_AUTHORIZATION="Token " + "f" * 40)
+
+        self.assertEqual(TestPeopleView.as_view()(request).status_code, 200)
+
     @override_settings(LOGIN_ALLOWED_EMAILS=[])
     def test_without_a_list_the_door_stays_as_it_was(self):
         """
