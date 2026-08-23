@@ -182,12 +182,24 @@ test('правка работы, в которой уже отвечали, на
   // не запрет, а число: правка проходит, но человек знает, чего она стоит
   await expect(page.locator('main')).toContainText('уже отвечали')
 
+  // название на странице одно: заголовок, а не он же плюс поле в карточке
+  // под чужой подписью. Поле появляется по клику в заголовок — как тема
+  // урока и строка плана
+  await expect(page.getByLabel('Название')).toHaveCount(0)
+
   // «Сохранить» ждёт правки, а не запрещает её: пока ничего не тронуто,
   // сохранять нечего — тронули, и кнопка ожила
   const save = page.getByRole('button', { name: 'Сохранить' })
   await expect(save).toBeDisabled()
-  await page.getByLabel('Название').fill('Контрольная (поправлено)')
+  await page.getByLabel('Пояснения к работе').fill('Решить номера 1–5.')
   await expect(save).toBeEnabled()
+
+  // переименование — своей формой в заголовке, и применяется сразу:
+  // заголовок страницы черновиком не бывает
+  await page.locator('h1 button.name').click()
+  await page.getByLabel('Название').fill('Контрольная (поправлено)')
+  await page.locator('.lesson-title-head form').getByRole('button', { name: 'Сохранить' }).click()
+  await expect(page.locator('h1')).toContainText('Контрольная (поправлено)')
 })
 
 /**

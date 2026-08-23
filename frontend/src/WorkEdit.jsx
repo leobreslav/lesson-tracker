@@ -20,21 +20,33 @@ import { fetchTasks, fetchWork, fetchWorkImpact, updateWork } from './api'
  *
  * | | где | почему |
  * |---|---|---|
+ * | название | заголовком страницы, правится кликом по нему | оно же и есть имя страницы |
  * | задание | во весь экран, поле на дюжину строк | его пишут, переписывают и правят весь год |
  * | файлы | под заданием | прикладывают в тот же заход |
  * | задачи | своей карточкой ниже | вторая половина той же работы |
  * | окно, попытки, показ отметки, итоговая, оценивание | за кнопкой «Настройки» | задают один раз и не трогают |
+ *
+ * **Название на странице одно.** Поле «Название» стояло в карточке
+ * содержания — то есть под заголовком страницы, показывавшим ровно тот же
+ * текст, и вдобавок под жирной подписью «Пояснения к работе», к которой оно
+ * не имело отношения. Один текст в двух местах читается как ошибка вёрстки
+ * и заставляет гадать, какое из двух настоящее.
+ *
+ * Теперь оно правится кликом по заголовку — как тема на странице занятия и
+ * как строка в таблице плана: одна операция не должна делаться тремя
+ * разными способами на трёх экранах. Оттуда же и порядок сохранения:
+ * переименование применяется сразу, своей маленькой формой, — заголовок
+ * страницы не бывает черновиком.
  *
  * **Просмотр — тумблер, а не второе поле рядом.** Задание это Markdown с
  * формулами и картинками, и посмотреть его глазами ученика надо; но поле и
  * вид бок о бок делят пополам ровно ту ширину, ради которой правку и унесли
  * из окна. Тумблер тот же, что в панели урока и в окне задачи.
  *
- * Три вещи сохраняются здесь **по-разному**, и это не небрежность:
- * название с заданием — черновик до «Сохранить» (текст правят долго и
- * возвращаются к нему), а файлы, задачи и настройки — строки в базе, и
- * применяются сразу. Файл, ждущий кнопки, — это загрузка, которая тихо не
- * случилась.
+ * Сохраняется здесь три вещи **по-разному**, и это не небрежность: задание
+ * — черновик до «Сохранить» (текст правят долго и возвращаются к нему), а
+ * название, файлы, задачи и настройки — строки в базе, и применяются сразу.
+ * Файл, ждущий кнопки, — это загрузка, которая тихо не случилась.
  */
 export default function WorkEdit() {
   const { id } = useParams()
@@ -45,6 +57,7 @@ export default function WorkEdit() {
   const [impact, setImpact] = useState(null)
   const [tasks, setTasks] = useState([])
   const [form, setForm] = useState(null)
+  const [renaming, setRenaming] = useState(null)
   const [preview, setPreview] = useState(false)
   const [settings, setSettings] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -56,9 +69,7 @@ export default function WorkEdit() {
         setWork(answer)
         // черновик заводится один раз, при загрузке: перечитывание после
         // правки задач не должно затирать набранный, но не сохранённый текст
-        setForm((current) =>
-          current ?? { title: answer.title, description: answer.description ?? '' },
-        )
+        setForm((current) => current ?? { description: answer.description ?? '' })
       }),
     [id],
   )
@@ -76,19 +87,32 @@ export default function WorkEdit() {
     fetchWorkImpact(id).then(setImpact).catch(() => setImpact(null))
   }, [id, load, loadTasks])
 
-  const dirty =
-    work &&
-    form &&
-    (form.title !== work.title || form.description !== (work.description ?? ''))
+  const dirty = work && form && form.description !== (work.description ?? '')
 
   const save = async (event) => {
     event.preventDefault()
-    if (busy || !form.title.trim()) return
+    if (busy) return
 
     setBusy(true)
     setError(null)
     try {
-      setWork(await updateWork(id, { title: form.title.trim(), description: form.description }))
+      setWork(await updateWork(id, { description: form.description }))
+    } catch (failure) {
+      setError(failure.message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const rename = async (event) => {
+    event.preventDefault()
+    if (busy || !renaming.trim()) return
+
+    setBusy(true)
+    setError(null)
+    try {
+      setWork(await updateWork(id, { title: renaming.trim() }))
+      setRenaming(null)
     } catch (failure) {
       setError(failure.message)
     } finally {
@@ -108,7 +132,40 @@ export default function WorkEdit() {
     <main className="page wide">
       <header className="page-header">
         <div className="lesson-title-head">
-          <h1>{work.title}</h1>
+          {/* Переименование — кликом по названию, как на странице занятия и
+              как в таблице плана. Своей строкой формы оно и сохраняется:
+              заголовок страницы черновиком не бывает */}
+          {renaming === null ? (
+            <h1>
+              <button
+                type="button"
+                className="link name"
+                title={t('works.rename')}
+                disabled={busy}
+                onClick={() => setRenaming(work.title)}
+              >
+                {work.title}
+              </button>
+            </h1>
+          ) : (
+            <form className="row" onSubmit={rename}>
+              <input
+                autoFocus
+                value={renaming}
+                maxLength={200}
+                aria-label={t('works.workTitle')}
+                placeholder={t('works.workTitle')}
+                onChange={(event) => setRenaming(event.target.value)}
+              />
+              <button type="submit" disabled={busy || !renaming.trim()}>
+                {t('common.save')}
+              </button>
+              <button type="button" className="secondary" onClick={() => setRenaming(null)}>
+                {t('common.cancel')}
+              </button>
+            </form>
+          )}
+
           <p className="hint">
             {work.course_name} · {t(`works.state.${work.state}`)}
           </p>
@@ -134,9 +191,13 @@ export default function WorkEdit() {
         </p>
       )}
 
+      {/* Карточка названа по тому, что в ней лежит целиком — задание и
+          файлы к нему. Называлась она «Пояснения к работе», то есть именем
+          одного из двух своих полей, и подпись этого поля повторяла
+          заголовок строкой ниже */}
       <section className="panel">
         <div className="panel-head spread">
-          <h3>{t('works.description')}</h3>
+          <h3>{t('works.content')}</h3>
           <Switch
             className="compact"
             value={preview ? 'preview' : 'write'}
@@ -158,10 +219,11 @@ export default function WorkEdit() {
             busy={busy}
             preview={preview}
             rows={14}
+            withTitle={false}
           />
 
           <div className="actions">
-            <button type="submit" disabled={busy || !dirty || !form.title.trim()}>
+            <button type="submit" disabled={busy || !dirty}>
               {t('common.save')}
             </button>
             <span className="hint" role="status">

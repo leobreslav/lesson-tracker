@@ -26,6 +26,20 @@ import { formatSize, iconFor } from './fileKind'
  * Файлы — строки в базе, поэтому применяются сразу, не дожидаясь
  * «Сохранить»: файл, ждущий кнопки, — это загрузка, которая тихо не
  * случилась.
+ *
+ * **Название показывается не везде.** В окне заведения оно первое поле —
+ * без него работы не завести; на странице правки его показывает заголовок,
+ * и второе такое же поле в карточке читалось бы как ошибка вёрстки: один
+ * текст в двух местах заставляет гадать, какое из двух настоящее. Отсюда
+ * `withTitle`, и решает его тот, кто знает, есть ли название на экране
+ * рядом, — не сам блок.
+ *
+ * **Три блока, а не восемь абзацев подряд.** Название, задание и файлы —
+ * это три разных вопроса, и каждый стоит своим блоком с подписью
+ * (`.work-field`). Раньше подписи, поле, список файлов и зона
+ * перетаскивания шли сплошняком, отчего «Сохранить» слипалось с зоной, а
+ * зона — с подсказкой над ней: по такой странице не видно, где кончается
+ * одно и начинается другое.
  */
 export default function WorkContent({
   form,
@@ -42,6 +56,9 @@ export default function WorkContent({
   // фокус в окне попадает на название сам, а на странице тот же фокус
   // прокрутил бы её мимо заголовка
   autoFocus = false,
+  // название показывает страница правки заголовком, и второго такого же
+  // поля в карточке ей не нужно — см. докстринг
+  withTitle = true,
 }) {
   const { t } = useTranslation()
 
@@ -87,16 +104,18 @@ export default function WorkContent({
   }
 
   return (
-    <>
-      <label className="field-with-hint">
-        {t('works.workTitle')}
-        <input
-          autoFocus={autoFocus}
-          value={form.title}
-          maxLength={200}
-          onChange={change('title')}
-        />
-      </label>
+    <div className="work-content">
+      {withTitle && (
+        <label className="field-with-hint">
+          {t('works.workTitle')}
+          <input
+            autoFocus={autoFocus}
+            value={form.title}
+            maxLength={200}
+            onChange={change('title')}
+          />
+        </label>
+      )}
 
       {/* Текст задания — то, что увидит ученик над задачами, и то же
           самое видит над ними учитель.
@@ -112,31 +131,33 @@ export default function WorkContent({
           Поле — такое же, как содержание урока: Markdown с формулами и
           картинка по Ctrl+V. Своего редактора у него нет и не будет — см.
           `MarkdownField.jsx` */}
-      <span className="hint">{t('works.description')}</span>
-      {preview ? (
-        /* Пустое задание в просмотре — это строка «тут пусто», а не пустое
-           место: пустое место читается как «не загрузилось», и первый же
-           вопрос будет про поломку, а не про ненаписанный текст. */
-        form.description.trim() ? (
-          <div className="work-brief">
-            <Rendered text={form.description} />
-          </div>
+      <div className="work-field">
+        <span className="field-label">{t('works.description')}</span>
+        {preview ? (
+          /* Пустое задание в просмотре — это строка «тут пусто», а не пустое
+             место: пустое место читается как «не загрузилось», и первый же
+             вопрос будет про поломку, а не про ненаписанный текст. */
+          form.description.trim() ? (
+            <div className="work-brief">
+              <Rendered text={form.description} />
+            </div>
+          ) : (
+            <p className="hint">{t('works.noDescription')}</p>
+          )
         ) : (
-          <p className="hint">{t('works.noDescription')}</p>
-        )
-      ) : (
-        <>
-          <MarkdownField
-            value={form.description}
-            onChange={(text) => setForm((current) => ({ ...current, description: text }))}
-            rows={rows}
-            label={t('works.description')}
-            ensureOwner={async () => ({ work: await ensureWork() })}
-            disabled={busy}
-          />
-          <Hint short={t('works.descriptionHint')} more={t('works.descriptionHintMore')} />
-        </>
-      )}
+          <>
+            <MarkdownField
+              value={form.description}
+              onChange={(text) => setForm((current) => ({ ...current, description: text }))}
+              rows={rows}
+              label={t('works.description')}
+              ensureOwner={async () => ({ work: await ensureWork() })}
+              disabled={busy}
+            />
+            <Hint short={t('works.descriptionHint')} more={t('works.descriptionHintMore')} />
+          </>
+        )}
+      </div>
 
       {/* Файлы работы: условия одним pdf'ом, бланк для печати, разбор.
           Стоят рядом с текстом, а не в отдельном окне, потому что
@@ -146,82 +167,84 @@ export default function WorkContent({
           урока. Материал урока это то, чем пользуется учитель («принести
           линейку»); здесь же всё, что лежит, увидит класс, и «запись без
           цели» была бы строкой, на которую ученику нечего нажать */}
-      <div className="row middle">
-        <span className="hint">{t('works.files')}</span>
-        {files.length > 0 && <span className="hint">{files.length}</span>}
-      </div>
+      <div className="work-field">
+        <div className="row middle">
+          <span className="field-label">{t('works.files')}</span>
+          {files.length > 0 && <span className="hint">{files.length}</span>}
+        </div>
 
-      {files.length > 0 && (
-        <ul className="attachments">
-          {files.map((item) => {
-            const size = formatSize(item.size)
+        {files.length > 0 && (
+          <ul className="attachments">
+            {files.map((item) => {
+              const size = formatSize(item.size)
 
-            return (
-              <li key={item.id} className="attachment">
-                <span className="attachment-icon" aria-hidden="true">
-                  {iconFor(item)}
-                </span>
-                <button
-                  type="button"
-                  className="link title"
-                  title={t('lesson.download')}
-                  onClick={() => openAttachment(item.id).catch((failure) =>
-                    setFileError(failure.message),
-                  )}
-                >
-                  {item.title}
-                </button>
-                {size && (
-                  <span className="hint">
-                    {t(`lesson.size.${size.unit}`, { value: size.value })}
+              return (
+                <li key={item.id} className="attachment">
+                  <span className="attachment-icon" aria-hidden="true">
+                    {iconFor(item)}
                   </span>
-                )}
-                <button
-                  type="button"
-                  className="link remove"
-                  title={t('common.delete')}
-                  disabled={attaching || busy}
-                  onClick={() => removeFile(item)}
-                >
-                  ✕
-                </button>
-              </li>
-            )
-          })}
-        </ul>
-      )}
+                  <button
+                    type="button"
+                    className="link title"
+                    title={t('lesson.download')}
+                    onClick={() => openAttachment(item.id).catch((failure) =>
+                      setFileError(failure.message),
+                    )}
+                  >
+                    {item.title}
+                  </button>
+                  {size && (
+                    <span className="hint">
+                      {t(`lesson.size.${size.unit}`, { value: size.value })}
+                    </span>
+                  )}
+                  <button
+                    type="button"
+                    className="link remove"
+                    title={t('common.delete')}
+                    disabled={attaching || busy}
+                    onClick={() => removeFile(item)}
+                  >
+                    ✕
+                  </button>
+                </li>
+              )
+            })}
+          </ul>
+        )}
 
-      <input
-        ref={chooseFile}
-        type="file"
-        multiple
-        hidden
-        aria-label={t('works.addFile')}
-        onChange={(event) => {
-          attach([...event.target.files])
-          event.target.value = ''
-        }}
-      />
-      {/* зона перетаскивания — она же кнопка выбора: тащить умеют не все и
-          не везде, а нажать везде. Та же, что в панели урока */}
-      <button
-        type="button"
-        className="dropzone"
-        disabled={attaching || busy}
-        onClick={() => chooseFile.current.click()}
-        onDragOver={(event) => event.preventDefault()}
-        onDrop={(event) => {
-          event.preventDefault()
-          attach([...(event.dataTransfer?.files ?? [])])
-        }}
-      >
-        {attaching ? t('works.attaching') : t('works.dropHere')}
-      </button>
-      {fileError && (
-        <p className="error" role="alert">
-          {fileError}
-        </p>
-      )}
-    </>
+        <input
+          ref={chooseFile}
+          type="file"
+          multiple
+          hidden
+          aria-label={t('works.addFile')}
+          onChange={(event) => {
+            attach([...event.target.files])
+            event.target.value = ''
+          }}
+        />
+        {/* зона перетаскивания — она же кнопка выбора: тащить умеют не все и
+            не везде, а нажать везде. Та же, что в панели урока */}
+        <button
+          type="button"
+          className="dropzone"
+          disabled={attaching || busy}
+          onClick={() => chooseFile.current.click()}
+          onDragOver={(event) => event.preventDefault()}
+          onDrop={(event) => {
+            event.preventDefault()
+            attach([...(event.dataTransfer?.files ?? [])])
+          }}
+        >
+          {attaching ? t('works.attaching') : t('works.dropHere')}
+        </button>
+        {fileError && (
+          <p className="error" role="alert">
+            {fileError}
+          </p>
+        )}
+      </div>
+    </div>
   )
 }

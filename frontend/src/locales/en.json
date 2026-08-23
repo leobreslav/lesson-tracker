@@ -1097,6 +1097,8 @@
     "editAction": "Edit",
     "settings": "Settings",
     "workTitle": "Title",
+    "content": "Assignment content",
+    "rename": "Rename",
     "opensAt": "Opens",
     "closesAt": "Closes",
     "windowHint": "Answers can be sent only while the window is open.",
