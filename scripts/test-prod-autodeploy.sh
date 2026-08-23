@@ -172,6 +172,47 @@ else
 fi
 rm -rf "$t"
 
+# --- упавшая выкатка повторяется, даже когда новых коммитов нет --------------
+#
+# `deploy.sh` тянет код сам, и падает уже после `git pull`: дерево стоит на
+# origin/production, и без отметки следующий тик вышел бы как «нечего
+# выкатывать». Причину устранили — а контур молчит до чужого коммита.
+t="$(make_fixture)"
+cat > "$t/work/deploy.sh" <<'STUB'
+#!/usr/bin/env bash
+git pull --ff-only --quiet
+echo "deploy" >> "$HOME/deploy-calls"
+exit 1
+STUB
+chmod +x "$t/work/deploy.sh"
+git -C "$t/work" commit --quiet --allow-empty -m two
+git -C "$t/work" push --quiet origin HEAD:refs/heads/production
+git -C "$t/work" reset --hard --quiet HEAD~1
+
+first="$(run_in "$t")"
+if [ "$first" != "0" ] && [ -f "$t/.prod-autodeploy.failed" ]; then
+    report ok "упавшая выкатка оставляет отметку"
+else
+    report FAIL "упавшая выкатка оставляет отметку" "код $first"
+fi
+
+# теперь дерево уже на origin/production — прежний скрипт вышел бы молча
+: > "$t/deploy-calls"
+cat > "$t/work/deploy.sh" <<'STUB'
+#!/usr/bin/env bash
+git pull --ff-only --quiet
+echo "deploy" >> "$HOME/deploy-calls"
+STUB
+chmod +x "$t/work/deploy.sh"
+second="$(run_in "$t")"
+if [ "$second" = "0" ] && deployed "$t" && [ ! -f "$t/.prod-autodeploy.failed" ]; then
+    report ok "следующий тик повторяет её и снимает отметку"
+else
+    report FAIL "следующий тик повторяет её и снимает отметку" \
+        "код $second, вызовы: $(cat "$t/deploy-calls" 2>/dev/null)"
+fi
+rm -rf "$t"
+
 # --- замок занят: пропускаем тик, а не лезем поверх --------------------------
 t="$(make_fixture)"
 git -C "$t/work" commit --quiet --allow-empty -m two
