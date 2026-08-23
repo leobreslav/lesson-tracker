@@ -33,6 +33,7 @@ import SchoolOverview from './SchoolOverview'
 import SchoolReference from './SchoolReference'
 import SchoolStudents from './SchoolStudents'
 import Works from './Works'
+import WorkEdit from './WorkEdit'
 import WorkTable from './WorkTable'
 import SchoolTeachers from './SchoolTeachers'
 import StartHere, { hasSteps } from './StartHere'
@@ -200,6 +201,10 @@ export default function App() {
           <Route path="/plan" element={guarded(Plan, { user })} />
           <Route path="/works" element={guarded(Works)} />
           <Route path="/works/:id" element={guarded(WorkTable)} />
+          {/* два адреса у одной работы, и названы они по тому, что на них
+              делают: `/works/:id` — как справились, `/works/:id/edit` — из
+              чего работа состоит. Правка стояла окном и в него не влезала */}
+          <Route path="/works/:id/edit" element={guarded(WorkEdit)} />
           <Route path="/bank" element={guarded(Bank)} />
           <Route path="/track/:id" element={guarded(StudentTrack)} />
           <Route path="/bank/proposals" element={guarded(Proposals)} />

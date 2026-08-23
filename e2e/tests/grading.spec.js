@@ -69,7 +69,8 @@ test('учитель выбирает систему сам, а запрещён
   await ready(page)
   await page.getByLabel('Курс').selectOption({ label: 'Grade 6 Algebra' })
   const row = page.locator('.work-list .course-row', { hasText: work.title })
-  await row.getByRole('button', { name: 'Настройки' }).click()
+  await row.getByRole('button', { name: 'Править' }).click()
+  await ready(page)
 
   const select = page.getByLabel('Система оценивания')
   await expect(select).toBeVisible()
@@ -78,8 +79,9 @@ test('учитель выбирает систему сам, а запрещён
 
   await select.selectOption({ label: 'MYP 1–7' })
   await page.getByRole('button', { name: 'Сохранить' }).click()
-  // окно закрывается по ответу сервера: читать работу раньше — гонка
-  await expect(page.locator('.modal')).toHaveCount(0)
+  // со страницы правки уходят в список, и уходят по ответу сервера:
+  // читать работу раньше — гонка
+  await expect(page.locator('.work-list')).toBeVisible()
 
   const after = await teacher.get(`/api/works/${work.id}/`)
   expect(after.body.grade.name).toBe('MYP 1–7')

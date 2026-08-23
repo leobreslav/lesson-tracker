@@ -112,8 +112,18 @@ for (const language of ['ru', 'en']) {
       await (await api(who)).patch('/api/me/', { language })
     }
 
+    /*
+     * Страница правки работы адресуется по id, и статическим списком её не
+     * назвать — поэтому она добывается запросом и дописывается к обходу.
+     * Заглянуть туда надо тем более: рядов формы там больше, чем на любом
+     * другом экране, и живут они теперь на странице, а не в окне.
+     */
+    const mine = await (await api(PEOPLE.ivanova)).get('/api/works/')
+    const work = mine.body?.[0]
+    const pages = work ? [...PAGES, [`/works/${work.id}/edit`, PEOPLE.ivanova]] : PAGES
+
     const found = []
-    for (const [path, who] of PAGES) {
+    for (const [path, who] of pages) {
       await signIn(who)
       await page.goto(path)
       await ready(page)

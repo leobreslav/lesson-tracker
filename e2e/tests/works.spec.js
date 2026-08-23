@@ -32,7 +32,7 @@ test('в списке — имя и два действия, состояние 
   const closed = list.locator('.course-row', { hasText: 'Контрольная' })
   await expect(closed).toHaveCount(1)
   await expect(closed).not.toContainText('попыт')
-  await expect(closed.getByRole('button', { name: 'Настройки' })).toBeVisible()
+  await expect(closed.getByRole('button', { name: 'Править' })).toBeVisible()
 
   await closed.getByRole('button', { name: 'Проверка' }).click()
 
@@ -144,12 +144,18 @@ test('правка работы, в которой уже отвечали, на
 
   const work = list.locator('.course-row', { hasText: 'Контрольная' })
   await work.locator('.toggle').click()
-  await work.getByRole('button', { name: 'Настройки' }).click()
+  await work.getByRole('button', { name: 'Править' }).click()
+  await ready(page)
+
+  // правка — страница, а не окно, и это половина смысла теста: полей у
+  // работы, которую уже ведут, полтора десятка, и в щёлку поверх списка их
+  // не читали
+  await expect(page).toHaveURL(/\/works\/\d+\/edit$/)
+  await expect(page.locator('dialog.modal')).toHaveCount(0)
 
   // не запрет, а число: правка проходит, но человек знает, чего она стоит
-  const dialog = page.locator('dialog.modal')
-  await expect(dialog).toContainText('уже отвечали')
-  await expect(dialog.getByRole('button', { name: 'Сохранить' })).toBeEnabled()
+  await expect(page.locator('main')).toContainText('уже отвечали')
+  await expect(page.getByRole('button', { name: 'Сохранить' })).toBeEnabled()
 })
 
 /**

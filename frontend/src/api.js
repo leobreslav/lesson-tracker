@@ -581,6 +581,9 @@ export const submitBaseline = (classId, reviewer) =>
 export const fetchWorks = (course) =>
   request(`/api/works/?course=${course}`)
 
+/** Одна работа целиком — страница правки открывается по адресу, без списка. */
+export const fetchWork = (id) => request(`/api/works/${id}/`)
+
 export const createWork = (fields) =>
   request('/api/works/', { method: 'POST', body: fields })
 
