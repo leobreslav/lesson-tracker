@@ -26,16 +26,36 @@ from plans.models import PlanNode
 from .models import Attachment
 
 
+def watched_students(user):
+    """
+    Чьи работы этот человек смотрит как семья: свои или своих детей.
+
+    Один ответ на два вида, и живёт он здесь, а не в двух выборках ниже:
+    родитель появился позже ученика, и место, где про него забыли бы,
+    показало бы ему пустой список вместо работ ребёнка — или, что хуже,
+    чужие работы, если бы забыли в другую сторону.
+    """
+    from families.viewing import children_of
+
+    if getattr(user, "is_student", False):
+        return [user]
+    if getattr(user, "is_parent", False):
+        return children_of(user)
+    return []
+
+
 def school_attachments(user):
     """Everything hanging off a lesson row of this person's school."""
     if user is None or not user.is_authenticated or user.school_id is None:
         return Attachment.objects.none()
 
-    if getattr(user, "is_student", False):
-        # у ученика «школьные вложения» это его собственные: остальные для
-        # него не существуют, и разница «нет такого» / «не ваше» тут ни к
-        # чему — он и не должен знать, что у одноклассника что-то есть
-        return Attachment.objects.filter(student_work__student=user)
+    if getattr(user, "is_family", False):
+        # у семьи «школьные вложения» это работы ученика: остальные для неё
+        # не существуют, и разница «нет такого» / «не ваше» тут ни к чему —
+        # знать, что у одноклассника что-то лежит, ей тоже незачем
+        return Attachment.objects.filter(
+            student_work__student__in=watched_students(user)
+        )
 
     return Attachment.objects.filter(
         Q(plan_row__course__school_id=user.school_id)
@@ -56,10 +76,13 @@ def readable_attachments(user):
     if user is None or not user.is_authenticated or user.school_id is None:
         return Attachment.objects.none()
 
-    if getattr(user, "is_student", False):
-        # ученику виден ровно один вид вложений — сканы его собственных
-        # работ. Ни плана, ни полки он не читает вовсе
-        return Attachment.objects.filter(student_work__student=user)
+    if getattr(user, "is_family", False):
+        # семье виден ровно один вид вложений — то, что лежит на работах
+        # ученика: и скан от учителя, и его собственные фотографии. Ни
+        # плана, ни полки она не читает вовсе
+        return Attachment.objects.filter(
+            student_work__student__in=watched_students(user)
+        )
 
     return Attachment.objects.filter(
         # вложения строки плана и сканы работ — часть содержания курса,
@@ -97,10 +120,11 @@ def can_read(user, attachment) -> bool:
     from schedule.models import Course
 
     if attachment.student_work_id is not None:
-        # скан работы: свой ученик и ведущий курса, и больше никто. Ошибка
-        # здесь — не «показали лишнее», а чужая контрольная с отметками
+        # работа ученика: он сам, его родитель и ведущий курса, и больше
+        # никто. Ошибка здесь — не «показали лишнее», а чужая контрольная с
+        # отметками
         row = attachment.student_work
-        if row.student_id == user.pk:
+        if row.student_id in {person.pk for person in watched_students(user)}:
             return True
         return (
             Course.objects.writable_by(user).filter(pk=row.work.course_id).exists()
@@ -130,8 +154,14 @@ def can_write(user, attachment) -> bool:
     from schedule.models import CourseAssignment
 
     if attachment.student_work_id is not None:
-        # ученик свою работу не правит: скан — запись учителя о ней, а не
-        # его слова. Читает всегда, меняет никогда
+        # Учительская дверь, и в неё семья не проходит **вовсе** — даже за
+        # своей же фотографией. Своё она снимает своей дверью
+        # (`/api/student/photos/<id>/`, `works.photos.may_remove`), где
+        # спрашивается ещё и открыто ли окно: снять присланное после
+        # закрытия — это правка сданной работы, а не передумал.
+        #
+        # Две двери здесь не дублирование, а разные вопросы: тут «чей это
+        # урок», там «ваше ли это и не поздно ли».
         return CourseAssignment.objects.filter(
             course_id=attachment.student_work.work.course_id, teacher=user
         ).exists()

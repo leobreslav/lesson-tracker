@@ -4,7 +4,9 @@ import { useTranslation } from 'react-i18next'
 import Modal from './Modal'
 import TaskBrief from './TaskBrief'
 import Verdict from './Verdict'
-import { fetchSubmissions } from './api'
+import PhotoStrip from './PhotoStrip'
+import PhotoViewer from './PhotoViewer'
+import { fetchSubmissions, fetchWorkPhotos } from './api'
 import { dateTime } from './dates'
 
 /**
@@ -18,11 +20,16 @@ import { dateTime } from './dates'
  * окно говорит об этом строкой и кнопкой «показать» — решение остаётся за
  * учителем, а не за таймером.
  */
-export default function CellDialog({ student, task, onChanged, onClose }) {
+export default function CellDialog({ work, student, task, onChanged, onClose }) {
   const { t } = useTranslation()
   const [rows, setRows] = useState(null)
   const [fresh, setFresh] = useState(false)
   const [error, setError] = useState(null)
+  // снимки **этой** задачи: их и листает просмотрщик, открытый отсюда.
+  // Показать здесь всю тетрадь значило бы предложить листать то, за чем не
+  // приходили: пришли разбираться с одним вопросом
+  const [shots, setShots] = useState([])
+  const [viewing, setViewing] = useState(null)
 
   const load = useCallback(
     () =>
@@ -36,6 +43,22 @@ export default function CellDialog({ student, task, onChanged, onClose }) {
   useEffect(() => {
     load().catch((err) => setError(err.message))
   }, [load])
+
+  const loadPhotos = useCallback(
+    () =>
+      fetchWorkPhotos(work, student.id).then((answer) =>
+        setShots(
+          (answer.tasks.find((one) => one.id === task.id)?.photos ?? []).filter(
+            (photo) => photo.image,
+          ),
+        ),
+      ),
+    [work, student.id, task.id],
+  )
+
+  useEffect(() => {
+    loadPhotos().catch((err) => setError(err.message))
+  }, [loadPhotos])
 
   // проверка отсюда меняет таблицу под окном, поэтому о ней сообщаем наверх
   const checked = () => {
@@ -89,8 +112,29 @@ export default function CellDialog({ student, task, onChanged, onClose }) {
         </ul>
       )}
 
+      {/* Снимок решения — там же, где ответы: у одной ячейки бывают и то и
+          другое, и разводить их по разным окнам значило бы заставлять
+          учителя открывать два, чтобы поставить один балл. */}
+      <PhotoStrip
+        photos={shots}
+        label={shots.length ? t('photos.taskShots') : null}
+        onOpen={(photo) => setViewing(photo.id)}
+      />
+
       {/* разговор о задаче — там же, где её разбирают */}
       <TaskThread task={task.id} student={student.id} me={null} />
+
+      {viewing && (
+        <PhotoViewer
+          photos={shots}
+          current={viewing}
+          onChanged={() => {
+            loadPhotos().catch(() => {})
+            onChanged()
+          }}
+          onClose={() => setViewing(null)}
+        />
+      )}
     </Modal>
   )
 }

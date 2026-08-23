@@ -25,7 +25,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from . import assembling, services, statements, threads, track
+from . import assembling, photos, services, statements, threads, track
 from .models import Thread
 from vision import services as vision_services
 from .models import Submission, Task, Work
@@ -440,6 +440,50 @@ class WorkViewSet(CourseScopedViewSet):
             )
         )
 
+    # имя метода не `photos`: модуль `works.photos` зовут отсюда же, и
+    # одноимённый атрибут класса читался бы как он, стоило бы кому-нибудь
+    # обратиться к нему через `self`
+    @action(detail=True, methods=["get"], url_path="photos")
+    def student_photos(self, request, pk=None):
+        """
+        Снимки одного ученика по этой работе: по работе целиком и по задачам.
+
+        Одним ответом на обе раскладки, а не двумя адресами, и это про
+        просмотрщик: листают в нём **внутри** набора — снимки этой задачи
+        или снимки всей работы, — и какой из наборов открыт, решает то, куда
+        нажали. Раздельные адреса означали бы второй запрос ровно в тот
+        момент, когда человек нажал «дальше».
+
+        Ученик называется параметром: работа общая, а тетрадь — его.
+        """
+        work = self.get_object()
+
+        raw = request.query_params.get("student")
+        if not (raw or "").isdigit():
+            api_error(
+                Codes.SPLIT_NOT_IN_COURSE,
+                "Say whose photos these are.",
+                field="student",
+            )
+
+        mine = photos.sheets(work, viewer=request.user).get(
+            int(raw), photos.empty_sheet()
+        )
+
+        return Response(
+            {
+                "work": mine["work"],
+                "tasks": [
+                    {
+                        "id": task.pk,
+                        "name": task.name,
+                        "photos": mine["tasks"].get(task.pk, []),
+                    }
+                    for task in work.tasks.all()
+                ],
+            }
+        )
+
     @action(detail=True, methods=["get"])
     def table(self, request, pk=None):
         """
@@ -705,6 +749,10 @@ class StudentWorkView(APIView):
 
         tasks = list(work.tasks.all())
         journal = services.my_answers(student, tasks)
+        # снимки его работы: по задачам и на работу целиком. Второе едет в
+        # `papers` внутри `my_grade` — там же, где скан от учителя, потому
+        # что для ученика это одно и то же: изображение его работы
+        shots = photos.of_student(work, student, viewer=request.user)["tasks"]
         active = student.enrolments.filter(
             course_id=work.course_id, removed_at__isnull=True
         ).exists()
@@ -761,6 +809,11 @@ class StudentWorkView(APIView):
                         "attempts_left": services.attempts_left(
                             work, len(journal[task.pk])
                         ),
+                        # фотографии, присланные по этой задаче. Их видно
+                        # всегда, а не по `show_result`: это его собственная
+                        # тетрадь, и прятать её не от кого — то же правило,
+                        # что у скана работы
+                        "photos": shots.get(task.pk, []),
                         "submissions": StudentSubmissionSerializer(
                             journal[task.pk], many=True, context={"work": work}
                         ).data,
@@ -769,7 +822,7 @@ class StudentWorkView(APIView):
                 ],
                 # оценка и слова учителя — по тому же правилу, что вердикт:
                 # `show_result` решает, видно ли сразу или после закрытия
-                **services.my_grade(work, student),
+                **services.my_grade(work, student, viewer=request.user),
             }
         )
 

@@ -149,3 +149,44 @@ test('переключатель «войти как» берёт токен н�
 
   expect((await asked).postDataJSON().email).toBe(PEOPLE.student)
 })
+
+test('в работе есть куда положить фотографию — и по задаче, и на всю', async ({
+  page,
+  signIn,
+}) => {
+  /*
+   * Сама загрузка тут не проверяется и проверяться не может: у стенда нет
+   * хранилища объектов, и байтам ехать некуда. Проверяется то, ради чего
+   * браузерный набор и заведён, — что новый кусок интерфейса вообще
+   * запускается: `vite build` соберёт `ReferenceError` молча, и увидит его
+   * только слушатель консоли в оснастке.
+   *
+   * Заодно проверяется главное решение этого экрана: мест для снимка два, и
+   * они разные. По задаче — «вот решение четвёртой»; на работу целиком —
+   * «задач пятнадцать, снимаю разворот», и без второго ученик раскладывал бы
+   * по номерам то, что раскладывать не хочет.
+   */
+  await signIn(PEOPLE.student)
+  await page.goto('/')
+  await ready(page)
+
+  await page.getByRole('link', { name: 'Grade 6 Algebra' }).click()
+  await ready(page)
+
+  // открытая работа: в закрытой класть уже некуда, и кнопки там нет
+  await page
+    .locator('.panel', { hasText: 'Работы' })
+    .getByRole('link')
+    .first()
+    .click()
+  await ready(page)
+
+  const strips = page.locator('.photo-strip')
+  await expect(strips.first()).toBeVisible()
+  // полос больше одной: одна на работу целиком и по одной на задачу
+  await expect(strips).not.toHaveCount(1)
+  await expect(page.getByText('Фотографии работы')).toBeVisible()
+  await expect(
+    page.getByRole('button', { name: 'Добавить фото' }).first(),
+  ).toBeVisible()
+})

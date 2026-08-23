@@ -14,8 +14,9 @@ from django.db.models import Count, Max, Q
 from django.utils import timezone
 
 from bank.models import Problem
+from files.models import Attachment
 
-from . import statements, track
+from . import photos, statements, track
 from .models import (
     CLOSED,
     GradingSystem,
@@ -24,6 +25,7 @@ from .models import (
     Criterion,
     Mark,
     MarkChange,
+    PhotoNote,
     StudentWork,
     ScanPage,
     Submission,
@@ -363,6 +365,11 @@ def table_version(work) -> str:
     # оценки двигают ту же таблицу: поставили отметку — соседний экран
     # должен её увидеть, не дожидаясь перезагрузки
     graded = work.students.aggregate(rows=Count("id"), last=Max("updated_at"))
+    # присланная фотография — такое же событие для учителя, как ответ: класс
+    # снимает тетради на уроке, и снимки обязаны появляться в таблице сами
+    shots = Attachment.objects.filter(student_work__work=work).aggregate(
+        total=Count("id"), last=Max("id")
+    )
 
     return "|".join(
         str(part)
@@ -373,6 +380,8 @@ def table_version(work) -> str:
             numbers["checked"] and numbers["checked"].timestamp(),
             graded["rows"],
             graded["last"] and graded["last"].timestamp(),
+            shots["total"],
+            shots["last"],
         )
     )
 
@@ -402,6 +411,20 @@ def student_version(work, student) -> str:
     )
     # своя оценка — такое же неожиданное для него событие, как отметка
     graded = work.students.filter(student=student).aggregate(last=Max("updated_at"))
+    # снимки его работы и заметки учителя на них. Снимки потому, что убрать
+    # их может и учитель; заметки — потому, что они и есть проверка, и
+    # прикреплённая к клетке фраза обязана доехать без F5.
+    #
+    # Мазков в метке нет намеренно: обводка меняется десятками штрихов
+    # подряд, и метка дёргала бы страницу ученика всё время, пока учитель
+    # рисует. Их читает сам просмотрщик — при открытии, разом с картинкой.
+    shots = Attachment.objects.filter(
+        student_work__work=work, student_work__student=student
+    ).aggregate(total=Count("id"), last=Max("id"))
+    pinned = PhotoNote.objects.filter(
+        attachment__student_work__work=work,
+        attachment__student_work__student=student,
+    ).aggregate(total=Count("id"), last=Max("updated_at"))
 
     return "|".join(
         str(part)
@@ -413,6 +436,10 @@ def student_version(work, student) -> str:
             numbers["last"] and numbers["last"].timestamp(),
             numbers["checked"] and numbers["checked"].timestamp(),
             graded["last"] and graded["last"].timestamp(),
+            shots["total"],
+            shots["last"],
+            pinned["total"],
+            pinned["last"] and pinned["last"].timestamp(),
         )
     )
 
@@ -440,7 +467,10 @@ def build_table(work) -> dict:
     criteria = list(work.criteria.all())
     graded = {
         row.student_id: row
-        for row in work.students.prefetch_related("marks", "attachments")
+        # `attachments` тут больше не нужен: снимки собирает `photos.sheets`
+        # одним запросом на всю таблицу, а prefetch всё равно не помогал —
+        # фильтр по месту внутри работы заставлял Django спрашивать заново
+        for row in work.students.prefetch_related("marks")
     }
 
     # одна выборка на всю таблицу: тридцать учеников на десять задач — это
@@ -458,6 +488,12 @@ def build_table(work) -> dict:
         besides=work,
     )
 
+    # снимки всей таблицы одним запросом: и те, что лежат на работе целиком
+    # (столбец «работа ученика»), и те, что по задачам (точка в клетке). Из
+    # одних данных, а не двумя проходами: в клетке это единственный знак,
+    # по которому видно, что ученик сдал тетрадью, а не полем ответа
+    shots = photos.sheets(work)
+
     students = []
     per_task = {task.pk: {"answered": 0, "correct": 0, "wrong": 0, "unchecked": 0} for task in tasks}
 
@@ -474,6 +510,9 @@ def build_table(work) -> dict:
             # нему видно, что задача не новая, — и учителю, и в разговоре
             cell["seen_before"] = seen_before.get(
                 (task.problem_id, enrolment.student_id), 0
+            )
+            cell["photos"] = len(
+                shots.get(enrolment.student_id, {}).get("tasks", {}).get(task.pk, [])
             )
             cells.append(cell)
             if not history:
@@ -510,7 +549,9 @@ def build_table(work) -> dict:
                 "marks": marks_of(mine),
                 "scores": scores_of(mine),
                 "comment": mine.comment if mine else "",
-                "papers": papers_of(mine),
+                "papers": shots.get(enrolment.student_id, photos.empty_sheet())[
+                    "work"
+                ],
             }
         )
 
@@ -1018,7 +1059,7 @@ def set_scale(work, criteria):
     return work.criteria.all()
 
 
-def my_grade(work, student) -> dict:
+def my_grade(work, student, *, viewer=None) -> dict:
     """
     Оценка глазами ученика: своя, и только когда её можно показывать.
 
@@ -1044,31 +1085,8 @@ def my_grade(work, student) -> dict:
         "simple": scale["simple"],
         "marks": marks_of(row) if (row and visible) else {},
         "comment": (row.comment if row and visible else ""),
-        "papers": papers_of(row),
+        "papers": photos.of_student(work, student, viewer=viewer)["work"],
     }
-
-
-def papers_of(student_work) -> list:
-    """
-    Что приложено к работе ученика: сканы и ссылки.
-
-    Ссылки тоже: обычно это скан, но приложить адрес — законное действие
-    (отзыв в общем документе, разбор на видео), и отдавать только файлы
-    значило бы, что приложенная ссылка молча не показывается никому.
-    """
-    if student_work is None:
-        return []
-
-    return [
-        {
-            "id": item.pk,
-            "kind": item.kind,
-            "title": item.title,
-            "url": item.url,
-            "size": item.stored_file.size if item.stored_file_id else None,
-        }
-        for item in student_work.attachments.select_related("stored_file")
-    ]
 
 
 def attach_pages(work, student_id, *, data: bytes, numbers, by=None):

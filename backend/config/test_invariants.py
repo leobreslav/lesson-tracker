@@ -123,7 +123,18 @@ class TheCellHasNoTextOfItsOwnTests(SimpleTestCase):
     """
 
     PLACE = {"id", "work", "position", "maximum", "created_at"}
-    LINKS = {"problem", "submissions", "marks", "mark_changes", "threads"}
+    # `attachments` — снимки, присланные **по этому вопросу**. Связь, а не
+    # текст: изображение тетради не отвечает на «что спрашивали», оно
+    # отвечает на «что он написал», и лежит оно на работе ученика — ячейка
+    # тут только адрес внутри неё.
+    LINKS = {
+        "problem",
+        "submissions",
+        "marks",
+        "mark_changes",
+        "threads",
+        "attachments",
+    }
     SHOWING = {"show_stem"}
     # Как ячейка **зовётся**, а не где стоит. Разряд отдельный от PLACE
     # намеренно: пока имени не было, эту роль исполняла позиция — вопросы

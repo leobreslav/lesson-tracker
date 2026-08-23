@@ -203,6 +203,15 @@ class Codes:
     CRITERION_UNKNOWN = "criterion_unknown"
     MARK_OUT_OF_RANGE = "mark_out_of_range"
 
+    # фотографии работы и разметка на них
+    TOO_MANY_PHOTOS = "too_many_photos"
+    ROTATION_INVALID = "rotation_invalid"
+    STROKE_EMPTY = "stroke_empty"
+    STROKE_TOO_LONG = "stroke_too_long"
+    PEN_WIDTH_INVALID = "pen_width_invalid"
+    POINT_INVALID = "point_invalid"
+    COLOUR_INVALID = "colour_invalid"
+
     # чтение сканов моделью и потолок расхода
     AI_KEY_MISSING = "ai_key_missing"
     AI_BUDGET_EXCEEDED = "ai_budget_exceeded"

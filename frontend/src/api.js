@@ -1,4 +1,4 @@
-import { childParam } from './viewedChild'
+import { childParam, viewedChild } from './viewedChild'
 import i18n from './i18n'
 
 const TOKEN_KEY = 'authToken'
@@ -825,6 +825,70 @@ export const sendFamilyMessage = (thread, text) =>
 
 export const sendAnswer = (task, answer) =>
   request(`/api/student/tasks/${task}/answer/`, { method: 'POST', body: { answer } })
+
+// --- фотографии работы ---------------------------------------------------------
+//
+// Кладёт их семья, размечает учитель, а смотрят обе стороны **одним и тем же**
+// просмотрщиком — поэтому и адрес разметки один на двоих. Разведи его на две
+// половины, и они разошлись бы: учитель обвёл бы одно, ученик увидел другое.
+
+/**
+ * Прислать снимок работы: по задаче или на всю работу разом.
+ *
+ * `child` едет телом, а не хвостом адреса: у multipart-запроса тела и так
+ * достаточно, а хвост пришлось бы собирать вторым способом. Сервер читает
+ * обоих (`families.viewing.subject_of`), и у ученика его нет вовсе.
+ */
+export const sendWorkPhoto = ({ work, task = null, file }) => {
+  const form = new FormData()
+  form.append('file', file)
+  if (task) form.append('task', task)
+
+  const child = viewedChild()
+  if (child) form.append('child', child)
+
+  return request(`/api/student/works/${work}/photos/`, { method: 'POST', body: form })
+}
+
+/** Забрать присланное — своё и пока окно открыто. */
+export const removeWorkPhoto = (id) =>
+  request(`/api/student/photos/${id}/`, { method: 'DELETE' })
+
+/** Снимки одного ученика по работе: по работе целиком и по задачам. */
+export const fetchWorkPhotos = (work, student) =>
+  request(`/api/works/${work}/photos/?student=${student}`)
+
+/** Что нарисовано поверх снимка: поворот, мазки и булавки. */
+export const fetchPhotoMarkup = (id) => request(`/api/works/photos/${id}/`)
+
+export const turnPhoto = (id, rotation) =>
+  request(`/api/works/photos/${id}/`, { method: 'PATCH', body: { rotation } })
+
+export const drawOnPhoto = (id, stroke) =>
+  request(`/api/works/photos/${id}/strokes/`, { method: 'POST', body: stroke })
+
+/** Отмена: снимается **свой** последний мазок, а не чужой. */
+export const undoOnPhoto = (id) =>
+  request(`/api/works/photos/${id}/strokes/`, { method: 'DELETE' })
+
+export const pinPhotoNote = (id, { x, y, text }) =>
+  request(`/api/works/photos/${id}/notes/`, { method: 'POST', body: { x, y, text } })
+
+export const sayInPhotoNote = (note, text) =>
+  request(`/api/works/notes/${note}/`, { method: 'POST', body: { text } })
+
+export const removePhotoNote = (note) =>
+  request(`/api/works/notes/${note}/`, { method: 'DELETE' })
+
+/**
+ * Подписанный адрес самой картинки.
+ *
+ * Той же дверью, что и скачивание вложения, — она отвечает обеим сторонам
+ * («чьё это вложение», а не «кто вы по виду»), и заводить вторую значило бы
+ * заводить второе место, где решается право на файл.
+ */
+export const photoUrl = (id) =>
+  request(`/api/attachments/${id}/download/?json=1`).then((answer) => answer.url)
 
 /** Очередь методиста: планы по его предметам, присланные на утверждение. */
 export const fetchReviews = () => request('/api/plan/reviews/')

@@ -42,6 +42,7 @@ def build(school, courses, people, students, *, log=print):
     made.append(_marks(course, teacher, students))
     made.append(_mixed(course))
     made.append(_talk(course, teacher, students))
+    made.append(_photos(course, teacher))
     made.append(_attendance(course, teacher, students))
     methodist = people["petrov@example.com"]
     made.append(_methodist_and_baseline(supervised, methodist, admin))
@@ -233,6 +234,148 @@ def _talk(course, teacher, students):
             text="Да, иначе не сократится. Посмотрите пример на уроке.",
         )
     return "разговор о задаче"
+
+
+def _photos(course, teacher):
+    """
+    Присланная фотография работы — и проверка учителя поверх неё.
+
+    Живой случай тут двусоставный, и половинки друг без друга ничего не
+    показывают: снимок без пометок — просто вложение, пометки без снимка
+    невозможны вовсе. Поэтому заводятся вместе: ученик прислал тетрадь,
+    учитель обвёл ошибку и приколол к ней слово.
+
+    Снимок кладётся **той же дверью**, что и в жизни (`works.photos.accept`):
+    посев, пишущий мимо, выразил бы состояние, которого приложение не
+    создаёт, — например снимок с закрытым окном.
+
+    Без хранилища шаг пропускается молча, как и остальные загрузки посева: у
+    машины без ключей R2 файлов не будет, и это её рабочее состояние.
+    """
+    from django.core.files.uploadedfile import SimpleUploadedFile
+    from files import storage as file_storage
+    from works import photos as photo_service
+    from works.models import PhotoNote, Work
+
+    if not file_storage.configured():
+        return ""
+
+    # работа с **открытым** окном: снимок принимается по тем же правилам,
+    # что и ответ, и в закрытую работу его не положить — ни ученику, ни
+    # посеву. Дверь тут одна, и обходить её посев не должен
+    now = timezone.now()
+    work = (
+        Work.objects.filter(
+            course=course,
+            tasks__open_for_answers=True,
+            opens_at__lte=now,
+            closes_at__gte=now,
+        )
+        .distinct()
+        .first()
+    )
+    task = work.tasks.first() if work else None
+    if task is None:
+        return ""
+
+    enrolment = course.students.filter(removed_at=None).first()
+    if enrolment is None:
+        return ""
+    student = enrolment.student
+
+    row = work.students.filter(student=student).first()
+    shot = row.attachments.filter(task=task).first() if row else None
+
+    if shot is None:
+        shot = photo_service.accept(
+            work,
+            student,
+            upload=SimpleUploadedFile(
+                "тетрадь.png", _page_png(), content_type="image/png"
+            ),
+            task_id=task.pk,
+            by=student,
+        )
+
+    if not shot.strokes.exists():
+        photo_service.draw(
+            shot,
+            author=teacher,
+            color="#e11d48",
+            width=8,
+            # обводка вокруг места ошибки: замкнутая петля в правой трети
+            points=[
+                [0.58, 0.42],
+                [0.72, 0.40],
+                [0.78, 0.50],
+                [0.70, 0.58],
+                [0.58, 0.55],
+                [0.58, 0.42],
+            ],
+        )
+
+    if not PhotoNote.objects.filter(attachment=shot).exists():
+        note = photo_service.pin(
+            shot,
+            author=teacher,
+            x=0.68,
+            y=0.49,
+            text="Здесь потерян минус при раскрытии скобок.",
+        )
+        photo_service.say(
+            note,
+            author=student,
+            text="А, вижу. Переделать всю строку или только этот кусок?",
+        )
+
+    return "фотография с разметкой"
+
+
+def _page_png(width: int = 640, height: int = 880) -> bytes:
+    """
+    Лист в клетку, нарисованный на месте: посеву нужна картинка, а не пиксель.
+
+    Своя картинка, а не файл в репозитории, по той же причине, по какой
+    остальной посев не таскает с собой данных: он должен работать в чистом
+    клоне, ничего не скачивая. Кодировщик PNG тут в двенадцать строк, потому
+    что Pillow в зависимостях нет и заводить его ради демонстрационного
+    снимка было бы дорого.
+
+    Пропорция листовая, клетка пять миллиметров — на такой картинке видно,
+    что обводка и булавка стоят там, где их поставили, а не «где-то».
+    """
+    import struct
+    import zlib
+
+    paper, grid = (253, 251, 240), (205, 216, 228)
+    step = 32
+
+    # две строки-прототипа вместо полумиллиона проходов по пикселям: посев
+    # гоняется и в тестах, и секунда на рисование клетки там лишняя
+    plain = bytearray([0])
+    for x in range(width):
+        plain.extend(grid if x % step == 0 else paper)
+    ruled = bytes([0]) + bytes(grid) * width
+
+    rows = bytearray()
+    for y in range(height):
+        rows.extend(ruled if y % step == 0 else plain)
+
+    def chunk(tag: bytes, body: bytes) -> bytes:
+        return (
+            struct.pack(">I", len(body))
+            + tag
+            + body
+            + struct.pack(">I", zlib.crc32(tag + body) & 0xFFFFFFFF)
+        )
+
+    header = struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0)
+    return (
+        b"\x89PNG\r\n\x1a\n"
+        + chunk(b"IHDR", header)
+        + chunk(b"IDAT", zlib.compress(bytes(rows), 9))
+        + chunk(b"IEND", b"")
+    )
 
 
 def _attendance(course, teacher, students):

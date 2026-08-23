@@ -256,7 +256,13 @@ export default function WorkTable() {
                                  открываем работу ученика целиком: там балл и
                                  правится, в том числе когда его ошибочно
                                  прочитала модель */
-                              item.submission
+                              /* Снимок — такой же повод открыть ячейку,
+                                 как ответ: разбирают в ней конкретный
+                                 вопрос конкретного ученика, и присланная
+                                 тетрадь лежит там же. Без этого клик по
+                                 клетке со снимком уводил бы в оценку всей
+                                 работы, то есть мимо. */
+                              item.submission || item.photos > 0
                                 ? setCell({
                                     student,
                                     task: table.tasks.find(
@@ -275,6 +281,10 @@ export default function WorkTable() {
                                 уголок, а не строка — в клетке нет места, а
                                 знать это надо при проверке */}
                             {item.seen_before > 0 && <i className="again" />}
+                            {/* прислана фотография решения. Без этого знака
+                                сданная тетрадью задача выглядит нерешённой:
+                                поля ответа у неё нет, и клетка пуста */}
+                            {item.photos > 0 && <i className="shot" />}
                           </button>
                         </td>
                   ))}
@@ -346,6 +356,7 @@ export default function WorkTable() {
 
       {cell && (
         <CellDialog
+          work={table.work.id}
           student={cell.student}
           task={cell.task}
           onChanged={refresh}

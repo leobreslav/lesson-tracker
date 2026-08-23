@@ -7275,3 +7275,272 @@ button.dropzone:hover:not(:disabled) {
   font-weight: 600;
   text-align: right;
 }
+
+/* --- ФОТОГРАФИИ РАБОТЫ И ПРОСМОТРЩИК ---------------------------------------
+   Ученик присылает снимок тетради, учитель размечает его поверх. Полоса
+   миниатюр стоит на четырёх экранах (страница ученика, история ячейки,
+   работа ученика, просмотр родителем) и потому описана один раз: четыре
+   копии разъехались бы, и учитель с учеником смотрели бы на разное. */
+
+.photo-strip {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin-top: var(--panel-gap);
+}
+
+.photo-strip .photos {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: flex-start;
+}
+
+/* Миниатюра квадратная и одна на все снимки: разноразмерные кадры с телефона
+   иначе выстраиваются лесенкой, и полоса перестаёт читаться как ряд. */
+.photo-strip .photo {
+  position: relative;
+}
+
+.photo-strip .photo-open {
+  display: block;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--row-radius);
+  background: none;
+  overflow: hidden;
+  cursor: zoom-in;
+  line-height: 0;
+}
+
+.photo-strip .photo-open:hover {
+  border-color: #1a73e8;
+}
+
+.photo-thumb {
+  display: block;
+  width: 5.5rem;
+  height: 5.5rem;
+  object-fit: cover;
+}
+
+/* Адрес ещё не пришёл или уже протух. Место держится в обоих случаях:
+   схлопнувшаяся картинка пропадает вместе с тем, за что её можно взять. */
+.photo-thumb.waiting {
+  background: repeating-linear-gradient(
+    45deg,
+    #f1f3f4,
+    #f1f3f4 6px,
+    #e8eaed 6px,
+    #e8eaed 12px
+  );
+}
+
+.photo-thumb.gone {
+  display: grid;
+  place-items: center;
+  background: #f1f3f4;
+  color: var(--muted);
+  font-size: 1.2rem;
+  line-height: 1;
+}
+
+/* «Этот снимок уже смотрели»: без пометки проверенная тетрадь неотличима от
+   непроверенной, и открывать пришлось бы каждую. */
+.photo-strip .marked {
+  position: absolute;
+  left: 0.2rem;
+  bottom: 0.2rem;
+  padding: 0 0.25rem;
+  border-radius: 4px;
+  background: rgba(225, 29, 72, 0.9);
+  color: #fff;
+  font-size: 0.7rem;
+  font-style: normal;
+  line-height: 1.4;
+}
+
+/* Крестик у миниатюры висит на её углу, а у строки со скрепкой стоит в
+   строке: положи его в угол и там — и он оказался бы посреди пустоты. */
+.photo-strip .photo:not(.file) .remove {
+  position: absolute;
+  top: -0.4rem;
+  right: -0.4rem;
+  padding: 0 0.25rem;
+  border-radius: 50%;
+  background: #fff;
+  color: #b00020;
+  box-shadow: var(--row-shadow);
+}
+
+.photo-strip .photo.file {
+  display: flex;
+  gap: 0.4rem;
+  align-items: center;
+  width: 100%;
+}
+
+.photo-strip .photo.file .title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.photo-strip .photo.file .remove {
+  color: #b00020;
+}
+
+/* Зона и кнопка — один орган, как в панели урока: тащить умеют не все и не
+   везде, а нажать — везде. На телефоне то же нажатие открывает камеру. */
+.photo-drop {
+  padding: 0.4rem 0.6rem;
+  border: 1px dashed var(--border);
+  border-radius: var(--row-radius);
+}
+
+.photo-drop.over {
+  border-color: #1a73e8;
+  background: #e8f0fe;
+}
+
+/* Окно просмотрщика: снимок должен быть крупным, поэтому оно занимает почти
+   весь экран — разглядывают тут почерк, а не подпись под картинкой. */
+.modal-body.photo-viewer {
+  width: min(96vw, 1100px);
+  max-height: 92vh;
+}
+
+.photo-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  align-items: center;
+}
+
+.photo-tools-gap {
+  flex: 1;
+  min-width: 0.5rem;
+}
+
+.photo-tools .on {
+  border-color: #1a73e8;
+  background: #e8f0fe;
+}
+
+.photo-colour {
+  width: 1.6rem;
+  height: 1.6rem;
+  padding: 0;
+  border: 2px solid transparent;
+  border-radius: 50%;
+}
+
+.photo-colour.on {
+  border-color: #202124;
+}
+
+.photo-pen {
+  width: 1.9rem;
+  height: 1.9rem;
+  padding: 0;
+  display: grid;
+  place-items: center;
+}
+
+.photo-pen i {
+  display: block;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+/* Холст занимает всё, что осталось от окна: чем крупнее снимок, тем точнее
+   пометка, а обводка мимо места — единственная настоящая ошибка здесь. */
+.photo-stage {
+  position: relative;
+  flex: 1;
+  min-height: 55vh;
+  display: grid;
+  place-items: center;
+  background: #202124;
+  border-radius: var(--row-radius);
+  overflow: hidden;
+  touch-action: none;
+}
+
+.photo-canvas {
+  display: block;
+}
+
+.photo-canvas.hand {
+  cursor: grab;
+}
+
+.photo-canvas.pen {
+  cursor: crosshair;
+}
+
+.photo-canvas.note {
+  cursor: copy;
+}
+
+/* Булавка — кнопка поверх холста, а не рисунок на нём: по нарисованному не
+   кликнуть, а разговор начинается именно с нажатия на конкретное место. */
+.photo-pin {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  min-width: 1.4rem;
+  height: 1.4rem;
+  padding: 0 0.3rem;
+  border: 2px solid #fff;
+  border-radius: 999px;
+  background: #e11d48;
+  color: #fff;
+  font-size: 0.75rem;
+  line-height: 1;
+  box-shadow: var(--row-shadow);
+}
+
+.photo-pin.on {
+  background: #1a73e8;
+}
+
+.photo-pin.fresh {
+  display: grid;
+  place-items: center;
+  background: #1a73e8;
+}
+
+.photo-note {
+  margin-top: var(--panel-gap);
+  padding: var(--card-pad-tight);
+  border-radius: var(--row-radius);
+  background: #f8f9fa;
+}
+
+.photo-note h4 {
+  margin: 0;
+  font-size: 0.95rem;
+}
+
+.photo-paging {
+  display: inline-flex;
+  gap: 0.4rem;
+  align-items: center;
+}
+
+/* Прислана фотография решения. Без этого знака сданная тетрадью задача
+   выглядит нерешённой: поля ответа у неё нет, и клетка пуста. */
+.cell .shot {
+  position: absolute;
+  left: 2px;
+  bottom: 2px;
+  width: 6px;
+  height: 6px;
+  border-radius: 2px;
+  background: #1a73e8;
+}

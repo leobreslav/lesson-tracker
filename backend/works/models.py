@@ -861,7 +861,26 @@ class Message(models.Model):
         Thread,
         on_delete=models.CASCADE,
         related_name="messages",
+        null=True,
+        blank=True,
         verbose_name="thread",
+    )
+    # Второй возможный предмет разговора: место на фотографии.
+    #
+    # Одна таблица с двумя владельцами — тем же приёмом, что у оценки (вопрос
+    # или критерий) и у вложения (три владельца). Причина та же и она не про
+    # экономию таблиц: **чат будет читать сообщения, сгруппированные по
+    # собеседнику**, и разговор о задаче с разговором о клетке тетради он
+    # обязан показать одной лентой. Две таблицы сошлись бы в этом месте
+    # объединением, а разошлись бы в первой же правке — у одной появилась бы
+    # отметка о прочтении, у другой нет.
+    note = models.ForeignKey(
+        "works.PhotoNote",
+        on_delete=models.CASCADE,
+        related_name="messages",
+        null=True,
+        blank=True,
+        verbose_name="note on a photo",
     )
     author = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -886,6 +905,121 @@ class Message(models.Model):
         verbose_name = "message"
         verbose_name_plural = "messages"
         ordering = ("created_at", "id")
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(thread__isnull=False, note__isnull=True)
+                | models.Q(thread__isnull=True, note__isnull=False),
+                name="message_belongs_to_one_conversation",
+            ),
+        ]
 
     def __str__(self):
         return f"{self.author_id}: {self.text[:40]}"
+
+
+class PhotoStroke(models.Model):
+    """
+    Один мазок пером поверх фотографии.
+
+    **Хранится мазок, а не переделанная картинка**, и это то же решение, по
+    которому у содержания урока хранится Markdown, а не HTML: отрисовка живёт
+    по дороге на экран, а не по дороге в базу. Вжечь пометки в изображение
+    значило бы завести второй файл на каждую исправленную работу (плюс к
+    квоте школы), потерять исходник — тот самый, на который ученик и смотрит,
+    — и убить отмену: снять последний мазок с картинки уже нечем.
+
+    **Координаты — доли, а не пиксели**, и считаются они от **неповёрнутой**
+    картинки. Доли потому, что экранов много и один и тот же мазок обязан
+    лечь на своё место и на телефоне, и на большом мониторе. От неповёрнутой
+    потому, что поворот у фотографии — свойство ссылки (`Attachment.
+    rotation`), и его меняют **после** того, как размечали: считай мы
+    координаты от повёрнутой, каждый поворот пришлось бы переписывать во всех
+    мазках разом — и первый же пропущенный оставил бы пометку не на том
+    месте, молча.
+
+    Толщина — тоже доля ширины: перо, заданное в пикселях, на снимке с
+    телефона превращается в волосок, а на маленьком — в кляксу.
+    """
+
+    attachment = models.ForeignKey(
+        "files.Attachment",
+        on_delete=models.CASCADE,
+        related_name="strokes",
+        verbose_name="photo",
+    )
+    author = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name="photo_strokes",
+        verbose_name="author",
+    )
+    # `#rrggbb`; палитра живёт на клиенте, а сюда приезжает выбранный цвет
+    color = models.CharField("colour", max_length=7, default="#e11d48")
+    # толщина пера в тысячных ширины картинки: 6 ≈ тонкая линия, 40 ≈ маркер
+    width = models.PositiveSmallIntegerField("pen width, per mille of the width")
+    # `[[x, y], …]` в долях ширины и высоты неповёрнутой картинки
+    points = models.JSONField("points", default=list)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = "stroke on a photo"
+        verbose_name_plural = "strokes on photos"
+        # порядок рисования: поверх ложится то, что нарисовано позже, и
+        # отмена снимает **последний** — то есть край этого же порядка
+        ordering = ("created_at", "id")
+        indexes = [
+            models.Index(fields=("attachment", "id"), name="stroke_photo_idx"),
+        ]
+
+    def __str__(self):
+        return f"{self.attachment_id}: {len(self.points)} точек"
+
+
+class PhotoNote(models.Model):
+    """
+    Заметка, приколотая к месту на фотографии, — и разговор об этом месте.
+
+    Отличается от разговора о задаче (`Thread`) ровно предметом: там предмет
+    — вопрос целиком, здесь — точка на бумаге. «Вот здесь потерян минус» —
+    это не то же самое, что «поговорим о задаче 4»: у одной работы таких мест
+    бывает пять, и сложить их в один тред значило бы получить пять реплик
+    подряд, ни одна из которых не говорит, к чему относится.
+
+    Текста у самой булавки нет, и это не забывчивость. Первая реплика —
+    такое же сообщение, как и все следующие: заведи булавке своё поле, и
+    правка первой фразы шла бы одним путём, а правка второй другим, а чат
+    показывал бы только вторую.
+
+    Координаты — доли неповёрнутой картинки, ровно как у мазка и по той же
+    причине.
+    """
+
+    attachment = models.ForeignKey(
+        "files.Attachment",
+        on_delete=models.CASCADE,
+        related_name="notes",
+        verbose_name="photo",
+    )
+    author = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name="photo_notes",
+        verbose_name="author",
+    )
+    x = models.FloatField("x, share of the width")
+    y = models.FloatField("y, share of the height")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "note on a photo"
+        verbose_name_plural = "notes on photos"
+        ordering = ("created_at", "id")
+        indexes = [
+            models.Index(fields=("attachment", "id"), name="note_photo_idx"),
+        ]
+
+    def __str__(self):
+        return f"{self.attachment_id} ({self.x:.2f}, {self.y:.2f})"

@@ -325,7 +325,14 @@
     "proposal_empty": "Say what it is about: an empty proposal cannot be resolved.",
     "proposal_answer_required": "Say why it does not fit: a silent refusal explains nothing.",
     "tag_kind_required": "Say what kind of tag it is: the dictionary is sorted by kind.",
-    "attachment_not_an_image": "Only an image can stand inside the lesson text: {{allowed}}."
+    "attachment_not_an_image": "Only an image can stand inside the lesson text: {{allowed}}.",
+    "too_many_photos": "There are already {{limit}} photos here. Remove one to add another.",
+    "rotation_invalid": "A photo turns by a quarter at a time.",
+    "stroke_empty": "There is nothing to draw.",
+    "stroke_too_long": "That stroke is too long: at most {{limit}} points.",
+    "pen_width_invalid": "The pen is between {{low}} and {{high}}.",
+    "point_invalid": "That mark falls outside the picture.",
+    "colour_invalid": "That is not a colour."
   },
   "classPicker": {
     "label": "Classes:",
@@ -1659,5 +1666,24 @@
     "gone": "account removed",
     "emptyTitle": "Nothing here",
     "emptyHint": "Messages from users show up here as they arrive."
+  },
+  "photos": {
+    "add": "Add photos",
+    "colour": "Ink colour",
+    "gone": "This photo cannot be shown.",
+    "newNote": "A note on this spot",
+    "note": "Note",
+    "notePlaceholder": "what is wrong here",
+    "noteTitle": "About this spot",
+    "pen": "Pen",
+    "pinIt": "Pin it",
+    "position": "{{at}} of {{of}}",
+    "sending": "sending…",
+    "taskHint": "a photo of your working out",
+    "taskShots": "What the student sent for this question",
+    "undo": "Undo",
+    "wholeWork": "Photos of the work",
+    "wholeWorkHint": "a whole page at a time, when sorting by question is too much — Ctrl+V pastes a screenshot",
+    "width": "Pen width"
   }
 }

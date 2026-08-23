@@ -1,8 +1,9 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import Modal from './Modal'
-import { deleteAttachment, gradeStudent, openAttachment, uploadAttachment } from './api'
-import { formatSize, iconFor } from './fileKind'
+import PhotoStrip from './PhotoStrip'
+import PhotoViewer from './PhotoViewer'
+import { deleteAttachment, gradeStudent, uploadAttachment } from './api'
 
 /**
  * Работа одного ученика: скан, оценка и слова учителя — в одном окне.
@@ -49,6 +50,9 @@ export default function GradeDialog({
   const [comment, setComment] = useState(student.comment ?? '')
   const [uploading, setUploading] = useState(false)
   const [error, setError] = useState(null)
+  // просмотрщик листает снимки **всей работы**: сюда приходят с вопросом «а
+  // что он вообще сдал», и листается тут его тетрадь целиком
+  const [viewing, setViewing] = useState(null)
 
   const simple = criteria.length === 1 && !criteria[0].name
 
@@ -125,51 +129,19 @@ export default function GradeDialog({
             бумаге — обычный случай, и раньше его запирал флаг */}
         <section className="papers">
             <span className="hint">{t('paper.scans')}</span>
-            <ul className="attachments">
-              {papers.map((paper) => {
-                const size = formatSize(paper.size)
+            {/* Полоса та же, что видит ученик на своей странице, и это не
+                экономия: показывай мы одно и то же двумя разными списками,
+                они разъехались бы — где-то появилась бы пометка о проверке,
+                где-то нет, и разговор о работе шёл бы про разные экраны.
 
-                return (
-                  <li key={paper.id} className="attachment">
-                    <span className="attachment-icon" aria-hidden="true">
-                      {iconFor(paper)}
-                    </span>
-                    {paper.kind === 'link' ? (
-                      <a
-                        href={paper.url}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="title"
-                      >
-                        {paper.title}
-                      </a>
-                    ) : (
-                      <button
-                        type="button"
-                        className="link title"
-                        onClick={() => openAttachment(paper.id)}
-                      >
-                        {paper.title}
-                      </button>
-                    )}
-                    {size && (
-                      <span className="hint">
-                        {t(`lesson.size.${size.unit}`, { value: size.value })}
-                      </span>
-                    )}
-                    <button
-                      type="button"
-                      className="link remove"
-                      title={t('common.delete')}
-                      disabled={busy || uploading}
-                      onClick={() => remove(paper)}
-                    >
-                      ✕
-                    </button>
-                  </li>
-                )
-              })}
-            </ul>
+                Приложено сюда и то, что прислал сам ученик: изображение
+                его работы — одна и та же вещь, кто бы его ни принёс.
+                Различается только право снять, и его решает сервер. */}
+            <PhotoStrip
+              photos={papers}
+              onOpen={(photo) => setViewing(photo.id)}
+              onRemove={busy || uploading ? null : remove}
+            />
             <div className="row">
               <input
                 type="file"
@@ -182,6 +154,15 @@ export default function GradeDialog({
               />
             </div>
           </section>
+
+        {viewing && (
+          <PhotoViewer
+            photos={papers.filter((paper) => paper.image)}
+            current={viewing}
+            onChanged={onChanged}
+            onClose={() => setViewing(null)}
+          />
+        )}
 
         {tasks.length > 0 && (
           <section className="panel">

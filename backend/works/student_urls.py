@@ -8,10 +8,18 @@
 
 from django.urls import path
 
+from .photo_views import StudentPhotosView, StudentPhotoView
 from .views import StudentAnswerView, StudentWorkView, StudentWorksView
 
 urlpatterns = [
     path("works/", StudentWorksView.as_view(), name="student-works"),
     path("works/<int:pk>/", StudentWorkView.as_view(), name="student-work"),
     path("tasks/<int:pk>/answer/", StudentAnswerView.as_view(), name="student-answer"),
+    # фотография работы: кладёт её ученик — или родитель за него
+    path(
+        "works/<int:pk>/photos/",
+        StudentPhotosView.as_view(),
+        name="student-photos",
+    ),
+    path("photos/<int:pk>/", StudentPhotoView.as_view(), name="student-photo"),
 ]

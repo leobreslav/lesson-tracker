@@ -4,7 +4,14 @@ import { useTranslation } from 'react-i18next'
 import { Link, useParams } from 'react-router-dom'
 import Markdown from './Markdown'
 import Statement from './Statement'
-import { fetchStudentWork, openAttachment, sendAnswer } from './api'
+import PhotoStrip from './PhotoStrip'
+import PhotoViewer from './PhotoViewer'
+import {
+  fetchStudentWork,
+  removeWorkPhoto,
+  sendAnswer,
+  sendWorkPhoto,
+} from './api'
 import { dateTime } from './dates'
 import { POLL_MS } from './polling'
 
@@ -29,6 +36,9 @@ export default function StudentWork() {
   const { t } = useTranslation()
   const [work, setWork] = useState(null)
   const [error, setError] = useState(null)
+  // какой набор снимков сейчас открыт: снимки задачи или снимки всей
+  // работы. Листается **внутри** набора, поэтому он и есть состояние
+  const [viewing, setViewing] = useState(null)
 
   const version = useRef(null)
 
@@ -51,6 +61,40 @@ export default function StudentWork() {
     const timer = setInterval(() => load({ polling: true }).catch(() => {}), POLL_MS)
     return () => clearInterval(timer)
   }, [load])
+
+  /*
+   * Скриншот вставляется в работу целиком по Ctrl+V.
+   *
+   * Скрин приходит из буфера, а не из галереи, — тем же жестом, каким
+   * картинку вставляют в содержание урока. Кнопка «выбрать файл» для него
+   * означала бы сперва сохранить его на диск, а потом найти.
+   *
+   * Слушатель висит на окне, потому что цель у вставки одна и она
+   * однозначна — **вся работа**: задачу вставленный снимок не называет, а
+   * гадать, к какой он относится, значит однажды угадать неверно. Кому
+   * нужен снимок конкретной задачи, кладёт его в её полосу.
+   *
+   * Текст этим не задевается: обрабатываются только картинки, и обычная
+   * вставка в поле ответа проходит мимо.
+   */
+  useEffect(() => {
+    if (!work?.can_answer) return undefined
+
+    const paste = (event) => {
+      const pictures = [...(event.clipboardData?.files ?? [])].filter((file) =>
+        file.type.startsWith('image/'),
+      )
+      if (!pictures.length) return
+
+      event.preventDefault()
+      Promise.all(
+        pictures.map((file) => sendWorkPhoto({ work: work.id, file })),
+      ).then(load, (problem) => setError(problem.message))
+    }
+
+    window.addEventListener('paste', paste)
+    return () => window.removeEventListener('paste', paste)
+  }, [work?.id, work?.can_answer, load])
 
   const quiet = work && silence(work)
 
@@ -88,6 +132,34 @@ export default function StudentWork() {
 
       <Grade work={work} />
 
+      {/* Тетрадь целиком — отдельно от снимков по задачам, и это не
+          дублирование. Задач в работе бывает пятнадцать, и требовать снимка
+          к каждой значит получить снимки к трём: обычный ответ ученика —
+          сфотографировать разворот и не раскладывать его по номерам.
+
+          Здесь же лежит и скан от учителя, если работу писали на бумаге:
+          для ученика это одно и то же — изображение его работы. */}
+      {/* пустая белая карточка на месте, где ничего нет и положить нечего,
+          читается как поломка: у закрытой работы без снимков раздела
+          просто не существует */}
+      {((work.papers ?? []).length > 0 || work.can_answer) && (
+        <section className="panel">
+          <PhotoStrip
+            photos={work.papers ?? []}
+            label={t('photos.wholeWork')}
+            hint={work.can_answer ? t('photos.wholeWorkHint') : null}
+            onOpen={(photo) => setViewing({ photos: images(work.papers), id: photo.id })}
+            onSend={
+              work.can_answer
+                ? (file) => sendWorkPhoto({ work: work.id, file }).then(load)
+                : null
+            }
+            removable={(photo) => photo.mine}
+            onRemove={(photo) => removeWorkPhoto(photo.id).then(load)}
+          />
+        </section>
+      )}
+
       {/* «задач пока нет» — про работу, которую ещё не наполнили. Если
           молчание уже объяснено сверху, второй раз объяснять нечего */}
       {work.tasks.length === 0 && !quiet && (
@@ -100,6 +172,8 @@ export default function StudentWork() {
             <TaskCard
               key={task.id}
               task={task}
+              work={work}
+              onView={setViewing}
               // имя вопроса, а не его место в списке: учитель говорит на уроке
               // «второй пункт первой задачи», и на экране ученик должен найти
               // «1б». Пока номер считался здесь, переименование до ученика не
@@ -116,9 +190,27 @@ export default function StudentWork() {
       <p>
         <Link to="/">{t('student.title')}</Link>
       </p>
+
+      {viewing && (
+        <PhotoViewer
+          photos={viewing.photos}
+          current={viewing.id}
+          onChanged={load}
+          onClose={() => setViewing(null)}
+        />
+      )}
     </main>
   )
 }
+
+/*
+ * Что просмотрщик умеет открыть.
+ *
+ * На работе ученика вперемешку лежат снимки с телефона и разрезанный PDF от
+ * учителя; листать он умеет только первые. Отдать ему всё значило бы дать
+ * кнопку «дальше», которая приводит в пустоту.
+ */
+const images = (photos = []) => photos.filter((photo) => photo.image)
 
 /*
  * Почему в этой работе нельзя отвечать — или `null`, если можно.
@@ -157,37 +249,17 @@ function Grade({ work }) {
   const { t } = useTranslation()
   const criteria = work.criteria ?? []
   const marks = work.marks ?? {}
-  const papers = work.papers ?? []
   const given = criteria.some((item) => marks[item.id] !== undefined)
 
-  if (!given && !work.comment && !papers.length) return null
+  // Приложенное к работе отсюда ушло в свою полосу под этой плашкой:
+  // теперь это не только скан от учителя, но и снимки, присланные самим
+  // учеником, а к оценке они отношения не имеют. Плашка молчит, пока
+  // оценки и слов нет: «ещё не оценено» на пустом месте читается как
+  // обещание, которого никто не давал.
+  if (!given && !work.comment) return null
 
   return (
     <section className="panel student-grade">
-      {papers.length > 0 && (
-        <ul className="attachments">
-          {papers.map((paper) => (
-            <li key={paper.id} className="attachment">
-              <span className="attachment-icon" aria-hidden="true">
-                📄
-              </span>
-              {paper.kind === 'link' ? (
-                <a href={paper.url} target="_blank" rel="noreferrer" className="title">
-                  {paper.title}
-                </a>
-              ) : (
-                <button
-                  type="button"
-                  className="link title"
-                  onClick={() => openAttachment(paper.id)}
-                >
-                  {paper.title}
-                </button>
-              )}
-            </li>
-          ))}
-        </ul>
-      )}
       {given && (
         <ul className="marks">
           {criteria.map((item) => (
@@ -213,7 +285,7 @@ function Grade({ work }) {
  * существует ни для кого. Кнопка одна, и после неё в истории появляется
  * строка — это и есть подтверждение, что ответ ушёл.
  */
-function TaskCard({ task, number, canAnswer, onSent, onError }) {
+function TaskCard({ task, work, number, canAnswer, onSent, onError, onView }) {
   const { t } = useTranslation()
   const [text, setText] = useState('')
   const [busy, setBusy] = useState(false)
@@ -305,6 +377,27 @@ function TaskCard({ task, number, canAnswer, onSent, onError }) {
       {canAnswer && !task.open_for_answers && (
         <p className="hint">{t('student.work.onPaperQuestion')}</p>
       )}
+
+      {/* Снимок решения этой задачи. Появляется он и там, где поля ответа
+          нет: закрытая ячейка значит «решайте на листе», и фотография листа
+          — ровно то, чем её и сдают. Спроси мы `open_for_answers`,
+          единственный законный способ сдать такой вопрос оказался бы
+          закрыт. */}
+      <PhotoStrip
+        photos={task.photos ?? []}
+        hint={canAnswer ? t('photos.taskHint') : null}
+        onOpen={(photo) =>
+          onView({ photos: (task.photos ?? []).filter((one) => one.image), id: photo.id })
+        }
+        onSend={
+          canAnswer
+            ? (file) =>
+                sendWorkPhoto({ work: work.id, task: task.id, file }).then(onSent)
+            : null
+        }
+        removable={(photo) => photo.mine}
+        onRemove={(photo) => removeWorkPhoto(photo.id).then(onSent)}
+      />
 
       {/* спросить учителя можно прямо тут: вопрос про эту задачу, а не про
           работу вообще, и тред у них с учителем один и тот же */}

@@ -270,6 +270,9 @@ class MatrixTests(AccessTestCase):
                 {"name": "work-scan-questions", "method": "post", "body": {}},
                 # сборка из банка: дописать задачи в чужую работу нельзя
                 {"name": "work-add-from-bank", "method": "post", "body": {}},
+                # снимки тетради одного ученика: чужие ровно так же, как
+                # его ответы, — это его работа, а не общий материал курса
+                "work-student-photos",
             ),
         )
 
