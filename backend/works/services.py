@@ -1576,9 +1576,9 @@ def second_reader_available() -> bool:
 
 def model_reachable() -> bool:
     """Достаёт ли контур до языковой модели (`vision/reach.py`)."""
-    from vision import reach
+    from vision import reach, services as vision_services
 
-    return reach.model_reachable()
+    return reach.reachable(vision_services.ANTHROPIC)
 
 
 def name_readers() -> list:

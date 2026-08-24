@@ -47,11 +47,15 @@ def name_readers() -> list[str]:
     об этом отказом на первой странице пачки — плохой способ выяснять состав.
     """
     able = {
-        ANTHROPIC: client.configured() and reach.model_reachable(),
+        ANTHROPIC: client.configured(),
         YANDEX: yandex.configured(),
         MATHPIX: mathpix.configured(),
     }
-    return [one for one in NAME_READERS if able[one]]
+    # «Настроен» и «отвечает» — разные вопросы, и второй спрашивается у самой
+    # сети. Читателя, о котором только что выяснили, что до него не
+    # достучаться, не предлагают и не пробуют: ждать его повторно значит
+    # тратить по двадцать секунд на каждой странице пачки.
+    return [one for one in NAME_READERS if able[one] and reach.reachable(one)]
 
 
 def month_start(now: datetime | None = None) -> datetime:
@@ -218,13 +222,21 @@ def second_reading(
     неразличимы.
     """
     if not asked:
-        return {"reader": "mathpix", "error": "not_asked"}
+        return {"reader": MATHPIX, "error": "not_asked"}
     if not mathpix.configured():
-        return {"reader": "mathpix", "error": "not_configured"}
+        return {"reader": MATHPIX, "error": "not_configured"}
+    # До него могли не достучаться минуту назад — тогда не ждём снова. Без
+    # этой строки каждая страница пачки честно висела двадцать секунд на
+    # читателе, которого нет в сети: одиннадцать минут на пачку из тридцати
+    # четырёх листов, и снаружи это неотличимо от зависшего чтения.
+    if not reach.reachable(MATHPIX):
+        return {"reader": MATHPIX, "error": "unreachable"}
     if not has_budget(school):
-        return {"reader": "mathpix", "error": "no_budget"}
+        return {"reader": MATHPIX, "error": "no_budget"}
 
     second = mathpix.read_strip(image, media_type=media_type)
+    if second.get("error") == "unreachable":
+        reach.remember_unreachable(MATHPIX)
     if not second.get("error"):
         _charge(school, user, work, AiSpend.SCAN_SECOND, prices.MATHPIX, 0, 0)
     return second
@@ -291,7 +303,7 @@ def name_reading(
                 # Неудавшийся вызов не стоил ничего: платят за токены, а
                 # токенов не было. Записать трату значило бы взять деньги за
                 # молчание.
-                reach.remember_unreachable()
+                reach.remember_unreachable(ANTHROPIC)
                 unreachable = True
                 continue
             _charge(school, user, work, purpose, model, input_tokens, output_tokens)
@@ -304,6 +316,12 @@ def name_reading(
         )
         data = module.read_strip(image, media_type=media_type)
         if data.get("error"):
+            # Запоминается только «не дозвонились»: остальные отказы приходят
+            # мгновенно и ждать себя не заставляют, а этот стоит двадцати
+            # секунд на каждой странице.
+            if data["error"] == "unreachable":
+                reach.remember_unreachable(one)
+                unreachable = True
             continue
         _charge(school, user, work, purpose, priced, 0, 0)
         data["model"] = priced

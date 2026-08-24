@@ -409,6 +409,24 @@ class SecondReaderParseTests(SimpleTestCase):
             agreement.words("Mironova", "Varvara"),
         )
 
+    def test_the_dotted_rule_of_the_blank_is_not_part_of_the_name(self):
+        """
+        Под именем на бланке напечатана линейка из точек, и распознаватель
+        честно возвращает её текстом — то многоточием, то вереницей точек.
+
+        Найдено на живой пачке: имя приезжало как «… Варвара», и в таком виде
+        оно не сходится с составом класса ни по одному сравнению. Одиночная
+        точка при этом остаётся — она стоит в дате.
+        """
+        reading = strip.reading_from(
+            ["First name: … Варвара Surname: ..... Миронова Date: 3.05.26"],
+            reader="yandex",
+        )
+
+        self.assertEqual(reading["first_name"], "Варвара")
+        self.assertEqual(reading["surname"], "Миронова")
+        self.assertEqual(reading["date"], "3.05.26")
+
     def test_the_name_row_is_kept_as_it_was_read(self):
         """
         Человеку показывают прочитанное, а не наш разбор его на графы: разбор
@@ -547,6 +565,17 @@ class PretendsThereIsAKey:
         patcher.start()
         self.addCleanup(patcher.stop)
 
+    def forget_everyone(self):
+        """
+        Забыть, до кого не достучались.
+
+        Вердикт живёт в кэше и переживает тест: непочищенный, он красит
+        следующий тест в зелёный по неверной причине — читателя просто не
+        позвали.
+        """
+        for one in services.NAME_READERS:
+            reach.forget(one)
+
 
 class TwoReadersTests(PretendsThereIsAKey, SchoolTestMixin, APITestCase):
     """
@@ -568,6 +597,8 @@ class TwoReadersTests(PretendsThereIsAKey, SchoolTestMixin, APITestCase):
         # вовсе. Подменяем именно ответ «ключ есть», а не сам ключ — иначе
         # тест, у которого чтение не подменено, ушёл бы наружу за деньги.
         self.pretend_key()
+        self.forget_everyone()
+        self.addCleanup(self.forget_everyone)
         self.seen = []
         self.model_says = {
             "first_name": "Denis",
@@ -1005,8 +1036,8 @@ class ModelOutOfReachTests(PretendsThereIsAKey, SchoolTestMixin, APITestCase):
         self.pretend_key()
         # Вердикт живёт в кэше и переживает тест: непочищенный, он красит
         # следующий тест в зелёный по неверной причине.
-        reach.forget()
-        self.addCleanup(reach.forget)
+        self.forget_everyone()
+        self.addCleanup(self.forget_everyone)
         self.asked = []
         self.mathpix_says = {
             "reader": "mathpix",
@@ -1081,7 +1112,7 @@ class ModelOutOfReachTests(PretendsThereIsAKey, SchoolTestMixin, APITestCase):
         self.read()
 
         self.assertEqual(len(self.asked), 1)
-        self.assertFalse(reach.model_reachable())
+        self.assertFalse(reach.reachable(services.ANTHROPIC))
 
     def test_with_no_other_reader_the_refusal_says_so(self):
         """
@@ -1127,16 +1158,36 @@ class ModelOutOfReachTests(PretendsThereIsAKey, SchoolTestMixin, APITestCase):
 
         self.assertEqual(caught.exception.detail["code"], "ai_key_missing")
 
-    def test_a_reader_that_simply_did_not_answer_says_that_instead(self):
+    def test_a_reader_that_answered_with_a_refusal_says_that_instead(self):
         """
-        Модель в этой беде не участвовала: ключа у контура нет вовсе, читатель
-        был один и промолчал. Отказ поэтому другой — чинить надо не сеть, а
-        повторить страницу.
+        Модель в этой беде не участвовала: ключа у контура нет вовсе, а
+        единственный читатель **ответил** — отказом. Сеть тут ни при чём,
+        чинить надо не её, и повторить страницу имеет смысл.
+
+        Разводятся эти два случая словом самого читателя: `unreachable` значит
+        «не дозвонились» и ждать больше не будем, всё прочее — «ответил, но не
+        тем».
         """
         from unittest.mock import patch
 
         with patch.object(services.client, "configured", lambda: False):
             with self.assertRaises(Exception) as caught:
-                self.read(strip={"reader": "mathpix", "error": "unreachable"})
+                self.read(strip={"reader": "mathpix", "error": "refused"})
 
         self.assertEqual(caught.exception.detail["code"], "scan_reader_silent")
+
+    def test_a_reader_we_could_not_reach_is_not_waited_for_again(self):
+        """
+        Ради этого вердикт и запоминается. На живой пачке до распознавателя не
+        достучались, и каждая из тридцати четырёх страниц честно ждала его
+        двадцать секунд — одиннадцать минут чистого ожидания, снаружи
+        неотличимые от зависшего чтения.
+        """
+        from unittest.mock import patch
+
+        with patch.object(services.client, "configured", lambda: False):
+            with self.assertRaises(Exception):
+                self.read(strip={"reader": "mathpix", "error": "unreachable"})
+
+        self.assertFalse(reach.reachable(services.MATHPIX))
+        self.assertNotIn(services.MATHPIX, services.name_readers())
