@@ -6,11 +6,15 @@
 класса с работами и оценками, а часть без, и какая именно, снаружи не видно.
 """
 
+from datetime import timedelta
+
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.urls import reverse
+from django.utils import timezone
 from files.models import Attachment
 from rest_framework.test import APITestCase
 from schools.services import enrol
+from vision.models import AiSpend
 from schools.testing import (
     SchoolTestMixin,
     make_course,
@@ -226,3 +230,133 @@ class ScanApplyTests(SchoolTestMixin, APITestCase):
 
         self.assertEqual(response.status_code, 200, response.content)
         self.assertEqual(response.json()["pages"], [])
+
+
+class ScanSpendTests(SchoolTestMixin, APITestCase):
+    """
+    Во что обошлась пачка — вопрос отдельный от школьного потолка.
+
+    Потолок отвечает «сколько школа потратила за месяц», и на него смотрит
+    администратор. Учитель со стопкой в руках спрашивает другое: сколько
+    стоило вот это чтение. Считать ему сумму за всю историю работы нельзя —
+    одну и ту же работу разбирают повторно, пересняв пачку, — поэтому счёт
+    идёт от начала нынешней пачки, а началом служит самая ранняя из живущих
+    строк `ScanPage`: они заводятся первым чтением и уносятся применением.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.year = make_year(self.school)
+        self.course = make_course(self.school, self.year)
+        self.work = make_work(self.user, self.course)
+        enrol(self.student, self.course, by=self.admin)
+
+    def spend(self, micros, purpose=AiSpend.SCAN_HEADER, ago=None):
+        row = AiSpend.objects.create(
+            school=self.school,
+            user=self.user,
+            work=self.work,
+            purpose=purpose,
+            model="claude-haiku-4-5-20251001",
+            input_tokens=1600,
+            output_tokens=40,
+            cost_micros=micros,
+        )
+        if ago is not None:
+            AiSpend.objects.filter(pk=row.pk).update(created_at=ago)
+        return row
+
+    def test_the_batch_is_counted_from_its_first_page(self):
+        old = timezone.now() - timedelta(days=30)
+        self.spend(5000, ago=old)
+
+        services.save_scan_reading(
+            self.work,
+            index=0,
+            fingerprint="f0",
+            data={"first_name": "Fil", "surname": "Burmov", "values": [None] * 16},
+        )
+        self.spend(1200)
+
+        state = services.scan_state(self.work)
+
+        self.assertEqual(state["spend"]["micros"], 1200)
+        self.assertEqual(state["spend"]["calls"], 1)
+
+    def test_the_journal_still_remembers_everything(self):
+        """
+        Прошлые пачки из счёта уходят, но не из журнала: «сколько эта работа
+        стоила всего» — законный вопрос, и ответ на него рядом.
+        """
+        self.spend(5000, ago=timezone.now() - timedelta(days=30))
+        services.save_scan_reading(
+            self.work,
+            index=0,
+            fingerprint="f0",
+            data={"first_name": "Fil", "surname": "Burmov", "values": [None] * 16},
+        )
+        self.spend(1200)
+
+        self.assertEqual(services.scan_state(self.work)["spend"]["total_micros"], 6200)
+
+    def test_the_reasons_are_told_apart(self):
+        """
+        Полоска шапки, перечитывание и лист условий стоят по-разному — на
+        порядок, — и одна сумма не сказала бы, за что заплачено.
+        """
+        services.save_scan_reading(
+            self.work,
+            index=0,
+            fingerprint="f0",
+            data={"first_name": "Fil", "surname": "Burmov", "values": [None] * 16},
+        )
+        self.spend(1200, purpose=AiSpend.SCAN_HEADER)
+        self.spend(1300, purpose=AiSpend.SCAN_HEADER)
+        self.spend(23000, purpose=AiSpend.SCAN_QUESTIONS)
+
+        by_purpose = services.scan_state(self.work)["spend"]["by_purpose"]
+
+        self.assertEqual(by_purpose[AiSpend.SCAN_HEADER]["calls"], 2)
+        self.assertEqual(by_purpose[AiSpend.SCAN_HEADER]["micros"], 2500)
+        self.assertEqual(by_purpose[AiSpend.SCAN_QUESTIONS]["micros"], 23000)
+
+    def test_nothing_read_costs_nothing(self):
+        """Пустая пачка — это ноль, а не сумма прошлых разборов."""
+        self.spend(5000, ago=timezone.now() - timedelta(days=30))
+
+        self.assertEqual(services.scan_state(self.work)["spend"]["micros"], 0)
+
+
+class ScanCandidateStateTests(SchoolTestMixin, APITestCase):
+    """
+    Кого экран предлагает по прочитанной странице.
+
+    Тройка считается по самой странице и доезжает до состояния: до этого она
+    бралась от пакета, у решённого пакета её нет вовсе, и экран показывал
+    вместо неё первых по списку класса.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.year = make_year(self.school)
+        self.course = make_course(self.school, self.year)
+        self.work = make_work(self.user, self.course)
+        self.student.first_name, self.student.last_name = "Varvara", "Mironova"
+        self.student.save()
+        enrol(self.student, self.course, by=self.admin)
+
+    def test_the_page_offers_the_person_written_on_it(self):
+        services.save_scan_reading(
+            self.work,
+            index=0,
+            fingerprint="f0",
+            data={
+                "first_name": "Varvara",
+                "surname": "Mironova",
+                "values": [None] * 16,
+            },
+        )
+
+        page = services.scan_state(self.work)["pages"][0]
+
+        self.assertEqual(page["candidates"][0], self.student.id)

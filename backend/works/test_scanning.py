@@ -22,6 +22,7 @@ from .scanning import (
     merge_marks,
     classify,
     split_by_conditions,
+    top_candidates,
     troubles,
     vote,
 )
@@ -141,6 +142,56 @@ class GroupingTests(SimpleTestCase):
         index, candidates = doubts[0]
         self.assertEqual(index, 0)
         self.assertTrue(candidates)
+
+
+class CandidateTests(SimpleTestCase):
+    """
+    Кого экран предлагает по одной странице.
+
+    Список кандидатов раньше жил только у пакета, а у пакета его нет всякий
+    раз, когда пакет решился или собран постранично. Экран получал пустоту и
+    показывал вместо неё первых по списку класса — то есть заведомо не тех,
+    чьё имя на листе. Человек при этом видел «Read as: Миронова» и три кнопки
+    с посторонними фамилиями, и правильного ответа среди них не было вовсе.
+    """
+
+    def test_a_page_offers_the_person_whose_name_is_on_it(self):
+        best = top_candidates(page(0, "Shahar", "Jerbi"), ROSTER)
+
+        self.assertEqual(best[0], 1)
+
+    def test_a_misspelt_name_still_leads(self):
+        """Ради этого кандидатов и показывают: точное совпадение решилось бы само."""
+        best = top_candidates(page(0, "Shahar", "Jerbe"), ROSTER)
+
+        self.assertEqual(best[0], 1)
+
+    def test_three_are_offered_not_the_whole_class(self):
+        self.assertEqual(len(top_candidates(page(0, "Sh", "J"), ROSTER)), 3)
+
+    def test_an_unsigned_page_offers_nobody(self):
+        """
+        Пустая шапка не свидетельство. Предложить по ней тройку значит
+        предложить случайных людей — а выбирать всё равно из полного списка.
+        """
+        self.assertEqual(top_candidates(page(0), ROSTER), [])
+
+    def test_the_models_opinion_goes_to_the_top(self):
+        """
+        Мнение модели — свидетельство этого же листа, и в голосовании пакета
+        оно учитывается так же. Расходиться эти места не должны.
+        """
+        one = page(0, "Shalene", "Dorah")
+        one.guess = "Peter Tibora"
+
+        self.assertEqual(top_candidates(one, ROSTER)[0], 3)
+
+    def test_an_opinion_about_a_stranger_does_not_lead(self):
+        """Модель могла назвать кого угодно; названное сверяется с составом."""
+        one = page(0, "Shahar", "Jerbi")
+        one.guess = "Someone Else"
+
+        self.assertEqual(top_candidates(one, ROSTER)[0], 1)
 
 
 class MergeTests(SimpleTestCase):

@@ -1407,7 +1407,11 @@ def scan_state(work) -> dict:
                 "headerless": page.headerless,
                 "student": owner,
                 "decided_by_human": page.decided_by_human,
-                "candidates": [],
+                # Тройка лучших — по самой странице. От пакета кандидаты
+                # приходили пустыми всякий раз, когда пакет решился или был
+                # собран постранично, и экран показывал вместо них первых по
+                # списку класса — то есть заведомо не тех.
+                "candidates": scanning.top_candidates(page, roster),
                 "trouble": []
                 if page.headerless
                 else scanning.troubles(page, owner, limit, questions),
@@ -1439,8 +1443,11 @@ def scan_state(work) -> dict:
             for page in packet.pages:
                 if "no_owner" not in by_index[page.index]["trouble"]:
                     by_index[page.index]["trouble"].append("no_owner")
+        # Кандидаты пакета не затирают страничные: у пакета их может не быть
+        # вовсе, а у страницы они есть всегда, когда на ней прочитано имя.
         for page in packet.pages:
-            by_index[page.index]["candidates"] = packet.candidates
+            if not by_index[page.index]["candidates"]:
+                by_index[page.index]["candidates"] = packet.candidates
         out_packets.append(
             {
                 "number": number,
@@ -1470,6 +1477,11 @@ def scan_state(work) -> dict:
                 "marks": {q + 1: value for q, value in marks.items()},
                 "total": sum(marks.values()) if marks else 0,
                 "conflicts": conflicts,
+                # Балл, который скан перепишет, называется до записи — и
+                # называется он теперь у ученика, а не у пакета: разбор идёт
+                # постранично, а «было 3, придёт 1» — это про итог человека,
+                # а не про то, как листы сгруппировались по дороге.
+                "overwrites": differing_marks(standing, person.id, marks, names),
             }
         )
 
@@ -1492,6 +1504,53 @@ def scan_state(work) -> dict:
         # цена показывается там же, где идёт чтение: узнавать её в другом
         # разделе, уже потратив, — не то же самое, что видеть по ходу
         "budget": vision_services.budget(work.course.school),
+        # ...а «во что обошлась вот эта пачка» — вопрос отдельный от школьного
+        # потолка, и ответ на него нужен там же, у пачки
+        "spend": scan_spend(work),
+    }
+
+
+def scan_spend(work) -> dict:
+    """
+    Во что обошлась эта пачка: сумма, число вызовов и разбивка по поводам.
+
+    **Считается от начала пачки, а не за всё время работы.** Одну и ту же
+    работу разбирают повторно — пересняли пачку, доложили забытые листы, — и
+    сумма за всю историю отвечала бы на вопрос, которого никто не задавал.
+    Началом считается самая ранняя из живущих строк `ScanPage`: они заводятся
+    при первом чтении и уносятся применением, то есть живут ровно столько,
+    сколько живёт пачка.
+
+    Строки журнала не удаляются вместе с ними — журнал трат вечен, и `total`
+    рядом отвечает «сколько эта работа стоила всего».
+    """
+    from django.db.models import Count, Sum
+
+    from vision.models import AiSpend
+
+    rows = AiSpend.objects.filter(work=work)
+    total = rows.aggregate(sum=Sum("cost_micros"))["sum"] or 0
+
+    started = (
+        ScanPage.objects.filter(work=work)
+        .order_by("created_at")
+        .values_list("created_at", flat=True)
+        .first()
+    )
+    batch = rows.filter(created_at__gte=started) if started else rows.none()
+
+    by_purpose = {
+        row["purpose"]: {"micros": row["micros"] or 0, "calls": row["calls"]}
+        for row in batch.values("purpose").annotate(
+            micros=Sum("cost_micros"), calls=Count("id")
+        )
+    }
+
+    return {
+        "micros": sum(one["micros"] for one in by_purpose.values()),
+        "calls": sum(one["calls"] for one in by_purpose.values()),
+        "by_purpose": by_purpose,
+        "total_micros": total,
     }
 
 

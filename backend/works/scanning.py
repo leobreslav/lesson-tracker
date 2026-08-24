@@ -104,6 +104,33 @@ def candidates_for(page: Page, roster: list[Person]) -> list[tuple[Person, float
     return scored
 
 
+def top_candidates(page: Page, roster: list[Person], limit: int = 3) -> list[int]:
+    """
+    Кого предложить человеку по этой странице — лучшие, от самого похожего.
+
+    Считается **по странице**, а не по пакету, и это не мелочь. Кандидаты
+    пакета есть только тогда, когда пакет не решился целиком: у решённого их
+    нет вовсе, а у собранного постранично — тем более. Экран показывал их
+    как есть, и на пустом списке падал на запасной путь «первые шесть по
+    списку класса». Выглядело это дико: страница подписана «Миронова», а
+    предлагают Белова, Волкову и Гусева — то есть тех, кого на ней точно нет.
+
+    Мнение модели (`guess`) поднимается на самый верх, если оно сошлось с
+    составом курса: это свидетельство того же листа, а не отдельный голос, и
+    ровно так же оно учитывается в голосовании пакета.
+    """
+    if not page.named:
+        return []
+
+    scored = {person.id: score for person, score in candidates_for(page, roster)}
+    opinion = guessed(page, roster)
+    if opinion:
+        scored[opinion.id] = max(scored.get(opinion.id, 0.0), SURE)
+
+    best = sorted(scored.items(), key=lambda pair: -pair[1])
+    return [pk for pk, _ in best[:limit]]
+
+
 def guessed(page: Page, roster: list[Person]) -> Person | None:
     """
     Кого модель назвала из списка. Строка сверяется с составом, а не берётся

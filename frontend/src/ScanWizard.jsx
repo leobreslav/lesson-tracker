@@ -24,10 +24,11 @@ import {
  *   1. **файл** — выбрали PDF;
  *   2. **чтение** — браузер рисует страницы, вырезает шапки и шлёт их на
  *      чтение по одной. Прогресс настоящий, а не «идёт загрузка»;
- *   3. **сомнения** — обязательный шаг: всё, в чём система не уверена,
- *      человек решает сам. Пропустить его нельзя, и это главное правило всего
- *      экрана: чужая контрольная, приписанная однокласснику, дороже любой
- *      экономии на вопросах;
+ *   3. **разбор** — обязательный шаг: весь файл, страница за страницей, и
+ *      всё, в чём система не уверена, человек решает сам. Пропустить его
+ *      нельзя, пока хоть у одной страницы нет хозяина, и это главное правило
+ *      всего экрана: чужая контрольная, приписанная однокласснику, дороже
+ *      любой экономии на вопросах;
  *   4. **проверка** — необязательный: пройти глазами всё, включая то, в чём
  *      система уверена. Пропускается кнопкой «доверяю».
  *
@@ -134,13 +135,13 @@ export default function ScanWizard({ work, onClose, onDone }) {
       })
       setPages(collected)
       setState(await fetchScanState(work.id))
-      setStage('doubts')
+      setStage('pages')
     } catch (problem) {
       // прочитанное до сбоя остаётся: за него уже заплачено, и разложить
       // остальное руками лучше, чем начинать пачку сначала
       setError(problem.message)
       setState(await fetchScanState(work.id).catch(() => null))
-      setStage(seen.length ? 'doubts' : 'file')
+      setStage(seen.length ? 'pages' : 'file')
     }
   }
 
@@ -157,12 +158,7 @@ export default function ScanWizard({ work, onClose, onDone }) {
       onClose()
     })
 
-  const packets = state?.packets ?? []
-  const doubts = packets.filter((packet) => packet.trouble.length)
   const byIndex = Object.fromEntries(pages.map((page) => [page.index, page]))
-  const nameOf = (id) =>
-    state?.students.find((one) => one.id === id)?.name ?? t('scan.nobody')
-  const readOf = (index) => state?.pages?.find((page) => page.index === index)
 
   return (
     <Modal onClose={onClose} title={t('scan.title', { name: work.title })}>
@@ -214,18 +210,15 @@ export default function ScanWizard({ work, onClose, onDone }) {
         </section>
       )}
 
-      {stage === 'doubts' && state && (
-        <DoubtStep
-          doubts={doubts}
+      {stage === 'pages' && state && (
+        <PagesStep
+          state={state}
+          all={pages}
+          byIndex={byIndex}
           questions={questions}
-          conditions={state.conditions}
-          packets={packets.length}
-          pages={byIndex}
-          readOf={readOf}
-          students={state.students}
-          nameOf={nameOf}
           busy={busy}
           onDecide={decide}
+          onFix={fix}
           onNext={() => setStage('check')}
         />
       )}
@@ -236,7 +229,7 @@ export default function ScanWizard({ work, onClose, onDone }) {
           pages={byIndex}
           busy={busy}
           onFix={fix}
-          onBack={() => setStage('doubts')}
+          onBack={() => setStage('pages')}
           onApply={finish}
         />
       )}
@@ -463,33 +456,72 @@ function FileStep({ onPick, busy, questions, read, onReset, readQuestions, onRea
 }
 
 /**
- * Шаг сомнений: всё, в чём система не уверена.
+ * Шаг разбора: весь файл, страница за страницей.
  *
- * Показывается **всегда**, даже когда сомнений нет: пустой шаг говорит
- * «сомнений нет» и это тоже ответ. Пропустить его нельзя, пока хоть у одной
- * страницы нет владельца.
+ * Единицей показа был **пакет** — работа одного ученика целиком, — и на живой
+ * пачке это оказалось не тем, о чём стоит спрашивать. Пакет собирает
+ * раскладка, а раскладка ошибается: в одну карточку попадали листы двух
+ * разных учеников, подписанные разными именами, и у вопроса «чей это пакет»
+ * правильного ответа не было вовсе. Спрашивать надо о том, в чём система
+ * может ошибиться, а ошибается она в **странице**.
+ *
+ * Показываются все страницы файла, а не только спорные. Спорные помечены и по
+ * ним ходит отдельная кнопка — иначе на пачке в тридцать листов их искали бы
+ * перелистыванием, — но посмотреть глазами можно любую: уверенное чтение тоже
+ * бывает неверным, и ловится это только так. Два таких случая на живой пачке
+ * пометками не поймались вовсе: «Denis», прочитанный как «Misha», и «LAPE»,
+ * ставшее «LAPA» при двух похожих фамилиях в классе.
+ *
+ * И показывается **вся страница**, а не полоска шапки. Полоска — это то, что
+ * уехало на чтение; человек же проверяет не чтение, а работу, и чей это лист,
+ * видно по почерку в поле записи не хуже, чем по подписи.
  */
-function DoubtStep({
-  doubts,
-  questions,
-  conditions,
-  packets,
-  pages,
-  readOf,
-  students,
-  nameOf,
-  busy,
-  onDecide,
-  onNext,
-}) {
+function PagesStep({ state, all, byIndex, questions, busy, onDecide, onFix, onNext }) {
   const { t } = useTranslation()
-  const stuck = doubts.filter((packet) => packet.trouble.includes('no_owner'))
+  const [at, setAt] = useState(0)
+
+  const students = state.students ?? []
+  const nameOf = (id) => students.find((one) => one.id === id)?.name ?? t('scan.nobody')
+  const rowOf = (index) => state.pages?.find((page) => page.index === index)
+
+  // Показываем то, что нарисовал браузер: страницы файла, все до одной. Список
+  // сервера короче — в нём только прочитанное, — и по нему лист, до которого
+  // чтение не дошло, просто не существовал бы.
+  const sheets = all.length ? all : (state.pages ?? []).map((page) => ({ index: page.index }))
+  const here = sheets[Math.min(at, sheets.length - 1)]
+  const row = here ? rowOf(here.index) : null
+
+  const troubled = (page) => (rowOf(page.index)?.trouble ?? []).length > 0
+  const stuck = sheets.filter((page) => (rowOf(page.index)?.trouble ?? []).includes('no_owner'))
+
+  /* Прыжок по спорным. Перелистывать тридцать листов ради четырёх — это и
+     есть та работа, ради избавления от которой пачку разбирает машина. */
+  const jump = (step) => {
+    for (let i = 1; i <= sheets.length; i += 1) {
+      const next = (at + step * i + sheets.length * i) % sheets.length
+      if (troubled(sheets[next])) return setAt(next)
+    }
+  }
+
+  const columns = Array.from({ length: state.questions }, (_, i) => i + 1)
+  const nameOfQuestion = (number) => state.question_names?.[number - 1] ?? String(number)
+  const cells = row?.cells ?? []
+
+  const setCell = (position, value) => {
+    const next = [...(row?.cells ?? Array(16).fill(null))]
+    next[position] = value === '' ? null : Number(value)
+    onFix(here.index, next)
+  }
 
   return (
-    <section className="scan-step scan-doubts">
+    <section className="scan-step scan-review">
+      <SpendLine spend={state.spend} />
+
       {/* сколько листов условий нашлось — по ним и разрезана пачка */}
-      {conditions > 0 && (
-        <p className="hint">{t('scan.conditions', { count: conditions, packets })}</p>
+      {state.conditions > 0 && (
+        <p className="hint">
+          {t('scan.conditions', { count: state.conditions, packets: state.packets?.length ?? 0 })}
+        </p>
       )}
 
       {questions && (
@@ -501,86 +533,166 @@ function DoubtStep({
         </p>
       )}
 
-      {doubts.length === 0 ? (
-        <p className="hint">{t('scan.noDoubts')}</p>
-      ) : (
-        <ul className="scan-cards">
-          {doubts.map((packet) => {
-            const first = readOf(packet.pages[0])
-            return (
-              <li key={packet.number} className="panel">
-                <p className="hint">
-                  {t('scan.packetPages', {
-                    list: packet.pages.map((index) => index + 1).join(', '),
-                  })}{' '}
-                  · {packet.trouble.map((code) => t(`scan.trouble.${code}`)).join(' · ')}
-                </p>
+      {/* лента страниц: где мы и что где лежит, одним взглядом */}
+      <ol className="scan-film">
+        {sheets.map((page, position) => {
+          const its = rowOf(page.index)
+          const mark = its?.headerless
+            ? 'conditions'
+            : (its?.trouble ?? []).includes('no_owner')
+              ? 'stuck'
+              : troubled(page)
+                ? 'doubt'
+                : its?.student
+                  ? 'settled'
+                  : ''
+          return (
+            <li key={page.index}>
+              <button
+                type="button"
+                className={`scan-film-page ${mark} ${position === at ? 'here' : ''}`}
+                onClick={() => setAt(position)}
+              >
+                {page.index + 1}
+              </button>
+            </li>
+          )
+        })}
+      </ol>
 
-                {/* полоски всех листов пакета: чьи они, видно по любой из них */}
-                {packet.pages.slice(0, 3).map(
-                  (index) =>
-                    pages[index]?.strip && (
-                      <img key={index} className="scan-strip" src={pages[index].strip} alt="" />
-                    ),
-                )}
+      <div className="row middle scan-walk">
+        <button
+          type="button"
+          className="secondary compact"
+          disabled={busy || at === 0}
+          onClick={() => setAt(at - 1)}
+        >
+          {t('scan.prev')}
+        </button>
+        <span>{t('scan.pageOf', { number: (here?.index ?? 0) + 1, count: sheets.length })}</span>
+        <button
+          type="button"
+          className="secondary compact"
+          disabled={busy || at >= sheets.length - 1}
+          onClick={() => setAt(at + 1)}
+        >
+          {t('scan.next')}
+        </button>
+        <button
+          type="button"
+          className="link"
+          disabled={busy || !sheets.some(troubled)}
+          onClick={() => jump(1)}
+        >
+          {t('scan.nextDoubt')}
+        </button>
+      </div>
 
-                <p className="hint">
-                  {t('scan.readAs', {
-                    name: `${first?.first_name ?? ''} ${first?.surname ?? ''}`.trim() || '—',
-                  })}
-                  {packet.student ? ` → ${nameOf(packet.student)}` : ''}
-                </p>
+      <div className="scan-review-body">
+        {/* вся страница, а не полоска: чей это лист, видно и по почерку */}
+        <div className="scan-sheet">
+          {byIndex[here?.index]?.preview ? (
+            <img src={byIndex[here.index].preview} alt="" />
+          ) : (
+            <p className="hint">{t('scan.noPreview')}</p>
+          )}
+        </div>
 
-                {/* балл уже стоял, и скан принёс другой. Решать за человека
-                    нельзя: прежний мог быть поставлен за онлайн-ответ или
-                    прошлым разбором этой же пачки. Показываем оба числа */}
-                {packet.overwrites?.length > 0 && (
-                  <p className="hint warning">
-                    {t('scan.overwrites', {
-                      list: packet.overwrites
-                        .map((one) =>
-                          t('scan.overwrite', {
-                            question: one.question,
-                            was: one.was,
-                            now: one.now,
-                          }),
-                        )
-                        .join(', '),
-                    })}
-                  </p>
-                )}
+        <div className="scan-side">
+          {/* полоска рядом с прочитанным именем: это ровно та картинка, по
+              которой модель отвечала, и расхождение видно на ней, а не на
+              странице целиком */}
+          {byIndex[here?.index]?.strip && (
+            <img className="scan-strip" src={byIndex[here.index].strip} alt="" />
+          )}
 
-                <div className="row">
-                  {(packet.candidates.length
-                    ? packet.candidates
-                    : students.map((one) => one.id)
-                  )
-                    .slice(0, 6)
-                    .map((id) => (
-                      <button
-                        key={id}
-                        type="button"
-                        className="secondary compact"
-                        disabled={busy}
-                        onClick={() => onDecide(packet.pages[0], id)}
-                      >
-                        {nameOf(id)}
-                      </button>
-                    ))}
-                  <button
-                    type="button"
-                    className="link"
+          <p className="hint">
+            {t('scan.readAs', {
+              name: `${row?.first_name ?? ''} ${row?.surname ?? ''}`.trim() || '—',
+            })}
+          </p>
+
+          {row?.headerless && <p className="hint">{t('scan.headerless')}</p>}
+
+          {(row?.trouble ?? []).length > 0 && (
+            <p className="hint warning">
+              {row.trouble.map((code) => t(`scan.trouble.${code}`)).join(' · ')}
+            </p>
+          )}
+
+          <p>
+            <b>{row?.student ? nameOf(row.student) : t('scan.nobodyYet')}</b>
+            {row?.decided_by_human && <span className="hint"> {t('scan.byHand')}</span>}
+          </p>
+
+          {/* тройка лучших — по этой странице, а не по пакету: у пакета
+              кандидатов может не быть вовсе, и тогда экран предлагал первых
+              по списку класса, то есть заведомо не тех */}
+          {(row?.candidates ?? []).length > 0 && (
+            <div className="row">
+              {row.candidates.map((id) => (
+                <button
+                  key={id}
+                  type="button"
+                  className="secondary compact"
+                  disabled={busy}
+                  onClick={() => onDecide(here.index, id)}
+                >
+                  {nameOf(id)}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* ...а список всех — на случай, когда прочиталось не то вовсе.
+              Тройка отвечает на «кто из похожих», список — на «а всё-таки» */}
+          <div className="row middle">
+            <select
+              value={row?.student ?? ''}
+              disabled={busy}
+              onChange={(event) =>
+                onDecide(here.index, event.target.value ? Number(event.target.value) : null)
+              }
+            >
+              <option value="">{t('scan.nobody')}</option>
+              {students.map((one) => (
+                <option key={one.id} value={one.id}>
+                  {one.name}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {row && !row.headerless && (
+            <div className="row">
+              {columns.map((number) => (
+                <label key={number} className="scan-cell">
+                  <span>{nameOfQuestion(number)}</span>
+                  <input
+                    type="number"
+                    min="0"
+                    max="99"
+                    value={cells[number - 1] ?? ''}
                     disabled={busy}
-                    onClick={() => onDecide(packet.pages[0], null)}
-                  >
-                    {t('scan.nobody')}
-                  </button>
-                </div>
-              </li>
-            )
-          })}
-        </ul>
-      )}
+                    onChange={(event) => setCell(number - 1, event.target.value)}
+                  />
+                </label>
+              ))}
+              <label className="scan-cell">
+                <span>{t('scan.pageSum')}</span>
+                <input
+                  type="number"
+                  min="0"
+                  max="999"
+                  value={cells[15] ?? ''}
+                  disabled={busy}
+                  onChange={(event) => setCell(15, event.target.value)}
+                />
+              </label>
+            </div>
+          )}
+        </div>
+      </div>
 
       <div className="actions">
         <button type="button" disabled={busy || stuck.length > 0} onClick={onNext}>
@@ -591,6 +703,29 @@ function DoubtStep({
         )}
       </div>
     </section>
+  )
+}
+
+/**
+ * Во что обошлась эта пачка.
+ *
+ * Стоит рядом с работой, а не в разделе школы: там отвечают на вопрос
+ * администратора «не пора ли поднять потолок», а здесь на вопрос учителя —
+ * «во что обошлось вот это чтение». Цена показывается там же, где идёт
+ * чтение: узнавать её, уже потратив, — не то же самое, что видеть по ходу.
+ */
+function SpendLine({ spend }) {
+  const { t } = useTranslation()
+  if (!spend?.calls) return null
+
+  const money = (micros) => `$${(micros / 1e6).toFixed(3)}`
+
+  return (
+    <p className="hint">
+      {t('scan.batchSpend', { amount: money(spend.micros), count: spend.calls })}
+      {spend.total_micros > spend.micros &&
+        ` · ${t('scan.workSpend', { amount: money(spend.total_micros) })}`}
+    </p>
   )
 }
 
@@ -659,6 +794,25 @@ function CheckStep({ state, pages, busy, onFix, onBack, onApply }) {
                       {t('scan.conflict', { list: student.conflicts.join(', ') })}
                     </span>
                   )}
+                  {/* балл, который скан перепишет, называется до записи:
+                      прежний мог быть поставлен за онлайн-ответ или прошлым
+                      разбором этой же пачки, и молча заменить его нельзя */}
+                  {student.overwrites?.length > 0 && (
+                    <span className="hint warning">
+                      {' '}
+                      {t('scan.overwrites', {
+                        list: student.overwrites
+                          .map((one) =>
+                            t('scan.overwrite', {
+                              question: one.question,
+                              was: one.was,
+                              now: one.now,
+                            }),
+                          )
+                          .join(', '),
+                      })}
+                    </span>
+                  )}
                 </td>
               </tr>
             ))}
@@ -669,7 +823,10 @@ function CheckStep({ state, pages, busy, onFix, onBack, onApply }) {
       {open !== null && (
         <div className="panel">
           <p className="hint">{t('scan.pageNumber', { number: open + 1 })}</p>
-          {pages[open]?.strip && <img className="scan-strip" src={pages[open].strip} alt="" />}
+          {/* вся страница, а не полоска: проверяют работу, а не чтение */}
+          <div className="scan-sheet">
+            {pages[open]?.preview && <img src={pages[open].preview} alt="" />}
+          </div>
           <div className="row">
             {questions.map((number) => (
               <label key={number} className="scan-cell">

@@ -6974,7 +6974,9 @@ button.dropzone:hover:not(:disabled) {
 .scan-strip {
   display: block;
   width: 100%;
-  border: 1px solid var(--border);
+  /* Литерал, а не `var(--border)`: такой переменной в теме нет, и объявление
+     с ней недействительно целиком — рамки у полоски не было вовсе. */
+  border: 1px solid #c6c6c6;
   border-radius: var(--row-radius);
   background: #fff;
 }
@@ -7020,6 +7022,124 @@ button.dropzone:hover:not(:disabled) {
   display: flex;
   flex-direction: column;
   gap: var(--modal-gap);
+}
+
+/*
+ * Постраничный разбор: слева лист целиком, справа то, что о нём известно.
+ *
+ * Две колонки, а не одна под другой: решение принимается **сличением** —
+ * почерк на листе против прочитанного имени, — и прокрутка между ними эту
+ * работу ломает. На узком экране колонки складываются, потому что там выбора
+ * нет; порядок при этом сохраняется, лист первым.
+ */
+.scan-review-body {
+  display: flex;
+  gap: var(--modal-gap);
+  align-items: flex-start;
+}
+
+.scan-review-body > .scan-sheet {
+  flex: 1 1 60%;
+  min-width: 0;
+}
+
+.scan-review-body > .scan-side {
+  flex: 1 1 40%;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--panel-gap);
+}
+
+.scan-review-body > .scan-side > * {
+  margin-top: 0;
+  margin-bottom: 0;
+}
+
+@media (max-width: 60rem) {
+  .scan-review-body {
+    flex-direction: column;
+  }
+
+  .scan-review-body > .scan-sheet,
+  .scan-review-body > .scan-side {
+    flex: 1 1 auto;
+    width: 100%;
+  }
+}
+
+/* Лист держится в своей высоте и прокручивается внутри себя: страница A4 в
+   натуральную величину выбросила бы кнопки шага за нижний край окна, и
+   назначить страницу стало бы нельзя, не долистав до конца картинки. */
+.scan-sheet {
+  max-height: 60vh;
+  overflow: auto;
+  border: 1px solid #c6c6c6;
+  border-radius: var(--row-radius);
+  background: #fff;
+}
+
+.scan-sheet img {
+  display: block;
+  width: 100%;
+}
+
+/*
+ * Лента страниц: где мы и что где лежит, одним взглядом.
+ *
+ * Цветом помечено состояние, а не важность: страница без хозяина краснеет,
+ * потому что она держит весь разбор, лист условий приглушён, потому что он не
+ * ничья работа, а не потому, что он менее важен.
+ */
+.scan-film {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+}
+
+.scan-film-page {
+  min-width: 2rem;
+  min-height: 1.75rem;
+  padding: 0 0.35rem;
+  font-size: 0.85rem;
+  border: 1px solid #c6c6c6;
+  border-radius: var(--row-radius);
+  background: #fff;
+  color: inherit;
+  cursor: pointer;
+}
+
+.scan-film-page.settled {
+  border-color: #1c7a34;
+}
+
+.scan-film-page.doubt {
+  border-color: #b26500;
+}
+
+.scan-film-page.stuck {
+  border-color: #b00020;
+  font-weight: 600;
+}
+
+.scan-film-page.conditions {
+  color: #666;
+  border-style: dashed;
+}
+
+.scan-film-page.here {
+  outline: 2px solid #1a73e8;
+  outline-offset: 1px;
+}
+
+/* ряд перелистывания: номер страницы посередине не должен прыгать от того,
+   что у соседней кнопки подпись длиннее */
+.scan-walk > span {
+  min-width: 9rem;
+  text-align: center;
 }
 
 /* Таблица шире окна не растягивает страницу, а прокручивается внутри себя:
