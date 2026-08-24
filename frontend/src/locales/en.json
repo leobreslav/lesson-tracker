@@ -30,8 +30,7 @@
     "studyDayCount_other": "{{count}} study days",
     "termCount_one": "{{count}} term",
     "termCount_other": "{{count}} terms",
-    "to": "to",
-    "back": "Back"
+    "to": "to"
   },
   "language": {
     "label": "Language"
@@ -1497,7 +1496,10 @@
     "markMissing": "our mark in the corner was not found.",
     "zoomIn": "Zoom in",
     "zoomOut": "Zoom out",
-    "checkScale": "Check the scale before the reading starts. Marks land on these questions, and a mark in a cell beyond them is how a shifted reading gets caught — getting this wrong is only visible once the whole pile is paid for."
+    "checkScale": "Check the scale before the reading starts. Marks land on these questions, and a mark in a cell beyond them is how a shifted reading gets caught — getting this wrong is only visible once the whole pile is paid for.",
+    "rowName": "Called",
+    "rowMax": "Top mark",
+    "back": "Back a step"
   },
   "ai": {
     "title": "Reading scans",

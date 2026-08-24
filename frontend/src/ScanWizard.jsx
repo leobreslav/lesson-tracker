@@ -2,6 +2,9 @@ import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import Modal from './Modal'
+// крошечный модуль с миллиметрами бланка; pdfjs за собой не тянет, в отличие
+// от scanSheet.js, который грузится лениво
+import { GRID, gridInStrip } from './blankGeometry'
 import {
   applyScan,
   editScanPage,
@@ -163,7 +166,11 @@ export default function ScanWizard({ work, onClose, onDone }) {
   const byIndex = Object.fromEntries(pages.map((page) => [page.index, page]))
 
   return (
-    <Modal onClose={onClose} title={t('scan.title', { name: work.title })}>
+    <Modal
+      onClose={onClose}
+      title={t('scan.title', { name: work.title })}
+      className="wide"
+    >
       {error && <p className="error">{error}</p>}
 
       {stage === 'loading' && <p className="hint">{t('common.loading')}</p>}
@@ -191,6 +198,7 @@ export default function ScanWizard({ work, onClose, onDone }) {
           questions={scale.length}
           read={state?.pages?.length ?? 0}
           onReset={() => run(async () => setState(await resetScan(work.id)))}
+          onBack={() => setStage('questions')}
         />
       )}
 
@@ -223,6 +231,7 @@ export default function ScanWizard({ work, onClose, onDone }) {
           onDecide={decide}
           onFix={fix}
           onNext={() => setStage('check')}
+          onBack={() => setStage('file')}
         />
       )}
 
@@ -321,13 +330,33 @@ function QuestionsStep({ onSave, busy, scale = [] }) {
       <details>
         <summary>{t('scan.perQuestion')}</summary>
         <p className="hint">{t('scan.perQuestionHint')}</p>
-        <div className="row">
-          {numbers.map((number) => (
-            <div key={number} className="scan-cell">
+        {/*
+          * Одна таблица, а не россыпь квадратиков.
+          *
+          * Стояли пары полей без подписей: сверху имя с подставленным номером,
+          * снизу максимум — две строки цифр одна над другой, и по ним нельзя
+          * было сказать, где номер задачи, а где балл. Поэтому шапка называет
+          * клетку словом (`Q1`, а не «1»), а строки подписаны слева: колонка
+          * читается сверху вниз как «клетка — как зовём — сколько стоит».
+          */}
+        <div className="scan-table-wrap">
+          <div
+            className="scan-scale"
+            style={{ gridTemplateColumns: `auto repeat(${count}, minmax(2.6rem, 1fr))` }}
+          >
+            <span className="scan-scale-side" />
+            {numbers.map((number) => (
+              <span key={`head-${number}`} className="scan-scale-head">
+                Q{number}
+              </span>
+            ))}
+
+            <span className="scan-scale-side">{t('scan.rowName')}</span>
+            {numbers.map((number) => (
               <input
-                className="scan-cell-name"
+                key={`name-${number}`}
                 maxLength={16}
-                placeholder={String(number)}
+                placeholder="—"
                 value={nameOf(number)}
                 disabled={busy}
                 aria-label={t('scan.questionName', { number })}
@@ -335,7 +364,12 @@ function QuestionsStep({ onSave, busy, scale = [] }) {
                   setNames({ ...names, [number]: event.target.value })
                 }
               />
+            ))}
+
+            <span className="scan-scale-side">{t('scan.rowMax')}</span>
+            {numbers.map((number) => (
               <input
+                key={`max-${number}`}
                 type="number"
                 min="1"
                 max="99"
@@ -346,8 +380,8 @@ function QuestionsStep({ onSave, busy, scale = [] }) {
                   setEach({ ...(each ?? {}), [number]: Math.max(1, Number(event.target.value) || 1) })
                 }
               />
-            </div>
-          ))}
+            ))}
+          </div>
         </div>
       </details>
 
@@ -372,7 +406,7 @@ function QuestionsStep({ onSave, busy, scale = [] }) {
 }
 
 /** Шаг: выбрать файл. Всегда PDF — так его отдаёт и сканер, и телефон. */
-function FileStep({ onPick, busy, questions, read, onReset, readQuestions, onReadQuestions }) {
+function FileStep({ onPick, busy, questions, read, onReset, readQuestions, onReadQuestions, onBack }) {
   const { t } = useTranslation()
   const [over, setOver] = useState(false)
 
@@ -473,6 +507,15 @@ function FileStep({ onPick, busy, questions, read, onReset, readQuestions, onRea
         />
         <span>{t('scan.pick')}</span>
       </label>
+
+      {/* Назад — к шкале. Мастер идёт вперёд шагами, и до сих пор единственным
+          способом вернуться было закрыть окно и открыть заново; на шаге,
+          следующем за платным, это особенно дорого. */}
+      <div className="actions">
+        <button type="button" className="secondary" disabled={busy} onClick={onBack}>
+          {t('scan.back')}
+        </button>
+      </div>
     </section>
   )
 }
@@ -498,7 +541,7 @@ function FileStep({ onPick, busy, questions, read, onReset, readQuestions, onRea
  * уехало на чтение; человек же проверяет не чтение, а работу, и чей это лист,
  * видно по почерку в поле записи не хуже, чем по подписи.
  */
-function PagesStep({ state, all, byIndex, questions, busy, onDecide, onFix, onNext }) {
+function PagesStep({ state, all, byIndex, questions, busy, onDecide, onFix, onNext, onBack }) {
   const { t } = useTranslation()
   const [at, setAt] = useState(0)
   /* Увеличение листа. Превью — это страница A4 в колонку шириной с пол-окна,
@@ -554,19 +597,19 @@ function PagesStep({ state, all, byIndex, questions, busy, onDecide, onFix, onNe
   }
 
   /*
-   * Какие клетки показать. Шкала работы — обязательно, а за ней ещё всякая
-   * клетка, в которой что-то прочитано.
+   * Клеток показывается ровно столько, сколько их на бланке, — все
+   * шестнадцать, и всегда.
    *
-   * Показывались только клетки шкалы, и это было хуже, чем кажется. У работы
-   * с четырьмя задачами прочитанные Q5 и Q8 не показывались **нигде**: экран
-   * писал «балл в клетке, которой у работы нет», но какая это клетка и что в
-   * ней стоит, узнать было негде, а стереть случайную галочку — тем более.
+   * Показывались только клетки шкалы работы, и это было хуже, чем кажется: у
+   * работы с четырьмя задачами прочитанные Q5 и Q8 не показывались **нигде**.
+   * Экран писал «балл в клетке, которой у работы нет», а какая это клетка и
+   * что в ней стоит, узнать было негде — и стереть случайную галочку тоже.
    * Пометка без предмета не проверяется и не чинится.
+   *
+   * Теперь ряд полей повторяет сетку бланка целиком и стоит под ней колонка в
+   * колонку; лишние клетки помечены, но видны и правятся.
    */
   const cells = row?.cells ?? []
-  const columns = Array.from({ length: 15 }, (_, i) => i).filter(
-    (position) => position < state.questions || cells[position] != null,
-  )
   const nameOfQuestion = (number) => state.question_names?.[number - 1] ?? String(number)
 
   const setCell = (position, value) => {
@@ -670,6 +713,53 @@ function PagesStep({ state, all, byIndex, questions, busy, onDecide, onFix, onNe
         </button>
       </div>
 
+      {/*
+        * Полоска шапки и поля для баллов — один блок, колонка в колонку.
+        *
+        * Стояли они врозь: полоска в боковой колонке, поля отдельными
+        * квадратиками под ней. Сличать в таком виде нечего — глазу приходится
+        * считать клетки на картинке и считать квадратики под ней, то есть
+        * делать ровно ту работу, на которой сбилась модель. Поставленные под
+        * своими клетками поля превращают проверку в один взгляд вдоль строки.
+        */}
+      {row && !row.headerless && byIndex[here?.index]?.strip && (
+        <div className="scan-header-block">
+          <img className="scan-strip" src={byIndex[here.index].strip} alt="" />
+          <div
+            className="scan-cells"
+            style={{
+              marginLeft: `${gridInStrip().left * 100}%`,
+              width: `${gridInStrip().width * 100}%`,
+              gridTemplateColumns: `repeat(${GRID.cells}, minmax(0, 1fr))`,
+            }}
+          >
+            {Array.from({ length: GRID.cells }, (_, position) => (
+              <label
+                key={position}
+                className={`scan-box ${position >= state.questions && position < GRID.cells - 1 ? 'beyond' : ''}`}
+              >
+                <span>
+                  {position === GRID.cells - 1 ? t('scan.pageSum') : `Q${position + 1}`}
+                </span>
+                <input
+                  type="number"
+                  min="0"
+                  max="999"
+                  value={cells[position] ?? ''}
+                  disabled={busy}
+                  aria-label={
+                    position < state.questions
+                      ? nameOfQuestion(position + 1)
+                      : `Q${position + 1}`
+                  }
+                  onChange={(event) => setCell(position, event.target.value)}
+                />
+              </label>
+            ))}
+          </div>
+        </div>
+      )}
+
       <div className="scan-review-body">
         {/* вся страница, а не полоска: чей это лист, видно и по почерку */}
         <div className="scan-sheet" ref={sheet}>
@@ -687,13 +777,6 @@ function PagesStep({ state, all, byIndex, questions, busy, onDecide, onFix, onNe
         </div>
 
         <div className="scan-side">
-          {/* полоска рядом с прочитанным именем: это ровно та картинка, по
-              которой модель отвечала, и расхождение видно на ней, а не на
-              странице целиком */}
-          {byIndex[here?.index]?.strip && (
-            <img className="scan-strip" src={byIndex[here.index].strip} alt="" />
-          )}
-
           <p className="hint">
             {t('scan.readAs', {
               name: `${row?.first_name ?? ''} ${row?.surname ?? ''}`.trim() || '—',
@@ -765,47 +848,15 @@ function PagesStep({ state, all, byIndex, questions, busy, onDecide, onFix, onNe
             </select>
           </div>
 
-          {row && !row.headerless && (
-            <div className="row">
-              {columns.map((position) => (
-                <label
-                  key={position}
-                  className={`scan-cell ${position >= state.questions ? 'beyond' : ''}`}
-                >
-                  <span>
-                    {position < state.questions
-                      ? nameOfQuestion(position + 1)
-                      : `Q${position + 1}`}
-                  </span>
-                  <input
-                    type="number"
-                    min="0"
-                    max="99"
-                    value={cells[position] ?? ''}
-                    disabled={busy}
-                    onChange={(event) => setCell(position, event.target.value)}
-                  />
-                </label>
-              ))}
-              <label className="scan-cell">
-                <span>{t('scan.pageSum')}</span>
-                <input
-                  type="number"
-                  min="0"
-                  max="999"
-                  value={cells[15] ?? ''}
-                  disabled={busy}
-                  onChange={(event) => setCell(15, event.target.value)}
-                />
-              </label>
-            </div>
-          )}
         </div>
       </div>
 
       <div className="actions">
         <button type="button" disabled={busy || stuck.length > 0} onClick={onNext}>
           {t('scan.toCheck')}
+        </button>
+        <button type="button" className="secondary" disabled={busy} onClick={onBack}>
+          {t('scan.back')}
         </button>
         {stuck.length > 0 && (
           <span className="hint">{t('scan.stillStuck', { count: stuck.length })}</span>
@@ -964,7 +1015,7 @@ function CheckStep({ state, pages, busy, onFix, onBack, onApply }) {
           {t('scan.apply')}
         </button>
         <button type="button" className="secondary" disabled={busy} onClick={onBack}>
-          {t('common.back')}
+          {t('scan.back')}
         </button>
       </div>
     </section>

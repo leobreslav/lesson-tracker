@@ -103,3 +103,19 @@ export function sheetCorners() {
   const { topLeft, topRight, bottomRight, bottomLeft } = CORNERS
   return [topLeft, topRight, bottomRight, bottomLeft]
 }
+
+/**
+ * Где стоит сетка баллов **внутри полоски**, в долях её ширины.
+ *
+ * Нужно это экрану: под полоской рисуется ряд полей для тех же шестнадцати
+ * клеток, и стоять они должны колонка в колонку с напечатанными. Считать это
+ * на глаз нельзя — полоска шире сетки на пару миллиметров с каждой стороны, —
+ * а вписать проценты руками значит завести третье место, где живут те же
+ * миллиметры. Здесь они одни.
+ */
+export function gridInStrip() {
+  return {
+    left: (GRID.x - STRIP.x) / STRIP.width,
+    width: (GRID.cells * GRID.cellWidth) / STRIP.width,
+  }
+}
