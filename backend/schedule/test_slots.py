@@ -85,7 +85,7 @@ class SlotCrudTests(SlotTestCase):
         self.assertEqual(slot.year, self.year)
         self.assertFalse(slot.is_cancelled)
         self.assertFalse(slot.is_extra)
-        self.assertIsNone(response.json()["warning"])
+        self.assertEqual(response.json()["warnings"], [])
 
     def test_slot_on_a_non_study_day_is_allowed_but_warns(self):
         DayException.objects.create(
@@ -99,7 +99,9 @@ class SlotCrudTests(SlotTestCase):
         response = self.post_slot("2026-10-28", 1)
 
         self.assertEqual(response.status_code, 201, response.content)
-        warning = response.json()["warning"]
+        # предупреждений список: урок в каникулы вполне может ещё и делить
+        # кабинет, и выбирать, о чём промолчать, тут нельзя
+        (warning,) = response.json()["warnings"]
         self.assertEqual(warning["code"], "slot_not_study_day")
         self.assertEqual(warning["params"]["status"], "vacation")
         self.assertEqual(warning["params"]["title"], "Осенние каникулы")
@@ -109,7 +111,7 @@ class SlotCrudTests(SlotTestCase):
 
         self.assertEqual(response.status_code, 201, response.content)
         self.assertEqual(
-            response.json()["warning"]["params"]["status"], "weekend"
+            response.json()["warnings"][0]["params"]["status"], "weekend"
         )
 
     def test_date_outside_the_year_is_rejected(self):

@@ -3,17 +3,29 @@ import BellsPanel from './BellsPanel'
 import GradingPanel from './GradingPanel'
 import { useTranslation } from 'react-i18next'
 import Hint from './Hint'
+import HomegroupsPanel from './HomegroupsPanel'
+import RoomsPanel from './RoomsPanel'
 import {
   addGradePreset,
   clearUnusedGrades,
   createGrade,
+  createHomegroup,
+  createRoom,
   createSubject,
   deleteGrade,
+  deleteHomegroup,
+  deleteRoom,
   deleteSubject,
   fetchGrades,
+  fetchHomegroups,
+  fetchMembers,
+  fetchRooms,
+  fetchSchoolYears,
   fetchSubjects,
   renameSubject,
   updateGrade,
+  updateHomegroup,
+  updateRoom,
 } from './api'
 import { useSchoolSection } from './School'
 
@@ -43,6 +55,12 @@ export default function SchoolReference() {
   const { onLoggedOut } = useSchoolSection()
   const [subjects, setSubjects] = useState(null)
   const [grades, setGrades] = useState([])
+  const [rooms, setRooms] = useState([])
+  const [homegroups, setHomegroups] = useState([])
+  const [teachers, setTeachers] = useState([])
+  // год классов: в следующем году 6А становится 7А, и это другая строка.
+  // Берём тот же, что по умолчанию берёт расписание, — первый в списке
+  const [year, setYear] = useState(null)
   const [subjectName, setSubjectName] = useState('')
   // `named` — трогали ли поле названия: пока нет, оно следует за уровнем
   const [grade, setGrade] = useState({ level: '', name: '', named: false })
@@ -60,11 +78,31 @@ export default function SchoolReference() {
 
   const load = useCallback(
     () =>
-      Promise.all([fetchSubjects(), fetchGrades()])
-        .then(([subjectList, gradeList]) => {
+      Promise.all([
+        fetchSubjects(),
+        fetchGrades(),
+        fetchRooms(),
+        fetchSchoolYears(),
+        fetchMembers(),
+      ])
+        .then(([subjectList, gradeList, roomList, years, people]) => {
           setSubjects(subjectList)
           setGrades(gradeList)
+          setRooms(roomList)
+          setTeachers(
+            people.map((person) => ({
+              id: person.id,
+              name:
+                [person.first_name, person.last_name].filter(Boolean).join(' ') ||
+                person.email,
+            })),
+          )
+
+          const current = years[0] ?? null
+          setYear(current)
+          return current ? fetchHomegroups({ year: current.id }) : []
         })
+        .then(setHomegroups)
         .catch(handleError),
     [handleError],
   )
@@ -376,6 +414,30 @@ export default function SchoolReference() {
           )}
         </div>
       </section>
+
+      {/* кабинеты стоят между параллелями и звонками: и то и другое —
+          справочник, из которого расписание выбирает */}
+      {/* классы стоят рядом с параллелями: параллель — год обучения, класс
+          — люди этого года. Путать их легко, и объяснить разницу проще
+          всего тем, что они видны рядом */}
+      <HomegroupsPanel
+        homegroups={homegroups}
+        grades={grades}
+        teachers={teachers}
+        year={year}
+        busy={busy}
+        onCreate={(fields) => run(() => createHomegroup(fields))}
+        onUpdate={(id, fields) => run(() => updateHomegroup(id, fields))}
+        onDelete={(id) => run(() => deleteHomegroup(id))}
+      />
+
+      <RoomsPanel
+        rooms={rooms}
+        busy={busy}
+        onCreate={(fields) => run(() => createRoom(fields))}
+        onUpdate={(id, fields) => run(() => updateRoom(id, fields))}
+        onDelete={(id) => run(() => deleteRoom(id))}
+      />
 
       <BellsPanel />
       <GradingPanel />

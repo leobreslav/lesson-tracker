@@ -16,6 +16,7 @@ import {
   deleteSlot,
   fetchAgenda,
   fetchCourses,
+  fetchRooms,
   fetchSchoolYears,
   moveSlot,
   repeatSlot,
@@ -39,6 +40,9 @@ const EMPTY = { lessons: {}, days: {} }
 // «Темы уроков» переживают перезагрузку — тем же хранилищем, что флажки
 // над таблицей плана: своя копия этих четырёх строк тут уже была
 const TOPICS_KEY = 'agendaShowTopics'
+// показ кабинетов — такой же переключатель вида, как темы:
+// настройка, а не поза за работой, поэтому `localStorage`
+const ROOMS_KEY = 'agendaShowRooms'
 
 /** Lessons from the agenda answer as a flat list, each carrying its date. */
 function flatten(lessons) {
@@ -64,7 +68,12 @@ function lessonClassName(lesson) {
     (lesson.debt ? ' debt' : '') +
     // а записанный — зелёная галочка, тем же углом и теми же цветами, что в
     // таблице плана: один факт должен выглядеть одинаково везде
-    (lesson.recorded ? ' recorded' : '')
+    (lesson.recorded ? ' recorded' : '') +
+    // кабинет делится с чужим часом. Метка на самой клетке, а не в строке
+    // с названием кабинета, и это решение: показ кабинетов — переключатель
+    // вида, а предупреждение не украшение строки, а сообщение, и прятаться
+    // вместе с ней оно не должно
+    (lesson.room_clash ? ' room-clash' : '')
   )
 }
 
@@ -109,6 +118,24 @@ export default function Agenda({ views = null, onLoggedOut }) {
       cancelled = true
     }
   }, [])
+
+  /*
+   * Кабинеты — такой же справочник школы, как звонки, и приезжает он один
+   * раз: список короткий и от недели не зависит. Молча, как и звонки:
+   * школа, не заведшая ни одного кабинета, живёт как жила, и сетка из-за
+   * пустого справочника падать не должна.
+   */
+  useEffect(() => {
+    let cancelled = false
+    fetchRooms()
+      .then((list) => {
+        if (!cancelled) setRooms(list)
+      })
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [])
   const [error, setError] = useState(null)
   const [notice, setNotice] = useState(null)
   const [dialog, setDialog] = useState(null) // {type:'add'|'lesson'|'copy'|'clear', ...}
@@ -120,6 +147,8 @@ export default function Agenda({ views = null, onLoggedOut }) {
   // null means not loaded yet, so "no topic" is not printed for nothing
   const [topics, setTopics] = useState(null)
   const [showTopics, setShowTopics] = useState(() => remembered(TOPICS_KEY, false))
+  const [rooms, setRooms] = useState([])
+  const [showRooms, setShowRooms] = useState(() => remembered(ROOMS_KEY, false))
 
   const tempId = useRef(0)
 
@@ -571,6 +600,24 @@ export default function Agenda({ views = null, onLoggedOut }) {
     )
   }
 
+  /**
+   * Где идёт занятие — строкой в клетке, и только по просьбе.
+   *
+   * Тем же переключателем, что и темы: в клетке уже лежат курс и, если
+   * включены, тема — третья строка помещается не всегда, а нужна не всем.
+   * Школа, не ведущая кабинеты, тумблера не видит вовсе.
+   *
+   * Про занятый кабинет говорит сама клетка (`room-clash` в
+   * `lessonClassName`), а не эта строка: показ кабинетов — переключатель
+   * вида, а предупреждение — сообщение, и прятаться вместе с выключенной
+   * строкой оно не должно.
+   */
+  const roomOf = (lesson) => {
+    if (!showRooms || !lesson.room_name) return null
+
+    return <span className="cell-room">{lesson.room_name}</span>
+  }
+
   /*
    * Левое нажатие ведёт в занятие, правое открывает меню.
    *
@@ -617,11 +664,14 @@ export default function Agenda({ views = null, onLoggedOut }) {
         <>
           <span className="cell-course">{lesson.course_name}</span>
           {topicOf(lesson)}
+          {roomOf(lesson)}
         </>
       )}
       lessonClassName={lessonClassName}
       lessonTitle={(lesson) =>
-        [lesson.course_name, lesson.reason].filter(Boolean).join(' — ')
+        [lesson.course_name, lesson.room_name, lesson.reason]
+          .filter(Boolean)
+          .join(' — ')
       }
       isFree={(inCell) => !inCell.some((item) => !item.is_cancelled)}
       onPickDay={pickDay}
@@ -769,6 +819,22 @@ export default function Agenda({ views = null, onLoggedOut }) {
             />
             {t('agenda.topics')}
           </label>
+
+          {/* переключателя нет, пока школа не завела ни одного кабинета:
+              он обещал бы строку, которой неоткуда взяться */}
+          {rooms.length > 0 && (
+            <label className="checkbox">
+              <input
+                type="checkbox"
+                checked={showRooms}
+                onChange={(event) => {
+                  setShowRooms(event.target.checked)
+                  remember(ROOMS_KEY, event.target.checked)
+                }}
+              />
+              {t('agenda.rooms')}
+            </label>
+          )}
         </div>
       )}
 
@@ -812,6 +878,7 @@ export default function Agenda({ views = null, onLoggedOut }) {
           date={dialog.date}
           number={dialog.number}
           classes={freeClassesFor(dialog.date, dialog.number)}
+          rooms={rooms}
           /* докуда предлагать повтор: дальше года урока не бывает */
           yearEnd={
             yearById.get(
@@ -856,6 +923,8 @@ export default function Agenda({ views = null, onLoggedOut }) {
           onDelete={() => removeLesson(dialog.date, dialog.lesson)}
           onDeleteRow={() => deleteRow(dialog.date, dialog.lesson)}
           onMove={(fields) => moveLesson(dialog.date, dialog.lesson, fields)}
+          rooms={rooms}
+          onRoom={(room) => patchLesson(dialog.date, dialog.lesson, { room })}
           onClose={() => setDialog(null)}
         />
       )}

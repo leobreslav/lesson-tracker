@@ -2,7 +2,7 @@ import { Fragment } from 'react'
 import { useTranslation } from 'react-i18next'
 
 /**
- * Один день как таблица: номера уроков сверху вниз, курсы слева направо.
+ * Один день как таблица: номера уроков сверху вниз, столбцы — по выбранной оси.
  *
  * Вторая сетка расписания школы, и заведена она не ради разнообразия видов.
  * Неделя (`WeekGrid.jsx`) кладёт в клетку **все** курсы, у которых в этот
@@ -11,24 +11,31 @@ import { useTranslation } from 'react-i18next'
  * превращается в стопку из полутора десятков строк ростом в экран. Читать
  * её невозможно, а поставить в неё час — тем более.
  *
- * Развернуть эту стопку и значит развернуть **курс в отдельный столбец**:
- * тогда пересечение «курс × номер» — ровно одна клетка, и она пустая или
- * занятая. Не «почти одна»: `unique_together (course, date, lesson_number)`
- * держит это ограничением базы, и стопок здесь не бывает по построению.
+ * Развернуть эту стопку и значит развернуть день **по столбцам**. По каким —
+ * решает тот, кто смотрит (`dayAxis.js`): завуч, раскладывающий часы, видит
+ * курсы; ищущий свободное помещение — кабинеты; ищущий, кем закрыть окно, —
+ * учителей. Данные при этом одни и те же, и здесь про ось не знают ничего:
+ * столбцы и раскладку считает страница.
  *
- * Платим шириной: девятнадцать курсов — это таблица шире экрана, и она
+ * **Клетка держит стопку, и это не уступка.** На оси курсов час в ней ровно
+ * один — `unique_together (course, date, lesson_number)` держит это
+ * ограничением базы, — а на остальных стопка законна: в делимом зале два
+ * занятия разом норма, у заменяющего учителя два часа в одном номере тоже
+ * бывают. Сетка, умеющая показать один час, молча прятала бы второй.
+ *
+ * Платим шириной: девятнадцать столбцов — это таблица шире экрана, и она
  * прокручивается внутри своей коробки (страница вбок не едет — правило
  * общее для широких таблиц). Колонка номеров при этом прилипает к левому
- * краю: уехав вправо на четырнадцатый курс, человек иначе не знает, в
+ * краю: уехав вправо на четырнадцатый столбец, человек иначе не знает, в
  * каком он ряду.
  *
  * Чего здесь нет намеренно:
  *
  * * **перетаскивания.** В неделе оно переносит час на другой день или
  *   номер — то же, что «Перенести» в меню. Здесь соседний столбец это
- *   **другой курс**, а час принадлежит курсу: жест обещал бы перенос, а
- *   значил бы «отдайте этот урок другому классу», чего нет ни в API, ни в
- *   голове у того, кто тащит;
+ *   другой курс, кабинет или учитель, и жест обещал бы перенос, а значил
+ *   бы «отдайте этот час другому», чего нет ни в API, ни в голове у того,
+ *   кто тащит;
  * * **выделения дней.** Массовые операции идут по дням, а день тут один —
  *   его и копируют кнопкой в баре.
  *
@@ -39,12 +46,12 @@ import { useTranslation } from 'react-i18next'
 export default function DayGrid({
   date,
   day = {},
-  courses,
+  // столбцы считает страница (`dayAxis.columns`): здесь их только рисуют
+  columns,
   numbers,
   busy,
-  // час курса на этом номере — или ничего. Ищет страница: она же знает,
-  // что показано, а что убрано фильтром
-  lessonAt,
+  // часы этого столбца на этом номере — список: клетка держит стопку
+  lessonsIn,
   renderLesson,
   lessonClassName,
   lessonTitle = () => undefined,
@@ -69,7 +76,7 @@ export default function DayGrid({
     return { x: cell.left, y: cell.bottom }
   }
 
-  if (!courses.length) {
+  if (!columns.length) {
     return (
       <p className="hint" role="status">
         {t('schoolSchedule.day.noCourses')}
@@ -83,29 +90,30 @@ export default function DayGrid({
         className="day-grid"
         data-day={date}
         style={{
-          gridTemplateColumns: `3rem repeat(${courses.length}, minmax(7.5rem, 1fr))`,
+          gridTemplateColumns: `3rem repeat(${columns.length}, minmax(7.5rem, 1fr))`,
         }}
       >
         <div className="corner" />
-        {courses.map((course) => {
-          const leads = (course.teachers ?? []).map((teacher) => teacher.name)
-
-          return (
-            <div
-              key={course.id}
-              data-course-head={course.id}
-              className={leads.length ? 'day-course-head' : 'day-course-head unassigned'}
-              title={[course.name, leads.join(', ')].filter(Boolean).join(' — ')}
-            >
-              <strong>{course.name}</strong>
-              {/* кто ведёт — здесь же, а не в клетке: в неделе имя стоит в
-                  каждом часе, потому что курсов в клетке несколько, а тут
-                  столбец и есть курс, и повторённое десять раз имя
-                  заслоняло бы сами часы */}
-              <em>{leads.join(', ') || t('schoolSchedule.nobody')}</em>
-            </div>
-          )
-        })}
+        {columns.map((column) => (
+          <div
+            key={column.key}
+            data-column={column.key}
+            className={
+              'day-column-head' +
+              // столбец «не указан» и столбец того, кого в справочнике уже
+              // нет: и то и другое — не норма, и подписаны они иначе
+              (column.none || column.gone ? ' unassigned' : '')
+            }
+            title={[column.name, column.note].filter(Boolean).join(' — ')}
+          >
+            <strong>{column.name ?? t('schoolSchedule.day.none')}</strong>
+            {/* вторая строка — то, что про столбец полезно знать и что не
+                влезает в имя: кто ведёт курс, делимый ли зал. Внутри клеток
+                этого нет: повторённое десять раз в одном столбце, оно
+                закрыло бы собой сами часы */}
+            <em>{column.note}</em>
+          </div>
+        ))}
 
         {numbers.map((number) => (
           <Fragment key={number}>
@@ -121,53 +129,69 @@ export default function DayGrid({
               )}
             </div>
 
-            {courses.map((course) => {
-              const lesson = lessonAt(course.id, number)
+            {columns.map((column) => {
+              const inCell = lessonsIn(column.key, number)
 
-              if (!lesson) {
-                if (locked) {
-                  return <div key={course.id} className="cell locked" />
-                }
+              const addButton = (
+                <button
+                  type="button"
+                  data-add={`${date}:${number}:${column.key}`}
+                  className={inCell.length ? 'cell free add-more' : 'cell free'}
+                  aria-label={t('schoolSchedule.day.addTo', {
+                    number,
+                    column: column.name ?? t('schoolSchedule.day.none'),
+                  })}
+                  disabled={busy}
+                  onClick={() => onAdd?.(date, number, column)}
+                >
+                  +
+                </button>
+              )
 
-                return (
-                  <button
-                    type="button"
-                    key={course.id}
-                    data-add={`${date}:${number}:${course.id}`}
-                    className="cell free"
-                    aria-label={t('schoolSchedule.day.addTo', {
-                      number,
-                      course: course.name,
-                    })}
-                    disabled={busy}
-                    onClick={() => onAdd?.(date, number, course.id)}
-                  >
-                    +
-                  </button>
+              if (!inCell.length) {
+                // неучебный день не принимает часы — как и в неделе: молча
+                // положить туда занятие значило бы завести урок в праздник
+                // в обход того же запрета
+                return locked ? (
+                  <div key={column.key} className="cell locked" />
+                ) : (
+                  <Fragment key={column.key}>{addButton}</Fragment>
                 )
               }
 
               return (
-                <button
-                  type="button"
-                  key={course.id}
-                  /* ключ клетки — тройка, а не пара: пару «дата и номер»
-                     в этом виде делят все столбцы, и по ней нельзя указать
-                     ни на один час в отдельности */
-                  data-lesson={`${date}:${number}:${course.id}`}
-                  className={lessonClassName(lesson)}
-                  title={lessonTitle(lesson)}
-                  disabled={busy}
-                  onClick={(event) => onMenu?.(date, lesson, menuAt(event))}
-                  onContextMenu={(event) => {
-                    // своё меню вместо браузерного — как в неделе: правое
-                    // нажатие по часу значит ровно то же, что левое
-                    event.preventDefault()
-                    onMenu?.(date, lesson, menuAt(event))
-                  }}
+                <div
+                  key={column.key}
+                  className={inCell.length > 1 ? 'cell-stack multi' : 'cell-stack'}
                 >
-                  {renderLesson(lesson)}
-                </button>
+                  {inCell.map((lesson) => (
+                    <button
+                      type="button"
+                      key={lesson.id}
+                      /* ключ клетки — тройка, а не пара: пару «дата и номер»
+                         в этом виде делят все столбцы, и по ней нельзя
+                         указать ни на один час в отдельности */
+                      data-lesson={`${date}:${number}:${column.key}`}
+                      className={lessonClassName(lesson)}
+                      title={lessonTitle(lesson)}
+                      disabled={busy}
+                      onClick={(event) => onMenu?.(date, lesson, menuAt(event))}
+                      onContextMenu={(event) => {
+                        // своё меню вместо браузерного — как в неделе: правое
+                        // нажатие по часу значит ровно то же, что левое
+                        event.preventDefault()
+                        onMenu?.(date, lesson, menuAt(event))
+                      }}
+                    >
+                      {renderLesson(lesson)}
+                    </button>
+                  ))}
+                  {/* место свободно, пока в клетке одни отмены: тот же
+                      признак, что и в неделе */}
+                  {!locked &&
+                    !inCell.some((lesson) => !lesson.is_cancelled) &&
+                    addButton}
+                </div>
               )
             })}
           </Fragment>

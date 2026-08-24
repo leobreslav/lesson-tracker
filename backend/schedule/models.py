@@ -1,3 +1,5 @@
+from collections import defaultdict
+
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.core.validators import MaxValueValidator, MinValueValidator
@@ -373,6 +375,244 @@ class CourseStudent(models.Model):
         return self.removed_at is None
 
 
+class Homegroup(models.Model):
+    """
+    Класс: устойчивое множество учеников, у которого есть имя. «6А», «DP1».
+
+    Слово «класс» в этом проекте уже занято дважды — параллелью
+    (`GradeLevel`, год обучения) и курсом («9Б Алгебра»), — и третье значение
+    ему бы не пережить, поэтому в коде он `Homegroup`. В интерфейсе он
+    называется так, как называет школа.
+
+    **Чем он не является — важнее того, чем является.** Он не курс: на
+    курсе учатся ради предмета, а в классе просто числятся. Он и не
+    параллель: в шестой параллели два класса, 6А и 6Б, и учатся они то
+    вместе, то вперемешку, разбившись на подгруппы. Собственно, ради этого
+    «то вместе, то вперемешку» он и заведён.
+
+    **Связи с курсом у него нет и не будет.** Курс класса — это множество
+    классов его учеников, и выводится оно из зачислений. Записанная связь
+    была бы вторым ответом на вопрос, на который уже отвечают ученики, и
+    разошлась бы с ними молча: «курс 6А», в котором семеро из 6А и трое из
+    6Б, — обычное дело, а в базе стояло бы «6А». В школе с выбором предметов
+    (DP) связи не существует вовсе: там каждый курс собран из кусков разных
+    классов, и правильного единственного ответа нет.
+
+    Цена этого решения названа прямо: **пока учеников не зачислили, класса у
+    курса нет**. Расписание рисуют в августе, а зачисляют в сентябре, и всё
+    это время дневной вид «по классам» покажет такие часы в крайнем столбце
+    «не указан». Спрятать их было бы хуже: пропавший с экрана урок не
+    находят месяцами.
+
+    Классный руководитель — необязательная ссылка на человека, а не роль в
+    правах: он ничего не открывает и ничего не закрывает. Это ответ на
+    вопрос «чей это класс», который задают, когда нужно кому-то написать.
+    """
+
+    school = models.ForeignKey(
+        "schools.School",
+        related_name="homegroups",
+        on_delete=models.CASCADE,
+        verbose_name="school",
+    )
+    # год обязателен по тому же доводу, что у курса: в следующем году 6А
+    # становится 7А, и это другая строка, а не переименованная эта
+    year = models.ForeignKey(
+        "calendars.SchoolYear",
+        related_name="homegroups",
+        on_delete=models.CASCADE,
+        verbose_name="school year",
+    )
+    grade = models.ForeignKey(
+        GradeLevel,
+        related_name="homegroups",
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        verbose_name="grade level",
+    )
+    name = models.CharField("name", max_length=100)
+    # классный руководитель: свойство класса, а не право в системе
+    tutor = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        related_name="homegroups_led",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        verbose_name="tutor",
+        help_text="Классный руководитель: кому писать про этот класс.",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = "homegroup"
+        verbose_name_plural = "homegroups"
+        ordering = ("grade__level", "name")
+        constraints = [
+            models.UniqueConstraint(
+                fields=("school", "year", "name"),
+                name="unique_homegroup_name_per_year",
+            ),
+        ]
+
+    def __str__(self):
+        return self.name
+
+
+class HomegroupStudent(models.Model):
+    """
+    Кто в этом классе. Строка со снятием, как зачисление на курс.
+
+    Не удаляется по той же причине: перевод из 6А в 6Б посреди года не
+    должен стирать, что человек был в 6А, — расписание сентября собиралось
+    по тому составу, и переписывать его задним числом нельзя.
+
+    **Класс на год у ученика один**, и это ограничение базы, а не
+    договорённость. Частичное — только среди незакрытых строк: иначе перевод
+    был бы невозможен вовсе, потому что старая строка держала бы место.
+
+    Год ради этого лежит **на самой строке**, хотя он же есть у класса, и
+    это единственная денормализация в этой паре таблиц. Причина
+    техническая и названа прямо: ограничение уникальности в Postgres
+    считается по колонкам одной таблицы, а `homegroup__year` — колонка
+    соседней; Django на такое отвечает `models.E012`. Выбор был между копией
+    поля и правилом, живущим только в коде, — а правило, живущее только в
+    коде, здесь уже обходили дважды (сначала импортом, потом админкой).
+
+    Копия при этом не может разойтись с оригиналом: она проставляется в
+    `save()` из класса и нигде больше не пишется, а сторож
+    (`HomegroupYearMatchesTests`) проверяет, что не разошлась.
+    """
+
+    homegroup = models.ForeignKey(
+        Homegroup,
+        related_name="students",
+        on_delete=models.CASCADE,
+        verbose_name="homegroup",
+    )
+    # копия года класса — ради ограничения уникальности, см. докстринг.
+    # Пишется только в `save()`, руками не заполняется никогда
+    year = models.ForeignKey(
+        "calendars.SchoolYear",
+        related_name="homegroup_rows",
+        on_delete=models.CASCADE,
+        editable=False,
+        verbose_name="school year",
+    )
+    student = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        related_name="homegroups",
+        on_delete=models.CASCADE,
+        verbose_name="student",
+    )
+    added_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        related_name="homegroup_rows_added",
+        null=True,
+        on_delete=models.SET_NULL,
+        verbose_name="added by",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    removed_at = models.DateTimeField("removed at", null=True, blank=True)
+
+    class Meta:
+        verbose_name = "homegroup student"
+        verbose_name_plural = "homegroup students"
+        ordering = ("homegroup__name", "student__last_name", "student__email")
+        constraints = [
+            models.UniqueConstraint(
+                fields=("homegroup", "student"),
+                name="one_homegroup_row_per_student",
+            ),
+            models.UniqueConstraint(
+                fields=("student", "year"),
+                condition=models.Q(removed_at__isnull=True),
+                name="one_active_homegroup_per_year",
+                violation_error_message=(
+                    "This student already belongs to a homegroup this year."
+                ),
+            ),
+        ]
+        indexes = [
+            models.Index(
+                fields=("student", "removed_at"), name="active_homegroup_idx"
+            ),
+        ]
+
+    def save(self, *args, **kwargs):
+        """Год берётся у класса — и только у него: второй источник тут не нужен."""
+        if self.homegroup_id:
+            self.year_id = self.homegroup.year_id
+        return super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f"{self.student} — {self.homegroup}"
+
+    @property
+    def is_active(self) -> bool:
+        return self.removed_at is None
+
+
+class Room(models.Model):
+    """
+    Кабинет школы: где идёт занятие.
+
+    Четвёртый справочник рядом с предметами, параллелями и звонками, и
+    заведён он тем же порядком: список принадлежит школе, ведёт его
+    администратор, учитель из него выбирает. Имя — человеческое поле, как у
+    курса: «214», «Актовый зал», «Лаборатория химии» — что школа пишет на
+    двери, то и лежит здесь.
+
+    **Делимый кабинет — не разрешение, а свойство помещения.** Занятость
+    кабинета в этой школе никогда не запрет: два класса, загнанных в один
+    кабинет, — обычное дело, и отказ на этом месте просто заставил бы врать
+    расписанию. Значит остаётся предупреждение, а у него единственная беда —
+    привыкание: горящий каждый день спортзал перестают читать через неделю,
+    а вместе с ним перестают читать и настоящие. Поэтому у зала, где
+    несколько занятий разом — норма, флаг стоит, и про него молчат.
+
+    Архивный кабинет — закрытый на ремонт или отданный под склад: из
+    выбора он исчезает, а история остаётся. Удалять его ради этого нельзя:
+    часы прошедших уроков ссылаются на него `PROTECT`'ом, и это правильно —
+    факт «урок шёл в 214» никуда не девается оттого, что кабинета больше нет.
+    """
+
+    school = models.ForeignKey(
+        "schools.School",
+        related_name="rooms",
+        on_delete=models.CASCADE,
+        verbose_name="school",
+    )
+    name = models.CharField("name", max_length=100)
+    is_shared = models.BooleanField(
+        "shared",
+        default=False,
+        help_text=(
+            "Несколько занятий разом — норма: спортзал, актовый зал. "
+            "О совпадениях в таком кабинете не предупреждаем."
+        ),
+    )
+    is_archived = models.BooleanField(
+        "archived",
+        default=False,
+        help_text="Из выбора убран, в истории остался.",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = "room"
+        verbose_name_plural = "rooms"
+        ordering = ("name",)
+        constraints = [
+            models.UniqueConstraint(
+                fields=("school", "name"), name="unique_room_name_per_school"
+            ),
+        ]
+
+    def __str__(self):
+        return self.name
+
+
 class BellTime(models.Model):
     """
     Расписание звонков: во сколько начинается и кончается урок с этим номером.
@@ -525,9 +765,13 @@ class Slot(models.Model):
 
     #: Поля, которые говорят только «когда» и «состоялось ли»: они описывают
     #: клетку сетки, а не то, что в ней произошло.
+    #: Кабинет стоит здесь, а не среди записей, и это решение, а не
+    #: недосмотр: он говорит, **где** стоит клетка, а не что в ней
+    #: произошло. Час, которому проставили кабинет и который так и не
+    #: состоялся, — пустая клетка, и массовая чистка вправе её снести.
     GRID_FIELDS = frozenset(
         {"id", "year", "course", "date", "lesson_number", "is_cancelled",
-         "is_extra", "created_at"}
+         "is_extra", "room", "created_at"}
     )
     #: Собственные поля, заполненность которых делает занятие историей.
     #: Обратные связи в перечислении не нуждаются, см. `empty_conditions`.
@@ -585,6 +829,18 @@ class Slot(models.Model):
         on_delete=models.SET_NULL,
         verbose_name="taught by",
         help_text="Заполняется только для замены: обычно урок ведёт ведущий курса.",
+    )
+    # Где идёт занятие. Необязателен: школа, не ведущая кабинеты, живёт как
+    # жила, а пустое поле значит «не указан», а не «неизвестно откуда взять».
+    # `PROTECT`: кабинет, в котором уже шли уроки, не исчезает молча — иначе
+    # правка справочника переписывала бы историю задним числом
+    room = models.ForeignKey(
+        Room,
+        related_name="slots",
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        verbose_name="room",
     )
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -786,6 +1042,195 @@ class Slot(models.Model):
             queryset = queryset.exclude(pk=exclude_pk)
 
         return queryset.first()
+
+    @classmethod
+    def room_clashes(cls, *, school_id, start, end):
+        """
+        Часы, делящие неделимый кабинет, — одним запросом на весь период.
+
+        **Считается на чтение, а не при записи, и это главное здесь.**
+        Занятость кабинета — свойство пары часов, а не одного: конфликт
+        возникает не когда вы ставите свой урок, а когда рядом поставят
+        чужой. Предупреждение, сказанное один раз в ответе на создание,
+        поэтому бесполезно — тот, кто пришёл первым, его никогда не увидит.
+        Значит его надо показывать всем и всегда, пока пара стоит рядом.
+
+        Отменённый час кабинет освобождает — тем же правилом, что и номер у
+        учителя. Делимый кабинет не считается вовсе: у зала, где два
+        занятия разом норма, предупреждение горело бы каждый день и
+        приучало бы отмахиваться от всех остальных.
+
+        Возвращает множество id: клетке нужно знать только «я в паре».
+        """
+        rows = cls.objects.filter(
+            course__school_id=school_id,
+            date__range=(start, end),
+            room__isnull=False,
+            room__is_shared=False,
+            is_cancelled=False,
+        ).values_list("id", "date", "lesson_number", "room_id")
+
+        seats = defaultdict(list)
+        for pk, date, number, room_id in rows:
+            seats[(date, number, room_id)].append(pk)
+
+        return {pk for shared in seats.values() if len(shared) > 1 for pk in shared}
+
+    @staticmethod
+    def homegroups_by_course(school_id):
+        """
+        Классы каждого курса — выведенные из его учеников, одним запросом.
+
+        Записанной связи «курс — класс» не существует, и это решение, а не
+        пробел: она была бы вторым ответом на вопрос, на который уже
+        отвечают зачисления, и разошлась бы с ними молча. «Курс 6А», в
+        котором семеро из 6А и трое из 6Б, — обычное дело, а в поле стояло
+        бы «6А».
+
+        Цена названа прямо: курс, в который никого не зачислили, классов не
+        имеет вовсе — и в дневном виде «по классам» уходит в крайний столбец
+        «не указан». Расписание рисуют в августе, а зачисляют в сентябре, и
+        всё это время так и будет.
+        """
+        from collections import defaultdict
+
+        rows = (
+            CourseStudent.objects.filter(
+                removed_at__isnull=True,
+                course__school_id=school_id,
+                student__homegroups__removed_at__isnull=True,
+            )
+            .values_list("course_id", "student__homegroups__homegroup_id")
+            .distinct()
+        )
+
+        found = defaultdict(set)
+        for course_id, group_id in rows:
+            if group_id is not None:
+                found[course_id].add(group_id)
+
+        return {course_id: sorted(groups) for course_id, groups in found.items()}
+
+    @classmethod
+    def student_clashes(cls, *, school_id, start, end):
+        """
+        Часы, у которых в один номер попал один и тот же ученик.
+
+        Это то, ради чего классы вообще заведены, и это **не** «класс занят»:
+        две подгруппы 6А в третьем часу — норма, ровно для того их и делят.
+        Ошибка — когда в обеих оказался Иванов, а физически он один.
+
+        Считается по самим ученикам, а не по классам, и потому работает и
+        там, где классов как таковых нет: в школе с выбором предметов каждый
+        курс собран из кусков разных классов, а вопрос «где сейчас этот
+        человек» остаётся тем же самым.
+
+        Предупреждение, а не запрет — как и с кабинетом: сдвоенные занятия,
+        консультации и отработки бывают, и отказ заставил бы расписание
+        врать. Возвращается `{id часа: [имена учеников]}`: клетке нужно и
+        «я в паре», и кого назвать в подсказке.
+
+        Отменённый час не считается: ученика на нём нет.
+        """
+        from collections import defaultdict
+
+        rows = (
+            CourseStudent.objects.filter(
+                removed_at__isnull=True,
+                course__school_id=school_id,
+                course__slots__date__range=(start, end),
+                course__slots__is_cancelled=False,
+            )
+            .values_list(
+                "course__slots__id",
+                "course__slots__date",
+                "course__slots__lesson_number",
+                "student_id",
+                "student__first_name",
+                "student__last_name",
+                "student__email",
+            )
+        )
+
+        # «кто где стоит» — по окну (дата и номер), а внутри по ученику:
+        # один ученик в двух курсах одного окна и есть весь конфликт
+        windows = defaultdict(lambda: defaultdict(set))
+        names = {}
+        for slot_id, date, number, student_id, first, last, email in rows:
+            windows[(date, number)][student_id].add(slot_id)
+            names[student_id] = " ".join(filter(None, (first, last))) or email
+
+        found = defaultdict(set)
+        for seats in windows.values():
+            for student_id, slot_ids in seats.items():
+                if len(slot_ids) < 2:
+                    continue
+                for slot_id in slot_ids:
+                    found[slot_id].add(names[student_id])
+
+        return {slot_id: sorted(who) for slot_id, who in found.items()}
+
+    def student_clash(self):
+        """
+        Те же пересечения, но про один час: у одиночного ответа периода нет.
+
+        Тот же приём, что у кабинета рядом, и по той же причине: один запрос
+        про один час дешевле, чем обход недели на каждый PATCH.
+        """
+        if self.is_cancelled or not self.course_id:
+            return []
+        if self.date is None or self.lesson_number is None:
+            return []
+
+        mine = set(
+            CourseStudent.objects.filter(
+                course_id=self.course_id, removed_at__isnull=True
+            ).values_list("student_id", flat=True)
+        )
+        if not mine:
+            return []
+
+        rows = (
+            CourseStudent.objects.filter(
+                removed_at__isnull=True,
+                student_id__in=mine,
+                course__slots__date=self.date,
+                course__slots__lesson_number=self.lesson_number,
+                course__slots__is_cancelled=False,
+            )
+            .exclude(course__slots__id=self.pk)
+            .values_list("student__first_name", "student__last_name", "student__email")
+        )
+
+        return sorted(
+            {" ".join(filter(None, (first, last))) or email for first, last, email in rows}
+        )
+
+    def shares_room(self) -> bool:
+        """
+        Делит ли **этот** час неделимый кабинет с другим.
+
+        Один запрос про один час — для ответа, в котором слот приехал сам по
+        себе (создание, правка). Списку это не годится: там за тем же
+        ответом ходит `room_clashes`, один раз на весь период.
+        """
+        if self.room_id is None or self.is_cancelled:
+            return False
+        if self.date is None or self.lesson_number is None:
+            return False
+        if self.room.is_shared:
+            return False
+
+        return (
+            Slot.objects.filter(
+                room_id=self.room_id,
+                date=self.date,
+                lesson_number=self.lesson_number,
+                is_cancelled=False,
+            )
+            .exclude(pk=self.pk)
+            .exists()
+        )
 
     def lead_teacher_id(self):
         """Кто ведёт курс этого слота; None — нагрузку ещё не раздали."""

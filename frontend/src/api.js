@@ -324,6 +324,47 @@ export const importTemplate = (payload) =>
 
 export const fetchSubjects = () => request('/api/school/subjects/')
 
+// --- кабинеты: справочник школы, живёт рядом с расписанием ---
+
+export const fetchRooms = () => request('/api/rooms/')
+
+export const createRoom = (fields) =>
+  request('/api/rooms/', { method: 'POST', body: fields })
+
+export const updateRoom = (id, fields) =>
+  request(`/api/rooms/${id}/`, { method: 'PATCH', body: fields })
+
+export const deleteRoom = (id) => request(`/api/rooms/${id}/`, { method: 'DELETE' })
+
+// --- классы (хоумрумы): состав выводит связь курса с классом ---
+
+export const fetchHomegroups = (params = {}) =>
+  request(`/api/homegroups/?${new URLSearchParams(params)}`)
+
+export const createHomegroup = (fields) =>
+  request('/api/homegroups/', { method: 'POST', body: fields })
+
+export const updateHomegroup = (id, fields) =>
+  request(`/api/homegroups/${id}/`, { method: 'PATCH', body: fields })
+
+export const deleteHomegroup = (id) =>
+  request(`/api/homegroups/${id}/`, { method: 'DELETE' })
+
+// без параметра — все действующие строки школы: экран «Ученики» показывает
+// класс у каждого, и спрашивать по классу значило бы спросить десять раз
+export const fetchHomegroupStudents = (params = {}) =>
+  request(`/api/homegroup-students/?${new URLSearchParams(params)}`)
+
+export const addHomegroupStudent = (homegroup, student) =>
+  request('/api/homegroup-students/', {
+    method: 'POST',
+    body: { homegroup, student },
+  })
+
+// снятие, а не удаление: где человек учился, остаётся правдой
+export const removeHomegroupStudent = (id) =>
+  request(`/api/homegroup-students/${id}/`, { method: 'DELETE' })
+
 export const createSubject = (name) =>
   request('/api/school/subjects/', { method: 'POST', body: { name } })
 

@@ -53,6 +53,8 @@ def build(school, courses, people, students, *, log=print):
     made.append(_feedback(school, teacher, students))
     made.append(_families(school, students))
     made.append(_bells(school))
+    made.append(_rooms(school, courses))
+    made.append(_homegroups(school, courses, students, teacher))
 
     log("  досев:     " + ", ".join(one for one in made if one))
 
@@ -795,6 +797,96 @@ BELLS = (
     ("12:20", "13:05"),
     ("13:15", "14:00"),
 )
+
+
+def _rooms(school, courses):
+    """
+    Кабинеты школы и часы, расставленные по ним.
+
+    Пустой справочник кабинетов означал бы, что ось «по кабинетам» в
+    дневном расписании никто ни разу не видел с данными, — а видно на ней
+    ровно то, ради чего кабинеты и заводят: где свободно и где два класса
+    оказались в одном помещении.
+
+    Поэтому сеются три обычных кабинета и один делимый (спортзал), а часы
+    первых двух дней расставляются по ним по кругу — с одним намеренным
+    совпадением: два курса в одном обычном кабинете на одном номере. Оно и
+    есть тот случай, о котором расписание предупреждает.
+    """
+    from schedule.models import Room, Slot
+
+    # `get_or_create`, а не `create`: досев зовут и по второму разу — на
+    # непустой базе он должен дополнять, а не падать на своём же кабинете
+    rooms = [
+        Room.objects.get_or_create(
+            school=school, name=name, defaults={"is_shared": shared}
+        )[0]
+        for name, shared in (("214", False), ("301", False),
+                             ("Лаборатория", False), ("Спортзал", True))
+    ]
+
+    # `courses` — словарь «имя → курс», и в фильтр идут значения: по ключам
+    # выборка молча ушла бы в поиск курса по строке
+    slots = list(
+        Slot.objects.filter(course__in=list(courses.values()))
+        .order_by("date", "lesson_number")[:24]
+    )
+    for index, slot in enumerate(slots):
+        slot.room = rooms[index % len(rooms)]
+        slot.save(update_fields=["room"])
+
+    # намеренное совпадение: два часа одного номера в одном обычном кабинете
+    same = [slot for slot in slots if slot.room_id == rooms[0].pk][:1]
+    twin = next(
+        (
+            slot
+            for slot in slots
+            if same
+            and slot.pk != same[0].pk
+            and slot.date == same[0].date
+            and slot.lesson_number == same[0].lesson_number
+        ),
+        None,
+    )
+    if twin:
+        twin.room = rooms[0]
+        twin.save(update_fields=["room"])
+
+    return f"кабинетов {len(rooms)}"
+
+
+def _homegroups(school, courses, students, teacher):
+    """
+    Классы школы и кто в них.
+
+    Без них ось «по классам» в дневном расписании никто ни разу не видел с
+    данными, а вместе с ней — и предупреждение «ученик стоит в двух местах»,
+    ради которого классы, собственно, и заведены.
+
+    Связи с курсами тут нет и быть не может: класс курса выводится из его
+    учеников. Поэтому сеются два класса и ученики раскладываются по ним —
+    дальше приложение считает всё само.
+    """
+    from schedule.models import Homegroup, HomegroupStudent
+
+    year = next(iter(courses.values())).year
+    groups = [
+        Homegroup.objects.get_or_create(
+            school=school,
+            year=year,
+            name=name,
+            defaults={"tutor": teacher if name == "6А" else None},
+        )[0]
+        for name in ("6А", "6Б")
+    ]
+
+    people = list(students)
+    for index, student in enumerate(people):
+        group = groups[index % len(groups)]
+        # `get_or_create`: досев зовут и по второму разу, а ученик уже в классе
+        HomegroupStudent.objects.get_or_create(homegroup=group, student=student)
+
+    return f"классов {len(groups)}"
 
 
 def _bells(school):

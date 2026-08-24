@@ -145,7 +145,10 @@
     "weekend": "Weekend"
   },
   "warnings": {
-    "slot_not_study_day": "{{date}} is not a study day ({{statusLabel}}{{titleSuffix}}) — the lesson sits outside the school calendar."
+    "slot_not_study_day": "{{date}} is not a study day ({{statusLabel}}{{titleSuffix}}) — the lesson sits outside the school calendar.",
+    "slot_room_busy": "Room {{room}} holds another lesson at number {{lesson_number}} that day.",
+    "slot_student_busy": "{{names}} also have another lesson at number {{lesson_number}} that day.",
+    "slot_student_busy_short": "Also in another lesson: {{names}}"
   },
   "errors": {
     "offline": "The server did not answer. Check the connection and try again — nothing has been lost.",
@@ -332,7 +335,10 @@
     "stroke_too_long": "That stroke is too long: at most {{limit}} points.",
     "pen_width_invalid": "The pen is between {{low}} and {{high}}.",
     "point_invalid": "That mark falls outside the picture.",
-    "colour_invalid": "That is not a colour."
+    "colour_invalid": "That is not a colour.",
+    "room_in_use": "«{{name}}» holds {{slots}} lessons: archive it instead of deleting.",
+    "homegroup_taken": "{{name}} already belongs to «{{homegroup}}» this year.",
+    "homegroup_in_use": "«{{name}}» still holds {{students}} students: move them out first."
   },
   "classPicker": {
     "label": "Classes:",
@@ -735,7 +741,9 @@
       "repeatBiweekly": "every other week",
       "repeatUntil": "until",
       "reasonPlaceholder": "Why: a substitution, a club…",
-      "reasonLabel": "Explanation"
+      "reasonLabel": "Explanation",
+      "roomLabel": "Room",
+      "noRoom": "not set"
     },
     "menu": {
       "title": "{{className}}, lesson {{number}}",
@@ -757,13 +765,24 @@
       "deleteRow": "Delete the whole row…",
       "rowHint": "This lesson and every one like it — same weekday, same number — up to the end of the year. Hours with a record stay: the answer says how many.",
       "rowSubmit": "Delete the row",
-      "cancel": "Cancel the lesson"
+      "cancel": "Cancel the lesson",
+      "room": "Room…",
+      "roomHint": "Where this lesson takes place. Empty means not set.",
+      "roomIs": "Room {{name}}"
     },
     "copyDay": "Copy the day…",
     "span": {
       "label": "How much is shown",
       "week": "Week",
       "day": "Day"
+    },
+    "rooms": "Rooms",
+    "axis": {
+      "label": "Columns are",
+      "course": "Courses",
+      "teacher": "Teachers",
+      "room": "Rooms",
+      "homegroup": "Classes"
     }
   },
   "noSchool": {
@@ -893,7 +912,37 @@
       "noCourses": "not enrolled anywhere",
       "removed": "no longer in this course",
       "detach": "Detach from the school",
-      "detachKeeps": "Nothing is deleted: the person is taken off every course, and what they have done stays."
+      "detachKeeps": "Nothing is deleted: the person is taken off every course, and what they have done stays.",
+      "homegroup": "Class",
+      "noHomegroup": "none"
+    },
+    "rooms": {
+      "title": "Rooms",
+      "hint": "Where lessons take place. The list is yours; teachers choose from it.",
+      "hintMore": "A room that already holds lessons cannot be deleted — «the lesson was in 214» stays true even after the room becomes a store cupboard. Archive it instead: it disappears from the timetable pickers and stays in the history. Mark a hall shared when several lessons at once are normal there: the timetable then keeps quiet about them instead of warning every single day.",
+      "newName": "Room number or name",
+      "shared": "Shared",
+      "rename": "Room name",
+      "archive": "Archive",
+      "restore": "Bring back",
+      "empty": "No rooms yet — lessons simply have none.",
+      "usedBy_one": "{{count}} lesson",
+      "usedBy_other": "{{count}} lessons"
+    },
+    "homegroups": {
+      "title": "Classes",
+      "hint": "Groups of students: 6A, 6B, DP1. Not the same thing as a year group.",
+      "hintMore": "A class is a set of students with a name, and nothing else. It holds no courses: which classes a course belongs to follows from who studies in it, so a written link would be a second answer to the same question — and «course 6A» with seven students from 6A and three from 6B is an ordinary state of affairs. Membership is set where the students are, in «School → Students»: a class is a property of a person. Knowing both — who is in a course and who is in a class — the timetable can finally warn that somebody is in two places at once.",
+      "newName": "Class name",
+      "grade": "Year group:",
+      "noGrade": "not set",
+      "tutor": "Tutor:",
+      "noTutor": "nobody",
+      "rename": "Class name",
+      "empty": "No classes yet.",
+      "needYear": "Add a school year first — a class belongs to one.",
+      "inside_one": "{{count}} student",
+      "inside_other": "{{count}} students"
     }
   },
   "schools": {
@@ -937,8 +986,9 @@
       "lesson": "Lesson",
       "extra": "Extra",
       "cancelled": "Cancelled",
-      "addTo": "Add lesson {{number}} to {{course}}",
-      "noCourses": "No courses match the filter, so there are no columns to show."
+      "addTo": "Add lesson {{number}} to {{column}}",
+      "noCourses": "No courses match the filter, so there are no columns to show.",
+      "none": "Not set"
     }
   },
   "library": {

@@ -128,6 +128,9 @@ class Codes:
     TEMPLATE_ROW_UNKNOWN = "template_row_unknown"
     SUBJECT_NAME_TAKEN = "subject_name_taken"
     SUBJECT_IN_USE = "subject_in_use"
+    ROOM_IN_USE = "room_in_use"
+    HOMEGROUP_TAKEN = "homegroup_taken"
+    HOMEGROUP_IN_USE = "homegroup_in_use"
     MODE_INVALID = "mode_invalid"
 
     # plan tree
@@ -140,6 +143,8 @@ class Codes:
 
     # warnings: not failures, the request goes through
     SLOT_NOT_STUDY_DAY = "slot_not_study_day"
+    SLOT_ROOM_BUSY = "slot_room_busy"
+    SLOT_STUDENT_BUSY = "slot_student_busy"
 
     # CSV import
     CLASS_REQUIRED = "class_required"

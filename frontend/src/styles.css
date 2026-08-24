@@ -3168,6 +3168,12 @@ button.chip.active:hover:not(:disabled) {
  * Колонки при этом остались постоянной ширины: семь строк должны читаться
  * столбцами, а не лесенкой из имён разной длины.
  */
+/* архивный кабинет: из выбора убран, в списке приглушён */
+.class-list > li.archived .name {
+  color: #8a8a8a;
+  text-decoration: line-through;
+}
+
 .course-head {
   display: grid;
   grid-template-columns: var(--course-columns) auto;
@@ -5991,7 +5997,7 @@ button.day-head:hover {
  * потому что курсов в клетке несколько, а тут столбец и есть курс —
  * повторённое десять раз имя закрыло бы собой сами часы.
  */
-.day-course-head {
+.day-column-head {
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -6002,7 +6008,7 @@ button.day-head:hover {
   text-align: center;
 }
 
-.day-course-head strong {
+.day-column-head strong {
   max-width: 100%;
   overflow: hidden;
   font-size: 0.85rem;
@@ -6011,7 +6017,7 @@ button.day-head:hover {
   white-space: nowrap;
 }
 
-.day-course-head em {
+.day-column-head em {
   max-width: 100%;
   overflow: hidden;
   font-size: 0.7rem;
@@ -6023,7 +6029,8 @@ button.day-head:hover {
 
 /* курс без ведущего — то, что администратор на этом экране и ищет: тот же
    цвет тревоги, что у его часов в сетке */
-.day-course-head.unassigned em {
+.day-column-head.unassigned strong,
+.day-column-head.unassigned em {
   color: #b8860b;
 }
 
@@ -6115,6 +6122,52 @@ button.day-head:hover {
   opacity: 0.75;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/*
+ * Кабинет в клетке: третья строка, мельче остальных.
+ *
+ * Показывается по переключателю — как и тема, — потому что в клетке уже
+ * лежат курс и тема, и третья строка нужна не всякому дню. А вот метка
+ * занятости (`.room-clash` ниже) от переключателя не зависит: строку
+ * человек выключает, а сообщение — нет.
+ */
+.cell-room {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  font-size: 0.68rem;
+  font-weight: 400;
+  line-height: 1.2;
+  opacity: 0.7;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/*
+ * Кабинет делится с чужим часом.
+ *
+ * Пунктирная рамка, а не заливка и не третий цвет: заливкой в этой сетке
+ * уже сказаны отмена и «дополнительный», и четвёртый оттенок читался бы как
+ * ещё один вид занятия. Здесь же занятие обычное, а сообщение — про
+ * соседа, поэтому рамка: она не спорит с тем, что говорит цвет.
+ */
+.cell.lesson.room-clash {
+  border-style: dashed;
+  border-color: #b8860b;
+}
+
+/*
+ * Кто-то из учеников стоит в это же время ещё где-то.
+ *
+ * Красная пунктирная рамка против жёлтой у кабинета: и то и другое — про
+ * соседа, но занятый кабинет чинят «когда-нибудь», а человека, стоящего в
+ * двух местах, чинят сегодня. Имена — в подсказке клетки: «кто-то
+ * пересекается» это сообщение, с которым нечего делать.
+ */
+.cell.lesson.student-clash {
+  border-style: dashed;
+  border-color: #b00020;
 }
 
 /* слоту не досталось урока плана — говорим об этом прямо */

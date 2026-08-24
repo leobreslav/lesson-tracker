@@ -2,7 +2,14 @@ import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 import EmptyState from './EmptyState'
-import { detachMember, fetchMembers } from './api'
+import {
+  addHomegroupStudent,
+  detachMember,
+  fetchHomegroupStudents,
+  fetchHomegroups,
+  fetchMembers,
+  removeHomegroupStudent,
+} from './api'
 import { useSchoolSection } from './School'
 
 const fullName = (person) =>
@@ -19,11 +26,24 @@ const fullName = (person) =>
  * Зачисления показаны рядом с именем и снятые тоже, приглушённо: «он у нас
  * есть, но нигде не учится» и «он учился вот здесь» — разные ответы, и оба
  * нужны, когда ищешь, кого отвязывать.
+ *
+ * **Класс живёт здесь же, и это не соседство ради удобства.** Класс — это
+ * свойство человека, а не список, который кто-то ведёт отдельно: из него
+ * выводится, какие классы у курса, и на нём держится предупреждение «ученик
+ * стоит в двух местах». Поэтому назначается он там, где на человека
+ * смотрят, — и одним селектом, а не окном: у него ровно одно значение.
+ *
+ * Класс на год один, поэтому выбор класса из другого — это **перевод**:
+ * прежняя строка закрывается, новая заводится, и то, что человек был в 6А,
+ * остаётся правдой.
  */
 export default function SchoolStudents() {
   const { t } = useTranslation()
   const { onLoggedOut } = useSchoolSection()
   const [students, setStudents] = useState(null)
+  const [homegroups, setHomegroups] = useState([])
+  // ученик → его действующая строка принадлежности классу
+  const [membership, setMembership] = useState(new Map())
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
 
@@ -36,7 +56,16 @@ export default function SchoolStudents() {
   )
 
   const load = useCallback(
-    () => fetchMembers({ kind: 'student' }).then(setStudents),
+    () =>
+      Promise.all([
+        fetchMembers({ kind: 'student' }),
+        fetchHomegroups(),
+        fetchHomegroupStudents(),
+      ]).then(([people, groups, rows]) => {
+        setStudents(people)
+        setHomegroups(groups)
+        setMembership(new Map(rows.map((row) => [row.student, row])))
+      }),
     [],
   )
 
@@ -73,6 +102,21 @@ export default function SchoolStudents() {
         return detachMember(student.id, { force: true })
       }),
     )
+
+  /**
+   * Перевести ученика в другой класс — или вывести его из класса вовсе.
+   *
+   * Прежняя строка **закрывается**, а не удаляется: расписание сентября
+   * собиралось по тому составу, и «его там не было» задним числом было бы
+   * неправдой. Поэтому здесь два запроса подряд, а не один PATCH.
+   */
+  const moveTo = (student, groupId) =>
+    run(async () => {
+      const current = membership.get(student.id)
+      if (current?.homegroup === groupId) return
+      if (current) await removeHomegroupStudent(current.id)
+      if (groupId) await addHomegroupStudent(groupId, student.id)
+    })
 
   if (students === null) {
     return <p>{error ? <span className="error">{error}</span> : t('common.loading')}</p>
@@ -115,6 +159,32 @@ export default function SchoolStudents() {
                     {t('school.people.waiting')}
                   </span>
                 )}
+                {/* класс — свойство человека, и правится там, где на
+                    человека смотрят. Пусто значит «ни в одном»: бывает и
+                    это, и молчать об этом нельзя */}
+                {homegroups.length > 0 && (
+                  <label className="checkbox">
+                    {t('school.students.homegroup')}
+                    <select
+                      value={membership.get(student.id)?.homegroup ?? ''}
+                      disabled={busy}
+                      onChange={(event) =>
+                        moveTo(
+                          student,
+                          event.target.value ? Number(event.target.value) : null,
+                        )
+                      }
+                    >
+                      <option value="">{t('school.students.noHomegroup')}</option>
+                      {homegroups.map((group) => (
+                        <option key={group.id} value={group.id}>
+                          {group.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                )}
+
                 <button
                   type="button"
                   className="link detach"

@@ -211,6 +211,65 @@ test('справочники: предмет заводится и паралл�
   await expect(ninth.locator('.level')).toHaveText('9')
 })
 
+test('кабинет заводится в справочнике и виден в расписании', async ({
+  page,
+  signIn,
+}) => {
+  // Кабинет — четвёртый справочник школы, и заводится он тем же порядком,
+  // что предметы и параллели. Проверяется здесь дорога целиком: завели —
+  // выбрали, ставя час, — увидели в клетке.
+  await signIn(PEOPLE.admin)
+  await openSection(page, '/school/reference')
+
+  const rooms = page.locator('[data-panel="rooms"]')
+  await rooms.getByPlaceholder('Номер или название').fill('Кабинет 404')
+  await rooms.getByRole('button', { name: 'Добавить' }).click()
+  await expect(
+    rooms.getByRole('button', { name: 'Кабинет 404', exact: true }),
+  ).toBeVisible()
+
+  await openSection(page, '/school/schedule')
+  const monday = page.locator('[data-day-head="2026-09-07"]')
+  for (let step = 0; step < 8 && !(await monday.count()); step += 1) {
+    await page.getByRole('button', { name: '→' }).click()
+    await page.waitForTimeout(250)
+  }
+  await expect(monday).toBeVisible()
+
+  await page.locator('[data-add="2026-09-07:9"]').click()
+  const dialog = page.locator('dialog.modal')
+  await dialog.getByLabel('Курсы').selectOption({ index: 1 })
+  // пусто — законное состояние: школа, не ведущая кабинеты, живёт как жила
+  await expect(dialog.getByLabel('Кабинет')).toHaveValue('')
+  await dialog.getByLabel('Кабинет').selectOption({ label: 'Кабинет 404' })
+  await dialog.getByRole('button', { name: 'Добавить', exact: true }).click()
+
+  await expect(dialog).toBeHidden()
+  const cell = page.locator('[data-lesson="2026-09-07:9"]')
+  await expect(cell).toHaveCount(1)
+  await expect(cell).toHaveAttribute('title', /Кабинет 404/)
+})
+
+test('кабинет, в котором уже шли уроки, уходит в архив, а не удаляется', async ({
+  page,
+  signIn,
+}) => {
+  // «Урок шёл в 214» — правда прошедшего дня, и она не перестаёт быть
+  // правдой оттого, что кабинет отдали под склад. Отказ говорит про архив,
+  // и архив стоит тут же, соседней кнопкой.
+  await signIn(PEOPLE.admin)
+  await openSection(page, '/school/reference')
+
+  const rooms = page.locator('[data-panel="rooms"]')
+  const used = rooms.locator('li', { hasText: '214' }).first()
+
+  await used.getByRole('button', { name: /^Удалить/ }).click()
+  await expect(page.locator('.error')).toContainText('архив')
+
+  await used.getByRole('button', { name: 'В архив' }).click()
+  await expect(used.getByRole('button', { name: 'Вернуть' })).toBeVisible()
+})
+
 test('параллели: набор одной кнопкой и уборка неиспользуемых', async ({
   page,
   signIn,
@@ -413,7 +472,7 @@ test('день школы разворачивает курсы по столб�
 
   // столбец на каждый курс школы — включая те, у которых в этот день часов
   // нет: пустой столбец и есть то место, куда час ставят
-  await expect(page.locator('[data-course-head]')).toHaveCount(courses.body.length)
+  await expect(page.locator('[data-column]')).toHaveCount(courses.body.length)
 
   // ставим час в столбец курса: курс в окне уже выбран — переспрашивать то,
   // во что человек нажал, незачем
@@ -430,6 +489,62 @@ test('день школы разворачивает курсы по столб�
   await page.getByRole('radio', { name: 'Неделя', exact: true }).click()
   await ready(page)
   await expect(page.locator('[data-lesson="2026-09-07:8"]')).toHaveCount(1)
+})
+
+test('в дне столбцы переключаются на кабинеты, и час виден там же', async ({
+  page,
+  signIn,
+}) => {
+  // Данные одни и те же, меняется только то, на что смотрят как на столбец:
+  // завуч раскладывает часы по курсам, а свободное помещение ищет по
+  // кабинетам. И то и другое — один день и одни и те же часы.
+  await signIn(PEOPLE.admin)
+  await page.goto('/schedule?view=school&span=day&by=room')
+  await ready(page)
+
+  // ось живёт в адресе, поэтому тумблер уже стоит на кабинетах
+  await expect(page.getByRole('radio', { name: 'Кабинеты' })).toBeChecked()
+
+  // столбец на каждый кабинет школы плюс крайний «не указан»: час без
+  // кабинета обязан быть видно, иначе урок пропадает с экрана
+  const columns = page.locator('[data-column]')
+  await expect(columns.filter({ hasText: '214' })).toHaveCount(1)
+  await expect(columns.filter({ hasText: 'Спортзал' })).toHaveCount(1)
+  await expect(columns.filter({ hasText: 'Не указан' })).toHaveCount(1)
+
+  // и обратно на курсы — тем же тумблером
+  await page.getByRole('radio', { name: 'Курсы' }).click()
+  await ready(page)
+  await expect(page).not.toHaveURL(/by=room/)
+})
+
+test('классы: ученик переводится, а расписание видит его в двух местах', async ({
+  page,
+  signIn,
+}) => {
+  // Класс заведён не ради ещё одного справочника: зная, кто в курсе и кто в
+  // классе, расписание умеет сказать, что человек стоит в двух местах разом.
+  // Проверяется дорога целиком: класс — ученик — столбец в дне.
+  await signIn(PEOPLE.admin)
+  await openSection(page, '/school/reference')
+
+  const groups = page.locator('[data-panel="homegroups"]')
+  await groups.getByPlaceholder('Название класса').fill('6В')
+  await groups.getByRole('button', { name: 'Добавить' }).click()
+  await expect(groups.getByRole('button', { name: '6В', exact: true })).toBeVisible()
+
+  // класс — свойство человека, и назначается там, где на человека смотрят
+  await openSection(page, '/school/students')
+  const first = page.locator('.people-list > li').first()
+  await first.getByLabel('Класс:').selectOption({ label: '6В' })
+  await expect(first.getByLabel('Класс:')).toHaveValue(/\d+/)
+
+  // и он же виден столбцом в дневном виде: связи «курс — класс» нет, она
+  // выводится из учеников
+  await page.goto('/schedule?view=school&span=day&by=homegroup')
+  await ready(page)
+  await expect(page.getByRole('radio', { name: 'Классы' })).toBeChecked()
+  await expect(page.locator('[data-column]').filter({ hasText: '6В' })).toHaveCount(1)
 })
 
 test('урок ставится рядом на каждую неделю, а не по клетке', async ({

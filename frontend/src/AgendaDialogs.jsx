@@ -58,10 +58,52 @@ export function RepeatChoice({ step, until, date, yearEnd, busy, onStep, onUntil
 }
 
 /** A new lesson in a free window. */
+/**
+ * Выбор кабинета: один блок на все формы, где час заводят или правят.
+ *
+ * Пусто — законное состояние и означает «не указан», а не «неизвестно
+ * откуда взять»: школа, не ведущая кабинеты, живёт как жила. Поэтому
+ * первым пунктом стоит именно пустой, а не первый кабинет по алфавиту:
+ * подставленный сам собой кабинет — это тихо сказанная неправда о том, где
+ * идёт урок.
+ *
+ * Архивные не показываются: кабинет убрали из выбора ровно затем, чтобы в
+ * него больше не ставили. Уже проставленный остаётся — в списке он
+ * появляется, пока стоит у этого часа, иначе правка соседнего поля молча
+ * стирала бы кабинет.
+ */
+export function RoomChoice({ rooms, value, busy, onChange }) {
+  const { t } = useTranslation()
+
+  const shown = rooms.filter((room) => !room.is_archived || room.id === value)
+  if (!rooms.length) return null
+
+  return (
+    <label>
+      {t('agenda.add.roomLabel')}
+      <select
+        value={value ?? ''}
+        disabled={busy}
+        onChange={(event) =>
+          onChange(event.target.value ? Number(event.target.value) : null)
+        }
+      >
+        <option value="">{t('agenda.add.noRoom')}</option>
+        {shown.map((room) => (
+          <option key={room.id} value={room.id}>
+            {room.name}
+          </option>
+        ))}
+      </select>
+    </label>
+  )
+}
+
 export function AddLessonDialog({
   date,
   number,
   classes,
+  rooms = [],
   yearEnd,
   busy,
   onSubmit,
@@ -69,6 +111,7 @@ export function AddLessonDialog({
 }) {
   const { t } = useTranslation()
   const [classId, setClassId] = useState(classes[0]?.id ?? null)
+  const [room, setRoom] = useState(null)
   const [isExtra, setIsExtra] = useState(false)
   const [reason, setReason] = useState('')
   // 0 — не повторять, 1 — каждую неделю, 2 — через неделю
@@ -81,6 +124,7 @@ export function AddLessonDialog({
 
     onSubmit({
       course: classId,
+      room,
       is_extra: isExtra,
       reason: isExtra ? reason.trim() : '',
       // повтор — свойство ряда, а не клетки: у дополнительного урока его
@@ -112,6 +156,8 @@ export function AddLessonDialog({
                 ))}
               </select>
             </label>
+
+            <RoomChoice rooms={rooms} value={room} busy={busy} onChange={setRoom} />
 
             <label className="checkbox">
               <input
@@ -250,17 +296,20 @@ export function LessonMenu({
   date,
   at,
   busy,
+  rooms = [],
   onCancel,
   onRestore,
   onDelete,
   onDeleteRow,
   onMove,
+  onRoom = null,
   onClose,
 }) {
   const { t } = useTranslation()
   const navigate = useNavigate()
   const [reason, setReason] = useState('')
-  const [mode, setMode] = useState(null) // null | 'cancel' | 'move' | 'row'
+  const [mode, setMode] = useState(null) // null | 'cancel' | 'move' | 'row' | 'room'
+  const [room, setRoom] = useState(lesson.room ?? null)
   const [target, setTarget] = useState({ date: '', number: lesson.lesson_number })
   // строка плана, попавшая в этот час: {plan_row_id, title, section_title}
   const [row, setRow] = useState(null)
@@ -293,6 +342,11 @@ export function LessonMenu({
   const handleCancel = (event) => {
     event.preventDefault()
     onCancel(reason.trim())
+  }
+
+  const handleRoom = (event) => {
+    event.preventDefault()
+    onRoom(room)
   }
 
   const handleMove = (event) => {
@@ -349,6 +403,13 @@ export function LessonMenu({
               {row.title}
             </span>
           )}
+          {/* где идёт — в шапке, а не в списке действий: это не то, что
+              с часом делают, а то, что о нём известно */}
+          {lesson.room_name && (
+            <span className="hint">
+              {t('agenda.menu.roomIs', { name: lesson.room_name })}
+            </span>
+          )}
           {/* «дополнительный» — свойство самого часа, и в шапке меню ему
               место рядом с курсом и датой */}
           {lesson.is_extra && <span className="hint">{t('agenda.menu.extra')}</span>}
@@ -382,6 +443,14 @@ export function LessonMenu({
                 item('cancel', t('agenda.menu.cancel'), () => setMode('cancel')),
               item('move', t('agenda.menu.move'), () => setMode('move')),
             ].filter(Boolean)}
+
+        {/* кабинет правится там же, где отмена и перенос: это свойство
+            того же часа, и ходить за ним на страницу занятия незачем.
+            Пункта нет вовсе, пока школа не завела ни одного кабинета —
+            выбор из пустого списка обещал бы то, чего нет */}
+        {onRoom &&
+          rooms.length > 0 &&
+          item('room', t('agenda.menu.room'), () => setMode('room'))}
 
         {!lesson.recorded && item('delete', t('common.delete'), onDelete)}
         {/* час с записью ряд переживёт: массовая операция его пропустит и
@@ -464,6 +533,21 @@ export function LessonMenu({
             <div className="actions">
               <button type="submit" disabled={busy || !target.date}>
                 {t('agenda.menu.moveSubmit')}
+              </button>
+              <button type="button" className="secondary" onClick={() => setMode(null)}>
+                {t('agenda.menu.cancelAbort')}
+              </button>
+            </div>
+          </form>
+        )}
+
+        {mode === 'room' && (
+          <form onSubmit={handleRoom}>
+            <p className="hint">{t('agenda.menu.roomHint')}</p>
+            <RoomChoice rooms={rooms} value={room} busy={busy} onChange={setRoom} />
+            <div className="actions">
+              <button type="submit" disabled={busy}>
+                {t('common.save')}
               </button>
               <button type="button" className="secondary" onClick={() => setMode(null)}>
                 {t('agenda.menu.cancelAbort')}

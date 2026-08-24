@@ -3,6 +3,7 @@ import { useSearchParams } from 'react-router-dom'
 import Agenda from './Agenda'
 import SchoolSchedule from './SchoolSchedule'
 import Switch from './Switch'
+import { AXES } from './dayAxis'
 
 /**
  * Расписание — одна страница, два вида.
@@ -39,6 +40,9 @@ export default function Schedule({ user, onLoggedOut }) {
 
   const school = user?.is_school_admin && search.get('view') === 'school'
   const span = search.get('span') === 'day' ? 'day' : 'week'
+  // ось столбцов дневного вида — там же, в адресе: «вот вторник по
+  // кабинетам» посылают ссылкой ровно так же, как сам вторник
+  const axis = AXES.includes(search.get('by')) ? search.get('by') : 'course'
 
   // `replace` — тем же доводом, что у вида: размах не шаг в истории
   const setParam = (key, value, fallback) => {
@@ -65,6 +69,8 @@ export default function Schedule({ user, onLoggedOut }) {
       views={views}
       span={span}
       onSpan={(value) => setParam('span', value, 'week')}
+      axis={axis}
+      onAxis={(value) => setParam('by', value, 'course')}
       onLoggedOut={onLoggedOut}
     />
   ) : (

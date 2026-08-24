@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { LessonMenu, RepeatChoice } from './AgendaDialogs'
+import { LessonMenu, RepeatChoice, RoomChoice } from './AgendaDialogs'
 import CopyDialog from './CopyDialog'
 import DayGrid from './DayGrid'
 import EmptyState from './EmptyState'
@@ -13,6 +13,8 @@ import {
   createSlot,
   deleteSlot,
   fetchCourses,
+  fetchHomegroups,
+  fetchRooms,
   fetchSchoolSlots,
   fetchScheduleSummary,
   fetchMembers,
@@ -33,6 +35,7 @@ import { dateRange, firstWeekday, longDate } from './dates'
 import { weekdayIndex } from './weekStart'
 import { useKept } from './remember'
 import { MAX_LESSON_NUMBER } from './scheduleLogic'
+import { AXES, columns as axisColumns, layout, prefillFor } from './dayAxis'
 import {
   courseMatches,
   emptyFilters,
@@ -43,6 +46,10 @@ import {
 } from './scheduleFilters'
 
 const NUMBERS = Array.from({ length: MAX_LESSON_NUMBER }, (_, index) => index + 1)
+
+/** Как зовут человека: имя с фамилией, а без них — почта. */
+const personName = (member) =>
+  [member.first_name, member.last_name].filter(Boolean).join(' ') || member.email
 
 /**
  * The school-wide timetable, kept by administrators.
@@ -71,6 +78,8 @@ export default function SchoolSchedule({
   views = null,
   span = 'week',
   onSpan = null,
+  axis = 'course',
+  onAxis = null,
   onLoggedOut,
 }) {
   const { t } = useTranslation()
@@ -78,6 +87,8 @@ export default function SchoolSchedule({
   const [yearId, setYearId] = useState(null)
   const [courses, setCourses] = useState([])
   const [members, setMembers] = useState([])
+  const [rooms, setRooms] = useState([])
+  const [homegroups, setHomegroups] = useState([])
   const [slots, setSlots] = useState([])
   const [days, setDays] = useState({})
   const [summary, setSummary] = useState(null)
@@ -149,6 +160,14 @@ export default function SchoolSchedule({
     fetchCourses(yearId, { scope: 'school' }).then(setCourses).catch(handleError)
     // the calendar decides which columns are dimmed; the timetable itself
     // knows nothing about breaks
+    // кабинеты — справочник школы: короткий список, один запрос на заход.
+    // Молча: школа, не заведшая ни одного, живёт как жила
+    fetchRooms().then(setRooms).catch(() => setRooms([]))
+    // классы года: столбцы дневного вида «по классам». Год важен — в
+    // следующем 6А становится 7А, и это другая строка
+    fetchHomegroups({ year: yearId })
+      .then(setHomegroups)
+      .catch(() => setHomegroups([]))
     fetchYearDays(yearId)
       .then((data) =>
         setDays(Object.fromEntries(data.days.map((day) => [day.date, day]))),
@@ -200,30 +219,54 @@ export default function SchoolSchedule({
   const lessonsOn = (date) => visible.filter((slot) => slot.date === date)
 
   /*
-   * Столбцы дневного вида — курсы, и те же, что прошли сужение.
+   * Столбцы дневного вида и раскладка часов по ним — по выбранной оси.
    *
-   * Курс без единого часа в этот день столбец всё равно получает, и это не
-   * недосмотр: пустой столбец — то место, куда час ставят. Спрятать его
-   * значило бы спрятать половину работы администратора, ради которой он
-   * сюда и заходит.
+   * Считает это чистый модуль (`dayAxis.js`), и здесь остаётся только то,
+   * чего он знать не может: какие курсы прошли сужение, кто из людей школы
+   * ведёт хоть что-нибудь и какие кабинеты завела школа.
+   *
+   * Пустой столбец остаётся на любой оси: свободный кабинет — это и есть
+   * ответ, ради которого на ось кабинетов смотрят, а курс без часов — место,
+   * куда час ставят.
    */
   const columns = useMemo(
-    () => courses.filter((course) => courseMatches(course, filters)),
-    [courses, filters],
+    () =>
+      axisColumns(axis, {
+        courses: courses.filter((course) => courseMatches(course, filters)),
+        teachers: options.teachers.map((person) => ({
+          id: person.id,
+          name: personName(person),
+        })),
+        rooms,
+        homegroups,
+        slots: visible.filter((slot) => slot.date === period.start),
+      }),
+    [
+      axis,
+      courses,
+      filters,
+      options.teachers,
+      rooms,
+      homegroups,
+      visible,
+      period.start,
+    ],
+  )
+
+  const byColumn = useMemo(
+    () => layout(visible.filter((slot) => slot.date === period.start), axis),
+    [visible, period.start, axis],
   )
 
   /*
-   * Час курса на этом номере — не более одного: `unique_together
-   * (course, date, lesson_number)`. Стопок, как в недельной клетке, тут не
-   * бывает по построению.
+   * Часы столбца на этом номере — списком: клетка держит стопку.
+   *
+   * На оси курсов их не бывает больше одного (`unique_together`), а на
+   * остальных бывает: делимый зал вмещает два занятия, у заменяющего
+   * учителя два часа в одном номере — законное состояние. Сетка, умеющая
+   * показать один, молча прятала бы второй.
    */
-  const lessonAt = (courseId, number) =>
-    visible.find(
-      (slot) =>
-        slot.date === period.start &&
-        slot.course === courseId &&
-        slot.lesson_number === number,
-    ) ?? null
+  const lessonsIn = (key, number) => byColumn.get(key)?.get(number) ?? []
 
   /**
    * Как выглядит час — один ответ на обе сетки.
@@ -239,12 +282,82 @@ export default function SchoolSchedule({
     (slot.is_cancelled ? ' cancelled' : '') +
     (slot.is_extra ? ' extra' : '') +
     (slot.lesson ? ' recorded' : '') +
-    (slot.debt ? ' debt' : '')
+    (slot.debt ? ' debt' : '') +
+    // кабинет делится с чужим часом. Метка на клетке, а не в строке с
+    // названием кабинета: показ кабинетов человек выключает, а
+    // предупреждение — не украшение строки, а сообщение
+    (busyRoom(slot) ? ' room-clash' : '') +
+    // а это уже про людей: кто-то из учеников стоит в это же время ещё
+    // где-то. Две подгруппы в одном часу — норма, тот же человек в обеих —
+    // нет, и различить это может только сервер, знающий составы
+    (busyStudents(slot).length ? ' student-clash' : '')
 
-  const cellTitle = (slot) =>
-    [slot.course_name, slot.teacher_name, slot.lesson_title]
+  /**
+   * Что написано в клетке дня — зависит от оси.
+   *
+   * Правило одно: в клетке лежит то, чего **не видно по столбцу и ряду**.
+   * Номер известен рядом, а дальше по-разному: на оси курсов курс назван
+   * столбцом, и остаётся тема; на оси кабинетов и учителей курс как раз и
+   * есть то, чего по столбцу не видно, и без него клетка была бы набором
+   * одинаковых зелёных квадратов.
+   */
+  const dayCell = (slot) => (
+    <>
+      <span className="cell-course">
+        {axis === 'course'
+          ? slot.lesson_title ||
+            (slot.is_extra
+              ? t('schoolSchedule.day.extra')
+              : t('schoolSchedule.day.lesson'))
+          : slot.course_name}
+      </span>
+      {(axis === 'room' || axis === 'homegroup') && slot.teacher_name && (
+        <span className="cell-topic">{slot.teacher_name}</span>
+      )}
+      {axis === 'teacher' && slot.room_name && (
+        <span className="cell-topic">{slot.room_name}</span>
+      )}
+      {slot.is_cancelled && (
+        <span className="cell-topic">
+          {slot.reason || t('schoolSchedule.day.cancelled')}
+        </span>
+      )}
+      {axis === 'course' && slot.room_name && (
+        <span className="cell-room">{slot.room_name}</span>
+      )}
+    </>
+  )
+
+  const cellTitle = (slot) => {
+    const clash = busyStudents(slot)
+
+    return [
+      slot.course_name,
+      slot.teacher_name,
+      slot.room_name,
+      slot.lesson_title,
+      // имена прямо в подсказке: «кто-то пересекается» — сообщение, с
+      // которым нечего делать, а починить расписание можно, только зная кто
+      clash.length ? t('warnings.slot_student_busy_short', { names: clash.join(', ') }) : '',
+    ]
       .filter(Boolean)
       .join(' — ')
+  }
+
+  /*
+   * Делит ли час кабинет — считает сервер и говорит предупреждением.
+   *
+   * Своего расчёта у экрана нет и быть не должно: делимый зал молчит, а
+   * отменённый час кабинет освобождает — два правила, которые второй раз
+   * записанные разъехались бы с первым. Здесь только чтение кода.
+   */
+  const busyRoom = (slot) =>
+    (slot.warnings ?? []).some((one) => one.code === 'slot_room_busy')
+
+  /** Кто из учеников этого часа стоит в это же время ещё где-то. */
+  const busyStudents = (slot) =>
+    (slot.warnings ?? []).find((one) => one.code === 'slot_student_busy')?.params
+      ?.students ?? []
 
   const run = async (request, describe) => {
     setBusy(true)
@@ -398,6 +511,22 @@ export default function SchoolSchedule({
           />
         )}
 
+        {/* Ось столбцов — вопрос только дневного вида: в неделе столбцы это
+            дни, и выбирать там нечего. Поэтому тумблера в недельном виде
+            нет вовсе, а не стоит выключенным */}
+        {byDay && onAxis && (
+          <Switch
+            className="compact"
+            label={t('agenda.axis.label')}
+            value={axis}
+            options={AXES.map((one) => ({
+              value: one,
+              label: t(`agenda.axis.${one}`),
+            }))}
+            onChange={onAxis}
+          />
+        )}
+
         <span className="year-picker">
           {years.map((year) => (
             <button
@@ -447,8 +576,7 @@ export default function SchoolSchedule({
             <option value="">{t('schoolSchedule.everyone')}</option>
             {options.teachers.map((member) => (
               <option key={member.id} value={member.id}>
-                {[member.first_name, member.last_name].filter(Boolean).join(' ') ||
-                  member.email}
+                {personName(member)}
               </option>
             ))}
           </select>
@@ -487,34 +615,16 @@ export default function SchoolSchedule({
         <DayGrid
           date={period.start}
           day={days[period.start] || {}}
-          courses={columns}
+          columns={columns}
           numbers={NUMBERS}
           busy={busy}
-          lessonAt={lessonAt}
-          renderLesson={(slot) => (
-            <>
-              {/* курс назван столбцом, номер — рядом, поэтому в клетке
-                  остаётся то, чего по ним не видно: что прошло и почему
-                  сорвалось. Повторять здесь имя курса значило бы написать
-                  его десять раз в одном столбце */}
-              <span className="cell-course">
-                {slot.lesson_title ||
-                  (slot.is_extra
-                    ? t('schoolSchedule.day.extra')
-                    : t('schoolSchedule.day.lesson'))}
-              </span>
-              {slot.is_cancelled && (
-                <span className="cell-topic">
-                  {slot.reason || t('schoolSchedule.day.cancelled')}
-                </span>
-              )}
-            </>
-          )}
+          lessonsIn={lessonsIn}
+          renderLesson={dayCell}
           lessonClassName={cellClass}
           lessonTitle={cellTitle}
           onMenu={(date, slot, at) => setDialog({ type: 'menu', date, slot, at })}
-          onAdd={(date, number, courseId) =>
-            setDialog({ type: 'add', date, number, courseId })
+          onAdd={(date, number, column) =>
+            setDialog({ type: 'add', date, number, ...prefillFor(axis, column) })
           }
         />
       ) : (
@@ -530,6 +640,7 @@ export default function SchoolSchedule({
             <span className="cell-topic">
               {slot.teacher_name || t('schoolSchedule.nobody')}
             </span>
+            {slot.room_name && <span className="cell-room">{slot.room_name}</span>}
           </>
         )}
         lessonClassName={cellClass}
@@ -578,6 +689,11 @@ export default function SchoolSchedule({
             setDialog(null)
             run(() => moveSlot(dialog.slot.id, fields))
           }}
+          rooms={rooms}
+          onRoom={(room) => {
+            setDialog(null)
+            run(() => updateSlot(dialog.slot.id, { room }))
+          }}
           onDelete={() => {
             setDialog(null)
             removeSlot(dialog.slot)
@@ -595,9 +711,15 @@ export default function SchoolSchedule({
           date={dialog.date}
           number={dialog.number}
           courses={courses}
+          rooms={rooms}
           /* в дневном виде столбец и есть курс: спрашивать о нём заново
              значит переспрашивать то, во что человек только что нажал */
-          initialCourse={dialog.courseId ?? null}
+          initialCourse={dialog.course ?? null}
+          initialRoom={dialog.room ?? null}
+          /* столбец учителя сужает список курсов, а не заменяет вопрос:
+             час принадлежит курсу, и без него его не создать */
+          onlyTeacher={dialog.teacher ?? null}
+          onlyHomegroup={dialog.homegroup ?? null}
           yearEnd={(years ?? []).find((year) => year.id === yearId)?.end_date}
           busy={busy}
           onSubmit={addSlot}
@@ -665,16 +787,34 @@ function AddSchoolSlot({
   date,
   number,
   courses,
+  rooms = [],
   // курс, в столбец которого нажали (дневной вид); в недельном его нет —
   // там клетка это окно, а не курс
   initialCourse = null,
+  // кабинет столбца — на оси кабинетов он уже известен
+  initialRoom = null,
+  // учитель столбца: не подставляется никуда (учителя у часа нет, есть у
+  // курса), а **сужает** список курсов до его собственных
+  onlyTeacher = null,
+  // класс столбца: сужает так же — до курсов, где учатся его ученики
+  onlyHomegroup = null,
   yearEnd,
   busy,
   onSubmit,
   onClose,
 }) {
   const { t } = useTranslation()
-  const [courseId, setCourseId] = useState(initialCourse ?? courses[0]?.id ?? null)
+  const shown = courses
+    .filter(
+      (course) =>
+        !onlyTeacher ||
+        (course.teachers ?? []).some((one) => one.id === onlyTeacher),
+    )
+    .filter(
+      (course) => !onlyHomegroup || (course.homegroups ?? []).includes(onlyHomegroup),
+    )
+  const [courseId, setCourseId] = useState(initialCourse ?? shown[0]?.id ?? null)
+  const [room, setRoom] = useState(initialRoom)
   // 0 — не повторять, 1 — каждую неделю, 2 — через неделю
   const [step, setStep] = useState(0)
   const [until, setUntil] = useState(yearEnd ?? '')
@@ -682,10 +822,10 @@ function AddSchoolSlot({
   const submit = (event) => {
     event.preventDefault()
     if (!courseId) return
-    onSubmit({ course: courseId, ...(step ? { step, until } : {}) })
+    onSubmit({ course: courseId, room, ...(step ? { step, until } : {}) })
   }
 
-  const chosen = courses.find((course) => course.id === courseId)
+  const chosen = shown.find((course) => course.id === courseId)
   const leads = (chosen?.teachers ?? []).map((teacher) => teacher.name).join(', ')
 
   return (
@@ -700,13 +840,15 @@ function AddSchoolSlot({
             disabled={busy}
             onChange={(event) => setCourseId(Number(event.target.value))}
           >
-            {courses.map((course) => (
+            {shown.map((course) => (
               <option key={course.id} value={course.id}>
                 {course.name}
               </option>
             ))}
           </select>
         </label>
+
+        <RoomChoice rooms={rooms} value={room} busy={busy} onChange={setRoom} />
 
         {/* кто ведёт — показываем, но не спрашиваем: это свойство курса */}
         <p className="hint">

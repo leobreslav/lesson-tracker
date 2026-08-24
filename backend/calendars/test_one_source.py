@@ -148,4 +148,4 @@ class TimetableAcceptsWeekdaysTests(SchoolTestMixin, APITestCase):
 
         self.assertEqual(response.status_code, 201, response.content)
         # предупреждение «не учебный день» появляется только в каникулы
-        self.assertIsNone(response.json()["warning"])
+        self.assertEqual(response.json()["warnings"], [])

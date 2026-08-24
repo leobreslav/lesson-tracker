@@ -43,6 +43,9 @@ from .models import (
     CourseMethodist,
     CourseStudent,
     GradeLevel,
+    Homegroup,
+    HomegroupStudent,
+    Room,
     Slot,
     Subject,
 )
@@ -59,6 +62,9 @@ from .serializers import (
     CourseAssignmentSerializer,
     CourseSerializer,
     GradeLevelSerializer,
+    HomegroupSerializer,
+    HomegroupStudentSerializer,
+    RoomSerializer,
     SlotMoveSerializer,
     SlotSerializer,
     PeriodSerializer,
@@ -102,6 +108,120 @@ class SubjectViewSet(SchoolScopedViewSet):
                 f"«{instance.name}» is used by {instance.courses.count()} courses.",
                 name=instance.name,
                 courses=instance.courses.count(),
+            )
+
+
+class HomegroupViewSet(SchoolScopedViewSet):
+    """
+    Классы школы: 6А, 6Б, DP1. Ведёт их администратор, видят все.
+
+    Курсов в ответе нет намеренно: класс курса выводится из его учеников, и
+    записанной связи между ними не существует — см. `Homegroup` в моделях.
+
+    Список сужается годом (`?year=`): в следующем году 6А становится 7А, и
+    это другая строка, а не переименованная эта.
+    """
+
+    serializer_class = HomegroupSerializer
+    queryset = Homegroup.objects.annotate(
+        student_count=Count("students", filter=Q(students__removed_at__isnull=True))
+    ).select_related("grade", "tutor")
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        year = self.request.query_params.get("year")
+        if year:
+            queryset = (
+                queryset.filter(year_id=year) if year.isdigit() else queryset.none()
+            )
+        return queryset
+
+    def perform_destroy(self, instance):
+        """
+        Класс, в котором кто-то числится, не удаляется молча.
+
+        Удаление унесло бы с собой строки принадлежности — то есть ответ на
+        вопрос «кто где учился в сентябре», по которому собиралось всё
+        расписание. Сначала выведите людей.
+        """
+        inside = instance.students.filter(removed_at__isnull=True).count()
+        if inside:
+            api_error(
+                Codes.HOMEGROUP_IN_USE,
+                f"«{instance.name}» still holds {inside} students: "
+                "move them out first.",
+                name=instance.name,
+                students=inside,
+            )
+        instance.delete()
+
+
+class HomegroupStudentViewSet(SchoolScopedViewSet):
+    """
+    Кто в классе: строка «класс и ученик», ставит её администратор.
+
+    Та же форма, что у зачисления на курс (`CourseStudentViewSet`), и то же
+    правило: строка не удаляется, а снимается. `DELETE` поэтому ставит
+    `removed_at`, а не убирает запись.
+    """
+
+    serializer_class = HomegroupStudentSerializer
+    queryset = HomegroupStudent.objects.select_related("student", "homegroup")
+    school_path = "homegroup__school"
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        group = self.request.query_params.get("homegroup")
+        if group:
+            queryset = (
+                queryset.filter(homegroup_id=group)
+                if group.isdigit()
+                else queryset.none()
+            )
+        # снятые не показываются по умолчанию: экран отвечает на «кто сейчас
+        # в классе», а история нужна редко и спрашивается явно
+        if self.request.query_params.get("all") != "1":
+            queryset = queryset.filter(removed_at__isnull=True)
+        return queryset
+
+    def perform_destroy(self, instance):
+        """Снятие, а не удаление: где человек учился, остаётся правдой."""
+        instance.removed_at = timezone.now()
+        instance.save(update_fields=["removed_at"])
+
+
+class RoomViewSet(SchoolScopedViewSet):
+    """
+    Кабинеты школы: список ведёт администратор, выбирают из него все.
+
+    Устроен как предметы рядом и по тем же доводам: читает вся школа —
+    учитель выбирает кабинет, ставя себе час, — правит администратор.
+
+    Архивные из ответа не убираются: страница справочника показывает их
+    отдельно, а выбор в расписании сужает сам. Убери их здесь — и
+    администратор не смог бы вернуть кабинет из архива, не зная его id.
+    """
+
+    serializer_class = RoomSerializer
+    queryset = Room.objects.annotate(slot_count=Count("slots"))
+
+    def perform_destroy(self, instance):
+        """
+        Кабинет, в котором уже шли уроки, не удаляется: `PROTECT` говорит так.
+
+        И это не формальность: «урок шёл в 214» — факт прошедшего дня, и
+        оттого, что кабинет отдали под склад, он не перестаёт быть правдой.
+        Для склада есть архив, о нём и говорит отказ.
+        """
+        try:
+            instance.delete()
+        except ProtectedError:
+            api_error(
+                Codes.ROOM_IN_USE,
+                f"«{instance.name}» is used by {instance.slots.count()} lessons: "
+                "archive it instead of deleting.",
+                name=instance.name,
+                slots=instance.slots.count(),
             )
 
 
@@ -514,6 +634,21 @@ class CourseViewSet(SchoolScopedViewSet):
     serializer_class = CourseSerializer
     queryset = Course.objects.all()
 
+    def get_serializer_context(self):
+        context = super().get_serializer_context()
+        # классы курса выводятся из его учеников: считаем один раз на ответ,
+        # а не по курсу на строку — на девятнадцати курсах это девятнадцать
+        # лишних запросов
+        context["course_homegroups"] = self.course_homegroups
+        return context
+
+    def course_homegroups(self):
+        if not hasattr(self, "_course_homegroups"):
+            self._course_homegroups = Slot.homegroups_by_course(
+                self.request.user.school_id
+            )
+        return self._course_homegroups
+
     def get_queryset(self):
         queryset = super().get_queryset()
 
@@ -673,7 +808,58 @@ class SlotViewSet(SchoolScopedViewSet):
         # функцией, а не значением: запрос нужен только тем ответам, где
         # долги показывают, а контекст строится и на запись тоже
         context["recorded_courses"] = self.recorded_courses
+        # то же и с занятостью кабинета, но с одной разницей: она считается
+        # по **периоду**, а его знает только список. Ответу про один час
+        # передавать нечего, и он спрашивает про себя сам (`shares_room`)
+        if self.action == "list":
+            context["room_clashes"] = self.room_clashes
+            context["student_clashes"] = self.student_clashes
+            context["course_homegroups"] = self.course_homegroups
         return context
+
+    def course_homegroups(self):
+        """Классы каждого курса — выведенные из учеников, одним запросом."""
+        if not hasattr(self, "_course_homegroups"):
+            self._course_homegroups = Slot.homegroups_by_course(
+                self.request.user.school_id
+            )
+        return self._course_homegroups
+
+    def student_clashes(self):
+        """Кто из учеников стоит в двух местах разом — одним запросом на показ."""
+        if not hasattr(self, "_student_clashes"):
+            params = self.request.query_params
+            start, end = read_date(params.get("start")), read_date(params.get("end"))
+            self._student_clashes = (
+                Slot.student_clashes(
+                    school_id=self.request.user.school_id, start=start, end=end
+                )
+                if start and end and start <= end
+                else {}
+            )
+        return self._student_clashes
+
+    def room_clashes(self):
+        """
+        Часы, делящие неделимый кабинет, — одним запросом на весь показ.
+
+        Границы берутся у самого запроса и тем же `read_date`, что и фильтр
+        списка: два разбора одного параметра разошлись бы в первой же правке,
+        и разошлись бы молча — предупреждение просто не появилось бы.
+        Периода не назвали (список за весь год) — считать нечего: обходить
+        год ради метки в клетке дороже, чем промолчать.
+        """
+        if not hasattr(self, "_room_clashes"):
+            params = self.request.query_params
+            start, end = read_date(params.get("start")), read_date(params.get("end"))
+            self._room_clashes = (
+                Slot.room_clashes(
+                    school_id=self.request.user.school_id, start=start, end=end
+                )
+                if start and end and start <= end
+                else set()
+            )
+        return self._room_clashes
 
     def recorded_courses(self):
         """Курсы школы, в которых запись уже начали, — одним запросом."""
@@ -1146,7 +1332,15 @@ class SlotViewSet(SchoolScopedViewSet):
         slots = (
             self.own_slots()
             .filter(date__range=(start, end))
-            .select_related("course")
+            .select_related("course", "room")
+        )
+
+        # кабинеты, делимые с чужим часом: одним запросом на весь период —
+        # по той же причине, что и список «начавших запись» ниже. Считается
+        # это по **школе**, а не по своим курсам: в кабинет к учителю встаёт
+        # чужой класс, и не сказать ему об этом значит не сказать никому
+        clashes = Slot.room_clashes(
+            school_id=request.user.school_id, start=start, end=end
         )
 
         # долг — прошедший час без записи, и только в курсе, где запись уже
@@ -1171,6 +1365,9 @@ class SlotViewSet(SchoolScopedViewSet):
                     "is_extra": slot.is_extra,
                     "reason": slot.reason,
                     "recorded": slot.lesson_id is not None,
+                    "room_id": slot.room_id,
+                    "room_name": slot.room.name if slot.room_id else None,
+                    "room_clash": slot.id in clashes,
                     "debt": (
                         slot.lesson_id is None
                         and not slot.is_cancelled

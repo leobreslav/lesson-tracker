@@ -16,6 +16,9 @@ from .models import (
     CourseMethodist,
     CourseStudent,
     GradeLevel,
+    Homegroup,
+    HomegroupStudent,
+    Room,
     Slot,
     Subject,
 )
@@ -91,6 +94,128 @@ class SubjectSerializer(serializers.ModelSerializer):
                 queryset=Subject.objects.all(),
                 fields=("school", "name"),
                 message="This school already has a subject with that name.",
+            ),
+        ]
+
+
+class HomegroupSerializer(serializers.ModelSerializer):
+    """
+    Класс: имя, параллель, классный руководитель и сколько в нём человек.
+
+    Связи с курсами тут нет и не будет: класс курса выводится из его
+    учеников (см. `Homegroup` в моделях). Наружу отдаётся только состав —
+    числом, потому что списком его смотрят на своём экране.
+    """
+
+    school = serializers.HiddenField(default=CurrentSchoolDefault())
+    tutor_name = serializers.SerializerMethodField()
+    grade_name = serializers.CharField(source="grade.name", read_only=True)
+    students = serializers.SerializerMethodField()
+
+    def get_tutor_name(self, group) -> str:
+        return full_name(group.tutor) if group.tutor_id else ""
+
+    def get_students(self, group) -> int:
+        return getattr(group, "student_count", 0)
+
+    class Meta:
+        model = Homegroup
+        fields = (
+            "id",
+            "school",
+            "year",
+            "grade",
+            "grade_name",
+            "name",
+            "tutor",
+            "tutor_name",
+            "students",
+        )
+        validators = [
+            UniqueTogetherValidator(
+                queryset=Homegroup.objects.all(),
+                fields=("school", "year", "name"),
+                message="This school already has a homegroup with that name this year.",
+            ),
+        ]
+
+
+class HomegroupStudentSerializer(serializers.ModelSerializer):
+    """
+    Кто в классе. Та же форма, что у зачисления на курс, и та же причина.
+
+    Строка не удаляется: перевод из 6А в 6Б посреди года не должен стирать,
+    что человек был в 6А, — расписание сентября собиралось по тому составу.
+    Снятие ставит `removed_at`, возврат его снимает.
+    """
+
+    student_name = serializers.SerializerMethodField()
+
+    def get_student_name(self, row) -> str:
+        return full_name(row.student)
+
+    class Meta:
+        model = HomegroupStudent
+        fields = ("id", "homegroup", "student", "student_name", "removed_at")
+        read_only_fields = ("removed_at",)
+
+    def validate(self, attrs):
+        """
+        Класс на год у ученика один — и отказ должен называть, какой именно.
+
+        Ограничение стоит в базе, но её сообщение человеку ничего не
+        говорит: ловим раньше и называем класс, в котором он уже числится.
+        """
+        student = attrs.get("student")
+        group = attrs.get("homegroup")
+        if not student or not group:
+            return attrs
+
+        busy = (
+            HomegroupStudent.objects.filter(
+                student=student, year=group.year, removed_at__isnull=True
+            )
+            .exclude(homegroup=group)
+            .select_related("homegroup")
+            .first()
+        )
+        if busy:
+            api_error(
+                Codes.HOMEGROUP_TAKEN,
+                f"{full_name(student)} already belongs to «{busy.homegroup.name}» "
+                "this year.",
+                field="student",
+                name=full_name(student),
+                homegroup=busy.homegroup.name,
+            )
+
+        return attrs
+
+
+class RoomSerializer(serializers.ModelSerializer):
+    """
+    Кабинет школы. Список ведёт администратор, выбирают из него все.
+
+    `slots` — сколько часов на него уже ссылается: то же число, что у
+    предмета рядом, и нужно оно там же, где у предмета, — в отказе на
+    удаление. Аннотацией из вьюсета, а не `source`, по той же причине: на
+    сорока кабинетах это сорок лишних запросов.
+    """
+
+    school = serializers.HiddenField(default=CurrentSchoolDefault())
+    slots = serializers.SerializerMethodField()
+
+    def get_slots(self, room) -> int:
+        return getattr(room, "slot_count", 0)
+
+    class Meta:
+        model = Room
+        fields = ("id", "school", "name", "is_shared", "is_archived", "slots")
+        validators = [
+            UniqueTogetherValidator(
+                queryset=Room.objects.all(),
+                fields=("school", "name"),
+                message="This school already has a room with that name.",
             ),
         ]
 
@@ -277,6 +402,9 @@ class CourseSerializer(serializers.ModelSerializer):
     teachers = serializers.SerializerMethodField()
     methodists = serializers.SerializerMethodField()
     students = serializers.SerializerMethodField()
+    # классы курса — выведенные из его учеников, а не записанные полем.
+    # Тем же расчётом, что у часа: два ответа на один вопрос разъехались бы
+    homegroups = serializers.SerializerMethodField()
 
     class Meta:
         model = Course
@@ -292,6 +420,7 @@ class CourseSerializer(serializers.ModelSerializer):
             "teachers",
             "methodists",
             "students",
+            "homegroups",
             "name",
             "created_at",
         )
@@ -305,6 +434,13 @@ class CourseSerializer(serializers.ModelSerializer):
                 message="A course with this name already exists in this year.",
             ),
         ]
+
+    def get_homegroups(self, course):
+        known = self.context.get("course_homegroups")
+        if known is not None:
+            return known().get(course.id, [])
+
+        return Slot.homegroups_by_course(course.school_id).get(course.id, [])
 
     def get_students(self, course) -> int:
         """
@@ -370,7 +506,11 @@ class SlotSerializer(serializers.ModelSerializer):
     teacher = serializers.SerializerMethodField()
     teacher_name = serializers.SerializerMethodField()
     lesson_title = serializers.CharField(source="lesson.title", read_only=True)
-    warning = serializers.SerializerMethodField()
+    room_name = serializers.CharField(source="room.name", read_only=True)
+    # классы курса — выведенные из его учеников, а не записанные полем:
+    # см. `Slot.homegroups_by_course`. Нужны дневному виду «по классам»
+    homegroups = serializers.SerializerMethodField()
+    warnings = serializers.SerializerMethodField()
     # долг — прошедший час без записи в курсе, где запись уже начали. То же
     # правило, что в сводном расписании; там оно считается своим кодом,
     # потому что тот ответ строится не сериализатором
@@ -393,8 +533,11 @@ class SlotSerializer(serializers.ModelSerializer):
             "is_cancelled",
             "is_extra",
             "reason",
+            "room",
+            "room_name",
+            "homegroups",
             "created_at",
-            "warning",
+            "warnings",
             "debt",
         )
         read_only_fields = ("created_at",)
@@ -461,26 +604,118 @@ class SlotSerializer(serializers.ModelSerializer):
         lead = self.lead(obj)
         return full_name(lead) if lead else None
 
-    def get_warning(self, obj):
+    def get_warnings(self, obj):
         """
-        A lesson on a non-study day is allowed — catch-up days happen — but
-        the answer says so, coded like an error so the UI can localise it.
+        Что с этим часом не так — списком, а не одним полем.
+
+        Полем это было, пока предупреждение было одно: урок в неучебный
+        день. Их стало больше — занятый кабинет, а дальше ученик, стоящий в
+        двух местах, — и складываются они свободно: урок в субботу вполне
+        может ещё и делить кабинет. Одно поле заставило бы выбирать, о чём
+        промолчать, а промолчать нельзя ни о чём: запрета тут нет ни у
+        одного из них, и предупреждение — единственное, что вообще
+        сказано.
+
+        Порядок — от общего к частному: сперва про день целиком, потом про
+        этот час.
         """
+        found = []
+
         day = calendar_services.resolve_day(
             obj.date, obj.year.weekend_days, obj.year.periods()
         )
-        if day.is_study:
-            return None
+        if not day.is_study:
+            label = calendar_services.STATUS_LABELS[day.status]
+            note = f" «{day.title}»" if day.title else ""
+            found.append(
+                error_payload(
+                    Codes.SLOT_NOT_STUDY_DAY,
+                    f"{obj.date.isoformat()} is a {label}{note}: "
+                    "the lesson falls outside study days.",
+                    date=obj.date.isoformat(),
+                    status=day.status,
+                    title=day.title,
+                )
+            )
 
-        label = calendar_services.STATUS_LABELS[day.status]
-        note = f" «{day.title}»" if day.title else ""
-        return error_payload(
-            Codes.SLOT_NOT_STUDY_DAY,
-            f"{obj.date.isoformat()} is a {label}{note}: the lesson falls outside study days.",
-            date=obj.date.isoformat(),
-            status=day.status,
-            title=day.title,
-        )
+        clash = self.student_clash(obj)
+        if clash:
+            more = len(clash) - 3
+            listed = ", ".join(clash[:3]) + (f" (+{more})" if more > 0 else "")
+            found.append(
+                error_payload(
+                    Codes.SLOT_STUDENT_BUSY,
+                    f"{listed} also have another lesson at number "
+                    f"{obj.lesson_number} on {obj.date.isoformat()}.",
+                    students=clash,
+                    names=listed,
+                    count=len(clash),
+                    lesson_number=obj.lesson_number,
+                )
+            )
+
+        if self.room_taken(obj):
+            found.append(
+                error_payload(
+                    Codes.SLOT_ROOM_BUSY,
+                    f"Room «{obj.room.name}» holds another lesson "
+                    f"at number {obj.lesson_number} on {obj.date.isoformat()}.",
+                    room=obj.room.name,
+                    date=obj.date.isoformat(),
+                    lesson_number=obj.lesson_number,
+                )
+            )
+
+        return found
+
+    def get_homegroups(self, obj):
+        """
+        Классы этого часа: классы учеников его курса.
+
+        Списку набор курсов известен заранее, и вывод считается **одним**
+        запросом на ответ (`course_homegroups` в контексте вьюсета) — тем же
+        приёмом, что занятость кабинета и пересечения по ученикам рядом.
+        Одиночному ответу считать нечего сообща, и он спрашивает про свой
+        курс сам.
+        """
+        known = self.context.get("course_homegroups")
+        if known is not None:
+            return known().get(obj.course_id, [])
+
+        return Slot.homegroups_by_course(obj.course.school_id).get(obj.course_id, [])
+
+    def student_clash(self, obj):
+        """
+        Кто из учеников этого часа стоит в это же время ещё где-то.
+
+        Тем же приёмом, что и занятость кабинета: списку набор клеток
+        известен заранее, и пересечения считаются **одним** запросом на весь
+        период; одиночный ответ спрашивает про себя сам.
+        """
+        clashes = self.context.get("student_clashes")
+        if clashes is not None:
+            return clashes().get(obj.id, [])
+
+        return obj.student_clash()
+
+    def room_taken(self, obj) -> bool:
+        """
+        Делит ли час неделимый кабинет с соседним.
+
+        Ответу-списку набор клеток известен заранее, и он считается **одним**
+        запросом на весь период (`room_clashes` в контексте вьюсета) — как
+        список «начавших запись» для долгов рядом. Одиночному ответу считать
+        нечего сообща, и он спрашивает про себя сам: один запрос про один
+        час дешевле, чем лишний обход всей недели на каждый PATCH.
+        """
+        if obj.room_id is None:
+            return False
+
+        clashes = self.context.get("room_clashes")
+        if clashes is not None:
+            return obj.id in clashes()
+
+        return obj.shares_room()
 
     def check_record_order(self, course, lesson):
         """
