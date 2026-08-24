@@ -133,8 +133,8 @@ const TILE = { width: Math.floor(STRIP_WIDTH / TILE_COLUMNS), height: 128, label
  * Подпись рисуется красным и снаружи клетки: спутать её с напечатанным на
  * бланке нечем, и внутрь клетки она не залезает.
  */
-export function readingSheet(image, h) {
-  const { name, cells } = cutForReading(image, h)
+export function readingSheet(image, h, fix = null) {
+  const { name, cells } = cutForReading(image, h, fix)
 
   // строка имени идёт в свою натуральную величину, без ужатия
   const nameHeight = name.height
@@ -243,7 +243,7 @@ export async function walk(file, { onPage, send, blank, questions, stop } = {}) 
     if (worthReading && send) {
       // на чтение уезжает не полоска, а собранная из неё картинка: строка
       // имени и шестнадцать плиток с нашими подписями
-      const blob = await scaledJpeg(readingSheet(image, found.h), 1568, 0.9)
+      const blob = await scaledJpeg(readingSheet(image, found.h, found.fix), 1568, 0.9)
       page.sent = await send({
         index: page.index,
         blob,

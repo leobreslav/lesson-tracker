@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 
 import {
   ENOUGH_LINES,
+  GRID_IS_OURS,
   extractHeader,
   extremes,
   findMarks,
@@ -22,7 +23,7 @@ import { CORNERS, GRID, HEADER, PAGE, STRIP, STRIP_WIDTH } from '../src/blankGeo
  * быть не может — он приходит из PDF в браузере, — а проверять надо ровно то,
  * что этот модуль решает: где лист, где метки и какой поворот верный.
  */
-function drawSheet({ scale = 3, angleFlip = 0, margin = 40, noise = 0, marks = true } = {}) {
+function drawSheet({ scale = 3, angleFlip = 0, margin = 40, noise = 0, marks = true, markShift = 0 } = {}) {
   const width = Math.round(PAGE.width * scale) + margin * 2
   const height = Math.round(PAGE.height * scale) + margin * 2
   const data = new Uint8ClampedArray(width * height * 4)
@@ -59,7 +60,10 @@ function drawSheet({ scale = 3, angleFlip = 0, margin = 40, noise = 0, marks = t
     }
   }
 
-  if (marks) for (const corner of Object.values(CORNERS)) square(corner.x, corner.y, 4)
+  // markShift сдвигает реперы, не трогая сетку: так выглядит промах поиска
+  // меток — грубое выпрямление уезжает, а печатные линии остаются на местах
+  if (marks)
+    for (const corner of Object.values(CORNERS)) square(corner.x + markShift, corner.y, 4)
 
   // сетка баллов: семнадцать вертикалей и две горизонтали
   const line = (fromX, fromY, toX, toY) => {
@@ -168,6 +172,32 @@ test('перевёрнутая страница выправляется сам�
   )
 })
 
+test('промах реперов чинится уточнением по сетке', () => {
+  /*
+   * Метки — приближение, и промах в них уводит всю гомографию. Сетка баллов
+   * же стоит ровно там, где мы кропаем: семнадцать вертикалей и три
+   * горизонтали высокого контраста на базе 185 мм. Выпрямили как получилось,
+   * посмотрели, где линии стоят на самом деле, и поправили прямоугольник
+   * кропа так, чтобы они встали на печатные места.
+   *
+   * Здесь реперы сдвинуты на два миллиметра, а сетка нет: ровно так выглядит
+   * ошибка поиска меток, из-за которой на живой пачке терялись страницы.
+   */
+  const found = extractHeader(drawSheet({ markShift: 2 }))
+
+  assert.ok(found, 'шапка не нашлась вовсе')
+  assert.ok(found.fix, 'поправка по сетке не посчиталась')
+  assert.ok(
+    found.score >= ENOUGH_LINES,
+    `после уточнения границ ${found.score} из нужных ${ENOUGH_LINES}`,
+  )
+
+  // поправка обязана быть **содержательной**: сдвиг в два миллиметра она и
+  // должна была увидеть, а не вернуть тождество и промолчать
+  const shift = Math.abs(found.fix.ax * GRID.x + found.fix.bx - GRID.x)
+  assert.ok(shift > 0.5, `поправка вышла пустой: сдвиг ${shift.toFixed(2)} мм`)
+})
+
 test('ровный лист читается и без единой метки по углам', () => {
   /*
    * Метки — приближение, и на сканере они не нужны: страница уже выпрямлена,
@@ -194,6 +224,22 @@ test('перевёрнутый ровный лист тоже читается �
   const found = extractHeader(drawSheet({ marks: false, margin: 0, angleFlip: 1 }))
 
   assert.ok(found && found.score >= ENOUGH_LINES, `границ ${found?.score}`)
+})
+
+test('полная сетка сама доказывает, что бланк наш', () => {
+  /*
+   * Доказательством был только код в углу — и стоит он внизу листа. Обрезал
+   * скан низ, загнулся угол — доказательства нет, при том что шапка на месте.
+   * На живой пачке такие страницы уезжали в «листы условий» и разрезали пачку
+   * надвое.
+   *
+   * Шестнадцать клеток, вставшие все на печатные места, — не совпадение: у
+   * чужого листа так не выходит.
+   */
+  const found = extractHeader(drawSheet({ margin: 0, marks: false }))
+
+  assert.ok(found.score >= GRID_IS_OURS, `сетка сошлась на ${found.score}`)
+  assert.equal(found.ours, true, 'полная сетка не признана нашим бланком')
 })
 
 test('пустой лист без сетки набирает мало и честно об этом говорит', () => {

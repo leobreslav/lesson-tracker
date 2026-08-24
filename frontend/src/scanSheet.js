@@ -370,6 +370,153 @@ export function warp(image, h, rect, outWidth, outHeight) {
  */
 const CROWDED = 25
 
+/**
+ * Тёмные полосы поперёк картинки: сначала средняя яркость, потом центры.
+ *
+ * Одна функция на оба направления — вертикали сетки и её горизонтали, — потому
+ * что вопрос один и тот же: где линия. Порог берётся **от самой бумаги**, а не
+ * абсолютный: на фотографии линия чёрная и толстая, в отрисованном PDF серая в
+ * полтора пикселя со сглаживанием, и один порог либо пропускает вторую, либо
+ * принимает за линию любую тень.
+ */
+function darkBands(gray, width, height, { across }) {
+  const outer = across ? width : height
+  const inner = across ? height : width
+
+  const level = new Float32Array(outer)
+  for (let a = 0; a < outer; a += 1) {
+    let sum = 0
+    for (let b = 0; b < inner; b += 1) sum += gray[across ? b * width + a : a * width + b]
+    level[a] = sum / inner
+  }
+
+  const paper = [...level].sort((one, two) => one - two)[Math.floor(outer / 2)]
+  const limit = paper - Math.max(8, paper * 0.08)
+
+  const centres = []
+  let from = -1
+  for (let a = 0; a <= outer; a += 1) {
+    const dark = a < outer && level[a] < limit
+    if (dark && from < 0) from = a
+    if (!dark && from >= 0) {
+      centres.push((from + a - 1) / 2)
+      from = -1
+    }
+  }
+  return centres
+}
+
+/** Прямая по парам методом наименьших квадратов: `to = a * from + b`. */
+function fitLine(pairs) {
+  const n = pairs.length
+  if (n < 3) return null
+  let sx = 0
+  let sy = 0
+  let sxx = 0
+  let sxy = 0
+  for (const [x, y] of pairs) {
+    sx += x
+    sy += y
+    sxx += x * x
+    sxy += x * y
+  }
+  const denominator = n * sxx - sx * sx
+  if (Math.abs(denominator) < 1e-9) return null
+  const a = (n * sxy - sx * sy) / denominator
+  return { a, b: (sy - a * sx) / n }
+}
+
+/**
+ * Уточнение по самой сетке — тот шаг, который в `blank/README.md` описан как
+ * главный, а в коде долго отсутствовал.
+ *
+ * Метки по углам это **приближение**: их четыре (из шести), они мелкие, и
+ * промах в одной уводит всю гомографию. Сетка баллов же стоит ровно там, где
+ * мы кропаем: семнадцать вертикалей и три горизонтали высокого контраста на
+ * базе 185 мм. Ей безразличны порванный угол, обрез и бледная печать —
+ * избыточность такая, что хватит и половины линий.
+ *
+ * Поэтому: выпрямили как получилось, посмотрели, **где на самом деле** стоят
+ * линии, и поправили прямоугольник кропа так, чтобы они встали на печатные
+ * места. Возвращается поправка в миллиметрах листа (`x' = ax·x + bx`), потому
+ * что применять её надо ко всем кропам сразу — к полоске, к клеткам и к
+ * проверке кода в углу, — а прямоугольники у них разные.
+ *
+ * `null` значит «уточнять не по чему»: линий нашлось слишком мало, и подгонка
+ * по трём случайным теням была бы хуже, чем её отсутствие.
+ */
+export function gridFix(strip, rect) {
+  const { gray, width, height } = toGray(strip)
+  const mmX = (px) => rect.x + (rect.width * px) / width
+  const mmY = (px) => rect.y + (rect.height * px) / height
+
+  const near = (rect.width * 3) / 190
+
+  const verticals = darkBands(gray, width, height, { across: true }).map(mmX)
+  const pairs = []
+  for (let cell = 0; cell <= GRID.cells; cell += 1) {
+    const want = GRID.x + cell * GRID.cellWidth
+    let best = null
+    for (const found of verticals) {
+      const gap = Math.abs(found - want)
+      if (gap <= near && (!best || gap < Math.abs(best - want))) best = found
+    }
+    if (best !== null) pairs.push([want, best])
+  }
+
+  const horizontals = darkBands(gray, width, height, { across: false }).map(mmY)
+  const rows = []
+  for (const want of [GRID.y, GRID.y + GRID.labelHeight, GRID.y + GRID.height]) {
+    let best = null
+    for (const found of horizontals) {
+      const gap = Math.abs(found - want)
+      if (gap <= near && (!best || gap < Math.abs(best - want))) best = found
+    }
+    if (best !== null) rows.push([want, best])
+  }
+
+  const byX = fitLine(pairs)
+  if (!byX) return null
+  const byY = fitLine(rows)
+
+  const fix = {
+    ax: byX.a,
+    bx: byX.b,
+    // горизонталей всего три, и найтись должны все: по двум прямая проходит
+    // через любые две точки и врёт с уверенным видом
+    ay: byY ? byY.a : 1,
+    by: byY ? byY.b : 0,
+  }
+
+  /*
+   * Поправка бывает только **маленькой**, и это не придирка.
+   *
+   * Уточнение подгоняет прямую по найденным полосам, а полос на листе много:
+   * ниже шапки лежит тетрадное поле с шагом 5 мм. Свободная подгонка растянула
+   * бы его вдвое с лишним и объявила сеткой баллов — то есть нашла бы шапку
+   * там, где её нет. Настоящий же промах реперов измеряется миллиметрами:
+   * метки мелкие, но стоят они на своих местах.
+   */
+  const sane = (a, b) => Math.abs(a - 1) <= 0.1 && Math.abs(b) <= 6
+  if (!sane(fix.ax, fix.bx)) return null
+  if (!sane(fix.ay, fix.by)) {
+    fix.ay = 1
+    fix.by = 0
+  }
+  return fix
+}
+
+/** Прямоугольник листа с поправкой: те же миллиметры, сдвинутые и растянутые. */
+export function fixed(rect, fix) {
+  if (!fix) return rect
+  return {
+    x: fix.ax * rect.x + fix.bx,
+    y: fix.ay * rect.y + fix.by,
+    width: fix.ax * rect.width,
+    height: fix.ay * rect.height,
+  }
+}
+
 export function gridScore(strip) {
   const { gray, width, height } = toGray(strip)
 
@@ -432,10 +579,13 @@ export function gridScore(strip) {
  * Работает это только после выпрямления: без гомографии мы не знаем, где у
  * листа угол. Так и надо — лист без меток и не наш по определению.
  */
-export function hasBlankMark(image, h) {
-  const step = QR.size / QR.modules
+export function hasBlankMark(image, h, fix = null) {
+  // код в углу ищется с той же поправкой, что и полоска: уточнение по сетке
+  // говорит, куда уехал весь лист, а не одна его шапка
+  const where = fixed(QR, fix)
+  const step = where.width / QR.modules
   const dark = (mx, my) => {
-    const at = project(h, QR.x + (mx + 0.5) * step, QR.y + (my + 0.5) * step)
+    const at = project(h, where.x + (mx + 0.5) * step, where.y + (my + 0.5) * step)
     const x = Math.round(at.x)
     const y = Math.round(at.y)
     if (x < 1 || y < 1 || x >= image.width - 1 || y >= image.height - 1) return null
@@ -497,23 +647,45 @@ export function extractHeader(image) {
 
   const tryHeight = Math.round((TRY_WIDTH * HEADER.height) / HEADER.width)
   const nominal = sheetCorners()
-  let best = null
+  const rough = []
 
-  const consider = (from, to, corners) => {
+  /*
+   * Каждый кандидат проверяется дважды: как есть и **после уточнения по
+   * сетке**.
+   *
+   * Уточнялись сперва только лучшие по грубому счёту — и это было ровно
+   * наоборот: спасать надо тех, у кого грубый счёт мал. Сдвиньте реперы на два
+   * миллиметра, и настоящая, годная четвёрка наберёт ноль совпадений — при
+   * том, что сетка на её полоске видна целиком и промах измеряется одной
+   * подгонкой. Такой кандидат до уточнения не доживал.
+   *
+   * Стоит это второго выпрямления на кандидата, и оба идут дешёвой копией в
+   * пятьсот точек шириной.
+   */
+  const consider = (from, to) => {
     const h = homography(from, to)
     if (!h) return
-    const score = gridScore(warp(image, h, HEADER, TRY_WIDTH, tryHeight))
-    if (!best || score > best.score) best = { score, h, corners }
+
+    const strip = warp(image, h, HEADER, TRY_WIDTH, tryHeight)
+    rough.push({ score: gridScore(strip), h, fix: null })
+
+    const fix = gridFix(strip, HEADER)
+    if (!fix) return
+    const window = fixed(HEADER, fix)
+    rough.push({
+      score: gridScore(warp(image, h, window, TRY_WIDTH, tryHeight)),
+      h,
+      fix,
+    })
   }
 
   for (const quad of candidates) {
     for (let turn = 0; turn < 4; turn += 1) {
       const turned = quad.slice(turn).concat(quad.slice(0, turn))
-      const full = turned.map((point) => ({
-        x: point.x * small.step,
-        y: point.y * small.step,
-      }))
-      consider(nominal, full, full)
+      consider(
+        nominal,
+        turned.map((point) => ({ x: point.x * small.step, y: point.y * small.step })),
+      )
     }
   }
 
@@ -527,11 +699,9 @@ export function extractHeader(image) {
    * так пропали три страницы, из которых две прочитались бы глазами без
    * усилий — на экране они были ровные и чистые.
    *
-   * Поэтому пробуем ещё и тождественную раскладку: углы листа на углы
-   * картинки. Испортить она ничего не может — выбор идёт по тому же счёту, и
-   * побеждает она только там, где сетка действительно сошлась лучше.
-   *
-   * Повороты те же четыре: страница из сканера бывает и вверх ногами.
+   * Испортить она ничего не может — выбор идёт по тому же счёту, и побеждает
+   * она только там, где сетка действительно сошлась лучше. Повороты те же
+   * четыре: страница из сканера бывает и вверх ногами.
    */
   const page = [
     { x: 0, y: 0 },
@@ -546,16 +716,21 @@ export function extractHeader(image) {
     { x: 0, y: image.height },
   ]
   for (let turn = 0; turn < 4; turn += 1) {
-    consider(page, frame.slice(turn).concat(frame.slice(0, turn)), null)
+    consider(page, frame.slice(turn).concat(frame.slice(0, turn)))
   }
 
-  if (!best) return null
+  if (!rough.length) return null
+
+  const best = rough.reduce((one, two) => (two.score > one.score ? two : one))
+
   return {
     ...best,
-    ours: hasBlankMark(image, best.h),
+    // наш бланк доказывают двое, и хватает любого: код в углу поля записи и
+    // сама сетка баллов, вставшая на печатные места
+    ours: hasBlankMark(image, best.h, best.fix) || best.score >= GRID_IS_OURS,
     // ищем по HEADER, а режем по STRIP: счёт считается там, где выпрямление
     // подпёрто метками, а картинка берётся от верха листа
-    strip: warp(image, best.h, STRIP, STRIP_WIDTH, stripHeight()),
+    strip: warp(image, best.h, fixed(STRIP, best.fix), STRIP_WIDTH, stripHeight()),
   }
 }
 
@@ -567,6 +742,25 @@ export function extractHeader(image) {
  * читать её можно, а вот меньше двенадцати значит, что мы смотрим не туда.
  */
 export const ENOUGH_LINES = 12
+
+/**
+ * Счёт, при котором сетка сама доказывает, что бланк наш.
+ *
+ * Доказательством этого был только код в углу — и стоит он **внизу** листа, в
+ * поле записи. Обрезал скан низ, загнулся угол, лёг лист не целиком — и
+ * доказательства нет, при том что шапка на месте и читается. На живой пачке
+ * такие страницы уезжали в «листы условий» и разрезали пачку надвое.
+ *
+ * Между тем шестнадцать клеток по 11.5625 мм на базе 185 мм, вставшие **все**
+ * на печатные места после подгонки, — это не совпадение и не тень: у чужого
+ * листа так не выходит. Поэтому почти полная сетка считается такой же печатью,
+ * как код в углу, и доказывается она по той самой полоске, которую мы и так
+ * кропаем.
+ *
+ * Порог высокий нарочно: у порога чтения (12) запас на блик и обрез, а здесь
+ * речь о признаке, по которому лист объявляется нашим.
+ */
+export const GRID_IS_OURS = 16
 
 /**
  * Разрезать выпрямленную шапку на то, из чего собирается картинка для чтения:
@@ -584,13 +778,13 @@ export const ENOUGH_LINES = 12
  */
 export const CELL_SIDE = 120
 
-export function cutForReading(image, h) {
-  const row = nameRow()
+export function cutForReading(image, h, fix = null) {
+  const row = fixed(nameRow(), fix)
   const rowHeight = Math.round((STRIP_WIDTH * row.height) / row.width)
   return {
     name: warp(image, h, row, STRIP_WIDTH, rowHeight),
     cells: Array.from({ length: GRID.cells }, (_, index) =>
-      warp(image, h, cellRect(index), CELL_SIDE, CELL_SIDE),
+      warp(image, h, fixed(cellRect(index), fix), CELL_SIDE, CELL_SIDE),
     ),
   }
 }
