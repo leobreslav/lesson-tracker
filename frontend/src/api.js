@@ -734,11 +734,15 @@ export const fetchScanState = (work) => request(`/api/works/${work}/scan/state/`
 export const resetScan = (work) =>
   request(`/api/works/${work}/scan/state/`, { method: 'DELETE' })
 
-export const readScanPage = (work, { index, blob, mark }) => {
+export const readScanPage = (work, { index, blob, mark, second = true }) => {
   const form = new FormData()
   form.append('index', index)
   form.append('strip', blob, `strip-${index}.jpg`)
   form.append('fingerprint', mark)
+  // Звать ли второго читателя. Решение принимается один раз на пачку —
+  // галочкой на шаге выбора файла, — а ехать ему приходится с каждой
+  // страницей: цикл чтения ведёт браузер, и другого места у просьбы нет.
+  form.append('second', second ? 'true' : 'false')
   return request(`/api/works/${work}/scan/read/`, { method: 'POST', body: form })
 }
 

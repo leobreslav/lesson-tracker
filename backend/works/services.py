@@ -1547,7 +1547,18 @@ def scan_state(work) -> dict:
         # ...а «во что обошлась вот эта пачка» — вопрос отдельный от школьного
         # потолка, и ответ на него нужен там же, у пачки
         "spend": scan_spend(work),
+        # Есть ли у контура второй читатель. Спрашивает это галочка на шаге
+        # выбора файла, и спрашивает не из любопытства: галочка, которая ничем
+        # не управляет, — это ложь на экране. Нет ключей — нет и выбора.
+        "second_reader": second_reader_available(),
     }
+
+
+def second_reader_available() -> bool:
+    """Заведён ли в контуре второй читатель шапки (`vision/mathpix.py`)."""
+    from vision import mathpix
+
+    return mathpix.configured()
 
 
 def _scattered(pages) -> bool:

@@ -51,6 +51,14 @@ export default function ScanWizard({ work, onClose, onDone }) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
   const [readQuestions, setReadQuestions] = useState(false)
+  /* Звать ли второго читателя на этой пачке.
+   *
+   * Умолчание — «звать», и это не небрежность: ключи Mathpix в контуре
+   * появляются не сами, и раз школа их поставила, второй читатель нужен.
+   * Галочка — способ **отказаться** на конкретной пачке, а не включить: у
+   * стопки, где имена вписаны учителем печатными буквами, спорить не о чем,
+   * а платить пришлось бы вдвое. */
+  const [second, setSecond] = useState(true)
   const [questions, setQuestions] = useState(null)
   const stop = useRef(false)
 
@@ -87,7 +95,7 @@ export default function ScanWizard({ work, onClose, onDone }) {
     }
   }
 
-  const start = async (chosen, alsoQuestions) => {
+  const start = async (chosen, alsoQuestions, alsoSecond) => {
     if (!chosen) return
     setFile(chosen)
     setQuestions(null)
@@ -119,7 +127,12 @@ export default function ScanWizard({ work, onClose, onDone }) {
           setTotal(count)
         },
         send: async ({ index, blob, mark }) => {
-          const answer = await readScanPage(work.id, { index, blob, mark })
+          const answer = await readScanPage(work.id, {
+            index,
+            blob,
+            mark,
+            second: alsoSecond,
+          })
           setState(answer)
           return true
         },
@@ -191,10 +204,13 @@ export default function ScanWizard({ work, onClose, onDone }) {
 
       {stage === 'file' && (
         <FileStep
-          onPick={(chosen) => start(chosen, readQuestions)}
+          onPick={(chosen) => start(chosen, readQuestions, second)}
           busy={busy}
           readQuestions={readQuestions}
           onReadQuestions={setReadQuestions}
+          secondReader={state?.second_reader ?? false}
+          second={second}
+          onSecond={setSecond}
           questions={scale.length}
           read={state?.pages?.length ?? 0}
           onReset={() => run(async () => setState(await resetScan(work.id)))}
@@ -407,7 +423,20 @@ function QuestionsStep({ onSave, busy, scale = [] }) {
 }
 
 /** Шаг: выбрать файл. Всегда PDF — так его отдаёт и сканер, и телефон. */
-function FileStep({ onPick, busy, questions, read, onReset, readQuestions, onReadQuestions, onBack, onForward }) {
+function FileStep({
+  onPick,
+  busy,
+  questions,
+  read,
+  onReset,
+  readQuestions,
+  onReadQuestions,
+  secondReader,
+  second,
+  onSecond,
+  onBack,
+  onForward,
+}) {
   const { t } = useTranslation()
   const [over, setOver] = useState(false)
 
@@ -471,6 +500,35 @@ function FileStep({ onPick, busy, questions, read, onReset, readQuestions, onRea
         </label>
       )}
       {readQuestions && <p className="hint">{t('scan.readQuestionsHint')}</p>}
+
+      {/*
+        * Второй читатель — выбор человека, и делается он **до** платежа.
+        *
+        * Показывается галочка только там, где второму читателю есть чем
+        * читать: без ключей Mathpix она ничем не управляла бы, а галочка,
+        * которая ничего не делает, — это ложь на экране.
+        *
+        * Подсказка стоит в обоих положениях, а не только во включённом.
+        * Выключенное состояние тут не «ничего не происходит», а другое
+        * поведение — читает один, и ошибётся он молча; сказать об этом надо
+        * ровно в тот момент, когда галочку снимают.
+        */}
+      {secondReader && (
+        <>
+          <label className="checkbox">
+            <input
+              type="checkbox"
+              checked={second}
+              disabled={busy}
+              onChange={(event) => onSecond(event.target.checked)}
+            />
+            {t('scan.secondReader')}
+          </label>
+          <p className="hint">
+            {t(second ? 'scan.secondReaderOn' : 'scan.secondReaderOff')}
+          </p>
+        </>
+      )}
 
       {/*
         * Начать пачку заново.

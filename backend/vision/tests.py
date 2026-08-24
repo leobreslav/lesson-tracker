@@ -615,6 +615,52 @@ class TwoReadersTests(SchoolTestMixin, APITestCase):
         self.assertEqual(len(self.seen), 1)
         self.assertEqual(self.purposes(), ["scan_header", "scan_second"])
 
+    def test_the_human_may_refuse_the_second_reader(self):
+        """
+        Галочка на шаге выбора файла: второй читатель удваивает цену пачки, а
+        нужен он не всегда — у стопки, где имена вписаны учителем печатными
+        буквами, спорить не о чем. Решает тот, кто платит.
+        """
+        from unittest.mock import patch
+
+        with self.settings(MATHPIX_APP_ID="id", MATHPIX_APP_KEY="key"):
+            with patch.object(
+                services, "read_header", lambda image, **kw: (dict(self.model_says), 100, 10)
+            ), patch.object(
+                services.mathpix, "read_strip", self.fail_if_called
+            ):
+                data = services.read_and_charge(
+                    school=self.school,
+                    user=self.user,
+                    work=None,
+                    image=b"strip",
+                    asked_second=False,
+                )
+
+        self.assertEqual(data["second"]["error"], "not_asked")
+        self.assertEqual(self.purposes(), ["scan_header"])
+
+    def fail_if_called(self, *args, **kwargs):
+        self.fail("второго читателя позвали, хотя человек его снял")
+
+    def test_why_there_is_no_second_opinion_is_said_in_words(self):
+        """
+        Причин «второго мнения нет» несколько, и они разные: не просили, нечем
+        звать, нечем платить, не ответил. Общий пустой словарь на все случаи
+        сделал бы снятую галочку и отвалившийся сервис неразличимыми на экране.
+        """
+        from unittest.mock import patch
+
+        with self.settings(MATHPIX_APP_ID="", MATHPIX_APP_KEY=""):
+            with patch.object(
+                services, "read_header", lambda image, **kw: (dict(self.model_says), 100, 10)
+            ):
+                data = services.read_and_charge(
+                    school=self.school, user=self.user, work=None, image=b"strip"
+                )
+
+        self.assertEqual(data["second"]["error"], "not_configured")
+
     def test_a_reader_who_did_not_answer_is_not_charged(self):
         """
         Отказ второго читателя не отменяет чтения и не стоит денег: страница

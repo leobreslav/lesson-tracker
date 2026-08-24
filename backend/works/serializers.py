@@ -595,6 +595,14 @@ class ScanReadSerializer(serializers.Serializer):
     strip = serializers.FileField()
     # Отпечаток полоски: та же страница, загруженная снова, не перечитывается.
     fingerprint = serializers.CharField(max_length=64, required=False, allow_blank=True)
+    # Звать ли второго читателя. Спрашивается **на каждой странице**, потому
+    # что цикл ведёт браузер и другого места для этой просьбы нет; решает же
+    # человек один раз на пачку, галочкой на шаге выбора файла.
+    #
+    # Умолчание — «звать»: ключи Mathpix в контуре появляются не сами, и раз
+    # школа их поставила, второй читатель нужен. Галочка — способ отказаться
+    # от него на конкретной пачке, а не включить.
+    second = serializers.BooleanField(required=False, default=True)
 
     def validate_strip(self, upload):
         if upload.size > 4 * 1024 * 1024:

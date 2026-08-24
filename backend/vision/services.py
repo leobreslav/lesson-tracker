@@ -88,6 +88,7 @@ def read_and_charge(
     candidates: list[str] | None = None,
     model: str | None = None,
     purpose: str = AiSpend.SCAN_HEADER,
+    asked_second: bool = True,
 ) -> dict:
     """
     Прочитать полоску и записать трату. Одна дверь: считать, не заплатив, нельзя.
@@ -114,6 +115,11 @@ def read_and_charge(
     моделью — это то, без чего страницы нет вовсе; второй читатель и арбитр —
     прибавка. Упрись мы в потолок или в отказ сети на первом шаге из трёх,
     потерять хочется прибавку, а не страницу.
+
+    `asked_second` — просьба человека, галочка на шаге выбора файла. Второй
+    читатель удваивает цену пачки, а нужен он не всегда: у пачки, где имена
+    вписаны учителем печатными буквами, спорить не о чем. Решение поэтому не
+    наше и не настроечное — того, кто платит и держит стопку в руках.
     """
     from django.conf import settings
 
@@ -128,7 +134,7 @@ def read_and_charge(
     _charge(school, user, work, purpose, model, input_tokens, output_tokens)
     data["model"] = model
 
-    second = second_reading(school, user, work, image, media_type)
+    second = second_reading(school, user, work, image, media_type, asked=asked_second)
     # Спор записывается **до** арбитража и потом не пересчитывается. Иначе он
     # исчезал бы ровно тогда, когда арбитр встал на сторону второго читателя:
     # чтение сошлось бы с ним, и страница, о которой спорили трое, выглядела бы
@@ -151,14 +157,24 @@ def read_and_charge(
     return data
 
 
-def second_reading(school, user, work, image: bytes, media_type: str) -> dict:
+def second_reading(
+    school, user, work, image: bytes, media_type: str, *, asked: bool = True
+) -> dict:
     """
     Позвать второго читателя и записать трату. Не позвался — не беда.
 
     Возвращается всегда словарь: `error` внутри значит «второго мнения по этой
     странице нет», и это законное состояние, а не отказ. Ключей Mathpix может
     не быть вовсе — тогда всё работает ровно так, как работало до него.
+
+    Причин «не было» четыре, и они **разные**: не просили, нечем звать, нечем
+    платить, не ответил. Пишем поэтому каждую своим словом, а не общим
+    пустым словарём: страница без второго мнения потом объясняет, почему его
+    нет, — иначе выключенная галочка и отвалившийся сервис на экране
+    неразличимы.
     """
+    if not asked:
+        return {"reader": "mathpix", "error": "not_asked"}
     if not mathpix.configured():
         return {"reader": "mathpix", "error": "not_configured"}
     if not has_budget(school):

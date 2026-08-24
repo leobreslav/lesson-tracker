@@ -527,3 +527,75 @@ class SecondReadingIsKeptTests(SchoolTestMixin, APITestCase):
 
         self.assertEqual(row["second"], {})
         self.assertNotIn("readers_differ", row["trouble"])
+
+
+class SecondReaderIsAskedForTests(SchoolTestMixin, APITestCase):
+    """
+    Второго читателя зовут по просьбе человека, и просьба едет по HTTP.
+
+    Проверяется именно дорога, а не сервис: галочка стоит на шаге выбора
+    файла, то есть **до** платежа, а цикл чтения ведёт браузер — значит с
+    каждой страницей уезжает и просьба. Оборвись она где-нибудь по пути,
+    снаружи это выглядело бы как работающая галочка, которая ничего не
+    меняет, и заметили бы это по счёту.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.year = make_year(self.school)
+        self.course = make_course(self.school, self.year)
+        self.work = make_work(self.user, self.course)
+        enrol(self.student, self.course, by=self.admin)
+        self.client.force_authenticate(self.user)
+
+    def post(self, **extra):
+        """Одна страница на чтение. Читатель подменён — настоящий стоит денег."""
+        from unittest.mock import patch
+
+        from works import views
+
+        seen = {}
+
+        def reading(**kwargs):
+            seen.update(kwargs)
+            return {
+                "first_name": "Fil",
+                "surname": "Burmov",
+                "values": [None] * 16,
+                "second": {"reader": "mathpix", "error": "not_asked", "differs": []},
+            }
+
+        with patch.object(views.vision_services, "read_and_charge", reading):
+            answer = self.client.post(
+                reverse("work-scan-read", args=[self.work.pk]),
+                {
+                    "index": 0,
+                    "strip": SimpleUploadedFile("strip.jpg", b"picture"),
+                    "fingerprint": "f0",
+                }
+                | extra,
+                format="multipart",
+            )
+        self.assertEqual(answer.status_code, 200, answer.content)
+        return seen
+
+    def test_the_unticked_box_reaches_the_reader(self):
+        self.assertFalse(self.post(second="false")["asked_second"])
+
+    def test_the_ticked_box_reaches_the_reader(self):
+        self.assertTrue(self.post(second="true")["asked_second"])
+
+    def test_saying_nothing_means_reading_as_before(self):
+        """
+        Умолчание — «звать»: ключи Mathpix в контуре появляются не сами, и раз
+        школа их поставила, второй читатель нужен. Галочка снимает его, а не
+        включает.
+        """
+        self.assertTrue(self.post()["asked_second"])
+
+    def test_the_screen_is_told_whether_there_is_a_second_reader_at_all(self):
+        """Галочка, которая ничем не управляет, — это ложь на экране."""
+        with self.settings(MATHPIX_APP_ID="", MATHPIX_APP_KEY=""):
+            self.assertFalse(services.scan_state(self.work)["second_reader"])
+        with self.settings(MATHPIX_APP_ID="id", MATHPIX_APP_KEY="key"):
+            self.assertTrue(services.scan_state(self.work)["second_reader"])

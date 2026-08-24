@@ -354,6 +354,7 @@ class WorkViewSet(CourseScopedViewSet):
             work=work,
             image=form.validated_data["strip"].read(),
             candidates=[person.full for person in services.scan_roster(work)],
+            asked_second=form.validated_data["second"],
         )
 
         services.save_scan_reading(
