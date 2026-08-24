@@ -144,6 +144,44 @@ class GroupingTests(SimpleTestCase):
         self.assertTrue(candidates)
 
 
+class HumanBeatsDetectionTests(SimpleTestCase):
+    """
+    Сказанное человеком не пересматривается — в том числе и о том, что это за
+    страница.
+
+    Лист с плохо снятой шапкой попадает в «условия»: шапки нет, метки в углу
+    не нашлось. Отдать его ученику руками было можно, и выглядело это так,
+    будто всё получилось, — а в раскладку лист всё равно не попадал, потому
+    что условия в неё не попадают по построению. Баллы, проставленные на нём,
+    не ехали никуда, и узнать об этом было неоткуда.
+    """
+
+    def test_a_page_given_to_a_student_is_not_a_question_paper(self):
+        one = page(0, headerless=True, ours=False)
+        one.student_id = 2
+        one.decided_by_human = True
+
+        self.assertEqual(classify([one])[0], "read")
+
+    def test_a_page_nobody_touched_is_judged_as_before(self):
+        one = page(0, headerless=True, ours=False)
+
+        self.assertEqual(classify([one])[0], "conditions")
+
+    def test_a_hand_placed_page_carries_its_marks(self):
+        """Ради этого всё и затевалось: баллы такого листа доезжают до ученика."""
+        pages = [page(0, "Fil", "Burmov", {0: 1})]
+        stray = page(1, headerless=True, ours=False, marks={1: 2})
+        stray.student_id = 2
+        stray.decided_by_human = True
+        pages.append(stray)
+
+        packets = arrange(pages, ROSTER)
+        marks, _ = merge_marks([p for one in packets for p in one.pages])
+
+        self.assertEqual(marks.get(1), 2)
+
+
 class CandidateTests(SimpleTestCase):
     """
     Кого экран предлагает по одной странице.

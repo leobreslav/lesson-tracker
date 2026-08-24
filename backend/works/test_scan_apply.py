@@ -360,3 +360,95 @@ class ScanCandidateStateTests(SchoolTestMixin, APITestCase):
         page = services.scan_state(self.work)["pages"][0]
 
         self.assertEqual(page["candidates"][0], self.student.id)
+
+
+class ScanSuggestionTests(SchoolTestMixin, APITestCase):
+    """
+    Кого предложить странице, на которой имени нет вовсе.
+
+    Своего свидетельства у такой страницы нет, и кандидатов ей взять неоткуда:
+    список выходил либо пустым, либо набором случайных фамилий с нулевым
+    сходством — сравнивать было не с чем. Между тем пачка лежит стопкой, и
+    лист без подписи почти всегда продолжение предыдущего. Это ровно та
+    догадка, по которой раскладка кладёт такие листы сама; человеку она
+    предлагается кнопкой, а не применяется молча.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.year = make_year(self.school)
+        self.course = make_course(self.school, self.year)
+        self.work = make_work(self.user, self.course)
+        self.student.first_name, self.student.last_name = "Fil", "Burmov"
+        self.student.save()
+        enrol(self.student, self.course, by=self.admin)
+
+    def read(self, index, first="", surname="", marks=None):
+        cells = [None] * 16
+        for question, value in (marks or {}).items():
+            cells[question] = value
+        services.save_scan_reading(
+            self.work,
+            index=index,
+            fingerprint=f"f{index}",
+            data={"first_name": first, "surname": surname, "values": cells},
+        )
+
+    def test_an_unsigned_page_is_offered_the_previous_owner(self):
+        self.read(0, "Fil", "Burmov", {0: 1})
+        self.read(1, marks={1: 2})
+
+        pages = services.scan_state(self.work)["pages"]
+
+        self.assertEqual(pages[1]["candidates"], [self.student.id])
+
+    def test_the_first_page_has_nobody_to_borrow_from(self):
+        """Предлагать по соседу сверху нечего, если соседа нет."""
+        self.read(0, marks={0: 1})
+
+        self.assertEqual(services.scan_state(self.work)["pages"][0]["candidates"], [])
+
+    def test_a_signed_page_keeps_its_own_candidates(self):
+        """
+        Подсказка соседа не заслоняет собственное имя: у подписанной страницы
+        свидетельство своё, и оно сильнее порядка в стопке.
+        """
+        self.read(0, "Fil", "Burmov", {0: 1})
+        self.read(1, "Fil", "Burmov", {1: 2})
+
+        pages = services.scan_state(self.work)["pages"]
+
+        self.assertEqual(pages[1]["candidates"][0], self.student.id)
+
+
+class ScanHandFilledTests(SchoolTestMixin, APITestCase):
+    """
+    Балл, вписанный руками, говорит о странице больше, чем поиск шапки.
+
+    Лист, на котором шапку не нашли, считается листом условий и в раскладку не
+    попадает. Но баллы на нём человек видит глазами — и вписывает; после этого
+    называть лист условиями значит выбросить только что сделанную работу.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.year = make_year(self.school)
+        self.course = make_course(self.school, self.year)
+        self.work = make_work(self.user, self.course)
+        enrol(self.student, self.course, by=self.admin)
+
+    def test_a_filled_cell_makes_it_an_answer_sheet(self):
+        services.mark_headerless(self.work, index=0, ours=False)
+        self.assertTrue(ScanPage.objects.get(work=self.work, index=0).headerless)
+
+        services.edit_scan_page(self.work, index=0, cells=[2] + [None] * 15)
+
+        self.assertFalse(ScanPage.objects.get(work=self.work, index=0).headerless)
+
+    def test_clearing_the_cells_does_not_resurrect_it(self):
+        """Пустые клетки ничего не утверждают — это стирание, а не решение."""
+        services.mark_headerless(self.work, index=0, ours=False)
+
+        services.edit_scan_page(self.work, index=0, cells=[None] * 16)
+
+        self.assertTrue(ScanPage.objects.get(work=self.work, index=0).headerless)

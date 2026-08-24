@@ -1469,6 +1469,28 @@ def scan_state(work) -> dict:
             }
         )
 
+    # Странице, на которой имени нет, предлагается хозяин предыдущей.
+    #
+    # Своего свидетельства у такой страницы нет вовсе, и кандидатов ей взять
+    # неоткуда — список выходил пустым, а выбирать приходилось из всего класса.
+    # Между тем пачка лежит стопкой: лист без подписи почти всегда продолжение
+    # предыдущего, и это ровно та догадка, по которой раскладка кладёт такие
+    # листы сама. Предлагаем, а не назначаем: подсказка стоит первой кнопкой,
+    # решает человек.
+    last_owner = None
+    for row in rows:
+        unnamed = not (row["first_name"].strip() or row["surname"].strip())
+        if unnamed:
+            # У безымянной страницы кандидаты пакета — набор случайных фамилий
+            # с нулевым сходством: сравнивать было не с чем. Показывать их
+            # значит предлагать людей наугад, да ещё и заслонять ими
+            # единственную осмысленную подсказку.
+            row["candidates"] = [last_owner] if last_owner is not None else []
+        elif not row["candidates"] and last_owner is not None:
+            row["candidates"] = [last_owner]
+        if row["student"] is not None:
+            last_owner = row["student"]
+
     students = []
     mine = {packet.student_id: packet for packet in packets if packet.student_id}
     for person in roster:
@@ -1710,6 +1732,13 @@ def edit_scan_page(work, *, index: int, student=UNSET, cells=None):
     if cells is not None:
         row.cells = (list(cells) + [None] * CELLS)[:CELLS]
         fields.append("cells")
+        # Человек вписал балл — значит перед ним сетка баллов, то есть лист
+        # решения, что бы ни решил поиск шапки. Без этого проставленные руками
+        # баллы пропадали молча: страница, сочтённая листом условий, в
+        # раскладку не попадает вовсе, и её клетки никуда не едут.
+        if row.headerless and any(value is not None for value in row.cells):
+            row.headerless = False
+            fields.append("headerless")
     if fields:
         row.save(update_fields=fields)
     return row

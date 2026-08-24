@@ -342,7 +342,7 @@ function QuestionsStep({ onSave, busy, scale = [] }) {
         <div className="scan-table-wrap">
           <div
             className="scan-scale"
-            style={{ gridTemplateColumns: `auto repeat(${count}, minmax(2.6rem, 1fr))` }}
+            style={{ gridTemplateColumns: `auto repeat(${count}, minmax(0, 1fr))` }}
           >
             <span className="scan-scale-side" />
             {numbers.map((number) => (
@@ -722,9 +722,16 @@ function PagesStep({ state, all, byIndex, questions, busy, onDecide, onFix, onNe
         * делать ровно ту работу, на которой сбилась модель. Поставленные под
         * своими клетками поля превращают проверку в один взгляд вдоль строки.
         */}
-      {row && !row.headerless && byIndex[here?.index]?.strip && (
+      {row && (
         <div className="scan-header-block">
-          <img className="scan-strip" src={byIndex[here.index].strip} alt="" />
+          {/* Полоска есть не всегда: у страницы, на которой шапку не нашли,
+              выпрямлять было нечего. Клетки при этом остаются — баллы на
+              бумаге видно глазами, и вписать их надо уметь. Пока ряд полей
+              прятался вместе с полоской, такая страница была тупиком: баллы
+              есть, а поставить их некуда. */}
+          {byIndex[here?.index]?.strip && (
+            <img className="scan-strip" src={byIndex[here.index].strip} alt="" />
+          )}
           <div
             className="scan-cells"
             style={{
@@ -815,7 +822,9 @@ function PagesStep({ state, all, byIndex, questions, busy, onDecide, onFix, onNe
               по списку класса, то есть заведомо не тех */}
           {(row?.candidates ?? []).length > 0 && (
             <div className="row">
-              {row.candidates.map((id) => (
+              {/* трое, не больше: кнопок ровно столько, сколько можно окинуть
+                  взглядом, а «а всё-таки» отвечает список ниже */}
+              {row.candidates.slice(0, 3).map((id) => (
                 <button
                   key={id}
                   type="button"

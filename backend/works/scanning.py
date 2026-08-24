@@ -288,7 +288,14 @@ def classify(pages: list[Page]) -> dict:
 
     kinds = {}
     for page in pages:
-        if not page.headerless:
+        # Сказанное человеком не пересматривается — и здесь тоже. Отдал
+        # страницу ученику значит «это его работа», чем бы её ни счёл поиск
+        # шапки. Пока этого не было, страница с плохо снятой шапкой оставалась
+        # листом условий даже после того, как её назначили руками: в раскладку
+        # такая не попадает, и её баллы не ехали никуда.
+        if page.decided_by_human and page.student_id is not None:
+            kinds[page.index] = READ
+        elif not page.headerless:
             kinds[page.index] = READ
         elif trusted and page.ours:
             kinds[page.index] = UNREADABLE
