@@ -723,6 +723,43 @@ class TwoReadersTests(PretendsThereIsAKey, SchoolTestMixin, APITestCase):
         self.assertEqual(len(self.seen), 1)
         self.assertEqual(self.purposes(), ["scan_header", "scan_second"])
 
+    def test_when_mathpix_is_out_of_reach_the_cells_go_to_yandex(self):
+        """
+        На закрытом контуре до Mathpix не достучаться, и без запасного
+        читателя клеток баллы пришлось бы вбивать руками: имя разложилось бы,
+        а плитки остались пустыми. Yandex своей моделью для таблиц закрывает
+        ровно эту дыру.
+        """
+        from unittest.mock import patch
+
+        table_says = {
+            "reader": "yandex",
+            "first_name": "",
+            "surname": "",
+            "date": "",
+            "values": [5] + [None] * 15,
+            "text": "",
+        }
+
+        with self.settings(
+            MATHPIX_APP_ID="", MATHPIX_APP_KEY="", YANDEX_OCR_API_KEY="key"
+        ):
+            with patch.object(
+                services, "read_header", lambda image, **kw: (dict(self.model_says), 100, 10)
+            ), patch.object(
+                services.yandex, "read_cells", lambda *a, **k: dict(table_says)
+            ):
+                data = services.read_and_charge(
+                    school=self.school, user=self.user, work=None, image=b"strip"
+                )
+
+        self.assertEqual(data["first_name"], "Denis")  # имя от модели
+        self.assertEqual(data["values"][0], 5)  # клетки от таблицы
+        self.assertEqual(self.purposes(), ["scan_header", "scan_second"])
+        self.assertEqual(
+            AiSpend.objects.get(purpose=AiSpend.SCAN_SECOND).model, prices.YANDEX
+        )
+
     def test_silence_does_not_rub_out_a_mark_someone_did_read(self):
         """
         Хозяин клеток — распознаватель, но не любой ценой.
@@ -925,6 +962,34 @@ class ThirdReaderTests(SimpleTestCase):
             sorted(reading),
             sorted(strip.reading_from(["First name: Ann"], reader="mathpix")),
         )
+
+    def test_the_cells_are_asked_of_the_table_model(self):
+        """
+        Полоска — две разные вещи на одной картинке: рукописная строка имени и
+        сетка плиток. Живая пачка показала, что одной моделью они не читаются:
+        `handwritten` разобрал имена на всех страницах и не увидел почти ни
+        одной клетки — ноль или одну из шестнадцати. Плитки это таблица, и для
+        таблиц у сервиса своя модель.
+        """
+        import io
+        import json as js
+        from contextlib import contextmanager
+        from unittest.mock import patch
+
+        sent = {}
+
+        @contextmanager
+        def urlopen(request, timeout=None):
+            sent.update(js.loads(request.data.decode()))
+            yield io.BytesIO(b'{"result": {"textAnnotation": {"fullText": "Q1 3"}}}')
+
+        with self.settings(YANDEX_OCR_API_KEY="key"):
+            with patch.object(yandex.urllib.request, "urlopen", urlopen):
+                yandex.read_strip(b"picture")
+                self.assertEqual(sent["model"], "handwritten")
+
+                yandex.read_cells(b"picture")
+                self.assertEqual(sent["model"], "table")
 
     def test_the_third_reader_is_priced_by_the_request_too(self):
         """Как и Mathpix: страница, а не токены. Дверь подсчёта одна."""

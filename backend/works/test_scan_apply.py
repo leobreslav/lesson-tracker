@@ -593,9 +593,19 @@ class SecondReaderIsAskedForTests(SchoolTestMixin, APITestCase):
         """
         self.assertTrue(self.post()["asked_second"])
 
-    def test_the_screen_is_told_whether_there_is_a_second_reader_at_all(self):
-        """Галочка, которая ничем не управляет, — это ложь на экране."""
-        with self.settings(MATHPIX_APP_ID="", MATHPIX_APP_KEY=""):
-            self.assertFalse(services.scan_state(self.work)["second_reader"])
+    def test_the_screen_is_told_who_can_read_the_cells(self):
+        """
+        Галочка, которая ничем не управляет, — это ложь на экране. А список, а
+        не флаг, потому что читателей клеток стало двое и экрану надо знать,
+        кого именно галочка позовёт: у Mathpix способ один, у Yandex два.
+        """
+        with self.settings(MATHPIX_APP_ID="", MATHPIX_APP_KEY="", YANDEX_OCR_API_KEY=""):
+            self.assertEqual(services.scan_state(self.work)["cells_readers"], [])
         with self.settings(MATHPIX_APP_ID="id", MATHPIX_APP_KEY="key"):
-            self.assertTrue(services.scan_state(self.work)["second_reader"])
+            self.assertEqual(services.scan_state(self.work)["cells_readers"], ["mathpix"])
+        with self.settings(
+            MATHPIX_APP_ID="id", MATHPIX_APP_KEY="key", YANDEX_OCR_API_KEY="key"
+        ):
+            self.assertEqual(
+                services.scan_state(self.work)["cells_readers"], ["mathpix", "yandex"]
+            )

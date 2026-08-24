@@ -46,10 +46,22 @@ API = "https://ocr.api.cloud.yandex.net/ocr/v1/recognizeText"
 # которых на проде два.
 TIMEOUT = 20
 
-# Модель распознавания. `handwritten` — печатное вперемешку с рукописным,
-# ровно наш случай. Она же ограничена русским и английским, и оба языка надо
-# назвать явно: без `languageCodes` сервис берёт другую модель.
-MODEL = "handwritten"
+# Моделей у сервиса несколько, и **у нас в ходу две**. Полоска шапки — это две
+# разные вещи на одной картинке: строка имени, написанная от руки, и сетка
+# плиток с баллами. Одной моделью они читаются плохо, и это выяснилось живой
+# пачкой: `handwritten` разобрал имена на всех страницах и не увидел почти ни
+# одной клетки — ноль или одну из шестнадцати.
+#
+# Причина не в качестве, а в задаче: плитки это **таблица**, а для таблиц у
+# сервиса отдельная модель. Поэтому полоска читается дважды, разными моделями,
+# и каждое чтение отвечает за своё. Цена от этого удваивается — два запроса
+# вместо одного, — и это осознанный размен: без него баллы пришлось бы вбивать
+# руками.
+#
+# Обе ограничены русским и английским, и оба языка надо назвать явно: без
+# `languageCodes` сервис берёт другую модель.
+HANDWRITTEN = "handwritten"
+TABLE = "table"
 LANGUAGES = ["ru", "en"]
 
 # Наш `media_type` -> то, как этот сервис называет формат.
@@ -66,7 +78,21 @@ def configured() -> bool:
     return bool(getattr(settings, "YANDEX_OCR_API_KEY", ""))
 
 
-def read_strip(image: bytes, *, media_type: str = "image/jpeg") -> dict:
+def read_cells(image: bytes, *, media_type: str = "image/jpeg") -> dict:
+    """
+    Та же картинка, но моделью для таблиц: ради плиток с баллами.
+
+    Отдельная дверь, а не флаг у `read_strip`, потому что и роль другая: это
+    чтение зовут там, где нужен **читатель клеток**, и его ответ идёт в
+    слияние по своей графе (`merge.py`). Имя из него не берут — модель для
+    таблиц строку имени разбирает как придётся.
+    """
+    return read_strip(image, media_type=media_type, model=TABLE)
+
+
+def read_strip(
+    image: bytes, *, media_type: str = "image/jpeg", model: str = HANDWRITTEN
+) -> dict:
     """
     Собранная картинка шапки -> что увидел этот читатель.
 
@@ -82,7 +108,7 @@ def read_strip(image: bytes, *, media_type: str = "image/jpeg") -> dict:
         {
             "mimeType": MIME.get(media_type, "JPEG"),
             "languageCodes": LANGUAGES,
-            "model": MODEL,
+            "model": model,
             "content": base64.standard_b64encode(image).decode(),
         }
     ).encode()

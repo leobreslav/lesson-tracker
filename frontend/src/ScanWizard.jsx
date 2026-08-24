@@ -226,7 +226,7 @@ export default function ScanWizard({ work, onClose, onDone }) {
           busy={busy}
           readQuestions={readQuestions}
           onReadQuestions={setReadQuestions}
-          secondReader={state?.second_reader ?? false}
+          cellsReaders={state?.cells_readers ?? []}
           modelReachable={state?.model_reachable ?? true}
           readers={state?.readers ?? []}
           reader={reader}
@@ -453,7 +453,7 @@ function FileStep({
   onReset,
   readQuestions,
   onReadQuestions,
-  secondReader,
+  cellsReaders,
   modelReachable,
   readers,
   reader,
@@ -467,12 +467,22 @@ function FileStep({
   const [over, setOver] = useState(false)
 
   /* Кто на этой пачке прочитает имя: выбранный человеком или первый, кого
-   * предлагает контур. Знать это экрану нужно затем, что от ответа зависит
-   * роль Mathpix: обычно он читает клетки вторым, но если имя читает он же —
-   * второго чтения не бывает вовсе, и галочка, которой нечем управлять, была
-   * бы ложью. */
+   * предлагает контур. Знать это экрану нужно затем, что от ответа зависит,
+   * останется ли кому читать клетки.
+   *
+   * Тонкость в том, что «тот же читатель» считается по вызову, а не по имени.
+   * Mathpix читает одним способом: если имя прочитал он, второе чтение было бы
+   * повтором того же запроса за те же деньги. У Yandex моделей две — почерк
+   * для имени, таблица для клеток, — и второе чтение у него настоящее.
+   *
+   * Галочка, которой нечем управлять, — ложь на экране, поэтому её нет, когда
+   * звать некого. Снятая же означает «читает один, и он же берёт клетки»: это
+   * и есть способ отказаться от распознавателя и остаться на чистой модели. */
   const nameReader = reader || readers[0] || ''
-  const mathpixReadsCells = secondReader && nameReader !== 'mathpix'
+  const cellsReadersLeft = cellsReaders.filter(
+    (one) => one !== 'mathpix' || nameReader !== 'mathpix',
+  )
+  const mathpixReadsCells = cellsReadersLeft.length > 0
 
   return (
     <section className="scan-step">

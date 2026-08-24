@@ -182,13 +182,14 @@ def read_and_charge(
         chosen=reader,
     )
 
-    # Того же читателя второй раз не зовут: он ответит то же самое, а деньги
-    # спишутся дважды. Случается это, когда имя читал Mathpix, — то есть
-    # тогда, когда больше читать было некому.
-    cells = (
-        {"reader": MATHPIX, "error": "same_reader"}
-        if names.get("reader") == MATHPIX
-        else second_reading(school, user, work, image, media_type, asked=asked_second)
+    cells = second_reading(
+        school,
+        user,
+        work,
+        image,
+        media_type,
+        asked=asked_second,
+        name_reader=names.get("reader") or "",
     )
     if cells.get("error"):
         names["second"] = cells
@@ -205,41 +206,86 @@ def read_and_charge(
     return reading
 
 
+# Кто читает клетки, в порядке предпочтения. Mathpix первый — таблицы он
+# читает лучше всех, ради этого он и заведён. Yandex вторым, своей отдельной
+# моделью для таблиц: на закрытом контуре, откуда до Mathpix не достучаться,
+# он единственный, кто вообще увидит баллы.
+CELLS_READERS = (MATHPIX, YANDEX)
+
+PRICED_AS = {MATHPIX: prices.MATHPIX, YANDEX: prices.YANDEX}
+
+
 def second_reading(
-    school, user, work, image: bytes, media_type: str, *, asked: bool = True
+    school,
+    user,
+    work,
+    image: bytes,
+    media_type: str,
+    *,
+    asked: bool = True,
+    name_reader: str = "",
 ) -> dict:
     """
-    Позвать второго читателя и записать трату. Не позвался — не беда.
+    Позвать читателя клеток и записать трату. Не позвался — не беда.
 
-    Возвращается всегда словарь: `error` внутри значит «второго мнения по этой
-    странице нет», и это законное состояние, а не отказ. Ключей Mathpix может
-    не быть вовсе — тогда всё работает ровно так, как работало до него.
+    Возвращается всегда словарь: `error` внутри значит «второго чтения по этой
+    странице нет», и это законное состояние, а не отказ. Читателей может не
+    быть вовсе — тогда всё работает так, как работало до них: клетки берутся у
+    того, кто прочитал имя.
 
-    Причин «не было» четыре, и они **разные**: не просили, нечем звать, нечем
-    платить, не ответил. Пишем поэтому каждую своим словом, а не общим
-    пустым словарём: страница без второго мнения потом объясняет, почему его
-    нет, — иначе выключенная галочка и отвалившийся сервис на экране
+    Причин «не было» несколько, и они **разные**: не просили, нечем звать,
+    нечем платить, не дозвонились, ответил отказом. Пишем каждую своим словом,
+    а не общим пустым словарём: страница без второго чтения потом объясняет,
+    почему его нет, — иначе снятая галочка и отвалившийся сервис на экране
     неразличимы.
+
+    **Тот же читатель второй раз не зовётся, но «тот же» считается по
+    вызову, а не по имени.** У Mathpix способ один, и повторный запрос за той
+    же картинкой — это заплатить дважды за тот же ответ. У Yandex моделей две,
+    и чтение таблицы — другой запрос: имя он читал моделью для рукописного,
+    клетки читает моделью для таблиц. Живая пачка показала, зачем это нужно:
+    `handwritten` разобрал имена на всех страницах и не увидел почти ни одной
+    клетки — ноль или одну из шестнадцати.
     """
     if not asked:
-        return {"reader": MATHPIX, "error": "not_asked"}
-    if not mathpix.configured():
-        return {"reader": MATHPIX, "error": "not_configured"}
-    # До него могли не достучаться минуту назад — тогда не ждём снова. Без
-    # этой строки каждая страница пачки честно висела двадцать секунд на
-    # читателе, которого нет в сети: одиннадцать минут на пачку из тридцати
-    # четырёх листов, и снаружи это неотличимо от зависшего чтения.
-    if not reach.reachable(MATHPIX):
-        return {"reader": MATHPIX, "error": "unreachable"}
-    if not has_budget(school):
-        return {"reader": MATHPIX, "error": "no_budget"}
+        return {"reader": "", "error": "not_asked"}
 
-    second = mathpix.read_strip(image, media_type=media_type)
-    if second.get("error") == "unreachable":
-        reach.remember_unreachable(MATHPIX)
-    if not second.get("error"):
-        _charge(school, user, work, AiSpend.SCAN_SECOND, prices.MATHPIX, 0, 0)
-    return second
+    able = {MATHPIX: mathpix.configured(), YANDEX: yandex.configured()}
+    last = {"reader": "", "error": "not_configured"}
+
+    for one in CELLS_READERS:
+        if not able[one]:
+            continue
+        if one == MATHPIX and name_reader == MATHPIX:
+            # Он уже прочитал эту картинку, и другого способа у него нет:
+            # повтор стоил бы вторых денег за тот же ответ. Слово своё, потому
+            # что «нечем звать» и «звать некого, кроме уже позванного» — разные
+            # состояния, и на экране их путать нельзя.
+            last = {"reader": one, "error": "same_reader"}
+            continue
+        # До него могли не достучаться минуту назад — тогда не ждём снова. Без
+        # этой проверки каждая страница пачки честно висела двадцать секунд на
+        # читателе, которого нет в сети: одиннадцать минут на пачку из тридцати
+        # четырёх листов, и снаружи это неотличимо от зависшего чтения.
+        if not reach.reachable(one):
+            last = {"reader": one, "error": "unreachable"}
+            continue
+        if not has_budget(school):
+            return {"reader": one, "error": "no_budget"}
+
+        answer = (
+            mathpix.read_strip(image, media_type=media_type)
+            if one == MATHPIX
+            else yandex.read_cells(image, media_type=media_type)
+        )
+        if answer.get("error") == "unreachable":
+            reach.remember_unreachable(one)
+        if not answer.get("error"):
+            _charge(school, user, work, AiSpend.SCAN_SECOND, PRICED_AS[one], 0, 0)
+            return answer
+        last = answer
+
+    return last
 
 
 def name_reading(

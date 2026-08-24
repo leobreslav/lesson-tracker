@@ -1547,10 +1547,11 @@ def scan_state(work) -> dict:
         # ...а «во что обошлась вот эта пачка» — вопрос отдельный от школьного
         # потолка, и ответ на него нужен там же, у пачки
         "spend": scan_spend(work),
-        # Есть ли у контура второй читатель. Спрашивает это галочка на шаге
+        # Кем контур умеет читать клетки. Спрашивает это галочка на шаге
         # выбора файла, и спрашивает не из любопытства: галочка, которая ничем
-        # не управляет, — это ложь на экране. Нет ключей — нет и выбора.
-        "second_reader": second_reader_available(),
+        # не управляет, — это ложь на экране. Нет ключей — нет и выбора, а
+        # снятая галочка означает «читает один, и он же берёт клетки».
+        "cells_readers": cells_readers(),
         # Достаёт ли сервер до языковой модели. Отвечает на это не настройка, а
         # последняя попытка (`vision/reach.py`), поэтому и живёт ответ в
         # состоянии пачки, а не в конфиге экрана: он меняется сам.
@@ -1567,11 +1568,22 @@ def scan_state(work) -> dict:
     }
 
 
-def second_reader_available() -> bool:
-    """Заведён ли в контуре второй читатель шапки (`vision/mathpix.py`)."""
-    from vision import mathpix
+def cells_readers() -> list:
+    """
+    Кем контур умеет читать клетки с баллами (`vision/services.py`).
 
-    return mathpix.configured()
+    Список, а не флаг, и не «есть ли Mathpix»: читателей клеток стало двое, и
+    экрану надо знать не только «предлагать ли галочку», но и **кого именно**
+    она позовёт. Тонкость в том, что Mathpix читает одним способом, а Yandex
+    двумя — поэтому «имя читает он же» отменяет первого и не отменяет второго.
+    """
+    from vision import mathpix, services as vision_services, yandex
+
+    able = {
+        vision_services.MATHPIX: mathpix.configured(),
+        vision_services.YANDEX: yandex.configured(),
+    }
+    return [one for one in vision_services.CELLS_READERS if able[one]]
 
 
 def model_reachable() -> bool:
