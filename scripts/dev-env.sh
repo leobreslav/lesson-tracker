@@ -72,6 +72,8 @@ ANTHROPIC_API_KEY=
 # раньше; с ключами читают двое, и расхождение показывается человеку.
 MATHPIX_APP_ID=
 MATHPIX_APP_KEY=
+YANDEX_OCR_API_KEY=
+YANDEX_FOLDER_ID=
 ENV
     # В этот файл рано или поздно вписывают настоящие ключи — тот же ключ
     # Anthropic, что на проде, секрет Google, токены R2. Права ставятся сразу:

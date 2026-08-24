@@ -15,7 +15,7 @@ from django.utils import timezone
 from rest_framework.test import APITestCase
 from schools.testing import SchoolTestMixin
 
-from . import agreement, client, mathpix, reach, services
+from . import agreement, client, mathpix, reach, services, strip, yandex
 from .models import AiSpend
 from . import prices
 from .prices import HAIKU, SONNET, cost_micros
@@ -312,8 +312,9 @@ class SecondReaderParseTests(SimpleTestCase):
         Печать на бланке и режет строку: `First name:` и `Surname:` стоят
         типографской краской, а рукописное лежит между ними.
         """
-        reading = mathpix.reading_from(
-            ["First name: Varvara Surname: Mironova Grade: 7B Date: 3.05.26"]
+        reading = strip.reading_from(
+            ["First name: Varvara Surname: Mironova Grade: 7B Date: 3.05.26"],
+            reader="mathpix",
         )
 
         self.assertEqual(reading["first_name"], "Varvara")
@@ -325,7 +326,7 @@ class SecondReaderParseTests(SimpleTestCase):
         Подпись над плиткой режет текст на куски: что стоит после подписи, то и
         написано в её клетке. Это чтение, а не счёт клеток слева.
         """
-        reading = mathpix.reading_from(["First name: Ann Surname: Lee", "Q1 3 Q2 1 Q15 2 Σ 6"])
+        reading = strip.reading_from(["First name: Ann Surname: Lee", "Q1 3 Q2 1 Q15 2 Σ 6"], reader="mathpix")
 
         self.assertEqual(reading["values"][0], 3)
         self.assertEqual(reading["values"][1], 1)
@@ -334,7 +335,7 @@ class SecondReaderParseTests(SimpleTestCase):
 
     def test_an_empty_tile_says_nothing(self):
         """Пустая клетка не называется вовсе: её отсутствие и есть пустота."""
-        reading = mathpix.reading_from(["Surname: Lee", "Q1 Q2 4 Q3"])
+        reading = strip.reading_from(["Surname: Lee", "Q1 Q2 4 Q3"], reader="mathpix")
 
         self.assertIsNone(reading["values"][0])
         self.assertEqual(reading["values"][1], 4)
@@ -345,14 +346,14 @@ class SecondReaderParseTests(SimpleTestCase):
         Взять первое попавшееся значило бы выдать догадку за свидетельство — а
         свидетельство тут единственное, ради чего второй читатель заведён.
         """
-        reading = mathpix.reading_from(["Surname: Lee", "Q1 3 5 Q2 1"])
+        reading = strip.reading_from(["Surname: Lee", "Q1 3 5 Q2 1"], reader="mathpix")
 
         self.assertIsNone(reading["values"][0])
         self.assertEqual(reading["values"][1], 1)
 
     def test_latex_around_a_digit_is_still_a_digit(self):
         """Рукописное Mathpix отдаёт то текстом, то формулой. Цифра та же."""
-        reading = mathpix.reading_from([r"Surname: Lee", r"Q1 $3$ Q2 \(1\)"])
+        reading = strip.reading_from([r"Surname: Lee", r"Q1 $3$ Q2 \(1\)"], reader="mathpix")
 
         self.assertEqual(reading["values"][0], 3)
         self.assertEqual(reading["values"][1], 1)
@@ -362,7 +363,7 @@ class SecondReaderParseTests(SimpleTestCase):
         Подписей не нашлось — значит прочитано одно рукописное. Ошибиться в
         графах тут не страшно: сверяются чтения парой слов целиком.
         """
-        reading = mathpix.reading_from(["Varvara Mironova"])
+        reading = strip.reading_from(["Varvara Mironova"], reader="mathpix")
 
         self.assertEqual(
             agreement.words(reading["first_name"], reading["surname"]),
@@ -374,7 +375,7 @@ class SecondReaderParseTests(SimpleTestCase):
         Человеку показывают прочитанное, а не наш разбор его на графы: разбор
         мог и не сойтись, а бумага перед глазами.
         """
-        reading = mathpix.reading_from(["First name: Ann Surname: Lee", "Q1 3"])
+        reading = strip.reading_from(["First name: Ann Surname: Lee", "Q1 3"], reader="mathpix")
 
         self.assertIn("Ann", reading["text"])
         self.assertIn("Lee", reading["text"])
@@ -699,6 +700,111 @@ class TwoReadersTests(SchoolTestMixin, APITestCase):
         with self.assertRaises(Exception):
             self.read()  # главное чтение отказывает честно
         self.assertEqual(self.purposes(), ["scan_header"])
+
+
+class ThirdReaderTests(SimpleTestCase):
+    """
+    Yandex Vision OCR — ещё один читатель той же полоски.
+
+    Форму его ответа мы **не видели живьём**: запрос стоит денег, и правило
+    CLAUDE.md про это прямое. Отсюда и предмет проверки — не распознавание, а
+    терпимость к форме: неожиданный ключ обязан кончаться словом «не понял», а
+    не пятисотой и не пустой шапкой, свалившей чужую беду на бумагу.
+    """
+
+    def answer(self, payload):
+        """Ответить на запрос вот таким телом, никуда не ходя."""
+        import io
+        import json as js
+        from contextlib import contextmanager
+        from unittest.mock import patch
+
+        @contextmanager
+        def urlopen(request, timeout=None):
+            yield io.BytesIO(js.dumps(payload).encode())
+
+        with self.settings(YANDEX_OCR_API_KEY="key"):
+            with patch.object(yandex.urllib.request, "urlopen", urlopen):
+                return yandex.read_strip(b"picture")
+
+    def test_without_a_key_there_is_no_reader(self):
+        """Отказ, а не исключение: решает вызывающий, мы только сообщаем."""
+        with self.settings(YANDEX_OCR_API_KEY=""):
+            self.assertFalse(yandex.configured())
+            self.assertEqual(yandex.read_strip(b"picture")["error"], "not_configured")
+
+    def test_lines_come_from_the_blocks(self):
+        lines = yandex.lines_of(
+            {
+                "result": {
+                    "textAnnotation": {
+                        "blocks": [
+                            {"lines": [{"text": "First name: Ann Surname: Lee"}]},
+                            {"lines": [{"text": "Q1 3 Q2 1"}]},
+                        ]
+                    }
+                }
+            }
+        )
+
+        self.assertEqual(lines, ["First name: Ann Surname: Lee", "Q1 3 Q2 1"])
+
+    def test_flat_text_is_better_than_nothing(self):
+        """
+        Разложенных строк может не оказаться — тогда берём сплошной текст.
+        Половина ответа лучше отказа, и это то же решение, что у Mathpix.
+        """
+        lines = yandex.lines_of(
+            {"result": {"textAnnotation": {"fullText": "Surname: Lee\nQ1 3"}}}
+        )
+
+        self.assertEqual(lines, ["Surname: Lee", "Q1 3"])
+
+    def test_a_shape_we_do_not_know_is_not_a_crash(self):
+        for payload in ({}, {"result": None}, {"result": {"textAnnotation": []}}):
+            self.assertEqual(yandex.lines_of(payload), [], payload)
+
+    def test_an_answer_we_cannot_read_says_so(self):
+        """
+        Двухсотый с пустым разбором — это «мы не поняли ответ», а не «на бумаге
+        пусто». Пустая шапка тут свалила бы на скан чужую беду, и учитель искал
+        бы причину в сканере.
+        """
+        self.assertEqual(self.answer({"result": {}})["error"], "unreadable")
+
+    def test_the_reading_has_the_same_shape_as_everyone_elses(self):
+        """
+        Сверять два чтения можно только тогда, когда они одинаковой формы.
+        Разъехавшись, читатели потребовали бы третьего места, где форма живёт,
+        — а `agreement.compare` знает ровно одну.
+        """
+        reading = self.answer(
+            {
+                "result": {
+                    "textAnnotation": {
+                        "blocks": [
+                            {"lines": [{"text": "First name: Ann Surname: Lee"}]},
+                            {"lines": [{"text": "Q1 3 Σ 3"}]},
+                        ]
+                    }
+                }
+            }
+        )
+
+        self.assertEqual(reading["reader"], "yandex")
+        self.assertEqual(reading["first_name"], "Ann")
+        self.assertEqual(reading["surname"], "Lee")
+        self.assertEqual(reading["values"][0], 3)
+        self.assertEqual(reading["values"][15], 3)
+        self.assertEqual(
+            sorted(reading),
+            sorted(strip.reading_from(["First name: Ann"], reader="mathpix")),
+        )
+
+    def test_the_third_reader_is_priced_by_the_request_too(self):
+        """Как и Mathpix: страница, а не токены. Дверь подсчёта одна."""
+        self.assertEqual(cost_micros(prices.YANDEX, 0, 0), 1_300)
+        self.assertEqual(cost_micros(prices.YANDEX, 9999, 9999), 1_300)
 
 
 class WhatCountsAsOutOfReachTests(SimpleTestCase):

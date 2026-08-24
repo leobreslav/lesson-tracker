@@ -77,6 +77,23 @@ class NoTestSpendsMoneyTests(SimpleTestCase):
                 "шапок. Верните обнуление в config/testing.py.",
             )
 
+    def test_no_third_reader_for_the_whole_run(self):
+        """
+        Читателей стало трое, и правило у них общее.
+
+        Yandex Vision OCR продаётся так же — за страницу, — и заведён он ради
+        контура, до Anthropic не достающего. Ключ у него отдельный, значит и
+        обнуление отдельное: список платных дверей растёт, и каждая новая
+        обязана попасть сюда **в тот же день**, когда появилась. Забытая
+        обнаружится не прогоном, а счётом.
+        """
+        self.assertEqual(
+            getattr(settings, "YANDEX_OCR_API_KEY", ""),
+            "",
+            "YANDEX_OCR_API_KEY виден тестам: прогон способен платить за "
+            "чтение шапок. Верните обнуление в config/testing.py.",
+        )
+
 
 class StatementLivesInOnePlaceTests(SimpleTestCase):
     """

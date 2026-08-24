@@ -74,8 +74,14 @@ class Runner(DiscoverRunner):
         # вызов не случается вовсе.
         self._second_purse = override_settings(MATHPIX_APP_ID="", MATHPIX_APP_KEY="")
         self._second_purse.enable()
+        # Третий кошелёк, и заводится он по тому же правилу: каждый новый
+        # платный читатель обнуляется здесь в тот же день, когда появляется.
+        # Забыть — значит узнать об этом из счёта, а не из прогона.
+        self._third_purse = override_settings(YANDEX_OCR_API_KEY="")
+        self._third_purse.enable()
 
     def teardown_test_environment(self, **kwargs):
+        self._third_purse.disable()
         self._second_purse.disable()
         self._purse.disable()
         self._guest_list.disable()

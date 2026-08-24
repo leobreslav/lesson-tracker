@@ -109,6 +109,8 @@
 | `SCAN_HEADER_MODEL` | какой моделью читать шапку скана | `claude-haiku-4-5-20251001` |
 | `MATHPIX_APP_ID` | второй читатель шапки: имя приложения | второго читателя нет |
 | `MATHPIX_APP_KEY` | он же: ключ | второго читателя нет |
+| `YANDEX_OCR_API_KEY` | распознаватель Yandex Vision OCR | этого читателя нет |
+| `YANDEX_FOLDER_ID` | каталог Yandex Cloud | с API-ключом не нужен |
 | `SCAN_ARBITER_MODEL` | кем перечитывать спорную страницу | `claude-sonnet-5`; пусто — не перечитывать |
 
 Шапку читают **двое**, и второй нужен не ради второго мнения, а ради
@@ -211,5 +213,5 @@ HSTS оставлен нулём сознательно: включается л
 
 `SECRET_KEY` боевого контура, `POSTGRES_PASSWORD` боевого контура, все
 `R2_*` и `R2_BACKUP_*`, `GOOGLE_CLIENT_SECRET`, `ANTHROPIC_API_KEY`,
-`MATHPIX_APP_KEY`,
+`MATHPIX_APP_KEY`, `YANDEX_OCR_API_KEY`,
 `BOOTSTRAP_SUPERUSER_PASSWORD`. Они живут на ноутбуке и на сервере.

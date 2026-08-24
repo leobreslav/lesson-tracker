@@ -27,13 +27,12 @@ from __future__ import annotations
 
 import base64
 import json
-import re
 import urllib.error
 import urllib.request
 
 from django.conf import settings
 
-from .client import CELLS, cell_index
+from . import strip
 
 # Адрес один и в настройки не вынесен: у Mathpix он не меняется, а переменная
 # окружения тут значила бы «можно подсунуть другой сервер», чего мы не хотим.
@@ -100,7 +99,7 @@ def read_strip(image: bytes, *, media_type: str = "image/jpeg") -> dict:
     if payload.get("error"):
         return {"reader": "mathpix", "error": "refused"}
 
-    return reading_from(lines_of(payload))
+    return strip.reading_from(lines_of(payload), reader="mathpix")
 
 
 def lines_of(payload: dict) -> list[str]:
@@ -124,108 +123,3 @@ def lines_of(payload: dict) -> list[str]:
     if lines:
         return lines
     return [line for line in (payload.get("text") or "").splitlines() if line.strip()]
-
-
-# Подпись над плиткой: `Q1`..`Q15` и сумма. Сигму Mathpix пишет то знаком, то
-# латехом, поэтому обе формы.
-LABEL = re.compile(
-    r"(?:\bQ\s*(?:1[0-5]|[1-9])\b|\bSUM\b|\bTOTAL\b|Σ|\\Sigma\b)",
-    re.IGNORECASE,
-)
-
-# Печатные подписи строки имени. Ищутся по порядку появления, а не по месту:
-# Mathpix может склеить строку иначе, чем она напечатана.
-FIELDS = ("first name", "surname", "grade", "date")
-
-# Латех вокруг цифры: `$3$`, `\(3\)`, `{3}`. Цифра от этого не меняется.
-NOISE = re.compile(r"[$\\{}()\[\]]|\\text|\\mathrm")
-
-
-def clean(text: str) -> str:
-    return NOISE.sub(" ", text or "")
-
-
-def reading_from(lines: list[str]) -> dict:
-    """
-    Строки Mathpix -> то же самое, что возвращает чтение моделью.
-
-    Форма ответа совпадает с моделью нарочно: сверять два чтения можно только
-    тогда, когда они одинаковой формы, а приводить их друг к другу в третьем
-    месте — значит завести третье место, где живёт форма.
-    """
-    text = " ".join(lines)
-    first_label = LABEL.search(text)
-    head = text[: first_label.start()] if first_label else text
-    tiles = text[first_label.start():] if first_label else ""
-
-    first, surname, date = names_from(head)
-    return {
-        "reader": "mathpix",
-        "first_name": first,
-        "surname": surname,
-        "date": date,
-        "values": values_from(tiles),
-        # Строка имени как есть: человеку показываем прочитанное, а не наш
-        # разбор его на графы. Разбор мог и не сойтись.
-        "text": clean(head).strip(),
-    }
-
-
-def names_from(head: str) -> tuple[str, str, str]:
-    """
-    Строка имени -> имя, фамилия, дата.
-
-    Разводит их **печать**: `First name:`, `Surname:`, `Date:` стоят на бланке
-    и распознаются как обычный текст, а рукописное лежит между ними. Значение
-    поля — это всё, что идёт до следующей печатной подписи.
-
-    Подписей не нашлось вовсе — значит Mathpix прочитал одно рукописное. Тогда
-    два слова кладутся в имя и фамилию по порядку, и ошибиться тут не страшно:
-    сверяются чтения парой слов целиком, а не по графам.
-    """
-    text = clean(head)
-    found = []
-    for name in FIELDS:
-        place = text.lower().find(name)
-        if place >= 0:
-            found.append((place, name))
-    found.sort()
-
-    if not found:
-        words = [word for word in re.split(r"[\s,]+", text.strip()) if word]
-        return (words[0] if words else ""), (words[1] if len(words) > 1 else ""), ""
-
-    values: dict[str, str] = {}
-    for number, (place, name) in enumerate(found):
-        start = place + len(name)
-        end = found[number + 1][0] if number + 1 < len(found) else len(text)
-        values[name] = text[start:end].strip(" \t:;.,-—_")
-
-    return values.get("first name", ""), values.get("surname", ""), values.get("date", "")
-
-
-def values_from(tiles: str) -> list:
-    """
-    Плитки -> шестнадцать значений по местам.
-
-    Каждая плитка подписана красным (`Q1`…`Q15`, сигма) — эти подписи и режут
-    текст на куски: что стоит после подписи и до следующей, то и написано в
-    её клетке.
-
-    **Два числа в одном куске — это отказ, а не выбор.** Значит Mathpix
-    прочитал что-то, чего мы не понимаем: слипшиеся плитки, обрывок даты,
-    подпись, принятую за цифру. Взять первое попавшееся значило бы выдать
-    догадку за свидетельство — а всё, ради чего второй читатель заведён, это
-    свидетельство.
-    """
-    values: list = [None] * CELLS
-    marks = list(LABEL.finditer(tiles))
-    for number, mark in enumerate(marks):
-        place = cell_index(mark.group().replace("\\Sigma", "Σ"))
-        if place is None:
-            continue
-        end = marks[number + 1].start() if number + 1 < len(marks) else len(tiles)
-        digits = re.findall(r"\d+", clean(tiles[mark.end():end]))
-        if len(digits) == 1 and len(digits[0]) <= 3:
-            values[place] = int(digits[0])
-    return values
