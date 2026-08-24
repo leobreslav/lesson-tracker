@@ -111,6 +111,58 @@ test('подпись «(макс.)» стоит на той же строке, �
    */
   const pitch = atSecond - atFirst
   expect(atFirst - atLabel).toBeLessThan(pitch * 1.1)
+
+})
+
+
+test('ряд столбцов идёт одним шагом до самого итога', async ({
+  page,
+  signIn,
+  api,
+}) => {
+  /*
+   * Столбец итога стоял шире прочих — заданные ширина и поле слева, — и
+   * отходил от последнего вопроса дальше, чем вопросы стоят друг от друга: 72
+   * пикселя против 49. Выпадающий из шага столбец читается как отдельная
+   * таблица, приставленная сбоку.
+   *
+   * Работа заводится своя, из пятнадцати вопросов, и это не прихоть: у
+   * работы из трёх колонки широкие, и лишние восемь миллиметров в них тонут.
+   * Тот же замер на «Контрольной» проходил и со старой вёрсткой — то есть не
+   * стерёг ничего.
+   */
+  const teacher = await api(PEOPLE.ivanova)
+  const courses = await teacher.get('/api/courses/')
+  const course = courses.body.find((one) => one.name === 'Grade 6 Algebra')
+  const day = 24 * 60 * 60 * 1000
+  const work = await teacher.post('/api/works/', {
+    course: course.id,
+    title: 'Пятнадцать вопросов',
+    opens_at: new Date(Date.now() - day).toISOString(),
+    closes_at: new Date(Date.now() + day).toISOString(),
+  })
+  await teacher.put(`/api/works/${work.body.id}/questions/`, {
+    questions: Array.from({ length: 15 }, () => ({ label: '', maximum: 3 })),
+  })
+  // шкала — чтобы появился и столбец скана: жаловались на пару PDF и «Итог»
+  await teacher.put(`/api/works/${work.body.id}/criteria/`, {
+    criteria: [{ name: 'A', maximum: 5 }],
+  })
+
+  await signIn(PEOPLE.ivanova)
+  await openTable(page, 'Пятнадцать вопросов')
+
+  const heads = page.locator('.work-table thead th')
+  const count = await heads.count()
+  const centres = []
+  for (let i = 0; i < count; i += 1) {
+    const box = await heads.nth(i).boundingBox()
+    centres.push(box.x + box.width / 2)
+  }
+
+  // столбец имени в счёт не идёт: он широкий по делу, в нём фамилии
+  const steps = centres.slice(2).map((centre, i) => centre - centres[i + 1])
+  expect(Math.max(...steps)).toBeLessThan(Math.min(...steps) * 1.4)
 })
 
 test('проверка столбцом ставит отметку, и таблица её показывает', async ({
