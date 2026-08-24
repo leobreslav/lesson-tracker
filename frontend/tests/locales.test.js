@@ -205,6 +205,10 @@ test('keys built at runtime exist for every value they take', () => {
     ...['scan_header', 'scan_second', 'scan_reread', 'scan_questions'].map(
       (purpose) => `ai.purpose.${purpose}`,
     ),
+    // читателей шапки трое, и выбирает между ними человек: имя каждого
+    // строится из его кода (`vision/services.py`, NAME_READERS). Забытая
+    // фраза показала бы код в выпадающем списке
+    ...['anthropic', 'yandex', 'mathpix'].map((one) => `scan.reader.${one}`),
   ]
 
   assert.deepEqual(

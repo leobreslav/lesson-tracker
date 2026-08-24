@@ -57,16 +57,21 @@ import sys
 # сессию: правка файла, где в тексте стоит `ANTHROPIC_API_KEY`, вызывала
 # вопрос про трату. Имя переменной не запрос; `printenv ANTHROPIC_API_KEY`
 # денег не стоит, а `Anthropic(...)` стоит.
-# Из `vision` наружу ходят `client`, `services` и `mathpix`. `prices` считает
-# стоимость по таблице и не отправляет ничего — CLAUDE.md разрешает его прямо,
-# и голый `from vision import` ловил бы разрешённое. `agreement` там же: он
-# сверяет два готовых чтения и в сеть не ходит.
+# Из `vision` наружу ходят `client`, `services`, `mathpix` и `yandex`.
+# `prices` считает стоимость по таблице и не отправляет ничего — CLAUDE.md
+# разрешает его прямо, и голый `from vision import` ловил бы разрешённое.
+# `agreement`, `merge` и `strip` там же: они разбирают и сводят уже готовые
+# чтения, в сеть не ходят и денег не стоят.
+#
+# **Список растёт вместе с числом платных читателей**, и добавлять сюда надо в
+# тот же день: пропущенный модуль — это не дыра в защите вообще, а именно та
+# дверь, через которую тратят не глядя.
 CALLS = (
-    r"(vision\.client|vision\.services|vision\.mathpix"
-    r"|from\s+vision\s+import\s+(client|services|mathpix)"
+    r"(vision\.client|vision\.services|vision\.mathpix|vision\.yandex"
+    r"|from\s+vision\s+import\s+(client|services|mathpix|yandex)"
     r"|read_header\s*\(|read_questions\s*\(|read_strip\s*\("
     r"|Anthropic\s*\(|messages\.create"
-    r"|api\.anthropic\.com|api\.mathpix\.com)"
+    r"|api\.anthropic\.com|api\.mathpix\.com|ocr\.api\.cloud\.yandex\.net)"
 )
 
 # Нужен **исполнитель** перед `manage.py`, а не упоминание. Иначе сторож ловит

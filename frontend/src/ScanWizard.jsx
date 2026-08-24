@@ -60,6 +60,12 @@ export default function ScanWizard({ work, onClose, onDone }) {
    * стопки, где имена вписаны учителем печатными буквами, спорить не о чем,
    * а платить пришлось бы вдвое. */
   const [second, setSecond] = useState(true)
+  /* Кем читать имя. Пустая строка — «кем умеете»: контур возьмёт первого
+   * доступного сам, и это верное умолчание, потому что порядок предпочтения
+   * знает он, а не экран. Человек перебивает его выбором, когда хочет
+   * сравнить читателей на своей пачке — единственный способ узнать, кто из
+   * них лучше на этом почерке. */
+  const [reader, setReader] = useState('')
   const [questions, setQuestions] = useState(null)
   const stop = useRef(false)
 
@@ -96,7 +102,7 @@ export default function ScanWizard({ work, onClose, onDone }) {
     }
   }
 
-  const start = async (chosen, alsoQuestions, alsoSecond) => {
+  const start = async (chosen, alsoQuestions, alsoSecond, byReader = '') => {
     if (!chosen) return
     setFile(chosen)
     setQuestions(null)
@@ -133,6 +139,7 @@ export default function ScanWizard({ work, onClose, onDone }) {
             blob,
             mark,
             second: alsoSecond,
+            reader: byReader,
           })
           setState(answer)
           return true
@@ -209,13 +216,21 @@ export default function ScanWizard({ work, onClose, onDone }) {
       {stage === 'file' && (
         <FileStep
           onPick={(chosen) =>
-            start(chosen, readQuestions && (state?.model_reachable ?? true), second)
+            start(
+              chosen,
+              readQuestions && (state?.model_reachable ?? true),
+              second,
+              reader,
+            )
           }
           busy={busy}
           readQuestions={readQuestions}
           onReadQuestions={setReadQuestions}
           secondReader={state?.second_reader ?? false}
           modelReachable={state?.model_reachable ?? true}
+          readers={state?.readers ?? []}
+          reader={reader}
+          onReader={setReader}
           second={second}
           onSecond={setSecond}
           questions={scale.length}
@@ -440,6 +455,9 @@ function FileStep({
   onReadQuestions,
   secondReader,
   modelReachable,
+  readers,
+  reader,
+  onReader,
   second,
   onSecond,
   onBack,
@@ -447,6 +465,14 @@ function FileStep({
 }) {
   const { t } = useTranslation()
   const [over, setOver] = useState(false)
+
+  /* Кто на этой пачке прочитает имя: выбранный человеком или первый, кого
+   * предлагает контур. Знать это экрану нужно затем, что от ответа зависит
+   * роль Mathpix: обычно он читает клетки вторым, но если имя читает он же —
+   * второго чтения не бывает вовсе, и галочка, которой нечем управлять, была
+   * бы ложью. */
+  const nameReader = reader || readers[0] || ''
+  const mathpixReadsCells = secondReader && nameReader !== 'mathpix'
 
   return (
     <section className="scan-step">
@@ -504,10 +530,40 @@ function FileStep({
         * читать нечем вовсе, и узнать это лучше сейчас, чем на тридцатой
         * странице.
         */}
-      {!modelReachable && (
-        <p className={secondReader ? 'hint warning' : 'error'}>
-          {t(secondReader ? 'scan.soleReader' : 'scan.noReader')}
-        </p>
+      {readers.length === 0 ? (
+        <p className="error">{t('scan.noReader')}</p>
+      ) : (
+        !modelReachable &&
+        !readers.includes('anthropic') && (
+          <p className="hint warning">
+            {t('scan.soleReader', { reader: t(`scan.reader.${nameReader}`) })}
+          </p>
+        )
+      )}
+
+      {/*
+        * Выбор читателя стоит здесь, а не в настройках школы, и это то же
+        * решение, что у галочки ниже: кто лучше читает **этот** почерк,
+        * узнаётся только пачкой, а держит пачку учитель. Показывается выбор,
+        * только когда он есть: единственный читатель в выпадающем списке —
+        * это вопрос без ответов.
+        */}
+      {readers.length > 1 && (
+        <label className="field">
+          <span>{t('scan.readerLabel')}</span>
+          <select
+            value={reader}
+            disabled={busy}
+            onChange={(event) => onReader(event.target.value)}
+          >
+            <option value="">{t('scan.readerAny')}</option>
+            {readers.map((one) => (
+              <option key={one} value={one}>
+                {t(`scan.reader.${one}`)}
+              </option>
+            ))}
+          </select>
+        </label>
       )}
 
       {/* условия читаются по просьбе: страница целиком дороже полоски шапки,
@@ -538,7 +594,7 @@ function FileStep({
         * поведение — читает один, и ошибётся он молча; сказать об этом надо
         * ровно в тот момент, когда галочку снимают.
         */}
-      {secondReader && modelReachable && (
+      {mathpixReadsCells && (
         <>
           <label className="checkbox">
             <input
@@ -989,13 +1045,14 @@ function PagesStep({ state, all, byIndex, questions, busy, onDecide, onFix, onNe
             </p>
           )}
 
-          {/* что именно увидел второй читатель — и перечитывал ли спорную
-              страницу арбитр. Без второго «страница спорная, но прочитана
-              вот так» выглядит необъяснимо */}
+          {/* что именно увидел второй читатель.
+              Третьего чтения тут больше не поминают: спорную страницу
+              перечитывал арбитр, а теперь спор решает правило — имя от
+              модели, клетки от распознавателя. Что записано, видно в самих
+              полях; здесь говорится только о том, что согласия не было. */}
           {differs.length > 0 && (
             <p className="hint warning">
               {t('scan.secondSaw', { reading: secondSaw() })}
-              {row.second.arbiter ? ` ${t('scan.arbitrated')}` : ''}
             </p>
           )}
 

@@ -20,9 +20,38 @@ from django.db.models import Sum
 
 from config.errors import Codes, api_error, api_unavailable
 
-from . import agreement, client, mathpix, prices, reach
+from . import agreement, client, mathpix, merge, prices, reach, yandex
 from .client import read_header, read_questions
 from .models import AiSpend
+
+# Кто может читать имя. Имена человеческие, а не названия моделей: по ним
+# человек выбирает на экране, и версии в них нет — сменить `claude-haiku-4-5`
+# на следующую значит поправить `.env`, а не переучивать учителя.
+ANTHROPIC = "anthropic"
+YANDEX = "yandex"
+MATHPIX = "mathpix"
+
+# Порядок предпочтения, он же порядок падения. Первой — языковая модель: она
+# знает, что перед ней имя, и держит слово целиком, а распознаватель видит
+# буквы по одной и на рукописном ошибается заметно чаще. Последним — Mathpix:
+# в этом списке он не выбор, а «хоть что-то вместо ничего».
+NAME_READERS = (ANTHROPIC, YANDEX, MATHPIX)
+
+
+def name_readers() -> list[str]:
+    """
+    Кем этот контур умеет читать имя, в порядке предпочтения.
+
+    Спрашивает это экран, чтобы предложить выбор, и спрашивает не из
+    любопытства: предложить читателя, которого нет, значит соврать, а узнать
+    об этом отказом на первой странице пачки — плохой способ выяснять состав.
+    """
+    able = {
+        ANTHROPIC: client.configured() and reach.model_reachable(),
+        YANDEX: yandex.configured(),
+        MATHPIX: mathpix.configured(),
+    }
+    return [one for one in NAME_READERS if able[one]]
 
 
 def month_start(now: datetime | None = None) -> datetime:
@@ -88,6 +117,7 @@ def read_and_charge(
     candidates: list[str] | None = None,
     model: str | None = None,
     purpose: str = AiSpend.SCAN_HEADER,
+    reader: str = "",
     asked_second: bool = True,
 ) -> dict:
     """
@@ -98,86 +128,77 @@ def read_and_charge(
     рукописном имени есть — и стоит она втрое. Проверять это надо на живой
     пачке, и переключение должно стоить строки в `.env`, а не правки кода.
 
-    **Читателей бывает двое, и второй нужен не ради второго мнения, а ради
-    расхождения.** Модель ошибается молча: «Denis» становится «Misha», и
-    страница уходит не тому — уверенно и без единой пометки. Поймать такое
-    можно только другим свидетельством, и Mathpix годится потому, что он не
-    модель: распознаватель рукописного ошибается иначе. Сошлись — странице
-    можно верить сильнее прежнего; разошлись — человек об этом узнает.
+    **Читателей двое, и сильны они в разном.** Имя и фамилию лучше читает
+    языковая модель: она знает, что перед ней имя, и держит слово целиком.
+    Клетки с баллами лучше читает распознаватель: плитки — это таблица, а
+    цифра в квадратике требует зрения, а не понимания, и модель на них
+    сбивается со счёта. Поэтому чтение страницы **собирается из двух**: имя от
+    одного, клетки от другого (`merge.py`).
 
-    **Чужого чтения первым двум читателям не показывают.** Закон проекта
-    выведен дважды и дорого: подсказанное подставляется вместо увиденного.
-    Подскажи мы модели ответ Mathpix — их согласие перестало бы что-либо
-    значить, а вместе с ним и вся затея. Обе версии видит только **арбитр**,
-    и только тогда, когда спор уже случился и уже записан.
+    **Пометка о расхождении при этом остаётся.** Приоритет решает, что
+    записать; пометка — о чём сказать человеку. Правило «имя от модели» не
+    делает модель непогрешимой — оно говорит, чья версия правдоподобнее.
+    Убери мы пометку, и молчаливая ошибка вернулась бы ровно там, ради чего
+    второго читателя заводили.
 
-    **Порядок вызовов не случаен: сперва модель, потом прибавки.** Чтение
-    моделью — это то, без чего страницы нет вовсе; второй читатель и арбитр —
-    прибавка. Упрись мы в потолок или в отказ сети на первом шаге из трёх,
-    потерять хочется прибавку, а не страницу.
+    **Чужого чтения читателям не показывают.** Закон проекта выведен дважды и
+    дорого: подсказанное подставляется вместо увиденного. Подскажи мы одному
+    ответ другого — их согласие перестало бы что-либо значить, а вместе с ним
+    и вся затея. Оба читают вслепую, и сводит их только правило.
 
-    `asked_second` — просьба человека, галочка на шаге выбора файла. Второй
-    читатель удваивает цену пачки, а нужен он не всегда: у пачки, где имена
-    вписаны учителем печатными буквами, спорить не о чем. Решение поэтому не
-    наше и не настроечное — того, кто платит и держит стопку в руках.
+    **Порядок вызовов не случаен: сперва имя, потом клетки.** Чтение имени —
+    это то, без чего страницы нет вовсе; клетки правит человек на шаге
+    проверки. Упрись мы в потолок или в отказ сети, потерять хочется второе, а
+    не первое.
 
-    **А бывает, что модели нет вовсе, и узнаётся это только попыткой.** Сервер
-    может стоять там, откуда Anthropic не отвечает; ключ у него при этом
-    настоящий, и никакая настройка об этом не говорит. Тогда читает тот, кто
-    доступен, — распознаватель рукописного, и читает он **один**. Это заметно
-    хуже: он не знает ни списка класса, ни того, что сигма над клеткой значит
-    сумму, и молчаливую ошибку ловить больше нечем — двое ошибаются молча
-    только вместе. Но «хуже» тут спорит не с «лучше», а с «никак»: без этого
-    пути пачка на таком контуре не читается совсем.
+    `reader` — выбор человека: кем читать имя. Пустой значит «кем умеете»,
+    и тогда берётся первый доступный по `NAME_READERS`. `asked_second` — его
+    же решение, звать ли Mathpix за клетками: он удваивает цену пачки, а нужен
+    не всегда.
+
+    **Выбор человека мы уступаем только вниз.** Не достучались до модели —
+    читаем тем, кто ближе и дешевле, и говорим об этом. Обратно нет: подменить
+    выбранный местный распознаватель дорогим заграничным чтением значит
+    потратить чужие деньги вместо того, кто их считает.
     """
     from django.conf import settings
 
     model = model or getattr(settings, "SCAN_HEADER_MODEL", prices.HAIKU)
     check_budget(school)
 
-    # Достаёт ли контур до модели, спрашивается у самого сервера. Вопрос этот
-    # про сеть, а не про настройку, и ответ на него меняется без нашего
-    # участия — блокировку снимут, прокси поднимут, сервер переедет.
-    if not reach.model_reachable():
-        return sole_reading(school, user, work, image, media_type)
+    names = name_reading(
+        school,
+        user,
+        work,
+        image,
+        media_type,
+        candidates=candidates,
+        model=model,
+        purpose=purpose,
+        chosen=reader,
+    )
 
-    try:
-        data, input_tokens, output_tokens = read_header(
-            image,
-            media_type=media_type,
-            candidates=candidates,
-            model=model,
-        )
-    except client.ModelUnreachable:
-        # Неудавшийся вызов не стоил ничего: платят за токены, а токенов не
-        # было. Записать трату тут значило бы брать деньги за молчание.
-        reach.remember_unreachable()
-        return sole_reading(school, user, work, image, media_type)
+    # Того же читателя второй раз не зовут: он ответит то же самое, а деньги
+    # спишутся дважды. Случается это, когда имя читал Mathpix, — то есть
+    # тогда, когда больше читать было некому.
+    cells = (
+        {"reader": MATHPIX, "error": "same_reader"}
+        if names.get("reader") == MATHPIX
+        else second_reading(school, user, work, image, media_type, asked=asked_second)
+    )
+    if cells.get("error"):
+        names["second"] = cells
+        return names
 
-    _charge(school, user, work, purpose, model, input_tokens, output_tokens)
-    data["model"] = model
+    # Спор записывается **до** слияния и потом не пересчитывается. Приоритет
+    # решает, что записать; пометка — о чём сказать человеку. Посчитай мы его
+    # после, спор исчезал бы ровно там, где правило встало на чью-то сторону,
+    # то есть на каждой спорной странице.
+    cells["differs"] = agreement.compare(names, cells)
 
-    second = second_reading(school, user, work, image, media_type, asked=asked_second)
-    # Спор записывается **до** арбитража и потом не пересчитывается. Иначе он
-    # исчезал бы ровно тогда, когда арбитр встал на сторону второго читателя:
-    # чтение сошлось бы с ним, и страница, о которой спорили трое, выглядела бы
-    # бесспорной. Событие тут — сам спор, а не его нынешний след.
-    second["differs"] = agreement.compare(data, second)
-    if second["differs"]:
-        data = arbitrate(
-            school,
-            user,
-            work,
-            image,
-            media_type=media_type,
-            candidates=candidates,
-            rivals=[data, second],
-            reading=data,
-            second=second,
-        )
-
-    data["second"] = second
-    return data
+    reading = merge.take(names_from=names, cells_from=cells)
+    reading["second"] = cells
+    return reading
 
 
 def second_reading(
@@ -209,104 +230,97 @@ def second_reading(
     return second
 
 
-def sole_reading(school, user, work, image: bytes, media_type: str) -> dict:
-    """
-    Модели нет — читает распознаватель, и читает он один.
-
-    Отличается это от `second_reading` не вызовом, а **ролью**: там Mathpix
-    свидетель, которого можно не звать и чей отказ ничего не ломает, здесь он
-    единственный читатель, и его молчание — это непрочитанная страница.
-    Поэтому и отказы тут громкие: страница, тихо вернувшаяся пустой, выглядела
-    бы как «шапки не разобрать», то есть свалила бы на бумагу вину сети.
-
-    Трата записывается поводом `SCAN_HEADER`, а не `SCAN_SECOND`: повод
-    отвечает на вопрос «за что заплачено», а заплачено за чтение шапки. Кем
-    именно — сказано в поле `model`, и по нему же в журнале видно, что читал
-    не тот, кто обычно.
-
-    Отказы идут дверью «не сейчас» (503), а не «вы ошиблись» (400): человек
-    ничего не напутал и перепечатыванием ничего не исправит — это та же
-    причина, по которой так отвечает недоступное хранилище.
-    """
-    if not mathpix.configured():
-        api_unavailable(
-            Codes.AI_UNREACHABLE,
-            "This server cannot reach the language model, and no other reader "
-            "is set up.",
-        )
-
-    reading = mathpix.read_strip(image, media_type=media_type)
-    if reading.get("error"):
-        api_unavailable(
-            Codes.SCAN_READER_SILENT,
-            "The only reader available did not answer.",
-            reader=reading.get("reader", ""),
-            reason=reading.get("error", ""),
-        )
-
-    _charge(school, user, work, AiSpend.SCAN_HEADER, prices.MATHPIX, 0, 0)
-    reading["model"] = prices.MATHPIX
-    # Второго мнения тут нет и быть не может, и сказать об этом надо своим
-    # словом: пустой словарь значил бы «второй читатель промолчал», то есть
-    # свалил бы на него отсутствующую модель.
-    reading["second"] = {"reader": "mathpix", "error": "sole_reader"}
-    return reading
-
-
-def arbitrate(
+def name_reading(
     school,
     user,
     work,
     image: bytes,
-    *,
     media_type: str,
+    *,
     candidates: list[str] | None,
-    rivals: list[dict],
-    reading: dict,
-    second: dict,
+    model: str,
+    purpose: str,
+    chosen: str,
 ) -> dict:
     """
-    Читатели разошлись — позвать третьего, дорогого и внимательного.
+    Прочитать имя. Кем — решает человек; чем закончить, если он не смог, — мы.
 
-    Он видит ту же картинку и обе версии, и его ответ становится чтением
-    страницы. Пометка о расхождении при этом **не снимается**: спор был, и
-    человек о нём узнает — арбитраж улучшает догадку, а не заменяет глаза.
+    Отличается это от `second_reading` не вызовом, а **ролью**: там читатель
+    свидетель, которого можно не звать и чей отказ ничего не ломает, здесь он
+    единственный, и его молчание — это непрочитанная страница. Поэтому и
+    отказы тут громкие: страница, тихо вернувшаяся пустой, выглядела бы как
+    «шапки не разобрать», то есть свалила бы на бумагу вину сети.
 
-    Модель арбитра — настройка, и пустая значит «не звать»: расхождение тогда
-    просто помечается. Это честный выбор школы, у которой каждая страница
-    стоит денег, а не забытая ветка.
+    **Уступаем выбор человека только вниз** — от модели к тому, кто ближе и
+    дешевле. Обратно нет: выбрал он местный распознаватель, а мы бы молча
+    сходили за границу за его деньги. Поэтому падение с первого места
+    разрешено, а подъём на него — нет.
+
+    Трата записывается поводом `SCAN_HEADER` независимо от того, кто читал:
+    повод отвечает на вопрос «за что заплачено», а заплачено за чтение шапки.
+    Кем именно — сказано в поле `model`, и по нему в журнале видно, что читал
+    не тот, кто обычно.
+
+    Отказы идут дверью «не сейчас» (503), а не «вы ошиблись» (400): человек
+    ничего не напутал и перепечатыванием ничего не исправит — та же причина,
+    по которой так отвечает недоступное хранилище.
     """
-    from django.conf import settings
+    order = name_readers()
+    if chosen in order:
+        order = [chosen] + [one for one in order if one != chosen]
 
-    arbiter = getattr(settings, "SCAN_ARBITER_MODEL", "")
-    # Цена спрашивается **до** вызова, и неизвестная модель тут не отказ, а
-    # пропуск: опечатка в `.env` иначе стоила бы страницы, за которую уже
-    # заплачено первому читателю. Сторож на умолчание есть в тестах.
-    if not arbiter or not prices.known(arbiter) or not has_budget(school):
-        return reading
+    # Чем кончился обход, решает **последнее слово**, а не длина списка:
+    # «до модели не достучаться» и «читатель промолчал» чинятся по-разному, и
+    # общий отказ на оба отправил бы человека искать не там.
+    unreachable = False
 
-    try:
-        better, input_tokens, output_tokens = read_header(
-            image,
-            media_type=media_type,
-            candidates=candidates,
-            model=arbiter,
-            rivals=rivals,
+    for number, one in enumerate(order):
+        # Подъём к модели после чужого выбора запрещён — см. докстринг.
+        if number and one == ANTHROPIC:
+            break
+
+        if one == ANTHROPIC:
+            try:
+                data, input_tokens, output_tokens = read_header(
+                    image,
+                    media_type=media_type,
+                    candidates=candidates,
+                    model=model,
+                )
+            except client.ModelUnreachable:
+                # Неудавшийся вызов не стоил ничего: платят за токены, а
+                # токенов не было. Записать трату значило бы взять деньги за
+                # молчание.
+                reach.remember_unreachable()
+                unreachable = True
+                continue
+            _charge(school, user, work, purpose, model, input_tokens, output_tokens)
+            data["reader"] = ANTHROPIC
+            data["model"] = model
+            return data
+
+        module, priced = (
+            (yandex, prices.YANDEX) if one == YANDEX else (mathpix, prices.MATHPIX)
         )
-    except client.ModelUnreachable:
-        # Модель отвалилась между чтением и арбитражем. Арбитр — прибавка, и
-        # терять из-за него уже прочитанную и уже оплаченную страницу нельзя:
-        # спор записан, человек о нём узнает, а перечитывать некому.
-        reach.remember_unreachable()
-        return reading
-    _charge(
-        school, user, work, AiSpend.SCAN_REREAD, arbiter, input_tokens, output_tokens
+        data = module.read_strip(image, media_type=media_type)
+        if data.get("error"):
+            continue
+        _charge(school, user, work, purpose, priced, 0, 0)
+        data["model"] = priced
+        return data
+
+    if unreachable or not order:
+        api_unavailable(
+            Codes.AI_UNREACHABLE,
+            "This server cannot reach the language model, and no other reader "
+            "could take its place.",
+            tried=order,
+        )
+    api_unavailable(
+        Codes.SCAN_READER_SILENT,
+        "No reader answered.",
+        tried=order,
     )
-    better["model"] = arbiter
-    # Кем перечитано — видно человеку рядом с обеими версиями: без этого
-    # «страница спорная, но прочитана вот так» выглядит необъяснимо.
-    second["arbiter"] = arbiter
-    return better
 
 
 def _charge(school, user, work, purpose, model, input_tokens, output_tokens):

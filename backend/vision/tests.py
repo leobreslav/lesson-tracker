@@ -155,16 +155,14 @@ class ModelChoiceTests(SimpleTestCase):
 
         self.assertIsNotNone(prices.price_of(settings.SCAN_HEADER_MODEL))
 
-    def test_the_arbiter_has_a_price_too(self):
+    def test_every_reader_we_may_call_has_a_price(self):
         """
-        Арбитра зовут по спорным страницам, и цена ему нужна такая же. Пустая
-        настройка — законное состояние: «не перечитывать».
+        Читателей стало трое, и цена нужна каждому: вызов без цены считался бы
+        по нулю, то есть тихо снимал бы потолок. Список берётся из кода, а не
+        переписывается сюда, — иначе четвёртый читатель прошёл бы молча.
         """
-        from django.conf import settings
-
-        arbiter = getattr(settings, "SCAN_ARBITER_MODEL", "")
-        if arbiter:
-            self.assertTrue(prices.known(arbiter))
+        for name in (prices.MATHPIX, prices.YANDEX):
+            self.assertIn(name, prices.PER_REQUEST, name)
 
 
 class PriceTests(SchoolTestMixin, APITestCase):
@@ -487,7 +485,29 @@ class AgreementTests(SimpleTestCase):
         )
 
 
-class TwoReadersTests(SchoolTestMixin, APITestCase):
+class PretendsThereIsAKey:
+    """
+    Сделать вид, что ключ Anthropic у контура есть.
+
+    Прогон обнуляет его целиком (`config/testing.py`), и это правильно: так
+    случайный вызов упирается в отказ, а не в счёт. Но выбор читателя теперь
+    спрашивает «есть ли чем звать» — и без ключа модель не предлагается вовсе,
+    то есть тесты про двух читателей проверяли бы контур без модели.
+
+    Подменяется поэтому **ответ на вопрос**, а не сам ключ. Разница
+    существенная: поставь мы ключ, и тест, забывший подменить чтение, ушёл бы
+    наружу за настоящие деньги — ровно то, чего обнуление избегает.
+    """
+
+    def pretend_key(self):
+        from unittest.mock import patch
+
+        patcher = patch.object(services.client, "configured", lambda: True)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+
+class TwoReadersTests(PretendsThereIsAKey, SchoolTestMixin, APITestCase):
     """
     Двое читают одну полоску, а деньги считаются по-прежнему в одном месте.
 
@@ -502,6 +522,11 @@ class TwoReadersTests(SchoolTestMixin, APITestCase):
 
     def setUp(self):
         super().setUp()
+        # Ключ Anthropic обнулён на весь прогон (`config/testing.py`), а выбор
+        # читателя теперь на него смотрит: без ключа модель не предлагается
+        # вовсе. Подменяем именно ответ «ключ есть», а не сам ключ — иначе
+        # тест, у которого чтение не подменено, ушёл бы наружу за деньги.
+        self.pretend_key()
         self.seen = []
         self.model_says = {
             "first_name": "Denis",
@@ -518,13 +543,6 @@ class TwoReadersTests(SchoolTestMixin, APITestCase):
             "values": [3] + [None] * 15,
             "text": "Denis Orlov",
         }
-        self.arbiter_says = {
-            "first_name": "Denis",
-            "surname": "Orlov",
-            "date": "",
-            "guess": "",
-            "values": [2] + [None] * 15,
-        }
 
     def read(self, **settings_over):
         """Прочитать одну страницу подменёнными читателями."""
@@ -532,14 +550,9 @@ class TwoReadersTests(SchoolTestMixin, APITestCase):
 
         def reader(image, **kwargs):
             self.seen.append(kwargs)
-            answer = self.arbiter_says if kwargs.get("rivals") else self.model_says
-            return dict(answer), 100, 10
+            return dict(self.model_says), 100, 10
 
-        defaults = {
-            "MATHPIX_APP_ID": "id",
-            "MATHPIX_APP_KEY": "key",
-            "SCAN_ARBITER_MODEL": SONNET,
-        }
+        defaults = {"MATHPIX_APP_ID": "id", "MATHPIX_APP_KEY": "key"}
         with self.settings(**(defaults | settings_over)):
             with patch.object(services, "read_header", reader), patch.object(
                 services.mathpix, "read_strip", lambda *a, **k: dict(self.mathpix_says)
@@ -570,51 +583,89 @@ class TwoReadersTests(SchoolTestMixin, APITestCase):
         Закон проекта выведен дважды и дорого: подсказанное подставляется
         вместо увиденного. Подскажи мы модели ответ второго читателя — их
         согласие перестало бы значить что-либо, а вместе с ним и вся затея.
+
+        Стережётся это **подписью функции**, а не вызовом: пока чужому чтению
+        неоткуда взяться, подсказать его нельзя даже по недосмотру. Раньше
+        параметр был — им пользовался арбитр, — и тогда закон держался на том,
+        что первым двум читателям его не передают.
         """
+        from inspect import signature
+
+        forbidden = {"rivals", "second", "other", "reading", "readings"}
+        self.assertEqual(
+            forbidden & set(signature(client.read_header).parameters),
+            set(),
+            "у чтения появился параметр под чужой ответ — подсказка вернулась",
+        )
         self.read()
+        self.assertEqual(len(self.seen), 1)
 
-        self.assertIsNone(self.seen[0].get("rivals"))
+    def test_the_name_is_taken_from_the_model(self):
+        """
+        Имя читает модель, и спор об имени решается в её пользу.
 
-    def test_a_disagreement_calls_a_third_reader(self):
-        """Спор решает не большинство и не мы, а тот, кто ещё раз посмотрит."""
+        Знание это про читателей, а не про страницу: распознаватель видит
+        буквы по одной и на рукописной фамилии ошибается заметно чаще, а модель
+        знает, что перед ней имя, и держит слово целиком. Поэтому правило
+        отвечает точнее, чем третье чтение, — и не стоит ничего.
+        """
         self.mathpix_says["surname"] = "Orlova"
 
         data = self.read()
 
+        self.assertEqual(data["surname"], "Orlov")
+        # ...но человеку о споре всё равно сказано: правило говорит, чья
+        # версия правдоподобнее, а не что модель непогрешима
         self.assertEqual(data["second"]["differs"], ["name"])
-        self.assertEqual(len(self.seen), 2)
-        self.assertEqual(self.seen[1]["model"], SONNET)
-        # арбитр увидел обе версии — и ни одна не названа правой
-        self.assertEqual(len(self.seen[1]["rivals"]), 2)
-        # ...и его чтение стало чтением страницы
-        self.assertEqual(data["values"][0], 2)
-        self.assertEqual(self.purposes(), ["scan_header", "scan_reread", "scan_second"])
 
-    def test_the_argument_survives_the_arbiter(self):
+    def test_the_cells_are_taken_from_the_recogniser(self):
         """
-        Пометка ставится **до** арбитража и потом не пересчитывается. Иначе она
-        исчезала бы ровно тогда, когда арбитр встал на сторону второго
-        читателя: чтение сошлось бы с ним, и страница, о которой спорили трое,
-        выглядела бы бесспорной.
+        Клетки читает распознаватель, и спор о клетке решается в его пользу.
+
+        Плитки — это таблица, а цифра в квадратике требует зрения, не
+        понимания: модель на них сбивается со счёта и путает соседние клетки,
+        распознаватель — нет.
         """
-        self.mathpix_says["values"] = [2] + [None] * 15  # арбитр придёт к тому же
+        self.mathpix_says["values"] = [7] + [None] * 15
+
         data = self.read()
 
+        self.assertEqual(data["values"][0], 7)
         self.assertEqual(data["second"]["differs"], ["cell:0"])
-        self.assertEqual(data["values"][0], 2)
 
-    def test_without_an_arbiter_the_argument_is_only_marked(self):
+    def test_nobody_is_called_a_third_time(self):
         """
-        Пустая настройка — честный выбор школы, у которой каждая страница стоит
-        денег: расхождение помечается, а решает его человек.
+        Арбитра больше нет, и это осознанная потеря.
+
+        Он перечитывал спорную страницу дорогой моделью; правило же отвечает
+        на тот же вопрос точнее — потому что опирается не на догадку о
+        странице, а на знание о читателях, — и бесплатно. Сторож нужен затем,
+        чтобы третье чтение не вернулось «на всякий случай»: цена ему пачка
+        спорных страниц, а польза с появлением приоритета исчезла.
         """
         self.mathpix_says["first_name"] = "Misha"
 
-        data = self.read(SCAN_ARBITER_MODEL="")
+        data = self.read()
 
         self.assertEqual(data["second"]["differs"], ["name"])
         self.assertEqual(len(self.seen), 1)
         self.assertEqual(self.purposes(), ["scan_header", "scan_second"])
+
+    def test_silence_does_not_rub_out_a_mark_someone_did_read(self):
+        """
+        Хозяин клеток — распознаватель, но не любой ценой.
+
+        Он не разбирает половину плиток на бледном скане, и его молчание — это
+        «я не увидел», а не «там пусто». Стирай оно прочитанное другим, и
+        приоритет работал бы против той самой точности, ради которой заведён.
+        """
+        self.model_says["values"] = [3, 4] + [None] * 14
+        self.mathpix_says["values"] = [None, 4] + [None] * 14
+
+        data = self.read()
+
+        self.assertEqual(data["values"][0], 3)
+        self.assertEqual(data["values"][1], 4)
 
     def test_the_human_may_refuse_the_second_reader(self):
         """
@@ -682,7 +733,9 @@ class TwoReadersTests(SchoolTestMixin, APITestCase):
                 )
 
         self.assertEqual(data["second"]["error"], "unreachable")
-        self.assertEqual(data["second"]["differs"], [])
+        # Спора нет и быть не может: спорить не с кем. Пустой список тут
+        # означал бы «сверили и сошлись», то есть уверенность, которой не было.
+        self.assertNotIn("differs", data["second"])
         self.assertEqual(self.purposes(), ["scan_header"])
 
     def test_the_extras_stop_at_the_ceiling_instead_of_refusing(self):
@@ -892,7 +945,7 @@ class WhatCountsAsOutOfReachTests(SimpleTestCase):
             )
 
 
-class ModelOutOfReachTests(SchoolTestMixin, APITestCase):
+class ModelOutOfReachTests(PretendsThereIsAKey, SchoolTestMixin, APITestCase):
     """
     Сервер, который не достаёт до модели, обязан всё равно прочитать пачку.
 
@@ -908,6 +961,7 @@ class ModelOutOfReachTests(SchoolTestMixin, APITestCase):
 
     def setUp(self):
         super().setUp()
+        self.pretend_key()
         # Вердикт живёт в кэше и переживает тест: непочищенный, он красит
         # следующий тест в зелёный по неверной причине.
         reach.forget()
@@ -970,9 +1024,11 @@ class ModelOutOfReachTests(SchoolTestMixin, APITestCase):
     def test_the_missing_second_opinion_says_why_it_is_missing(self):
         """
         Пустой словарь значил бы «второй читатель промолчал» — то есть свалил
-        бы на него отсутствующую модель.
+        бы на него отсутствующую модель. Слово тут своё: имя читал тот же, кто
+        читал бы клетки, и звать его второй раз значило бы заплатить дважды за
+        один и тот же ответ.
         """
-        self.assertEqual(self.read()["second"]["error"], "sole_reader")
+        self.assertEqual(self.read()["second"]["error"], "same_reader")
 
     def test_the_pile_finds_out_once_and_not_on_every_page(self):
         """
@@ -1001,9 +1057,27 @@ class ModelOutOfReachTests(SchoolTestMixin, APITestCase):
         """
         У второго читателя молчание — законное состояние, у единственного —
         непрочитанная страница. Роль изменилась, значит изменился и ответ.
+
+        Код при этом называет **первую** беду: до модели не достучались, и
+        подменить её оказалось некем. Назови мы вторую, человек чинил бы
+        распознаватель, не зная, что его позвали только из-за закрытой сети.
         """
         with self.assertRaises(Exception) as caught:
             self.read(strip={"reader": "mathpix", "error": "unreachable"})
 
-        self.assertEqual(caught.exception.detail["code"], "scan_reader_silent")
+        self.assertEqual(caught.exception.detail["code"], "ai_unreachable")
         self.assertEqual(self.purposes(), [])
+
+    def test_a_reader_that_simply_did_not_answer_says_that_instead(self):
+        """
+        Модель в этой беде не участвовала: ключа у контура нет вовсе, читатель
+        был один и промолчал. Отказ поэтому другой — чинить надо не сеть, а
+        повторить страницу.
+        """
+        from unittest.mock import patch
+
+        with patch.object(services.client, "configured", lambda: False):
+            with self.assertRaises(Exception) as caught:
+                self.read(strip={"reader": "mathpix", "error": "unreachable"})
+
+        self.assertEqual(caught.exception.detail["code"], "scan_reader_silent")

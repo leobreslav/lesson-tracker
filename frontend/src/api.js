@@ -734,7 +734,7 @@ export const fetchScanState = (work) => request(`/api/works/${work}/scan/state/`
 export const resetScan = (work) =>
   request(`/api/works/${work}/scan/state/`, { method: 'DELETE' })
 
-export const readScanPage = (work, { index, blob, mark, second = true }) => {
+export const readScanPage = (work, { index, blob, mark, second = true, reader = '' }) => {
   const form = new FormData()
   form.append('index', index)
   form.append('strip', blob, `strip-${index}.jpg`)
@@ -743,6 +743,9 @@ export const readScanPage = (work, { index, blob, mark, second = true }) => {
   // галочкой на шаге выбора файла, — а ехать ему приходится с каждой
   // страницей: цикл чтения ведёт браузер, и другого места у просьбы нет.
   form.append('second', second ? 'true' : 'false')
+  // Кем читать имя — тем же путём и по той же причине. Пустая строка значит
+  // «кем умеете»: контур возьмёт первого доступного сам.
+  form.append('reader', reader)
   return request(`/api/works/${work}/scan/read/`, { method: 'POST', body: form })
 }
 

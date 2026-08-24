@@ -24,6 +24,10 @@ class AiSpend(models.Model):
     SCAN_SECOND = "scan_second"
     PURPOSES = [
         (SCAN_HEADER, "reading a scanned blank header"),
+        # Никто больше так не тратит: арбитра сменило правило приоритета
+        # (`vision/merge.py`). Повод остаётся, потому что журнал вечен — строки
+        # тех перечитываний живут в базах школ, и снятый выбор превратил бы их
+        # в неназываемое число.
         (SCAN_REREAD, "re-reading a header the two readers disagreed about"),
         (SCAN_QUESTIONS, "copying the questions off the question paper"),
         (SCAN_SECOND, "a second reader on the same header"),

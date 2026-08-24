@@ -603,6 +603,16 @@ class ScanReadSerializer(serializers.Serializer):
     # школа их поставила, второй читатель нужен. Галочка — способ отказаться
     # от него на конкретной пачке, а не включить.
     second = serializers.BooleanField(required=False, default=True)
+    # Кем читать имя. Пустая строка — «кем умеете»: контур сам возьмёт первого
+    # доступного. Незнакомое имя читателя не отказ, а та же пустая строка:
+    # клиент мог отстать от сервера на одну выкатку, и ронять из-за этого
+    # пачку, за половину которой уже заплачено, — плохой обмен.
+    reader = serializers.CharField(required=False, allow_blank=True, default="")
+
+    def validate_reader(self, name):
+        from vision import services as vision_services
+
+        return name if name in vision_services.NAME_READERS else ""
 
     def validate_strip(self, upload):
         if upload.size > 4 * 1024 * 1024:

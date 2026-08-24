@@ -53,18 +53,6 @@ def price_of(model: str) -> tuple[float, float]:
         raise ValueError(f"Unknown model {model!r}: add it to vision/prices.py")
 
 
-def known(model: str) -> bool:
-    """
-    Знаем ли мы цену. Спрашивают там, где вызов **необязателен**.
-
-    Отказ неизвестной модели — правило верное, но у него есть цена: опечатка в
-    `.env` кончилась бы отказом страницы, за которую уже заплачено первому
-    читателю. Поэтому необязательный вызов (арбитр) сперва спрашивает, а
-    обязательный (`cost_micros`) по-прежнему отказывает.
-    """
-    return model in PRICES or model in PER_REQUEST
-
-
 def cost_micros(model: str, input_tokens: int, output_tokens: int) -> int:
     """
     Стоимость вызова в миллионных долях доллара.

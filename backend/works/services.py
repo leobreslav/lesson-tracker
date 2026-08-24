@@ -1560,6 +1560,10 @@ def scan_state(work) -> dict:
         # единственным. Галочка «проверять вторым» в этот момент лжёт дважды —
         # снять её нельзя, и проверять нечего.
         "model_reachable": model_reachable(),
+        # Кем этот контур умеет читать имя, в порядке предпочтения. Список, а
+        # не флаг: читателей стало трое, и человек выбирает между ними на шаге
+        # выбора файла. Предложить того, кого нет, значит соврать.
+        "readers": name_readers(),
     }
 
 
@@ -1575,6 +1579,13 @@ def model_reachable() -> bool:
     from vision import reach
 
     return reach.model_reachable()
+
+
+def name_readers() -> list:
+    """Кем этот контур умеет читать имя (`vision/services.py`)."""
+    from vision import services as vision_services
+
+    return vision_services.name_readers()
 
 
 def _scattered(pages) -> bool:

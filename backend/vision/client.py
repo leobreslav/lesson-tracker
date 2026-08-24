@@ -298,6 +298,21 @@ def _system_prompt() -> str:
     )
 
 
+def configured() -> bool:
+    """
+    Есть ли чем звать модель. Тот же вопрос, что у распознавателей.
+
+    Спрашивают его там, где читателя **выбирают**: контур без ключа не должен
+    предлагать модель человеку, а узнавать об этом отказом на первой странице
+    пачки — плохой способ выяснять состав читателей.
+
+    Это не то же, что «достаёт ли до модели» (`reach.py`): ключа может не быть
+    вовсе, а может быть настоящий ключ и закрытая сеть. Чинятся эти два
+    состояния по-разному, поэтому и спрашиваются порознь.
+    """
+    return bool(getattr(settings, "ANTHROPIC_API_KEY", ""))
+
+
 def _client():
     key = getattr(settings, "ANTHROPIC_API_KEY", "")
     if not key:
@@ -349,60 +364,12 @@ def _ask(**kwargs):
         raise ModelUnreachable(str(gone)) from gone
 
 
-def _reading_as_text(reading: dict) -> str:
-    """Чужое чтение одной строкой — так, как его увидит арбитр."""
-    marks = ", ".join(
-        f"{cell_label(place)}={value}"
-        for place, value in enumerate(reading.get("values") or [])
-        if value is not None
-    )
-    return (
-        f"first name «{(reading.get('first_name') or '').strip()}», "
-        f"surname «{(reading.get('surname') or '').strip()}», "
-        f"marks: {marks or 'none'}"
-    )
-
-
-def dispute_note(rivals: list[dict]) -> str:
-    """
-    Две версии одного листа — арбитру.
-
-    **Показывать чужое чтение можно только там, где спор уже записан.** Закон
-    проекта выведен дважды и дорого: всё, что подсказывает ожидаемый ответ,
-    будет подставлено вместо увиденного. Подсказка первому читателю поэтому и
-    опасна — она делает согласие двух чтений бессмысленным, а вместе с ним и
-    всю пометку о расхождении.
-
-    Здесь же наоборот: расхождение уже случилось и уже помечено, страница уже
-    едет человеку. Хуже от подсказки не станет, а лучше стать может — задача у
-    арбитра проще, чем чтение с нуля: не «что тут написано», а «которое из
-    двух, и если ни одно, то что».
-
-    Читатели нарочно безымянны и равны. Скажи мы «так прочитал распознаватель
-    рукописного» — получили бы не арбитраж, а голос за авторитет.
-    """
-    if not rivals:
-        return ""
-    versions = "\n".join(
-        f"- Reader {chr(ord('A') + number)} saw: {_reading_as_text(one)}"
-        for number, one in enumerate(rivals)
-    )
-    return (
-        "\n\nTwo readers have already looked at this very picture and did not "
-        "agree, so at least one of them is wrong:\n" + versions + "\n"
-        "Neither of them is authoritative — they are guesses about the same "
-        "paper, nothing more. Read the picture yourself and report what is "
-        "actually written on it, even if that is a third answer."
-    )
-
-
 def read_header(
     image: bytes,
     *,
     media_type: str = "image/jpeg",
     candidates: list[str] | None = None,
     model: str = prices.HAIKU,
-    rivals: list[dict] | None = None,
 ) -> tuple[dict, int, int]:
     """
     Полоска шапки -> (данные, входных токенов, выходных).
@@ -421,10 +388,12 @@ def read_header(
     ровно там, где мнению место: первым кандидатом в карточке, которую решает
     человек. Молча по нему ничего не назначается.
 
-    `rivals` — та же функция в роли **арбитра**: два чтения разошлись, и модель
-    зовут посмотреть на ту же картинку, зная обе версии. Почему подсказка тут
-    не нарушает закона «подсказанное подставляется вместо увиденного» —
-    в `dispute_note`.
+    **Чужого чтения сюда не приходит вовсе, и параметра под него нет.** Был:
+    арбитр показывал модели обе разошедшиеся версии и просил рассудить.
+    Работал он на догадке о странице, а знание о читателях отвечает точнее —
+    имя лучше читает модель, клетки распознаватель, — и отвечает бесплатно
+    (`merge.py`). Отсутствие параметра тут не небрежность, а сторож: пока его
+    нет, подсказку неоткуда взять.
     """
     hint = ""
     if candidates:
@@ -454,9 +423,7 @@ def read_header(
                 "content": [
                     {
                         "type": "text",
-                        "text": "Read the name and the marks grid."
-                        + hint
-                        + dispute_note(rivals or []),
+                        "text": "Read the name and the marks grid." + hint,
                     },
                     {
                         "type": "image",

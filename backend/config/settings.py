@@ -233,12 +233,6 @@ YANDEX_OCR_API_KEY = env("YANDEX_OCR_API_KEY", default="")
 # сам берёт каталог, где аккаунт заведён.
 YANDEX_FOLDER_ID = env("YANDEX_FOLDER_ID", default="")
 
-# Кем перечитывать страницу, о которой читатели не сошлись. Дорогой моделью и
-# только по спорным страницам — их единицы на пачку. Пусто значит «не
-# перечитывать»: расхождение тогда просто помечается, и решает его человек.
-# Без ключей Mathpix не сработает всё равно: спорить не с кем.
-SCAN_ARBITER_MODEL = env("SCAN_ARBITER_MODEL", default="claude-sonnet-5")
-
 FILE_MAX_BYTES = env.int("FILE_MAX_BYTES", default=20 * 1024 * 1024)
 # квота школы: сумма размеров её уникальных файлов
 SCHOOL_FILE_QUOTA_BYTES = env.int(
