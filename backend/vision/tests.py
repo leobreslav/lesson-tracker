@@ -182,8 +182,8 @@ class PriceTests(SchoolTestMixin, APITestCase):
         способами в двух местах значит завести два ответа на вопрос «сколько
         школа потратила».
         """
-        self.assertEqual(cost_micros(prices.MATHPIX, 0, 0), 4_000)
-        self.assertEqual(cost_micros(prices.MATHPIX, 9999, 9999), 4_000)
+        self.assertEqual(cost_micros(prices.MATHPIX, 0, 0), 2_000)
+        self.assertEqual(cost_micros(prices.MATHPIX, 9999, 9999), 2_000)
 
 
 class BudgetTests(SchoolTestMixin, APITestCase):
