@@ -5,6 +5,7 @@ import Modal from './Modal'
 // крошечный модуль с миллиметрами бланка; pdfjs за собой не тянет, в отличие
 // от scanSheet.js, который грузится лениво
 import { GRID, gridInStrip } from './blankGeometry'
+import { dollars } from './money'
 import {
   applyScan,
   editScanPage,
@@ -1049,24 +1050,68 @@ function PagesStep({ state, all, byIndex, questions, busy, onDecide, onFix, onNe
 }
 
 /**
+ * Порядок поводов — тот, в котором за них платят: сперва обязательное чтение,
+ * потом прибавки. Список ведётся здесь, а не берётся из ответа сервера, чтобы
+ * разбивка не переставлялась от пачки к пачке: у одной второй читатель был, у
+ * другой нет, и алфавит показал бы их в разном порядке.
+ *
+ * Повод, которого здесь нет, не теряется — он встаёт в конец. Потерянный
+ * рубль хуже некрасивого: сумма частей обязана сходиться с целым.
+ */
+const SPEND_ORDER = [
+  'scan_header',
+  'scan_second',
+  'scan_reread',
+  'scan_questions',
+]
+
+/**
  * Во что обошлась эта пачка.
  *
  * Стоит рядом с работой, а не в разделе школы: там отвечают на вопрос
  * администратора «не пора ли поднять потолок», а здесь на вопрос учителя —
  * «во что обошлось вот это чтение». Цена показывается там же, где идёт
  * чтение: узнавать её, уже потратив, — не то же самое, что видеть по ходу.
+ *
+ * **Одной суммы стало мало, когда читателей стало двое.** Сумма всегда
+ * включала всех — и модель, и Mathpix, — но на экране это было неотличимо от
+ * прежней цены, а вопрос у учителя ровно противоположный: второй читатель
+ * заказывается галочкой на каждой пачке, и решают её по тому, сколько он
+ * стоил на прошлой. Число, из которого этого не достать, отвечает не на тот
+ * вопрос. Разбивку сервер отдавал и раньше (`by_purpose`), её просто никто не
+ * рисовал.
+ *
+ * Показывается она **только когда поводов больше одного**: на пачке, где
+ * читал один, разбивка слово в слово повторяла бы строку выше.
  */
 function SpendLine({ spend }) {
   const { t } = useTranslation()
   if (!spend?.calls) return null
 
-  const money = (micros) => `$${(micros / 1e6).toFixed(3)}`
+  const by = spend.by_purpose || {}
+  const parts = [
+    ...SPEND_ORDER.filter((purpose) => by[purpose]),
+    ...Object.keys(by).filter((purpose) => !SPEND_ORDER.includes(purpose)),
+  ]
 
   return (
     <p className="hint">
-      {t('scan.batchSpend', { amount: money(spend.micros), count: spend.calls })}
+      {t('scan.batchSpend', { amount: dollars(spend.micros), count: spend.calls })}
       {spend.total_micros > spend.micros &&
-        ` · ${t('scan.workSpend', { amount: money(spend.total_micros) })}`}
+        ` · ${t('scan.workSpend', { amount: dollars(spend.total_micros) })}`}
+      {parts.length > 1 && (
+        <>
+          <br />
+          {parts
+            .map((purpose) =>
+              t('scan.spendPart', {
+                what: t(`ai.purpose.${purpose}`),
+                amount: dollars(by[purpose].micros),
+              }),
+            )
+            .join(' · ')}
+        </>
+      )}
     </p>
   )
 }

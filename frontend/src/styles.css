@@ -7567,12 +7567,15 @@ button.dropzone:hover:not(:disabled) {
 
 /* Журнал трат: дата, за что, кто и сколько — четыре колонки, выровненные по
    сетке, чтобы суммы читались столбиком, а не искались глазами. */
+/* Пять колонок: когда, за какую работу, за что, кто и сколько. «За что»
+   появилось вместе со вторым читателем — без него строка Mathpix ничем не
+   отличалась от чтения шапки, а решают по журналу именно это. */
 .ai-log {
   list-style: none;
   margin: 0;
   padding: 0;
   display: grid;
-  grid-template-columns: auto 1fr auto auto;
+  grid-template-columns: auto 1fr auto auto auto;
   gap: 0.15rem 0.75rem;
   font-size: 0.9rem;
 }

@@ -198,6 +198,13 @@ test('keys built at runtime exist for every value they take', () => {
       `lesson.placeholders.${field}`,
     ]),
     ...['b', 'kb', 'mb'].map((unit) => `lesson.size.${unit}`),
+    // журнал трат и разбивка пачки строят ключ из повода, а поводы заводятся
+    // на сервере (`vision/models.py`, `AiSpend.PURPOSES`). Новый повод без
+    // фразы показал бы человеку сам ключ — в списке, по которому решают,
+    // стоит ли второй читатель своих денег
+    ...['scan_header', 'scan_second', 'scan_reread', 'scan_questions'].map(
+      (purpose) => `ai.purpose.${purpose}`,
+    ),
   ]
 
   assert.deepEqual(

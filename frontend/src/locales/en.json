@@ -1505,6 +1505,7 @@
     "batchSpend_one": "This pile has cost {{amount}}, {{count}} reading.",
     "batchSpend_other": "This pile has cost {{amount}}, {{count}} readings.",
     "workSpend": "{{amount}} on this assignment all told",
+    "spendPart": "{{what}}: {{amount}}",
     "headerlessWhy": "The grid matched {{score}} of {{need}} borders needed, and {{mark}}",
     "markFound": "our mark in the corner is there.",
     "markMissing": "our mark in the corner was not found.",
@@ -1524,12 +1525,18 @@
   },
   "ai": {
     "title": "Reading scans",
-    "hint": "Scanned blanks are read by a model, and that costs money. The school sets a monthly ceiling; every call is written down.",
+    "hint": "Scanned blanks are read for you, and that costs money: a language model reads every header, and a handwriting recogniser checks it when you ask. The school sets a monthly ceiling; every call is written down.",
     "spent": "Spent this month: {{spent}} of {{limit}}",
     "limit": "Monthly limit, cents",
     "limitHint": "Zero means reading is off.",
     "none": "Nothing spent yet.",
-    "noWork": "a work that is gone"
+    "noWork": "a work that is gone",
+    "purpose": {
+      "scan_header": "reading headers",
+      "scan_second": "second reader",
+      "scan_reread": "re-reading disputed headers",
+      "scan_questions": "reading the question paper"
+    }
   },
   "thread": {
     "title": "Ask about this question",

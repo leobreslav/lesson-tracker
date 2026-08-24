@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 
 import { fetchAiBudget, fetchAiSpend, saveAiBudget } from './api'
 import { shortDate } from './dates'
+import { dollars } from './money'
 
 /**
  * Расход на чтение сканов: потолок и журнал.
@@ -12,9 +13,17 @@ import { shortDate } from './dates'
  * разный («не пора ли поднять» против «во что обошлась пачка»), но данные одни
  * и те же, и разойтись они не должны.
  *
- * Деньги показываются в долларах: в них выставляет счёт Anthropic, и переводить
- * их во что-то другое значит объяснять человеку курс, по которому мы сами не
- * платим.
+ * Деньги показываются в долларах: в них выставляют счёт и Anthropic, и
+ * Mathpix, а переводить их во что-то другое значит объяснять человеку курс, по
+ * которому мы сами не платим. Считает их `money.js` — общий на весь интерфейс,
+ * потому что здешний `toFixed(2)` показывал «$0.00» за каждую строку: вызов
+ * стоит доли цента, и весь журнал выглядел бесплатным.
+ *
+ * **У строки есть повод, и он теперь виден.** Сервер отдавал его всегда, а
+ * экран показывал дату, работу и сумму — то есть отвечал «сколько», не отвечая
+ * «за что». Пока читатель был один, разницы не было; со вторым в журнале
+ * появились строки, которые от чтения шапки не отличить ничем, кроме повода, —
+ * а решают по ним, стоит ли второй читатель своих денег.
  */
 export default function AiSpendPanel() {
   const { t } = useTranslation()
@@ -53,8 +62,6 @@ export default function AiSpendPanel() {
   }
 
   if (!budget) return null
-
-  const dollars = (micros) => `$${(micros / 1_000_000).toFixed(2)}`
 
   return (
     <section className="panel" data-panel="ai-spend">
@@ -96,7 +103,13 @@ export default function AiSpendPanel() {
             <li key={row.id}>
               <span className="hint">{shortDate(row.at)}</span>
               <span>{row.work_title || t('ai.noWork')}</span>
-              {budget.may_edit && <span className="hint">{row.who}</span>}
+              <span className="hint">{t(`ai.purpose.${row.purpose}`)}</span>
+              {/* Клетка «кто потратил» пустует у учителя, но остаётся: строка
+                  разложена по колонкам сетки (`display: contents`), и убранная
+                  клетка сдвинула бы весь журнал на одну вправо — начиная со
+                  следующей строки. Видно это только не-администратору, то есть
+                  ровно тому, кто об этом не расскажет. */}
+              <span className="hint">{budget.may_edit ? row.who : ''}</span>
               <b>{dollars(row.cost_micros)}</b>
             </li>
           ))}
