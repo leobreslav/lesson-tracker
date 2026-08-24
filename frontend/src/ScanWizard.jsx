@@ -471,13 +471,32 @@ function FileStep({ onPick, busy, questions, read, onReset, readQuestions, onRea
       )}
       {readQuestions && <p className="hint">{t('scan.readQuestionsHint')}</p>}
 
+      {/*
+        * Начать пачку заново.
+        *
+        * Стояла эта кнопка строчной ссылкой в конце серой подсказки, среди
+        * четырёх других серых блоков, — и не находилась. А нужна она каждый
+        * раз, когда меняется само чтение: прочитанное узнаётся по отпечатку и
+        * второй раз не перечитывается, то есть без сброса новое чтение просто
+        * не случится.
+        *
+        * Спрашиваем перед сбросом, и это не ритуал: удаляется **оплаченное**.
+        * Тем же `window.confirm`, что и удаление курса или школы.
+        */}
       {read > 0 && (
-        <p className="hint">
-          {t('scan.alreadyRead', { count: read })}{' '}
-          <button type="button" className="link" disabled={busy} onClick={onReset}>
+        <div className="row middle">
+          <button
+            type="button"
+            className="secondary compact"
+            disabled={busy}
+            onClick={() => {
+              if (window.confirm(t('scan.startOverConfirm', { count: read }))) onReset()
+            }}
+          >
             {t('scan.startOver')}
           </button>
-        </p>
+          <span className="hint">{t('scan.alreadyRead', { count: read })}</span>
+        </div>
       )}
       <label
         className={over ? 'dropzone over' : 'dropzone'}

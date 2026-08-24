@@ -1469,7 +1469,7 @@
     "printBlank": "Print the blank",
     "alreadyRead_one": "{{count}} page from an earlier upload is still here.",
     "alreadyRead_other": "{{count}} pages from an earlier upload are still here.",
-    "startOver": "start over",
+    "startOver": "Start the pile over",
     "conditions_one": "{{count}} sheet without a header — the question paper. It cuts the pile into {{packets}} packets.",
     "conditions_other": "{{count}} sheets without a header — question papers. They cut the pile into {{packets}} packets.",
     "readQuestions": "Also copy the questions off the question paper",
@@ -1503,7 +1503,8 @@
     "warnings": "Worth a look",
     "scattered": "the pages are not in one run — a stray sheet may have been added",
     "fromThePile": "Nothing is written here. Suggested from the pile: {{name}}",
-    "nothingRead": "Nothing is written here, and there is nobody above to borrow from."
+    "nothingRead": "Nothing is written here, and there is nobody above to borrow from.",
+    "startOverConfirm": "Delete what has been read and start the pile over?\n\n{{count}} pages will go, and reading them again costs money: a page is not read twice while it is here."
   },
   "ai": {
     "title": "Reading scans",
