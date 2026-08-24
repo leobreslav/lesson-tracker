@@ -22,7 +22,7 @@
  * `ImageData`), поэтому проверяются в node без браузера.
  */
 
-import { GRID, HEADER, PAGE, QR, STRIP_WIDTH, headerCorners, sheetCorners, stripHeight } from './blankGeometry.js'
+import { GRID, HEADER, PAGE, QR, STRIP, STRIP_WIDTH, headerCorners, sheetCorners, stripHeight } from './blankGeometry.js'
 
 /** Оттенки серого одной плоскостью: дальше всё считается по ней. */
 export function toGray(image) {
@@ -517,7 +517,9 @@ export function extractHeader(image) {
   return {
     ...best,
     ours: hasBlankMark(image, best.h),
-    strip: warp(image, best.h, HEADER, STRIP_WIDTH, stripHeight()),
+    // ищем по HEADER, а режем по STRIP: счёт считается там, где выпрямление
+    // подпёрто метками, а картинка берётся от верха листа
+    strip: warp(image, best.h, STRIP, STRIP_WIDTH, stripHeight()),
   }
 }
 

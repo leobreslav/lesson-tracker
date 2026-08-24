@@ -104,6 +104,89 @@ def candidates_for(page: Page, roster: list[Person]) -> list[tuple[Person, float
     return scored
 
 
+def own_owner(page: Page, roster: list[Person]) -> int | None:
+    """
+    Кого лист называет сам — и только когда называет однозначно.
+
+    Это то же решение, что принимает `group` для отдельной страницы, вынутое
+    отдельно: пакетной раскладке оно нужно, чтобы отличить «лист молчит и
+    положен по соседству» от «лист подписан, и подписан не тем именем».
+    """
+    if not page.named:
+        return None
+
+    scored = {person.id: score for person, score in candidates_for(page, roster)}
+    opinion = guessed(page, roster)
+    if opinion:
+        scored[opinion.id] = max(scored.get(opinion.id, 0.0), SURE)
+
+    people = {person.id: person for person in roster}
+    best = sorted(
+        ((people[pk], score) for pk, score in scored.items()), key=lambda pair: -pair[1]
+    )
+    return best[0][0].id if _sure(best) else None
+
+
+def split_off_signed(packets: list[Packet], roster: list[Person]) -> list[Packet]:
+    """
+    Лист, подписанный своим именем, принадлежит тому, кто подписался.
+
+    Пакет — догадка о группировке: границы ему рисуют листы условий, а внутри
+    голосуют все листы разом, и одно уверенное имя решает за всех. Пока это
+    работало на пачке, разрезанной по-настоящему, всё сходилось; на живой
+    пачке, разрезанной по ошибке, этого хватило, чтобы страница, подписанная
+    «Кирилл Орлов», уехала Варваре Мироновой — её имя стояло на первом листе
+    того же пакета.
+
+    Подпись — свидетельство сильнее любой группировки, поэтому такой лист
+    забирают из пакета и отдают тому, кто на нём написан. Молчать об этом
+    нельзя: страница несёт `signed_apart`, и человек видит, что её переложили.
+
+    Решение человека не пересматривается: сказанное им сильнее и подписи.
+    """
+    out: list[Packet] = []
+    for packet in packets:
+        if packet.decided_by_human:
+            out.append(packet)
+            continue
+
+        stays: list[Page] = []
+        moved: dict[int, list[Page]] = {}
+        for page in packet.pages:
+            mine = own_owner(page, roster)
+            if mine is not None and mine != packet.student_id:
+                moved.setdefault(mine, []).append(page)
+            else:
+                stays.append(page)
+
+        packet.pages = stays
+        # Пакет, оставшийся без единого листа решения, — это его условия и
+        # ничего больше. Условия ездят с работой, поэтому они уходят вместе с
+        # листами, если ушли все и к одному человеку.
+        if not stays and len(moved) == 1 and packet.conditions:
+            only = next(iter(moved))
+            out.append(
+                Packet(
+                    conditions=packet.conditions,
+                    pages=moved.pop(only),
+                    student_id=only,
+                    signed_apart=[],
+                )
+            )
+        elif stays or packet.conditions:
+            out.append(packet)
+
+        for student_id, pages in moved.items():
+            out.append(
+                Packet(
+                    pages=pages,
+                    student_id=student_id,
+                    signed_apart=[page.index for page in pages],
+                )
+            )
+    return out
+
+
 def top_candidates(page: Page, roster: list[Person], limit: int = 3) -> list[int]:
     """
     Кого предложить человеку по этой странице — лучшие, от самого похожего.
@@ -174,6 +257,8 @@ class Packet:
     # страницы, положенные сюда **не по своему имени**, а по свободным задачам
     # или по соседу. Догадка законная, но это догадка, и человек о ней узнаёт
     by_fit: list = field(default_factory=list)
+    # страницы, забранные из чужого пакета по собственной подписи
+    signed_apart: list = field(default_factory=list)
 
     @property
     def all_pages(self) -> list:
@@ -227,6 +312,14 @@ def condition_runs(pages: list[Page], kinds: dict) -> list[list[Page]]:
     return runs
 
 
+def _work_follows(run: list[Page], pages: list[Page], kinds: dict) -> bool:
+    """Есть ли за этим рядом условий хоть один лист решения."""
+    after = run[-1].index
+    return any(
+        page.index > after and kinds[page.index] != CONDITIONS for page in pages
+    )
+
+
 def split_by_conditions(pages: list[Page], kinds: dict) -> list[Packet] | None:
     """
     Разрезать пачку по рядам листов условий.
@@ -237,8 +330,16 @@ def split_by_conditions(pages: list[Page], kinds: dict) -> list[Packet] | None:
 
     Возвращает `None`, если рядов меньше двух: делить нечем. Один ряд — это не
     разметка, а общие условия на всю пачку, и с ними разбирается `arrange`.
+
+    **Ряд в самом конце пачки границей не считается — за ним нет работы.**
+    Стоило это целой разобранной пачки. Две последние страницы не опознались
+    как наш бланк (пустые обороты), попали в «условия» и дали второй ряд — а
+    два ряда включают разрезку. Пачка из тридцати четырёх листов стала двумя
+    пакетами по тринадцать учеников в каждом, и голосование, у которого один
+    пакет — один ученик, отдало пять чужих листов Варваре Мироновой, а
+    двадцать шесть не решило вовсе.
     """
-    runs = condition_runs(pages, kinds)
+    runs = [run for run in condition_runs(pages, kinds) if _work_follows(run, pages, kinds)]
     if len(runs) < 2:
         return None
 
@@ -475,7 +576,7 @@ def arrange(pages: list[Page], roster: list[Person]) -> list[Packet]:
             packet.student_id = scored[0][0].id
         else:
             packet.candidates = [person.id for person, _ in scored[:3]]
-    return packets_without_duplicates(by_conditions)
+    return packets_without_duplicates(split_off_signed(by_conditions, roster))
 
 
 def packets_without_duplicates(packets: list[Packet]) -> list[Packet]:
@@ -497,6 +598,10 @@ def packets_without_duplicates(packets: list[Packet]) -> list[Packet]:
         first = seen[packet.student_id]
         first.pages += packet.pages
         first.conditions += packet.conditions
+        # пометки едут вместе со страницами: слияние не повод потерять «этот
+        # лист положен догадкой» или «этот забран по своей подписи»
+        first.by_fit += packet.by_fit
+        first.signed_apart += packet.signed_apart
     return out
 
 

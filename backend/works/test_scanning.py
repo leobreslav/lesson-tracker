@@ -292,6 +292,109 @@ class PacketTests(SimpleTestCase):
 
         self.assertIsNone(split_by_conditions(pages, classify(pages)))
 
+    def test_a_trailing_run_does_not_cut_the_pile(self):
+        """
+        Ряд без шапки в самом конце пачки — это не граница: за ним нет работы.
+
+        Стоило это целой разобранной пачки. Два последних листа не опознались
+        как наш бланк (пустые обороты), попали в «условия» и дали второй ряд —
+        а два ряда включают разрезку. Тридцать четыре листа стали двумя
+        пакетами, и голосование, у которого один пакет — один ученик, отдало
+        чужие листы одному человеку, а половину пачки не решило вовсе.
+        """
+        pages = [
+            page(0, headerless=True),
+            page(1, "Fil", "Burmov", {0: 1}),
+            page(2, "Peter", "Tibora", {1: 3}),
+            page(3, headerless=True),
+            page(4, headerless=True),
+        ]
+
+        self.assertIsNone(split_by_conditions(pages, classify(pages)))
+
+    def test_a_trailing_run_after_a_real_boundary_still_leaves_it(self):
+        """Хвост ничего не отменяет: настоящая граница как была, так и есть."""
+        pages = [
+            page(0, headerless=True),
+            page(1, "Fil", "Burmov", {0: 1}),
+            page(2, headerless=True),
+            page(3, "Peter", "Tibora", {0: 3}),
+            page(4, headerless=True),
+        ]
+
+        packets = split_by_conditions(pages, classify(pages))
+
+        self.assertIsNotNone(packets)
+        # хвост заводит свой пакет из одних условий, и это не важно; важно, что
+        # настоящая граница по-прежнему развела двух учеников по разным пакетам
+        with_pages = [packet for packet in packets if packet.pages]
+        self.assertEqual([[p.index for p in one.pages] for one in with_pages], [[1], [3]])
+
+    def test_a_signed_page_leaves_a_foreign_packet(self):
+        """
+        Подпись сильнее группировки.
+
+        Пакет — догадка о том, как листы лежат вместе; подпись — свидетельство
+        о том, чей лист. На живой пачке пакет, собранный по ошибочной границе,
+        отдал Варваре Мироновой страницу, подписанную «Кирилл Орлов»: её имя
+        стояло на первом листе того же пакета, и голосование решило за всех.
+        """
+        pages = [
+            page(0, headerless=True),
+            page(1, "Fil", "Burmov", {0: 1}),
+            page(2, "Peter", "Tibora", {1: 3}),
+            page(3, headerless=True),
+            page(4, "Shahar", "Jerbi", {0: 2}),
+            page(5, "Shahar", "Jerbi", {1: 2}),
+        ]
+
+        packets = arrange(pages, ROSTER)
+        owner = {
+            page.index: packet.student_id
+            for packet in packets
+            for page in packet.pages
+        }
+
+        self.assertEqual(owner[1], 2)
+        self.assertEqual(owner[2], 3)
+
+    def test_a_page_taken_out_says_so(self):
+        """Переложили не молча: человек видит, что решение принято за него."""
+        pages = [
+            page(0, headerless=True),
+            page(1, "Fil", "Burmov", {0: 1}),
+            page(2, "Peter", "Tibora", {1: 3}),
+            page(3, headerless=True),
+            page(4, "Shahar", "Jerbi", {0: 2}),
+        ]
+
+        packets = arrange(pages, ROSTER)
+        moved = [index for packet in packets for index in packet.signed_apart]
+
+        self.assertIn(2, moved)
+
+    def test_an_unsigned_page_stays_where_the_packet_put_it(self):
+        """
+        Молчащий лист забирать не за что: у него нет своего свидетельства, и
+        границы пакета — лучшее, что о нём известно.
+        """
+        pages = [
+            page(0, headerless=True),
+            page(1, "Fil", "Burmov", {0: 1}),
+            page(2, marks={1: 3}),
+            page(3, headerless=True),
+            page(4, "Peter", "Tibora", {0: 2}),
+        ]
+
+        packets = arrange(pages, ROSTER)
+        owner = {
+            page.index: packet.student_id
+            for packet in packets
+            for page in packet.pages
+        }
+
+        self.assertEqual(owner[2], owner[1])
+
     def test_without_conditions_the_old_way_still_works(self):
         """Короткая работа: условий не раздавали, а пакеты всё равно есть."""
         pages = [

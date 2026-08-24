@@ -183,13 +183,23 @@ def read_questions(
     return out, message.usage.input_tokens, message.usage.output_tokens
 
 
-def _system_prompt(max_mark: int | None) -> str:
-    limit = (
-        f" A mark for a question is between 0 and {max_mark}; a larger number is "
-        f"almost certainly a misread digit, look again."
-        if max_mark
-        else ""
-    )
+def _system_prompt() -> str:
+    """
+    Что модель знает о листе — и чего ей знать не следует.
+
+    **Максимум за задачу ей больше не сообщается, и это выведено опытом.**
+    Стояла фраза «оценка от 0 до N; большее число почти наверняка неверно
+    прочитанная цифра, посмотри ещё раз» — и на живой пачке она работала ровно
+    так, как написана: у работы со шкалой «4 задачи по 1 баллу» лист с
+    выставленными «1 2 0 3 2» прочитался как «1 2 0 3 0». Модель не ошиблась,
+    она послушалась.
+
+    Это тот же капкан, что и со списком класса, который однажды подменил
+    фамилию: **всё, что подсказывает ожидаемый ответ, будет подставлено вместо
+    увиденного.** Поэтому спрашиваем только «что написано», а «бывает ли такое
+    число вообще» проверяет сервер — `troubles` ставит `mark_too_big`, и
+    человек видит и цифру, и лист. Проверка на месте, а чтение не искажено.
+    """
     return (
         "You are given a straightened strip cut from the top of a school answer "
         "sheet. The strip has two rows. The upper row has printed labels "
@@ -202,9 +212,10 @@ def _system_prompt(max_mark: int | None) -> str:
         "name. If a field is not filled in, return an EMPTY string for it; never "
         "invent a name. The handwriting varies: sometimes the teacher fills it in, "
         "not the student. Ignore Grade.\n"
-        "Report the 16 cell values in order. A cell you can see is empty is null."
-        + limit
-        + " The last cell is a sum for the page and may be larger than a single "
+        "Report the 16 cell values in order. A cell you can see is empty is null. "
+        "Report the digit you actually see: never adjust a mark to fit a range "
+        "you expect, and never turn an unexpected digit into a more likely one. "
+        "The last cell is a sum for the page and may be larger than a single "
         "question mark; it is often left blank, and that is fine."
     )
 
@@ -229,7 +240,6 @@ def read_header(
     *,
     media_type: str = "image/jpeg",
     candidates: list[str] | None = None,
-    max_mark: int | None = None,
     model: str = prices.HAIKU,
 ) -> tuple[dict, int, int]:
     """
@@ -265,7 +275,7 @@ def read_header(
         system=[
             {
                 "type": "text",
-                "text": _system_prompt(max_mark),
+                "text": _system_prompt(),
                 "cache_control": {"type": "ephemeral"},
             }
         ],

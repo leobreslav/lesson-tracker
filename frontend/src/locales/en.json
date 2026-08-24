@@ -1438,7 +1438,8 @@
       "beyond_questions": "a mark in a cell this work does not use",
       "first_name_only": "signed with a first name only",
       "placed_by_guess": "placed by a guess, not by a name",
-      "mark_differs": "the mark differs from the one already there"
+      "mark_differs": "the mark differs from the one already there",
+      "signed_apart": "taken out of its packet: it is signed by this student"
     },
     "questionsHint": "How many questions were in this work, and what is the top mark for one? The blank always has fifteen cells; the extra ones must stay empty — that is how a shifted reading gets caught.",
     "questionCount": "Questions",
@@ -1490,7 +1491,10 @@
     "pageSum": "Σ",
     "batchSpend_one": "This pile has cost {{amount}}, {{count}} reading.",
     "batchSpend_other": "This pile has cost {{amount}}, {{count}} readings.",
-    "workSpend": "{{amount}} on this assignment all told"
+    "workSpend": "{{amount}} on this assignment all told",
+    "headerlessWhy": "The grid matched {{score}} of {{need}} borders needed, and {{mark}}",
+    "markFound": "our mark in the corner is there.",
+    "markMissing": "our mark in the corner was not found."
   },
   "ai": {
     "title": "Reading scans",

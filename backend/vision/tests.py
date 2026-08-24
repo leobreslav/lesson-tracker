@@ -9,14 +9,54 @@
 
 from datetime import timedelta
 
+from django.test import SimpleTestCase
 from django.urls import reverse
 from django.utils import timezone
 from rest_framework.test import APITestCase
 from schools.testing import SchoolTestMixin
 
-from . import services
+from . import client, services
 from .models import AiSpend
 from .prices import HAIKU, SONNET, cost_micros
+
+
+class PromptTests(SimpleTestCase):
+    """
+    Что модель знает о листе — и чего ей знать не следует.
+
+    Правило одно, и выведено оно дважды, дорого: **всё, что подсказывает
+    ожидаемый ответ, будет подставлено вместо увиденного.** Сперва это был
+    список класса, который подменил фамилию — «Lape» стала «Jerbi», потому что
+    Jerbi в списке был. Потом максимум за задачу: у работы со шкалой «четыре
+    задачи по одному баллу» промпт говорил «оценка от 0 до 1, большее число
+    почти наверняка неверно прочитанная цифра, посмотри ещё раз», и лист с
+    выставленными «1 2 0 3 2» прочитался как «1 2 0 3 0». Модель не ошиблась —
+    она послушалась.
+
+    Проверять «бывает ли такое число» — работа сервера: `troubles` ставит
+    `mark_too_big`, и человек видит и цифру, и лист. Проверка на месте, а
+    чтение не искажено.
+    """
+
+    def test_the_prompt_does_not_say_what_it_expects(self):
+        prompt = client._system_prompt()
+
+        self.assertNotIn("look again", prompt)
+        self.assertNotIn("between 0 and", prompt)
+
+    def test_the_prompt_asks_for_what_is_seen(self):
+        self.assertIn("never adjust a mark", client._system_prompt())
+
+    def test_the_prompt_takes_no_scale(self):
+        """
+        Максимум не просто не упоминается — его сюда и не передают. Пока
+        параметр был, вернуть фразу стоило одной строки, а стоит она пачки
+        неверно прочитанных баллов.
+        """
+        from inspect import signature
+
+        self.assertEqual(list(signature(client._system_prompt).parameters), [])
+        self.assertNotIn("max_mark", signature(client.read_header).parameters)
 
 
 class PriceTests(SchoolTestMixin, APITestCase):

@@ -1438,6 +1438,12 @@ def scan_state(work) -> dict:
             trouble.append("placed_by_guess")
             for index in packet.by_fit:
                 by_index[index]["trouble"].append("placed_by_guess")
+        # лист, забранный из чужого пакета по своей подписи: переложили не
+        # молча, а вслух — человек видит, что решение принято за него
+        if packet.signed_apart:
+            trouble.append("signed_apart")
+            for index in packet.signed_apart:
+                by_index[index]["trouble"].append("signed_apart")
         if packet.student_id is None:
             trouble = ["no_owner"] + [c for c in trouble if c != "no_owner"]
             for page in packet.pages:

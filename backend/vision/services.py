@@ -73,7 +73,6 @@ def read_and_charge(
     image: bytes,
     media_type: str = "image/jpeg",
     candidates: list[str] | None = None,
-    max_mark: int | None = None,
     model: str = prices.HAIKU,
     purpose: str = AiSpend.SCAN_HEADER,
 ) -> dict:
@@ -85,7 +84,6 @@ def read_and_charge(
         image,
         media_type=media_type,
         candidates=candidates,
-        max_mark=max_mark,
         model=model,
     )
     _charge(school, user, work, purpose, model, input_tokens, output_tokens)

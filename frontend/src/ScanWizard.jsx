@@ -503,9 +503,21 @@ function PagesStep({ state, all, byIndex, questions, busy, onDecide, onFix, onNe
     }
   }
 
-  const columns = Array.from({ length: state.questions }, (_, i) => i + 1)
-  const nameOfQuestion = (number) => state.question_names?.[number - 1] ?? String(number)
+  /*
+   * Какие клетки показать. Шкала работы — обязательно, а за ней ещё всякая
+   * клетка, в которой что-то прочитано.
+   *
+   * Показывались только клетки шкалы, и это было хуже, чем кажется. У работы
+   * с четырьмя задачами прочитанные Q5 и Q8 не показывались **нигде**: экран
+   * писал «балл в клетке, которой у работы нет», но какая это клетка и что в
+   * ней стоит, узнать было негде, а стереть случайную галочку — тем более.
+   * Пометка без предмета не проверяется и не чинится.
+   */
   const cells = row?.cells ?? []
+  const columns = Array.from({ length: 15 }, (_, i) => i).filter(
+    (position) => position < state.questions || cells[position] != null,
+  )
+  const nameOfQuestion = (number) => state.question_names?.[number - 1] ?? String(number)
 
   const setCell = (position, value) => {
     const next = [...(row?.cells ?? Array(16).fill(null))]
@@ -612,7 +624,21 @@ function PagesStep({ state, all, byIndex, questions, busy, onDecide, onFix, onNe
             })}
           </p>
 
-          {row?.headerless && <p className="hint">{t('scan.headerless')}</p>}
+          {row?.headerless && (
+            <p className="hint">
+              {t('scan.headerless')}{' '}
+              {/* и почему именно: счёт совпадения с сеткой против порога, плюс
+                  нашлась ли метка нашего бланка в углу. Без этих двух чисел
+                  «не наш лист» и «плохое фото нашего листа» неразличимы, а это
+                  очень разные события */}
+              {byIndex[here?.index] &&
+                t('scan.headerlessWhy', {
+                  score: byIndex[here.index].score,
+                  need: byIndex[here.index].need,
+                  mark: t(byIndex[here.index].ours ? 'scan.markFound' : 'scan.markMissing'),
+                })}
+            </p>
+          )}
 
           {(row?.trouble ?? []).length > 0 && (
             <p className="hint warning">
@@ -665,16 +691,23 @@ function PagesStep({ state, all, byIndex, questions, busy, onDecide, onFix, onNe
 
           {row && !row.headerless && (
             <div className="row">
-              {columns.map((number) => (
-                <label key={number} className="scan-cell">
-                  <span>{nameOfQuestion(number)}</span>
+              {columns.map((position) => (
+                <label
+                  key={position}
+                  className={`scan-cell ${position >= state.questions ? 'beyond' : ''}`}
+                >
+                  <span>
+                    {position < state.questions
+                      ? nameOfQuestion(position + 1)
+                      : `Q${position + 1}`}
+                  </span>
                   <input
                     type="number"
                     min="0"
                     max="99"
-                    value={cells[number - 1] ?? ''}
+                    value={cells[position] ?? ''}
                     disabled={busy}
-                    onChange={(event) => setCell(number - 1, event.target.value)}
+                    onChange={(event) => setCell(position, event.target.value)}
                   />
                 </label>
               ))}

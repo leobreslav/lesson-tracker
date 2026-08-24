@@ -14,7 +14,7 @@ import {
   shrink,
   toGray,
 } from '../src/scanSheet.js'
-import { CORNERS, GRID, HEADER, PAGE, STRIP_WIDTH } from '../src/blankGeometry.js'
+import { CORNERS, GRID, HEADER, PAGE, STRIP, STRIP_WIDTH } from '../src/blankGeometry.js'
 
 /**
  * Рисуем лист так, как он выглядит на фотографии: тёмный фон, светлый
@@ -193,6 +193,14 @@ test('кроп берёт именно шапку, а не середину ли
   // Сверху полоска не режется: она начинается у самого края листа и кончается
   // под сеткой. Промах кропа вверх срезал бы верх букв в строке имени, а
   // выглядело бы это как испортившееся чтение почерка.
-  assert.equal(HEADER.y, 0)
-  assert.equal(HEADER.height, 38)
+  assert.equal(STRIP.y, 0)
+  assert.equal(STRIP.height, 38)
+
+  // А **ищут** шапку по другой области — той, что обнята метками. Расширение
+  // кропа вверх однажды утащило за собой и поиск: счёт стал считаться там,
+  // где гомография продолжена наружу, и две страницы живой пачки перестали
+  // опознаваться как наш бланк. Области разные, и это должно остаться так.
+  assert.equal(HEADER.y, 8)
+  assert.equal(HEADER.height, 30)
+  assert.ok(STRIP.y < HEADER.y, 'кроп обязан начинаться выше области поиска')
 })
