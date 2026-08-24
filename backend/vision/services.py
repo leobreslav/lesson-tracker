@@ -309,6 +309,15 @@ def name_reading(
         data["model"] = priced
         return data
 
+    # Читателей нет вовсе и ключа нет — это «не настроено», а не «не
+    # достучаться»: достукиваться не до чего. Разница не словесная, чинят их
+    # в разных местах, и сказать «сеть закрыта» тому, кто просто не вписал
+    # ключ, значит отправить его искать несуществующую беду.
+    if not order and not client.configured():
+        api_error(
+            Codes.AI_KEY_MISSING,
+            "Reading scans is not set up: the service has no reader.",
+        )
     if unreachable or not order:
         api_unavailable(
             Codes.AI_UNREACHABLE,

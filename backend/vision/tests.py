@@ -1068,6 +1068,24 @@ class ModelOutOfReachTests(PretendsThereIsAKey, SchoolTestMixin, APITestCase):
         self.assertEqual(caught.exception.detail["code"], "ai_unreachable")
         self.assertEqual(self.purposes(), [])
 
+    def test_a_contour_with_nothing_set_up_says_so_the_old_way(self):
+        """
+        Ни ключа, ни распознавателей — это «не настроено», а не «не
+        достучаться»: достукиваться не до чего.
+
+        Разница не словесная, и стоила она красного прогона. Контур без ключей
+        отвечал `ai_key_missing` с первого дня, и на этой фразе стоит
+        браузерный тест: человеку, который просто не вписал ключ, «сеть
+        закрыта» отправило бы искать несуществующую беду.
+        """
+        from unittest.mock import patch
+
+        with patch.object(services.client, "configured", lambda: False):
+            with self.assertRaises(Exception) as caught:
+                self.read(MATHPIX_APP_ID="", MATHPIX_APP_KEY="")
+
+        self.assertEqual(caught.exception.detail["code"], "ai_key_missing")
+
     def test_a_reader_that_simply_did_not_answer_says_that_instead(self):
         """
         Модель в этой беде не участвовала: ключа у контура нет вовсе, читатель
