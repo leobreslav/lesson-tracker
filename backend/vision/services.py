@@ -73,12 +73,20 @@ def read_and_charge(
     image: bytes,
     media_type: str = "image/jpeg",
     candidates: list[str] | None = None,
-    model: str = prices.HAIKU,
+    model: str | None = None,
     purpose: str = AiSpend.SCAN_HEADER,
 ) -> dict:
     """
     Прочитать полоску и записать трату. Одна дверь: считать, не заплатив, нельзя.
+
+    Модель по умолчанию берётся из настроек (`SCAN_HEADER_MODEL`), а не зашита
+    здесь: на цифрах в отдельных квадратиках разницы между моделями нет, а на
+    рукописном имени есть — и стоит она втрое. Проверять это надо на живой
+    пачке, и переключение должно стоить строки в `.env`, а не правки кода.
     """
+    from django.conf import settings
+
+    model = model or getattr(settings, "SCAN_HEADER_MODEL", prices.HAIKU)
     check_budget(school)
     data, input_tokens, output_tokens = read_header(
         image,

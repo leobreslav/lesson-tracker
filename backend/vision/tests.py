@@ -17,6 +17,7 @@ from schools.testing import SchoolTestMixin
 
 from . import client, services
 from .models import AiSpend
+from . import prices
 from .prices import HAIKU, SONNET, cost_micros
 
 
@@ -123,6 +124,36 @@ class CellLabelTests(SimpleTestCase):
 
     def test_nothing_read_is_sixteen_empties(self):
         self.assertEqual(client.values_from_marks(None), [None] * 16)
+
+
+class ModelChoiceTests(SimpleTestCase):
+    """
+    Какой моделью читается шапка — настройка, а не константа в коде.
+
+    На цифрах, вырезанных в отдельные квадратики, разницы между моделями нет:
+    задача простая. Разница есть на рукописном имени, и стоит она втрое —
+    значит, это выбор хозяина ключа, а не наш. Проверяется он единственным
+    способом, живой пачкой, и переключение поэтому обязано стоить строки в
+    `.env`.
+
+    Сторож нужен ровно затем, чтобы модель не вернулась в код константой: там
+    её меняют правкой и выкаткой, то есть не меняют вовсе.
+    """
+
+    def test_the_model_comes_from_the_settings(self):
+        from django.conf import settings
+
+        self.assertTrue(hasattr(settings, "SCAN_HEADER_MODEL"))
+
+    def test_the_default_model_has_a_price(self):
+        """
+        Модель без цены к вызову не допускается вовсе — иначе расход считался
+        бы по нулю, и это тихо снятый потолок. Настройка тут опаснее кода:
+        опечатку в `.env` не увидит ни один обзор.
+        """
+        from django.conf import settings
+
+        self.assertIsNotNone(prices.price_of(settings.SCAN_HEADER_MODEL))
 
 
 class PriceTests(SchoolTestMixin, APITestCase):
