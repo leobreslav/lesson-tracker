@@ -7392,6 +7392,18 @@ button.dropzone:hover:not(:disabled) {
   text-align: left;
 }
 
+/* Столбец предупреждений: каждое со своей строки и по левому краю — это
+   фразы, а не числа, и в один ряд они читаются как одна длинная. */
+.scan-warnings {
+  text-align: left;
+  white-space: normal;
+  min-width: 12rem;
+}
+
+.scan-warnings > span {
+  display: block;
+}
+
 /* Ученик, которому не досталось ни одной страницы, приглушён: он не ошибка,
    но и не результат — на контрольной его просто не было. */
 .scan-table tr.empty td {

@@ -119,3 +119,37 @@ export function gridInStrip() {
     width: (GRID.cells * GRID.cellWidth) / STRIP.width,
   }
 }
+
+/**
+ * Строка имени: от верха листа до подписей сетки.
+ *
+ * Уезжает она на чтение отдельной картинкой — вместе с плитками клеток, но
+ * своей полосой сверху: имя пишут поперёк всей ширины, и резать его на куски
+ * нечего.
+ */
+export function nameRow() {
+  return { x: STRIP.x, y: STRIP.y, width: STRIP.width, height: GRID.y - STRIP.y }
+}
+
+/**
+ * Одна клетка сетки баллов, без подписи над ней.
+ *
+ * **Клетки режет браузер, а не модель.** Гомография у нас уже есть, и по ней
+ * известно с точностью до миллиметра, где кончается Q14 и начинается Q15 —
+ * то есть ровно то, что модель делала на глаз и в чём ошибалась: балл из Q15
+ * уезжал в сумму, а вся строка — на клетку влево. Спрашивать её об этом
+ * незачем, когда ответ посчитан.
+ */
+export function cellRect(index) {
+  return {
+    x: GRID.x + index * GRID.cellWidth,
+    y: GRID.y + GRID.labelHeight,
+    width: GRID.cellWidth,
+    height: GRID.height - GRID.labelHeight,
+  }
+}
+
+/** Как зовётся клетка на бланке: Q1…Q15 и сумма за страницу. */
+export function cellLabel(index) {
+  return index === GRID.cells - 1 ? 'SUM' : `Q${index + 1}`
+}

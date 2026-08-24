@@ -729,7 +729,12 @@ function PagesStep({ state, all, byIndex, questions, busy, onDecide, onFix, onNe
               бумаге видно глазами, и вписать их надо уметь. Пока ряд полей
               прятался вместе с полоской, такая страница была тупиком: баллы
               есть, а поставить их некуда. */}
-          {byIndex[here?.index]?.strip && (
+          {/* Полоска показывается только у страницы, которую поиск шапки
+              признал своей. У отказавшейся она есть тоже — её выпрямили по
+              негодной четвёрке меток, — но выглядит она перекошенной сеткой,
+              и показывать её наравне с удачной значит выдавать симптом
+              отказа за содержимое листа. */}
+          {byIndex[here?.index]?.strip && !row?.headerless && (
             <img className="scan-strip" src={byIndex[here.index].strip} alt="" />
           )}
           <div
@@ -784,11 +789,22 @@ function PagesStep({ state, all, byIndex, questions, busy, onDecide, onFix, onNe
         </div>
 
         <div className="scan-side">
-          <p className="hint">
-            {t('scan.readAs', {
-              name: `${row?.first_name ?? ''} ${row?.surname ?? ''}`.trim() || '—',
-            })}
-          </p>
+          {/* Прочерк в «прочитано как» ничего не сообщал: и так видно, что
+              шапка пуста. Куда полезнее сказать, откуда взялось предложенное
+              имя — из стопки, а не с бумаги. */}
+          {`${row?.first_name ?? ''} ${row?.surname ?? ''}`.trim() ? (
+            <p className="hint">
+              {t('scan.readAs', {
+                name: `${row.first_name} ${row.surname}`.trim(),
+              })}
+            </p>
+          ) : (
+            <p className="hint">
+              {(row?.candidates ?? []).length > 0
+                ? t('scan.fromThePile', { name: nameOf(row.candidates[0]) })
+                : t('scan.nothingRead')}
+            </p>
+          )}
 
           {row?.headerless && (
             <p className="hint">
@@ -867,8 +883,19 @@ function PagesStep({ state, all, byIndex, questions, busy, onDecide, onFix, onNe
         <button type="button" className="secondary" disabled={busy} onClick={onBack}>
           {t('scan.back')}
         </button>
+        {/* Сколько страниц без хозяина — знали, а какие именно, приходилось
+            искать перелистыванием: на пачке в тридцать четыре листа последняя
+            такая страница ищется дольше, чем разбирается. Счётчик поэтому и
+            есть кнопка — она ведёт к первой из них. */}
         {stuck.length > 0 && (
-          <span className="hint">{t('scan.stillStuck', { count: stuck.length })}</span>
+          <button
+            type="button"
+            className="link"
+            disabled={busy}
+            onClick={() => setAt(sheets.indexOf(stuck[0]))}
+          >
+            {t('scan.stillStuck', { count: stuck.length })}
+          </button>
         )}
       </div>
     </section>
@@ -932,6 +959,11 @@ function CheckStep({ state, pages, busy, onFix, onBack, onApply }) {
                 <th key={number}>{nameOfQuestion(number)}</th>
               ))}
               <th>{t('scan.total')}</th>
+              {/* Предупреждения — свой столбец, а не приписка к сумме. Стояли
+                  они рядом с числом, и строка читалась как «итог 14 та же
+                  задача дважды»: два разных факта в одной клетке, причём
+                  тревожный набран мелким шрифтом при крупном спокойном. */}
+              <th>{t('scan.warnings')}</th>
             </tr>
           </thead>
           <tbody>
@@ -957,18 +989,24 @@ function CheckStep({ state, pages, busy, onFix, onBack, onApply }) {
                 ))}
                 <td>
                   <b>{student.total}</b>
+                </td>
+                <td className="scan-warnings">
                   {student.conflicts.length > 0 && (
                     <span className="hint warning">
-                      {' '}
                       {t('scan.conflict', { list: student.conflicts.join(', ') })}
                     </span>
+                  )}
+                  {/* листы одного ученика лежат в стопке подряд — так их и
+                      сдают; разрыв почти всегда значит чужую страницу,
+                      приписанную по совпавшему покрытию задач */}
+                  {student.scattered && (
+                    <span className="hint warning">{t('scan.scattered')}</span>
                   )}
                   {/* балл, который скан перепишет, называется до записи:
                       прежний мог быть поставлен за онлайн-ответ или прошлым
                       разбором этой же пачки, и молча заменить его нельзя */}
                   {student.overwrites?.length > 0 && (
                     <span className="hint warning">
-                      {' '}
                       {t('scan.overwrites', {
                         list: student.overwrites
                           .map((one) =>

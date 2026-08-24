@@ -13,8 +13,8 @@
  * платить нечем — картинку всё равно ужимает Anthropic.
  */
 
-import { PAGE, STRIP_WIDTH } from './blankGeometry'
-import { ENOUGH_LINES, extractHeader } from './scanSheet'
+import { GRID, PAGE, STRIP_WIDTH, cellLabel } from './blankGeometry'
+import { ENOUGH_LINES, cutForReading, extractHeader } from './scanSheet'
 
 /**
  * Ширина отрисовки страницы. Полоска занимает 190 мм из 210, и хочется, чтобы
@@ -100,11 +100,63 @@ export function scaledJpeg(canvas, maxSide = STRIP_WIDTH, quality = 0.8) {
   return new Promise((resolve) => small.toBlob(resolve, 'image/jpeg', quality))
 }
 
-/** JPEG из картинки: полоска уезжает на сервер именно так. */
-export function toJpeg(image, quality = 0.88) {
-  return new Promise((resolve) =>
-    toCanvas(image).toBlob((blob) => resolve(blob), 'image/jpeg', quality),
-  )
+/* Плитка клетки: подпись слева, сама клетка справа. */
+const TILE = { width: 240, height: 128, label: 74, pad: 4 }
+const TILE_COLUMNS = 4
+
+/**
+ * Картинка, которая уезжает на чтение: строка имени и шестнадцать плиток.
+ *
+ * **Выравнивать модели больше нечего, и в этом весь смысл.** Полоска шапки —
+ * это шестнадцать узких колонок на картинке пять к одному, и чтобы сказать
+ * «тройка стоит под Q15», модель должна пройти взглядом вдоль всей строки и
+ * не сбиться. Она сбивалась: на одной странице балл из Q15 уезжал в сумму, на
+ * другой вся строка съезжала на клетку влево. Схема с подписями («назови
+ * клетку, а не место») это уменьшила, но не убрала — потому что задача
+ * осталась той же.
+ *
+ * Между тем ответ у нас уже посчитан: гомография знает с точностью до
+ * миллиметра, где кончается Q14 и начинается Q15. Поэтому клетки режет
+ * браузер, а рядом с каждой **мы сами** рисуем её имя. Модели остаётся
+ * прочесть цифру в квадратике — то, что она делает хорошо.
+ *
+ * Подпись рисуется красным и снаружи клетки: спутать её с напечатанным на
+ * бланке нечем, и внутрь клетки она не залезает.
+ */
+export function readingSheet(image, h) {
+  const { name, cells } = cutForReading(image, h)
+
+  const scale = (TILE.width * TILE_COLUMNS) / name.width
+  const nameHeight = Math.round(name.height * scale)
+  const rows = Math.ceil(cells.length / TILE_COLUMNS)
+
+  const canvas = document.createElement('canvas')
+  canvas.width = TILE.width * TILE_COLUMNS
+  canvas.height = nameHeight + rows * TILE.height
+  const context = canvas.getContext('2d')
+  context.fillStyle = '#fff'
+  context.fillRect(0, 0, canvas.width, canvas.height)
+
+  context.drawImage(toCanvas(name), 0, 0, canvas.width, nameHeight)
+
+  context.font = 'bold 26px sans-serif'
+  context.textBaseline = 'middle'
+  cells.forEach((cell, index) => {
+    const left = (index % TILE_COLUMNS) * TILE.width
+    const top = nameHeight + Math.floor(index / TILE_COLUMNS) * TILE.height
+
+    context.strokeStyle = '#000'
+    context.lineWidth = 1
+    context.strokeRect(left + 0.5, top + 0.5, TILE.width - 1, TILE.height - 1)
+
+    context.fillStyle = '#c00'
+    context.fillText(cellLabel(index), left + TILE.pad * 2, top + TILE.height / 2)
+
+    const side = TILE.height - TILE.pad * 2
+    context.drawImage(toCanvas(cell), left + TILE.label, top + TILE.pad, side, side)
+  })
+
+  return canvas
 }
 
 /**
@@ -161,7 +213,9 @@ export async function walk(file, { onPage, send, blank, questions, stop } = {}) 
     }
 
     if (enough && send) {
-      const blob = await toJpeg(found.strip)
+      // на чтение уезжает не полоска, а собранная из неё картинка: строка
+      // имени и шестнадцать плиток с нашими подписями
+      const blob = await scaledJpeg(readingSheet(image, found.h), 1568, 0.9)
       page.sent = await send({
         index: page.index,
         blob,

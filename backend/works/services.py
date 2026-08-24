@@ -1505,6 +1505,13 @@ def scan_state(work) -> dict:
                 "marks": {q + 1: value for q, value in marks.items()},
                 "total": sum(marks.values()) if marks else 0,
                 "conflicts": conflicts,
+                # Листы одного ученика лежат в стопке подряд — так их и
+                # сдают. Разрыв почти всегда значит, что чужая страница
+                # приписана ему по догадке: покрытие задач совпало, а работа
+                # чужая. Само по себе это не отказ — пачку могли и
+                # перемешать, — но сказать об этом надо: молча такое не
+                # находится вовсе.
+                "scattered": _scattered(packet.pages if packet else []),
                 # Балл, который скан перепишет, называется до записи — и
                 # называется он теперь у ученика, а не у пакета: разбор идёт
                 # постранично, а «было 3, придёт 1» — это про итог человека,
@@ -1536,6 +1543,14 @@ def scan_state(work) -> dict:
         # потолка, и ответ на него нужен там же, у пачки
         "spend": scan_spend(work),
     }
+
+
+def _scattered(pages) -> bool:
+    """Лежат ли листы ученика в стопке подряд."""
+    if len(pages) < 2:
+        return False
+    places = sorted(page.index for page in pages)
+    return places[-1] - places[0] + 1 != len(places)
 
 
 def scan_spend(work) -> dict:

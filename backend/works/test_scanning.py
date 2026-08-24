@@ -21,6 +21,8 @@ from .scanning import (
     group,
     merge_marks,
     classify,
+    candidates_for,
+    short_for,
     split_by_conditions,
     top_candidates,
     troubles,
@@ -180,6 +182,68 @@ class HumanBeatsDetectionTests(SimpleTestCase):
         marks, _ = merge_marks([p for one in packets for p in one.pages])
 
         self.assertEqual(marks.get(1), 2)
+
+
+class NameMatchTests(SimpleTestCase):
+    """
+    Что считается «тем же именем».
+
+    Две ошибки, обе с живой пачки, и обе молчаливые: лист уходил к человеку —
+    или, хуже, к чужому — там, где имя было написано разборчиво.
+    """
+
+    ROSTER = [
+        Person(id=1, first="Матвей", last="Гусев"),
+        Person(id=2, first="Никита", last="Белов"),
+        Person(id=3, first="Софья", last="Панова"),
+    ]
+
+    def best(self, first="", surname=""):
+        one = Page(index=0, first=first, surname=surname)
+        return candidates_for(one, self.ROSTER)[0]
+
+    def test_a_surname_written_in_the_name_box_still_matches(self):
+        """
+        В какую графу попало слово — не свидетельство. Подписываются «фамилия
+        имя», да и модель может перепутать графы; сравнение было привязано к
+        полю намертво, и «Гусев» в графе имени не сравнивался с фамилиями
+        вовсе — лист получал в кандидаты человека, чьё **имя** случайно
+        оказалось похоже.
+        """
+        person, score = self.best(first="Гусев")
+
+        self.assertEqual(person.id, 1)
+        self.assertEqual(score, 100)
+
+    def test_a_name_and_surname_swapped_round_still_match(self):
+        person, _ = self.best(first="Гусев", surname="Матвей")
+
+        self.assertEqual(person.id, 1)
+
+    def test_a_short_name_is_the_same_name(self):
+        """«Соня» и «Софья» — один человек, а букв общих три из пяти."""
+        person, score = self.best(first="Соня", surname="Панова")
+
+        self.assertEqual(person.id, 3)
+        self.assertEqual(score, 100)
+
+    def test_a_short_name_alone_is_enough_to_lead(self):
+        person, _ = self.best(first="Соня")
+
+        self.assertEqual(person.id, 3)
+
+    def test_the_letter_yo_does_not_matter(self):
+        self.assertTrue(short_for("Лёша", "Алексей"))
+
+    def test_two_people_are_not_collapsed_into_one(self):
+        """
+        Соблазн «схлопнуть похожие имена» велик, но схлопывание работает в обе
+        стороны: Александр и Александра — двое, и неразличимыми по имени они
+        стать не должны. Уменьшительное — свидетельство одностороннее.
+        """
+        self.assertFalse(short_for("Александр", "Александра"))
+        self.assertTrue(short_for("Саша", "Александра"))
+        self.assertTrue(short_for("Саша", "Александр"))
 
 
 class CandidateTests(SimpleTestCase):

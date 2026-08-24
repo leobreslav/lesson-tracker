@@ -103,8 +103,8 @@ _HEADER_TOOL = {
             "marks": {
                 "type": "array",
                 "description": (
-                    "one entry per cell that has a handwritten digit in it. "
-                    "Empty cells are simply left out. Order does not matter."
+                    "one entry per tile whose cell has a handwritten digit in "
+                    "it. Empty cells are simply left out. Order does not matter."
                 ),
                 "items": {
                     "type": "object",
@@ -112,10 +112,9 @@ _HEADER_TOOL = {
                         "cell": {
                             "type": "string",
                             "description": (
-                                "the label PRINTED in the grey strip directly "
-                                "above this cell, copied as printed: 'Q1'..'Q15', "
-                                "or 'sum' for the last cell, the one labelled "
-                                "with a sigma"
+                                "the RED label of the tile this digit is in, "
+                                "copied as printed: 'Q1'..'Q15', or 'SUM' for "
+                                "the page total"
                             ),
                         },
                         "value": {
@@ -271,27 +270,26 @@ def _system_prompt() -> str:
     человек видит и цифру, и лист. Проверка на месте, а чтение не искажено.
     """
     return (
-        "You are given a straightened strip cut from the top of a school answer "
-        "sheet. The strip has two rows. The upper row has printed labels "
-        "'First name:', 'Surname:', 'Grade:', 'Date:' with handwriting on the "
-        "rules after them. The lower row is a table of 16 cells. Every cell has "
-        "its own PRINTED label in a grey strip directly above it: 'Q1' to 'Q15', "
-        "and the last one is a sigma, for the page total. A cell holds at most "
-        "one handwritten digit, in pen of any colour, and most cells are empty.\n"
+        "You are given a picture assembled from one school answer sheet. At the "
+        "top is the name row, with printed labels 'First name:', 'Surname:', "
+        "'Grade:', 'Date:' and handwriting on the rules after them. Below it are "
+        "16 tiles, one per cell of the marks grid. Each tile shows a RED label we "
+        "printed — 'Q1' to 'Q15', and 'SUM' for the page total — and, next to it, "
+        "that cell cut out of the sheet. A cell holds at most one handwritten "
+        "digit, in pen of any colour, and most cells are empty.\n"
         "Report the handwritten First name and Surname SEPARATELY, letter by "
         "letter, EXACTLY as written — do not correct them into a more plausible "
         "name. If a field is not filled in, return an EMPTY string for it; never "
         "invent a name. The handwriting varies: sometimes the teacher fills it in, "
         "not the student. Ignore Grade.\n"
-        "For every cell that has a handwritten digit, report TWO things: the "
-        "label printed above that very cell, and the digit. READ THE LABEL, DO "
-        "NOT COUNT THE CELLS: counting from the left is what goes wrong, and a "
-        "count that is off by one puts a mark on the wrong question. Leave empty "
-        "cells out entirely. Report the digit you actually see: never adjust a "
-        "mark to fit a range you expect, and never turn an unexpected digit into "
-        "a more likely one. The last cell is a sum for the page, not a question: "
-        "it may be larger than any single mark, it is often left blank, and it "
-        "belongs to 'sum' and to no Q at all."
+        "For every tile whose cell has a handwritten digit, report the red label "
+        "of that tile and the digit. The tiles are already cut apart, so a digit "
+        "belongs to the tile it is drawn in and to no other — do not look for it "
+        "in a row or count anything. Leave empty tiles out entirely. Report the "
+        "digit you actually see: never adjust a mark to fit a range you expect, "
+        "and never turn an unexpected digit into a more likely one. 'SUM' is the "
+        "page total, not a question: it may be larger than any single mark, and "
+        "it is often left blank."
     )
 
 

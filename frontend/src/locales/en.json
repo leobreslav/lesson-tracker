@@ -1499,7 +1499,11 @@
     "checkScale": "Check the scale before the reading starts. Marks land on these questions, and a mark in a cell beyond them is how a shifted reading gets caught — getting this wrong is only visible once the whole pile is paid for.",
     "rowName": "Called",
     "rowMax": "Top mark",
-    "back": "Back a step"
+    "back": "Back a step",
+    "warnings": "Worth a look",
+    "scattered": "the pages are not in one run — a stray sheet may have been added",
+    "fromThePile": "Nothing is written here. Suggested from the pile: {{name}}",
+    "nothingRead": "Nothing is written here, and there is nobody above to borrow from."
   },
   "ai": {
     "title": "Reading scans",

@@ -22,7 +22,7 @@
  * `ImageData`), поэтому проверяются в node без браузера.
  */
 
-import { GRID, HEADER, PAGE, QR, STRIP, STRIP_WIDTH, headerCorners, sheetCorners, stripHeight } from './blankGeometry.js'
+import { GRID, HEADER, PAGE, QR, STRIP, STRIP_WIDTH, cellRect, headerCorners, nameRow, sheetCorners, stripHeight } from './blankGeometry.js'
 
 /** Оттенки серого одной плоскостью: дальше всё считается по ней. */
 export function toGray(image) {
@@ -531,5 +531,32 @@ export function extractHeader(image) {
  * читать её можно, а вот меньше двенадцати значит, что мы смотрим не туда.
  */
 export const ENOUGH_LINES = 12
+
+/**
+ * Разрезать выпрямленную шапку на то, из чего собирается картинка для чтения:
+ * строку имени и шестнадцать клеток по отдельности.
+ *
+ * Резать по гомографии — значит не спрашивать модель о том, что уже
+ * посчитано. Где кончается Q14 и начинается Q15, известно с точностью до
+ * миллиметра; на глаз же это и ошибалось — балл из Q15 уезжал в сумму, а вся
+ * строка съезжала на клетку влево, причём в разные стороны на разных
+ * страницах.
+ *
+ * Разрешение клетки берётся под её натуральную величину: клетка бланка
+ * 11.5 × 11.5 мм, страница рисуется примерно в десять точек на миллиметр, и
+ * больше ста двадцати точек на клетку взять просто неоткуда.
+ */
+export const CELL_SIDE = 120
+
+export function cutForReading(image, h) {
+  const row = nameRow()
+  const rowHeight = Math.round((STRIP_WIDTH * row.height) / row.width)
+  return {
+    name: warp(image, h, row, STRIP_WIDTH, rowHeight),
+    cells: Array.from({ length: GRID.cells }, (_, index) =>
+      warp(image, h, cellRect(index), CELL_SIDE, CELL_SIDE),
+    ),
+  }
+}
 
 export { HEADER, headerCorners }
