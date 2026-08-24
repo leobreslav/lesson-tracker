@@ -165,6 +165,47 @@ class ModelChoiceTests(SimpleTestCase):
             self.assertIn(name, prices.PER_REQUEST, name)
 
 
+class TheCallToTheModelIsBoundedInTimeTests(SimpleTestCase):
+    """
+    Вызов модели обязан сдаваться быстро, если соединения нет.
+
+    Стоило это пятисотой на первой же живой пачке. На контуре, откуда
+    Anthropic не отвечает, пакеты не отбиваются, а **пропадают**: соединение
+    не падает, а висит. Умолчания SDK — нет предела на connect и три
+    повтора — превращали это в минуту внутри одного запроса, а воркера
+    gunicorn убивают по таймауту. Страница отвечала `SystemExit`, то есть
+    пятисотой, в которой ни слова о причине; и хуже всего, что запасной
+    читатель, ради которого всё это заведено, до вызова не доживал.
+
+    Сторож нужен затем, что умолчания возвращаются молча: строку легко
+    упростить при следующей правке, а узнать об этом можно только с живой
+    пачки на закрытом контуре.
+    """
+
+    def test_connecting_gives_up_in_seconds_not_minutes(self):
+        with self.settings(ANTHROPIC_API_KEY="not-a-real-key"):
+            made = client._client()
+
+        self.assertIsNotNone(
+            made.timeout.connect,
+            "у соединения с моделью нет предела: на глухой сети запрос "
+            "провисит до смерти воркера",
+        )
+        self.assertLessEqual(made.timeout.connect, 10)
+
+    def test_the_retries_do_not_multiply_the_wait(self):
+        """
+        Повторы сами по себе полезны — они про 429 и 5xx, где сервер ответил.
+        Опасны они вместе с долгим соединением: столько же ожиданий подряд.
+        Предел на connect держит их в узде, но и число попыток должно быть
+        обозримым.
+        """
+        with self.settings(ANTHROPIC_API_KEY="not-a-real-key"):
+            made = client._client()
+
+        self.assertLessEqual(made.max_retries * made.timeout.connect, 20)
+
+
 class PriceTests(SchoolTestMixin, APITestCase):
     def test_the_cost_is_counted_in_millionths(self):
         # 1000 входных по $1/M и 100 выходных по $5/M

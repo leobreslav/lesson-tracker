@@ -30,11 +30,19 @@ services:
     # bootstrap идёт между migrate и collectstatic: схема уже на месте, а
     # статика к нему отношения не имеет. Он идемпотентен и ничего не удаляет,
     # поэтому безопасно выполняется при каждом старте
+    #
+    # `--timeout 60` вместо умолчания в 30 секунд, и это про чтение сканов.
+    # Один запрос там законно ходит к внешним читателям: не достучались до
+    # модели (до пятнадцати секунд), позвали распознавателя (до двадцати), а
+    # на плохом контуре ещё и второго. В тридцать секунд эта цепочка не
+    # укладывалась, и воркер убивали посреди чужого ответа — страница отвечала
+    # пятисотой без единого слова о причине. Дольше держать воркер тоже нельзя:
+    # их два, и каждый занятый — половина прода.
     command: >
       sh -c "python manage.py migrate --noinput &&
              python manage.py bootstrap &&
              python manage.py collectstatic --noinput &&
-             gunicorn config.wsgi:application --bind 0.0.0.0:8000 --workers 2 --access-logfile -"
+             gunicorn config.wsgi:application --bind 0.0.0.0:8000 --workers 2 --timeout 60 --access-logfile -"
     volumes:
       - static_files:/app/staticfiles
     env_file: .env.prod
