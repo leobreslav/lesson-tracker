@@ -1,4 +1,4 @@
-import { PEOPLE, expect, ready, test } from './harness.js'
+import { PEOPLE, expect, expectConsoleError, ready, test } from './harness.js'
 
 /**
  * Scenario 2: the «School» section — four tabs and the link between a
@@ -260,6 +260,10 @@ test('кабинет, в котором уже шли уроки, уходит �
   await signIn(PEOPLE.admin)
   await openSection(page, '/school/reference')
 
+  // отказ здесь — предмет теста, и 400 в консоли к нему прилагается:
+  // сторож ошибок иначе считает ожидаемый ответ сервера поломкой страницы
+  expectConsoleError(page, /Failed to load resource|400|api\/rooms/)
+
   const rooms = page.locator('[data-panel="rooms"]')
   const used = rooms.locator('li', { hasText: '214' }).first()
 
@@ -462,33 +466,47 @@ test('день школы разворачивает курсы по столб�
   await ready(page)
   await expect(page).toHaveURL(/span=day/)
 
-  // неделя и день листаются своим шагом: стрелка в дне ходит по одному дню
-  const day = page.locator('[data-day="2026-09-07"]')
-  for (let step = 0; step < 7 && !(await day.count()); step += 1) {
+  // Какой именно день показан, спрашиваем **у сетки**, а не назначаем сами.
+  // Переключение размаха оставляет тот же якорь — то есть тот же день
+  // недели, что «сегодня», — и до заранее выбранной даты от него бывает и
+  // вперёд, и назад: тест, листающий в одну сторону, зависел от того, на
+  // какой день недели пришёлся посев.
+  const grid = page.locator('[data-day]')
+  await expect(grid).toBeVisible()
+
+  // листаем вперёд до учебного дня: в неучебном клеток нет, и ставить час
+  // некуда — это и проверяет «+» ниже
+  for (let step = 0; step < 7; step += 1) {
+    if (await page.locator('[data-add]').count()) break
     await page.getByRole('button', { name: '→' }).click()
     await page.waitForTimeout(250)
   }
-  await expect(day).toBeVisible()
+  const day = await grid.getAttribute('data-day')
+  expect(day, 'учебный день не нашёлся за неделю').toBeTruthy()
 
   // столбец на каждый курс школы — включая те, у которых в этот день часов
   // нет: пустой столбец и есть то место, куда час ставят
   await expect(page.locator('[data-column]')).toHaveCount(courses.body.length)
 
   // ставим час в столбец курса: курс в окне уже выбран — переспрашивать то,
-  // во что человек нажал, незачем
-  const first = courses.body[0]
-  await page.locator(`[data-add="2026-09-07:8:${first.id}"]`).click()
+  // во что человек нажал, незачем. Клетку берём свободную, а её номер —
+  // у самой сетки: какие часы в этот день заняты, решает посев
+  const free = page.locator('[data-add]').last()
+  const spot = await free.getAttribute('data-add')
+  const [, number, columnKey] = spot.split(':')
+  await free.click()
+
   const dialog = page.locator('dialog.modal')
-  await expect(dialog.getByLabel('Курсы')).toHaveValue(String(first.id))
+  await expect(dialog.getByLabel('Курсы')).toHaveValue(columnKey)
   await dialog.getByRole('button', { name: 'Добавить', exact: true }).click()
 
   await expect(dialog).toBeHidden()
-  await expect(page.locator(`[data-lesson="2026-09-07:8:${first.id}"]`)).toHaveCount(1)
+  await expect(page.locator(`[data-lesson="${spot}"]`)).toHaveCount(1)
 
   // и тот же час виден в неделе: сетки две, расписание одно
   await page.getByRole('radio', { name: 'Неделя', exact: true }).click()
   await ready(page)
-  await expect(page.locator('[data-lesson="2026-09-07:8"]')).toHaveCount(1)
+  await expect(page.locator(`[data-lesson="${day}:${number}"]`)).toHaveCount(1)
 })
 
 test('в дне столбцы переключаются на кабинеты, и час виден там же', async ({
@@ -505,12 +523,14 @@ test('в дне столбцы переключаются на кабинеты,
   // ось живёт в адресе, поэтому тумблер уже стоит на кабинетах
   await expect(page.getByRole('radio', { name: 'Кабинеты' })).toBeChecked()
 
-  // столбец на каждый кабинет школы плюс крайний «не указан»: час без
-  // кабинета обязан быть видно, иначе урок пропадает с экрана
+  // столбец на каждый кабинет школы — включая пустые: свободный кабинет и
+  // есть тот ответ, ради которого на эту ось смотрят
   const columns = page.locator('[data-column]')
   await expect(columns.filter({ hasText: '214' })).toHaveCount(1)
   await expect(columns.filter({ hasText: 'Спортзал' })).toHaveCount(1)
-  await expect(columns.filter({ hasText: 'Не указан' })).toHaveCount(1)
+  // делимость названа в подписи столбца, а не спрятана в подсказке: о
+  // совпадении в таком зале расписание молчит, и знать об этом надо заранее
+  await expect(columns.filter({ hasText: 'Спортзал' })).toContainText('делимый')
 
   // и обратно на курсы — тем же тумблером
   await page.getByRole('radio', { name: 'Курсы' }).click()

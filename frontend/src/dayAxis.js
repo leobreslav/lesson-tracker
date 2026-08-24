@@ -104,7 +104,11 @@ export function columns(
         key: String(room.id),
         id: room.id,
         name: room.name,
-        note: room.is_shared ? 'shared' : '',
+        // делимость — признак, а не текст: перевод здесь означал бы, что
+        // чистый модуль знает про словарь, а сырое «shared» доехало бы до
+        // экрана словом. Подписывает его тот, кто рисует
+        shared: room.is_shared ?? false,
+        note: '',
       })
     }
   }

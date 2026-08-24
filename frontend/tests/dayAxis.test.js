@@ -49,6 +49,15 @@ describe('в какой столбец попадает час', () => {
 })
 
 describe('какие столбцы показать', () => {
+  test('делимость столбца — признак, а не готовое слово', () => {
+    // перевод в чистом модуле означал бы, что он знает про словарь, а сырое
+    // «shared» доехало бы до экрана словом — так и доехало в первом заходе
+    const shown = columns('room', { rooms, slots: [] })
+
+    assert.equal(shown.find((one) => one.name === 'Спортзал').shared, true)
+    assert.equal(shown.find((one) => one.name === '214').shared, false)
+  })
+
   test('пустой столбец остаётся: это и есть ответ «свободно»', () => {
     const shown = columns('room', { rooms, slots: [] })
 

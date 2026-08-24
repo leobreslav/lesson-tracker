@@ -805,7 +805,8 @@
       "course": "Курсы",
       "teacher": "Учителя",
       "room": "Кабинеты",
-      "homegroup": "Классы"
+      "homegroup": "Классы",
+      "sharedRoom": "делимый"
     }
   },
   "noSchool": {

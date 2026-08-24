@@ -111,7 +111,9 @@ export default function DayGrid({
                 влезает в имя: кто ведёт курс, делимый ли зал. Внутри клеток
                 этого нет: повторённое десять раз в одном столбце, оно
                 закрыло бы собой сами часы */}
-            <em>{column.note}</em>
+            <em>
+              {column.shared ? t('agenda.axis.sharedRoom') : column.note}
+            </em>
           </div>
         ))}
 

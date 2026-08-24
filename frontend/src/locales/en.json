@@ -782,7 +782,8 @@
       "course": "Courses",
       "teacher": "Teachers",
       "room": "Rooms",
-      "homegroup": "Classes"
+      "homegroup": "Classes",
+      "sharedRoom": "shared"
     }
   },
   "noSchool": {
