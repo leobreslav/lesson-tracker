@@ -1508,7 +1508,8 @@
     "fromThePile": "Nothing is written here. Suggested from the pile: {{name}}",
     "nothingRead": "Nothing is written here, and there is nobody above to borrow from.",
     "startOverConfirm": "Delete what has been read and start the pile over?\n\n{{count}} pages will go, and reading them again costs money: a page is not read twice while it is here.",
-    "toPages": "On to the pages"
+    "toPages": "On to the pages",
+    "noStrip": "The header could not be straightened here, so there is no strip to show — the marks are yours to type in."
   },
   "ai": {
     "title": "Reading scans",

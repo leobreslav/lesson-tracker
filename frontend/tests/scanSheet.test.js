@@ -22,7 +22,7 @@ import { CORNERS, GRID, HEADER, PAGE, STRIP, STRIP_WIDTH } from '../src/blankGeo
  * быть не может — он приходит из PDF в браузере, — а проверять надо ровно то,
  * что этот модуль решает: где лист, где метки и какой поворот верный.
  */
-function drawSheet({ scale = 3, angleFlip = 0, margin = 40, noise = 0 } = {}) {
+function drawSheet({ scale = 3, angleFlip = 0, margin = 40, noise = 0, marks = true } = {}) {
   const width = Math.round(PAGE.width * scale) + margin * 2
   const height = Math.round(PAGE.height * scale) + margin * 2
   const data = new Uint8ClampedArray(width * height * 4)
@@ -59,7 +59,7 @@ function drawSheet({ scale = 3, angleFlip = 0, margin = 40, noise = 0 } = {}) {
     }
   }
 
-  for (const corner of Object.values(CORNERS)) square(corner.x, corner.y, 4)
+  if (marks) for (const corner of Object.values(CORNERS)) square(corner.x, corner.y, 4)
 
   // сетка баллов: семнадцать вертикалей и две горизонтали
   const line = (fromX, fromY, toX, toY) => {
@@ -166,6 +166,34 @@ test('перевёрнутая страница выправляется сам�
     found.score >= ENOUGH_LINES,
     `перевёрнутую не выправило: линий ${found.score}`,
   )
+})
+
+test('ровный лист читается и без единой метки по углам', () => {
+  /*
+   * Метки — приближение, и на сканере они не нужны: страница уже выпрямлена,
+   * край листа совпадает с краем картинки. Хуже того, поиск меток на такой
+   * странице умеет **ошибаться**: найдя не ту четвёрку, он строит перекошенную
+   * гомографию, набирает семь границ из двенадцати и объявляет лист «не
+   * нашим». На живой пачке так пропали три страницы, и две из них читались
+   * глазами без усилий — на экране ровные и чистые.
+   *
+   * Поэтому среди кандидатов есть и тождественная раскладка: углы листа на
+   * углы картинки. Испортить она ничего не может — выбор идёт по тому же
+   * счёту.
+   */
+  const found = extractHeader(drawSheet({ marks: false, margin: 0 }))
+
+  assert.ok(found, 'ровный лист без меток не нашёлся вовсе')
+  assert.ok(
+    found.score >= ENOUGH_LINES,
+    `границ нашлось ${found.score} из нужных ${ENOUGH_LINES}`,
+  )
+})
+
+test('перевёрнутый ровный лист тоже читается без меток', () => {
+  const found = extractHeader(drawSheet({ marks: false, margin: 0, angleFlip: 1 }))
+
+  assert.ok(found && found.score >= ENOUGH_LINES, `границ ${found?.score}`)
 })
 
 test('пустой лист без сетки набирает мало и честно об этом говорит', () => {

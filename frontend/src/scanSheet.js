@@ -499,18 +499,54 @@ export function extractHeader(image) {
   const nominal = sheetCorners()
   let best = null
 
-  for (const corners of candidates) {
+  const consider = (from, to, corners) => {
+    const h = homography(from, to)
+    if (!h) return
+    const score = gridScore(warp(image, h, HEADER, TRY_WIDTH, tryHeight))
+    if (!best || score > best.score) best = { score, h, corners }
+  }
+
+  for (const quad of candidates) {
     for (let turn = 0; turn < 4; turn += 1) {
-      const turned = corners.slice(turn).concat(corners.slice(0, turn))
+      const turned = quad.slice(turn).concat(quad.slice(0, turn))
       const full = turned.map((point) => ({
         x: point.x * small.step,
         y: point.y * small.step,
       }))
-      const h = homography(nominal, full)
-      if (!h) continue
-      const score = gridScore(warp(image, h, HEADER, TRY_WIDTH, tryHeight))
-      if (!best || score > best.score) best = { score, h, corners: full }
+      consider(nominal, full, full)
     }
+  }
+
+  /*
+   * И последний кандидат: **лист просто лежит ровно**.
+   *
+   * Метки — приближение, и на сканере они не нужны вовсе: страница уже
+   * выпрямлена, край листа совпадает с краем картинки. А поиск меток на такой
+   * странице умеет ошибаться: найдя не ту четвёрку, он строит перекошенную
+   * гомографию, набирает 7 из 12 и объявляет лист «не нашим». На живой пачке
+   * так пропали три страницы, из которых две прочитались бы глазами без
+   * усилий — на экране они были ровные и чистые.
+   *
+   * Поэтому пробуем ещё и тождественную раскладку: углы листа на углы
+   * картинки. Испортить она ничего не может — выбор идёт по тому же счёту, и
+   * побеждает она только там, где сетка действительно сошлась лучше.
+   *
+   * Повороты те же четыре: страница из сканера бывает и вверх ногами.
+   */
+  const page = [
+    { x: 0, y: 0 },
+    { x: PAGE.width, y: 0 },
+    { x: PAGE.width, y: PAGE.height },
+    { x: 0, y: PAGE.height },
+  ]
+  const frame = [
+    { x: 0, y: 0 },
+    { x: image.width, y: 0 },
+    { x: image.width, y: image.height },
+    { x: 0, y: image.height },
+  ]
+  for (let turn = 0; turn < 4; turn += 1) {
+    consider(page, frame.slice(turn).concat(frame.slice(0, turn)), null)
   }
 
   if (!best) return null
