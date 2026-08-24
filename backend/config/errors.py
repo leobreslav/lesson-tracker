@@ -186,6 +186,11 @@ class Codes:
     ATTACHMENT_TITLE_REQUIRED = "attachment_title_required"
     ATTACHMENT_FORBIDDEN = "attachment_forbidden"
     ATTACHMENT_NOT_AN_IMAGE = "attachment_not_an_image"
+    # Отдельный код от предыдущего, и разошлись они по смыслу: в текст
+    # урока встаёт только картинка, а работой ученика бывает и PDF —
+    # телефонный сканер отдаёт именно его. Пока код был один, фраза
+    # словаря могла быть верной ровно для одного из двух отказов.
+    PHOTO_TYPE_NOT_ALLOWED = "photo_type_not_allowed"
     URL_REQUIRED = "url_required"
     FILE_TYPE_NOT_ALLOWED = "file_type_not_allowed"
     SCHOOL_QUOTA_EXCEEDED = "school_quota_exceeded"
@@ -215,6 +220,7 @@ class Codes:
     STROKE_TOO_LONG = "stroke_too_long"
     PEN_WIDTH_INVALID = "pen_width_invalid"
     POINT_INVALID = "point_invalid"
+    PAGE_INVALID = "page_invalid"
     COLOUR_INVALID = "colour_invalid"
 
     # чтение сканов моделью и потолок расхода

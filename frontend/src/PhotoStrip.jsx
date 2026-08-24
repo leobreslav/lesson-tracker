@@ -96,7 +96,9 @@ export default function PhotoStrip({
 
       <ul className="photos">
         {photos.map((photo) =>
-          photo.image ? (
+          /* плиткой показывается всё, что просмотрщик умеет открыть, — и
+             снимок, и PDF: у второго миниатюрой служит первая страница */
+          (photo.viewable ?? photo.image) ? (
             <li key={photo.id} className="photo">
               <button
                 type="button"
@@ -104,7 +106,7 @@ export default function PhotoStrip({
                 title={photo.title}
                 onClick={() => onOpen(photo)}
               >
-                <PhotoThumb photo={photo.id} alt={photo.title} />
+                <PhotoThumb photo={photo.id} alt={photo.title} pdf={photo.pdf} />
                 {/* обводка или заметки на снимке: без пометки проверенная
                     тетрадь неотличима от непроверенной */}
                 {(photo.notes > 0 || photo.strokes > 0) && (

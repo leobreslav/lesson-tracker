@@ -1516,3 +1516,58 @@ class WorkHandoutTests(FilesTestCase):
         self.assertEqual(
             [item["id"] for item in answer.data["files"]], [handout["id"]]
         )
+
+
+class ReadingAFileWithCodeTests(SimpleTestCase):
+    """
+    Кому бакет разрешает читать себя **кодом**, а не тегом.
+
+    До просмотра PDF браузер брал из R2 только картинки, тегом, и CORS был не
+    нужен вовсе. `pdf.js` читает файл запросами с диапазонами байт — и без
+    разрешения браузер не отдаст прочитанное странице: файл на месте, ссылка
+    верная, просмотрщик пуст. Настройка эта живёт в бакете, поэтому норовит
+    стать фольклором; команда нужна затем, чтобы правило лежало в коде.
+
+    Проверяется здесь то, что решает **команда**, а не boto3: кому разрешаем
+    и что именно. Разговор с R2 без R2 не проверить, и подделывать его смысла
+    нет — там один вызов.
+    """
+
+    def test_the_allowed_origins_are_ours_and_not_a_star(self):
+        """
+        Звёздочка выглядит безобидной — ссылка подписана и живёт пять минут, —
+        но означает «любая страница в интернете, добывшая ссылку». А ссылка
+        попадает в историю браузера, в лог прокси и в пересланное сообщение.
+        """
+        from files.management.commands.r2_cors import RULE, origins
+
+        with self.settings(
+            CORS_ALLOWED_ORIGINS=["https://lbreslav.com/"],
+            CSRF_TRUSTED_ORIGINS=["https://lbreslav.com", "https://www.lbreslav.com"],
+        ):
+            allowed = origins()
+
+        self.assertEqual(allowed, ["https://lbreslav.com", "https://www.lbreslav.com"])
+        self.assertNotIn("*", allowed)
+        self.assertEqual(RULE["AllowedMethods"], ["GET", "HEAD"])
+
+    def test_only_reading_is_allowed(self):
+        """
+        Запись и удаление сюда не входят: CORS не заменяет право, он лишь
+        разрешает браузеру показать странице то, что сервер уже отдал.
+        """
+        from files.management.commands.r2_cors import RULE
+
+        self.assertNotIn("PUT", RULE["AllowedMethods"])
+        self.assertNotIn("DELETE", RULE["AllowedMethods"])
+
+    def test_ranged_reading_is_allowed_because_pdfjs_reads_in_pieces(self):
+        """
+        Без `Range` в запросе и `Content-Range` в ответе pdf.js тянул бы файл
+        целиком на каждую страницу — то есть двадцать мегабайт на нажатие
+        «дальше».
+        """
+        from files.management.commands.r2_cors import RULE
+
+        self.assertIn("Range", RULE["AllowedHeaders"])
+        self.assertIn("Content-Range", RULE["ExposeHeaders"])

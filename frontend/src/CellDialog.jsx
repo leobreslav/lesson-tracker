@@ -52,7 +52,7 @@ export default function CellDialog({ work, student, task, cell = null, onChanged
       fetchWorkPhotos(work, student.id).then((answer) =>
         setShots(
           (answer.tasks.find((one) => one.id === task.id)?.photos ?? []).filter(
-            (photo) => photo.image,
+            (photo) => photo.viewable ?? photo.image,
           ),
         ),
       ),

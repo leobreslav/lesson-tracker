@@ -40,7 +40,12 @@ from django.db import transaction
 from django.db.models import Count
 
 from files.models import KIND_FILE, Attachment
-from files.services import shows_in_text
+from files.services import (
+    VIEWER_EXTENSIONS,
+    extension_of,
+    opens_in_viewer,
+    shows_in_text,
+)
 
 from .models import CLOSED, Message, PhotoNote, PhotoStroke, StudentWork, Task
 
@@ -58,6 +63,12 @@ MIN_PEN, MAX_PEN = 1, 60
 # Сколько точек принимается в одном мазке. Длинная линия, нарисованная
 # медленно, — это несколько сотен точек; десять тысяч это уже не мазок.
 MAX_POINTS = 4000
+
+# Самая дальняя страница, на которую кладут пометку. Число это не про PDF — в
+# нём страниц бывает и больше, — а про поле в базе: `PositiveSmallIntegerField`
+# держит до 32767, и мазок с номером в миллион уронил бы запись ошибкой базы
+# вместо честного отказа. Тетрадь на тысячу страниц в школу не сдают.
+MAX_PAGE = 999
 
 
 # --- кто на что имеет право --------------------------------------------------
@@ -173,14 +184,16 @@ def accept(work, student, *, upload, task_id=None, by, now=None) -> Attachment:
                 field="task",
             )
 
-    if not shows_in_text(upload.name):
-        # тот же список, что у картинки в содержании урока, и по той же
-        # причине: сюда шлют **снимок**, а не документ. Приняв .pdf, мы
-        # обещали бы просмотрщику страницу, которую он не нарисует
+    if not opens_in_viewer(upload.name):
+        # Список — это ровно то, что просмотрщик умеет открыть и разметить.
+        # Пока в нём были одни картинки, PDF отказывали справедливо: мы
+        # обещали бы страницу, которую он не нарисует. Теперь рисует, и
+        # телефонный сканер, отдающий тетрадь PDF'ом, перестал быть тупиком.
         api_error(
-            Codes.ATTACHMENT_NOT_AN_IMAGE,
-            "A photo is expected: png, jpg, gif or webp.",
+            Codes.PHOTO_TYPE_NOT_ALLOWED,
+            "A photo or a PDF is expected.",
             field="file",
+            allowed=sorted(VIEWER_EXTENSIONS),
         )
 
     row, _ = StudentWork.objects.get_or_create(work=work, student=student)
@@ -235,8 +248,18 @@ def rotate(attachment, *, degrees: int) -> Attachment:
     return attachment
 
 
-def draw(attachment, *, author, color: str, width: int, points) -> PhotoStroke:
-    """Положить мазок поверх снимка."""
+def draw(
+    attachment, *, author, color: str, width: int, points, page: int = 0
+) -> PhotoStroke:
+    """
+    Положить мазок поверх снимка — на ту страницу, которую человек видел.
+
+    У снимка страница всегда нулевая, у PDF — та, что открыта. Число сюда
+    приходит от клиента и не сверяется с числом страниц в файле: сервер его
+    не знает, а узнать значило бы скачать файл из бакета на каждый мазок.
+    Цена ошибки при этом никакая — пометка на странице, которой нет, просто
+    не покажется, — а цена проверки: гигабайты через два воркера.
+    """
     if not isinstance(points, list) or len(points) < 1:
         api_error(Codes.STROKE_EMPTY, "A stroke has no points.", field="points")
     if len(points) > MAX_POINTS:
@@ -264,20 +287,29 @@ def draw(attachment, *, author, color: str, width: int, points) -> PhotoStroke:
         color=_colour(color),
         width=width,
         points=cleaned,
+        page=_page(page),
     )
 
 
-def undo(attachment, *, author) -> bool:
+def undo(attachment, *, author, page: int = 0) -> bool:
     """
-    Снять последний мазок. `False` — снимать было нечего.
+    Снять последний мазок **на этой странице**. `False` — снимать было нечего.
 
     Отмена ходит на сервер, а не живёт в памяти вкладки, потому что и сам
     мазок ложится на сервер сразу: вкладку закроют, а вложение, ждущее
     кнопки «сохранить», — это правка, которая тихо не случилась. Цена
     названа честно: отменяется **свой** последний мазок, а не чужой, — иначе
     двое проверяющих одну работу стирали бы друг за другом.
+
+    Страница здесь по той же причине, что и автор. Человек смотрит на седьмую
+    страницу и нажимает «отменить»; сними мы мазок с третьей — на экране не
+    произойдёт ничего, а работа пропадёт. Нажмут ещё раз.
     """
-    last = attachment.strokes.filter(author=author).order_by("created_at", "id").last()
+    last = (
+        attachment.strokes.filter(author=author, page=_page(page))
+        .order_by("created_at", "id")
+        .last()
+    )
     if last is None:
         return False
 
@@ -285,7 +317,9 @@ def undo(attachment, *, author) -> bool:
     return True
 
 
-def pin(attachment, *, author, x: float, y: float, text: str) -> PhotoNote:
+def pin(
+    attachment, *, author, x: float, y: float, text: str, page: int = 0
+) -> PhotoNote:
     """
     Приколоть заметку к месту и сказать в ней первое слово.
 
@@ -301,7 +335,7 @@ def pin(attachment, *, author, x: float, y: float, text: str) -> PhotoNote:
 
     with transaction.atomic():
         note = PhotoNote.objects.create(
-            attachment=attachment, author=author, x=x, y=y
+            attachment=attachment, author=author, x=x, y=y, page=_page(page)
         )
         Message.objects.create(note=note, author=author, text=text)
 
@@ -345,6 +379,11 @@ def markup_payload(attachment, *, user) -> dict:
                 "author": stroke.author_id,
                 "color": stroke.color,
                 "width": stroke.width,
+                # страница едет с каждым мазком, а фильтрует их экран: разметка
+                # приезжает **одним** ответом, и делить её на страницы значило
+                # бы спрашивать сервер при каждом листании — то есть заново
+                # платить за то, что уже привезли
+                "page": stroke.page,
                 "points": stroke.points,
             }
             for stroke in attachment.strokes.all()
@@ -356,6 +395,7 @@ def markup_payload(attachment, *, user) -> dict:
 def note_payload(note) -> dict:
     return {
         "id": note.pk,
+        "page": note.page,
         "x": note.x,
         "y": note.y,
         "author": note.author_id,
@@ -404,13 +444,23 @@ def photo_payload(attachment, *, viewer=None) -> dict:
         ),
         "size": attachment.stored_file.size if attachment.stored_file_id else None,
         "kind": attachment.kind,
-        # рисовать это картинкой или показывать строкой со скрепкой. Решает
-        # расширение, а не догадка экрана: на работе ученика вперемешку
-        # лежат снимки с телефона и разрезанный PDF от учителя, и просмотрщик
-        # умеет только первые
+        # Два разных вопроса, и разошлись они ровно тогда, когда просмотрщик
+        # научился PDF. `image` — можно ли нарисовать это одним тегом `<img>`
+        # (миниатюра, лента). `viewable` — можно ли открыть и разметить: сюда
+        # добавляется PDF, который тегом не показать, зато можно нарисовать
+        # постранично. Решает расширение, а не догадка экрана: на работе
+        # ученика вперемешку лежат снимки с телефона и PDF от учителя.
         "image": bool(
             attachment.stored_file_id
             and shows_in_text(attachment.stored_file.original_name)
+        ),
+        "viewable": bool(
+            attachment.stored_file_id
+            and opens_in_viewer(attachment.stored_file.original_name)
+        ),
+        "pdf": bool(
+            attachment.stored_file_id
+            and extension_of(attachment.stored_file.original_name) == ".pdf"
         ),
         "url": attachment.url,
         # сколько пометок на снимке: аннотация, когда он пришёл из `sheets`,
@@ -515,6 +565,26 @@ def _point(pair, *, field: str):
         )
 
     return round(x, 5), round(y, 5)
+
+
+def _page(value) -> int:
+    """
+    Номер страницы: целое от нуля. Отрицательное и не-число — отказ.
+
+    Верхней границы нет намеренно: сколько в файле страниц, знает браузер, а
+    сервер узнал бы это, только скачав файл из бакета — на каждый мазок. См.
+    `draw`: цена ошибки тут никакая, цена проверки — гигабайты через два
+    воркера.
+    """
+    try:
+        page = int(value)
+    except (TypeError, ValueError):
+        api_error(Codes.PAGE_INVALID, "A page is a whole number from zero.", field="page")
+
+    if page < 0 or page > MAX_PAGE:
+        api_error(Codes.PAGE_INVALID, "A page is a whole number from zero.", field="page")
+
+    return page
 
 
 def _colour(value: str) -> str:

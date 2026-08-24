@@ -11,7 +11,17 @@ import {
   turnPhoto,
   undoOnPhoto,
 } from './api'
-import { layout, penPixels, step, toScreen, toSource, turn } from './photoGeometry'
+import { book, drawPageOf } from './pdfPage'
+import {
+  layout,
+  onPage,
+  pageAt,
+  penPixels,
+  step,
+  toScreen,
+  toSource,
+  turn,
+} from './photoGeometry'
 
 /**
  * Просмотрщик работы: увидеть снимок, обвести ошибку, поговорить о месте.
@@ -41,6 +51,21 @@ import { layout, penPixels, step, toScreen, toSource, turn } from './photoGeomet
  * **Листается набор, а не всё подряд.** Открыли снимки задачи — листаются
  * они; открыли работу целиком — снимки работы. За «дальше» человек ждёт
  * следующую страницу той же тетради, а не что-нибудь ещё.
+ *
+ * **PDF — это те же пиксели, просто добытые иначе.** Тетрадь приходит и
+ * снимком, и PDF'ом: телефонные сканеры отдают именно его, да и учительский
+ * скан пачки — он же. Пока просмотрщик умел один `<img>`, такая работа была
+ * тупиком — файл виден строкой со скрепкой, а обвести в нём нечего.
+ *
+ * Чинится это **не вторым просмотрщиком**, а одним превращением: страница
+ * PDF рисуется в холст (`pdfPage.js`), и дальше идёт той же дорогой, что
+ * картинка, — у холста есть ширина, высота и пиксели, а больше отсюда ничего
+ * и не спрашивается. Второе окно «для PDF» разошлось бы с первым в первой же
+ * правке, и разошлось бы там, где это дороже всего: в геометрии пометок.
+ *
+ * Отсюда единственное настоящее отличие: **у пометки появляется страница**.
+ * Доли отвечают «где на листе», страница — «на каком листе»; у снимка ответ
+ * на второй вопрос один и тот же, у PDF — нет.
  */
 
 // Палитра проверки: красный по умолчанию, потому что им и правят; синий и
@@ -61,6 +86,16 @@ export default function PhotoViewer({ photos, current, onClose, onChanged }) {
 
   const [markup, setMarkup] = useState(null)
   const [picture, setPicture] = useState(null)
+  /* Открытая страница — вместе с тем, чья она.
+   *
+   * Пара, а не два состояния: сбрасывать страницу эффектом при смене
+   * вложения значило бы прожить один кадр с чужим номером — и на нём
+   * спросить у семистраничного PDF страницу, которой у него нет. Здесь же
+   * «страница третья» и «третья страница вот этого» — одно значение, и
+   * рассинхронизироваться им негде.
+   */
+  const [openAt, setOpenAt] = useState({ id: current, page: 0 })
+  const [pages, setPages] = useState(1)
   const [box, setBox] = useState({ width: 0, height: 0 })
   const [zoom, setZoom] = useState(1)
   const [pan, setPan] = useState({ x: 0, y: 0 })
@@ -78,6 +113,10 @@ export default function PhotoViewer({ photos, current, onClose, onChanged }) {
 
   const rotation = markup?.rotation ?? 0
   const mayDraw = Boolean(markup?.can_draw)
+  // страница чужого вложения — не наша страница: пока пара не переписана,
+  // открыта нулевая
+  const page = openAt.id === photo?.id ? openAt.page : 0
+  const turnTo = (next) => setOpenAt({ id: photo.id, page: next })
 
   /* --- что показываем --------------------------------------------------- */
 
@@ -86,7 +125,6 @@ export default function PhotoViewer({ photos, current, onClose, onChanged }) {
 
     let cancelled = false
     setMarkup(null)
-    setPicture(null)
     setZoom(1)
     setPan({ x: 0, y: 0 })
     setNote(null)
@@ -96,14 +134,48 @@ export default function PhotoViewer({ photos, current, onClose, onChanged }) {
       (problem) => !cancelled && setError(problem.message),
     )
 
+    return () => {
+      cancelled = true
+    }
+  }, [photo])
+
+  /*
+   * Пиксели страницы. Отдельным эффектом от разметки, и это про листание:
+   * разметка приезжает **одним** ответом на весь документ, а перерисовывать
+   * при переходе на седьмую страницу надо только страницу. Спроси мы заодно
+   * и разметку, каждое нажатие «дальше» стоило бы запроса — при том, что
+   * ответ был бы тот же самый.
+   */
+  useEffect(() => {
+    if (!photo) return undefined
+
+    let cancelled = false
+    setPicture(null)
+
     addressOf(photo.id).then(
-      (url) => {
-        const image = new Image()
-        // размеры нужны до первой отрисовки: без них масштаб не посчитать, а
-        // холст, нарисованный «пока по умолчанию», прыгает на глазах
-        image.onload = () => !cancelled && setPicture(image)
-        image.onerror = () => !cancelled && setError(t('photos.gone'))
-        image.src = url
+      async (url) => {
+        if (cancelled) return
+        if (!photo.pdf) {
+          const image = new Image()
+          // размеры нужны до первой отрисовки: без них масштаб не посчитать,
+          // а холст, нарисованный «пока по умолчанию», прыгает на глазах
+          image.onload = () => !cancelled && setPicture(image)
+          image.onerror = () => !cancelled && setError(t('photos.gone'))
+          image.src = url
+          return
+        }
+
+        try {
+          const document = await book(photo.id, url)
+          if (cancelled) return
+          setPages(document.numPages)
+          // страница за концом документа — это не отказ, а «вложение
+          // сменилось на более короткое»: показываем первую
+          const sheet = await drawPageOf(document, Math.min(page, document.numPages - 1))
+          if (!cancelled) setPicture(sheet)
+        } catch {
+          if (!cancelled) setError(t('photos.pdfGone'))
+        }
       },
       (problem) => !cancelled && setError(problem.message),
     )
@@ -111,7 +183,7 @@ export default function PhotoViewer({ photos, current, onClose, onChanged }) {
     return () => {
       cancelled = true
     }
-  }, [photo, t])
+  }, [photo, page, t])
 
   useEffect(() => {
     const watched = stage.current
@@ -128,11 +200,16 @@ export default function PhotoViewer({ photos, current, onClose, onChanged }) {
 
   // натуральный размер, а не `.width`: у элемента `<img>` тот отвечает «каким
   // его нарисовали», и стоит однажды задать ему размер стилем — масштаб
-  // посчитается от него, а пометки лягут мимо
+  // посчитается от него, а пометки лягут мимо. У холста со страницей PDF
+  // натурального размера нет вовсе — там `width` и есть настоящий размер
+  // пикселей, потому что рисовали его мы сами
   const place = picture
     ? layout({
         box,
-        image: { width: picture.naturalWidth, height: picture.naturalHeight },
+        image: {
+          width: picture.naturalWidth ?? picture.width,
+          height: picture.naturalHeight ?? picture.height,
+        },
         rotation,
         zoom,
         pan,
@@ -173,7 +250,9 @@ export default function PhotoViewer({ photos, current, onClose, onChanged }) {
     ink.drawImage(picture, -along / 2, -across / 2, along, across)
     ink.restore()
 
-    const strokes = [...(markup?.strokes ?? [])]
+    // мазки **этой** страницы: разметка приезжает на весь документ разом, а
+    // рисуется та, что под пером
+    const strokes = onPage(markup?.strokes, page)
     if (drawing) strokes.push(drawing)
 
     ink.lineCap = 'round'
@@ -194,7 +273,7 @@ export default function PhotoViewer({ photos, current, onClose, onChanged }) {
       }
       ink.stroke()
     }
-  }, [box, picture, place, rotation, markup, drawing])
+  }, [box, picture, place, rotation, markup, drawing, page])
 
   useEffect(() => {
     paint()
@@ -290,7 +369,7 @@ export default function PhotoViewer({ photos, current, onClose, onChanged }) {
     setDrawing(null)
     setError(null)
     try {
-      const saved = await drawOnPhoto(photo.id, stroke)
+      const saved = await drawOnPhoto(photo.id, { ...stroke, page })
       setMarkup((was) => ({ ...was, strokes: [...was.strokes, saved] }))
       onChanged?.()
     } catch (problem) {
@@ -302,7 +381,7 @@ export default function PhotoViewer({ photos, current, onClose, onChanged }) {
     setBusy(true)
     setError(null)
     try {
-      await undoOnPhoto(photo.id)
+      await undoOnPhoto(photo.id, page)
       setMarkup(await fetchPhotoMarkup(photo.id))
       onChanged?.()
     } catch (problem) {
@@ -331,7 +410,7 @@ export default function PhotoViewer({ photos, current, onClose, onChanged }) {
     const [x, y] = note.fresh
     setBusy(true)
     try {
-      const saved = await pinPhotoNote(photo.id, { x, y, text })
+      const saved = await pinPhotoNote(photo.id, { x, y, text, page })
       setMarkup((was) => ({ ...was, notes: [...was.notes, saved] }))
       setNote({ id: saved.id })
       onChanged?.()
@@ -349,7 +428,7 @@ export default function PhotoViewer({ photos, current, onClose, onChanged }) {
 
   if (!photo) return null
 
-  const pinned = markup?.notes ?? []
+  const pinned = onPage(markup?.notes, page)
   const opened = pinned.find((item) => item.id === note?.id) ?? null
 
   return (
@@ -358,22 +437,49 @@ export default function PhotoViewer({ photos, current, onClose, onChanged }) {
       className="photo-viewer"
       title={photo.title}
       actions={
-        photos.length > 1 && (
-          <span className="photo-paging">
-            <button type="button" className="link" onClick={() => flip(-1)}>
-              ‹
-            </button>
-            <span className="hint">
-              {t('photos.position', {
-                at: photos.findIndex((item) => item.id === photo.id) + 1,
-                of: photos.length,
-              })}
+        <>
+          {/* Страницы документа и снимки набора листаются **порознь**, хотя
+              выглядят одинаково. Это разные вопросы: «дальше по этой тетради»
+              и «дальше по стопке», и слитая в одну кнопка увозила бы к
+              соседнему ученику ровно тогда, когда человек дочитал страницу. */}
+          {photo.pdf && pages > 1 && (
+            <span className="photo-paging">
+              <button
+                type="button"
+                className="link"
+                onClick={() => turnTo(pageAt(pages, page, -1))}
+              >
+                ‹
+              </button>
+              <span className="hint">
+                {t('photos.page', { at: page + 1, of: pages })}
+              </span>
+              <button
+                type="button"
+                className="link"
+                onClick={() => turnTo(pageAt(pages, page, 1))}
+              >
+                ›
+              </button>
             </span>
-            <button type="button" className="link" onClick={() => flip(1)}>
-              ›
-            </button>
-          </span>
-        )
+          )}
+          {photos.length > 1 && (
+            <span className="photo-paging">
+              <button type="button" className="link" onClick={() => flip(-1)}>
+                ‹
+              </button>
+              <span className="hint">
+                {t('photos.position', {
+                  at: photos.findIndex((item) => item.id === photo.id) + 1,
+                  of: photos.length,
+                })}
+              </span>
+              <button type="button" className="link" onClick={() => flip(1)}>
+                ›
+              </button>
+            </span>
+          )}
+        </>
       }
     >
       {error && (
@@ -462,7 +568,7 @@ export default function PhotoViewer({ photos, current, onClose, onChanged }) {
             <button
               type="button"
               className="compact"
-              disabled={busy || !(markup?.strokes ?? []).length}
+              disabled={busy || !onPage(markup?.strokes, page).length}
               onClick={undo}
             >
               {t('photos.undo')}

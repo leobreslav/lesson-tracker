@@ -987,6 +987,15 @@ class PhotoStroke(models.Model):
         related_name="photo_strokes",
         verbose_name="author",
     )
+    # Страница, на которой лежит мазок. Ноль у картинки — не «страницы нет», а
+    # «страница единственная»: NULL завёл бы два кода на один случай, и каждый
+    # запрос про мазки пришлось бы писать дважды.
+    #
+    # **Страница — часть адреса, ровно как доля координаты.** Доли отвечают
+    # «где на листе», страница — «на каком листе»; у снимка второй вопрос имеет
+    # единственный ответ, у PDF — нет, и без него пометка со второй страницы
+    # легла бы на первую. Молча: доли-то в границах.
+    page = models.PositiveSmallIntegerField("page, from zero", default=0)
     # `#rrggbb`; палитра живёт на клиенте, а сюда приезжает выбранный цвет
     color = models.CharField("colour", max_length=7, default="#e11d48")
     # толщина пера в тысячных ширины картинки: 6 ≈ тонкая линия, 40 ≈ маркер
@@ -1041,6 +1050,8 @@ class PhotoNote(models.Model):
         related_name="photo_notes",
         verbose_name="author",
     )
+    # Страница — часть адреса булавки, ровно как у мазка и по той же причине.
+    page = models.PositiveSmallIntegerField("page, from zero", default=0)
     x = models.FloatField("x, share of the width")
     y = models.FloatField("y, share of the height")
     created_at = models.DateTimeField(auto_now_add=True)

@@ -234,7 +234,7 @@ export default function GradeDialog({
 
         {viewing && (
           <PhotoViewer
-            photos={papers.filter((paper) => paper.image)}
+            photos={papers.filter((paper) => paper.viewable ?? paper.image)}
             current={viewing}
             onChanged={onChanged}
             onClose={() => setViewing(null)}

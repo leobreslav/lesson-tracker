@@ -210,7 +210,14 @@ export default function StudentWork() {
  * учителя; листать он умеет только первые. Отдать ему всё значило бы дать
  * кнопку «дальше», которая приводит в пустоту.
  */
-const images = (photos = []) => photos.filter((photo) => photo.image)
+/**
+ * Что уедет в просмотрщик.
+ *
+ * Вопрос тут «что он умеет открыть», а не «что можно нарисовать тегом
+ * `<img>`»: с тех пор как он рисует страницы PDF, эти два вопроса разошлись,
+ * и PDF-тетрадь, отобранная по картинке, осталась бы строкой со скрепкой.
+ */
+const images = (photos = []) => photos.filter((photo) => photo.viewable ?? photo.image)
 
 /*
  * Почему в этой работе нельзя отвечать — или `null`, если можно.
@@ -397,7 +404,7 @@ function TaskCard({ task, work, number, canAnswer, onSent, onError, onView }) {
         photos={task.photos ?? []}
         hint={canAnswer ? t('photos.taskHint') : null}
         onOpen={(photo) =>
-          onView({ photos: (task.photos ?? []).filter((one) => one.image), id: photo.id })
+          onView({ photos: images(task.photos), id: photo.id })
         }
         onSend={
           canAnswer

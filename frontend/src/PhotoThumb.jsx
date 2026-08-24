@@ -2,6 +2,11 @@ import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { photoUrl } from './api'
+/* Ленивым этот импорт быть не может и не должен: просмотрщик тянет тот же
+   модуль напрямую, так что в отдельный кусок он всё равно не уедет — сборка
+   на это и ругается. Тяжёлый тут не он (пара килобайт), а сам `pdfjs`, и он
+   грузится лениво внутри, при первом же PDF. */
+import { book, drawPageOf } from './pdfPage'
 
 /**
  * Снимок работы, показанный картинкой.
@@ -46,23 +51,49 @@ export function forgetPhoto(photo) {
   known.delete(photo)
 }
 
-export default function PhotoThumb({ photo, alt = '', className = '' }) {
+export default function PhotoThumb({ photo, alt = '', className = '', pdf = false }) {
   const { t } = useTranslation()
   const [url, setUrl] = useState(null)
   const [gone, setGone] = useState(false)
 
+  /*
+   * У PDF миниатюра — его **первая страница**, а не значок документа.
+   *
+   * Значок отвечает на вопрос «какого типа файл», а человек в этом месте
+   * спрашивает другое: «чья это работа и та ли она». Стопка одинаковых
+   * значков не отвечает ни на один из двух, и открывать пришлось бы каждый.
+   *
+   * Рисуется она тем же холстом, что и в просмотрщике, и отдаётся сюда
+   * готовой картинкой: тег остаётся `<img>`, а с ним остаются и стили, и
+   * ленивая загрузка, и поведение при пропаже файла.
+   */
   useEffect(() => {
     let cancelled = false
     setGone(false)
+    setUrl(null)
+
     addressOf(photo).then(
-      (address) => !cancelled && setUrl(address),
+      async (address) => {
+        if (cancelled) return
+        if (!pdf) {
+          setUrl(address)
+          return
+        }
+        try {
+          const document = await book(photo, address)
+          const sheet = await drawPageOf(document, 0)
+          if (!cancelled) setUrl(sheet.toDataURL('image/jpeg', 0.7))
+        } catch {
+          if (!cancelled) setGone(true)
+        }
+      },
       () => !cancelled && setGone(true),
     )
 
     return () => {
       cancelled = true
     }
-  }, [photo])
+  }, [photo, pdf])
 
   if (gone) {
     return <span className={`photo-thumb gone ${className}`.trim()}>⚠</span>

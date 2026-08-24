@@ -167,19 +167,25 @@ class SendingAPhotoTests(PhotoTestCase):
         """
         Сюда шлют **снимок**, а не документ.
 
-        Приняв `.pdf`, мы пообещали бы просмотрщику страницу, которую он не
-        нарисует, — и обнаружил бы это ученик, а не мы.
+        Список — это то, что **просмотрщик умеет открыть**, а не «любой файл».
+        Иначе работа ученика превратилась бы во второе файловое хранилище, где
+        рядом с тетрадью лежит архив, который нечем ни показать, ни разметить.
+
+        Раньше в списке были одни картинки, и PDF отказывали справедливо: мы
+        обещали бы страницу, которую просмотрщик не нарисует. Теперь рисует —
+        и отказ снят вместе с причиной, а не вместо неё (см.
+        `AWorkThatCameAsAPdfTests`).
         """
         self.client.force_authenticate(self.student)
 
         answer = self.client.post(
             reverse("student-photos", args=[self.work.pk]),
-            {"file": SimpleUploadedFile("работа.pdf", b"%PDF-1.4", "application/pdf")},
+            {"file": SimpleUploadedFile("работа.zip", b"PK\x03\x04", "application/zip")},
             format="multipart",
         )
 
         self.assertEqual(answer.status_code, 400)
-        self.assertEqual(answer.data["code"], "attachment_not_an_image")
+        self.assertEqual(answer.data["code"], "photo_type_not_allowed")
 
     def test_a_question_of_another_work_does_not_exist_here(self):
         other = make_work(self.user, self.course, title="Другая")
@@ -718,3 +724,156 @@ class ThePhotosOfOneStudentTests(PhotoTestCase):
         self.assertNotEqual(
             before, services.student_version(self.work, self.student)
         )
+
+
+# минимальный PDF в две страницы: тесты проверяют правила приёма, а не вёрстку
+PDF = (
+    b"%PDF-1.4\n"
+    b"1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n"
+    b"2 0 obj<</Type/Pages/Kids[3 0 R 4 0 R]/Count 2>>endobj\n"
+    b"3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 595 842]>>endobj\n"
+    b"4 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 595 842]>>endobj\n"
+    b"trailer<</Root 1 0 R>>\n%%EOF\n"
+)
+
+
+class AWorkThatCameAsAPdfTests(PhotoTestCase):
+    """
+    Тетрадь приходит и снимком, и PDF'ом, и разметить надо обе.
+
+    Отказ на приёме был честным ровно до тех пор, пока просмотрщик не умел
+    страницу: обещать разметку файла, который нечем показать, хуже, чем не
+    принять его. Теперь умеет — и отказ снят вместе с причиной, а не вместо
+    неё.
+
+    Телефонный сканер отдаёт именно PDF, и до этого он был тупиком: ученик
+    сдал работу, учитель видит строку со скрепкой и обвести в ней нечего.
+    """
+
+    def pdf(self, name="тетрадь.pdf"):
+        return SimpleUploadedFile(name, PDF, content_type="application/pdf")
+
+    def send_pdf(self, who=None, name="тетрадь.pdf"):
+        self.client.force_authenticate(who or self.student)
+        return self.client.post(
+            reverse("student-photos", args=[self.work.pk]),
+            {"file": self.pdf(name)},
+            format="multipart",
+        )
+
+    def test_a_pdf_of_the_notebook_is_accepted(self):
+        answer = self.send_pdf()
+
+        self.assertEqual(answer.status_code, 201, answer.data)
+
+    def test_the_screen_is_told_it_can_open_it(self):
+        """
+        Два разных вопроса, и разошлись они ровно тут: нарисовать это одним
+        тегом нельзя (`image`), а открыть и разметить — можно (`viewable`).
+        Ответь мы одним полем, PDF-тетрадь осталась бы строкой со скрепкой.
+        """
+        self.send_pdf()
+        self.client.force_authenticate(self.user)
+
+        sheet = self.client.get(
+            f"/api/works/{self.work.pk}/photos/", {"student": self.student.pk}
+        ).json()
+        shot = sheet["work"][0]
+
+        self.assertFalse(shot["image"])
+        self.assertTrue(shot["viewable"])
+        self.assertTrue(shot["pdf"])
+
+
+class MarksKnowTheirPageTests(PhotoTestCase):
+    """
+    Страница — часть адреса пометки, ровно как доля координаты.
+
+    Доли отвечают «где на листе», страница — «на каком листе». У снимка второй
+    вопрос имеет единственный ответ, у семистраничной тетради — нет, и без
+    него пометка со второй страницы легла бы на первую. Молча: доли-то в
+    границах, мазок нарисован, просто не там.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.shot = self.sent(task=self.task)
+        self.client.force_authenticate(self.user)
+
+    def stroke(self, page=None, **fields):
+        body = {"color": "#e11d48", "width": 8, "points": [[0.1, 0.1]], **fields}
+        if page is not None:
+            body["page"] = page
+        return self.client.post(
+            reverse("photo-strokes", args=[self.shot.pk]), body, format="json"
+        )
+
+    def test_a_stroke_remembers_its_page(self):
+        answer = self.stroke(page=3)
+
+        self.assertEqual(answer.status_code, 201, answer.data)
+        self.assertEqual(answer.data["page"], 3)
+        self.assertEqual(PhotoStroke.objects.get().page, 3)
+
+    def test_a_photo_says_nothing_and_means_the_only_page(self):
+        """
+        У снимка страниц нет, и ноль тут — не «страница не указана», а «она
+        единственная». NULL завёл бы два кода на один случай.
+        """
+        self.stroke()
+
+        self.assertEqual(PhotoStroke.objects.get().page, 0)
+
+    def test_a_page_that_is_not_a_number_is_refused(self):
+        self.assertEqual(self.stroke(page="вторая").status_code, 400)
+        self.assertEqual(self.stroke(page=-1).data["code"], "page_invalid")
+
+    def test_undo_takes_the_stroke_off_the_page_in_front_of_you(self):
+        """
+        Человек смотрит на седьмую страницу и нажимает «отменить». Сними мы
+        мазок с третьей — на экране не произойдёт ничего, а работа пропадёт;
+        и нажмут ещё раз.
+        """
+        self.stroke(page=0)
+        self.stroke(page=7)
+
+        answer = self.client.delete(
+            reverse("photo-strokes", args=[self.shot.pk]) + "?page=7"
+        )
+
+        self.assertTrue(answer.data["undone"])
+        self.assertEqual([one.page for one in PhotoStroke.objects.all()], [0])
+
+    def test_undo_on_an_untouched_page_takes_nothing(self):
+        self.stroke(page=0)
+
+        answer = self.client.delete(
+            reverse("photo-strokes", args=[self.shot.pk]) + "?page=5"
+        )
+
+        self.assertFalse(answer.data["undone"])
+        self.assertEqual(PhotoStroke.objects.count(), 1)
+
+    def test_a_note_is_pinned_to_a_page_too(self):
+        answer = self.client.post(
+            reverse("photo-notes", args=[self.shot.pk]),
+            {"x": 0.4, "y": 0.6, "text": "здесь потерян минус", "page": 2},
+            format="json",
+        )
+
+        self.assertEqual(answer.status_code, 201, answer.data)
+        self.assertEqual(answer.data["page"], 2)
+        self.assertEqual(PhotoNote.objects.get().page, 2)
+
+    def test_the_markup_arrives_in_one_answer_for_the_whole_document(self):
+        """
+        Одним ответом, а не по странице: листание тогда стоило бы запроса на
+        каждое нажатие «дальше», и ответ был бы тот же самый. Раскладывает
+        мазки по страницам экран — у него они уже есть.
+        """
+        self.stroke(page=0)
+        self.stroke(page=4)
+
+        markup = self.client.get(reverse("photo-markup", args=[self.shot.pk])).json()
+
+        self.assertEqual(sorted(one["page"] for one in markup["strokes"]), [0, 4])

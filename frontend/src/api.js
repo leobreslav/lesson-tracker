@@ -919,12 +919,18 @@ export const turnPhoto = (id, rotation) =>
 export const drawOnPhoto = (id, stroke) =>
   request(`/api/works/photos/${id}/strokes/`, { method: 'POST', body: stroke })
 
-/** Отмена: снимается **свой** последний мазок, а не чужой. */
-export const undoOnPhoto = (id) =>
-  request(`/api/works/photos/${id}/strokes/`, { method: 'DELETE' })
+/**
+ * Отмена: снимается **свой** последний мазок, а не чужой, и на той странице,
+ * которую видно. Страница едет в адресе: у DELETE тела не бывает по-хорошему.
+ */
+export const undoOnPhoto = (id, page = 0) =>
+  request(`/api/works/photos/${id}/strokes/?page=${page}`, { method: 'DELETE' })
 
-export const pinPhotoNote = (id, { x, y, text }) =>
-  request(`/api/works/photos/${id}/notes/`, { method: 'POST', body: { x, y, text } })
+export const pinPhotoNote = (id, { x, y, text, page = 0 }) =>
+  request(`/api/works/photos/${id}/notes/`, {
+    method: 'POST',
+    body: { x, y, text, page },
+  })
 
 export const sayInPhotoNote = (note, text) =>
   request(`/api/works/notes/${note}/`, { method: 'POST', body: { text } })

@@ -183,6 +183,13 @@ class PhotoStrokesView(APIView):
             color=request.data.get("color"),
             width=whole(request.data.get("width"), default=0),
             points=request.data.get("points"),
+            # Страница, которую человек видел, когда вёл пером. Значение
+            # едет **как есть**, а не через `whole`: тот превращает мусор в
+            # умолчание, то есть в первую страницу. Мазок, молча уехавший на
+            # первую страницу семистраничной тетради, — ровно та ошибка, от
+            # которой заведена страница; «не прислали» и «прислали чушь» тут
+            # разные события, и второе обязано быть отказом.
+            page=request.data.get("page", 0),
         )
         return Response(
             {
@@ -190,15 +197,30 @@ class PhotoStrokesView(APIView):
                 "author": stroke.author_id,
                 "color": stroke.color,
                 "width": stroke.width,
+                "page": stroke.page,
                 "points": stroke.points,
             },
             status=status.HTTP_201_CREATED,
         )
 
     def delete(self, request, pk):
+        """
+        Снять последний свой мазок — на той странице, которую видно.
+
+        Страница приезжает параметром запроса, а не телом: у DELETE тела не
+        бывает по-хорошему, и половина прокси его выбрасывает.
+        """
         attachment = readable_photo(request, pk)
         require_drawing(request, attachment)
-        return Response({"undone": photos.undo(attachment, author=request.user)})
+        return Response(
+            {
+                "undone": photos.undo(
+                    attachment,
+                    author=request.user,
+                    page=request.query_params.get("page", 0),
+                )
+            }
+        )
 
 
 class PhotoNotesView(APIView):
@@ -216,6 +238,7 @@ class PhotoNotesView(APIView):
             x=request.data.get("x"),
             y=request.data.get("y"),
             text=request.data.get("text", ""),
+            page=request.data.get("page", 0),
         )
         return Response(photos.note_payload(note), status=status.HTTP_201_CREATED)
 
