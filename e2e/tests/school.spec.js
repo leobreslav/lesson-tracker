@@ -378,6 +378,60 @@ test('в школьном расписании урок ставится в об
   await expect(page.locator('[data-lesson="2026-09-07:6"]')).toHaveCount(1)
 })
 
+test('день школы разворачивает курсы по столбцам', async ({ page, signIn, api }) => {
+  // В неделе клетка — это окно «день + номер», и в школе в него попадают
+  // все курсы разом: первых уроков в понедельник примерно столько же,
+  // сколько курсов. Стопку из полутора десятков строк нельзя ни прочитать,
+  // ни пополнить, и разворачивается она курсом в столбец.
+  const admin = await api(PEOPLE.admin)
+  const courses = await admin.get('/api/courses/?scope=school')
+
+  await signIn(PEOPLE.admin)
+  await openSection(page, '/school/schedule')
+
+  // листаем в учебный год: «сегодня» в демо-данных до его начала
+  const monday = page.locator('[data-day-head="2026-09-07"]')
+  for (let step = 0; step < 8 && !(await monday.count()); step += 1) {
+    await page.getByRole('button', { name: '→' }).click()
+    await page.waitForTimeout(250)
+  }
+  await expect(monday).toBeVisible()
+
+  // размах — тумблер, и он же адрес: ссылкой «вот этот день» делятся так же,
+  // как ссылкой на школьный вид
+  await page.getByRole('radio', { name: 'День', exact: true }).click()
+  await ready(page)
+  await expect(page).toHaveURL(/span=day/)
+
+  // неделя и день листаются своим шагом: стрелка в дне ходит по одному дню
+  const day = page.locator('[data-day="2026-09-07"]')
+  for (let step = 0; step < 7 && !(await day.count()); step += 1) {
+    await page.getByRole('button', { name: '→' }).click()
+    await page.waitForTimeout(250)
+  }
+  await expect(day).toBeVisible()
+
+  // столбец на каждый курс школы — включая те, у которых в этот день часов
+  // нет: пустой столбец и есть то место, куда час ставят
+  await expect(page.locator('[data-course-head]')).toHaveCount(courses.body.length)
+
+  // ставим час в столбец курса: курс в окне уже выбран — переспрашивать то,
+  // во что человек нажал, незачем
+  const first = courses.body[0]
+  await page.locator(`[data-add="2026-09-07:8:${first.id}"]`).click()
+  const dialog = page.locator('dialog.modal')
+  await expect(dialog.getByLabel('Курсы')).toHaveValue(String(first.id))
+  await dialog.getByRole('button', { name: 'Добавить', exact: true }).click()
+
+  await expect(dialog).toBeHidden()
+  await expect(page.locator(`[data-lesson="2026-09-07:8:${first.id}"]`)).toHaveCount(1)
+
+  // и тот же час виден в неделе: сетки две, расписание одно
+  await page.getByRole('radio', { name: 'Неделя', exact: true }).click()
+  await ready(page)
+  await expect(page.locator('[data-lesson="2026-09-07:8"]')).toHaveCount(1)
+})
+
 test('урок ставится рядом на каждую неделю, а не по клетке', async ({
   page,
   signIn,

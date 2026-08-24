@@ -26,12 +26,27 @@ import Switch from './Switch'
  * Тумблер видит только администратор школы. Учителю чужие часы править
  * нечем (`IsCourseTeacherOrSchoolAdmin` пускает его в свои курсы, и они у
  * него и так на экране), а видеть их он может там же, где и раньше.
+ *
+ * **Сколько показано — тоже адрес** (`?span=day`), и по той же причине.
+ * Расписание школы умеет два размаха: неделя всех курсов и один день, где
+ * курсы развёрнуты по столбцам. Ссылкой «вот вторник, смотри» пользуются
+ * ровно так же, как ссылкой на школьный вид, а «назад» после ухода в
+ * занятие обязано вернуть тот размах, из которого ушли.
  */
 export default function Schedule({ user, onLoggedOut }) {
   const { t } = useTranslation()
   const [search, setSearch] = useSearchParams()
 
   const school = user?.is_school_admin && search.get('view') === 'school'
+  const span = search.get('span') === 'day' ? 'day' : 'week'
+
+  // `replace` — тем же доводом, что у вида: размах не шаг в истории
+  const setParam = (key, value, fallback) => {
+    const next = new URLSearchParams(search)
+    if (value === fallback) next.delete(key)
+    else next.set(key, value)
+    setSearch(next, { replace: true })
+  }
 
   const views = user?.is_school_admin ? (
     <Switch
@@ -41,19 +56,17 @@ export default function Schedule({ user, onLoggedOut }) {
         { value: 'mine', label: t('agenda.views.mine') },
         { value: 'school', label: t('agenda.views.school') },
       ]}
-      onChange={(value) => {
-        // replace, а не push: тумблер — не шаг в истории, иначе «назад»
-        // после трёх нажатий возвращало бы по одному виду за раз
-        const next = new URLSearchParams(search)
-        if (value === 'school') next.set('view', 'school')
-        else next.delete('view')
-        setSearch(next, { replace: true })
-      }}
+      onChange={(value) => setParam('view', value, 'mine')}
     />
   ) : null
 
   return school ? (
-    <SchoolSchedule views={views} onLoggedOut={onLoggedOut} />
+    <SchoolSchedule
+      views={views}
+      span={span}
+      onSpan={(value) => setParam('span', value, 'week')}
+      onLoggedOut={onLoggedOut}
+    />
   ) : (
     <Agenda views={views} onLoggedOut={onLoggedOut} />
   )

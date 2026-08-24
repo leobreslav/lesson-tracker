@@ -758,6 +758,12 @@
       "rowHint": "This lesson and every one like it — same weekday, same number — up to the end of the year. Hours with a record stay: the answer says how many.",
       "rowSubmit": "Delete the row",
       "cancel": "Cancel the lesson"
+    },
+    "copyDay": "Copy the day…",
+    "span": {
+      "label": "How much is shown",
+      "week": "Week",
+      "day": "Day"
     }
   },
   "noSchool": {
@@ -926,7 +932,14 @@
     "addTitle": "Lesson {{number}}",
     "copyTitle": "Copy the timetable week",
     "copyNote": "Cancellations and substitutions are neither copied nor wiped when a period is replaced: bulk edits leave hand-made markup alone.",
-    "copied": "Created {{created}}, skipped {{skipped}}."
+    "copied": "Created {{created}}, skipped {{skipped}}.",
+    "day": {
+      "lesson": "Lesson",
+      "extra": "Extra",
+      "cancelled": "Cancelled",
+      "addTo": "Add lesson {{number}} to {{course}}",
+      "noCourses": "No courses match the filter, so there are no columns to show."
+    }
   },
   "library": {
     "subject": "Subject:",

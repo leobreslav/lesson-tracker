@@ -2,8 +2,10 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { LessonMenu, RepeatChoice } from './AgendaDialogs'
 import CopyDialog from './CopyDialog'
+import DayGrid from './DayGrid'
 import EmptyState from './EmptyState'
 import Modal from './Modal'
+import Switch from './Switch'
 import WeekGrid from './WeekGrid'
 import {
   deleteSlots,
@@ -27,11 +29,12 @@ import {
   startOfWeek,
   today,
 } from './calendarLogic'
-import { dateRange, firstWeekday } from './dates'
+import { dateRange, firstWeekday, longDate } from './dates'
 import { weekdayIndex } from './weekStart'
 import { useKept } from './remember'
 import { MAX_LESSON_NUMBER } from './scheduleLogic'
 import {
+  courseMatches,
   emptyFilters,
   filterOptions,
   pick,
@@ -47,8 +50,29 @@ const NUMBERS = Array.from({ length: MAX_LESSON_NUMBER }, (_, index) => index + 
  * The same week grid as «My schedule» — one component, so the two screens
  * cannot drift apart — with the teacher's name in the cell instead of the
  * topic, and filters that a personal schedule has no use for.
+ *
+ * **Размаха два: неделя и день.** Неделя отвечает на «как стоит расписание»,
+ * и клетка в ней — это окно «день × номер», куда попадают все курсы разом. У
+ * учителя их там один-два, а в школе первых уроков примерно столько же,
+ * сколько курсов: понедельничная клетка «1» становится стопкой в полтора
+ * десятка строк, которую нельзя ни прочитать, ни пополнить.
+ *
+ * День отвечает на «что происходит сегодня» и разворачивает ту самую стопку
+ * — **курс в столбец** (`DayGrid.jsx`). Пересечение «курс × номер» тогда
+ * ровно одна клетка: `unique_together (course, date, lesson_number)` держит
+ * это ограничением базы. Платим шириной — таблица уезжает за экран и
+ * прокручивается внутри своей коробки.
+ *
+ * Размах живёт в адресе (`?span=day`, см. `Schedule.jsx`), а не в состоянии
+ * страницы: тем же доводом, что и школьный вид, — ссылкой делятся, а «назад»
+ * из занятия возвращает туда, откуда ушли.
  */
-export default function SchoolSchedule({ views = null, onLoggedOut }) {
+export default function SchoolSchedule({
+  views = null,
+  span = 'week',
+  onSpan = null,
+  onLoggedOut,
+}) {
   const { t } = useTranslation()
   const [years, setYears] = useState(null)
   const [yearId, setYearId] = useState(null)
@@ -80,9 +104,19 @@ export default function SchoolSchedule({ views = null, onLoggedOut }) {
   const [notice, setNotice] = useState(null)
 
   const weekStart = firstWeekday()
+  const byDay = span === 'day'
+  /*
+   * Показанный период считается от размаха, а не от нажатой стрелки: сетка,
+   * стрелки, копирование и запрос за часами обязаны говорить об одном и том
+   * же куске календаря, и второе место, где это решается, разошлось бы с
+   * первым в ближайшую правку.
+   */
   const period = useMemo(
-    () => ({ start: startOfWeek(anchor, weekStart), end: endOfWeek(anchor, weekStart) }),
-    [anchor, weekStart],
+    () =>
+      byDay
+        ? { start: anchor, end: anchor }
+        : { start: startOfWeek(anchor, weekStart), end: endOfWeek(anchor, weekStart) },
+    [byDay, anchor, weekStart],
   )
   const dates = useMemo(
     () => eachDate(period.start, period.end),
@@ -164,6 +198,53 @@ export default function SchoolSchedule({ views = null, onLoggedOut }) {
   )
 
   const lessonsOn = (date) => visible.filter((slot) => slot.date === date)
+
+  /*
+   * Столбцы дневного вида — курсы, и те же, что прошли сужение.
+   *
+   * Курс без единого часа в этот день столбец всё равно получает, и это не
+   * недосмотр: пустой столбец — то место, куда час ставят. Спрятать его
+   * значило бы спрятать половину работы администратора, ради которой он
+   * сюда и заходит.
+   */
+  const columns = useMemo(
+    () => courses.filter((course) => courseMatches(course, filters)),
+    [courses, filters],
+  )
+
+  /*
+   * Час курса на этом номере — не более одного: `unique_together
+   * (course, date, lesson_number)`. Стопок, как в недельной клетке, тут не
+   * бывает по построению.
+   */
+  const lessonAt = (courseId, number) =>
+    visible.find(
+      (slot) =>
+        slot.date === period.start &&
+        slot.course === courseId &&
+        slot.lesson_number === number,
+    ) ?? null
+
+  /**
+   * Как выглядит час — один ответ на обе сетки.
+   *
+   * Отменённый и дополнительный час выглядят тут так же, как у учителя. Не
+   * выглядели вовсе: отменить из этой сетки было нечем, и никто не замечал,
+   * что перечёркнутых часов она не рисует, — то есть администратор видел
+   * сорванное занятие как обычное. Метки те же: записанный час — галочка,
+   * прошедший без записи — красная точка.
+   */
+  const cellClass = (slot) =>
+    (slot.teacher ? 'cell lesson' : 'cell lesson unassigned') +
+    (slot.is_cancelled ? ' cancelled' : '') +
+    (slot.is_extra ? ' extra' : '') +
+    (slot.lesson ? ' recorded' : '') +
+    (slot.debt ? ' debt' : '')
+
+  const cellTitle = (slot) =>
+    [slot.course_name, slot.teacher_name, slot.lesson_title]
+      .filter(Boolean)
+      .join(' — ')
 
   const run = async (request, describe) => {
     setBusy(true)
@@ -276,17 +357,46 @@ export default function SchoolSchedule({ views = null, onLoggedOut }) {
       )}
 
       <div className="agenda-bar">
-        <button type="button" className="secondary" onClick={() => setAnchor(addDays(anchor, -7))}>
+        {/* шаг стрелки — показанный кусок целиком: в неделе неделя, в дне
+            день. Иначе стрелка в дневном виде листала бы мимо шести дней */}
+        <button
+          type="button"
+          className="secondary"
+          onClick={() => setAnchor(addDays(anchor, byDay ? -1 : -7))}
+        >
           ←
         </button>
         <button type="button" className="secondary" onClick={() => setAnchor(today())}>
           {t('agenda.today')}
         </button>
-        <button type="button" className="secondary" onClick={() => setAnchor(addDays(anchor, 7))}>
+        <button
+          type="button"
+          className="secondary"
+          onClick={() => setAnchor(addDays(anchor, byDay ? 1 : 7))}
+        >
           →
         </button>
 
-        <strong>{dateRange(period.start, period.end)}</strong>
+        {/* День называется днём недели и числом: диапазон из одной даты в
+            обе стороны читался бы как ошибка */}
+        <strong>
+          {byDay ? longDate(period.start) : dateRange(period.start, period.end)}
+        </strong>
+
+        {/* Размах — тумблер, а не две кнопки: один орган на один вопрос, тот
+            же, что «Мои · Вся школа» строкой выше */}
+        {onSpan && (
+          <Switch
+            className="compact"
+            label={t('agenda.span.label')}
+            value={byDay ? 'day' : 'week'}
+            options={[
+              { value: 'week', label: t('agenda.span.week') },
+              { value: 'day', label: t('agenda.span.day') },
+            ]}
+            onChange={onSpan}
+          />
+        )}
 
         <span className="year-picker">
           {years.map((year) => (
@@ -309,7 +419,7 @@ export default function SchoolSchedule({ views = null, onLoggedOut }) {
           disabled={busy}
           onClick={() => setDialog({ type: 'copy' })}
         >
-          {t('agenda.copyWeek')}
+          {byDay ? t('agenda.copyDay') : t('agenda.copyWeek')}
         </button>
       </div>
 
@@ -368,6 +478,46 @@ export default function SchoolSchedule({ views = null, onLoggedOut }) {
         </p>
       )}
 
+      {/*
+        Две сетки, одна клетка: вид часа, его метки и подсказка считаются
+        здесь и уезжают в обе. Разъехались бы они молча — в неделе час
+        отменённый, в дне обычный, и оба вида про одно и то же расписание.
+      */}
+      {byDay ? (
+        <DayGrid
+          date={period.start}
+          day={days[period.start] || {}}
+          courses={columns}
+          numbers={NUMBERS}
+          busy={busy}
+          lessonAt={lessonAt}
+          renderLesson={(slot) => (
+            <>
+              {/* курс назван столбцом, номер — рядом, поэтому в клетке
+                  остаётся то, чего по ним не видно: что прошло и почему
+                  сорвалось. Повторять здесь имя курса значило бы написать
+                  его десять раз в одном столбце */}
+              <span className="cell-course">
+                {slot.lesson_title ||
+                  (slot.is_extra
+                    ? t('schoolSchedule.day.extra')
+                    : t('schoolSchedule.day.lesson'))}
+              </span>
+              {slot.is_cancelled && (
+                <span className="cell-topic">
+                  {slot.reason || t('schoolSchedule.day.cancelled')}
+                </span>
+              )}
+            </>
+          )}
+          lessonClassName={cellClass}
+          lessonTitle={cellTitle}
+          onMenu={(date, slot, at) => setDialog({ type: 'menu', date, slot, at })}
+          onAdd={(date, number, courseId) =>
+            setDialog({ type: 'add', date, number, courseId })
+          }
+        />
+      ) : (
       <WeekGrid
         dates={dates}
         days={days}
@@ -382,30 +532,15 @@ export default function SchoolSchedule({ views = null, onLoggedOut }) {
             </span>
           </>
         )}
-        lessonClassName={(slot) =>
-          (slot.teacher ? 'cell lesson' : 'cell lesson unassigned') +
-          // отменённый и дополнительный час выглядят тут так же, как у
-          // учителя. Не выглядели вовсе: отменить из этой сетки было
-          // нечем, и никто не замечал, что перечёркнутых часов она не
-          // рисует — то есть администратор видел сорванное занятие как
-          // обычное
-          (slot.is_cancelled ? ' cancelled' : '') +
-          (slot.is_extra ? ' extra' : '') +
-          // те же метки, что у учителя: записанный час — галочка,
-          // прошедший без записи — красная точка. Администратор смотрит
-          // на то же расписание, и метки на нём должны значить то же
-          (slot.lesson ? ' recorded' : '') +
-          (slot.debt ? ' debt' : '')
-        }
-        lessonTitle={(slot) =>
-          [slot.course_name, slot.teacher_name].filter(Boolean).join(' — ')
-        }
+        lessonClassName={cellClass}
+        lessonTitle={cellTitle}
         /* любое нажатие — меню, и первым пунктом в нём «Открыть урок»:
            правая кнопка ничем себя не показывала, и половина работы с
            сеткой (отмена, перенос) просто не находилась */
         onMenu={(date, slot, at) => setDialog({ type: 'menu', date, slot, at })}
         onAdd={(date, number) => setDialog({ type: 'add', date, number })}
       />
+      )}
 
       {/* оба нажатия названы словами: правая кнопка и долгое нажатие
           беззвучны — ниоткуда не видно, что они есть */}
@@ -460,6 +595,9 @@ export default function SchoolSchedule({ views = null, onLoggedOut }) {
           date={dialog.date}
           number={dialog.number}
           courses={courses}
+          /* в дневном виде столбец и есть курс: спрашивать о нём заново
+             значит переспрашивать то, во что человек только что нажал */
+          initialCourse={dialog.courseId ?? null}
           yearEnd={(years ?? []).find((year) => year.id === yearId)?.end_date}
           busy={busy}
           onSubmit={addSlot}
@@ -523,9 +661,20 @@ function clampToYear(day, year) {
  * собственное поле учителя, эти два ответа могли разойтись: сетку рисовали
  * на одного, курс вёл другой.
  */
-function AddSchoolSlot({ date, number, courses, yearEnd, busy, onSubmit, onClose }) {
+function AddSchoolSlot({
+  date,
+  number,
+  courses,
+  // курс, в столбец которого нажали (дневной вид); в недельном его нет —
+  // там клетка это окно, а не курс
+  initialCourse = null,
+  yearEnd,
+  busy,
+  onSubmit,
+  onClose,
+}) {
   const { t } = useTranslation()
-  const [courseId, setCourseId] = useState(courses[0]?.id ?? null)
+  const [courseId, setCourseId] = useState(initialCourse ?? courses[0]?.id ?? null)
   // 0 — не повторять, 1 — каждую неделю, 2 — через неделю
   const [step, setStep] = useState(0)
   const [until, setUntil] = useState(yearEnd ?? '')
