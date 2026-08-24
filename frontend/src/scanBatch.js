@@ -222,7 +222,25 @@ export async function walk(file, { onPage, send, blank, questions, stop } = {}) 
       strip: found ? toCanvas(found.strip).toDataURL('image/jpeg', 0.8) : null,
     }
 
-    if (enough && send) {
+    /*
+     * Читаем, если сетка сошлась **или** нашлась наша метка в углу.
+     *
+     * Метка — признак твёрдый, и твёрже сетки: код в углу поля записи стоит
+     * только на нашем бланке, а раз бланк наш, то шапка на нём **есть** — это
+     * не вопрос и не оценка вероятности, это печать. Проверяется она уже
+     * после выпрямления, той же гомографией, которой режется полоска; значит
+     * найденная метка заодно говорит, что выпрямление годное.
+     *
+     * Пока читали только по счёту сетки, лист с нашим кодом и подпорченной
+     * сеткой (блик, обрез, бледная печать) не читался вовсе — при том, что
+     * про него было точно известно, что читать там есть что.
+     */
+    const worthReading = enough || page.ours
+    // экрану нужен тот же ответ, что и циклу: показывать полоску или сказать,
+    // что выпрямить не удалось
+    page.readable = worthReading
+
+    if (worthReading && send) {
       // на чтение уезжает не полоска, а собранная из неё картинка: строка
       // имени и шестнадцать плиток с нашими подписями
       const blob = await scaledJpeg(readingSheet(image, found.h), 1568, 0.9)
@@ -231,7 +249,7 @@ export async function walk(file, { onPage, send, blank, questions, stop } = {}) 
         blob,
         mark: await fingerprint(blob),
       })
-    } else if (!enough && blank) {
+    } else if (!worthReading && blank) {
       // Шапки нет — читать нечего и платить не за что, но сказать серверу
       // надо: ряд таких листов размечает пачку, и без них он не увидит, где
       // кончается работа одного ученика и начинается другого.
@@ -247,7 +265,7 @@ export async function walk(file, { onPage, send, blank, questions, stop } = {}) 
       }
     }
 
-    if (enough) seenAnswer = true
+    if (worthReading) seenAnswer = true
 
     pages.push(page)
     onPage?.(page, book.numPages)

@@ -20,14 +20,30 @@ import { setMark } from './api'
  * посмотреть». Гасить оценку за то, что ученик прислал ещё раз, значило бы
  * стирать работу учителя чужими руками.
  */
-export default function Verdict({ submission, maximum = 1, onChanged, onError }) {
+export default function Verdict({
+  submission = null,
+  mark = null,
+  maximum = 1,
+  onPut = null,
+  onChanged,
+  onError,
+}) {
   const { t } = useTranslation()
   const [busy, setBusy] = useState(false)
+
+  /* Балл бывает за отправку, а бывает за бумагу — и во втором случае строки
+     журнала нет вовсе, привязывать не к чему. Шкала при этом та же: те же
+     ✓ и ✗ у вопроса из одного балла, те же кнопки у вопроса из трёх. Второй
+     компонент ради этого завёлся бы копией всех трёх видов шкалы и разошёлся
+     бы с этим молча. */
+  const current = submission ? submission.mark : mark
 
   const put = async (value) => {
     setBusy(true)
     try {
-      await setMark(submission.id, submission.mark === value ? null : value)
+      const next = current === value ? null : value
+      if (onPut) await onPut(next)
+      else await setMark(submission.id, next)
       await onChanged()
     } catch (err) {
       onError(err.message)
@@ -40,9 +56,9 @@ export default function Verdict({ submission, maximum = 1, onChanged, onError })
     <button
       key={value}
       type="button"
-      className={submission.mark === value ? `chip active ${extra}` : 'chip'}
+      className={current === value ? `chip active ${extra}` : 'chip'}
       disabled={busy}
-      aria-pressed={submission.mark === value}
+      aria-pressed={current === value}
       title={title ?? t('table.markPoints', { value, maximum })}
       onClick={() => put(value)}
     >
@@ -78,7 +94,7 @@ export default function Verdict({ submission, maximum = 1, onChanged, onError })
         className="mark-input"
         min="0"
         max={maximum}
-        value={submission.mark ?? ''}
+        value={current ?? ''}
         disabled={busy}
         aria-label={t('table.markPoints', { value: '', maximum })}
         onChange={(event) => {

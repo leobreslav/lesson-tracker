@@ -763,7 +763,7 @@ function PagesStep({ state, all, byIndex, questions, busy, onDecide, onFix, onNe
               страница тут же показывала перекошенную полоску, выпрямленную по
               негодной четвёрке меток. Выглядело это как поломка от нажатия на
               клетку, а на деле было симптомом давнего отказа. */}
-          {byIndex[here?.index]?.strip && byIndex[here.index].enough && (
+          {byIndex[here?.index]?.strip && byIndex[here.index].readable && (
             <img className="scan-strip" src={byIndex[here.index].strip} alt="" />
           )}
           <div
@@ -848,7 +848,7 @@ function PagesStep({ state, all, byIndex, questions, busy, onDecide, onFix, onNe
             </p>
           )}
 
-          {byIndex[here?.index] && !byIndex[here.index].enough && (
+          {byIndex[here?.index] && !byIndex[here.index].readable && (
             <p className="hint">
               {row?.headerless ? `${t('scan.headerless')} ` : `${t('scan.noStrip')} `}
               {/* и почему именно: счёт совпадения с сеткой против порога, плюс

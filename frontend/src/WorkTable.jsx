@@ -119,6 +119,8 @@ export default function WorkTable() {
   // сумма баллов осмысленна там, где вопрос стоит больше единицы; иначе
   // «сколько верно из скольки» говорит больше
   const pointed = table.tasks.some((task) => task.maximum > 1)
+  // максимум за работу: сумма стоимостей вопросов
+  const workMaximum = table.tasks.reduce((sum, task) => sum + (task.maximum ?? 0), 0)
   const statsOf = (id) => marks?.columns.find((column) => column.id === id)
 
   return (
@@ -216,6 +218,10 @@ export default function WorkTable() {
                     >
                       {task.name}
                     </button>
+                    {/* сколько стоит вопрос: без этого балл в клетке — число
+                        без шкалы, и «2» у одного вопроса и «2» у другого
+                        читаются одинаково, хотя значат разное */}
+                    <span className="hint">{`/ ${task.maximum}`}</span>
                   </th>
                 ))}
                 {showRow && (
@@ -224,7 +230,12 @@ export default function WorkTable() {
                   </th>
                 )}
                 {table.tasks.length > 0 && (
-                  <th className="total">{t('table.total')}</th>
+                  <th className="total">
+                    {t('table.total')}
+                    {/* максимум за работу — под именем столбца: «14» без «из
+                        18» не говорит ничего, а искать его было негде */}
+                    {pointed && <span className="hint">{`/ ${workMaximum}`}</span>}
+                  </th>
                 )}
               </tr>
             </thead>
@@ -250,26 +261,19 @@ export default function WorkTable() {
                                 : (item.answer ?? t('table.empty'))
                             }
                             onClick={() =>
-                              /* Есть ответ — открываем его историю: балл
-                                 ставится за конкретный ответ, и смотреть надо
-                                 на него. Ответа нет (писали на бумаге) —
-                                 открываем работу ученика целиком: там балл и
-                                 правится, в том числе когда его ошибочно
-                                 прочитала модель */
-                              /* Снимок — такой же повод открыть ячейку,
-                                 как ответ: разбирают в ней конкретный
-                                 вопрос конкретного ученика, и присланная
-                                 тетрадь лежит там же. Без этого клик по
-                                 клетке со снимком уводил бы в оценку всей
-                                 работы, то есть мимо. */
-                              item.submission || item.photos > 0
-                                ? setCell({
-                                    student,
-                                    task: table.tasks.find(
-                                      (row) => row.id === item.task,
-                                    ),
-                                  })
-                                : setGrading({ student })
+                              /* Клик по клетке открывает **эту** клетку —
+                                 всегда. Раньше он вёл в окно ячейки только
+                                 при отправке или снимке, а у бумажной работы
+                                 не бывает ни того, ни другого: клик уводил в
+                                 оценку всей работы, то есть в пятнадцать
+                                 чужих вопросов вместо одного нужного. Между
+                                 тем разбирают именно клетку: её балл, её
+                                 снимки, разговор про неё. */
+                              setCell({
+                                student,
+                                cell: item,
+                                task: table.tasks.find((row) => row.id === item.task),
+                              })
                             }
                           >
                             {cellMark(item)}
@@ -355,6 +359,7 @@ export default function WorkTable() {
           work={table.work.id}
           student={cell.student}
           task={cell.task}
+          cell={cell.cell}
           onChanged={refresh}
           onClose={() => setCell(null)}
         />

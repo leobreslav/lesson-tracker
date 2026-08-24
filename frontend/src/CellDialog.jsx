@@ -6,7 +6,7 @@ import TaskBrief from './TaskBrief'
 import Verdict from './Verdict'
 import PhotoStrip from './PhotoStrip'
 import PhotoViewer from './PhotoViewer'
-import { fetchSubmissions, fetchWorkPhotos } from './api'
+import { fetchSubmissions, fetchWorkPhotos, gradeStudent } from './api'
 import { dateTime } from './dates'
 
 /**
@@ -20,7 +20,7 @@ import { dateTime } from './dates'
  * окно говорит об этом строкой и кнопкой «показать» — решение остаётся за
  * учителем, а не за таймером.
  */
-export default function CellDialog({ work, student, task, onChanged, onClose }) {
+export default function CellDialog({ work, student, task, cell = null, onChanged, onClose }) {
   const { t } = useTranslation()
   const [rows, setRows] = useState(null)
   const [fresh, setFresh] = useState(false)
@@ -30,6 +30,9 @@ export default function CellDialog({ work, student, task, onChanged, onClose }) 
   // приходили: пришли разбираться с одним вопросом
   const [shots, setShots] = useState([])
   const [viewing, setViewing] = useState(null)
+  // балл за бумагу: отправки нет, привязывать не к чему, и держим мы его
+  // здесь — таблица под окном перечитается сама, но её `cell` уже устареет
+  const [paper, setPaper] = useState(cell?.mark ?? null)
 
   const load = useCallback(
     () =>
@@ -86,6 +89,31 @@ export default function CellDialog({ work, student, task, onChanged, onClose }) 
             {t('table.show')}
           </button>
         </p>
+      )}
+
+      {/*
+        * Ячейка без единой отправки — это бумага: писали на листе, а не здесь.
+        * Балл ей ставят тем же движением и той же шкалой; окно оценки всей
+        * работы для этого не годится — там пятнадцать вопросов сразу, а
+        * пришли разбираться с одним.
+        */}
+      {rows !== null && rows.length === 0 && (
+        <div className="row middle">
+          <span>{t('table.paperMark')}</span>
+          <Verdict
+            mark={paper}
+            maximum={task.maximum}
+            onPut={async (value) => {
+              await gradeStudent(work, {
+                student: student.id,
+                scores: { [task.id]: value },
+              })
+              setPaper(value)
+            }}
+            onChanged={onChanged}
+            onError={setError}
+          />
+        </div>
       )}
 
       {rows === null ? (

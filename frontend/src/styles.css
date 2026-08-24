@@ -3579,6 +3579,16 @@ button.compact,
   vertical-align: bottom;
 }
 
+/* Стоимость вопроса — второй строкой под именем столбца, мелко и приглушённо.
+   Балл в клетке без шкалы — число без смысла: «2» у вопроса из двух и «2» у
+   вопроса из пяти читаются одинаково, а значат разное. */
+.work-table thead th .hint {
+  display: block;
+  margin: 0;
+  font-size: 0.7rem;
+  line-height: 1.2;
+}
+
 .work-table th.who {
   width: 30%;
   min-width: 10rem;
