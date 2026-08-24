@@ -23,6 +23,58 @@ from . import prices
 # Сколько клеток в сетке бланка. Пятнадцать заданий и сумма за страницу.
 CELLS = 16
 
+def cell_index(label: str) -> int | None:
+    """
+    Подпись над клеткой -> её место в списке из шестнадцати. Неизвестная — None.
+
+    Принимаем щедро: `Q14`, `q14`, `14`, `Q 14`. Последняя клетка — сумма за
+    страницу, и зовут её по-разному: на бланке напечатана сигма, модель пишет
+    то `sum`, то `total`, то `Σ pg`. Отказать из-за формы подписи значит
+    потерять прочитанный балл там, где всё было прочитано верно.
+    """
+    text = (label or "").strip().lower().replace(" ", "")
+    if not text:
+        return None
+    if text.startswith("q"):
+        text = text[1:]
+    if text.isdigit():
+        number = int(text)
+        return number - 1 if 1 <= number <= CELLS - 1 else None
+    return CELLS - 1 if any(
+        # подпись уже приведена к нижнему регистру, поэтому сигма одна
+        word in text for word in ("sum", "total", "σ", "pg")
+    ) else None
+
+
+def values_from_marks(marks) -> list:
+    """
+    Названные клетки -> шестнадцать значений по местам.
+
+    **Модель называет клетку подписью, а не местом в списке, и это выведено
+    опытом.** Список из шестнадцати значений требует от неё считать клетки
+    слева, а счёт сбивается: на живой странице баллы стояли в Q14, Q15 и в
+    сумме, а приехали в Q13, Q14, Q15 — сдвиг на одну, — да ещё и сумма попала
+    разом в Q15 и в свою клетку. Ошибка при этом молчаливая: пятнадцать чисел
+    выглядят одинаково правдоподобно, где бы они ни стояли.
+
+    Подпись над клеткой на бланке напечатана для каждой (`Q1`…`Q15` и сигма),
+    поэтому «прочти подпись» — это чтение, а не счёт, и ошибиться в нём можно
+    только там, где подпись не видна.
+
+    Пустые клетки не называются вовсе: их отсутствие и есть пустота.
+    """
+    values: list = [None] * CELLS
+    for one in marks or []:
+        if not isinstance(one, dict):
+            continue
+        place = cell_index(one.get("cell"))
+        value = one.get("value")
+        if place is None or not isinstance(value, int) or isinstance(value, bool):
+            continue
+        values[place] = value
+    return values
+
+
 _HEADER_TOOL = {
     "name": "record_header",
     "description": "Record the handwritten name and the marks grid from the header.",
@@ -48,16 +100,34 @@ _HEADER_TOOL = {
                     "verbatim from the list; EMPTY if none of them fits"
                 ),
             },
-            "values": {
+            "marks": {
                 "type": "array",
                 "description": (
-                    "exactly 16 values in order Q1..Q15 then the last cell "
-                    "(sum for the page); null for an empty cell"
+                    "one entry per cell that has a handwritten digit in it. "
+                    "Empty cells are simply left out. Order does not matter."
                 ),
-                "items": {"type": ["integer", "null"]},
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "cell": {
+                            "type": "string",
+                            "description": (
+                                "the label PRINTED in the grey strip directly "
+                                "above this cell, copied as printed: 'Q1'..'Q15', "
+                                "or 'sum' for the last cell, the one labelled "
+                                "with a sigma"
+                            ),
+                        },
+                        "value": {
+                            "type": "integer",
+                            "description": "the handwritten digit in that cell",
+                        },
+                    },
+                    "required": ["cell", "value"],
+                },
             },
         },
-        "required": ["first_name", "surname", "values"],
+        "required": ["first_name", "surname", "marks"],
     },
 }
 
@@ -204,19 +274,24 @@ def _system_prompt() -> str:
         "You are given a straightened strip cut from the top of a school answer "
         "sheet. The strip has two rows. The upper row has printed labels "
         "'First name:', 'Surname:', 'Grade:', 'Date:' with handwriting on the "
-        "rules after them. The lower row is a table of 16 cells labelled Q1..Q15 "
-        "and a last cell for the page total; a cell holds at most one handwritten "
-        "digit, in pen of any colour, and most cells are empty.\n"
+        "rules after them. The lower row is a table of 16 cells. Every cell has "
+        "its own PRINTED label in a grey strip directly above it: 'Q1' to 'Q15', "
+        "and the last one is a sigma, for the page total. A cell holds at most "
+        "one handwritten digit, in pen of any colour, and most cells are empty.\n"
         "Report the handwritten First name and Surname SEPARATELY, letter by "
         "letter, EXACTLY as written — do not correct them into a more plausible "
         "name. If a field is not filled in, return an EMPTY string for it; never "
         "invent a name. The handwriting varies: sometimes the teacher fills it in, "
         "not the student. Ignore Grade.\n"
-        "Report the 16 cell values in order. A cell you can see is empty is null. "
-        "Report the digit you actually see: never adjust a mark to fit a range "
-        "you expect, and never turn an unexpected digit into a more likely one. "
-        "The last cell is a sum for the page and may be larger than a single "
-        "question mark; it is often left blank, and that is fine."
+        "For every cell that has a handwritten digit, report TWO things: the "
+        "label printed above that very cell, and the digit. READ THE LABEL, DO "
+        "NOT COUNT THE CELLS: counting from the left is what goes wrong, and a "
+        "count that is off by one puts a mark on the wrong question. Leave empty "
+        "cells out entirely. Report the digit you actually see: never adjust a "
+        "mark to fit a range you expect, and never turn an unexpected digit into "
+        "a more likely one. The last cell is a sum for the page, not a question: "
+        "it may be larger than any single mark, it is often left blank, and it "
+        "belongs to 'sum' and to no Q at all."
     )
 
 
@@ -304,12 +379,7 @@ def read_header(
         if block.type == "tool_use":
             data = block.input
 
-    values = list(data.get("values") or [])
-    # Модель может вернуть меньше или больше шестнадцати: приводим к длине, а
-    # не отказываем — половина прочитанного лучше отказа, а недостающее видно
-    # как пустая клетка и попадёт в сомнения.
-    values = (values + [None] * CELLS)[:CELLS]
-    values = [v if isinstance(v, int) else None for v in values]
+    values = values_from_marks(data.get("marks"))
 
     return (
         {

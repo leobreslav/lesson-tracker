@@ -1494,7 +1494,10 @@
     "workSpend": "{{amount}} on this assignment all told",
     "headerlessWhy": "The grid matched {{score}} of {{need}} borders needed, and {{mark}}",
     "markFound": "our mark in the corner is there.",
-    "markMissing": "our mark in the corner was not found."
+    "markMissing": "our mark in the corner was not found.",
+    "zoomIn": "Zoom in",
+    "zoomOut": "Zoom out",
+    "checkScale": "Check the scale before the reading starts. Marks land on these questions, and a mark in a cell beyond them is how a shifted reading gets caught — getting this wrong is only visible once the whole pile is paid for."
   },
   "ai": {
     "title": "Reading scans",

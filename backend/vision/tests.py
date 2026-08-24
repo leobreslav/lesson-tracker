@@ -59,6 +59,72 @@ class PromptTests(SimpleTestCase):
         self.assertNotIn("max_mark", signature(client.read_header).parameters)
 
 
+class CellLabelTests(SimpleTestCase):
+    """
+    Клетку называют подписью, а не местом в списке.
+
+    Список из шестнадцати значений требует от модели считать клетки слева, и
+    счёт сбивается: на живой странице баллы стояли в Q14, Q15 и в сумме, а
+    приехали в Q13, Q14 и Q15 — сдвиг на одну, — да ещё сумма попала разом в
+    Q15 и в свою клетку. Ошибка молчаливая: пятнадцать чисел выглядят одинаково
+    правдоподобно, где бы они ни стояли, и заметить сдвиг можно только по
+    бумаге.
+
+    Подпись над каждой клеткой на бланке напечатана (`Q1`…`Q15` и сигма),
+    поэтому «прочти подпись» — это чтение, а не счёт.
+    """
+
+    def test_a_question_label_finds_its_place(self):
+        self.assertEqual(client.cell_index("Q14"), 13)
+        self.assertEqual(client.cell_index("Q1"), 0)
+        self.assertEqual(client.cell_index("Q15"), 14)
+
+    def test_the_label_is_taken_generously(self):
+        """Форма подписи — не повод потерять верно прочитанный балл."""
+        for label in ("q14", "14", "Q 14", " Q14 "):
+            self.assertEqual(client.cell_index(label), 13, label)
+
+    def test_the_sum_is_a_cell_of_its_own(self):
+        """Сигму модель зовёт по-разному, а клетка у суммы одна и последняя."""
+        for label in ("sum", "total", "Σ pg", "σ"):
+            self.assertEqual(client.cell_index(label), 15, label)
+
+    def test_a_label_we_do_not_know_is_dropped(self):
+        for label in ("", "Q0", "Q16", "Q99", "какая-то"):
+            self.assertIsNone(client.cell_index(label), label)
+
+    def test_marks_land_where_they_are_labelled(self):
+        values = client.values_from_marks(
+            [{"cell": "Q14", "value": 3}, {"cell": "Q15", "value": 3}, {"cell": "sum", "value": 6}]
+        )
+
+        self.assertEqual(values[13], 3)
+        self.assertEqual(values[14], 3)
+        self.assertEqual(values[15], 6)
+
+    def test_an_unnamed_cell_stays_empty(self):
+        """Пустая клетка не называется вовсе: её отсутствие и есть пустота."""
+        values = client.values_from_marks([{"cell": "Q2", "value": 1}])
+
+        self.assertEqual(values[1], 1)
+        self.assertEqual([v for v in values if v is not None], [1])
+
+    def test_rubbish_does_not_break_the_page(self):
+        """
+        Половина прочитанного лучше отказа: страница с одной непонятой клеткой
+        доедет до человека с остальными, а не исчезнет целиком.
+        """
+        values = client.values_from_marks(
+            ["не словарь", {"cell": "Q3"}, {"cell": "Q4", "value": "два"}, {"cell": "Q5", "value": 2}]
+        )
+
+        self.assertEqual(values[4], 2)
+        self.assertEqual(len(values), 16)
+
+    def test_nothing_read_is_sixteen_empties(self):
+        self.assertEqual(client.values_from_marks(None), [None] * 16)
+
+
 class PriceTests(SchoolTestMixin, APITestCase):
     def test_the_cost_is_counted_in_millionths(self):
         # 1000 входных по $1/M и 100 выходных по $5/M

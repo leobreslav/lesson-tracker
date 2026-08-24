@@ -75,7 +75,11 @@ test('кнопка сканов есть и у онлайновой работы
   await expect(first.getByRole('button', { name: 'Сканы' })).toHaveCount(1)
 })
 
-test('шкала спрашивается один раз, а потом сразу файл', async ({ page, signIn, api }) => {
+test('шкалу спрашивают перед каждым чтением, а не только у пустой работы', async ({
+  page,
+  signIn,
+  api,
+}) => {
   await signIn(PEOPLE.ivanova)
   await paperWork(await api(PEOPLE.ivanova), { title: 'Без шкалы', questions: 0 })
 
@@ -87,9 +91,20 @@ test('шкала спрашивается один раз, а потом сра�
   await page.getByLabel('Максимум за задачу').fill('2')
   await page.getByRole('button', { name: 'Сохранить' }).click()
 
-  // и сразу после — файл, без второго вопроса
   await expect(page.getByText('Выберите PDF')).toBeVisible()
   await expect(page.getByText('4 задачи')).toBeVisible()
+
+  /* А теперь то же окно во второй раз. Шкала есть, и всё равно спрашивают —
+     подставленной, чтобы её подтвердили. Узнать, что шкала не та, иначе можно
+     только после чтения, то есть уже заплатив за всю пачку: у живой работы
+     стояло «4 задачи по 1 баллу» при пятнадцати задачах на листах. */
+  await page.getByRole('button', { name: 'Закрыть окно' }).click()
+  await openScan(page, 'Без шкалы')
+
+  const count = page.getByLabel('Задач', { exact: true })
+  await expect(count).toBeVisible()
+  await expect(count).toHaveValue('4')
+  await expect(page.getByLabel('Максимум за задачу')).toHaveValue('2')
 })
 
 test('страницы отрисовываются, шапки находятся, а без ключа отказ говорит словами', async ({
@@ -100,6 +115,9 @@ test('страницы отрисовываются, шапки находятс
   await signIn(PEOPLE.ivanova)
   await paperWork(await api(PEOPLE.ivanova))
   await openScan(page)
+
+  // шкала подтверждается перед каждым чтением — подставленной; проходим её
+  await page.getByRole('button', { name: 'Сохранить' }).click()
 
   // отказ сервера мы вызываем нарочно, и он честно шумит в консоль
   expectConsoleError(page, /Failed to load resource|400/)

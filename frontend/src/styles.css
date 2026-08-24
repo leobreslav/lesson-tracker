@@ -7079,9 +7079,21 @@ button.dropzone:hover:not(:disabled) {
   background: #fff;
 }
 
+/* Ширину задаёт увеличение, поэтому `max-width` тут не помощник, а помеха:
+   он молча вернул бы лист к ширине колонки, и увеличение перестало бы
+   работать ровно там, где оно нужно. */
 .scan-sheet img {
   display: block;
   width: 100%;
+  max-width: none;
+}
+
+.scan-sheet img.in {
+  cursor: zoom-in;
+}
+
+.scan-sheet img.out {
+  cursor: zoom-out;
 }
 
 /*

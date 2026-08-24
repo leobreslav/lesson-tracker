@@ -63,7 +63,9 @@ export default function ScanWizard({ work, onClose, onDone }) {
         if (!alive) return
         setScale(answer.questions ?? [])
         setState(known)
-        setStage((answer.questions ?? []).length ? 'file' : 'questions')
+        // шкалу подтверждают перед каждым чтением: узнать, что она не та,
+        // можно было только после того, как за пачку уже заплачено
+        setStage('questions')
       })
       .catch((problem) => alive && setError(problem.message))
     return () => { alive = false }
@@ -169,6 +171,7 @@ export default function ScanWizard({ work, onClose, onDone }) {
       {stage === 'questions' && (
         <QuestionsStep
           busy={busy}
+          scale={scale}
           onSave={(questions) =>
             run(async () => {
               const answer = await saveQuestions(work.id, questions)
@@ -252,13 +255,32 @@ export default function ScanWizard({ work, onClose, onDone }) {
  * Максимум спрашивается один на всех, а правится по одной: у большинства работ
  * он одинаковый, а вводить пятнадцать одинаковых чисел — наказание.
  */
-function QuestionsStep({ onSave, busy }) {
+function QuestionsStep({ onSave, busy, scale = [] }) {
   const { t } = useTranslation()
-  const [count, setCount] = useState(15)
-  const [max, setMax] = useState(3)
-  const [each, setEach] = useState(null)
+
+  /* Шкала спрашивается **перед каждым чтением**, а не только у ненастроенной
+     работы, и вводится она не заново: нынешняя подставлена, и шаг читается как
+     «проверьте, прежде чем платить». Причина в цене ошибки. По шкале
+     раскладываются баллы и ловится сдвиг на клетку («балл в клетке, которой у
+     работы нет»), а узнать, что шкала не та, можно было только после
+     чтения — то есть уже заплатив за всю пачку. У живой работы стояло «4
+     задачи по 1 баллу», тогда как на листах их было пятнадцать, а баллы
+     доходили до трёх: каждая страница честно ругалась, и ни одна из ругани не
+     была про настоящую ошибку. */
+  const known = scale.length
+  const [count, setCount] = useState(() => (known ? scale.length : 15))
+  const [max, setMax] = useState(() =>
+    known ? Math.max(...scale.map((one) => one.maximum || 1)) : 3,
+  )
+  const [each, setEach] = useState(() =>
+    known && new Set(scale.map((one) => one.maximum)).size > 1
+      ? Object.fromEntries(scale.map((one, i) => [i + 1, one.maximum]))
+      : null,
+  )
   // как вопросы зовутся: «1а», «324 из Галицкого». Пусто — зовутся номерами
-  const [names, setNames] = useState({})
+  const [names, setNames] = useState(() =>
+    Object.fromEntries(scale.map((one, i) => [i + 1, one.label ?? ''])),
+  )
 
   const numbers = Array.from({ length: count }, (_, i) => i + 1)
   const maxOf = (number) => each?.[number] ?? max
@@ -266,7 +288,7 @@ function QuestionsStep({ onSave, busy }) {
 
   return (
     <section className="scan-step">
-      <p className="hint">{t('scan.questionsHint')}</p>
+      <p className="hint">{known ? t('scan.checkScale') : t('scan.questionsHint')}</p>
       <div className="row">
         <label className="field">
           <span>{t('scan.questionCount')}</span>
@@ -479,6 +501,34 @@ function FileStep({ onPick, busy, questions, read, onReset, readQuestions, onRea
 function PagesStep({ state, all, byIndex, questions, busy, onDecide, onFix, onNext }) {
   const { t } = useTranslation()
   const [at, setAt] = useState(0)
+  /* Увеличение листа. Превью — это страница A4 в колонку шириной с пол-окна,
+     и на ней не всегда видно, «Денис» там написано или «Миша», а решать надо
+     именно это. Держится между страницами: разглядывают обычно подряд. */
+  const [zoom, setZoom] = useState(1)
+  const sheet = useRef(null)
+
+  const STEPS = [1, 1.5, 2, 3, 4]
+  const zoomBy = (step) => {
+    const now = STEPS.indexOf(zoom)
+    setZoom(STEPS[Math.min(STEPS.length - 1, Math.max(0, now + step))])
+  }
+
+  /* Щелчок по листу увеличивает **в это место**, а не в середину: тычут туда,
+     что хотят разглядеть, и приехать после этого в центр страницы значит
+     заставить искать заново. */
+  const zoomAt = (event) => {
+    const box = sheet.current
+    const rect = event.currentTarget.getBoundingClientRect()
+    const fx = (event.clientX - rect.left) / rect.width
+    const fy = (event.clientY - rect.top) / rect.height
+    const next = zoom > 1 ? 1 : 2
+    setZoom(next)
+    if (!box || next === 1) return
+    requestAnimationFrame(() => {
+      box.scrollLeft = fx * box.scrollWidth - box.clientWidth / 2
+      box.scrollTop = fy * box.scrollHeight - box.clientHeight / 2
+    })
+  }
 
   const students = state.students ?? []
   const nameOf = (id) => students.find((one) => one.id === id)?.name ?? t('scan.nobody')
@@ -598,13 +648,39 @@ function PagesStep({ state, all, byIndex, questions, busy, onDecide, onFix, onNe
         >
           {t('scan.nextDoubt')}
         </button>
+
+        <button
+          type="button"
+          className="secondary compact"
+          disabled={zoom === STEPS[0]}
+          aria-label={t('scan.zoomOut')}
+          onClick={() => zoomBy(-1)}
+        >
+          −
+        </button>
+        <span className="hint">{Math.round(zoom * 100)}%</span>
+        <button
+          type="button"
+          className="secondary compact"
+          disabled={zoom === STEPS[STEPS.length - 1]}
+          aria-label={t('scan.zoomIn')}
+          onClick={() => zoomBy(1)}
+        >
+          +
+        </button>
       </div>
 
       <div className="scan-review-body">
         {/* вся страница, а не полоска: чей это лист, видно и по почерку */}
-        <div className="scan-sheet">
+        <div className="scan-sheet" ref={sheet}>
           {byIndex[here?.index]?.preview ? (
-            <img src={byIndex[here.index].preview} alt="" />
+            <img
+              src={byIndex[here.index].preview}
+              alt=""
+              style={{ width: `${zoom * 100}%` }}
+              className={zoom > 1 ? 'out' : 'in'}
+              onClick={zoomAt}
+            />
           ) : (
             <p className="hint">{t('scan.noPreview')}</p>
           )}
