@@ -1425,6 +1425,8 @@
     "stop": "Stop",
     "pageNumber": "Page {{number}}",
     "readAs": "Read as: {{name}}",
+    "secondSaw": "The second reader saw: {{reading}}",
+    "arbitrated": "A third reading settled it.",
     "nobody": "Nobody",
     "toCheck": "Next",
     "stillStuck_one": "{{count}} page still has no owner.",
@@ -1444,7 +1446,8 @@
       "first_name_only": "signed with a first name only",
       "placed_by_guess": "placed by a guess, not by a name",
       "mark_differs": "the mark differs from the one already there",
-      "signed_apart": "taken out of its packet: it is signed by this student"
+      "signed_apart": "taken out of its packet: it is signed by this student",
+      "readers_differ": "the two readers read it differently"
     },
     "questionsHint": "How many questions were in this work, and what is the top mark for one? The blank always has fifteen cells; the extra ones must stay empty — that is how a shifted reading gets caught.",
     "questionCount": "Questions",

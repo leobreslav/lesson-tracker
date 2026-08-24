@@ -20,7 +20,7 @@ from django.db.models import Sum
 
 from config.errors import Codes, api_error
 
-from . import prices
+from . import agreement, mathpix, prices
 from .client import read_header, read_questions
 from .models import AiSpend
 
@@ -54,6 +54,19 @@ def budget(school) -> dict:
     }
 
 
+def has_budget(school) -> bool:
+    """
+    Осталось ли чем платить. Спрашивают об этом там, где вызов **необязателен**.
+
+    Второй читатель и арбитр — прибавка к чтению, а не оно само: упереться на
+    них в потолок значит потерять уже сделанную и уже оплаченную работу. Отказ
+    поэтому поднимается только на главном чтении, а прибавки просто не
+    случаются — молчаливо, потому что расход виден в журнале, а страница и без
+    них полноценно прочитана.
+    """
+    return budget(school)["left_micros"] > 0
+
+
 def check_budget(school) -> None:
     state = budget(school)
     if state["left_micros"] <= 0:
@@ -83,6 +96,24 @@ def read_and_charge(
     здесь: на цифрах в отдельных квадратиках разницы между моделями нет, а на
     рукописном имени есть — и стоит она втрое. Проверять это надо на живой
     пачке, и переключение должно стоить строки в `.env`, а не правки кода.
+
+    **Читателей бывает двое, и второй нужен не ради второго мнения, а ради
+    расхождения.** Модель ошибается молча: «Denis» становится «Misha», и
+    страница уходит не тому — уверенно и без единой пометки. Поймать такое
+    можно только другим свидетельством, и Mathpix годится потому, что он не
+    модель: распознаватель рукописного ошибается иначе. Сошлись — странице
+    можно верить сильнее прежнего; разошлись — человек об этом узнает.
+
+    **Чужого чтения первым двум читателям не показывают.** Закон проекта
+    выведен дважды и дорого: подсказанное подставляется вместо увиденного.
+    Подскажи мы модели ответ Mathpix — их согласие перестало бы что-либо
+    значить, а вместе с ним и вся затея. Обе версии видит только **арбитр**,
+    и только тогда, когда спор уже случился и уже записан.
+
+    **Порядок вызовов не случаен: сперва модель, потом прибавки.** Чтение
+    моделью — это то, без чего страницы нет вовсе; второй читатель и арбитр —
+    прибавка. Упрись мы в потолок или в отказ сети на первом шаге из трёх,
+    потерять хочется прибавку, а не страницу.
     """
     from django.conf import settings
 
@@ -95,7 +126,97 @@ def read_and_charge(
         model=model,
     )
     _charge(school, user, work, purpose, model, input_tokens, output_tokens)
+    data["model"] = model
+
+    second = second_reading(school, user, work, image, media_type)
+    # Спор записывается **до** арбитража и потом не пересчитывается. Иначе он
+    # исчезал бы ровно тогда, когда арбитр встал на сторону второго читателя:
+    # чтение сошлось бы с ним, и страница, о которой спорили трое, выглядела бы
+    # бесспорной. Событие тут — сам спор, а не его нынешний след.
+    second["differs"] = agreement.compare(data, second)
+    if second["differs"]:
+        data = arbitrate(
+            school,
+            user,
+            work,
+            image,
+            media_type=media_type,
+            candidates=candidates,
+            rivals=[data, second],
+            reading=data,
+            second=second,
+        )
+
+    data["second"] = second
     return data
+
+
+def second_reading(school, user, work, image: bytes, media_type: str) -> dict:
+    """
+    Позвать второго читателя и записать трату. Не позвался — не беда.
+
+    Возвращается всегда словарь: `error` внутри значит «второго мнения по этой
+    странице нет», и это законное состояние, а не отказ. Ключей Mathpix может
+    не быть вовсе — тогда всё работает ровно так, как работало до него.
+    """
+    if not mathpix.configured():
+        return {"reader": "mathpix", "error": "not_configured"}
+    if not has_budget(school):
+        return {"reader": "mathpix", "error": "no_budget"}
+
+    second = mathpix.read_strip(image, media_type=media_type)
+    if not second.get("error"):
+        _charge(school, user, work, AiSpend.SCAN_SECOND, prices.MATHPIX, 0, 0)
+    return second
+
+
+def arbitrate(
+    school,
+    user,
+    work,
+    image: bytes,
+    *,
+    media_type: str,
+    candidates: list[str] | None,
+    rivals: list[dict],
+    reading: dict,
+    second: dict,
+) -> dict:
+    """
+    Читатели разошлись — позвать третьего, дорогого и внимательного.
+
+    Он видит ту же картинку и обе версии, и его ответ становится чтением
+    страницы. Пометка о расхождении при этом **не снимается**: спор был, и
+    человек о нём узнает — арбитраж улучшает догадку, а не заменяет глаза.
+
+    Модель арбитра — настройка, и пустая значит «не звать»: расхождение тогда
+    просто помечается. Это честный выбор школы, у которой каждая страница
+    стоит денег, а не забытая ветка.
+    """
+    from django.conf import settings
+
+    arbiter = getattr(settings, "SCAN_ARBITER_MODEL", "")
+    # Цена спрашивается **до** вызова, и неизвестная модель тут не отказ, а
+    # пропуск: опечатка в `.env` иначе стоила бы страницы, за которую уже
+    # заплачено первому читателю. Сторож на умолчание есть в тестах.
+    if not arbiter or not prices.known(arbiter) or not has_budget(school):
+        return reading
+
+    better, input_tokens, output_tokens = read_header(
+        image,
+        media_type=media_type,
+        candidates=candidates,
+        model=arbiter,
+        rivals=rivals,
+    )
+    _charge(
+        school, user, work, AiSpend.SCAN_REREAD, arbiter, input_tokens, output_tokens
+    )
+    better["model"] = arbiter
+    # Кем перечитано — видно человеку рядом с обеими версиями: без этого
+    # «страница спорная, но прочитана вот так» выглядит необъяснимо.
+    second["arbiter"] = arbiter
+    return better
 
 
 def _charge(school, user, work, purpose, model, input_tokens, output_tokens):

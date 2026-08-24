@@ -639,6 +639,39 @@ function PagesStep({ state, all, byIndex, questions, busy, onDecide, onFix, onNe
   const cells = row?.cells ?? []
   const nameOfQuestion = (number) => state.question_names?.[number - 1] ?? String(number)
 
+  /*
+   * Страницу читали двое, и они прочитали разное.
+   *
+   * Одна модель ошибается **молча**: «Denis» становится «Misha», страница
+   * уходит не тому, и выглядит это ровно так же уверенно, как верное чтение.
+   * Второй читатель заведён ради этого случая, и весь его смысл доезжает до
+   * человека здесь — на странице, где рядом лежат бумага, полоска и обе
+   * версии.
+   *
+   * Показывается спор **предметно**, а не строкой «читатели не сошлись»: та же
+   * беда, что была у «балла выше максимума», — пометка без предмета не
+   * проверяется и не чинится. Клетка помечена, чужая цифра названа.
+   */
+  const differs = row?.second?.differs ?? []
+  const disputedCells = new Set(
+    differs.filter((code) => code.startsWith('cell:')).map((code) => Number(code.slice(5))),
+  )
+  const labelOfCell = (position) =>
+    position === GRID.cells - 1 ? t('scan.pageSum') : `Q${position + 1}`
+  const secondSaw = () => {
+    const parts = []
+    if (differs.includes('name')) {
+      // Разбор чужого чтения на графы мог и не сойтись, поэтому у него в
+      // запасе строка целиком: показываем прочитанное, а не наш разбор.
+      const name = `${row.second.first_name ?? ''} ${row.second.surname ?? ''}`.trim()
+      parts.push(name || row.second.text || '—')
+    }
+    for (const position of disputedCells) {
+      parts.push(`${labelOfCell(position)}=${row.second.values?.[position] ?? '—'}`)
+    }
+    return parts.join(', ')
+  }
+
   const setCell = (position, value) => {
     const next = [...(row?.cells ?? Array(16).fill(null))]
     next[position] = value === '' ? null : Number(value)
@@ -788,6 +821,9 @@ function PagesStep({ state, all, byIndex, questions, busy, onDecide, onFix, onNe
                   cells[position] > state.max_mark
                     ? 'too-big'
                     : '',
+                  // клетка, о которой читатели не сошлись: смотреть надо
+                  // именно на неё, а не на всю строку
+                  disputedCells.has(position) ? 'disputed' : '',
                 ]
                   .filter(Boolean)
                   .join(' ')}
@@ -867,6 +903,16 @@ function PagesStep({ state, all, byIndex, questions, busy, onDecide, onFix, onNe
           {(row?.trouble ?? []).length > 0 && (
             <p className="hint warning">
               {row.trouble.map((code) => t(`scan.trouble.${code}`)).join(' · ')}
+            </p>
+          )}
+
+          {/* что именно увидел второй читатель — и перечитывал ли спорную
+              страницу арбитр. Без второго «страница спорная, но прочитана
+              вот так» выглядит необъяснимо */}
+          {differs.length > 0 && (
+            <p className="hint warning">
+              {t('scan.secondSaw', { reading: secondSaw() })}
+              {row.second.arbiter ? ` ${t('scan.arbitrated')}` : ''}
             </p>
           )}
 

@@ -169,6 +169,9 @@ class Page:
     cells: list = field(default_factory=lambda: [None] * CELLS)
     student_id: int | None = None
     decided_by_human: bool = False
+    # Что увидел на той же полоске второй читатель и в чём он не сошёлся с
+    # первым (`differs`). Пустой словарь — второго читателя не было.
+    second: dict = field(default_factory=dict)
 
     @property
     def named(self) -> bool:
@@ -757,6 +760,12 @@ def troubles(
     # человеку всегда, даже когда всё остальное сошлось.
     elif assigned_to is not None and page.first.strip() and not page.surname.strip():
         out.append("first_name_only")
+    # Читателей было двое, и они прочитали разное. Сама по себе такая страница
+    # может быть прочитана верно — но узнать это можно только глазами, а
+    # молчаливо неверное чтение выглядит ровно так же уверенно, как верное.
+    # Ради этой пометки второй читатель и заведён.
+    if page.second.get("differs"):
+        out.append("readers_differ")
     if any(page.cells[q] is not None for q in range(questions, QUESTIONS)):
         out.append("beyond_questions")
     if max_mark:

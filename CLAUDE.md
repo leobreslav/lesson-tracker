@@ -255,6 +255,12 @@ docker compose exec frontend npm test      # tests/*.test.js
 списывает деньги ровно так же, как запрос от школы. Платит за него **хозяин
 ключа**, а не тот, кто запустил команду, — отсюда всё правило.
 
+**Платных читателей с тех пор стало двое.** Шапку скана читают модель
+Anthropic и Mathpix, распознаватель рукописного (`vision/mathpix.py`); второй
+продаётся не по токенам, а по запросам, около $0.004 за страницу. Правило
+ниже написано про Anthropic, потому что с него началось, и целиком
+распространяется на оба: разница между ними для хозяина ключа никакая.
+
 **Опаснее всего не тесты, а собственная работа исполнителя.** Тратится не
 там, где написано «потратить деньги», а там, где по ходу дела захотелось
 убедиться: «а читает ли оно вообще?», «а достаёт ли контейнер до API?», «а
@@ -302,10 +308,11 @@ docker compose exec frontend npm test      # tests/*.test.js
 
 ### Чем это стережётся, и чем не стережётся
 
-Тесты закрыты машинно: тест-раннер обнуляет `ANTHROPIC_API_KEY` на весь
-прогон (`config/testing.py`), поэтому случайный вызов упирается в отказ
-`ai_key_missing`, а не в счёт; что обнуление не отменили, следит
-`NoTestSpendsMoneyTests`.
+Тесты закрыты машинно: тест-раннер обнуляет `ANTHROPIC_API_KEY` и ключи
+Mathpix на весь прогон (`config/testing.py`), поэтому случайный вызов
+упирается в отказ `ai_key_missing` или просто не случается, а не в счёт; что
+обнуление не отменили, следит `NoTestSpendsMoneyTests` — по всем трём
+ключам.
 
 Обнуление ключа работает только под `manage.py test`. Отладочный
 `manage.py shell`, `python -c` и `curl` видят настоящий ключ из окружения —
@@ -334,8 +341,9 @@ docker compose exec frontend npm test      # tests/*.test.js
 подстановку делает шелл, и кода в команде опять нет.
 
 **«Поминает клиента» значит вызов, а не слово.** Ищутся `vision.client`,
-`read_header(`, `read_questions(`, конструктор `Anthropic(`, `messages.create`
-и адрес API — но **не** имя `ANTHROPIC_API_KEY`: его поминают всюду, от
+`vision.mathpix`, `read_header(`, `read_questions(`, `read_strip(`,
+конструктор `Anthropic(`, `messages.create` и адреса обоих API — но **не** имя
+`ANTHROPIC_API_KEY`: его поминают всюду, от
 `ENV_VARS.md` до правки конфига, а `printenv` денег не стоит. И не
 `vision.prices`: подсчёт цены наружу не ходит и разрешён прямо.
 
@@ -623,7 +631,7 @@ CI, не выкатывая до зелёного»: проверка та же,
 | администратор видит то, что вправе править | `bank/owning.py` | `AdminSeesWhatHeMayFixTests` |
 | после посева ни одна модель не пуста | `schools/demo_extras.py` | `EveryModelIsSeededTests` |
 | «настроено ли хранилище» отвечает, а не падает | `files/storage.py` | `StorageIsConfiguredAnswersInsteadOfCrashingTests` |
-| **ни один тест не платит за запрос к Anthropic** | `config/testing.py` | `NoTestSpendsMoneyTests` |
+| **ни один тест не платит за чтение сканов** | `config/testing.py` | `NoTestSpendsMoneyTests` |
 | **каждая дверь спрашивает, кого контур пускает** | `accounts/door.py` | `EveryDoorAsksWhoIsComingTests` |
 
 Последние четыре появились после того, как условие успело пожить в трёх

@@ -353,6 +353,29 @@ class TroubleTests(SimpleTestCase):
     def test_a_page_without_an_owner_is_trouble(self):
         self.assertIn("no_owner", troubles(page(0), None, 3, 15))
 
+    def test_readers_who_disagree_are_trouble(self):
+        """
+        Ради этой пометки второй читатель и заведён. Одна модель ошибается
+        молча — «Denis» становится «Misha», страница уходит не тому, и
+        выглядит это ровно так же уверенно, как верное чтение. Прочитанное
+        двумя и прочитанное по-разному может быть верным, но узнать это можно
+        только глазами по бумаге.
+        """
+        one = page(0, "Denis", "Orlov", {0: 1})
+        one.second = {"reader": "mathpix", "differs": ["name"]}
+
+        self.assertIn("readers_differ", troubles(one, 2, 3, 15))
+
+    def test_readers_who_agree_say_nothing(self):
+        """
+        Согласие — самый частый ответ, и он молчит. Пометка, стоящая на каждой
+        странице, не значит ничего уже к третьей.
+        """
+        one = page(0, "Denis", "Orlov", {0: 1})
+        one.second = {"reader": "mathpix", "differs": []}
+
+        self.assertNotIn("readers_differ", troubles(one, 2, 3, 15))
+
 
 class PacketTests(SimpleTestCase):
     """

@@ -1301,6 +1301,7 @@ def scan_pages(work) -> list:
             ours=row.ours,
             student_id=row.student_id,
             decided_by_human=row.decided_by_human,
+            second=row.second or {},
         )
         for row in work.scan_pages.all()
     ]
@@ -1412,6 +1413,10 @@ def scan_state(work) -> dict:
                 # собран постранично, и экран показывал вместо них первых по
                 # списку класса — то есть заведомо не тех.
                 "candidates": scanning.top_candidates(page, roster),
+                # Второе чтение едет на экран целиком: человек решает спор,
+                # глядя на обе версии и на бумагу, а не на наш вывод о том,
+                # кто из читателей прав. Мы этого и не знаем.
+                "second": page.second,
                 "trouble": []
                 if page.headerless
                 else scanning.troubles(page, owner, limit, questions),
@@ -1703,6 +1708,10 @@ def save_scan_reading(work, *, index: int, fingerprint: str, data: dict):
     row.cells = data.get("values") or []
     row.ours = True
     row.model = data.get("model", "")
+    # Что увидел второй читатель. Кладём и тогда, когда он не ответил: «его не
+    # было» — тоже сведение, и без него страница без второго мнения
+    # неотличима от страницы, где второй читатель промолчал по ошибке.
+    row.second = data.get("second") or {}
     row.save()
     return row
 
@@ -1754,6 +1763,13 @@ def edit_scan_page(work, *, index: int, student=UNSET, cells=None):
         if row.headerless and any(value is not None for value in row.cells):
             row.headerless = False
             fields.append("headerless")
+    # Спор двух читателей человеком и исчерпывается: он затем и показывается,
+    # чтобы на страницу посмотрели глазами. Оставить пометку после правки
+    # значило бы звать смотреть на то, что уже посмотрели, — а пометка,
+    # которую нельзя снять, перестаёт что-либо значить уже к третьей странице.
+    if fields and row.second.get("differs"):
+        row.second = dict(row.second, differs=[])
+        fields.append("second")
     if fields:
         row.save(update_fields=fields)
     return row

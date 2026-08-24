@@ -452,3 +452,78 @@ class ScanHandFilledTests(SchoolTestMixin, APITestCase):
         services.edit_scan_page(self.work, index=0, cells=[None] * 16)
 
         self.assertTrue(ScanPage.objects.get(work=self.work, index=0).headerless)
+
+
+class SecondReadingIsKeptTests(SchoolTestMixin, APITestCase):
+    """
+    Второе чтение живёт в строке страницы и доезжает до экрана.
+
+    Спор двух читателей — событие, а не расчёт: он случился при чтении, за
+    которое заплачено, и после этого его не пересчитывают. Иначе он исчезал бы
+    ровно тогда, когда арбитр встал на сторону второго читателя.
+
+    А исчерпывает его человек: он затем и позван, чтобы посмотреть на бумагу.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.year = make_year(self.school)
+        self.course = make_course(self.school, self.year)
+        self.work = make_work(self.user, self.course)
+        enrol(self.student, self.course, by=self.admin)
+
+    def reading(self, **over):
+        return {
+            "first_name": "Fil",
+            "surname": "Burmov",
+            "values": [1] + [None] * 15,
+            "second": {
+                "reader": "mathpix",
+                "first_name": "Fil",
+                "surname": "Burmova",
+                "values": [1] + [None] * 15,
+                "differs": ["name"],
+            },
+        } | over
+
+    def test_the_second_reading_reaches_the_screen(self):
+        services.save_scan_reading(
+            self.work, index=0, fingerprint="f0", data=self.reading()
+        )
+
+        row = services.scan_state(self.work)["pages"][0]
+
+        self.assertEqual(row["second"]["surname"], "Burmova")
+        self.assertIn("readers_differ", row["trouble"])
+
+    def test_a_human_looking_at_the_page_settles_the_argument(self):
+        """
+        Пометка, которую нельзя снять, перестаёт что-либо значить: она зовёт
+        смотреть на то, что уже посмотрели.
+        """
+        services.save_scan_reading(
+            self.work, index=0, fingerprint="f0", data=self.reading()
+        )
+
+        services.edit_scan_page(self.work, index=0, cells=[2] + [None] * 15)
+
+        row = services.scan_state(self.work)["pages"][0]
+        self.assertEqual(row["second"]["differs"], [])
+        self.assertNotIn("readers_differ", row["trouble"])
+        # само чтение второго читателя при этом никуда не делось: человек
+        # решил спор, а не стёр свидетельство
+        self.assertEqual(row["second"]["surname"], "Burmova")
+
+    def test_a_page_read_without_a_second_reader_is_a_normal_page(self):
+        """Ключей Mathpix может не быть вовсе — это законное состояние."""
+        services.save_scan_reading(
+            self.work,
+            index=0,
+            fingerprint="f0",
+            data={"first_name": "Fil", "surname": "Burmov", "values": [1] + [None] * 15},
+        )
+
+        row = services.scan_state(self.work)["pages"][0]
+
+        self.assertEqual(row["second"], {})
+        self.assertNotIn("readers_differ", row["trouble"])

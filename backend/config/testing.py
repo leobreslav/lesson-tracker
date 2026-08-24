@@ -68,8 +68,15 @@ class Runner(DiscoverRunner):
         # платный API: пустой ключ превращает случайный вызов в отказ
         self._purse = override_settings(ANTHROPIC_API_KEY="")
         self._purse.enable()
+        # Второй читатель шапки платный так же, и стеречь его надо тем же
+        # способом. Отдельное решение тут стоило бы ровно того же, чего стоил
+        # первый раз: пустых ключей у Mathpix значит «второго читателя нет», и
+        # вызов не случается вовсе.
+        self._second_purse = override_settings(MATHPIX_APP_ID="", MATHPIX_APP_KEY="")
+        self._second_purse.enable()
 
     def teardown_test_environment(self, **kwargs):
+        self._second_purse.disable()
         self._purse.disable()
         self._guest_list.disable()
         self._door.disable()
