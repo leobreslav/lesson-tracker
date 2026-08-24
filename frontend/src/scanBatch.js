@@ -100,9 +100,19 @@ export function scaledJpeg(canvas, maxSide = STRIP_WIDTH, quality = 0.8) {
   return new Promise((resolve) => small.toBlob(resolve, 'image/jpeg', quality))
 }
 
-/* Плитка клетки: подпись слева, сама клетка справа. */
-const TILE = { width: 240, height: 128, label: 74, pad: 4 }
-const TILE_COLUMNS = 4
+/*
+ * Плитка клетки: подпись слева, сама клетка справа.
+ *
+ * Колонок шесть, а не четыре, и это про **строку имени**. Ширину картинке
+ * задаёт она: имя пишут поперёк всего листа, и режется оно в 1568 точек —
+ * ровно столько, сколько оставляет от картинки Anthropic. Пока ширину задавали
+ * плитки (четыре по 240 — 960 точек), строка имени ужималась под них и теряла
+ * две пятых разрешения. Выходило это худшим из возможных способов: «Варвара
+ * Миронова» читалась как «Варварец Лосеводь», то есть страница честно уходила
+ * к человеку, хотя на бумаге имя написано разборчиво.
+ */
+const TILE_COLUMNS = 6
+const TILE = { width: Math.floor(STRIP_WIDTH / TILE_COLUMNS), height: 128, label: 74, pad: 4 }
 
 /**
  * Картинка, которая уезжает на чтение: строка имени и шестнадцать плиток.
@@ -126,18 +136,18 @@ const TILE_COLUMNS = 4
 export function readingSheet(image, h) {
   const { name, cells } = cutForReading(image, h)
 
-  const scale = (TILE.width * TILE_COLUMNS) / name.width
-  const nameHeight = Math.round(name.height * scale)
+  // строка имени идёт в свою натуральную величину, без ужатия
+  const nameHeight = name.height
   const rows = Math.ceil(cells.length / TILE_COLUMNS)
 
   const canvas = document.createElement('canvas')
-  canvas.width = TILE.width * TILE_COLUMNS
+  canvas.width = Math.max(name.width, TILE.width * TILE_COLUMNS)
   canvas.height = nameHeight + rows * TILE.height
   const context = canvas.getContext('2d')
   context.fillStyle = '#fff'
   context.fillRect(0, 0, canvas.width, canvas.height)
 
-  context.drawImage(toCanvas(name), 0, 0, canvas.width, nameHeight)
+  context.drawImage(toCanvas(name), 0, 0)
 
   context.font = 'bold 26px sans-serif'
   context.textBaseline = 'middle'

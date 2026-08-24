@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useNavigate, useParams } from 'react-router-dom'
+import ScanWizard from './ScanWizard'
 import Switch from './Switch'
 import TaskList from './TaskList'
 import WorkContent from './WorkContent'
@@ -60,6 +61,7 @@ export default function WorkEdit() {
   const [renaming, setRenaming] = useState(null)
   const [preview, setPreview] = useState(false)
   const [settings, setSettings] = useState(false)
+  const [scanning, setScanning] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
 
@@ -171,12 +173,23 @@ export default function WorkEdit() {
           </p>
         </div>
 
-        {/* Настройки — кнопкой, и стоит она у заголовка, а не над заданием:
-            рядом с текстом она читалась бы как что-то, что с этим текстом
-            делают */}
-        <button type="button" className="secondary" onClick={() => setSettings(true)}>
-          {t('works.settings')}
-        </button>
+        <div className="row">
+          {/* Сканы — там же, где и всё, что делают с работой целиком. Кнопка
+              жила только в списке работ, и это значило вот что: учитель,
+              открывший работу, чтобы завести под бланк пятнадцать ячеек,
+              должен был уйти со страницы обратно в список, чтобы принести
+              туда пачку. Одна работа — одно место, откуда с ней работают. */}
+          <button type="button" className="secondary" onClick={() => setScanning(true)}>
+            {t('scan.open')}
+          </button>
+
+          {/* Настройки — кнопкой, и стоит она у заголовка, а не над заданием:
+              рядом с текстом она читалась бы как что-то, что с этим текстом
+              делают */}
+          <button type="button" className="secondary" onClick={() => setSettings(true)}>
+            {t('works.settings')}
+          </button>
+        </div>
       </header>
 
       {error && (
@@ -236,6 +249,20 @@ export default function WorkEdit() {
       <section className="panel">
         <TaskList workId={work.id} tasks={tasks} onChanged={loadTasks} />
       </section>
+
+      {scanning && (
+        <ScanWizard
+          work={work}
+          /* Перечитываем и на закрытии, не только на «применить»: мастер
+             заводит ячейки первым же шагом, и закрытый на полпути он оставлял
+             бы на экране прежний список задач. */
+          onClose={() => {
+            setScanning(false)
+            loadTasks()
+          }}
+          onDone={() => loadTasks()}
+        />
+      )}
 
       {settings && (
         <WorkSettingsDialog

@@ -199,6 +199,7 @@ export default function ScanWizard({ work, onClose, onDone }) {
           read={state?.pages?.length ?? 0}
           onReset={() => run(async () => setState(await resetScan(work.id)))}
           onBack={() => setStage('questions')}
+          onForward={() => setStage('pages')}
         />
       )}
 
@@ -406,7 +407,7 @@ function QuestionsStep({ onSave, busy, scale = [] }) {
 }
 
 /** Шаг: выбрать файл. Всегда PDF — так его отдаёт и сканер, и телефон. */
-function FileStep({ onPick, busy, questions, read, onReset, readQuestions, onReadQuestions, onBack }) {
+function FileStep({ onPick, busy, questions, read, onReset, readQuestions, onReadQuestions, onBack, onForward }) {
   const { t } = useTranslation()
   const [over, setOver] = useState(false)
 
@@ -485,6 +486,13 @@ function FileStep({ onPick, busy, questions, read, onReset, readQuestions, onRea
         */}
       {read > 0 && (
         <div className="row middle">
+          {/* Прочитанное никуда не делось, а уйти к нему было нечем: шаг
+              выбора файла вёл только вперёд через новый файл, и вернувшийся
+              сюда человек оказывался в тупике — пачка разобрана, а показать её
+              нельзя. */}
+          <button type="button" disabled={busy} onClick={onForward}>
+            {t('scan.toPages')}
+          </button>
           <button
             type="button"
             className="secondary compact"
@@ -767,7 +775,20 @@ function PagesStep({ state, all, byIndex, questions, busy, onDecide, onFix, onNe
             {Array.from({ length: GRID.cells }, (_, position) => (
               <label
                 key={position}
-                className={`scan-box ${position >= state.questions && position < GRID.cells - 1 ? 'beyond' : ''}`}
+                className={[
+                  'scan-box',
+                  position >= state.questions && position < GRID.cells - 1 ? 'beyond' : '',
+                  // «балл выше максимума» — пометка без предмета: сказано, что
+                  // такой балл есть, а какой и где, приходилось искать глазами
+                  // по шестнадцати клеткам
+                  position < state.questions &&
+                  state.max_mark &&
+                  cells[position] > state.max_mark
+                    ? 'too-big'
+                    : '',
+                ]
+                  .filter(Boolean)
+                  .join(' ')}
               >
                 <span>
                   {position === GRID.cells - 1 ? t('scan.pageSum') : `Q${position + 1}`}

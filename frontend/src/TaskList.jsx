@@ -37,6 +37,8 @@ export default function TaskList({ workId, tasks, readOnly = false, onChanged })
   // какой ячейке накатываем условие из банка
   const [takingInto, setTakingInto] = useState(null)
   const [showAnswers, setShowAnswers] = useState(() => remembered(ANSWERS_KEY, false))
+  // сколько пустых ячеек завести разом
+  const [howMany, setHowMany] = useState(5)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
 
@@ -240,7 +242,7 @@ export default function TaskList({ workId, tasks, readOnly = false, onChanged })
           заводится тем же путём, что и всякая другая, —
           нажать «Сохранить», ничего не заполнив. */}
       {!readOnly && (
-      <div className="row">
+      <div className="row middle">
         <button
           type="button"
           className="task-add"
@@ -248,6 +250,42 @@ export default function TaskList({ workId, tasks, readOnly = false, onChanged })
           onClick={() => setEditingTask({ task: null })}
         >
           + {t('works.task.add')}
+        </button>
+
+        {/*
+          * Пачкой — потому что бумажную работу заводят целиком.
+          *
+          * Ячейка на бланке пустая по определению: условие лежит на листе
+          * условий, а в системе от неё нужен только номер и цена. Пятнадцать
+          * таких заводились пятнадцатью открытыми окнами, и это не мелочь —
+          * ровно на этом месте люди бросают и идут вписывать баллы руками.
+          */}
+        <input
+          type="number"
+          min="1"
+          max="15"
+          value={howMany}
+          disabled={busy}
+          aria-label={t('works.task.blankCount')}
+          onChange={(event) =>
+            setHowMany(Math.min(15, Math.max(1, Number(event.target.value) || 1)))
+          }
+        />
+        <button
+          type="button"
+          className="secondary"
+          disabled={busy}
+          onClick={() =>
+            run(async () => {
+              // по одной и по очереди: позиция ячейки — это её место в
+              // списке, и параллельные записи разложили бы их как придётся
+              for (let i = 0; i < howMany; i += 1) {
+                await createTask({ work: workId })
+              }
+            })
+          }
+        >
+          {t('works.task.addBlank', { count: howMany })}
         </button>
       </div>
       )}

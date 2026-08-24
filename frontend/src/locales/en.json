@@ -1221,7 +1221,10 @@
       "stemHidden": "The shared statement is hidden: the student sees only the question.",
       "onPaper": "Students do not submit answers online.",
       "closeAnswers": "Close for answers",
-      "openAnswers": "Open for answers"
+      "openAnswers": "Open for answers",
+      "blankCount": "How many blank cells",
+      "addBlank_one": "Add {{count}} blank one",
+      "addBlank_other": "Add {{count}} blank ones"
     },
     "answers": "Answers",
     "description": "Notes for the students",
@@ -1504,7 +1507,8 @@
     "scattered": "the pages are not in one run — a stray sheet may have been added",
     "fromThePile": "Nothing is written here. Suggested from the pile: {{name}}",
     "nothingRead": "Nothing is written here, and there is nobody above to borrow from.",
-    "startOverConfirm": "Delete what has been read and start the pile over?\n\n{{count}} pages will go, and reading them again costs money: a page is not read twice while it is here."
+    "startOverConfirm": "Delete what has been read and start the pile over?\n\n{{count}} pages will go, and reading them again costs money: a page is not read twice while it is here.",
+    "toPages": "On to the pages"
   },
   "ai": {
     "title": "Reading scans",

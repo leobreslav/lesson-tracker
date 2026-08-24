@@ -112,7 +112,11 @@ test('новая работа заводится с окном времени и
   await task.getByRole('button', { name: 'Сохранить' }).click()
 
   await expect(page.locator('.task-list li')).toHaveCount(1)
-  await page.getByRole('button', { name: 'Ответы' }).click()
+  // exact: иначе «Ответы» ловит ещё и «Закрыть ответы» в строке задачи, и
+  // поиск падает неоднозначностью. Разметка от этого не зависит — она
+  // одинакова, — но локатор обязан называть то, что имеет в виду: чип над
+  // списком, а не переключатель у задачи
+  await page.getByRole('button', { name: 'Ответы', exact: true }).click()
   await expect(page.locator('.task-list')).toContainText('180')
 
   // окно в будущем и есть «черновик»: работа запланирована, а не открыта
