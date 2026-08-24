@@ -1551,6 +1551,15 @@ def scan_state(work) -> dict:
         # выбора файла, и спрашивает не из любопытства: галочка, которая ничем
         # не управляет, — это ложь на экране. Нет ключей — нет и выбора.
         "second_reader": second_reader_available(),
+        # Достаёт ли сервер до языковой модели. Отвечает на это не настройка, а
+        # последняя попытка (`vision/reach.py`), поэтому и живёт ответ в
+        # состоянии пачки, а не в конфиге экрана: он меняется сам.
+        #
+        # Экрану это нужно затем, что без модели меняется не цена, а расстановка
+        # ролей: распознаватель перестаёт быть вторым читателем и становится
+        # единственным. Галочка «проверять вторым» в этот момент лжёт дважды —
+        # снять её нельзя, и проверять нечего.
+        "model_reachable": model_reachable(),
     }
 
 
@@ -1559,6 +1568,13 @@ def second_reader_available() -> bool:
     from vision import mathpix
 
     return mathpix.configured()
+
+
+def model_reachable() -> bool:
+    """Достаёт ли контур до языковой модели (`vision/reach.py`)."""
+    from vision import reach
+
+    return reach.model_reachable()
 
 
 def _scattered(pages) -> bool:

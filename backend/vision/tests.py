@@ -15,7 +15,7 @@ from django.utils import timezone
 from rest_framework.test import APITestCase
 from schools.testing import SchoolTestMixin
 
-from . import agreement, client, mathpix, services
+from . import agreement, client, mathpix, reach, services
 from .models import AiSpend
 from . import prices
 from .prices import HAIKU, SONNET, cost_micros
@@ -699,3 +699,205 @@ class TwoReadersTests(SchoolTestMixin, APITestCase):
         with self.assertRaises(Exception):
             self.read()  # главное чтение отказывает честно
         self.assertEqual(self.purposes(), ["scan_header"])
+
+
+class WhatCountsAsOutOfReachTests(SimpleTestCase):
+    """
+    Четыре отказа SDK, и только три из них значат «не достучаться».
+
+    Различие тут не вкусовое. «Не достучаться» переводит контур на запасного
+    читателя — молча и надолго; значит всё, что попало в эту графу по ошибке,
+    оборачивается ослабленным чтением, о котором никто не просил. Опечатка в
+    ключе — самый вероятный кандидат: она выглядит как отказ сервера и
+    случается ровно в тот день, когда ключ меняли.
+    """
+
+    def call(self, error):
+        """Позвать модель, у которой вместо ответа — вот такой отказ."""
+        from unittest.mock import patch
+
+        class Messages:
+            def create(self, **kwargs):
+                raise error
+
+        class Fake:
+            messages = Messages()
+
+        with patch.object(client, "_client", lambda: Fake()):
+            return client._ask(model="m", max_tokens=1, messages=[])
+
+    def sdk(self):
+        import anthropic
+        import httpx
+
+        return anthropic, httpx.Request("POST", "https://api.anthropic.com/v1/messages")
+
+    def test_a_dropped_connection_means_out_of_reach(self):
+        anthropic, request = self.sdk()
+        with self.assertRaises(client.ModelUnreachable):
+            self.call(anthropic.APIConnectionError(request=request))
+
+    def test_a_timeout_is_the_same_thing(self):
+        """
+        Блокировка чаще выглядит не отказом, а молчанием: пакеты уходят и не
+        возвращаются. Таймаут — частный случай отказа связи, и ловится тем же
+        `except`; проверяем, потому что иначе это знание живёт в чужой
+        библиотеке.
+        """
+        anthropic, request = self.sdk()
+        with self.assertRaises(client.ModelUnreachable):
+            self.call(anthropic.APITimeoutError(request=request))
+
+    def test_a_country_block_answers_403_and_still_means_out_of_reach(self):
+        """
+        Сервер ответил — но ответил, что разговора не будет. Снаружи это
+        «связь есть», и без этой ветки контур считал бы модель доступной,
+        получая 403 на каждой странице пачки.
+        """
+        import httpx
+
+        anthropic, request = self.sdk()
+        with self.assertRaises(client.ModelUnreachable):
+            self.call(
+                anthropic.PermissionDeniedError(
+                    "unsupported country",
+                    response=httpx.Response(403, request=request),
+                    body=None,
+                )
+            )
+
+    def test_a_wrong_key_stays_a_wrong_key(self):
+        """
+        401 — это ошибка настройки, и она обязана быть громкой. Прими мы её за
+        блокировку, опечатка в ключе тихо и навсегда оставила бы школу с
+        одним распознавателем вместо двух читателей, а искать причину пришлось
+        бы в стране размещения сервера.
+        """
+        import httpx
+
+        anthropic, request = self.sdk()
+        with self.assertRaises(anthropic.AuthenticationError):
+            self.call(
+                anthropic.AuthenticationError(
+                    "bad key",
+                    response=httpx.Response(401, request=request),
+                    body=None,
+                )
+            )
+
+
+class ModelOutOfReachTests(SchoolTestMixin, APITestCase):
+    """
+    Сервер, который не достаёт до модели, обязан всё равно прочитать пачку.
+
+    Случай не выдуманный: контур стоит там, откуда Anthropic не отвечает, а
+    ключ у него настоящий. Ни одна настройка об этом не говорит — узнаётся это
+    попыткой, и до того, как путь появился, выглядело оно как пятисотая на
+    каждой странице.
+
+    Проверяется не распознавание, а **развилка**: кого позвали вместо модели,
+    что записали в журнал, и не пришлось ли пачке из тридцати четырёх листов
+    выяснять недоступность тридцать четыре раза подряд.
+    """
+
+    def setUp(self):
+        super().setUp()
+        # Вердикт живёт в кэше и переживает тест: непочищенный, он красит
+        # следующий тест в зелёный по неверной причине.
+        reach.forget()
+        self.addCleanup(reach.forget)
+        self.asked = []
+        self.mathpix_says = {
+            "reader": "mathpix",
+            "first_name": "Denis",
+            "surname": "Orlov",
+            "date": "",
+            "values": [3] + [None] * 15,
+            "text": "Denis Orlov",
+        }
+
+    def read(self, *, strip=None, **settings_over):
+        """Прочитать страницу на контуре, который до модели не достаёт."""
+        from unittest.mock import patch
+
+        def blocked(image, **kwargs):
+            self.asked.append(kwargs)
+            raise client.ModelUnreachable("blocked")
+
+        says = self.mathpix_says if strip is None else strip
+        defaults = {"MATHPIX_APP_ID": "id", "MATHPIX_APP_KEY": "key"}
+        with self.settings(**(defaults | settings_over)):
+            with patch.object(services, "read_header", blocked), patch.object(
+                services.mathpix, "read_strip", lambda *a, **k: dict(says)
+            ):
+                return services.read_and_charge(
+                    school=self.school,
+                    user=self.user,
+                    work=None,
+                    image=b"strip",
+                )
+
+    def purposes(self):
+        return sorted(AiSpend.objects.values_list("purpose", flat=True))
+
+    def test_a_server_without_a_model_reads_with_what_it_has(self):
+        """«Хуже» спорит здесь не с «лучше», а с «никак»."""
+        data = self.read()
+
+        self.assertEqual(data["first_name"], "Denis")
+        self.assertEqual(data["surname"], "Orlov")
+        self.assertEqual(data["model"], prices.MATHPIX)
+
+    def test_the_reading_is_charged_as_a_header_by_whoever_read_it(self):
+        """
+        Повод отвечает на вопрос «за что заплачено», а заплачено за чтение
+        шапки. Кем именно — сказано в `model`, и по нему в журнале видно, что
+        читал не тот, кто обычно.
+        """
+        self.read()
+
+        self.assertEqual(self.purposes(), ["scan_header"])
+        row = AiSpend.objects.get()
+        self.assertEqual(row.model, prices.MATHPIX)
+        self.assertEqual(row.cost_micros, prices.PER_REQUEST[prices.MATHPIX])
+
+    def test_the_missing_second_opinion_says_why_it_is_missing(self):
+        """
+        Пустой словарь значил бы «второй читатель промолчал» — то есть свалил
+        бы на него отсутствующую модель.
+        """
+        self.assertEqual(self.read()["second"]["error"], "sole_reader")
+
+    def test_the_pile_finds_out_once_and_not_on_every_page(self):
+        """
+        Тридцать четыре страницы по три попытки с таймаутом — это не «медленно»,
+        это чтение, неотличимое от зависшего. Спросить один раз — то же самое
+        знание, только вовремя.
+        """
+        self.read()
+        self.read()
+
+        self.assertEqual(len(self.asked), 1)
+        self.assertFalse(reach.model_reachable())
+
+    def test_with_no_other_reader_the_refusal_says_so(self):
+        """
+        Отказ, а не пустая страница: «шапки не разобрать» свалило бы на бумагу
+        вину сети, и учитель искал бы причину в сканере.
+        """
+        with self.assertRaises(Exception) as caught:
+            self.read(MATHPIX_APP_ID="", MATHPIX_APP_KEY="")
+
+        self.assertEqual(caught.exception.detail["code"], "ai_unreachable")
+        self.assertEqual(self.purposes(), [])
+
+    def test_the_only_reader_going_silent_is_not_an_empty_page(self):
+        """
+        У второго читателя молчание — законное состояние, у единственного —
+        непрочитанная страница. Роль изменилась, значит изменился и ответ.
+        """
+        with self.assertRaises(Exception) as caught:
+            self.read(strip={"reader": "mathpix", "error": "unreachable"})
+
+        self.assertEqual(caught.exception.detail["code"], "scan_reader_silent")
+        self.assertEqual(self.purposes(), [])

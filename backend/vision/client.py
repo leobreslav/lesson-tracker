@@ -201,7 +201,7 @@ def read_questions(
     работу и остаётся там навсегда, ошибка в клетке видна человеку на шаге
     проверки.
     """
-    message = _client().messages.create(
+    message = _ask(
         model=model,
         max_tokens=4000,
         system=[
@@ -313,6 +313,42 @@ def _client():
     return anthropic.Anthropic(api_key=key, max_retries=3)
 
 
+class ModelUnreachable(Exception):
+    """
+    Контур не достаёт до Anthropic. Это не поломка и не ошибка настройки.
+
+    Сервер, стоящий в стране, откуда Anthropic не отвечает, — обычное дело, и
+    ключ у него при этом настоящий. Отличать этот случай надо от соседних,
+    потому что делать в них надо разное: до модели **не достучаться** — читаем
+    тем, чем можем, и говорим об этом; ключ **не тот** — это ошибка настройки,
+    и молча читать хуже, чем отказать, иначе опечатка в ключе навсегда
+    оставляет школу с ослабленным чтением.
+
+    Ловятся два вида отказа, и оба значат одно. Сеть не дошла
+    (`APIConnectionError`, таймаут — его частный случай) и `403`
+    (`PermissionDeniedError`): так Anthropic отвечает на запрос из страны, где
+    он не работает. Второй снаружи выглядит как «сервер ответил», но ответ
+    этот про то, что разговора не будет.
+    """
+
+
+def _ask(**kwargs):
+    """
+    Единственная дверь наружу — и единственное место, где ловится её отсутствие.
+
+    Обе функции чтения зовут модель через неё, чтобы «до модели не
+    достучаться» не пришлось узнавать в двух местах по-разному: разъехавшись,
+    они дали бы контур, где шапка читается запасным путём, а лист условий
+    роняет пятисотую.
+    """
+    import anthropic
+
+    try:
+        return _client().messages.create(**kwargs)
+    except (anthropic.APIConnectionError, anthropic.PermissionDeniedError) as gone:
+        raise ModelUnreachable(str(gone)) from gone
+
+
 def _reading_as_text(reading: dict) -> str:
     """Чужое чтение одной строкой — так, как его увидит арбитр."""
     marks = ", ".join(
@@ -400,7 +436,7 @@ def read_header(
             + names
         )
 
-    message = _client().messages.create(
+    message = _ask(
         model=model,
         max_tokens=500,
         system=[

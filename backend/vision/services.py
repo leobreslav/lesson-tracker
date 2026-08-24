@@ -18,9 +18,9 @@ from datetime import datetime, timezone
 
 from django.db.models import Sum
 
-from config.errors import Codes, api_error
+from config.errors import Codes, api_error, api_unavailable
 
-from . import agreement, mathpix, prices
+from . import agreement, client, mathpix, prices, reach
 from .client import read_header, read_questions
 from .models import AiSpend
 
@@ -120,17 +120,40 @@ def read_and_charge(
     читатель удваивает цену пачки, а нужен он не всегда: у пачки, где имена
     вписаны учителем печатными буквами, спорить не о чем. Решение поэтому не
     наше и не настроечное — того, кто платит и держит стопку в руках.
+
+    **А бывает, что модели нет вовсе, и узнаётся это только попыткой.** Сервер
+    может стоять там, откуда Anthropic не отвечает; ключ у него при этом
+    настоящий, и никакая настройка об этом не говорит. Тогда читает тот, кто
+    доступен, — распознаватель рукописного, и читает он **один**. Это заметно
+    хуже: он не знает ни списка класса, ни того, что сигма над клеткой значит
+    сумму, и молчаливую ошибку ловить больше нечем — двое ошибаются молча
+    только вместе. Но «хуже» тут спорит не с «лучше», а с «никак»: без этого
+    пути пачка на таком контуре не читается совсем.
     """
     from django.conf import settings
 
     model = model or getattr(settings, "SCAN_HEADER_MODEL", prices.HAIKU)
     check_budget(school)
-    data, input_tokens, output_tokens = read_header(
-        image,
-        media_type=media_type,
-        candidates=candidates,
-        model=model,
-    )
+
+    # Достаёт ли контур до модели, спрашивается у самого сервера. Вопрос этот
+    # про сеть, а не про настройку, и ответ на него меняется без нашего
+    # участия — блокировку снимут, прокси поднимут, сервер переедет.
+    if not reach.model_reachable():
+        return sole_reading(school, user, work, image, media_type)
+
+    try:
+        data, input_tokens, output_tokens = read_header(
+            image,
+            media_type=media_type,
+            candidates=candidates,
+            model=model,
+        )
+    except client.ModelUnreachable:
+        # Неудавшийся вызов не стоил ничего: платят за токены, а токенов не
+        # было. Записать трату тут значило бы брать деньги за молчание.
+        reach.remember_unreachable()
+        return sole_reading(school, user, work, image, media_type)
+
     _charge(school, user, work, purpose, model, input_tokens, output_tokens)
     data["model"] = model
 
@@ -186,6 +209,50 @@ def second_reading(
     return second
 
 
+def sole_reading(school, user, work, image: bytes, media_type: str) -> dict:
+    """
+    Модели нет — читает распознаватель, и читает он один.
+
+    Отличается это от `second_reading` не вызовом, а **ролью**: там Mathpix
+    свидетель, которого можно не звать и чей отказ ничего не ломает, здесь он
+    единственный читатель, и его молчание — это непрочитанная страница.
+    Поэтому и отказы тут громкие: страница, тихо вернувшаяся пустой, выглядела
+    бы как «шапки не разобрать», то есть свалила бы на бумагу вину сети.
+
+    Трата записывается поводом `SCAN_HEADER`, а не `SCAN_SECOND`: повод
+    отвечает на вопрос «за что заплачено», а заплачено за чтение шапки. Кем
+    именно — сказано в поле `model`, и по нему же в журнале видно, что читал
+    не тот, кто обычно.
+
+    Отказы идут дверью «не сейчас» (503), а не «вы ошиблись» (400): человек
+    ничего не напутал и перепечатыванием ничего не исправит — это та же
+    причина, по которой так отвечает недоступное хранилище.
+    """
+    if not mathpix.configured():
+        api_unavailable(
+            Codes.AI_UNREACHABLE,
+            "This server cannot reach the language model, and no other reader "
+            "is set up.",
+        )
+
+    reading = mathpix.read_strip(image, media_type=media_type)
+    if reading.get("error"):
+        api_unavailable(
+            Codes.SCAN_READER_SILENT,
+            "The only reader available did not answer.",
+            reader=reading.get("reader", ""),
+            reason=reading.get("error", ""),
+        )
+
+    _charge(school, user, work, AiSpend.SCAN_HEADER, prices.MATHPIX, 0, 0)
+    reading["model"] = prices.MATHPIX
+    # Второго мнения тут нет и быть не может, и сказать об этом надо своим
+    # словом: пустой словарь значил бы «второй читатель промолчал», то есть
+    # свалил бы на него отсутствующую модель.
+    reading["second"] = {"reader": "mathpix", "error": "sole_reader"}
+    return reading
+
+
 def arbitrate(
     school,
     user,
@@ -218,13 +285,20 @@ def arbitrate(
     if not arbiter or not prices.known(arbiter) or not has_budget(school):
         return reading
 
-    better, input_tokens, output_tokens = read_header(
-        image,
-        media_type=media_type,
-        candidates=candidates,
-        model=arbiter,
-        rivals=rivals,
-    )
+    try:
+        better, input_tokens, output_tokens = read_header(
+            image,
+            media_type=media_type,
+            candidates=candidates,
+            model=arbiter,
+            rivals=rivals,
+        )
+    except client.ModelUnreachable:
+        # Модель отвалилась между чтением и арбитражем. Арбитр — прибавка, и
+        # терять из-за него уже прочитанную и уже оплаченную страницу нельзя:
+        # спор записан, человек о нём узнает, а перечитывать некому.
+        reach.remember_unreachable()
+        return reading
     _charge(
         school, user, work, AiSpend.SCAN_REREAD, arbiter, input_tokens, output_tokens
     )
@@ -259,9 +333,20 @@ def questions_and_charge(
 ) -> list:
     """Прочитать лист условий и записать трату. Та же дверь, что у шапок."""
     check_budget(school)
-    found, input_tokens, output_tokens = read_questions(
-        image, media_type=media_type, model=model
-    )
+    try:
+        found, input_tokens, output_tokens = read_questions(
+            image, media_type=media_type, model=model
+        )
+    except client.ModelUnreachable:
+        # Заменить тут некем: распознаватель видит буквы, а не задачи, и
+        # шкалу из листа условий не соберёт. Значит честный отказ, а не
+        # пустая шкала, молча уехавшая в работу.
+        reach.remember_unreachable()
+        api_unavailable(
+            Codes.AI_UNREACHABLE,
+            "This server cannot reach the language model, and reading a "
+            "question paper needs one.",
+        )
     _charge(
         school, user, work, AiSpend.SCAN_QUESTIONS, model, input_tokens, output_tokens
     )

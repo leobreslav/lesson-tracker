@@ -227,6 +227,13 @@ class Codes:
     AI_KEY_MISSING = "ai_key_missing"
     AI_BUDGET_EXCEEDED = "ai_budget_exceeded"
     AI_UNAVAILABLE = "ai_unavailable"
+    # До модели не достучаться с этого сервера, и заменить её некем. Отдельно
+    # от AI_KEY_MISSING нарочно: там нечем звать, здесь — некуда дозвониться,
+    # и чинятся эти два совершенно по-разному.
+    AI_UNREACHABLE = "ai_unreachable"
+    # Читатель есть, но промолчал. Не то же, что «читателя нет»: повторить
+    # имеет смысл, а настраивать нечего.
+    SCAN_READER_SILENT = "scan_reader_silent"
     AI_LIMIT_NEGATIVE = "ai_limit_negative"
     SCAN_PAGE_UNKNOWN = "scan_page_unknown"
     SCAN_NOTHING_READ = "scan_nothing_read"

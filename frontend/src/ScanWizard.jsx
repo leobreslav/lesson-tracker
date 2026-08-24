@@ -203,13 +203,19 @@ export default function ScanWizard({ work, onClose, onDone }) {
         />
       )}
 
+      {/* Просьба прочитать условия снимается вместе с галочкой: галочка могла
+          остаться включённой с прошлого открытия, а модели с тех пор не стало —
+          и пачка упёрлась бы в отказ на первом же листе условий */}
       {stage === 'file' && (
         <FileStep
-          onPick={(chosen) => start(chosen, readQuestions, second)}
+          onPick={(chosen) =>
+            start(chosen, readQuestions && (state?.model_reachable ?? true), second)
+          }
           busy={busy}
           readQuestions={readQuestions}
           onReadQuestions={setReadQuestions}
           secondReader={state?.second_reader ?? false}
+          modelReachable={state?.model_reachable ?? true}
           second={second}
           onSecond={setSecond}
           questions={scale.length}
@@ -433,6 +439,7 @@ function FileStep({
   readQuestions,
   onReadQuestions,
   secondReader,
+  modelReachable,
   second,
   onSecond,
   onBack,
@@ -487,9 +494,26 @@ function FileStep({
         </ul>
       </div>
 
+      {/*
+        * До модели не достучаться — значит роли поменялись, и сказать об этом
+        * надо здесь, до нажатия: дальше человек увидит только результат, а по
+        * нему «читал не тот» не отличить от «почерк плохой».
+        *
+        * Две разные беды и две разные фразы. Распознаватель есть — пачка
+        * прочитается, просто хуже и без страховки; распознавателя нет —
+        * читать нечем вовсе, и узнать это лучше сейчас, чем на тридцатой
+        * странице.
+        */}
+      {!modelReachable && (
+        <p className={secondReader ? 'hint warning' : 'error'}>
+          {t(secondReader ? 'scan.soleReader' : 'scan.noReader')}
+        </p>
+      )}
+
       {/* условия читаются по просьбе: страница целиком дороже полоски шапки,
-          а нужна она один раз на пачку */}
-      {questions > 0 && (
+          а нужна она один раз на пачку. Без модели этой просьбы нет: шкалу из
+          листа условий собирает она, а распознаватель видит буквы, не задачи */}
+      {questions > 0 && modelReachable && (
         <label className="checkbox">
           <input
             type="checkbox"
@@ -514,7 +538,7 @@ function FileStep({
         * поведение — читает один, и ошибётся он молча; сказать об этом надо
         * ровно в тот момент, когда галочку снимают.
         */}
-      {secondReader && (
+      {secondReader && modelReachable && (
         <>
           <label className="checkbox">
             <input
