@@ -58,9 +58,14 @@ test('проверка столбцом ставит отметку, и табл
   await openTable(page, 'Контрольная')
 
   const before = await page.locator('.work-table td.sent').count()
+  // номер вопроса открывает **вопрос**: что спрашивали и что верно. Проверка
+  // столбцом — оттуда же, соседней кнопкой: столбец проверяют подряд по
+  // вопросу, и терять этот путь нельзя, но условие смотрят чаще
   await page.locator('.work-table thead button.link').first().click()
 
   const dialog = page.locator('dialog.modal')
+  await expect(dialog).toContainText('Правильный ответ')
+  await dialog.getByRole('button', { name: 'Проверить столбец' }).click()
   await expect(dialog).toContainText(/ждёт проверки|ждут проверки/)
   // непроверенные идут первыми — ради них сюда и заходят
   await dialog.locator('.attempt-list li').first().getByTitle(/Отметить «верно»/).click()

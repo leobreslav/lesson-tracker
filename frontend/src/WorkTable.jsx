@@ -8,6 +8,7 @@ import Markdown from './Markdown'
 import Modal from './Modal'
 import ScaleDialog from './ScaleDialog'
 import SplitDialog from './SplitDialog'
+import TaskBrief from './TaskBrief'
 import { fetchWorkTable, gradeStudent, saveScale, splitScan } from './api'
 import { POLL_MS } from './polling'
 
@@ -187,6 +188,16 @@ export default function WorkTable() {
             <thead>
               <tr>
                 <th className="who">{t('table.student')}</th>
+                {/*
+                  * Столбец-пояснение: он ничего не показывает, он **называет
+                  * вторую строку шапки**. Без него скобки под именами
+                  * столбцов — просто числа неизвестно о чём, и читаются они
+                  * как ещё один балл.
+                  */}
+                <th className="axis">
+                  <span className="head-name" />
+                  <span className="head-max">{t('table.maximum')}</span>
+                </th>
                 {/* под номером задачи ничего не пишем: числа по столбцу
                     были третьей строкой мелким шрифтом и делали шапку
                     шумной. Кто справился — видно по самой колонке, а
@@ -208,12 +219,16 @@ export default function WorkTable() {
                       type="button"
                       className="link"
                       onClick={() =>
-                        /* есть ответы — открываем колонку ответов, их и
-                           проверяют; нет — сводку по вопросу: на бумаге
-                           смотреть в столбце нечего, кроме баллов */
-                        task.answered > 0
-                          ? setColumn({ task })
-                          : setQuestion(statsOf(task.id))
+                        /* Номер вопроса открывает **вопрос**: что спрашивали
+                           и что считается верным. Открывал он то колонку
+                           ответов, то сводку по столбцу — и на бумажной
+                           работе, где сводки ещё нет, не открывал ничего
+                           вовсе: `statsOf` возвращал пустоту, и нажатие
+                           уходило в никуда. Колонка ответов при этом никуда
+                           не делась: в неё ведёт сводка сдачи над таблицей,
+                           где ей и место — там про ответы, а тут про
+                           условие. */
+                        setQuestion({ task, stats: statsOf(task.id) })
                       }
                     >
                       {task.name}
@@ -221,20 +236,30 @@ export default function WorkTable() {
                     {/* сколько стоит вопрос: без этого балл в клетке — число
                         без шкалы, и «2» у одного вопроса и «2» у другого
                         читаются одинаково, хотя значат разное */}
-                    <span className="hint">{`/ ${task.maximum}`}</span>
+                    <span className="head-max">{`(${task.maximum})`}</span>
                   </th>
                 ))}
                 {showRow && (
                   <th className="mark">
-                    {t(scale.graded ? 'grading.mark' : 'paper.column')}
+                    {/* Вторая строка пустая, но она **есть**: подписи столбцов
+                        стоят на одной линии только тогда, когда строк у всех
+                        поровну. Без неё «Работа» опускалась к низу клетки, а
+                        соседний «Итог» держался строкой выше — и выглядело
+                        это как разные уровни и разный цвет. */}
+                    <span className="head-name">
+                      {t(scale.graded ? 'grading.mark' : 'paper.column')}
+                    </span>
+                    <span className="head-max" />
                   </th>
                 )}
                 {table.tasks.length > 0 && (
                   <th className="total">
-                    {t('table.total')}
+                    <span className="head-name">{t('table.total')}</span>
                     {/* максимум за работу — под именем столбца: «14» без «из
                         18» не говорит ничего, а искать его было негде */}
-                    {pointed && <span className="hint">{`/ ${workMaximum}`}</span>}
+                    <span className="head-max">
+                      {pointed ? `(${workMaximum})` : ''}
+                    </span>
                   </th>
                 )}
               </tr>
@@ -248,6 +273,11 @@ export default function WorkTable() {
                       <span className="hint"> {t('table.removed')}</span>
                     )}
                   </th>
+                  {/* `th`, а не `td`: столбец-пояснение не данные, а
+                      продолжение шапки вниз. Клеткой он вдобавок сдвигал бы
+                      нумерацию — первой клеткой строки стала бы пустота, а не
+                      первый вопрос. */}
+                  <th className="axis" />
                   {/* клетка одна на оба случая: в ней балл, а если его нет —
                       состояние ответа. Двух видов таблицы больше нет */}
                   {student.cells.map((item) => (
@@ -340,17 +370,45 @@ export default function WorkTable() {
       {question && (
         <Modal
           onClose={() => setQuestion(null)}
-          title={t('grading.questionTitle', { name: question.name })}
+          title={t('grading.questionTitle', { name: question.task.name })}
         >
-          <Markdown text={question.question} />
+          {/* условие и эталоны — тем же компонентом, что и в окне ячейки:
+              вопрос «что тут спрашивали» один и тот же */}
+          <TaskBrief task={question.task} />
           <p className="hint">
-            {t('grading.facility', { percent: question.facility ?? 0 })} ·{' '}
-            {t('grading.hardestBreakdown', {
-              full: question.full,
-              partial: question.partial,
-              zero: question.zero,
-            })}
+            {t('table.markPoints', { value: '', maximum: question.task.maximum })}
           </p>
+          {/* «как справились» — только когда справлялись: у работы, где ещё
+              никого не проверяли, ноль процентов означал бы неверное */}
+          {question.stats && (
+            <p className="hint">
+              {t('grading.facility', { percent: question.stats.facility ?? 0 })} ·{' '}
+              {t('grading.hardestBreakdown', {
+                full: question.stats.full,
+                partial: question.stats.partial,
+                zero: question.stats.zero,
+              })}
+            </p>
+          )}
+
+          {/* Проверка столбцом — отсюда же. Номер вопроса вёл прямо в неё, и
+              условие посмотреть было негде; но и убрать её из-под номера
+              нельзя: столбец проверяют именно так, подряд по вопросу. Поэтому
+              сперва условие, а проверка соседней кнопкой. */}
+          {question.task.answered > 0 && (
+            <div className="actions">
+              <button
+                type="button"
+                onClick={() => {
+                  const task = question.task
+                  setQuestion(null)
+                  setColumn({ task })
+                }}
+              >
+                {t('table.checkColumn')}
+              </button>
+            </div>
+          )}
         </Modal>
       )}
 

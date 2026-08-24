@@ -1398,7 +1398,9 @@
     "markPoints": "Балл {{value}} из {{maximum}}",
     "markCorrect": "Отметить «верно»",
     "markWrong": "Отметить «неверно»",
-    "paperMark": "Балл за этот вопрос"
+    "paperMark": "Балл за этот вопрос",
+    "maximum": "(макс.)",
+    "checkColumn": "Проверить столбец"
   },
   "devSwitch": {
     "label": "Войти как (только на стенде)",

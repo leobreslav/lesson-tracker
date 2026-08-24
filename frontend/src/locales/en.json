@@ -1354,7 +1354,9 @@
     "markPoints": "Mark {{value}} of {{maximum}}",
     "markCorrect": "Mark as correct",
     "markWrong": "Mark as wrong",
-    "paperMark": "Mark for this question"
+    "paperMark": "Mark for this question",
+    "maximum": "(max)",
+    "checkColumn": "Check this column"
   },
   "devSwitch": {
     "label": "Sign in as (dev only)",
