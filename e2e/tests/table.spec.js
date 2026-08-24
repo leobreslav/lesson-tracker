@@ -73,6 +73,36 @@ test('подпись «(макс.)» стоит на той же строке, �
     .boundingBox()
 
   expect(Math.abs(label.y - first.y)).toBeLessThan(3)
+
+  /*
+   * И тем же шагом, что столбцы задач.
+   *
+   * Мерка тут не «на глаз просторно», а **между серединами**: числа в столбцах
+   * стоят по центру широких клеток, и ритм задают их середины. Подгонялось это
+   * дважды и дважды мимо — сперва по зазору между клетками (десять пикселей
+   * против двадцати двух, вроде и просторно), потом по зазору между надписями
+   * (девяносто три против девяноста пяти, тоже вроде верно), — а глазу
+   * неправильно было и то и другое: подпись шире числа, и при равных зазорах
+   * её середина уезжает. Поэтому сравниваются середины, и порог мягкий:
+   * правило про ритм, а не про пиксели.
+   */
+  const middles = (locator) =>
+    locator.evaluate((node) => {
+      const range = document.createRange()
+      range.selectNodeContents(node)
+      const box = range.getBoundingClientRect()
+      return (box.left + box.right) / 2
+    })
+
+  const cells = page.locator('.work-table thead th:not(.axis) .head-max')
+  const [atLabel, atFirst, atSecond] = await Promise.all([
+    middles(page.locator('.work-table thead .axis .head-max')),
+    middles(cells.nth(0)),
+    middles(cells.nth(1)),
+  ])
+
+  const pitch = atSecond - atFirst
+  expect(Math.abs(atFirst - atLabel - pitch)).toBeLessThan(pitch / 4)
 })
 
 test('проверка столбцом ставит отметку, и таблица её показывает', async ({
