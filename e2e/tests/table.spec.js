@@ -50,6 +50,31 @@ test('таблица показывает состояние каждой яче
   await expect(page.locator('.work-table td.empty')).not.toHaveCount(0)
 })
 
+test('подпись «(макс.)» стоит на той же строке, что и сами максимумы', async ({
+  page,
+  signIn,
+}) => {
+  /*
+   * Шапка таблицы — два этажа: имена столбцов и стоимость вопроса под ними.
+   * Столбец-пояснение называет **второй** этаж, и стоять он обязан на нём же.
+   *
+   * Ломается это молча и незаметно для кода: пустая первая строка схлопывается
+   * в ноль высоты, подпись поднимается этажом выше и оказывается на одной
+   * линии с номерами вопросов — то есть подписывает не ту строку, которую
+   * называет. Глазами это видно, а разметка при этом верная.
+   */
+  await signIn(PEOPLE.ivanova)
+  await openTable(page, 'Контрольная')
+
+  const label = await page.locator('.work-table thead .axis .head-max').boundingBox()
+  const first = await page
+    .locator('.work-table thead th:not(.axis) .head-max')
+    .first()
+    .boundingBox()
+
+  expect(Math.abs(label.y - first.y)).toBeLessThan(3)
+})
+
 test('проверка столбцом ставит отметку, и таблица её показывает', async ({
   page,
   signIn,

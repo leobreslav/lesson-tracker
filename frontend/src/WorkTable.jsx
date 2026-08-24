@@ -195,7 +195,13 @@ export default function WorkTable() {
                   * как ещё один балл.
                   */}
                 <th className="axis">
-                  <span className="head-name" />
+                  {/* Пустая строка обязана занимать свою высоту, иначе она
+                      схлопывается в ноль и подпись поднимается этажом выше:
+                      «(макс.)» оказывалось на одной линии с номерами вопросов,
+                      то есть подписывало не ту строку, которую называет.
+                      Неразрывный пробел надёжнее любой заданной высоты — это
+                      настоящая строка того же шрифта. */}
+                  <span className="head-name">{'\u00A0'}</span>
                   <span className="head-max">{t('table.maximum')}</span>
                 </th>
                 {/* под номером задачи ничего не пишем: числа по столбцу
@@ -249,7 +255,7 @@ export default function WorkTable() {
                     <span className="head-name">
                       {t(scale.graded ? 'grading.mark' : 'paper.column')}
                     </span>
-                    <span className="head-max" />
+                    <span className="head-max">{'\u00A0'}</span>
                   </th>
                 )}
                 {table.tasks.length > 0 && (
@@ -258,7 +264,7 @@ export default function WorkTable() {
                     {/* максимум за работу — под именем столбца: «14» без «из
                         18» не говорит ничего, а искать его было негде */}
                     <span className="head-max">
-                      {pointed ? `(${workMaximum})` : ''}
+                      {pointed ? `(${workMaximum})` : '\u00A0'}
                     </span>
                   </th>
                 )}
