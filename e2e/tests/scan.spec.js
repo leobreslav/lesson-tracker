@@ -182,18 +182,21 @@ test('после разбора видно, кто что решил и что �
   await ready(page)
 
   // таблица: столбец на задачу, а в ячейке балл
-  await expect(page.locator('.work-table th.hardest')).toBeVisible()
+  await expect(page.locator('.work-table thead th')).not.toHaveCount(0)
   await expect(page.locator('.work-table td.correct').first()).toHaveText('3')
 
   // сводка называет самую трудную задачу и разброс. Зовут её так же, как
   // столбец в таблице: имя вопроса, а у безымянного — номер по порядку.
-  // «Q3» тут было третьим написанием одного и того же числа
+  // «Q3» тут было третьим написанием одного и того же числа.
+  //
+  // Столбец её больше не подсвечивается: серый прямоугольник в шапке ничего
+  // не сообщал — красная черта под ним не рисовалась вовсе, потому что цвет
+  // брался из необъявленной переменной, — а спрашивать «почему эта клетка
+  // серая» приходилось каждому.
+  
   await expect(page.locator('[data-card="hardest"] h2')).toHaveText('3')
   await expect(page.locator('[data-card="graded"]')).toContainText('2')
   await expect(page.locator('[data-card="spread"]')).toBeVisible()
-
-  // и подсвечивает её столбец — третий по счёту
-  await expect(page.locator('.work-table th.hardest button')).toHaveText('3')
 })
 
 

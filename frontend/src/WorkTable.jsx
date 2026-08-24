@@ -208,7 +208,6 @@ export default function WorkTable() {
                 {table.tasks.map((task) => (
                   <th
                     key={task.id}
-                    className={hasMarks && task.id === marks.hardest ? 'hardest' : ''}
                     title={
                       task.question ||
                       (hasMarks
