@@ -634,6 +634,40 @@ class PacketTests(SimpleTestCase):
         self.assertEqual(len(packets), 1)
         self.assertEqual([p.index for p in packets[0].all_pages], [0, 1, 2, 3])
 
+    def test_a_second_human_decision_is_not_swallowed_by_the_first(self):
+        """
+        Пакет, вырезанный листами условий, назывался по **первому** решённому
+        в нём листу — и это верно ровно до тех пор, пока решение одно. Стоило
+        человеку отдать вторую страницу другому ученику, и первое решение
+        забирало её обратно молча.
+
+        Найдено на живой пачке, и выглядело хуже, чем было: «предлагает не того
+        и не даёт сменить через выпадающий список». Список работал, выбор
+        сохранялся — просто следующий ответ сервера показывал прежнее.
+        """
+        pages = [
+            page(0, headerless=True),  # лист условий режет пачку
+            page(1, "Fil", "Burmov", {0: 1}),
+            page(2, marks={1: 2}),
+            page(3, "Peter", "Tibora", {2: 3}),
+        ]
+        pages[1].decided_by_human = True
+        pages[1].student_id = 2
+        pages[3].decided_by_human = True
+        pages[3].student_id = 3
+
+        packets = arrange(pages, ROSTER)
+
+        owner = {
+            one.index: packet.student_id
+            for packet in packets
+            for one in packet.pages
+        }
+        self.assertEqual(owner[1], 2)
+        self.assertEqual(owner[3], 3, "второе решение человека съедено первым")
+        # неподписанная страница между ними продолжает блок первого
+        self.assertEqual(owner[2], 2)
+
     def test_the_last_packet_goes_to_the_last_student_left(self):
         """
         Список класса конечен, и это свидетельство.

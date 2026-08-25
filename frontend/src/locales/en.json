@@ -1440,6 +1440,7 @@
     "total": "Total",
     "conflict": "the same question twice: {{list}}",
     "apply": "Write it all down",
+    "applyNeedsFile": "Point at the PDF and write it all down",
     "trouble": {
       "no_owner": "no owner",
       "no_name": "no name written",
@@ -1505,6 +1506,7 @@
     "nextDoubt": "Next doubtful",
     "pageOf": "Page {{number}} of {{count}}",
     "noPreview": "This page has not been drawn — the reading stopped before it.",
+    "noPreviewNoFile": "The pages are drawn from the PDF, and this browser no longer has it. Point at the same file to see them — nothing will be read or paid for twice.",
     "headerless": "No header found here: most likely a question paper.",
     "nobodyYet": "Nobody yet",
     "byHand": "— you said so yourself",

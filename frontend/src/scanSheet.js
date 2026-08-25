@@ -731,12 +731,14 @@ export function nameRowIsClear(strip) {
  * по той же причине, что и раньше: чужой QR на листе условий это не пустота, а
  * событие, и увидеть его надо, а не молча вернуть `null`.
  */
-function decodeBand(image, top, height) {
-  const band = new Uint8ClampedArray(image.width * height * 4)
-  const from = top * image.width * 4
-  band.set(image.data.subarray(from, from + band.length))
+function decodeBox(image, left, top, width, height) {
+  const box = new Uint8ClampedArray(width * height * 4)
+  for (let y = 0; y < height; y += 1) {
+    const from = ((top + y) * image.width + left) * 4
+    box.set(image.data.subarray(from, from + width * 4), y * width * 4)
+  }
 
-  const found = jsQR(band, image.width, height, {
+  const found = jsQR(box, width, height, {
     // Инверсию не пробуем: бланк печатают чёрным по белому, а лишняя попытка
     // удваивает время на каждой странице пачки.
     inversionAttempts: 'dontInvert',
@@ -745,7 +747,7 @@ function decodeBand(image, top, height) {
 
   const { topLeftCorner, topRightCorner, bottomRightCorner, bottomLeftCorner } =
     found.location
-  const back = (point) => ({ x: point.x, y: point.y + top })
+  const back = (point) => ({ x: point.x + left, y: point.y + top })
   return {
     payload: found.data,
     ours: String(found.data || '').startsWith(CODE_PREFIX),
@@ -755,27 +757,47 @@ function decodeBand(image, top, height) {
 
 export function findCode(image) {
   /*
-   * **Полный кадр локатор обманывает, и это измерено.** На отрисованной
-   * странице бланка код не находился ни в полном разрешении, ни в
-   * уменьшенном вдвое и втрое, — а стоило взять нижнюю половину кадра, и он
-   * читался сразу, и слева, и справа. Дело не в размере: тетрадное поле это
+   * Ищется по **четвертям кадра**, и обе причины измерены на живых пачках.
+   *
+   * ПЕРВАЯ: полный кадр локатор обманывает. На отрисованной странице бланка
+   * код не находился ни в полном разрешении, ни в уменьшенном вдвое и втрое, —
+   * а стоило взять половину кадра, и он читался сразу. Тетрадное поле это
    * тысяча перекрестий, и каждое похоже на «глаз» ровно настолько, чтобы
    * попасть в кандидаты и обойти настоящий по счёту.
    *
-   * Половины — не возврат к «проверить на заданном месте»: геометрии тут
-   * по-прежнему нет никакой, а есть единственное допущение «страница
-   * приблизительно вертикальна». Обе половины пробуются потому, что лист
-   * бывает вверх ногами: тогда коды окажутся вверху кадра.
+   * ВТОРАЯ, и она смешнее: **два наших кода в одном кадре сбивают локатор друг
+   * о друга.** Три «глаза», по которым узнаётся символ, он собирает по всему
+   * кадру — и, найдя шесть, складывает из них небывалую четвёрку. На пачке из
+   * сорока шести листов, где код напечатан на **каждой** странице, половинами
+   * находилось четырнадцать; те же страницы по четвертям читаются все.
+   * Второй код мы завели ради надёжности — и он же её и сломал, пока искали
+   * широко.
    *
-   * Полный кадр остаётся последней попыткой — для скана, обрезанного так, что
-   * код попал на середину.
+   * Четверти — не возврат к «проверить на заданном месте»: геометрии тут
+   * по-прежнему нет никакой, есть только «в четверти кадра помещается один
+   * код, а не два». Нижние идут первыми, потому что коды напечатаны внизу;
+   * верхние — потому что лист бывает вверх ногами. Полный кадр остаётся
+   * последней попыткой, для скана, обрезанного так, что код попал на середину.
    */
-  const half = Math.floor(image.height / 2)
-  return (
-    decodeBand(image, half, image.height - half) ||
-    decodeBand(image, 0, half) ||
-    decodeBand(image, 0, image.height)
-  )
+  const halfW = Math.floor(image.width / 2)
+  const halfH = Math.floor(image.height / 2)
+  const boxes = [
+    [0, halfH],
+    [halfW, halfH],
+    [0, 0],
+    [halfW, 0],
+  ]
+  for (const [left, top] of boxes) {
+    const found = decodeBox(
+      image,
+      left,
+      top,
+      left ? image.width - halfW : halfW,
+      top ? image.height - halfH : halfH,
+    )
+    if (found) return found
+  }
+  return decodeBox(image, 0, 0, image.width, image.height)
 }
 
 /**
@@ -794,10 +816,48 @@ export function findCode(image) {
  */
 const TRY_WIDTH = 512
 
+/**
+ * Далеко ли выпрямление кладёт код бланка от того места, где код на самом деле.
+ *
+ * Найденный код — **опора**, а не потребитель геометрии: место его на бумаге
+ * известно до миллиметра, и годное выпрямление обязано попасть в него. Негодное
+ * промахивается на четверть листа, и это отличие видно без всякой точности.
+ *
+ * Нашлось это на живой пачке: страница 22 из сорока шести вырезалась с **низа
+ * листа и вверх ногами** — счёт по сетке у такого кандидата вышел не хуже, чем
+ * у верного, а строка имени у него пустая, и сторож `nameRowIsClear` его
+ * пропускал. Код же у неё был найден, и лежал он ровно там, куда перевёрнутое
+ * выпрямление не попадает никогда.
+ *
+ * Допуск нарочно щедрый — сорок миллиметров. Кандидат, опёртый только на метки
+ * шапки, экстраполирует до низа листа с ошибкой в несколько миллиметров, и
+ * отбрасывать его нельзя; ошибка же переворота — четверть метра, и спутать их
+ * невозможно.
+ */
+const CODE_MISS = 40
+
+function putsCodeInPlace(h, image, code) {
+  if (!code) return true
+
+  const middle = code.corners.reduce(
+    (sum, one) => ({ x: sum.x + one.x / 4, y: sum.y + one.y / 4 }),
+    { x: 0, y: 0 },
+  )
+  const near = (CODE_MISS * image.width) / PAGE.width
+
+  return QR.at.some((one) => {
+    const at = project(h, one.x + QR.size / 2, one.y + QR.size / 2)
+    return Math.hypot(at.x - middle.x, at.y - middle.y) < near
+  })
+}
+
 export function extractHeader(image) {
   const small = shrink(toGray(image))
   const marks = findMarks(small)
   const candidates = quads(marks, small)
+  // Ищется один раз на страницу: декодер идёт по четвертям кадра, и звать его
+  // на каждого кандидата значило бы платить за одно и то же по десять раз.
+  const code = findCode(image)
 
   const tryHeight = Math.round((TRY_WIDTH * HEADER.height) / HEADER.width)
   const nominal = sheetCorners()
@@ -819,6 +879,9 @@ export function extractHeader(image) {
   const consider = (from, to) => {
     const h = homography(from, to)
     if (!h) return
+    // Код бланка знает, где он на бумаге. Выпрямление, кладущее его за четверть
+    // листа от того места, где он найден, — не хуже прочих, оно неверное.
+    if (!putsCodeInPlace(h, image, code)) return
 
     const strip = warp(image, h, HEADER, TRY_WIDTH, tryHeight)
     // Перевёрнутая сетка набирает те же семнадцать границ, что и прямая, — и
@@ -924,8 +987,6 @@ export function extractHeader(image) {
    * лист с обрезанным низом не перестаёт быть нашим оттого, что код уехал за
    * край кадра.
    */
-  const code = findCode(image)
-
   return {
     ...best,
     code,

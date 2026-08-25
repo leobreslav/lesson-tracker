@@ -178,12 +178,27 @@ export default function ScanWizard({ work, onClose, onDone }) {
   const fix = async (index, cells) =>
     run(async () => setState(await editScanPage(work.id, { index, cells })))
 
-  const finish = async () =>
-    run(async () => {
-      const result = await applyScan(work.id, file)
+  /*
+   * Записать разобранное можно только вместе с самим PDF.
+   *
+   * Прочитанное живёт на сервере, а страницы — нет: их режет и раздаёт ученикам
+   * та же отправка, которой файл и приезжает. Поэтому вернувшийся к уже
+   * прочитанной пачке человек («к страницам» на шаге выбора файла) доходит до
+   * конца без файла в руках — и упирался в чужую ошибку DRF: «The submitted
+   * data was not a file». Со стороны это не ответ, а поломка.
+   *
+   * Теперь пустой файл — не отказ, а **просьба**: укажите тот же PDF. Читать
+   * его заново не придётся и платить тоже: у каждой страницы есть отпечаток, и
+   * сервер отдаёт прочитанное, не спрашивая модель.
+   */
+  const finish = async (chosen = file) => {
+    if (!chosen) return
+    return run(async () => {
+      const result = await applyScan(work.id, chosen)
       onDone?.(result)
       onClose()
     })
+  }
 
   const byIndex = Object.fromEntries(pages.map((page) => [page.index, page]))
 
@@ -285,6 +300,7 @@ export default function ScanWizard({ work, onClose, onDone }) {
           busy={busy}
           onFix={fix}
           onBack={() => setStage('pages')}
+          hasFile={Boolean(file)}
           onApply={finish}
         />
       )}
@@ -842,9 +858,33 @@ function PagesStep({ state, all, byIndex, questions, busy, onDecide, onFix, onNe
     return parts.join(', ')
   }
 
-  const setCell = (position, value) => {
+  /*
+   * Балл правится **черновиком**, а уезжает на сервер по уходу из поля.
+   *
+   * Отправлять на каждое нажатие было ошибкой, и выглядела она хуже, чем
+   * была: «не позволяет изменить балл». Поле заблокировано на время запроса
+   * (`disabled={busy}`), а чтобы заменить стоящую в клетке цифру, надо сперва
+   * её стереть. Стирание уходило запросом, поле гасло — и следующее нажатие
+   * попадало в мёртвый контрол. Со стороны это ровно «клетка не даёт себя
+   * править», хотя и сервер принимал, и база менялась.
+   *
+   * Поэтому: пока поле в работе, значение живёт здесь; на сервер оно едет
+   * один раз — по `blur` или по Enter. Гасить поле при этом больше незачем.
+   */
+  const [draft, setDraft] = useState(null)
+
+  const cellValue = (position) =>
+    draft && draft.index === here?.index && draft.position === position
+      ? draft.value
+      : (cells[position] ?? '')
+
+  const commitCell = (position) => {
+    if (!draft || draft.index !== here?.index || draft.position !== position) return
+    const was = cells[position] ?? ''
+    setDraft(null)
+    if (String(was) === draft.value) return
     const next = [...(row?.cells ?? Array(16).fill(null))]
-    next[position] = value === '' ? null : Number(value)
+    next[position] = draft.value === '' ? null : Number(draft.value)
     onFix(here.index, next)
   }
 
@@ -957,14 +997,23 @@ function PagesStep({ state, all, byIndex, questions, busy, onDecide, onFix, onNe
                   type="number"
                   min="0"
                   max="999"
-                  value={cells[position] ?? ''}
-                  disabled={busy}
+                  value={cellValue(position)}
                   aria-label={
                     position < state.questions
                       ? nameOfQuestion(position + 1)
                       : `Q${position + 1}`
                   }
-                  onChange={(event) => setCell(position, event.target.value)}
+                  onChange={(event) =>
+                    setDraft({
+                      index: here.index,
+                      position,
+                      value: event.target.value,
+                    })
+                  }
+                  onBlur={() => commitCell(position)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter') event.currentTarget.blur()
+                  }}
                 />
               </label>
             ))}
@@ -1012,7 +1061,12 @@ function PagesStep({ state, all, byIndex, questions, busy, onDecide, onFix, onNe
                 onClick={zoomAt}
               />
             ) : (
-              <p className="hint">{t('scan.noPreview')}</p>
+              /* Картинку рисует браузер из PDF. Вернувшийся к уже прочитанной
+                 пачке человек файла в руках не держит — и «чтение до неё не
+                 дошло» было бы неправдой: чтение дошло, нет картинки. */
+              <p className="hint">
+                {t(hasFile ? 'scan.noPreview' : 'scan.noPreviewNoFile')}
+              </p>
             )}
           </div>
         </div>
@@ -1256,7 +1310,7 @@ function SpendLine({ spend }) {
  * заставлять смотреть на тридцать уверенных строк значит превращать проверку
  * в ритуал. Но возможность посмотреть есть, и цифры правятся на месте.
  */
-function CheckStep({ state, pages, busy, onFix, onBack, onApply }) {
+function CheckStep({ state, pages, busy, hasFile, onFix, onBack, onApply }) {
   const { t } = useTranslation()
   const [open, setOpen] = useState(null)
   const questions = Array.from({ length: state.questions }, (_, i) => i + 1)
@@ -1381,9 +1435,26 @@ function CheckStep({ state, pages, busy, onFix, onBack, onApply }) {
       )}
 
       <div className="actions">
-        <button type="button" disabled={busy} onClick={onApply}>
-          {t('scan.apply')}
-        </button>
+        {/* Файла может не быть: к уже прочитанной пачке возвращаются кнопкой
+            «к страницам», и тогда браузер держит только прочитанное, а сами
+            страницы режет отправка. Просим указать тот же PDF — перечитывать
+            и платить не придётся, у страниц есть отпечаток. */}
+        {hasFile ? (
+          <button type="button" disabled={busy} onClick={() => onApply()}>
+            {t('scan.apply')}
+          </button>
+        ) : (
+          <label className="button-like">
+            <input
+              type="file"
+              accept="application/pdf"
+              hidden
+              disabled={busy}
+              onChange={(event) => onApply(event.target.files[0])}
+            />
+            {t('scan.applyNeedsFile')}
+          </label>
+        )}
         <button type="button" className="secondary" disabled={busy} onClick={onBack}>
           {t('scan.back')}
         </button>

@@ -709,6 +709,10 @@ def arrange(pages: list[Page], roster: list[Person]) -> list[Packet]:
         # работа у человека одна, сколько бы раз он ни брал бумагу.
         return packets_without_duplicates(packets)
 
+    # Решения человека режут пакет **до** того, как его назовут: иначе первое
+    # из них заберёт себе страницы, отданные им же другому ученику.
+    by_conditions = [one for packet in by_conditions for one in split_by_decisions(packet)]
+
     for packet in by_conditions:
         decided = [page for page in packet.pages if page.decided_by_human]
         if decided:
@@ -789,6 +793,50 @@ def blocks(pages: list[Page], assigned: dict, doubted: dict, by_fit: set) -> lis
         packets.append(current)
 
     return packets
+
+
+def split_by_decisions(packet: Packet) -> list[Packet]:
+    """
+    Решения человека режут пакет: он назвал внутри него разных хозяев.
+
+    Пакет, вырезанный листами условий, называется по **первому** решённому в
+    нём листу — и это верно ровно до тех пор, пока решение в пакете одно. Стоит
+    человеку отдать вторую страницу другому ученику, и первое решение забирает
+    её обратно молча: в базе стоит выбранный им ученик, а на экран едет хозяин
+    пакета, то есть чужой.
+
+    Найдено на живой пачке, и выглядело хуже, чем есть: «система предлагает не
+    того **и не даёт сменить через выпадающий список**». Список работал, выбор
+    сохранялся — просто следующий же ответ сервера показывал прежнее.
+
+    Режется по тому же правилу, что и вся пачка: решённый лист с новым хозяином
+    открывает блок, нерешённый продолжает нынешний. Условия достаются каждому
+    куску — они общие.
+    """
+    owners = {
+        page.student_id
+        for page in packet.pages
+        if page.decided_by_human and page.student_id is not None
+    }
+    if len(owners) < 2:
+        return [packet]
+
+    out: list[Packet] = []
+    current: Packet | None = None
+    for page in sorted(packet.pages, key=lambda one: one.index):
+        owner = page.student_id if page.decided_by_human else None
+        if current is None or (owner is not None and owner != current.student_id):
+            current = Packet(
+                pages=[page],
+                student_id=owner,
+                decided_by_human=owner is not None,
+                conditions=list(packet.conditions),
+            )
+            out.append(current)
+            continue
+        current.pages.append(page)
+        current.decided_by_human |= page.decided_by_human
+    return out
 
 
 def pile_contradicts(packets: list[Packet]) -> bool:

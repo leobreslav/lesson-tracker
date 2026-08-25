@@ -72,6 +72,37 @@ test('код, который печатается на бланке, читае�
   assert.equal(found.ours, true)
 })
 
+test('два наших кода в одном кадре не мешают друг другу', () => {
+  /*
+   * Кодов на бланке два — ради надёжности, — и они же её однажды и сломали.
+   * Три «глаза», по которым узнаётся символ, декодер собирает по всему кадру;
+   * найдя шесть, он складывает из них небывалую четвёрку и не читает ничего.
+   *
+   * Замер на живой пачке из сорока шести листов, где код напечатан на
+   * **каждой** странице: поиск половинами кадра находил его на четырнадцати,
+   * поиск четвертями — на всех сорока шести.
+   */
+  const shipped = shippedMatrix()
+  const one = draw(shipped)
+
+  const width = one.width * 3
+  const height = one.height * 2
+  const both = new Uint8ClampedArray(width * height * 4).fill(255)
+  for (const left of [0, one.width * 2]) {
+    for (let y = 0; y < one.height; y += 1) {
+      const from = y * one.width * 4
+      const to = ((height - one.height + y) * width + left) * 4
+      both.set(one.data.subarray(from, from + one.width * 4), to)
+    }
+  }
+
+  const found = findCode({ data: both, width, height })
+
+  assert.ok(found, 'два кода в кадре сбили поиск друг о друга')
+  assert.ok(found.payload.startsWith(CODE_PREFIX))
+  assert.equal(found.ours, true)
+})
+
 test('чужой лист не выдаёт себя за наш', () => {
   /*
    * Пустая бумага — не наш бланк, и молчание декодера тут единственный
