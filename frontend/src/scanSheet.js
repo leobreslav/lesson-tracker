@@ -623,15 +623,32 @@ export function gridScore(strip) {
   const level = paper - Math.max(8, paper * 0.08)
 
   const solid = new Uint8Array(width)
-  let strong = 0
-  for (let x = 0; x < width; x += 1) {
-    if (column[x] < level) {
-      solid[x] = 1
-      if (!solid[x - 1]) strong += 1
-    }
-  }
+  for (let x = 0; x < width; x += 1) if (column[x] < level) solid[x] = 1
 
-  // Сплошная стена вертикалей — это тетрадное поле, а не сетка баллов.
+  /*
+   * Стена вертикалей — тетрадное поле, а не сетка баллов. Но считать её надо
+   * по **линиям**, а не по тёмным столбцам, и это стоило нам пачки.
+   *
+   * Тёмный столбец даёт и печатная линия, и штрих написанной цифры. На
+   * странице с шестью выставленными баллами к семнадцати границам прибавлялся
+   * десяток столбцов от цифр, порог перебирался — и **верная** полоска
+   * получала ноль. Выходило наоборот тому, чего ждёшь: чем прилежнее заполнена
+   * шапка, тем вернее она объявляется негодной. На живой пачке из сорока шести
+   * листов так терялись пять страниц, и на них сидели почти все ошибки чтения.
+   *
+   * Линия проходит полосу клеток **насквозь**, цифра нет. Поэтому стена
+   * считается по столбцам, тёмным во всю высоту: у сетки их семнадцать, у
+   * тетрадного поля под сорок, и спутать их теперь невозможно.
+   */
+  let strong = 0
+  let inLine = false
+  for (let x = 0; x < width; x += 1) {
+    let dark = 0
+    for (let y = top; y < bottom; y += 1) if (gray[y * width + x] < level) dark += 1
+    const through = dark >= rows * 0.8
+    if (through && !inLine) strong += 1
+    inLine = through
+  }
   if (strong > CROWDED) return 0
 
   const near = Math.max(3, Math.round((1.2 / HEADER.width) * width))
@@ -779,6 +796,11 @@ export function findCode(image) {
    * верхние — потому что лист бывает вверх ногами. Полный кадр остаётся
    * последней попыткой, для скана, обрезанного так, что код попал на середину.
    */
+  return findCodes(image)[0] ?? null
+}
+
+/** Все коды, какие нашлись на странице. Их на бланке два, содержимое одно. */
+export function findCodes(image) {
   const halfW = Math.floor(image.width / 2)
   const halfH = Math.floor(image.height / 2)
   const boxes = [
@@ -787,17 +809,22 @@ export function findCode(image) {
     [0, 0],
     [halfW, 0],
   ]
+
+  const found = []
   for (const [left, top] of boxes) {
-    const found = decodeBox(
+    const one = decodeBox(
       image,
       left,
       top,
       left ? image.width - halfW : halfW,
       top ? image.height - halfH : halfH,
     )
-    if (found) return found
+    if (one) found.push(one)
   }
-  return decodeBox(image, 0, 0, image.width, image.height)
+  if (found.length) return found
+
+  const whole = decodeBox(image, 0, 0, image.width, image.height)
+  return whole ? [whole] : []
 }
 
 /**
@@ -853,11 +880,14 @@ function putsCodeInPlace(h, image, code) {
 
 export function extractHeader(image) {
   const small = shrink(toGray(image))
+  // Коды ищутся **до** меток и один раз на страницу: их места нужны, чтобы
+  // вычеркнуть из меток «глаза» самих кодов, а звать декодер на каждого
+  // кандидата значило бы платить за одно и то же по десять раз.
+  // Код ищется один раз на страницу: декодер идёт по четвертям кадра, и звать
+  // его на каждого кандидата значило бы платить за одно и то же по десять раз.
+  const code = findCode(image)
   const marks = findMarks(small)
   const candidates = quads(marks, small)
-  // Ищется один раз на страницу: декодер идёт по четвертям кадра, и звать его
-  // на каждого кандидата значило бы платить за одно и то же по десять раз.
-  const code = findCode(image)
 
   const tryHeight = Math.round((TRY_WIDTH * HEADER.height) / HEADER.width)
   const nominal = sheetCorners()
