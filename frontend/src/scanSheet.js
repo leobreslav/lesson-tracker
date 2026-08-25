@@ -267,6 +267,82 @@ export function quads(marks, frame) {
 }
 
 /**
+ * Полосы, которые метки бланка образуют **вокруг шапки**.
+ *
+ * Меток на бумаге восемь: четыре по углам листа и ещё две пары по бокам, на
+ * 27 и 39 мм. Вторые напечатаны ровно затем, чтобы обнять шапку, — так и
+ * сказано в `blank/README.md`, — но `extractHeader` брал только углы листа, и
+ * четыре метки из восьми не участвовали ни в чём.
+ *
+ * Стоило это непрочитанных страниц. Нижняя пара стоит у самого края листа и
+ * пропадает первой: обрезал скан низ, легла страница не целиком — и углов
+ * больше нет. Четвёрки из оставшихся верхних меток плоские, пропорцию A4 не
+ * дают и отсеиваются, кандидатов не остаётся вовсе, а последняя надежда —
+ * «лист лежит ровно» — верна только на сканере и только если поля не срезаны.
+ * Дальше страница набирает семь-девять границ из двенадцати и объявляется
+ * листом условий: то есть **не читается вовсе**, и учитель видит пустые
+ * клетки там, где сам выставил баллы.
+ *
+ * Пар три, и какая из них перед нами, решает пропорция: ширина у всех одна
+ * (194 мм), а высота разная. Гадать не нужно — выбор идёт по той же сетке,
+ * что и всё остальное.
+ */
+const BANDS = [
+  { top: 8, bottom: 39 },
+  { top: 8, bottom: 27 },
+  { top: 27, bottom: 39 },
+]
+
+const BAND_LEFT = 8
+const BAND_RIGHT = 202
+
+export function bands(marks, frame) {
+  const found = []
+  const least = Math.min(frame.width, frame.height) * 0.2
+
+  for (let a = 0; a < marks.length; a += 1) {
+    for (let b = a + 1; b < marks.length; b += 1) {
+      for (let c = b + 1; c < marks.length; c += 1) {
+        for (let d = c + 1; d < marks.length; d += 1) {
+          const corners = extremes([marks[a], marks[b], marks[c], marks[d]])
+          if (!corners) continue
+
+          const [tl, tr, br, bl] = corners
+          const top = Math.hypot(tr.x - tl.x, tr.y - tl.y)
+          const bottom = Math.hypot(br.x - bl.x, br.y - bl.y)
+          const left = Math.hypot(bl.x - tl.x, bl.y - tl.y)
+          const right = Math.hypot(br.x - tr.x, br.y - tr.y)
+
+          // Длинные стороны — во всю ширину листа, короткие просто не нулевые:
+          // полоса низкая, и мерять её тем же порогом, что сторону листа,
+          // значит отбросить её всю.
+          if (Math.min(top, bottom) < least) continue
+          if (Math.min(left, right) < 2) continue
+          if (Math.abs(top - bottom) / Math.max(top, bottom) > 0.35) continue
+          if (Math.abs(left - right) / Math.max(left, right) > 0.35) continue
+
+          const ratio = (top + bottom) / (left + right)
+          let best = null
+          for (const band of BANDS) {
+            const want = (BAND_RIGHT - BAND_LEFT) / (band.bottom - band.top)
+            const off = Math.abs(ratio - want) / want
+            if (off > 0.2) continue
+            if (!best || off < best.off) best = { band, off }
+          }
+          if (!best) continue
+
+          const area = ((top + bottom) / 2) * ((left + right) / 2)
+          found.push({ corners, band: best.band, score: area / (1 + best.off * 4) })
+        }
+      }
+    }
+  }
+
+  found.sort((one, two) => two.score - one.score)
+  return found.slice(0, 6)
+}
+
+/**
  * Гомография по четырём парам точек: решается система 8×8 методом Гаусса.
  *
  * Возвращает матрицу, переводящую `from` в `to`. Восьми уравнений ровно
@@ -682,6 +758,33 @@ export function extractHeader(image) {
   for (const quad of candidates) {
     for (let turn = 0; turn < 4; turn += 1) {
       const turned = quad.slice(turn).concat(quad.slice(0, turn))
+      consider(
+        nominal,
+        turned.map((point) => ({ x: point.x * small.step, y: point.y * small.step })),
+      )
+    }
+  }
+
+  /*
+   * Кандидаты по полосе меток вокруг шапки.
+   *
+   * Углов листа может не быть — нижняя пара пропадает первой, — а шапку
+   * обнимают ещё четыре метки, и напечатаны они ровно для этого. Выпрямление
+   * по ним даже точнее: полоса и есть то, что мы читаем, а ошибка гомографии
+   * растёт с расстоянием от опор.
+   *
+   * Поворотов тут два, а не четыре: полоса лежачая, и на бок её не кладут —
+   * страница бывает вверх ногами, но не поперёк себя.
+   */
+  for (const { corners, band } of bands(marks, small)) {
+    const nominal = [
+      { x: BAND_LEFT, y: band.top },
+      { x: BAND_RIGHT, y: band.top },
+      { x: BAND_RIGHT, y: band.bottom },
+      { x: BAND_LEFT, y: band.bottom },
+    ]
+    for (const turn of [0, 2]) {
+      const turned = corners.slice(turn).concat(corners.slice(0, turn))
       consider(
         nominal,
         turned.map((point) => ({ x: point.x * small.step, y: point.y * small.step })),

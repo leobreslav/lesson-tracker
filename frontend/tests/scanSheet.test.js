@@ -31,6 +31,8 @@ function drawSheet({
   marks = true,
   markShift = 0,
   ink = 0,
+  headerMarks = false,
+  bottomMarks = true,
 } = {}) {
   const width = Math.round(PAGE.width * scale) + margin * 2
   const height = Math.round(PAGE.height * scale) + margin * 2
@@ -71,7 +73,20 @@ function drawSheet({
   // markShift сдвигает реперы, не трогая сетку: так выглядит промах поиска
   // меток — грубое выпрямление уезжает, а печатные линии остаются на местах
   if (marks)
-    for (const corner of Object.values(CORNERS)) square(corner.x + markShift, corner.y, 4)
+    for (const corner of Object.values(CORNERS)) {
+      if (!bottomMarks && corner.y > PAGE.height / 2) continue
+      square(corner.x + markShift, corner.y, 4)
+    }
+
+  // На бумаге меток восемь, а не четыре: кроме углов листа напечатаны ещё две
+  // пары, обнимающие шапку (`blank/blank_form.tex`, 25 и 37 мм от верха).
+  // Фикстура их не рисовала, то есть ни один тест не видел настоящий лист —
+  // а лишние тёмные квадраты это ровно то, из чего поиск строит четвёрки.
+  if (headerMarks)
+    for (const y of [27, 39]) {
+      square(8 + markShift, y, 4)
+      square(202 + markShift, y, 4)
+    }
 
   // сетка баллов: семнадцать вертикалей и две горизонтали
   const line = (fromX, fromY, toX, toY) => {
@@ -289,6 +304,54 @@ test('заполненные баллами клетки не мешают уз�
       `при ${filled} заполненных клетках границ ${score} из нужных ${ENOUGH_LINES}`,
     )
   }
+})
+
+test('лист со всеми восемью метками бланка читается', () => {
+  /*
+   * Меток на бумаге восемь: четыре по углам листа и ещё две пары, обнимающие
+   * шапку. Фикстура рисовала только углы — значит ни один тест ни разу не
+   * видел настоящий лист, а лишние тёмные квадраты это ровно то, из чего
+   * поиск строит четвёрки.
+   */
+  const found = extractHeader(drawSheet({ headerMarks: true }))
+
+  assert.ok(found, 'лист с настоящими метками не нашёлся вовсе')
+  assert.ok(
+    found.score >= ENOUGH_LINES,
+    `границ ${found.score} из нужных ${ENOUGH_LINES}`,
+  )
+})
+
+test('лист, у которого срезали низ, опознаётся по оставшимся меткам', () => {
+  /*
+   * Нижняя пара меток стоит у самого края листа и пропадает первой: обрезал
+   * скан низ, легла страница не целиком — и углов листа больше нет. Наверху
+   * при этом остаются три пары, и четвёрка из них складывается плоская, на
+   * сетке не сходящаяся: шапка при таком выпрямлении уезжает, счёт падает, а
+   * страница объявляется листом условий.
+   */
+  const found = extractHeader(drawSheet({ headerMarks: true, bottomMarks: false }))
+
+  assert.ok(found, 'лист без нижних меток не нашёлся вовсе')
+  assert.ok(
+    found.score >= ENOUGH_LINES,
+    `границ ${found.score} из нужных ${ENOUGH_LINES}`,
+  )
+})
+
+test('одних меток вокруг шапки хватает, чтобы её выпрямить', () => {
+  /*
+   * Крайний случай того же: углов листа нет ни одного — скан обрезан по
+   * шапке, лист лёг не целиком, угол загнулся. Полоса меток при этом на
+   * месте, и напечатана она ровно для этого.
+   */
+  const found = extractHeader(drawSheet({ marks: false, headerMarks: true }))
+
+  assert.ok(found, 'по меткам вокруг шапки лист не нашёлся вовсе')
+  assert.ok(
+    found.score >= ENOUGH_LINES,
+    `границ ${found.score} из нужных ${ENOUGH_LINES}`,
+  )
 })
 
 test('пустой лист без сетки набирает мало и честно об этом говорит', () => {

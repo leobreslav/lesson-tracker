@@ -1014,6 +1014,96 @@ class ThirdReaderTests(SimpleTestCase):
 
         self.assertEqual(lines, ["First name: Ann Surname: Lee", "Q1 3 Q2 1"])
 
+    def test_the_marks_grid_comes_from_the_tables(self):
+        """
+        Модель для таблиц кладёт узнанное не в блоки, а в `tables`, и мы туда
+        не смотрели вовсе. Живая пачка из тридцати четырёх листов приехала
+        из-за этого без единого балла: от полоски доезжали печатные подписи
+        строки имени — «First name: Surname: Grade: Date:» — и ни одной
+        плитки. Со стороны это выглядело как «Yandex не умеет читать баллы».
+
+        Склеивается по колонкам: подпись стоит над своей клеткой, то есть в
+        той же колонке строкой выше.
+        """
+        lines = yandex.lines_of(
+            {
+                "result": {
+                    "textAnnotation": {
+                        "blocks": [{"lines": [{"text": "First name: Ann Surname: Lee"}]}],
+                        "tables": [
+                            {
+                                "cells": [
+                                    {"rowIndex": "0", "columnIndex": "0", "text": "Q1"},
+                                    {"rowIndex": "1", "columnIndex": "0", "text": "3"},
+                                    {"rowIndex": "0", "columnIndex": "1", "text": "Q2"},
+                                    {"rowIndex": "1", "columnIndex": "1", "text": "1"},
+                                    {"rowIndex": "0", "columnIndex": "2", "text": "Σ pg"},
+                                    {"rowIndex": "1", "columnIndex": "2", "text": "4"},
+                                ]
+                            }
+                        ],
+                    }
+                }
+            }
+        )
+
+        self.assertEqual(
+            lines, ["First name: Ann Surname: Lee", "Q1 3", "Q2 1", "Σ pg 4"]
+        )
+
+    def test_the_cells_of_a_table_reach_the_marks(self):
+        """
+        Разбор полоски ждёт значение **за** подписью, и колонка таблицы даёт
+        ровно это. Проверяется весь путь: клетки ответа -> строки -> баллы.
+        """
+        reading = strip.reading_from(
+            yandex.lines_of(
+                {
+                    "result": {
+                        "textAnnotation": {
+                            "tables": [
+                                {
+                                    "cells": [
+                                        {"rowIndex": "0", "columnIndex": "0", "text": "Q1"},
+                                        {"rowIndex": "1", "columnIndex": "0", "text": "1"},
+                                        {"rowIndex": "0", "columnIndex": "1", "text": "Q2"},
+                                        {"rowIndex": "1", "columnIndex": "1", "text": "0"},
+                                        {"rowIndex": "0", "columnIndex": "15", "text": "Σ pg"},
+                                        {"rowIndex": "1", "columnIndex": "15", "text": "9"},
+                                    ]
+                                }
+                            ]
+                        }
+                    }
+                }
+            ),
+            reader="yandex",
+        )
+
+        self.assertEqual(reading["values"][0], 1)
+        self.assertEqual(reading["values"][1], 0)
+        self.assertEqual(reading["values"][15], 9)
+
+    def test_a_table_without_indices_is_not_a_crash(self):
+        """
+        Номера клеток приходят строками, и на неожиданной форме падать нельзя:
+        цена ошибки тут — «прочитали хуже», а не «не прочитали вовсе».
+        """
+        lines = yandex.lines_of(
+            {
+                "result": {
+                    "textAnnotation": {
+                        "tables": [
+                            {"cells": [{"text": "Q1"}, {"text": ""}, "не словарь"]},
+                            "не таблица",
+                        ]
+                    }
+                }
+            }
+        )
+
+        self.assertEqual(lines, ["Q1"])
+
     def test_flat_text_is_better_than_nothing(self):
         """
         Разложенных строк может не оказаться — тогда берём сплошной текст.
