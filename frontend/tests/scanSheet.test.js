@@ -23,7 +23,15 @@ import { CORNERS, GRID, HEADER, PAGE, STRIP, STRIP_WIDTH } from '../src/blankGeo
  * быть не может — он приходит из PDF в браузере, — а проверять надо ровно то,
  * что этот модуль решает: где лист, где метки и какой поворот верный.
  */
-function drawSheet({ scale = 3, angleFlip = 0, margin = 40, noise = 0, marks = true, markShift = 0 } = {}) {
+function drawSheet({
+  scale = 3,
+  angleFlip = 0,
+  margin = 40,
+  noise = 0,
+  marks = true,
+  markShift = 0,
+  ink = 0,
+} = {}) {
   const width = Math.round(PAGE.width * scale) + margin * 2
   const height = Math.round(PAGE.height * scale) + margin * 2
   const data = new Uint8ClampedArray(width * height * 4)
@@ -81,6 +89,19 @@ function drawSheet({ scale = 3, angleFlip = 0, margin = 40, noise = 0, marks = t
   }
   line(GRID.x, GRID.y, GRID.x + GRID.cells * GRID.cellWidth, GRID.y)
   line(GRID.x, GRID.y + GRID.height, GRID.x + GRID.cells * GRID.cellWidth, GRID.y + GRID.height)
+
+  // `ink` — сколько клеток заполнено баллами. Цифра рисуется толстым штрихом
+  // почти во всю высоту клетки: так она и выглядит, написанная от руки
+  // крупно. Проверяется этим не чтение цифры, а то, что она не мешает считать
+  // границы сетки.
+  for (let cell = 0; cell < ink; cell += 1) {
+    const left = GRID.x + cell * GRID.cellWidth + GRID.cellWidth * 0.3
+    const top = GRID.y + GRID.labelHeight + 1
+    const bottom = GRID.y + GRID.height - 1
+    for (let dx = 0; dx <= GRID.cellWidth * 0.4; dx += 1 / (scale * 2)) {
+      line(left + dx, top, left + dx, bottom)
+    }
+  }
 
   return { data, width, height }
 }
@@ -240,6 +261,34 @@ test('полная сетка сама доказывает, что бланк �
 
   assert.ok(found.score >= GRID_IS_OURS, `сетка сошлась на ${found.score}`)
   assert.equal(found.ours, true, 'полная сетка не признана нашим бланком')
+})
+
+test('заполненные баллами клетки не мешают узнать сетку', () => {
+  /*
+   * Считается счёт по столбцам: линия — это столбец заметно темнее бумаги
+   * вокруг. «Бумага» при этом берётся медианой по всей полосе клеток, а чем
+   * больше клеток заполнено, тем медиана темнее — то есть порог уезжает вслед
+   * за чернилами. Если бы этого хватало, чтобы потерять линии, выходило бы
+   * наоборот тому, чего ждёшь: чем прилежнее заполнена шапка, тем хуже она
+   * узнаётся.
+   *
+   * Написан этот тест как **опыт**: на живой пачке страница с восемью
+   * выставленными баллами и суммой набрала семь границ из двенадцати и уехала
+   * в «листы условий» — то есть не была прочитана вовсе, и учитель увидел
+   * пустые клетки там, где сам же написал баллы. Чернила оказались ни при чём:
+   * на ровном листе счёт держится и при всех шестнадцати заполненных. Причина
+   * той страницы, значит, в другом — скорее всего в неверно выбранной
+   * четвёрке меток (см. соседний тест про лист без меток, где симптом ровно
+   * тот же), — а тест остаётся сторожем: медиана по полосе с чернилами вещь
+   * скользкая, и следующая правка порога должна об этом споткнуться.
+   */
+  for (const filled of [0, 4, 8, 16]) {
+    const score = gridScore(extractHeader(drawSheet({ ink: filled })).strip)
+    assert.ok(
+      score >= ENOUGH_LINES,
+      `при ${filled} заполненных клетках границ ${score} из нужных ${ENOUGH_LINES}`,
+    )
+  }
 })
 
 test('пустой лист без сетки набирает мало и честно об этом говорит', () => {
