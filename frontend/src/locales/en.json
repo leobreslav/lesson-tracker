@@ -1506,6 +1506,8 @@
     "nextDoubt": "Next doubtful",
     "pageOf": "Page {{number}} of {{count}}",
     "noPreview": "This page has not been drawn — the reading stopped before it.",
+    "flip": "Turn the page over",
+    "flipNeedsFile": "Point at the PDF again to turn a page over",
     "noPreviewNoFile": "The pages are drawn from the PDF, and this browser no longer has it. Point at the same file to see them — nothing will be read or paid for twice.",
     "headerless": "No header found here: most likely a question paper.",
     "nobodyYet": "Nobody yet",

@@ -287,18 +287,49 @@ def split_off_signed(packets: list[Packet], roster: list[Person]) -> list[Packet
     нельзя: страница несёт `signed_apart`, и человек видит, что её переложили.
 
     Решение человека не пересматривается: сказанное им сильнее и подписи.
+
+    **Через всю пачку лист не уходит**, и это ограничение появилось после живой
+    пачки. Порядок листов жёсткий: работы лежат подряд, и лист из начала пачки
+    не принадлежит тому, чей блок в девятнадцати страницах от него, — как бы
+    уверенно он ни был подписан. Такая подпись значит неверное **чтение**, а не
+    неверное место. Стоило это пяти баллов Тимура Кузнецова: его вторая
+    страница уехала к Никите Белову через всю пачку, и задачи 1, 2, 3, 14 и 15
+    просто исчезли.
+
+    Разрешено при этом два случая, и оба порядок не нарушают:
+
+    * **сосед** — пакет, разрезанный по ошибочной границе, отдаёт лист
+      соседнему: сама ошибочная граница между ними и проходит. Ради этого
+      механизм и заведён;
+    * **ученик без пакета** — лист образует свой блок на месте, никуда не
+      уезжая. Один лист одного ученика — обычное дело.
     """
+    owners = [packet.student_id for packet in packets]
+    taken = {one for one in owners if one is not None}
+
     out: list[Packet] = []
-    for packet in packets:
+    for number, packet in enumerate(packets):
         if packet.decided_by_human:
             out.append(packet)
             continue
+
+        # кому этот пакет вправе отдать лист: соседям по пачке — и тому, у кого
+        # своего пакета нет вовсе
+        near = {
+            owners[other]
+            for other in (number - 1, number + 1)
+            if 0 <= other < len(owners) and owners[other] is not None
+        }
 
         stays: list[Page] = []
         moved: dict[int, list[Page]] = {}
         for page in packet.pages:
             mine = own_owner(page, roster)
-            if mine is not None and mine != packet.student_id:
+            if (
+                mine is not None
+                and mine != packet.student_id
+                and (mine in near or mine not in taken)
+            ):
                 moved.setdefault(mine, []).append(page)
             else:
                 stays.append(page)

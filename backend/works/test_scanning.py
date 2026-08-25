@@ -634,6 +634,42 @@ class PacketTests(SimpleTestCase):
         self.assertEqual(len(packets), 1)
         self.assertEqual([p.index for p in packets[0].all_pages], [0, 1, 2, 3])
 
+    def test_a_signed_page_does_not_travel_across_the_pile(self):
+        """
+        Подпись сильнее группировки, но не сильнее порядка.
+
+        Порядок листов жёсткий: работы лежат подряд, и лист из начала пачки не
+        принадлежит тому, чей блок в другом её конце, — как бы уверенно он ни
+        был подписан. Такая подпись значит неверное **чтение**, а не неверное
+        место.
+
+        Найдено на живой пачке из семидесяти четырёх листов: вторая страница
+        Тимура Кузнецова уехала к Никите Белову через всю пачку, и пять его
+        баллов — задачи 1, 2, 3, 14 и 15 — просто исчезли. После правки на той
+        же пачке потерянных баллов не осталось ни одного.
+        """
+        pages = [
+            page(0, headerless=True),
+            page(1, "Fil", "Burmov", {0: 1}),
+            # прочитано «Peter Tibora», а Тибора владеет блоком в конце пачки
+            page(2, "Peter", "Tibora", {1: 3}),
+            page(3, headerless=True),
+            page(4, "Shahar", "Jerbi", {0: 2}),
+            page(5, headerless=True),
+            page(6, "Peter", "Tibora", {0: 3}),
+            page(7, "Peter", "Tibora", {1: 1}),
+        ]
+
+        packets = arrange(pages, ROSTER)
+        owner = {
+            one.index: packet.student_id
+            for packet in packets
+            for one in packet.pages
+        }
+
+        self.assertEqual(owner[2], 2, "лист уехал через всю пачку по подписи")
+        self.assertEqual(owner[6], 3)
+
     def test_a_second_human_decision_is_not_swallowed_by_the_first(self):
         """
         Пакет, вырезанный листами условий, назывался по **первому** решённому

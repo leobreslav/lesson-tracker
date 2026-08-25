@@ -713,3 +713,52 @@ class RememberedWritingTests(SchoolTestMixin, APITestCase):
         )
 
         self.assertEqual(services.scan_state(work)["pages"][0]["student"], stranger.pk)
+
+
+class ConditionsBelongToSomebodyTests(SchoolTestMixin, APITestCase):
+    """
+    Лист условий — страница того ученика, чьи решения идут за ним.
+
+    Раздают условия **перед** работой, поэтому ряд таких листов и режет пачку:
+    он принадлежит следующему, а не предыдущему и не никому. Разрезка это знала
+    давно, а экран — нет: хозяин строки страницы брался только со страниц
+    решений, и лист условий показывался ничьим. В PDF ученика он при этом
+    уезжал правильно, то есть человек шёл назначать вручную уже назначенное.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.year = make_year(self.school)
+        self.course = make_course(self.school, self.year)
+        self.work = make_work(self.user, self.course)
+        self.student.first_name, self.student.last_name = "Fil", "Burmov"
+        self.student.save()
+        self.second = make_user(self.school, "second@example.com", student=True)
+        self.second.first_name, self.second.last_name = "Peter", "Tibora"
+        self.second.save()
+        enrol(self.student, self.course, by=self.admin)
+        enrol(self.second, self.course, by=self.admin)
+
+    def test_a_condition_sheet_belongs_to_the_work_that_follows_it(self):
+        # условия, решение, условия, решение — два ряда, значит пачка режется
+        services.mark_headerless(self.work, index=0)
+        services.save_scan_reading(
+            self.work,
+            index=1,
+            fingerprint="f1",
+            data={"first_name": "Fil", "surname": "Burmov", "values": [1] + [None] * 15},
+        )
+        services.mark_headerless(self.work, index=2)
+        services.save_scan_reading(
+            self.work,
+            index=3,
+            fingerprint="f3",
+            data={"first_name": "Peter", "surname": "Tibora", "values": [2] + [None] * 15},
+        )
+
+        pages = {p["index"]: p for p in services.scan_state(self.work)["pages"]}
+
+        self.assertEqual(pages[0]["student"], self.student.pk, "условия первого ничьи")
+        self.assertEqual(pages[2]["student"], self.second.pk, "условия второго ничьи")
+        self.assertEqual(pages[1]["student"], self.student.pk)
+        self.assertEqual(pages[3]["student"], self.second.pk)

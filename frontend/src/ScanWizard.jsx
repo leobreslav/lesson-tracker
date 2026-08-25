@@ -67,6 +67,8 @@ export default function ScanWizard({ work, onClose, onDone }) {
    * них лучше на этом почерке. */
   const [reader, setReader] = useState('')
   const [questions, setQuestions] = useState(null)
+  /* Повороты, заданные человеком: страница -> градусы. */
+  const [turns, setTurns] = useState({})
   const stop = useRef(false)
 
   useEffect(() => () => { stop.current = true }, [])
@@ -170,6 +172,42 @@ export default function ScanWizard({ work, onClose, onDone }) {
       setState(await fetchScanState(work.id).catch(() => null))
       setStage(seen.length ? 'pages' : 'file')
     }
+  }
+
+  /*
+   * Перевернуть страницу и перечитать её.
+   *
+   * Скан из автоподатчика приходит вверх ногами не пачкой, а вразнобой: один
+   * лист лёг не так. Выправлять его нечем — выпрямление перебирает повороты
+   * само, но выбирает по сетке, а сетка симметрична, и на плохом снимке выбор
+   * бывает неверным. Тогда человек видит перевёрнутую полоску и до сих пор мог
+   * только развести руками.
+   *
+   * Стоит это **денег**: страница читается заново. Так и должно быть — за
+   * перечитывание платят ради верного чтения, а картинка у перевёрнутой другая,
+   * и отпечаток другой, поэтому кэш её не отдаст.
+   *
+   * Без файла поворот невозможен: страницы рисует браузер из PDF, а у
+   * вернувшегося к прочитанной пачке его нет.
+   */
+  const flip = async (index) => {
+    if (!file) return
+    const turn = ((turns[index] ?? 0) + 180) % 360
+    return run(async () => {
+      const { openBook, readPage } = await import('./scanBatch')
+      const book = await openBook(file)
+      const page = await readPage(book, index + 1, {
+        turn,
+        send: async ({ index: at, blob, plain, mark }) => {
+          setState(await readScanPage(work.id, { index: at, blob, plain, mark, second, reader }))
+          return true
+        },
+        blank: async (at, ours) => setState(await markHeaderless(work.id, at, ours)),
+      })
+      setTurns((was) => ({ ...was, [index]: turn }))
+      setPages((was) => was.map((one) => (one.index === index ? page : one)))
+      setState(await fetchScanState(work.id))
+    })
   }
 
   const decide = async (index, student) =>
@@ -287,6 +325,8 @@ export default function ScanWizard({ work, onClose, onDone }) {
           questions={questions}
           busy={busy}
           onDecide={decide}
+          onFlip={flip}
+          canFlip={Boolean(file)}
           onFix={fix}
           onNext={() => setStage('check')}
           onBack={() => setStage('file')}
@@ -754,7 +794,7 @@ function FileStep({
  * уехало на чтение; человек же проверяет не чтение, а работу, и чей это лист,
  * видно по почерку в поле записи не хуже, чем по подписи.
  */
-function PagesStep({ state, all, byIndex, questions, busy, onDecide, onFix, onNext, onBack }) {
+function PagesStep({ state, all, byIndex, questions, busy, canFlip, onDecide, onFlip, onFix, onNext, onBack }) {
   const { t } = useTranslation()
   const [at, setAt] = useState(0)
   /* Увеличение листа. Превью — это страница A4 в колонку шириной с пол-окна,
@@ -1047,6 +1087,18 @@ function PagesStep({ state, all, byIndex, questions, busy, onDecide, onFix, onNe
               onClick={() => zoomBy(1)}
             >
               +
+            </button>
+            {/* Поворот стоит здесь же, у картинки: он про неё, и решение о нём
+                принимают, глядя на неё. Стоит он денег — страница читается
+                заново, — поэтому кнопка обычная, а не незаметная ссылка. */}
+            <button
+              type="button"
+              className="secondary compact"
+              disabled={busy || !canFlip}
+              title={canFlip ? undefined : t('scan.flipNeedsFile')}
+              onClick={() => onFlip(here.index)}
+            >
+              {t('scan.flip')}
             </button>
           </div>
 
