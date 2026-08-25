@@ -71,8 +71,40 @@ export default function ScanWizard({ work, onClose, onDone }) {
   /* Повороты, заданные человеком: страница -> градусы. */
   const [turns, setTurns] = useState({})
   const stop = useRef(false)
+  /*
+   * Что человек назначил **по ходу чтения**: страница -> ученик.
+   *
+   * Разбор идёт теперь одновременно с чтением, и оба конца пишут в одно и то
+   * же состояние: человек отправляет «эта страница Петра», а следующая
+   * прочитанная страница привозит с собой снимок состояния целиком. Снимок
+   * этот сервер собрал в свой момент, и если он успел раньше, чем сохранилось
+   * решение, то приедет прежний хозяин — выбор человека мигнёт назад.
+   *
+   * Ошибка была бы не косметическая: экран, показывающий не то, что записано,
+   * читается как сломанный выпадающий список, и чинить пойдут не туда. Так уже
+   * было на этом самом экране (см. `split_by_decisions` в `scanning.py`).
+   *
+   * Поэтому назначенное держится здесь до конца чтения и накладывается на
+   * каждый приезжающий снимок. В базе стоит ровно то же самое — это не второй
+   * источник правды, а защита от опоздавшего ответа. По концу пачки состояние
+   * перечитывается начисто, и память сбрасывается.
+   */
+  const decided = useRef(new Map())
 
   useEffect(() => () => { stop.current = true }, [])
+
+  /** Снимок сервера, поверх которого лежит только что сказанное человеком. */
+  const withDecisions = (answer) => {
+    if (!answer?.pages || decided.current.size === 0) return answer
+    return {
+      ...answer,
+      pages: answer.pages.map((row) =>
+        decided.current.has(row.index)
+          ? { ...row, student: decided.current.get(row.index), decided_by_human: true }
+          : row,
+      ),
+    }
+  }
 
   /* Шкала — это и есть «сколько было задач и по сколько баллов». Спрашиваем
      её первой и только если её ещё нет: у работы, которую уже настроили,
@@ -112,6 +144,7 @@ export default function ScanWizard({ work, onClose, onDone }) {
     setStage('reading')
     setError(null)
     stop.current = false
+    decided.current.clear()
 
     // модуль обработки грузится лениво: pdfjs большой, а нужен он тут одному
     // экрану из всего приложения
@@ -145,11 +178,13 @@ export default function ScanWizard({ work, onClose, onDone }) {
             second: alsoSecond,
             reader: byReader,
           })
-          setState(answer)
+          // снимок сервера, но назначенное человеком по ходу чтения сильнее:
+          // ответ мог уехать раньше, чем сохранилось его решение
+          setState(withDecisions(answer))
           return true
         },
         blank: async (index, ours) =>
-          setState(await markHeaderless(work.id, index, ours)),
+          setState(withDecisions(await markHeaderless(work.id, index, ours))),
         questions: alsoQuestions
           ? async (sheet) => {
               const answer = await readScanQuestions(work.id, sheet)
@@ -164,12 +199,16 @@ export default function ScanWizard({ work, onClose, onDone }) {
           : null,
       })
       setPages(collected)
+      // пачка дочитана: дальше правда одна и она на сервере, память о
+      // назначенном по ходу больше не нужна
+      decided.current.clear()
       setState(await fetchScanState(work.id))
       setStage('pages')
     } catch (problem) {
       // прочитанное до сбоя остаётся: за него уже заплачено, и разложить
       // остальное руками лучше, чем начинать пачку сначала
       setError(problem.message)
+      decided.current.clear()
       setState(await fetchScanState(work.id).catch(() => null))
       setStage(seen.length ? 'pages' : 'file')
     }
@@ -212,7 +251,13 @@ export default function ScanWizard({ work, onClose, onDone }) {
   }
 
   const decide = async (index, student) =>
-    run(async () => setState(await editScanPage(work.id, { index, student })))
+    run(async () => {
+      const answer = await editScanPage(work.id, { index, student })
+      // пока пачка читается, сказанное держим у себя: следующий ответ чтения
+      // привезёт снимок, собранный, возможно, до этого решения
+      if (stage === 'reading') decided.current.set(index, student)
+      setState(withDecisions(answer))
+    })
 
   const fix = async (index, cells) =>
     run(async () => setState(await editScanPage(work.id, { index, cells })))
@@ -317,11 +362,27 @@ export default function ScanWizard({ work, onClose, onDone }) {
         />
       )}
 
+      {/*
+        * Полоска чтения — **над** разбором, а не вместо него.
+        *
+        * Экран чтения был глухой: полоска, проценты и кнопка «Остановить». А
+        * ждать за ним приходится минуты — тридцать четыре страницы это
+        * тридцать четыре запроса, — и всё это время человек сидел перед
+        * градусником, хотя работа уже приехала: первая страница разбирается,
+        * как только прочитана, и от последней не зависит ничем.
+        *
+        * Поэтому прочитанное показывается сразу, и разбор идёт одновременно с
+        * чтением. Полоска при этом никуда не делась: она отвечает на «сколько
+        * ещё осталось», и без неё дочитанная пачка была бы неотличима от
+        * замершей.
+        */}
       {stage === 'reading' && (
         <section className="scan-step scan-progress">
           <p>{t('scan.reading', { done, total: total || '…' })}</p>
           <progress value={done} max={total || 1} />
-          <p className="hint">{t('scan.readingHint')}</p>
+          <p className="hint">
+            {t(pages.length > 0 ? 'scan.readingAndSorting' : 'scan.readingHint')}
+          </p>
           {state?.budget && (
             <p className="hint">
               {t('scan.spent', {
@@ -336,13 +397,17 @@ export default function ScanWizard({ work, onClose, onDone }) {
         </section>
       )}
 
-      {stage === 'pages' && state && (
+      {/* Один и тот же шаг на оба состояния, и это не экономия строк: своим
+          он бы пересоздавался в тот миг, когда чтение кончилось, — и человек,
+          разглядывающий седьмую страницу, оказывался бы снова на первой. */}
+      {(stage === 'pages' || (stage === 'reading' && pages.length > 0)) && state && (
         <PagesStep
           state={state}
           all={pages}
           byIndex={byIndex}
           questions={questions}
           busy={busy}
+          reading={stage === 'reading'}
           onDecide={decide}
           onFlip={flip}
           canFlip={Boolean(file)}
@@ -882,7 +947,23 @@ function FileStep({
  * уехало на чтение; человек же проверяет не чтение, а работу, и чей это лист,
  * видно по почерку в поле записи не хуже, чем по подписи.
  */
-function PagesStep({ state, all, byIndex, questions, busy, canFlip, onDecide, onFlip, onFix, onNext, onBack }) {
+function PagesStep({
+  state,
+  all,
+  byIndex,
+  questions,
+  busy,
+  // пачка ещё читается: страницы приезжают по одной, и разбирать их уже можно,
+  // а уходить с шага — нет. Впереди запись, а записывать недочитанную пачку
+  // значит раздать половину класса и потерять остальных
+  reading = false,
+  canFlip,
+  onDecide,
+  onFlip,
+  onFix,
+  onNext,
+  onBack,
+}) {
   const { t } = useTranslation()
   const [at, setAt] = useState(0)
   /* Увеличение листа. Превью — это страница A4 в колонку шириной с пол-окна,
@@ -1194,8 +1275,18 @@ function PagesStep({ state, all, byIndex, questions, busy, canFlip, onDecide, on
             <button
               type="button"
               className="secondary compact"
-              disabled={busy || !canFlip}
-              title={canFlip ? undefined : t('scan.flipNeedsFile')}
+              /* Пока идёт чтение — нельзя: поворот перечитывает страницу, то
+                 есть шлёт второй запрос по той же книге навстречу первому, и
+                 чей ответ приедет последним, решает случай. Ждать тут недолго,
+                 а перепутанное чтение стоит денег и правится руками. */
+              disabled={busy || reading || !canFlip}
+              title={
+                reading
+                  ? t('scan.flipWhileReading')
+                  : canFlip
+                    ? undefined
+                    : t('scan.flipNeedsFile')
+              }
               onClick={() => onFlip(here.index)}
             >
               {t('scan.flip')}
@@ -1379,12 +1470,29 @@ function PagesStep({ state, all, byIndex, questions, busy, canFlip, onDecide, on
           обе кнопки про движение по шагам, и спорить с тем, куда показывает
           «вперёд», дороже, чем держать единый порядок с диалогами. */}
       <div className="actions">
-        <button type="button" className="secondary" disabled={busy} onClick={onBack}>
+        {/* Пока пачка читается, шаг назад — это уход с идущего чтения: оно
+            платное и продолжается независимо от того, на каком экране человек.
+            Уйти можно кнопкой «Остановить» наверху, и это честнее. */}
+        <button
+          type="button"
+          className="secondary"
+          disabled={busy || reading}
+          onClick={onBack}
+        >
           {t('scan.back')}
         </button>
-        <button type="button" disabled={busy || stuck.length > 0} onClick={onNext}>
+        <button
+          type="button"
+          disabled={busy || reading || stuck.length > 0}
+          title={reading ? t('scan.stillReading') : undefined}
+          onClick={onNext}
+        >
           {t('scan.toCheck')}
         </button>
+        {/* Почему «Дальше» не нажимается: недочитанная пачка — это половина
+            класса с работами и половина без, а по экрану этого не видно, пока
+            не сказано словами. */}
+        {reading && <span className="hint">{t('scan.stillReading')}</span>}
         {/* Сколько страниц без хозяина — знали, а какие именно, приходилось
             искать перелистыванием: на пачке в тридцать четыре листа последняя
             такая страница ищется дольше, чем разбирается. Счётчик поэтому и
