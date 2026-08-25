@@ -38,24 +38,54 @@ MATHPIX = "mathpix"
 NAME_READERS = (ANTHROPIC, YANDEX, MATHPIX)
 
 
-def name_readers() -> list[str]:
-    """
-    Кем этот контур умеет читать имя, в порядке предпочтения.
+# Почему читателя нельзя позвать. Слово, а не флаг: «ключей не задали» и «не
+# дозвонились» — разные беды, и лечатся они разными руками. Первая — настройкой
+# контура, вторая проходит сама.
+NOT_CONFIGURED = "not_configured"
+UNREACHABLE = "unreachable"
 
-    Спрашивает это экран, чтобы предложить выбор, и спрашивает не из
-    любопытства: предложить читателя, которого нет, значит соврать, а узнать
-    об этом отказом на первой странице пачки — плохой способ выяснять состав.
+
+def readers_state(order) -> list[dict]:
+    """
+    Все читатели из списка — каждый со своим состоянием и причиной отказа.
+
+    Отвечает на вопрос экрана целиком, а не наполовину. Отдавался раньше
+    список тех, кого позвать можно, и недоступный читатель из него просто
+    исчезал — а вместе с ним исчезал и сам вопрос: контур без ключей Mathpix
+    выглядел как контур, где Mathpix не бывает вовсе. Пропавшая строка себя не
+    объясняет, заглушённая объясняет; и второе важнее, потому что чинится это
+    настройкой, а не гаданием.
+
+    «Настроен» и «отвечает» — разные вопросы, и второй спрашивается у самой
+    сети. Читателя, о котором только что выяснили, что до него не достучаться,
+    не предлагают и не пробуют: ждать его повторно значит тратить по двадцать
+    секунд на каждой странице пачки.
     """
     able = {
         ANTHROPIC: client.configured(),
         YANDEX: yandex.configured(),
         MATHPIX: mathpix.configured(),
     }
-    # «Настроен» и «отвечает» — разные вопросы, и второй спрашивается у самой
-    # сети. Читателя, о котором только что выяснили, что до него не
-    # достучаться, не предлагают и не пробуют: ждать его повторно значит
-    # тратить по двадцать секунд на каждой странице пачки.
-    return [one for one in NAME_READERS if able[one] and reach.reachable(one)]
+    state = []
+    for one in order:
+        why = ""
+        if not able[one]:
+            why = NOT_CONFIGURED
+        elif not reach.reachable(one):
+            why = UNREACHABLE
+        state.append({"name": one, "able": not why, "why": why})
+    return state
+
+
+def name_readers() -> list[str]:
+    """
+    Кем этот контур умеет читать имя, в порядке предпочтения.
+
+    Спрашивает это не экран, а само чтение: экрану нужны все читатели с
+    причинами (`readers_state`), а чтению — тот, кого можно позвать прямо
+    сейчас.
+    """
+    return [one["name"] for one in readers_state(NAME_READERS) if one["able"]]
 
 
 def month_start(now: datetime | None = None) -> datetime:
@@ -122,7 +152,7 @@ def read_and_charge(
     model: str | None = None,
     purpose: str = AiSpend.SCAN_HEADER,
     reader: str = "",
-    asked_second: bool = True,
+    cells_reader: str = "",
 ) -> dict:
     """
     Прочитать полоску и записать трату. Одна дверь: считать, не заплатив, нельзя.
@@ -156,9 +186,9 @@ def read_and_charge(
     не первое.
 
     `reader` — выбор человека: кем читать имя. Пустой значит «кем умеете»,
-    и тогда берётся первый доступный по `NAME_READERS`. `asked_second` — его
-    же решение, звать ли Mathpix за клетками: он удваивает цену пачки, а нужен
-    не всегда.
+    и тогда берётся первый доступный по `NAME_READERS`. `cells_reader` — его
+    же решение про клетки, и решается оно отдельно: второй читатель удваивает
+    цену пачки, а нужен не всегда, да и сильны читатели в разном.
 
     **Выбор человека мы уступаем только вниз.** Не достучались до модели —
     читаем тем, кто ближе и дешевле, и говорим об этом. Обратно нет: подменить
@@ -188,7 +218,7 @@ def read_and_charge(
         work,
         image,
         media_type,
-        asked=asked_second,
+        wanted=cells_reader,
         name_reader=names.get("reader") or "",
     )
     if cells.get("error"):
@@ -214,6 +244,11 @@ CELLS_READERS = (MATHPIX, YANDEX)
 
 PRICED_AS = {MATHPIX: prices.MATHPIX, YANDEX: prices.YANDEX}
 
+# Выбор человека «клетки не читать никем». Слово, а не пустая строка: пустая
+# уже занята и значит «кем умеете», и путать эти два ответа нельзя — первый
+# отказывается от чтения, второй доверяет выбор контуру.
+NOBODY = "none"
+
 
 def second_reading(
     school,
@@ -222,7 +257,7 @@ def second_reading(
     image: bytes,
     media_type: str,
     *,
-    asked: bool = True,
+    wanted: str = "",
     name_reader: str = "",
 ) -> dict:
     """
@@ -246,14 +281,24 @@ def second_reading(
     клетки читает моделью для таблиц. Живая пачка показала, зачем это нужно:
     `handwritten` разобрал имена на всех страницах и не увидел почти ни одной
     клетки — ноль или одну из шестнадцати.
+
+    `wanted` — выбор человека, и у него три разных значения. Имя читателя
+    значит «зови этого и никого другого»: назвавший Yandex не должен получить
+    счёт от Mathpix только потому, что первый не ответил. `none` — «клетки
+    читает тот же, кто прочитал имя». Пустая строка — «кем умеете», и тогда
+    берётся первый доступный по `CELLS_READERS`.
     """
-    if not asked:
+    if wanted == NOBODY:
         return {"reader": "", "error": "not_asked"}
 
     able = {MATHPIX: mathpix.configured(), YANDEX: yandex.configured()}
     last = {"reader": "", "error": "not_configured"}
 
-    for one in CELLS_READERS:
+    # Назвали читателя — идём к нему одному. Запасной путь тут был бы подменой
+    # выбора, а платит за неё тот, кто выбирал.
+    order = (wanted,) if wanted in CELLS_READERS else CELLS_READERS
+
+    for one in order:
         if not able[one]:
             continue
         if one == MATHPIX and name_reader == MATHPIX:

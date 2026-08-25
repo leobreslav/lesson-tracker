@@ -848,11 +848,42 @@ class TwoReadersTests(PretendsThereIsAKey, SchoolTestMixin, APITestCase):
         self.assertEqual(data["values"][0], 3)
         self.assertEqual(data["values"][1], 4)
 
+    def test_the_named_reader_is_the_only_one_called(self):
+        """
+        Человек выбирает читателя клеток поимённо, и запасного пути у этого
+        выбора нет: назвавший Yandex не должен получить счёт от Mathpix
+        потому лишь, что тот стоит в списке первым. Уступать выбор вниз можно
+        только там, где иначе не прочитается ничего, а тут прочитается.
+        """
+        from unittest.mock import patch
+
+        with self.settings(
+            MATHPIX_APP_ID="id", MATHPIX_APP_KEY="key", YANDEX_OCR_API_KEY="key"
+        ):
+            with patch.object(
+                services, "read_header", lambda image, **kw: (dict(self.model_says), 100, 10)
+            ), patch.object(
+                services.mathpix, "read_strip", self.fail_if_called
+            ), patch.object(
+                services.yandex,
+                "read_cells",
+                lambda *a, **kw: {"reader": "yandex", "values": [None] * 16},
+            ):
+                data = services.read_and_charge(
+                    school=self.school,
+                    user=self.user,
+                    work=None,
+                    image=b"strip",
+                    cells_reader=services.YANDEX,
+                )
+
+        self.assertEqual(data["second"]["reader"], "yandex")
+
     def test_the_human_may_refuse_the_second_reader(self):
         """
-        Галочка на шаге выбора файла: второй читатель удваивает цену пачки, а
-        нужен он не всегда — у стопки, где имена вписаны учителем печатными
-        буквами, спорить не о чем. Решает тот, кто платит.
+        Выбор на шаге файла: второй читатель удваивает цену пачки, а нужен он
+        не всегда — у стопки, где имена вписаны учителем печатными буквами,
+        спорить не о чем. Решает тот, кто платит.
         """
         from unittest.mock import patch
 
@@ -867,7 +898,7 @@ class TwoReadersTests(PretendsThereIsAKey, SchoolTestMixin, APITestCase):
                     user=self.user,
                     work=None,
                     image=b"strip",
-                    asked_second=False,
+                    cells_reader=services.NOBODY,
                 )
 
         self.assertEqual(data["second"]["error"], "not_asked")

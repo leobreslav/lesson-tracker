@@ -579,33 +579,54 @@ class SecondReaderIsAskedForTests(SchoolTestMixin, APITestCase):
         self.assertEqual(answer.status_code, 200, answer.content)
         return seen
 
-    def test_the_unticked_box_reaches_the_reader(self):
-        self.assertFalse(self.post(second="false")["asked_second"])
+    def test_the_named_reader_reaches_the_reading(self):
+        """
+        Человек выбирает читателя клеток поимённо, и выбор доезжает как есть:
+        назвавший Yandex не должен получить счёт от Mathpix.
+        """
+        self.assertEqual(self.post(cells="yandex")["cells_reader"], "yandex")
 
-    def test_the_ticked_box_reaches_the_reader(self):
-        self.assertTrue(self.post(second="true")["asked_second"])
+    def test_refusing_the_second_reader_reaches_the_reading(self):
+        self.assertEqual(self.post(cells="none")["cells_reader"], "none")
 
     def test_saying_nothing_means_reading_as_before(self):
         """
-        Умолчание — «звать»: ключи Mathpix в контуре появляются не сами, и раз
-        школа их поставила, второй читатель нужен. Галочка снимает его, а не
-        включает.
+        Умолчание — «кем умеете»: ключи в контуре появляются не сами, и раз
+        школа их поставила, второй читатель нужен. Отказ от него — это явное
+        `none`, а не молчание.
         """
-        self.assertTrue(self.post()["asked_second"])
+        self.assertEqual(self.post()["cells_reader"], "")
 
-    def test_the_screen_is_told_who_can_read_the_cells(self):
+    def test_an_unknown_reader_is_the_same_as_saying_nothing(self):
         """
-        Галочка, которая ничем не управляет, — это ложь на экране. А список, а
-        не флаг, потому что читателей клеток стало двое и экрану надо знать,
-        кого именно галочка позовёт: у Mathpix способ один, у Yandex два.
+        Клиент мог отстать от сервера на одну выкатку, и ронять из-за этого
+        пачку, за половину которой уже заплачено, — плохой обмен. Та же
+        уступка, что у читателя имени.
+        """
+        self.assertEqual(self.post(cells="whoever")["cells_reader"], "")
+
+    def test_the_screen_is_told_about_every_cells_reader(self):
+        """
+        Показывается **каждый** читатель клеток, и недоступный тоже — со своей
+        причиной. Пропадал он раньше вместе с вопросом: контур без ключей
+        Mathpix выглядел как контур, где Mathpix не бывает вовсе, и починить
+        это настройкой было нельзя, потому что чинить было нечего.
         """
         with self.settings(MATHPIX_APP_ID="", MATHPIX_APP_KEY="", YANDEX_OCR_API_KEY=""):
-            self.assertEqual(services.scan_state(self.work)["cells_readers"], [])
-        with self.settings(MATHPIX_APP_ID="id", MATHPIX_APP_KEY="key"):
-            self.assertEqual(services.scan_state(self.work)["cells_readers"], ["mathpix"])
+            self.assertEqual(
+                services.scan_state(self.work)["cells_readers"],
+                [
+                    {"name": "mathpix", "able": False, "why": "not_configured"},
+                    {"name": "yandex", "able": False, "why": "not_configured"},
+                ],
+            )
         with self.settings(
-            MATHPIX_APP_ID="id", MATHPIX_APP_KEY="key", YANDEX_OCR_API_KEY="key"
+            MATHPIX_APP_ID="id", MATHPIX_APP_KEY="key", YANDEX_OCR_API_KEY=""
         ):
             self.assertEqual(
-                services.scan_state(self.work)["cells_readers"], ["mathpix", "yandex"]
+                services.scan_state(self.work)["cells_readers"],
+                [
+                    {"name": "mathpix", "able": True, "why": ""},
+                    {"name": "yandex", "able": False, "why": "not_configured"},
+                ],
             )

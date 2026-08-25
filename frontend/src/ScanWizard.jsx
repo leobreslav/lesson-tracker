@@ -39,6 +39,11 @@ import {
  * Страницы не хранятся на сервере, а прочитанное хранится: чтение стоит денег,
  * и закрытая вкладка не должна стоить их второй раз.
  */
+/* «Клетки не читает никто»: их берёт тот же, кто прочитал имя. Слово, а не
+ * пустая строка — пустая занята и значит «кем умеете». Совпадает с `NOBODY`
+ * на сервере (`vision/services.py`), потому что едет туда как есть. */
+const NOBODY = 'none'
+
 export default function ScanWizard({ work, onClose, onDone }) {
   const { t } = useTranslation()
 
@@ -52,14 +57,15 @@ export default function ScanWizard({ work, onClose, onDone }) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
   const [readQuestions, setReadQuestions] = useState(false)
-  /* Звать ли второго читателя на этой пачке.
+  /* Кем читать клетки с баллами на этой пачке.
    *
-   * Умолчание — «звать», и это не небрежность: ключи Mathpix в контуре
+   * Пустая строка — «кем умеете», и это не небрежность: ключи в контуре
    * появляются не сами, и раз школа их поставила, второй читатель нужен.
-   * Галочка — способ **отказаться** на конкретной пачке, а не включить: у
-   * стопки, где имена вписаны учителем печатными буквами, спорить не о чем,
-   * а платить пришлось бы вдвое. */
-  const [second, setSecond] = useState(true)
+   * `none` — способ **отказаться** на конкретной пачке: у стопки, где имена
+   * вписаны учителем печатными буквами, спорить не о чем, а платить пришлось
+   * бы вдвое. Имя читателя — «зови этого», и запасного пути у такого выбора
+   * нет: платит за него тот, кто выбирал. */
+  const [cells, setCells] = useState('')
   /* Кем читать имя. Пустая строка — «кем умеете»: контур возьмёт первого
    * доступного сам, и это верное умолчание, потому что порядок предпочтения
    * знает он, а не экран. Человек перебивает его выбором, когда хочет
@@ -102,7 +108,7 @@ export default function ScanWizard({ work, onClose, onDone }) {
     }
   }
 
-  const start = async (chosen, alsoQuestions, alsoSecond, byReader = '') => {
+  const start = async (chosen, alsoQuestions, byCells = '', byReader = '') => {
     if (!chosen) return
     setFile(chosen)
     setQuestions(null)
@@ -138,7 +144,7 @@ export default function ScanWizard({ work, onClose, onDone }) {
             index,
             blob,
             mark,
-            second: alsoSecond,
+            cells: byCells,
             reader: byReader,
           })
           setState(answer)
@@ -212,15 +218,18 @@ export default function ScanWizard({ work, onClose, onDone }) {
 
       {/* Просьба прочитать условия снимается вместе с галочкой: галочка могла
           остаться включённой с прошлого открытия, а модели с тех пор не стало —
-          и пачка упёрлась бы в отказ на первом же листе условий */}
+          и пачка упёрлась бы в отказ на первом же листе условий.
+
+          Читатели приезжают из шага уже разрешёнными: экран показал их
+          отмеченными, и уехать на сервер должно ровно показанное. */}
       {stage === 'file' && (
         <FileStep
-          onPick={(chosen) =>
+          onPick={(chosen, byReader, byCells) =>
             start(
               chosen,
               readQuestions && (state?.model_reachable ?? true),
-              second,
-              reader,
+              byCells,
+              byReader,
             )
           }
           busy={busy}
@@ -231,8 +240,8 @@ export default function ScanWizard({ work, onClose, onDone }) {
           readers={state?.readers ?? []}
           reader={reader}
           onReader={setReader}
-          second={second}
-          onSecond={setSecond}
+          cells={cells}
+          onCells={setCells}
           questions={scale.length}
           read={state?.pages?.length ?? 0}
           onReset={() => run(async () => setState(await resetScan(work.id)))}
@@ -458,31 +467,47 @@ function FileStep({
   readers,
   reader,
   onReader,
-  second,
-  onSecond,
+  cells,
+  onCells,
   onBack,
   onForward,
 }) {
   const { t } = useTranslation()
   const [over, setOver] = useState(false)
 
-  /* Кто на этой пачке прочитает имя: выбранный человеком или первый, кого
+  /* Оба списка приезжают с сервера **целиком**: и те, кого можно позвать, и
+   * те, кого нельзя, со словом о причине. Показываются тоже целиком, а
+   * недоступный — заглушённым. Пропадал он раньше вместе с самим вопросом, и
+   * контур без ключей Mathpix выглядел как контур, где Mathpix не бывает
+   * вовсе: чинить это настройкой человек не шёл, потому что чинить, судя по
+   * экрану, было нечего.
+   *
+   * Кто на этой пачке прочитает имя: выбранный человеком или первый, кого
    * предлагает контур. Знать это экрану нужно затем, что от ответа зависит,
    * останется ли кому читать клетки.
    *
    * Тонкость в том, что «тот же читатель» считается по вызову, а не по имени.
    * Mathpix читает одним способом: если имя прочитал он, второе чтение было бы
    * повтором того же запроса за те же деньги. У Yandex моделей две — почерк
-   * для имени, таблица для клеток, — и второе чтение у него настоящее.
-   *
-   * Галочка, которой нечем управлять, — ложь на экране, поэтому её нет, когда
-   * звать некого. Снятая же означает «читает один, и он же берёт клетки»: это
-   * и есть способ отказаться от распознавателя и остаться на чистой модели. */
-  const nameReader = reader || readers[0] || ''
-  const cellsReadersLeft = cellsReaders.filter(
-    (one) => one !== 'mathpix' || nameReader !== 'mathpix',
-  )
-  const mathpixReadsCells = cellsReadersLeft.length > 0
+   * для имени, таблица для клеток, — и второе чтение у него настоящее. Поэтому
+   * причина у Mathpix бывает своя, считаемая здесь: она зависит не от контура,
+   * а от соседнего выбора на этом же экране. */
+  const ableNames = readers.filter((one) => one.able).map((one) => one.name)
+  const nameReader = ableNames.includes(reader) ? reader : ''
+  const readerUsed = nameReader || ableNames[0] || ''
+
+  const cellsBlocked = (one) =>
+    one.name === 'mathpix' && readerUsed === 'mathpix' ? 'same_reader' : one.why
+  const cellsAble = cellsReaders.filter((one) => !cellsBlocked(one))
+
+  /* Что показано отмеченным, то и уезжает на сервер. Держать выбор человека
+   * отдельно от показанного нельзя: читатель, которого он выбрал минуту назад,
+   * мог стать недоступным — от его же соседнего выбора, — и тогда экран
+   * показывал бы одно, а пачка читалась бы другим. */
+  const cellsUsed =
+    cells === NOBODY || cellsAble.some((one) => one.name === cells)
+      ? cells
+      : cellsAble[0]?.name ?? NOBODY
 
   return (
     <section className="scan-step">
@@ -544,41 +569,58 @@ function FileStep({
           неудавшимся запросом, и второй такой же блок рядом — это два красных
           сообщения об одном и том же, из которых человеку надо выбрать. Здесь
           же не ошибка действия, а состояние контура, известное до нажатия. */}
-      {readers.length === 0 ? (
+      {ableNames.length === 0 ? (
         <p className="hint warning">{t('scan.noReader')}</p>
       ) : (
         !modelReachable &&
-        !readers.includes('anthropic') && (
+        !ableNames.includes('anthropic') && (
           <p className="hint warning">
-            {t('scan.soleReader', { reader: t(`scan.reader.${nameReader}`) })}
+            {t('scan.soleReader', { reader: t(`scan.reader.${readerUsed}`) })}
           </p>
         )
       )}
 
       {/*
-        * Выбор читателя стоит здесь, а не в настройках школы, и это то же
-        * решение, что у галочки ниже: кто лучше читает **этот** почерк,
-        * узнаётся только пачкой, а держит пачку учитель. Показывается выбор,
-        * только когда он есть: единственный читатель в выпадающем списке —
-        * это вопрос без ответов.
+        * Выбор читателя стоит здесь, а не в настройках школы: кто лучше читает
+        * **этот** почерк, узнаётся только пачкой, а держит пачку учитель.
+        *
+        * Радиокнопками, а не списком, и это прямо про заглушённые строки.
+        * Недоступный вариант в `select` виден только тому, кто список
+        * раскрыл, — то есть тому, кто и так собрался выбирать. Здесь же
+        * показать надо ровно **не собравшемуся**: он не знает, что читателей
+        * трое, и не узнает, пока строка не попадётся ему на глаза сама.
         */}
-      {readers.length > 1 && (
-        <label className="field">
-          <span>{t('scan.readerLabel')}</span>
-          <select
-            value={reader}
+      <div className="reader-choice">
+        <p className="hint">
+          <b>{t('scan.readerLabel')}</b>
+        </p>
+        <label className="checkbox">
+          <input
+            type="radio"
+            name="name-reader"
+            checked={nameReader === ''}
             disabled={busy}
-            onChange={(event) => onReader(event.target.value)}
-          >
-            <option value="">{t('scan.readerAny')}</option>
-            {readers.map((one) => (
-              <option key={one} value={one}>
-                {t(`scan.reader.${one}`)}
-              </option>
-            ))}
-          </select>
+            onChange={() => onReader('')}
+          />
+          {t('scan.readerAny')}
         </label>
-      )}
+        {readers.map((one) => (
+          <label
+            key={one.name}
+            className={one.able ? 'checkbox' : 'checkbox off'}
+          >
+            <input
+              type="radio"
+              name="name-reader"
+              checked={nameReader === one.name}
+              disabled={busy || !one.able}
+              onChange={() => onReader(one.name)}
+            />
+            {t(`scan.reader.${one.name}`)}
+            {!one.able && <span className="hint">{t(`scan.why.${one.why}`)}</span>}
+          </label>
+        ))}
+      </div>
 
       {/* условия читаются по просьбе: страница целиком дороже полоски шапки,
           а нужна она один раз на пачку. Без модели этой просьбы нет: шкалу из
@@ -597,33 +639,49 @@ function FileStep({
       {readQuestions && <p className="hint">{t('scan.readQuestionsHint')}</p>}
 
       {/*
-        * Второй читатель — выбор человека, и делается он **до** платежа.
+        * Читатель клеток — второй вопрос, и он отдельный от первого: читатели
+        * сильны в разном, а стоит второе чтение отдельных денег. Решается он
+        * **до** платежа и на каждой пачке заново.
         *
-        * Показывается галочка только там, где второму читателю есть чем
-        * читать: без ключей Mathpix она ничем не управляла бы, а галочка,
-        * которая ничего не делает, — это ложь на экране.
-        *
-        * Подсказка стоит в обоих положениях, а не только во включённом.
-        * Выключенное состояние тут не «ничего не происходит», а другое
-        * поведение — читает один, и ошибётся он молча; сказать об этом надо
-        * ровно в тот момент, когда галочку снимают.
+        * «Никто» стоит первым и названо словами, а не отсутствием выбора:
+        * это не «ничего не происходит», а другое поведение — клетки читает
+        * тот же, кто прочитал имя, и ошибётся он молча. Подсказка поэтому
+        * стоит в обоих положениях.
         */}
-      {mathpixReadsCells && (
-        <>
-          <label className="checkbox">
-            <input
-              type="checkbox"
-              checked={second}
-              disabled={busy}
-              onChange={(event) => onSecond(event.target.checked)}
-            />
-            {t('scan.secondReader')}
-          </label>
-          <p className="hint">
-            {t(second ? 'scan.secondReaderOn' : 'scan.secondReaderOff')}
-          </p>
-        </>
-      )}
+      <div className="reader-choice">
+        <p className="hint">
+          <b>{t('scan.cellsLabel')}</b>
+        </p>
+        <label className="checkbox">
+          <input
+            type="radio"
+            name="cells-reader"
+            checked={cellsUsed === NOBODY}
+            disabled={busy}
+            onChange={() => onCells(NOBODY)}
+          />
+          {t('scan.cellsNobody')}
+        </label>
+        {cellsReaders.map((one) => {
+          const why = cellsBlocked(one)
+          return (
+            <label key={one.name} className={why ? 'checkbox off' : 'checkbox'}>
+              <input
+                type="radio"
+                name="cells-reader"
+                checked={cellsUsed === one.name}
+                disabled={busy || !!why}
+                onChange={() => onCells(one.name)}
+              />
+              {t(`scan.reader.${one.name}`)}
+              {why && <span className="hint">{t(`scan.why.${why}`)}</span>}
+            </label>
+          )
+        })}
+        <p className="hint">
+          {t(cellsUsed === NOBODY ? 'scan.secondReaderOff' : 'scan.secondReaderOn')}
+        </p>
+      </div>
 
       {/*
         * Начать пачку заново.
@@ -666,7 +724,7 @@ function FileStep({
         onDrop={(event) => {
           event.preventDefault()
           setOver(false)
-          onPick(event.dataTransfer.files[0])
+          onPick(event.dataTransfer.files[0], nameReader, cellsUsed)
         }}
       >
         {/* поле спрятано, а не убрано: нажатие по зоне доходит до него
@@ -683,7 +741,7 @@ function FileStep({
           accept="application/pdf"
           hidden
           disabled={busy}
-          onChange={(event) => onPick(event.target.files[0])}
+          onChange={(event) => onPick(event.target.files[0], nameReader, cellsUsed)}
         />
         <span>{t('scan.pick')}</span>
       </label>

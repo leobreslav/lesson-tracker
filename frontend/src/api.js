@@ -734,15 +734,16 @@ export const fetchScanState = (work) => request(`/api/works/${work}/scan/state/`
 export const resetScan = (work) =>
   request(`/api/works/${work}/scan/state/`, { method: 'DELETE' })
 
-export const readScanPage = (work, { index, blob, mark, second = true, reader = '' }) => {
+export const readScanPage = (work, { index, blob, mark, cells = '', reader = '' }) => {
   const form = new FormData()
   form.append('index', index)
   form.append('strip', blob, `strip-${index}.jpg`)
   form.append('fingerprint', mark)
-  // Звать ли второго читателя. Решение принимается один раз на пачку —
-  // галочкой на шаге выбора файла, — а ехать ему приходится с каждой
-  // страницей: цикл чтения ведёт браузер, и другого места у просьбы нет.
-  form.append('second', second ? 'true' : 'false')
+  // Кем читать клетки с баллами. Решение принимается один раз на пачку — на
+  // шаге выбора файла, — а ехать ему приходится с каждой страницей: цикл
+  // чтения ведёт браузер, и другого места у просьбы нет. Пустая строка — «кем
+  // умеете», `none` — «клетки берёт тот же, кто прочитал имя».
+  form.append('cells', cells)
   // Кем читать имя — тем же путём и по той же причине. Пустая строка значит
   // «кем умеете»: контур возьмёт первого доступного сам.
   form.append('reader', reader)

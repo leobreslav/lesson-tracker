@@ -1486,7 +1486,13 @@
     "conditions_other": "{{count}} sheets without a header — question papers. They cut the pile into {{packets}} packets.",
     "readQuestions": "Also copy the questions off the question paper",
     "readQuestionsHint": "The first run of question sheets is read once for the whole pile and written into the scale. A full page costs a few cents — a header strip costs a fraction of one.",
-    "secondReader": "Let the recogniser read the marks grid as well",
+    "cellsLabel": "Who reads the marks grid",
+    "cellsNobody": "Nobody — whoever reads the names takes the marks too",
+    "why": {
+      "not_configured": "— not set up on this server",
+      "unreachable": "— this server could not reach it",
+      "same_reader": "— already reading the names on this pile"
+    },
     "secondReaderOn": "Two readers look at each header, and each does what it is good at: the model reads the names, the recogniser reads the marks. Where they disagree you will be asked to look at the sheet yourself. It roughly doubles what the pile costs.",
     "secondReaderOff": "One reader looks at each header and reads both the names and the marks. Cheaper, but a misread mark looks exactly as confident as a correct one.",
     "questionsRead": "Questions written into the scale: {{count}} of {{found}} found.",
