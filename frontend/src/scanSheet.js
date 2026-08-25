@@ -22,7 +22,13 @@
  * `ImageData`), поэтому проверяются в node без браузера.
  */
 
-import { GRID, HEADER, PAGE, QR, STRIP, STRIP_WIDTH, cellRect, headerCorners, nameRow, sheetCorners, stripHeight } from './blankGeometry.js'
+// Декодер QR, а не самодельная проверка узора: код на бланке стоит затем, чтобы
+// его **находили**, и находить его умеет библиотека, а не мы. Чистый JS без
+// wasm — эти функции проверяются в node, и нативный `BarcodeDetector` выпал бы
+// из тестов ровно там, где код станет разделителем блоков.
+import jsQR from 'jsqr'
+
+import { CODE_PREFIX, GRID, HEADER, PAGE, QR, STRIP, STRIP_WIDTH, cellRect, headerCorners, nameRow, sheetCorners, stripHeight } from './blankGeometry.js'
 
 /** Оттенки серого одной плоскостью: дальше всё считается по ней. */
 export function toGray(image) {
@@ -699,60 +705,77 @@ export function nameRowIsClear(strip) {
 }
 
 /**
- * Наш ли это лист — по QR в углу поля записи.
+ * Найти на странице код бланка — и ответить, наш ли это лист.
  *
- * Код **не декодируется**: содержимое у него постоянное, и читать его незачем.
- * Проверяется узор — три «глаза» по углам, те самые концентрические квадраты,
- * по которым QR узнают все декодеры. Каждый из них семь модулей на семь:
- * тёмная рамка, светлое кольцо, тёмная сердцевина. Три совпавших глаза значит
- * «наш лист», и никакой библиотеки для этого не нужно.
+ * **Ищется, а не проверяется на заданном месте, и это вся разница.** Прежняя
+ * проверка брала гомографию шапки, проецировала ею центр каждого модуля и
+ * сэмплировала по пикселю. Код же стоит внизу листа, в четверти метра от
+ * меток, по которым эта гомография построена: чтобы попасть в свой модуль,
+ * выпрямление должно было врать меньше чем на четверть миллиметра на другом
+ * конце бумаги. На живой пачке из тридцати четырёх листов оно не попадало
+ * никогда — «наш бланк» доказывала сетка, а код молчал всегда.
  *
- * Работает это только после выпрямления: без гомографии мы не знаем, где у
- * листа угол. Так и надо — лист без меток и не наш по определению.
+ * QR устроен так, что находится сам: три «глаза» узнаются сканированием строк
+ * на соотношение 1:1:3:1:1, без всякой предварительной геометрии. Мы это
+ * свойство выбрасывали и платили за него полной ценой.
+ *
+ * Отсюда и обратное следствие, ради которого стоило заводить декодер: найденный
+ * код — это **опора у нижнего края листа**, которой у выпрямления шапки нет
+ * вовсе. Он не потребитель геометрии, а её источник.
+ *
+ * Возвращается `{payload, corners, ours}` или `null`, если кода нет вовсе.
+ * Кодов на бланке два, берётся первый найденный: содержимое у них одинаковое,
+ * а угол нужен любой.
+ *
+ * **«Код есть» и «код наш» — снова два разных ответа**, и слипаться им нельзя
+ * по той же причине, что и раньше: чужой QR на листе условий это не пустота, а
+ * событие, и увидеть его надо, а не молча вернуть `null`.
  */
-export function hasBlankMark(image, h, fix = null) {
-  // код в углу ищется с той же поправкой, что и полоска: уточнение по сетке
-  // говорит, куда уехал весь лист, а не одна его шапка
-  const where = fixed(QR, fix)
-  const step = where.width / QR.modules
-  const dark = (mx, my) => {
-    const at = project(h, where.x + (mx + 0.5) * step, where.y + (my + 0.5) * step)
-    const x = Math.round(at.x)
-    const y = Math.round(at.y)
-    if (x < 1 || y < 1 || x >= image.width - 1 || y >= image.height - 1) return null
-    const p = (y * image.width + x) * 4
-    return (image.data[p] * 299 + image.data[p + 1] * 587 + image.data[p + 2] * 114) / 1000
-  }
+function decodeBand(image, top, height) {
+  const band = new Uint8ClampedArray(image.width * height * 4)
+  const from = top * image.width * 4
+  band.set(image.data.subarray(from, from + band.length))
 
-  // яркость бумаги рядом с кодом: порог считаем от неё, а не от абсолютного
-  const around = []
-  for (let mx = 0; mx < QR.modules; mx += 1) {
-    const value = dark(mx, -2)
-    if (value !== null) around.push(value)
-  }
-  if (!around.length) return false
-  const paper = around.sort((a, b) => a - b)[Math.floor(around.length / 2)]
-  const level = paper * 0.6
+  const found = jsQR(band, image.width, height, {
+    // Инверсию не пробуем: бланк печатают чёрным по белому, а лишняя попытка
+    // удваивает время на каждой странице пачки.
+    inversionAttempts: 'dontInvert',
+  })
+  if (!found) return null
 
-  const eye = (left, top) => {
-    let right = 0
-    let wrong = 0
-    for (let my = 0; my < 7; my += 1) {
-      for (let mx = 0; mx < 7; mx += 1) {
-        const value = dark(left + mx, top + my)
-        if (value === null) return false
-        const ring = mx === 0 || my === 0 || mx === 6 || my === 6
-        const middle = mx >= 2 && mx <= 4 && my >= 2 && my <= 4
-        const shouldBeDark = ring || middle
-        if ((value < level) === shouldBeDark) right += 1
-        else wrong += 1
-      }
-    }
-    return right / (right + wrong) > 0.8
+  const { topLeftCorner, topRightCorner, bottomRightCorner, bottomLeftCorner } =
+    found.location
+  const back = (point) => ({ x: point.x, y: point.y + top })
+  return {
+    payload: found.data,
+    ours: String(found.data || '').startsWith(CODE_PREFIX),
+    corners: [topLeftCorner, topRightCorner, bottomRightCorner, bottomLeftCorner].map(back),
   }
+}
 
-  const eyes = [eye(0, 0), eye(QR.modules - 7, 0), eye(0, QR.modules - 7)]
-  return eyes.filter(Boolean).length >= 2
+export function findCode(image) {
+  /*
+   * **Полный кадр локатор обманывает, и это измерено.** На отрисованной
+   * странице бланка код не находился ни в полном разрешении, ни в
+   * уменьшенном вдвое и втрое, — а стоило взять нижнюю половину кадра, и он
+   * читался сразу, и слева, и справа. Дело не в размере: тетрадное поле это
+   * тысяча перекрестий, и каждое похоже на «глаз» ровно настолько, чтобы
+   * попасть в кандидаты и обойти настоящий по счёту.
+   *
+   * Половины — не возврат к «проверить на заданном месте»: геометрии тут
+   * по-прежнему нет никакой, а есть единственное допущение «страница
+   * приблизительно вертикальна». Обе половины пробуются потому, что лист
+   * бывает вверх ногами: тогда коды окажутся вверху кадра.
+   *
+   * Полный кадр остаётся последней попыткой — для скана, обрезанного так, что
+   * код попал на середину.
+   */
+  const half = Math.floor(image.height / 2)
+  return (
+    decodeBand(image, half, image.height - half) ||
+    decodeBand(image, 0, half) ||
+    decodeBand(image, 0, image.height)
+  )
 }
 
 /**
@@ -886,11 +909,27 @@ export function extractHeader(image) {
 
   const best = rough.reduce((one, two) => (two.score > one.score ? two : one))
 
+  /*
+   * «Код найден» и «сетка сошлась» — **два разных ответа**, и слитый флаг
+   * стоил нам обоих.
+   *
+   * Раньше здесь стояло `код || сетка`, и на живой пачке из тридцати четырёх
+   * листов флаг был истинным всегда — доказывала его сетка, а код молчал на
+   * каждой странице. Экран при этом писал «метка в углу не найдена» там, где
+   * её толком не искали, а пачку размечать по коду было нельзя: разделитель,
+   * который никогда не срабатывает, — не разделитель.
+   *
+   * Теперь `code` говорит про код, `score` про сетку, а `ours` остаётся
+   * прежним сложением двух свидетельств: наш бланк доказывает любое из них, и
+   * лист с обрезанным низом не перестаёт быть нашим оттого, что код уехал за
+   * край кадра.
+   */
+  const code = findCode(image)
+
   return {
     ...best,
-    // наш бланк доказывают двое, и хватает любого: код в углу поля записи и
-    // сама сетка баллов, вставшая на печатные места
-    ours: hasBlankMark(image, best.h, best.fix) || best.score >= GRID_IS_OURS,
+    code,
+    ours: Boolean(code?.ours) || best.score >= GRID_IS_OURS,
     // ищем по HEADER, а режем по STRIP: счёт считается там, где выпрямление
     // подпёрто метками, а картинка берётся от верха листа
     strip: warp(image, best.h, fixed(STRIP, best.fix), STRIP_WIDTH, stripHeight()),

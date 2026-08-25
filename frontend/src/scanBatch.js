@@ -218,6 +218,11 @@ export async function walk(file, { onPage, send, blank, questions, stop } = {}) 
       // метка в углу: наш лист или чужой. У листа без меток гомографии нет
       // вовсе, а значит и смотреть негде — такой лист не наш по определению
       ours: Boolean(found?.ours),
+      // Код бланка, если декодер его нашёл. Отдельно от `ours`, потому что это
+      // разные свидетельства: код доказывает лист сам по себе, а `ours`
+      // складывается ещё и из сетки. Разделителем пачки служит именно код —
+      // на листе условий его нет.
+      code: found?.code?.payload ?? null,
       preview: canvas.toDataURL('image/jpeg', 0.5),
       strip: found ? toCanvas(found.strip).toDataURL('image/jpeg', 0.8) : null,
     }

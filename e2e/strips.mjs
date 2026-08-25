@@ -34,6 +34,7 @@ const pages = await page.evaluate(async () => {
         score: one.score,
         need: one.need,
         ours: one.ours,
+        code: one.code ?? null,
         readable: one.readable,
         strip: one.strip,
       }),
