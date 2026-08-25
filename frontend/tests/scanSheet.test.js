@@ -9,6 +9,7 @@ import {
   findMarks,
   findSheet,
   gridScore,
+  nameRowIsClear,
   homography,
   project,
   quads,
@@ -352,6 +353,55 @@ test('одних меток вокруг шапки хватает, чтобы �
     found.score >= ENOUGH_LINES,
     `границ ${found.score} из нужных ${ENOUGH_LINES}`,
   )
+})
+
+test('над сеткой должна быть строка имени, а не тетрадное поле', () => {
+  /*
+   * Сетка баллов симметрична, и перевёрнутая набирает те же семнадцать
+   * границ, что и прямая. На живой пачке этого хватило: страница с восемью
+   * выставленными баллами прочиталась зеркальной — победил кандидат, у
+   * которого в полоску попали тетрадное поле сверху и перевёрнутый ряд клеток
+   * снизу, со счётом 17 против 14 у верной четвёрки. Баллы ученика не
+   * потерялись с шумом, а просто не появились.
+   *
+   * Считаются столбцы, тёмные **во всю высоту** полосы имени. Буквы и штрихи
+   * почерка дают сколько угодно тёмных столбцов по среднему — первая проверка
+   * по среднему отбросила две трети годных страниц; линия проходит полосу
+   * насквозь, буква нет.
+   */
+  const strip = (draw) => {
+    const width = 512
+    const height = Math.round((width * HEADER.height) / HEADER.width)
+    const data = new Uint8ClampedArray(width * height * 4).fill(255)
+    draw((x, y, value) => {
+      const p = (y * width + x) * 4
+      data[p] = data[p + 1] = data[p + 2] = value
+      data[p + 3] = 255
+    }, width, height)
+    return { data, width, height }
+  }
+
+  const nameRow = Math.round(((GRID.y - HEADER.y) / HEADER.height) * 0 + 1)
+  assert.ok(nameRow > 0) // прогоняем расчёт полосы, чтобы он не разъехался молча
+
+  const field = strip((put, width, height) => {
+    const bottom = Math.round(((GRID.y - HEADER.y) / HEADER.height) * height)
+    for (let column = 0; column < 37; column += 1) {
+      const x = Math.round((column * width) / 37)
+      for (let y = 0; y < bottom; y += 1) put(x, y, 40)
+    }
+  })
+  assert.equal(nameRowIsClear(field), false, 'тетрадное поле принято за строку имени')
+
+  const written = strip((put, width, height) => {
+    const bottom = Math.round(((GRID.y - HEADER.y) / HEADER.height) * height)
+    // рукописное слово: короткие штрихи в середине полосы, не насквозь
+    for (let stroke = 0; stroke < 30; stroke += 1) {
+      const x = 120 + stroke * 4
+      for (let y = Math.round(bottom * 0.3); y < Math.round(bottom * 0.7); y += 1) put(x, y, 40)
+    }
+  })
+  assert.equal(nameRowIsClear(written), true, 'почерк принят за тетрадное поле')
 })
 
 test('пустой лист без сетки набирает мало и честно об этом говорит', () => {
