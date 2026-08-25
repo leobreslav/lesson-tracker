@@ -1443,6 +1443,19 @@ def scan_state(work) -> dict:
             trouble.append("placed_by_guess")
             for index in packet.by_fit:
                 by_index[index]["trouble"].append("placed_by_guess")
+        # названо вычетом: имя не прочиталось, а ученик остался последним
+        # свободным. Свидетельство сильное — список класса конечен, — но
+        # косвенное, и выдавать его за прочитанное нельзя
+        if packet.by_elimination:
+            trouble.append("placed_by_elimination")
+            for page in packet.pages:
+                by_index[page.index]["trouble"].append("placed_by_elimination")
+        # два листа блока закрыли одну и ту же задачу: в блок затесался чужой.
+        # Покрытие задач больше не решает, чей это лист, — оно сомневается
+        if packet.overlaps:
+            trouble.append("covers_twice")
+            for index in packet.overlaps:
+                by_index[index]["trouble"].append("covers_twice")
         # лист, забранный из чужого пакета по своей подписи: переложили не
         # молча, а вслух — человек видит, что решение принято за него
         if packet.signed_apart:

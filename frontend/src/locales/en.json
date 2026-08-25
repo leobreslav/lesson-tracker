@@ -1448,6 +1448,8 @@
       "beyond_questions": "a mark in a cell this work does not use",
       "first_name_only": "signed with a first name only",
       "placed_by_guess": "placed by a guess, not by a name",
+      "placed_by_elimination": "placed by elimination: everyone else was accounted for",
+      "covers_twice": "two sheets here answer the same question — one of them is not from this work",
       "mark_differs": "the mark differs from the one already there",
       "signed_apart": "taken out of its packet: it is signed by this student",
       "readers_differ": "the two readers read it differently"

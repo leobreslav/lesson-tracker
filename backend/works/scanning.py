@@ -377,6 +377,14 @@ class Packet:
     by_fit: list = field(default_factory=list)
     # страницы, забранные из чужого пакета по собственной подписи
     signed_apart: list = field(default_factory=list)
+    # пакет назван **вычетом**, а не чтением: остальные разобраны, и он
+    # достался тому, кто остался. Свидетельство это сильное, но косвенное, и
+    # человек о нём узнаёт — как и о догадке по соседству
+    by_elimination: bool = False
+    # страницы, повторившие задачи, уже закрытые в этом блоке. Покрытие задач
+    # больше не решает, чей это лист, — оно **сомневается**: два листа с одной
+    # и той же задачей значат, что в блок затесался чужой
+    overlaps: list = field(default_factory=list)
 
     @property
     def all_pages(self) -> list:
@@ -650,26 +658,7 @@ def arrange(pages: list[Page], roster: list[Person]) -> list[Packet]:
         answers = [page for page in pages if kinds[page.index] != CONDITIONS]
         assigned, doubts, by_fit = group(answers, roster)
         doubted = dict(doubts)
-        mine: dict = {}
-        packets = []
-        for page in sorted(answers, key=lambda one: one.index):
-            owner = assigned.get(page.index)
-            if owner is None:
-                packets.append(
-                    Packet(
-                        pages=[page],
-                        candidates=doubted.get(page.index, []),
-                        decided_by_human=page.decided_by_human,
-                    )
-                )
-                continue
-            if owner not in mine:
-                mine[owner] = Packet(student_id=owner)
-                packets.append(mine[owner])
-            mine[owner].pages.append(page)
-            mine[owner].decided_by_human |= page.decided_by_human
-            if page.index in by_fit:
-                mine[owner].by_fit.append(page.index)
+        packets = blocks(sorted(answers, key=lambda one: one.index), assigned, doubted, by_fit)
 
         # общие условия едут в работу каждого ученика; заблудившийся ряд
         # посреди пачки — тому пакету, перед которым он лежит
@@ -687,7 +676,12 @@ def arrange(pages: list[Page], roster: list[Person]) -> list[Packet]:
             )
             if following is not None:
                 following.conditions.append(page)
-        return packets
+        if not pile_contradicts(packets):
+            by_elimination(packets, roster)
+        # Блоки позиционны, и два блока одного ученика врозь остаются двумя —
+        # ровно затем, чтобы противоречие было видно. А в ответ едет работа, и
+        # работа у человека одна, сколько бы раз он ни брал бумагу.
+        return packets_without_duplicates(packets)
 
     for packet in by_conditions:
         decided = [page for page in packet.pages if page.decided_by_human]
@@ -701,7 +695,161 @@ def arrange(pages: list[Page], roster: list[Person]) -> list[Packet]:
             packet.student_id = scored[0][0].id
         else:
             packet.candidates = [person.id for person, _ in scored[:3]]
+
+    # Вычет идёт **после** того, как все пакеты названы по чтению: он опирается
+    # на то, что осталось, и запускать его раньше значило бы вычитать из
+    # неполного.
+    if not pile_contradicts(by_conditions):
+        by_elimination(by_conditions, roster)
     return packets_without_duplicates(split_off_signed(by_conditions, roster))
+
+
+def blocks(pages: list[Page], assigned: dict, doubted: dict, by_fit: set) -> list[Packet]:
+    """
+    Собрать пачку без листов условий в **блоки**, а не в отдельные страницы.
+
+    Порядок листов в пачке жёсткий: работы лежат подряд, и чужая страница
+    посреди чужого блока — событие примерно на тысячу пачек. Значит границу
+    блока задаёт **смена владельца**, а неподписанный лист продолжает тот, что
+    лежит над ним.
+
+    Раньше эта мысль была разрывом ничьей: неподписанная страница шла к тому,
+    у кого свободны её задачи, а сосед сверху вспоминался, только если таких
+    оказывалось несколько. Покрытие задач — свидетельство слабое: оно говорит
+    «может принадлежать», а порядок говорит «принадлежит вот этому». На живой
+    пачке из тридцати четырёх листов покрытие резало её на **двадцать четыре**
+    пакета вместо тринадцати работ — то есть человеку приходилось решать
+    «чей это лист» вдвое чаще, чем есть работ, а вычету по остатку было не из
+    чего вычитать.
+
+    Правило поэтому простое: неподписанный лист **всегда** достаётся
+    предыдущему блоку. Подписанный открывает новый — кроме случая, когда
+    подписан он тем же, кто владеет нынешним: ученик подписывает и второй свой
+    лист, и это не новая работа.
+    """
+    packets: list[Packet] = []
+    current: Packet | None = None
+
+    for page in pages:
+        owner = assigned.get(page.index)
+        same = current is not None and owner is not None and current.student_id == owner
+        # неподписанный лист продолжает блок, подписанный своим же именем тоже
+        joins = current is not None and (same or (not page.named and not page.decided_by_human))
+
+        if joins:
+            # Покрытие задач тут не решает, а сомневается: лист, повторивший
+            # уже закрытую в блоке задачу, — повод спросить человека, а не
+            # повод переложить лист. Решать им было слишком слабо (на живой
+            # пачке такая раскладка ошибалась молча), а сомневаться в самый раз.
+            if page.answered & {q for one in current.pages for q in one.answered}:
+                current.overlaps.append(page.index)
+            current.pages.append(page)
+            current.decided_by_human |= page.decided_by_human
+            if owner is None and current.student_id is not None:
+                # лист лёг к соседу, а не по собственному имени — и человек
+                # об этом узнает: догадка законная, но это догадка
+                current.by_fit.append(page.index)
+            if page.index in by_fit and page.index not in current.by_fit:
+                current.by_fit.append(page.index)
+            continue
+
+        current = Packet(
+            pages=[page],
+            student_id=owner,
+            candidates=doubted.get(page.index, []),
+            decided_by_human=page.decided_by_human,
+            by_fit=[page.index] if page.index in by_fit else [],
+        )
+        packets.append(current)
+
+    return packets
+
+
+def pile_contradicts(packets: list[Packet]) -> bool:
+    """
+    Есть ли в пачке противоречие — то, чего при жёстком порядке быть не может.
+
+    Порядок листов в пачке жёсткий: работы лежат блоками, и чужая страница в
+    середине чужого блока — событие примерно на тысячу пачек. Из этого следует
+    проверка, которой раньше не было: **один ученик не может владеть двумя
+    пакетами, лежащими врозь.** Соседние пакеты одного ученика — это законный
+    второй комплект листов (их сливает `packets_without_duplicates`), а вот
+    пакет в начале пачки и пакет в конце с тем же именем значат, что одно из
+    двух имён прочитано неверно.
+
+    Нужно это не ради самой пометки, а ради **вычета**: он опирается на то, что
+    пачка разложена без сдвига, и сдвиг обязан его выключать. Перепутанный лист
+    сдвигает нумерацию, и «остаток» после сдвига даёт уверенно неверный ответ
+    вместо честного вопроса — а это худшая беда из возможных здесь.
+    """
+    # Дважды закрытая задача внутри блока — то же самое противоречие, только
+    # увиденное с другой стороны: в блок затесался чужой лист.
+    if any(packet.overlaps for packet in packets):
+        return True
+
+    seen: dict = {}
+    for number, packet in enumerate(packets):
+        if packet.student_id is None:
+            continue
+        if packet.student_id in seen and number - seen[packet.student_id] > 1:
+            return True
+        seen[packet.student_id] = number
+    return False
+
+
+def by_elimination(packets: list[Packet], roster: list[Person]) -> None:
+    """
+    Дать имена оставшимся пакетам по остатку. Меняет пакеты на месте.
+
+    **Смысл в том, что список класса конечен.** Двенадцать пакетов из
+    тринадцати разобраны уверенно — значит тринадцатый принадлежит тому
+    единственному, кто остался, и это не догадка, а вычет. На живой пачке
+    страницу «Артём Степанов» не прочитал **ни один** из четырёх читателей —
+    «Кирилл Беганов», «Состанов», «анов Сделано с», — и вернуть её мог только
+    остаток. Стоит он ноль запросов и ноль денег.
+
+    Правил два, и оба идут до неподвижности:
+
+    * **один пакет и один ученик** — они друг друга, и спорить не с чем;
+    * **счёт против оставшихся, а не против всего класса.** Имя, бывшее ничьёй
+      среди двадцати пяти, среди трёх оставшихся становится однозначным:
+      «Белов» и «Белова» неразличимы, пока оба свободны, и различимы, как
+      только один из них уже разобран.
+
+    Чего вычет **не** делает: он не спорит с прочитанным именем. Пакет,
+    названный уверенно, в свободные не попадает вовсе, и остаток на него не
+    покушается. И вся процедура не запускается, если в пачке нашлось
+    противоречие (`pile_contradicts`): опора вычета — жёсткий порядок, а
+    противоречие говорит, что порядка нет.
+    """
+    while True:
+        free_packets = [
+            packet
+            for packet in packets
+            if packet.student_id is None and not packet.decided_by_human
+        ]
+        taken = {packet.student_id for packet in packets if packet.student_id is not None}
+        free_people = [person for person in roster if person.id not in taken]
+        if not free_packets or not free_people:
+            return
+
+        if len(free_packets) == 1 and len(free_people) == 1:
+            free_packets[0].student_id = free_people[0].id
+            free_packets[0].by_elimination = True
+            free_packets[0].candidates = []
+            return
+
+        moved = False
+        for packet in free_packets:
+            scored = vote(packet, free_people)
+            if _sure(scored):
+                packet.student_id = scored[0][0].id
+                packet.by_elimination = True
+                packet.candidates = []
+                moved = True
+                break
+        if not moved:
+            return
 
 
 def packets_without_duplicates(packets: list[Packet]) -> list[Packet]:

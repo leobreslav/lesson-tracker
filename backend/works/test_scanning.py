@@ -534,13 +534,20 @@ class PacketTests(SimpleTestCase):
         self.assertEqual(owners[2], [0, 1])
         self.assertEqual(owners[3], [2])
 
-    def test_a_neighbour_does_not_beat_coverage(self):
+    def test_a_repeated_question_doubts_instead_of_moving_the_page(self):
         """
-        Сосед решает только там, где покрытие оставило выбор.
+        Покрытие задач больше не решает, чей это лист, — оно **сомневается**.
 
-        У страницы 1 та же задача, что у Фила на странице 0, — значит лист не
-        его, как бы близко он ни лежал. Соседство добавляет свидетельство, а не
-        отменяет чужое.
+        Порядок в пачке жёсткий, и неподписанный лист принадлежит соседу
+        сверху; это свидетельство сильнее, чем «у него свободна эта задача».
+        Покрытие же говорило «может принадлежать», и решать им было слишком
+        слабо: на живой пачке такая раскладка ошиблась четырежды из
+        пятнадцати, и ошиблась молча.
+
+        Но сам сигнал никуда не делся: два листа с одной и той же задачей в
+        одном блоке значат, что в него затесался чужой. Поэтому лист остаётся
+        у соседа, а блок помечается — и вычет по остатку на такой пачке
+        выключается целиком.
         """
         pages = [
             page(0, "Fil", "Burmov", {0: 1}),
@@ -550,12 +557,11 @@ class PacketTests(SimpleTestCase):
 
         packets = arrange(pages, ROSTER)
 
-        owner = next(
-            packet.student_id
-            for packet in packets
-            if 1 in [p.index for p in packet.pages]
+        mine = next(
+            packet for packet in packets if 1 in [p.index for p in packet.pages]
         )
-        self.assertNotEqual(owner, 2)
+        self.assertEqual(mine.student_id, 2, "лист ушёл от соседа сверху")
+        self.assertEqual(mine.overlaps, [1], "повтор задачи не помечен")
 
     def test_a_misread_name_drowns_among_the_others(self):
         """Восемь листов — восемь голосов; одна ошибка чтения ничего не решает."""
@@ -627,6 +633,89 @@ class PacketTests(SimpleTestCase):
 
         self.assertEqual(len(packets), 1)
         self.assertEqual([p.index for p in packets[0].all_pages], [0, 1, 2, 3])
+
+    def test_the_last_packet_goes_to_the_last_student_left(self):
+        """
+        Список класса конечен, и это свидетельство.
+
+        Двое разобраны уверенно — значит третий пакет принадлежит третьему
+        ученику, и это не догадка, а вычет. На живой пачке страницу «Артём
+        Степанов» не прочитал ни один из четырёх читателей — «Кирилл Беганов»,
+        «Состанов», «анов Сделано с», — и вернуть её мог только остаток.
+        """
+        pages = [
+            page(0, headerless=True),
+            page(1, "Shahar", "Jerbi", {0: 1}),
+            page(2, headerless=True),
+            page(3, "Fil", "Burmov", {0: 2}),
+            page(4, headerless=True),
+            page(5, "Оывоа", "Ыаоыв", {0: 3}),
+        ]
+
+        packets = arrange(pages, ROSTER)
+
+        last = packets[-1]
+        self.assertEqual(last.student_id, 3, "остаток не сработал")
+        self.assertTrue(last.by_elimination, "вычет выдан за прочитанное имя")
+        self.assertEqual(last.candidates, [])
+
+    def test_elimination_narrows_a_name_that_was_a_tie(self):
+        """
+        Счёт считается против **оставшихся**, а не против всего класса. Имя,
+        бывшее ничьёй среди всех, среди свободных становится однозначным.
+        """
+        roster = [
+            Person(id=1, first="Анна", last="Белова"),
+            Person(id=2, first="Никита", last="Белов"),
+        ]
+        pages = [
+            page(0, headerless=True),
+            page(1, "Анна", "Белова", {0: 1}),
+            page(2, headerless=True),
+            page(3, "", "Белов", {0: 2}),
+        ]
+
+        packets = arrange(pages, roster)
+
+        self.assertEqual([one.student_id for one in packets], [1, 2])
+
+    def test_a_contradiction_switches_elimination_off(self):
+        """
+        Опора вычета — жёсткий порядок пачки. Один ученик, владеющий двумя
+        пакетами **врозь**, говорит, что порядка нет: одно из двух имён
+        прочитано неверно. Перепутанный лист сдвигает нумерацию, и остаток
+        после сдвига даёт уверенно неверный ответ вместо честного вопроса.
+        """
+        pages = [
+            page(0, headerless=True),
+            page(1, "Fil", "Burmov", {0: 1}),
+            page(2, headerless=True),
+            page(3, "Оывоа", "Ыаоыв", {0: 2}),
+            page(4, headerless=True),
+            page(5, "Fil", "Burmov", {0: 3}),
+        ]
+
+        packets = arrange(pages, ROSTER)
+
+        self.assertFalse(
+            any(one.by_elimination for one in packets),
+            "вычет сработал на пачке, в которой нашлось противоречие",
+        )
+
+    def test_elimination_does_not_argue_with_a_name_that_was_read(self):
+        """
+        Пакет, названный уверенно, в свободные не попадает вовсе: остаток
+        досказывает, а не переспорит.
+        """
+        pages = [
+            page(0, headerless=True),
+            page(1, "Fil", "Burmov", {0: 1}),
+        ]
+
+        packets = arrange(pages, ROSTER)
+
+        self.assertEqual(packets[0].student_id, 2)
+        self.assertFalse(packets[0].by_elimination)
 
     def test_a_silent_packet_is_a_doubt(self):
         """Никто не подписался — решает человек, а не покрытие задач."""
