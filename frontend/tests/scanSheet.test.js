@@ -10,6 +10,7 @@ import {
   findSheet,
   gridScore,
   nameRowIsClear,
+  withoutStrayInk,
   homography,
   project,
   quads,
@@ -495,4 +496,46 @@ test('кроп берёт именно шапку, а не середину ли
   assert.equal(HEADER.y, 8)
   assert.equal(HEADER.height, 30)
   assert.ok(STRIP.y < HEADER.y, 'кроп обязан начинаться выше области поиска')
+})
+
+
+test('чужой хвост из клетки убирается, а своя цифра остаётся', () => {
+  /*
+   * Клетка режется по печатным границам, и цифра соседа, написанная
+   * размашисто, заходит **за** границу — на бумаге, а не по вине выпрямления.
+   * На живой пачке этого хватило, чтобы у пустой Q6 прочиталась единица: в неё
+   * залез хвост двойки из Q5. Ошибка молчаливая и худшего рода — балл
+   * появляется там, где на бумаге ничего нет.
+   *
+   * Первый заход считал только площадь и **стёр настоящую двойку**: написанная
+   * размашисто, она касалась края и в порог уложилась. Отсюда второй признак:
+   * цифра стоит в клетке во весь рост, а чужой хвост входит сбоку низким
+   * росчерком. Нужны оба разом.
+   */
+  const cell = (draw) => {
+    const side = 120
+    const data = new Uint8ClampedArray(side * side * 4).fill(255)
+    draw((x, y) => {
+      const p = (y * side + x) * 4
+      data[p] = data[p + 1] = data[p + 2] = 30
+    }, side)
+    return { data, width: side, height: side }
+  }
+  const inked = (image) => {
+    let dark = 0
+    for (let i = 0; i < image.data.length; i += 4) if (image.data[i] < 128) dark += 1
+    return dark
+  }
+
+  // низкий росчерк от края — чужой хвост
+  const tail = cell((put) => {
+    for (let x = 0; x < 22; x += 1) for (let y = 60; y < 66; y += 1) put(x, y)
+  })
+  assert.equal(inked(withoutStrayInk(tail)), 0, 'чужой хвост остался в клетке')
+
+  // высокий штрих у края — своя цифра, написанная размашисто
+  const digit = cell((put, side) => {
+    for (let x = 0; x < 26; x += 1) for (let y = 20; y < side - 20; y += 1) put(x, y)
+  })
+  assert.ok(inked(withoutStrayInk(digit)) > 0, 'своя цифра стёрта вместе с хвостом')
 })

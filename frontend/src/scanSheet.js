@@ -1051,13 +1051,66 @@ export const GRID_IS_OURS = 16
  */
 export const CELL_SIDE = 120
 
+/**
+ * Каким бывает чужой хвост: низким и мелким.
+ *
+ * Первый заход считал только площадь — и **стёр настоящую двойку**: написанная
+ * размашисто, она касалась края клетки и в порог по площади уложилась. Это
+ * ровно та ошибка, которой тут надо избегать: стёртая цифра — потерянный балл,
+ * а оставленный хвост человек увидит на полоске рядом и поправит.
+ *
+ * Различает их **высота**. Цифра стоит в клетке во весь рост; хвост соседней
+ * входит сбоку низким росчерком — у него и высота мала, и площадь. Требуются
+ * оба признака разом.
+ */
+const STRAY = 0.05
+const STRAY_HEIGHT = 0.35
+
+/**
+ * Убрать из клетки чернила, зашедшие в неё от соседа.
+ *
+ * Клетка режется по печатным границам, и цифра соседа, написанная размашисто,
+ * заходит **за** границу — на бумаге, а не по вине выпрямления. На живой пачке
+ * этого хватило, чтобы у пустой Q6 прочиталась единица: в неё залез хвост
+ * двойки из Q5. Ошибка тут молчаливая и худшего рода — балл появляется там, где
+ * на бумаге ничего нет.
+ *
+ * Отличает их **связность**: цифра лежит в клетке целиком, а хвост входит с
+ * края и там же обрывается. Поэтому вычёркивается пятно, которое касается
+ * левого или правого края и при этом мало. Верх и низ не трогаем: там границы
+ * клетки, а не соседи, и цифра часто их задевает.
+ */
+export function withoutStrayInk(cell) {
+  const { gray, width, height } = toGray(cell)
+
+  const sorted = [...gray].sort((a, b) => a - b)
+  const paper = sorted[Math.floor(sorted.length * 0.9)]
+  const level = paper - Math.max(12, paper * 0.15)
+
+  const blobs = components({ gray, width, height }, (value) => value < level)
+  const data = new Uint8ClampedArray(cell.data)
+
+  for (const blob of blobs) {
+    const touches = blob.minX <= 1 || blob.maxX >= width - 2
+    const low = blob.maxY - blob.minY < height * STRAY_HEIGHT
+    if (!touches || !low || blob.size > width * height * STRAY) continue
+    for (let y = blob.minY; y <= blob.maxY; y += 1) {
+      for (let x = blob.minX; x <= blob.maxX; x += 1) {
+        const at = (y * width + x) * 4
+        data[at] = data[at + 1] = data[at + 2] = 255
+      }
+    }
+  }
+  return { data, width, height }
+}
+
 export function cutForReading(image, h, fix = null) {
   const row = fixed(nameRow(), fix)
   const rowHeight = Math.round((STRIP_WIDTH * row.height) / row.width)
   return {
     name: warp(image, h, row, STRIP_WIDTH, rowHeight),
     cells: Array.from({ length: GRID.cells }, (_, index) =>
-      warp(image, h, fixed(cellRect(index), fix), CELL_SIDE, CELL_SIDE),
+      withoutStrayInk(warp(image, h, fixed(cellRect(index), fix), CELL_SIDE, CELL_SIDE)),
     ),
   }
 }

@@ -163,12 +163,26 @@ export function nameRow() {
  * уезжал в сумму, а вся строка — на клетку влево. Спрашивать её об этом
  * незачем, когда ответ посчитан.
  */
+/**
+ * Отступ от краёв клетки, миллиметры.
+ *
+ * Клетка резалась **вместе с печатными границами**, и вместе с ними в плитку
+ * заглядывала соседняя. На живой пачке этого хватило: у пустой Q6 читалась
+ * единица — в кроп попал хвост двойки, написанной в Q5. Клетка при этом пустая,
+ * и ошибка молчаливая: балл появляется там, где на бумаге ничего нет.
+ *
+ * Миллиметр — это чуть меньше десятой доли клетки: печатная граница (0.2 мм) и
+ * промах выпрямления в неё укладываются, а цифра пишется посередине и обрезки
+ * не замечает.
+ */
+export const CELL_INSET = 1
+
 export function cellRect(index) {
   return {
-    x: GRID.x + index * GRID.cellWidth,
-    y: GRID.y + GRID.labelHeight,
-    width: GRID.cellWidth,
-    height: GRID.height - GRID.labelHeight,
+    x: GRID.x + index * GRID.cellWidth + CELL_INSET,
+    y: GRID.y + GRID.labelHeight + CELL_INSET,
+    width: GRID.cellWidth - CELL_INSET * 2,
+    height: GRID.height - GRID.labelHeight - CELL_INSET * 2,
   }
 }
 
