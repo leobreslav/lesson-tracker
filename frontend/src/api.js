@@ -527,6 +527,9 @@ export const uploadAttachment = ({
   file,
   title,
   inline = false,
+  // видно ли это классу. Едет **с загрузкой**, а не выставляется следом:
+  // приложенные видимыми ответы к контрольной успевают побывать открытыми
+  staffOnly = false,
 }) => {
   const form = new FormData()
   if (planRow) form.append('plan_row', planRow)
@@ -538,9 +541,23 @@ export const uploadAttachment = ({
   // «эта картинка встала в текст»: в списке материалов её не будет, и
   // распоряжается ею содержание, а не список
   if (inline) form.append('inline', 'true')
+  if (staffOnly) form.append('staff_only', 'true')
 
   return request('/api/attachments/', { method: 'POST', body: form })
 }
+
+/**
+ * Передумать: показать классу спрятанное или спрятать показанное.
+ *
+ * Отдельным запросом, а не пересозданием вложения: файл в бакете тот же, и
+ * заново возить его ради одного признака значило бы платить местом за
+ * передуманное решение.
+ */
+export const setAttachmentVisibility = (id, staffOnly) =>
+  request(`/api/attachments/${id}/`, {
+    method: 'PATCH',
+    body: { staff_only: staffOnly },
+  })
 
 /** Материал, у которого нет ни файла, ни адреса: «Мордкович, §14». */
 export const addTextAttachment = ({ planRow, templateRow, title }) =>

@@ -38,6 +38,13 @@ ALLOWED = {
     ".svg": {"image/svg+xml"},
     ".pdf": {"application/pdf"},
     ".txt": {"text/plain"},
+    # Исходники, которыми учитель пишет условия. Оба — обычный текст, и
+    # опасности в них не больше, чем в `.txt`: отдаются они с чужого домена и
+    # `Content-Disposition: attachment`, то есть браузер их сохраняет, а не
+    # исполняет. Тип браузеры для них объявляют вразнобой — от `text/x-tex` до
+    # пустого, — поэтому вариантов несколько, а решает всё равно расширение.
+    ".tex": {"text/x-tex", "application/x-tex", "application/x-latex", "text/plain"},
+    ".md": {"text/markdown", "text/x-markdown", "text/plain"},
     ".docx": {
         "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
     },

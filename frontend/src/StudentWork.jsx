@@ -8,11 +8,13 @@ import PhotoStrip from './PhotoStrip'
 import PhotoViewer from './PhotoViewer'
 import {
   fetchStudentWork,
+  openAttachment,
   removeWorkPhoto,
   sendAnswer,
   sendWorkPhoto,
 } from './api'
 import { dateTime } from './dates'
+import { formatSize, iconFor } from './fileKind'
 import { POLL_MS } from './polling'
 
 /**
@@ -127,6 +129,69 @@ export default function StudentWork() {
       {work.description && (
         <section className="panel">
           <Markdown text={work.description} />
+        </section>
+      )}
+
+      {/*
+        * Приложенное к заданию: условия одним pdf'ом, бланк, разбор после
+        * урока.
+        *
+        * Раздела этого не было вовсе, и это была не забывчивость экрана, а
+        * дыра во всю дорогу: сервер отдавал `files` ученику с самого начала,
+        * права под них были написаны отдельно («сюда смотрит весь класс»), а
+        * нарисовать их забыли — и приложенные условия не видел никто, кроме
+        * учителя, приложившего их. Наружу это выглядит как «прикрепил, а у
+        * детей ничего»: жалоба на загрузку, а не на показ, и искать её пошли
+        * бы не туда.
+        *
+        * Спрятанное от класса сюда не приезжает вовсе — `files_of(staff=False)`
+        * на сервере, — поэтому здесь не спрашивают ни о чём: что пришло, то и
+        * показано.
+        */}
+      {(work.files ?? []).length > 0 && (
+        <section className="panel">
+          <h2>{t('student.work.files')}</h2>
+          <ul className="attachments">
+            {work.files.map((item) => {
+              const size = formatSize(item.size)
+
+              return (
+                <li key={item.id} className="attachment">
+                  <span className="attachment-icon" aria-hidden="true">
+                    {iconFor(item)}
+                  </span>
+                  {item.kind === 'link' ? (
+                    <a
+                      href={item.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="title"
+                    >
+                      {item.title}
+                    </a>
+                  ) : (
+                    <button
+                      type="button"
+                      className="link title"
+                      title={t('lesson.download')}
+                      onClick={() =>
+                        openAttachment(item.id).catch((failure) =>
+                          setError(failure.message),
+                        )
+                      }
+                    >
+                      {item.title}
+                    </button>
+                  )}
+                  {size && (
+                    <span className="hint">
+                      {t(`lesson.size.${size.unit}`, { value: size.value })}
+                    </span>
+                  )}
+                </li>
+              )
+            })}
+          </ul>
         </section>
       )}
 

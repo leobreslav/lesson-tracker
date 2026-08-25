@@ -317,6 +317,58 @@ test('отметка учителя доезжает до ученика сам�
   await expect(first.locator('.attempt-list li')).toHaveClass(/correct/)
 })
 
+/*
+ * Материалы задания: класс видит открытое ему и не видит спрятанного.
+ *
+ * Тест браузерный, и это не прихоть. Приложенное к работе сервер отдавал
+ * ученику с самого начала — и права под это были написаны отдельно, — а экран
+ * ученика не рисовал их вовсе: раздела не существовало. Питоновский набор
+ * такое не ловит по построению, он проверяет ответ, а не показ, и дыра прожила
+ * всю дорогу именно поэтому.
+ *
+ * Вложение заводится ссылкой: ключей R2 у стенда нет намеренно, и настоящий
+ * файл сюда не загрузить. Проверяется не загрузка — её держат питоновские
+ * тесты, — а то, что открытое доходит до глаз, а спрятанное не доходит.
+ */
+test('материалы задания: открытое видно классу, спрятанное — нет', async ({
+  page,
+  signIn,
+  api,
+}) => {
+  const teacher = await api(PEOPLE.ivanova)
+  const work = await provingWork(teacher)
+
+  await teacher.post('/api/attachments/', {
+    work: work.id,
+    url: 'https://example.com/variants.pdf',
+    title: 'Условия варианта',
+  })
+  await teacher.post('/api/attachments/', {
+    work: work.id,
+    url: 'https://example.com/answers.pdf',
+    title: 'Ответы к варианту',
+    staff_only: true,
+  })
+
+  await signIn(PEOPLE.student)
+  await page.goto('/')
+  await ready(page)
+  await page.getByRole('link', { name: 'Проверочная: формулы сложения' }).click()
+  await ready(page)
+
+  await expect(page.getByText('Условия варианта')).toBeVisible()
+  await expect(page.getByText('Ответы к варианту')).toHaveCount(0)
+})
+
+/** «Проверочная» из демо: на ней проверяют и ответы, и материалы. */
+async function provingWork(teacher) {
+  const courses = await teacher.get('/api/courses/')
+  const course = courses.body.find((item) => item.name === 'Grade 6 Algebra')
+  const works = await teacher.get(`/api/works/?course=${course.id}`)
+
+  return works.body.find((item) => item.title.startsWith('Проверочная'))
+}
+
 /** Первая задача «Проверочной» — в ней ученик отвечает, а учитель проверяет. */
 async function firstTask(teacher) {
   const courses = await teacher.get('/api/courses/')

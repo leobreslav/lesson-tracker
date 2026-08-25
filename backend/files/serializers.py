@@ -54,8 +54,30 @@ class AttachmentSerializer(serializers.ModelSerializer):
             "size",
             "content_type",
             "is_shared",
+            # «видно только учителю» — не показ, а право, и правится оно тут
+            # же, строкой в списке: решают это в тот же заход, что и
+            # прикладывают, а перепутанное решение исправляют немедленно
+            "staff_only",
         )
         read_only_fields = ("id", "kind", "url", "position", "inline")
+
+    def validate_staff_only(self, value):
+        """
+        Прятать можно только то, что классу вообще показывают.
+
+        План и полку ученик не читает вовсе, тетрадь — своя собственная, и
+        «спрятать» там значило бы спрятать её от хозяина. Признак имеет смысл
+        ровно у вложения работы, и молча принятый в остальных местах он
+        обещал бы право, которого не даёт.
+        """
+        owner = self.instance
+        if value and owner is not None and owner.work_id is None:
+            api_error(
+                Codes.ATTACHMENT_KIND_MISMATCH,
+                "Only what is attached to a work can be hidden from the class.",
+                field="staff_only",
+            )
+        return value
 
     def get_is_shared(self, obj) -> bool:
         # the annotation when it is there, the model's own answer otherwise
@@ -93,6 +115,12 @@ class AttachmentCreateSerializer(serializers.Serializer):
     kind = serializers.ChoiceField(choices=KINDS, required=False)
     # «эта картинка встала в текст» — про распоряжение ею, а не про вид
     inline = serializers.BooleanField(required=False, default=False)
+    # Кому видно: классу или только учителю. Спрашивается **при загрузке**, а
+    # не переключается после, и это про окно, а не про удобство: ответы к
+    # контрольной, приложенные видимыми и спрятанные через секунду, эту
+    # секунду были открыты всему классу — а класс в этот момент как раз и
+    # смотрит на работу.
+    staff_only = serializers.BooleanField(required=False, default=False)
 
     def get_fields(self):
         from .access import (
@@ -120,6 +148,15 @@ class AttachmentCreateSerializer(serializers.Serializer):
                 "Name exactly one owner: «plan_row», «template_row», «work» "
                 "or «student_work».",
                 field="plan_row",
+            )
+
+        if attrs.get("staff_only") and owners["work"] is None:
+            # прятать можно только то, что классу вообще показывают: план и
+            # полку он не читает, а тетрадь — его собственная
+            api_error(
+                Codes.ATTACHMENT_KIND_MISMATCH,
+                "Only what is attached to a work can be hidden from the class.",
+                field="staff_only",
             )
 
         plan_row, template_row = owners["plan_row"], owners["template_row"]

@@ -234,6 +234,23 @@ class UploadTests(FilesTestCase):
         self.assertEqual(refused.status_code, 400)
         self.assertEqual(refused.data["code"], "file_type_not_allowed")
 
+    def test_the_source_a_teacher_writes_conditions_in_comes_in(self):
+        """
+        Латех и markdown — обычный текст, и опасности в них не больше, чем в
+        `.txt`: отдаются они с чужого домена и заголовком «сохранить», то есть
+        браузер их не исполняет. А без них учитель не мог приложить к работе
+        то, из чего условия и сделаны.
+
+        Тип браузеры для них объявляют вразнобой, вплоть до пустого, — решает
+        расширение, и оба случая проверяются здесь.
+        """
+        self.assertEqual(
+            self.attach_via_api(name="variant.tex", kind="text/x-tex").status_code, 201
+        )
+        self.assertEqual(
+            self.attach_via_api(name="notes.md", kind="").status_code, 201
+        )
+
     def test_a_browser_that_does_not_know_the_type_is_still_believed(self):
         allowed = self.attach_via_api(
             name="plan.docx", kind="application/octet-stream"
@@ -1429,13 +1446,14 @@ class WorkHandoutTests(FilesTestCase):
             "чужая пачка для ученика не «запрещена», а не существует",
         )
 
-    def test_the_pile_is_no_handout_for_the_teacher_either(self):
+    def test_the_teacher_sees_what_he_himself_hid(self):
         """
-        В списке материалов работы её тоже нет: её не задают, а разбирают.
+        Спрятанное от класса прячется от класса, а не от того, кто прятал.
 
-        Список — это то, чем на уроке пользуются и что правят строкой за
-        строкой; отсканированная стопка там была бы строкой, которую нельзя
-        ни отдать классу, ни объяснить.
+        Список какое-то время убирал `staff_only` у всех — признак значил
+        тогда одну вещь, отсканированную стопку. Стоило ему стать настройкой
+        любого вложения работы, и такой фильтр отнял бы у учителя и право
+        убрать спрятанное, и право передумать.
         """
         from works.services import attach_batch
 
@@ -1445,7 +1463,76 @@ class WorkHandoutTests(FilesTestCase):
 
         listed = self.client.get(reverse("attachment-list"), {"work": self.work.pk})
 
-        self.assertNotIn(pile.pk, [item["id"] for item in listed.data])
+        self.assertIn(pile.pk, [item["id"] for item in listed.data])
+
+    def test_a_file_may_be_attached_hidden_from_the_class(self):
+        """
+        Видимость спрашивается **при загрузке**, а не выставляется после.
+
+        Ответы к контрольной, приложенные видимыми и спрятанные через
+        секунду, эту секунду были открыты всему классу — а класс в этот
+        момент как раз и смотрит на работу.
+        """
+        answer = self.client.post(
+            reverse("attachment-list"),
+            {
+                "work": self.work.pk,
+                "file": make_upload(name="answers.pdf"),
+                "staff_only": "true",
+            },
+            format="multipart",
+        )
+
+        self.assertEqual(answer.status_code, 201, answer.content)
+        self.assertTrue(answer.data["staff_only"])
+
+        self.sign_in(self.student)
+        listed = self.client.get(reverse("attachment-list"), {"work": self.work.pk})
+        self.assertEqual([item["id"] for item in listed.data], [])
+
+    def test_the_teacher_may_change_his_mind_about_who_sees_it(self):
+        """Разобрали на уроке — можно и открыть; передумать нельзя было ничем."""
+        hidden = self.client.post(
+            reverse("attachment-list"),
+            {
+                "work": self.work.pk,
+                "file": make_upload(name="answers.pdf"),
+                "staff_only": "true",
+            },
+            format="multipart",
+        ).data
+
+        answer = self.client.patch(
+            reverse("attachment-detail", args=[hidden["id"]]),
+            {"staff_only": False},
+            format="json",
+        )
+
+        self.assertEqual(answer.status_code, 200, answer.content)
+        self.sign_in(self.student)
+        listed = self.client.get(reverse("attachment-list"), {"work": self.work.pk})
+        self.assertEqual([item["id"] for item in listed.data], [hidden["id"]])
+
+    def test_hiding_makes_no_sense_where_the_class_never_looks(self):
+        """
+        Признак имеет смысл только у вложения работы.
+
+        План и полку ученик не читает вовсе, а тетрадь — его собственная, и
+        «спрятать» там значило бы спрятать её от хозяина. Принятый молча, он
+        обещал бы право, которого не даёт.
+        """
+        answer = self.client.post(
+            reverse("attachment-list"),
+            {
+                "plan_row": self.lesson.pk,
+                "file": make_upload(name="notes.pdf"),
+                "staff_only": "true",
+            },
+            format="multipart",
+        )
+
+        self.assertEqual(answer.status_code, 400)
+        self.assertEqual(answer.json()["code"], "attachment_kind_mismatch")
 
     def test_the_teacher_may_still_throw_the_pile_away(self):
         """

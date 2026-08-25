@@ -792,10 +792,12 @@ class StudentWorkView(APIView):
                 "id": work.pk,
                 "title": work.title,
                 "description": work.description,
-                # приложенное к заданию: условия pdf'ом, бланк, что угодно.
-                # Тем же составом, что видит учитель, — `files_of` одна на
-                # обе стороны
-                "files": files_of(work),
+                # Приложенное к заданию: условия pdf'ом, бланк, что угодно.
+                # Тем же расчётом, что и у учителя, но **его** составом:
+                # спрятанное от класса (ответы, разбор, отсканированная
+                # пачка) сюда не едет. Это единственное место, где стороны
+                # расходятся, и потому флаг назван прямо, а не подразумевается.
+                "files": files_of(work, staff=False),
                 "course_name": work.course.name,
                 "state": work.state(),
                 "opens_at": work.opens_at,

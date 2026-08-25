@@ -13,6 +13,7 @@
 был один на все вопросы разом.
 """
 
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.urls import reverse
 from files.models import Attachment
 from rest_framework.test import APITestCase
@@ -165,15 +166,45 @@ class StudentViewTests(PaperTestCase):
             [item["id"] for item in body["papers"]], [self.my_scan.pk]
         )
 
-    def test_the_scanned_pile_is_no_material_of_the_assignment(self):
+    def test_the_class_gets_what_is_attached_for_the_class(self):
         """
-        Пачка приложена к работе — и в материалах задания её нет ни у кого.
+        Приложенное к заданию доезжает до ученика — иначе его незачем класть.
 
-        Место опасное именно тем, что оно одно на обе стороны: `files_of`
-        собирает материалы и учителю, и ученику. Забудь тут условие, и стопка
-        со всем классом уехала бы ему молча — при живом `staff_only` во всех
-        остальных дверях. Учителю она нужна не здесь, а в столбце PDF сводной
-        таблицы, рядом с нарезанными из неё работами.
+        Сторож на дыру, прожившую всю дорогу: сервер отдавал `files` с самого
+        начала и права под них были написаны отдельно, а экран ученика их не
+        рисовал вовсе. Поймать это тестом было нечем — payload проверяли, а
+        показ нет, — поэтому проверяется здесь **состав**, а браузерным
+        тестом рядом то, что он виден.
+        """
+        handout = self.client.post(
+            reverse("attachment-list"),
+            {
+                "work": self.work.pk,
+                "file": SimpleUploadedFile(
+                    "variants.pdf", b"%PDF-1.4 variants", content_type="application/pdf"
+                ),
+            },
+            format="multipart",
+        ).data
+
+        self.sign_in(self.student)
+        body = self.client.get(reverse("student-work", args=[self.work.pk])).json()
+
+        self.assertEqual([item["id"] for item in body["files"]], [handout["id"]])
+
+    def test_the_scanned_pile_is_the_teacher_s_and_nobody_else_s(self):
+        """
+        Пачка — вложение работы, спрятанное от класса, и ничего сверх того.
+
+        Своим случаем она была ровно до тех пор, пока `staff_only` значил
+        «отсканированная стопка». Теперь это настройка любого вложения работы,
+        и пачка просто одно из них: учителю видна и убирается, классу не
+        существует.
+
+        Место опасное тем, что оно одно на обе стороны: `files_of` собирает
+        материалы и учителю, и ученику. Забудь тут флаг — и стопка со всем
+        классом уедет ученику молча, при живом `staff_only` во всех остальных
+        дверях.
         """
         from . import services
 
@@ -182,7 +213,9 @@ class StudentViewTests(PaperTestCase):
         )
 
         mine = self.client.get(reverse("work-detail", args=[self.work.pk])).json()
-        self.assertNotIn(pile.pk, [item["id"] for item in mine["files"]])
+        listed = {item["id"]: item for item in mine["files"]}
+        self.assertIn(pile.pk, listed, "учитель не видит того, что сам спрятал")
+        self.assertTrue(listed[pile.pk]["staff_only"])
 
         self.sign_in(self.student)
         body = self.client.get(reverse("student-work", args=[self.work.pk])).json()

@@ -3,7 +3,12 @@ import { useTranslation } from 'react-i18next'
 import Hint from './Hint'
 import MarkdownField from './MarkdownField'
 import Rendered from './Markdown'
-import { deleteAttachment, openAttachment, uploadAttachment } from './api'
+import {
+  deleteAttachment,
+  openAttachment,
+  setAttachmentVisibility,
+  uploadAttachment,
+} from './api'
 import { formatSize, iconFor } from './fileKind'
 
 /**
@@ -69,6 +74,20 @@ export default function WorkContent({
   const [attaching, setAttaching] = useState(false)
   const [fileError, setFileError] = useState(null)
   const chooseFile = useRef(null)
+  /*
+   * Кому достанутся файлы, которые сейчас положат.
+   *
+   * Спрашивается **до** загрузки, и это не придирка к порядку. Ответы к
+   * контрольной, приложенные видимыми и спрятанные секундой позже, эту
+   * секунду открыты всему классу — а класс смотрит на работу как раз тогда,
+   * когда учитель её собирает. Передумать можно и после, строкой в списке;
+   * начать с открытого нельзя.
+   *
+   * Умолчание — «классу», потому что ради этого вложения к работе и заведены:
+   * условия, бланк, разбор после урока. Спрятанное — случай нередкий, но
+   * второй.
+   */
+  const [hidden, setHidden] = useState(false)
 
   const attach = async (chosen) => {
     if (!chosen.length) return
@@ -78,9 +97,25 @@ export default function WorkContent({
     try {
       const id = await ensureWork()
       for (const file of chosen) {
-        const added = await uploadAttachment({ work: id, file })
+        const added = await uploadAttachment({ work: id, file, staffOnly: hidden })
         setFiles((current) => [...current, added])
       }
+    } catch (failure) {
+      setFileError(failure.message)
+    } finally {
+      setAttaching(false)
+    }
+  }
+
+  /* Передумать: показать классу спрятанное или спрятать показанное. */
+  const flipVisibility = async (item) => {
+    setAttaching(true)
+    setFileError(null)
+    try {
+      const saved = await setAttachmentVisibility(item.id, !item.staff_only)
+      setFiles((current) =>
+        current.map((one) => (one.id === item.id ? { ...one, ...saved } : one)),
+      )
     } catch (failure) {
       setFileError(failure.message)
     } finally {
@@ -165,8 +200,13 @@ export default function WorkContent({
 
           Ссылок и записей тут нет намеренно — в отличие от материалов
           урока. Материал урока это то, чем пользуется учитель («принести
-          линейку»); здесь же всё, что лежит, увидит класс, и «запись без
-          цели» была бы строкой, на которую ученику нечего нажать */}
+          линейку»); здесь лежит то, что открывают файлом, и «запись без
+          цели» была бы строкой, на которую нечего нажать.
+
+          А вот **кому** это открывают, решает каждая строка сама: условия и
+          бланк — классу, ответы и разбор — только учителю. Прежде видно было
+          всё и всем, поэтому ответы к контрольной приложить было просто
+          некуда */}
       <div className="work-field">
         <div className="row middle">
           <span className="field-label">{t('works.files')}</span>
@@ -198,6 +238,21 @@ export default function WorkContent({
                       {t(`lesson.size.${size.unit}`, { value: size.value })}
                     </span>
                   )}
+                  {/* Кому виден этот файл — и тут же способ передумать.
+                      Написано состоянием, а не действием («Виден классу», а
+                      не «Показать классу»): в списке из пяти строк важнее
+                      прочитать одним взглядом, что кому открыто, чем
+                      догадаться, что случится по нажатию. Что нажатие
+                      переключает, говорит подсказка при наведении. */}
+                  <button
+                    type="button"
+                    className={item.staff_only ? 'link visibility hidden' : 'link visibility'}
+                    title={t(item.staff_only ? 'works.showToClass' : 'works.hideFromClass')}
+                    disabled={attaching || busy}
+                    onClick={() => flipVisibility(item)}
+                  >
+                    {t(item.staff_only ? 'works.onlyYou' : 'works.seenByClass')}
+                  </button>
                   <button
                     type="button"
                     className="link remove"
@@ -212,6 +267,22 @@ export default function WorkContent({
             })}
           </ul>
         )}
+
+        {/* Кому достанется то, что положат сейчас. Стоит над зоной, а не под
+            ней: решение принимается до броска, а прочитанное после — уже не
+            решение, а сообщение о случившемся. */}
+        <label className="checkbox">
+          <input
+            type="checkbox"
+            checked={hidden}
+            disabled={attaching || busy}
+            onChange={(event) => setHidden(event.target.checked)}
+          />
+          {t('works.attachHidden')}
+        </label>
+        <p className="hint">
+          {t(hidden ? 'works.attachHiddenOn' : 'works.attachHiddenOff')}
+        </p>
 
         <input
           ref={chooseFile}
