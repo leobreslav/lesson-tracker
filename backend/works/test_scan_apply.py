@@ -579,54 +579,44 @@ class SecondReaderIsAskedForTests(SchoolTestMixin, APITestCase):
         self.assertEqual(answer.status_code, 200, answer.content)
         return seen
 
-    def test_the_named_reader_reaches_the_reading(self):
-        """
-        Человек выбирает читателя клеток поимённо, и выбор доезжает как есть:
-        назвавший Yandex не должен получить счёт от Mathpix.
-        """
-        self.assertEqual(self.post(cells="yandex")["cells_reader"], "yandex")
+    def test_the_unticked_box_reaches_the_reading(self):
+        self.assertFalse(self.post(second="false")["second"])
 
-    def test_refusing_the_second_reader_reaches_the_reading(self):
-        self.assertEqual(self.post(cells="none")["cells_reader"], "none")
+    def test_the_ticked_box_reaches_the_reading(self):
+        self.assertTrue(self.post(second="true")["second"])
 
     def test_saying_nothing_means_reading_as_before(self):
         """
-        Умолчание — «кем умеете»: ключи в контуре появляются не сами, и раз
-        школа их поставила, второй читатель нужен. Отказ от него — это явное
-        `none`, а не молчание.
+        Умолчание — «звать»: ключи в контуре появляются не сами, и раз школа их
+        поставила, второй свидетель нужен. Галочка снимает его, а не включает.
         """
-        self.assertEqual(self.post()["cells_reader"], "")
+        self.assertTrue(self.post()["second"])
 
-    def test_an_unknown_reader_is_the_same_as_saying_nothing(self):
+    def test_the_screen_is_told_whether_the_second_reader_can_be_called(self):
         """
-        Клиент мог отстать от сервера на одну выкатку, и ронять из-за этого
-        пачку, за половину которой уже заплачено, — плохой обмен. Та же
-        уступка, что у читателя имени.
+        Заглушённая галочка объясняет себя, пропавшая — нет. Контур без ключей
+        Mathpix выглядел раньше как контур, где Mathpix не бывает вовсе, и
+        починить это настройкой человек не шёл: чинить, судя по экрану, было
+        нечего.
         """
-        self.assertEqual(self.post(cells="whoever")["cells_reader"], "")
-
-    def test_the_screen_is_told_about_every_cells_reader(self):
-        """
-        Показывается **каждый** читатель клеток, и недоступный тоже — со своей
-        причиной. Пропадал он раньше вместе с вопросом: контур без ключей
-        Mathpix выглядел как контур, где Mathpix не бывает вовсе, и починить
-        это настройкой было нельзя, потому что чинить было нечего.
-        """
-        with self.settings(MATHPIX_APP_ID="", MATHPIX_APP_KEY="", YANDEX_OCR_API_KEY=""):
+        with self.settings(MATHPIX_APP_ID="", MATHPIX_APP_KEY=""):
             self.assertEqual(
-                services.scan_state(self.work)["cells_readers"],
-                [
-                    {"name": "mathpix", "able": False, "why": "not_configured"},
-                    {"name": "yandex", "able": False, "why": "not_configured"},
-                ],
+                services.scan_state(self.work)["second_reader"],
+                {"name": "mathpix", "able": False, "why": "not_configured"},
             )
-        with self.settings(
-            MATHPIX_APP_ID="id", MATHPIX_APP_KEY="key", YANDEX_OCR_API_KEY=""
-        ):
+        with self.settings(MATHPIX_APP_ID="id", MATHPIX_APP_KEY="key"):
             self.assertEqual(
-                services.scan_state(self.work)["cells_readers"],
-                [
-                    {"name": "mathpix", "able": True, "why": ""},
-                    {"name": "yandex", "able": False, "why": "not_configured"},
-                ],
+                services.scan_state(self.work)["second_reader"],
+                {"name": "mathpix", "able": True, "why": ""},
+            )
+
+    def test_the_screen_is_offered_both_readers_of_the_header(self):
+        """
+        Читателей шапки двое, и показываются оба — недоступный заглушённым.
+        Mathpix среди них нет: он второй свидетель, а не выбор.
+        """
+        with self.settings(YANDEX_OCR_API_KEY=""):
+            self.assertEqual(
+                [one["name"] for one in services.scan_state(self.work)["readers"]],
+                ["anthropic", "yandex"],
             )

@@ -595,15 +595,14 @@ class ScanReadSerializer(serializers.Serializer):
     strip = serializers.FileField()
     # Отпечаток полоски: та же страница, загруженная снова, не перечитывается.
     fingerprint = serializers.CharField(max_length=64, required=False, allow_blank=True)
-    # Кем читать клетки с баллами. Спрашивается **на каждой странице**, потому
-    # что цикл ведёт браузер и другого места для этой просьбы нет; решает же
-    # человек один раз на пачку, на шаге выбора файла.
+    # Звать ли поверх первого читателя Mathpix. Спрашивается **на каждой
+    # странице**, потому что цикл ведёт браузер и другого места для этой
+    # просьбы нет; решает же человек один раз на пачку, на шаге выбора файла.
     #
-    # Три значения, и они разные: имя читателя — «зови этого», `none` — «клетки
-    # берёт тот же, кто прочитал имя», пустая строка — «кем умеете». Умолчание
-    # пустое: ключи в контуре появляются не сами, и раз школа их поставила,
-    # второй читатель нужен; отказ от него — это явное `none`.
-    cells = serializers.CharField(required=False, allow_blank=True, default="")
+    # Умолчание — «звать»: ключи в контуре появляются не сами, и раз школа их
+    # поставила, второй свидетель нужен. Галочка — способ отказаться от него на
+    # конкретной пачке, а не включить.
+    second = serializers.BooleanField(required=False, default=True)
     # Кем читать имя. Пустая строка — «кем умеете»: контур сам возьмёт первого
     # доступного. Незнакомое имя читателя не отказ, а та же пустая строка:
     # клиент мог отстать от сервера на одну выкатку, и ронять из-за этого
@@ -614,13 +613,6 @@ class ScanReadSerializer(serializers.Serializer):
         from vision import services as vision_services
 
         return name if name in vision_services.NAME_READERS else ""
-
-    def validate_cells(self, name):
-        """Незнакомое имя — то же «кем умеете», по той же причине, что у имени."""
-        from vision import services as vision_services
-
-        known = (*vision_services.CELLS_READERS, vision_services.NOBODY)
-        return name if name in known else ""
 
     def validate_strip(self, upload):
         if upload.size > 4 * 1024 * 1024:

@@ -7189,9 +7189,28 @@ button.dropzone:hover:not(:disabled) {
   align-items: flex-start;
 }
 
-.scan-review-body > .scan-sheet {
+/*
+ * Картинка листа и её зум — один столбец: кнопки стоят над той самой
+ * картинкой, которой управляют, и уехать от неё не могут.
+ */
+.scan-review-body > .scan-view {
   flex: 1 1 60%;
   min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.scan-review-body > .scan-view > .scan-sheet {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+/* Ряд зума узкий и прижат к левому краю картинки: он про неё, а не про
+   страницу целиком, и растягиваться ему не на что. */
+.scan-zoom {
+  flex: 0 0 auto;
 }
 
 .scan-review-body > .scan-side {
@@ -7223,7 +7242,7 @@ button.dropzone:hover:not(:disabled) {
   min-height: 0;
 }
 
-.scan-review .scan-sheet {
+.scan-review .scan-view {
   max-height: 100%;
   height: 100%;
 }
@@ -7233,7 +7252,7 @@ button.dropzone:hover:not(:disabled) {
     flex-direction: column;
   }
 
-  .scan-review-body > .scan-sheet,
+  .scan-review-body > .scan-view,
   .scan-review-body > .scan-side {
     flex: 1 1 auto;
     width: 100%;

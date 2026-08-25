@@ -39,11 +39,6 @@ import {
  * Страницы не хранятся на сервере, а прочитанное хранится: чтение стоит денег,
  * и закрытая вкладка не должна стоить их второй раз.
  */
-/* «Клетки не читает никто»: их берёт тот же, кто прочитал имя. Слово, а не
- * пустая строка — пустая занята и значит «кем умеете». Совпадает с `NOBODY`
- * на сервере (`vision/services.py`), потому что едет туда как есть. */
-const NOBODY = 'none'
-
 export default function ScanWizard({ work, onClose, onDone }) {
   const { t } = useTranslation()
 
@@ -57,15 +52,14 @@ export default function ScanWizard({ work, onClose, onDone }) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
   const [readQuestions, setReadQuestions] = useState(false)
-  /* Кем читать клетки с баллами на этой пачке.
+  /* Звать ли поверх первого читателя Mathpix.
    *
-   * Пустая строка — «кем умеете», и это не небрежность: ключи в контуре
-   * появляются не сами, и раз школа их поставила, второй читатель нужен.
-   * `none` — способ **отказаться** на конкретной пачке: у стопки, где имена
+   * Умолчание — «звать», и это не небрежность: ключи в контуре появляются не
+   * сами, и раз школа их поставила, второй свидетель нужен. Галочка — способ
+   * **отказаться** на конкретной пачке, а не включить: у стопки, где имена
    * вписаны учителем печатными буквами, спорить не о чем, а платить пришлось
-   * бы вдвое. Имя читателя — «зови этого», и запасного пути у такого выбора
-   * нет: платит за него тот, кто выбирал. */
-  const [cells, setCells] = useState('')
+   * бы вдвое. */
+  const [second, setSecond] = useState(true)
   /* Кем читать имя. Пустая строка — «кем умеете»: контур возьмёт первого
    * доступного сам, и это верное умолчание, потому что порядок предпочтения
    * знает он, а не экран. Человек перебивает его выбором, когда хочет
@@ -108,7 +102,7 @@ export default function ScanWizard({ work, onClose, onDone }) {
     }
   }
 
-  const start = async (chosen, alsoQuestions, byCells = '', byReader = '') => {
+  const start = async (chosen, alsoQuestions, alsoSecond = true, byReader = '') => {
     if (!chosen) return
     setFile(chosen)
     setQuestions(null)
@@ -144,7 +138,7 @@ export default function ScanWizard({ work, onClose, onDone }) {
             index,
             blob,
             mark,
-            cells: byCells,
+            second: alsoSecond,
             reader: byReader,
           })
           setState(answer)
@@ -224,24 +218,24 @@ export default function ScanWizard({ work, onClose, onDone }) {
           отмеченными, и уехать на сервер должно ровно показанное. */}
       {stage === 'file' && (
         <FileStep
-          onPick={(chosen, byReader, byCells) =>
+          onPick={(chosen, byReader, alsoSecond) =>
             start(
               chosen,
               readQuestions && (state?.model_reachable ?? true),
-              byCells,
+              alsoSecond,
               byReader,
             )
           }
           busy={busy}
           readQuestions={readQuestions}
           onReadQuestions={setReadQuestions}
-          cellsReaders={state?.cells_readers ?? []}
+          secondReader={state?.second_reader ?? { name: 'mathpix', able: false, why: 'not_configured' }}
           modelReachable={state?.model_reachable ?? true}
           readers={state?.readers ?? []}
           reader={reader}
           onReader={setReader}
-          cells={cells}
-          onCells={setCells}
+          second={second}
+          onSecond={setSecond}
           questions={scale.length}
           read={state?.pages?.length ?? 0}
           onReset={() => run(async () => setState(await resetScan(work.id)))}
@@ -462,52 +456,44 @@ function FileStep({
   onReset,
   readQuestions,
   onReadQuestions,
-  cellsReaders,
+  secondReader,
   modelReachable,
   readers,
   reader,
   onReader,
-  cells,
-  onCells,
+  second,
+  onSecond,
   onBack,
   onForward,
 }) {
   const { t } = useTranslation()
   const [over, setOver] = useState(false)
 
-  /* Оба списка приезжают с сервера **целиком**: и те, кого можно позвать, и
-   * те, кого нельзя, со словом о причине. Показываются тоже целиком, а
-   * недоступный — заглушённым. Пропадал он раньше вместе с самим вопросом, и
-   * контур без ключей Mathpix выглядел как контур, где Mathpix не бывает
-   * вовсе: чинить это настройкой человек не шёл, потому что чинить, судя по
-   * экрану, было нечего.
+  /* Вопросов человеку два, и оба простые: **кто читает** — модель или
+   * Yandex, — и **звать ли поверх него Mathpix**.
    *
-   * Кто на этой пачке прочитает имя: выбранный человеком или первый, кого
-   * предлагает контур. Знать это экрану нужно затем, что от ответа зависит,
-   * останется ли кому читать клетки.
+   * Было три читателя на двух осях, и человек выбирал отдельно читателя имени
+   * и читателя клеток. Развилок от этого стало больше, чем случаев, которые
+   * они разбирают: половина ответов отличалась только ценой одного лишнего
+   * запроса, а объяснять приходилось и «тот же читатель по имени», и «тот же
+   * по вызову». Клетки теперь читает тот же, кто прочитал шапку, и это не
+   * упущение, а ответ: у Yandex под клетки своя модель, и зовёт он её сам.
    *
-   * Тонкость в том, что «тот же читатель» считается по вызову, а не по имени.
-   * Mathpix читает одним способом: если имя прочитал он, второе чтение было бы
-   * повтором того же запроса за те же деньги. У Yandex моделей две — почерк
-   * для имени, таблица для клеток, — и второе чтение у него настоящее. Поэтому
-   * причина у Mathpix бывает своя, считаемая здесь: она зависит не от контура,
-   * а от соседнего выбора на этом же экране. */
+   * Список читателей приезжает с сервера **целиком**: и те, кого можно
+   * позвать, и те, кого нельзя, со словом о причине. Показываются тоже
+   * целиком, а недоступный — заглушённым. Пропадал он раньше вместе с самим
+   * вопросом, и контур без ключей выглядел как контур, где такого читателя не
+   * бывает вовсе: чинить это настройкой человек не шёл, потому что чинить,
+   * судя по экрану, было нечего.
+   *
+   * Что показано отмеченным, то и уезжает на сервер. Держать выбор человека
+   * отдельно от показанного нельзя: читатель, выбранный минуту назад, мог
+   * стать недоступным, и тогда экран показывал бы одно, а пачка читалась бы
+   * другим. */
   const ableNames = readers.filter((one) => one.able).map((one) => one.name)
   const nameReader = ableNames.includes(reader) ? reader : ''
   const readerUsed = nameReader || ableNames[0] || ''
-
-  const cellsBlocked = (one) =>
-    one.name === 'mathpix' && readerUsed === 'mathpix' ? 'same_reader' : one.why
-  const cellsAble = cellsReaders.filter((one) => !cellsBlocked(one))
-
-  /* Что показано отмеченным, то и уезжает на сервер. Держать выбор человека
-   * отдельно от показанного нельзя: читатель, которого он выбрал минуту назад,
-   * мог стать недоступным — от его же соседнего выбора, — и тогда экран
-   * показывал бы одно, а пачка читалась бы другим. */
-  const cellsUsed =
-    cells === NOBODY || cellsAble.some((one) => one.name === cells)
-      ? cells
-      : cellsAble[0]?.name ?? NOBODY
+  const secondUsed = second && secondReader.able
 
   return (
     <section className="scan-step">
@@ -594,16 +580,6 @@ function FileStep({
         <p className="hint">
           <b>{t('scan.readerLabel')}</b>
         </p>
-        <label className="checkbox">
-          <input
-            type="radio"
-            name="name-reader"
-            checked={nameReader === ''}
-            disabled={busy}
-            onChange={() => onReader('')}
-          />
-          {t('scan.readerAny')}
-        </label>
         {readers.map((one) => (
           <label
             key={one.name}
@@ -612,7 +588,7 @@ function FileStep({
             <input
               type="radio"
               name="name-reader"
-              checked={nameReader === one.name}
+              checked={readerUsed === one.name}
               disabled={busy || !one.able}
               onChange={() => onReader(one.name)}
             />
@@ -639,47 +615,29 @@ function FileStep({
       {readQuestions && <p className="hint">{t('scan.readQuestionsHint')}</p>}
 
       {/*
-        * Читатель клеток — второй вопрос, и он отдельный от первого: читатели
-        * сильны в разном, а стоит второе чтение отдельных денег. Решается он
-        * **до** платежа и на каждой пачке заново.
+        * Второй вопрос, и он один: звать ли поверх первого читателя Mathpix.
+        * Решается **до** платежа и на каждой пачке заново — он её удваивает.
         *
-        * «Никто» стоит первым и названо словами, а не отсутствием выбора:
-        * это не «ничего не происходит», а другое поведение — клетки читает
-        * тот же, кто прочитал имя, и ошибётся он молча. Подсказка поэтому
-        * стоит в обоих положениях.
+        * Подсказка стоит в обоих положениях, а не только во включённом.
+        * Снятая галочка тут не «ничего не происходит», а другое поведение:
+        * читает один, и ошибётся он молча. Сказать об этом надо ровно в тот
+        * момент, когда галочку снимают.
         */}
       <div className="reader-choice">
-        <p className="hint">
-          <b>{t('scan.cellsLabel')}</b>
-        </p>
-        <label className="checkbox">
+        <label className={secondReader.able ? 'checkbox' : 'checkbox off'}>
           <input
-            type="radio"
-            name="cells-reader"
-            checked={cellsUsed === NOBODY}
-            disabled={busy}
-            onChange={() => onCells(NOBODY)}
+            type="checkbox"
+            checked={secondUsed}
+            disabled={busy || !secondReader.able}
+            onChange={(event) => onSecond(event.target.checked)}
           />
-          {t('scan.cellsNobody')}
+          {t('scan.secondReader', { reader: t('scan.reader.mathpix') })}
+          {!secondReader.able && (
+            <span className="hint">{t(`scan.why.${secondReader.why}`)}</span>
+          )}
         </label>
-        {cellsReaders.map((one) => {
-          const why = cellsBlocked(one)
-          return (
-            <label key={one.name} className={why ? 'checkbox off' : 'checkbox'}>
-              <input
-                type="radio"
-                name="cells-reader"
-                checked={cellsUsed === one.name}
-                disabled={busy || !!why}
-                onChange={() => onCells(one.name)}
-              />
-              {t(`scan.reader.${one.name}`)}
-              {why && <span className="hint">{t(`scan.why.${why}`)}</span>}
-            </label>
-          )
-        })}
         <p className="hint">
-          {t(cellsUsed === NOBODY ? 'scan.secondReaderOff' : 'scan.secondReaderOn')}
+          {t(secondUsed ? 'scan.secondReaderOn' : 'scan.secondReaderOff')}
         </p>
       </div>
 
@@ -724,7 +682,7 @@ function FileStep({
         onDrop={(event) => {
           event.preventDefault()
           setOver(false)
-          onPick(event.dataTransfer.files[0], nameReader, cellsUsed)
+          onPick(event.dataTransfer.files[0], readerUsed, secondUsed)
         }}
       >
         {/* поле спрятано, а не убрано: нажатие по зоне доходит до него
@@ -741,7 +699,7 @@ function FileStep({
           accept="application/pdf"
           hidden
           disabled={busy}
-          onChange={(event) => onPick(event.target.files[0], nameReader, cellsUsed)}
+          onChange={(event) => onPick(event.target.files[0], readerUsed, secondUsed)}
         />
         <span>{t('scan.pick')}</span>
       </label>
@@ -936,54 +894,6 @@ function PagesStep({ state, all, byIndex, questions, busy, onDecide, onFix, onNe
         })}
       </ol>
 
-      <div className="row middle scan-walk">
-        <button
-          type="button"
-          className="secondary compact"
-          disabled={busy || at === 0}
-          onClick={() => setAt(at - 1)}
-        >
-          {t('scan.prev')}
-        </button>
-        <span>{t('scan.pageOf', { number: (here?.index ?? 0) + 1, count: sheets.length })}</span>
-        <button
-          type="button"
-          className="secondary compact"
-          disabled={busy || at >= sheets.length - 1}
-          onClick={() => setAt(at + 1)}
-        >
-          {t('scan.next')}
-        </button>
-        <button
-          type="button"
-          className="link"
-          disabled={busy || !sheets.some(troubled)}
-          onClick={() => jump(1)}
-        >
-          {t('scan.nextDoubt')}
-        </button>
-
-        <button
-          type="button"
-          className="secondary compact"
-          disabled={zoom === STEPS[0]}
-          aria-label={t('scan.zoomOut')}
-          onClick={() => zoomBy(-1)}
-        >
-          −
-        </button>
-        <span className="hint">{Math.round(zoom * 100)}%</span>
-        <button
-          type="button"
-          className="secondary compact"
-          disabled={zoom === STEPS[STEPS.length - 1]}
-          aria-label={t('scan.zoomIn')}
-          onClick={() => zoomBy(1)}
-        >
-          +
-        </button>
-      </div>
-
       {/*
         * Полоска шапки и поля для баллов — один блок, колонка в колонку.
         *
@@ -1062,19 +972,48 @@ function PagesStep({ state, all, byIndex, questions, busy, onDecide, onFix, onNe
       )}
 
       <div className="scan-review-body">
-        {/* вся страница, а не полоска: чей это лист, видно и по почерку */}
-        <div className="scan-sheet" ref={sheet}>
-          {byIndex[here?.index]?.preview ? (
-            <img
-              src={byIndex[here.index].preview}
-              alt=""
-              style={{ width: `${zoom * 100}%` }}
-              className={zoom > 1 ? 'out' : 'in'}
-              onClick={zoomAt}
-            />
-          ) : (
-            <p className="hint">{t('scan.noPreview')}</p>
-          )}
+        {/* Зум стоит **над самой картинкой**, а не в общем ряду наверху.
+            Управляет он ею одной, и рука тянется к нему, уже глядя на лист;
+            уехав к прочим кнопкам страницы, он оказывался в другом конце
+            окна — и связь «эти кнопки про эту картинку» держалась только
+            памятью. */}
+        <div className="scan-view">
+          <div className="row middle scan-zoom">
+            <button
+              type="button"
+              className="secondary compact"
+              disabled={zoom === STEPS[0]}
+              aria-label={t('scan.zoomOut')}
+              onClick={() => zoomBy(-1)}
+            >
+              −
+            </button>
+            <span className="hint">{Math.round(zoom * 100)}%</span>
+            <button
+              type="button"
+              className="secondary compact"
+              disabled={zoom === STEPS[STEPS.length - 1]}
+              aria-label={t('scan.zoomIn')}
+              onClick={() => zoomBy(1)}
+            >
+              +
+            </button>
+          </div>
+
+          {/* вся страница, а не полоска: чей это лист, видно и по почерку */}
+          <div className="scan-sheet" ref={sheet}>
+            {byIndex[here?.index]?.preview ? (
+              <img
+                src={byIndex[here.index].preview}
+                alt=""
+                style={{ width: `${zoom * 100}%` }}
+                className={zoom > 1 ? 'out' : 'in'}
+                onClick={zoomAt}
+              />
+            ) : (
+              <p className="hint">{t('scan.noPreview')}</p>
+            )}
+          </div>
         </div>
 
         <div className="scan-side">
@@ -1173,15 +1112,54 @@ function PagesStep({ state, all, byIndex, questions, busy, onDecide, onFix, onNe
             </select>
           </div>
 
+          {/* Листание стоит здесь, под выбором хозяина, и это про руку, а не
+              про красоту. Работа на этом шаге одна и повторяется тридцать
+              четыре раза: посмотреть, назначить, перейти к следующей. Пока
+              листание жило наверху, а назначение внизу, каждый круг стоил
+              переезда через всё окно — при том что оба действия части одного
+              движения. */}
+          <div className="row middle scan-walk">
+            <button
+              type="button"
+              className="secondary compact"
+              disabled={busy || at === 0}
+              onClick={() => setAt(at - 1)}
+            >
+              {t('scan.prev')}
+            </button>
+            <span>
+              {t('scan.pageOf', { number: (here?.index ?? 0) + 1, count: sheets.length })}
+            </span>
+            <button
+              type="button"
+              className="secondary compact"
+              disabled={busy || at >= sheets.length - 1}
+              onClick={() => setAt(at + 1)}
+            >
+              {t('scan.next')}
+            </button>
+            <button
+              type="button"
+              className="link"
+              disabled={busy || !sheets.some(troubled)}
+              onClick={() => jump(1)}
+            >
+              {t('scan.nextDoubt')}
+            </button>
+          </div>
         </div>
       </div>
 
+      {/* Шаг назад слева, шаг вперёд справа — это мастер, а не диалог.
+          В диалоге первой стоит главная кнопка, и «отмена» за ней; здесь же
+          обе кнопки про движение по шагам, и спорить с тем, куда показывает
+          «вперёд», дороже, чем держать единый порядок с диалогами. */}
       <div className="actions">
-        <button type="button" disabled={busy || stuck.length > 0} onClick={onNext}>
-          {t('scan.toCheck')}
-        </button>
         <button type="button" className="secondary" disabled={busy} onClick={onBack}>
           {t('scan.back')}
+        </button>
+        <button type="button" disabled={busy || stuck.length > 0} onClick={onNext}>
+          {t('scan.toCheck')}
         </button>
         {/* Сколько страниц без хозяина — знали, а какие именно, приходилось
             искать перелистыванием: на пачке в тридцать четыре листа последняя

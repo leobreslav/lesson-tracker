@@ -1486,15 +1486,13 @@
     "conditions_other": "{{count}} sheets without a header — question papers. They cut the pile into {{packets}} packets.",
     "readQuestions": "Also copy the questions off the question paper",
     "readQuestionsHint": "The first run of question sheets is read once for the whole pile and written into the scale. A full page costs a few cents — a header strip costs a fraction of one.",
-    "cellsLabel": "Who reads the marks grid",
-    "cellsNobody": "Nobody — whoever reads the names takes the marks too",
+    "secondReader": "Check every header with {{reader}} as well",
     "why": {
       "not_configured": "— not set up on this server",
-      "unreachable": "— this server could not reach it",
-      "same_reader": "— already reading the names on this pile"
+      "unreachable": "— this server could not reach it"
     },
-    "secondReaderOn": "Two readers look at each header, and each does what it is good at: the model reads the names, the recogniser reads the marks. Where they disagree you will be asked to look at the sheet yourself. It roughly doubles what the pile costs.",
-    "secondReaderOff": "One reader looks at each header and reads both the names and the marks. Cheaper, but a misread mark looks exactly as confident as a correct one.",
+    "secondReaderOn": "Every header is read twice: once by the reader you picked, once by Mathpix. Where the two disagree you will be asked to look at the sheet yourself. It roughly doubles what the pile costs.",
+    "secondReaderOff": "Every header is read once, names and marks together. Cheaper, but a misread name looks exactly as confident as a correct one.",
     "questionsRead": "Questions written into the scale: {{count}} of {{found}} found.",
     "questionsExtra": "no room in the scale for: {{list}}",
     "questionsMarks": "the paper says a different top mark: {{list}}",
@@ -1515,8 +1513,7 @@
     "spendPart": "{{what}}: {{amount}}",
     "soleReader": "This server cannot reach the language model, so the headers will be read by {{reader}} alone. It reads names less well and has nobody to check it: look the names over yourself.",
     "noReader": "This server cannot reach the language model, and no other reader is set up. There is nothing to read the pile with right now.",
-    "readerLabel": "Who reads the names",
-    "readerAny": "Whatever this server has",
+    "readerLabel": "Who reads the headers",
     "reader": {
       "anthropic": "Language model (Claude)",
       "yandex": "Yandex Vision OCR",

@@ -211,13 +211,10 @@ test('keys built at runtime exist for every value they take', () => {
     ...['anthropic', 'yandex', 'mathpix'].map((one) => `scan.reader.${one}`),
     // недоступный читатель показывается заглушённым и со словом о причине —
     // в том и смысл, что он не пропадает. Причины приходят с сервера
-    // (`vision/services.py`, `readers_state`), кроме `same_reader`: её
-    // считает сам экран по соседнему выбору. Забытая фраза оставила бы
+    // (`vision/services.py`, `readers_state`). Забытая фраза оставила бы
     // строку без объяснения, то есть ровно с той загадкой, ради которой
     // заглушённый вариант и показывается
-    ...['not_configured', 'unreachable', 'same_reader'].map(
-      (why) => `scan.why.${why}`,
-    ),
+    ...['not_configured', 'unreachable'].map((why) => `scan.why.${why}`),
   ]
 
   assert.deepEqual(

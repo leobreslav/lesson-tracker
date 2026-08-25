@@ -644,8 +644,13 @@ class PretendsThereIsAKey:
         Вердикт живёт в кэше и переживает тест: непочищенный, он красит
         следующий тест в зелёный по неверной причине — читателя просто не
         позвали.
+
+        Список берётся общий (`READERS`), а не по роли: роль читателя меняется
+        правкой, а забывать надо всех. Пока чистка шла по `NAME_READERS`, уход
+        Mathpix из этого списка тихо оставил его вердикт жить между тестами — и
+        половина класса стала зависеть от порядка запуска.
         """
-        for one in services.NAME_READERS:
+        for one in services.READERS:
             reach.forget(one)
 
 
@@ -795,41 +800,51 @@ class TwoReadersTests(PretendsThereIsAKey, SchoolTestMixin, APITestCase):
         self.assertEqual(len(self.seen), 1)
         self.assertEqual(self.purposes(), ["scan_header", "scan_second"])
 
-    def test_when_mathpix_is_out_of_reach_the_cells_go_to_yandex(self):
+    def test_yandex_reads_the_cells_with_its_own_second_model(self):
         """
-        На закрытом контуре до Mathpix не достучаться, и без запасного
-        читателя клеток баллы пришлось бы вбивать руками: имя разложилось бы,
-        а плитки остались пустыми. Yandex своей моделью для таблиц закрывает
-        ровно эту дыру.
+        Yandex-читатель — это **два запроса**, и оба его: рукописную строку
+        имени читает одна модель, сетку баллов другая. Одной не выходит, и это
+        выяснила живая пачка: `handwritten` разобрал имена на всех страницах и
+        не увидел почти ни одной клетки.
+
+        Наружу это одно чтение одним читателем. Развилка тут про модель
+        сервиса, а не про выбор человека, и вытаскивать её на экран значило бы
+        спрашивать про то, чего он не решает.
         """
         from unittest.mock import patch
 
-        table_says = {
+        handwriting = {
             "reader": "yandex",
-            "first_name": "",
-            "surname": "",
+            "first_name": "Denis",
+            "surname": "Orlov",
             "date": "",
-            "values": [5] + [None] * 15,
-            "text": "",
+            "values": [None] * 16,
+            "text": "Denis Orlov",
         }
+        table_says = {"reader": "yandex", "values": [5] + [None] * 15}
 
         with self.settings(
             MATHPIX_APP_ID="", MATHPIX_APP_KEY="", YANDEX_OCR_API_KEY="key"
         ):
             with patch.object(
-                services, "read_header", lambda image, **kw: (dict(self.model_says), 100, 10)
+                services.yandex, "read_strip", lambda *a, **k: dict(handwriting)
             ), patch.object(
                 services.yandex, "read_cells", lambda *a, **k: dict(table_says)
             ):
                 data = services.read_and_charge(
-                    school=self.school, user=self.user, work=None, image=b"strip"
+                    school=self.school,
+                    user=self.user,
+                    work=None,
+                    image=b"strip",
+                    reader=services.YANDEX,
                 )
 
-        self.assertEqual(data["first_name"], "Denis")  # имя от модели
-        self.assertEqual(data["values"][0], 5)  # клетки от таблицы
-        self.assertEqual(self.purposes(), ["scan_header", "scan_second"])
+        self.assertEqual(data["first_name"], "Denis")  # имя рукописной моделью
+        self.assertEqual(data["values"][0], 5)  # клетки табличной
+        self.assertEqual(self.purposes(), ["scan_header", "scan_header"])
         self.assertEqual(
-            AiSpend.objects.get(purpose=AiSpend.SCAN_SECOND).model, prices.YANDEX
+            AiSpend.objects.filter(purpose=AiSpend.SCAN_HEADER).first().model,
+            prices.YANDEX,
         )
 
     def test_silence_does_not_rub_out_a_mark_someone_did_read(self):
@@ -848,42 +863,12 @@ class TwoReadersTests(PretendsThereIsAKey, SchoolTestMixin, APITestCase):
         self.assertEqual(data["values"][0], 3)
         self.assertEqual(data["values"][1], 4)
 
-    def test_the_named_reader_is_the_only_one_called(self):
-        """
-        Человек выбирает читателя клеток поимённо, и запасного пути у этого
-        выбора нет: назвавший Yandex не должен получить счёт от Mathpix
-        потому лишь, что тот стоит в списке первым. Уступать выбор вниз можно
-        только там, где иначе не прочитается ничего, а тут прочитается.
-        """
-        from unittest.mock import patch
-
-        with self.settings(
-            MATHPIX_APP_ID="id", MATHPIX_APP_KEY="key", YANDEX_OCR_API_KEY="key"
-        ):
-            with patch.object(
-                services, "read_header", lambda image, **kw: (dict(self.model_says), 100, 10)
-            ), patch.object(
-                services.mathpix, "read_strip", self.fail_if_called
-            ), patch.object(
-                services.yandex,
-                "read_cells",
-                lambda *a, **kw: {"reader": "yandex", "values": [None] * 16},
-            ):
-                data = services.read_and_charge(
-                    school=self.school,
-                    user=self.user,
-                    work=None,
-                    image=b"strip",
-                    cells_reader=services.YANDEX,
-                )
-
-        self.assertEqual(data["second"]["reader"], "yandex")
-
     def test_the_human_may_refuse_the_second_reader(self):
         """
-        Выбор на шаге файла: второй читатель удваивает цену пачки, а нужен он
-        не всегда — у стопки, где имена вписаны учителем печатными буквами,
-        спорить не о чем. Решает тот, кто платит.
+        Второй вопрос на шаге файла, и он один: звать ли поверх первого
+        читателя Mathpix. Он удваивает цену пачки, а нужен не всегда — у
+        стопки, где имена вписаны учителем печатными буквами, спорить не о чем.
+        Решает тот, кто платит.
         """
         from unittest.mock import patch
 
@@ -898,7 +883,7 @@ class TwoReadersTests(PretendsThereIsAKey, SchoolTestMixin, APITestCase):
                     user=self.user,
                     work=None,
                     image=b"strip",
-                    cells_reader=services.NOBODY,
+                    second=False,
                 )
 
         self.assertEqual(data["second"]["error"], "not_asked")
@@ -1297,8 +1282,10 @@ class ModelOutOfReachTests(PretendsThereIsAKey, SchoolTestMixin, APITestCase):
         self.forget_everyone()
         self.addCleanup(self.forget_everyone)
         self.asked = []
-        self.mathpix_says = {
-            "reader": "mathpix",
+        # Заместителем модели стал Yandex: читателей шапки двое, и Mathpix в их
+        # число не входит — он только второй свидетель поверх первого.
+        self.stands_in = {
+            "reader": "yandex",
             "first_name": "Denis",
             "surname": "Orlov",
             "date": "",
@@ -1307,18 +1294,28 @@ class ModelOutOfReachTests(PretendsThereIsAKey, SchoolTestMixin, APITestCase):
         }
 
     def read(self, *, strip=None, **settings_over):
-        """Прочитать страницу на контуре, который до модели не достаёт."""
+        """
+        Прочитать страницу на контуре, который до модели не достаёт.
+
+        Подменяются **оба** вызова Yandex, и второй не для порядка: клетки он
+        читает отдельной моделью, то есть отдельным запросом, и с настоящим
+        ключом в настройках этот запрос ушёл бы в сеть.
+        """
         from unittest.mock import patch
 
         def blocked(image, **kwargs):
             self.asked.append(kwargs)
             raise client.ModelUnreachable("blocked")
 
-        says = self.mathpix_says if strip is None else strip
-        defaults = {"MATHPIX_APP_ID": "id", "MATHPIX_APP_KEY": "key"}
+        says = self.stands_in if strip is None else strip
+        defaults = {"YANDEX_OCR_API_KEY": "key"}
         with self.settings(**(defaults | settings_over)):
             with patch.object(services, "read_header", blocked), patch.object(
-                services.mathpix, "read_strip", lambda *a, **k: dict(says)
+                services.yandex, "read_strip", lambda *a, **k: dict(says)
+            ), patch.object(
+                services.yandex,
+                "read_cells",
+                lambda *a, **k: {"reader": "yandex", "values": dict(says).get("values")},
             ):
                 return services.read_and_charge(
                     school=self.school,
@@ -1336,29 +1333,33 @@ class ModelOutOfReachTests(PretendsThereIsAKey, SchoolTestMixin, APITestCase):
 
         self.assertEqual(data["first_name"], "Denis")
         self.assertEqual(data["surname"], "Orlov")
-        self.assertEqual(data["model"], prices.MATHPIX)
+        self.assertEqual(data["model"], prices.YANDEX)
 
     def test_the_reading_is_charged_as_a_header_by_whoever_read_it(self):
         """
         Повод отвечает на вопрос «за что заплачено», а заплачено за чтение
         шапки. Кем именно — сказано в `model`, и по нему в журнале видно, что
         читал не тот, кто обычно.
+
+        Строк при этом две, и обе честные: у Yandex полоска читается двумя
+        моделями — рукописной для имени и табличной для клеток, — то есть
+        двумя запросами, а платят тут за запросы. Повод у обеих один: заплачено
+        за чтение шапки.
         """
         self.read()
 
-        self.assertEqual(self.purposes(), ["scan_header"])
-        row = AiSpend.objects.get()
-        self.assertEqual(row.model, prices.MATHPIX)
-        self.assertEqual(row.cost_micros, prices.PER_REQUEST[prices.MATHPIX])
+        self.assertEqual(self.purposes(), ["scan_header", "scan_header"])
+        for row in AiSpend.objects.all():
+            self.assertEqual(row.model, prices.YANDEX)
+            self.assertEqual(row.cost_micros, prices.PER_REQUEST[prices.YANDEX])
 
     def test_the_missing_second_opinion_says_why_it_is_missing(self):
         """
         Пустой словарь значил бы «второй читатель промолчал» — то есть свалил
-        бы на него отсутствующую модель. Слово тут своё: имя читал тот же, кто
-        читал бы клетки, и звать его второй раз значило бы заплатить дважды за
-        один и тот же ответ.
+        бы на него отсутствующие ключи. Слово тут своё: звать некого.
         """
-        self.assertEqual(self.read()["second"]["error"], "same_reader")
+        with self.settings(MATHPIX_APP_ID="", MATHPIX_APP_KEY=""):
+            self.assertEqual(self.read()["second"]["error"], "not_configured")
 
     def test_the_pile_finds_out_once_and_not_on_every_page(self):
         """
@@ -1378,7 +1379,7 @@ class ModelOutOfReachTests(PretendsThereIsAKey, SchoolTestMixin, APITestCase):
         вину сети, и учитель искал бы причину в сканере.
         """
         with self.assertRaises(Exception) as caught:
-            self.read(MATHPIX_APP_ID="", MATHPIX_APP_KEY="")
+            self.read(YANDEX_OCR_API_KEY="")
 
         self.assertEqual(caught.exception.detail["code"], "ai_unreachable")
         self.assertEqual(self.purposes(), [])
@@ -1393,7 +1394,7 @@ class ModelOutOfReachTests(PretendsThereIsAKey, SchoolTestMixin, APITestCase):
         распознаватель, не зная, что его позвали только из-за закрытой сети.
         """
         with self.assertRaises(Exception) as caught:
-            self.read(strip={"reader": "mathpix", "error": "unreachable"})
+            self.read(strip={"reader": "yandex", "error": "unreachable"})
 
         self.assertEqual(caught.exception.detail["code"], "ai_unreachable")
         self.assertEqual(self.purposes(), [])
@@ -1412,7 +1413,7 @@ class ModelOutOfReachTests(PretendsThereIsAKey, SchoolTestMixin, APITestCase):
 
         with patch.object(services.client, "configured", lambda: False):
             with self.assertRaises(Exception) as caught:
-                self.read(MATHPIX_APP_ID="", MATHPIX_APP_KEY="")
+                self.read(YANDEX_OCR_API_KEY="")
 
         self.assertEqual(caught.exception.detail["code"], "ai_key_missing")
 
@@ -1430,7 +1431,7 @@ class ModelOutOfReachTests(PretendsThereIsAKey, SchoolTestMixin, APITestCase):
 
         with patch.object(services.client, "configured", lambda: False):
             with self.assertRaises(Exception) as caught:
-                self.read(strip={"reader": "mathpix", "error": "refused"})
+                self.read(strip={"reader": "yandex", "error": "refused"})
 
         self.assertEqual(caught.exception.detail["code"], "scan_reader_silent")
 
@@ -1445,7 +1446,7 @@ class ModelOutOfReachTests(PretendsThereIsAKey, SchoolTestMixin, APITestCase):
 
         with patch.object(services.client, "configured", lambda: False):
             with self.assertRaises(Exception):
-                self.read(strip={"reader": "mathpix", "error": "unreachable"})
+                self.read(strip={"reader": "yandex", "error": "unreachable"})
 
-        self.assertFalse(reach.reachable(services.MATHPIX))
-        self.assertNotIn(services.MATHPIX, services.name_readers())
+        self.assertFalse(reach.reachable(services.YANDEX))
+        self.assertNotIn(services.YANDEX, services.name_readers())
