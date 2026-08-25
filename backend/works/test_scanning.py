@@ -634,6 +634,41 @@ class PacketTests(SimpleTestCase):
         self.assertEqual(len(packets), 1)
         self.assertEqual([p.index for p in packets[0].all_pages], [0, 1, 2, 3])
 
+    def test_two_packets_of_one_student_apart_do_not_merge(self):
+        """
+        Два пакета одного ученика подряд — второй комплект листов. Врозь — это
+        ошибка чтения, и слияние через всю пачку молча приписывает чужие
+        страницы.
+
+        Найдено на живой пачке из двадцати четырёх листов: страницы 22 и 23
+        приросли к блоку Алисы Лебедевой со страницы 11 — между ними одиннадцать
+        листов, — и вместе с ними исчезли из виду двое учеников, чьи это были
+        работы. Со стороны это «система нашла десять из двенадцати», и почему
+        именно этих десяти, не видно.
+
+        Далёкому двойнику имя снимается, и лист уходит человеку: вопрос дешевле
+        тихой ошибки.
+        """
+        pages = [
+            page(0, headerless=True),
+            page(1, "Fil", "Burmov", {0: 1}),
+            page(2, headerless=True),
+            page(3, "Peter", "Tibora", {0: 2}),
+            page(4, headerless=True),
+            # прочитано как Burmov, а его блок в начале пачки
+            page(5, "Fil", "Burmov", {5: 3}),
+        ]
+
+        packets = arrange(pages, ROSTER)
+        mine = [p for p in packets if 5 in [one.index for one in p.pages]]
+
+        self.assertEqual(len(mine), 1)
+        self.assertNotIn(
+            1,
+            [one.index for one in mine[0].pages],
+            "далёкие пакеты одного ученика слиты через всю пачку",
+        )
+
     def test_a_signed_page_does_not_travel_across_the_pile(self):
         """
         Подпись сильнее группировки, но не сильнее порядка.

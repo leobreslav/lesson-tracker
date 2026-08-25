@@ -738,7 +738,7 @@ def arrange(pages: list[Page], roster: list[Person]) -> list[Packet]:
         # Блоки позиционны, и два блока одного ученика врозь остаются двумя —
         # ровно затем, чтобы противоречие было видно. А в ответ едет работа, и
         # работа у человека одна, сколько бы раз он ни брал бумагу.
-        return packets_without_duplicates(packets)
+        return packets_without_duplicates(packets, roster)
 
     # Решения человека режут пакет **до** того, как его назовут: иначе первое
     # из них заберёт себе страницы, отданные им же другому ученику.
@@ -762,7 +762,7 @@ def arrange(pages: list[Page], roster: list[Person]) -> list[Packet]:
     # неполного.
     if not pile_contradicts(by_conditions):
         by_elimination(by_conditions, roster)
-    return packets_without_duplicates(split_off_signed(by_conditions, roster))
+    return packets_without_duplicates(split_off_signed(by_conditions, roster), roster)
 
 
 def blocks(pages: list[Page], assigned: dict, doubted: dict, by_fit: set) -> list[Packet]:
@@ -957,29 +957,60 @@ def by_elimination(packets: list[Packet], roster: list[Person]) -> None:
             return
 
 
-def packets_without_duplicates(packets: list[Packet]) -> list[Packet]:
+def packets_without_duplicates(packets: list[Packet], roster: list[Person] | None = None) -> list[Packet]:
     """
-    Два пакета на одного ученика — это не ошибка, а второй комплект листов.
+    Два пакета одного ученика **подряд** — это второй комплект листов. Врозь —
+    это ошибка чтения.
 
-    Сливаем их: работа у человека одна, сколько бы раз он ни брал бумагу. А
-    вот если задачи в них пересекаются, это увидит слияние баллов и скажет
-    вслух — там для этого есть конфликт.
+    Сливаем соседей: работа у человека одна, сколько бы раз он ни брал бумагу,
+    и второй комплект он берёт тут же. А вот пакет в начале пачки и пакет в
+    конце с тем же именем при жёстком порядке невозможны: одно из двух имён
+    прочитано неверно.
+
+    **Слияние через всю пачку молча приписывало чужие страницы.** На живой
+    пачке из двадцати четырёх листов страницы 22 и 23 приросли к блоку Алисы
+    Лебедевой со страницы 11 — между ними одиннадцать листов, — и вместе с ними
+    исчезли из виду двое учеников, чьи это были работы. Со стороны это «система
+    нашла десять из двенадцати», и почему именно этих десяти, не видно.
+
+    Далёкому двойнику имя поэтому снимается, и лист уходит человеку. Кому из
+    двух его снять, решает **сила свидетельства**: остаётся тот пакет, чьё имя
+    прочиталось увереннее. Без списка класса сравнивать нечем — тогда остаётся
+    первый, как было раньше.
     """
+    strength = {}
+    if roster is not None:
+        for number, packet in enumerate(packets):
+            scored = vote(packet, roster) if packet.pages else []
+            strength[number] = scored[0][1] if scored else 0.0
+
     seen: dict = {}
     out = []
-    for packet in packets:
+    for number, packet in enumerate(packets):
         if packet.student_id is None or packet.student_id not in seen:
             if packet.student_id is not None:
-                seen[packet.student_id] = packet
+                seen[packet.student_id] = (number, packet)
             out.append(packet)
             continue
-        first = seen[packet.student_id]
-        first.pages += packet.pages
-        first.conditions += packet.conditions
-        # пометки едут вместе со страницами: слияние не повод потерять «этот
-        # лист положен догадкой» или «этот забран по своей подписи»
-        first.by_fit += packet.by_fit
-        first.signed_apart += packet.signed_apart
+
+        was, first = seen[packet.student_id]
+        # соседи — те, между которыми нет чужого пакета
+        if len(out) and out[-1] is first:
+            first.pages += packet.pages
+            first.conditions += packet.conditions
+            # пометки едут вместе со страницами: слияние не повод потерять
+            # «этот лист положен догадкой» или «этот забран по своей подписи»
+            first.by_fit += packet.by_fit
+            first.signed_apart += packet.signed_apart
+            continue
+
+        # врозь: имя снимается у того, чьё чтение слабее
+        loser = packet if strength.get(number, 0.0) <= strength.get(was, 0.0) else first
+        if loser is first:
+            seen[packet.student_id] = (number, packet)
+        loser.student_id = None
+        loser.by_elimination = False
+        out.append(packet)
     return out
 
 
