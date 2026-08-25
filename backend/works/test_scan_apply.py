@@ -24,7 +24,7 @@ from schools.testing import (
 )
 
 from . import services
-from .models import Mark, ScanPage, StudentWork
+from .models import Mark, ScanAlias, ScanPage, StudentWork
 from .test_splitting import book
 
 
@@ -620,3 +620,96 @@ class SecondReaderIsAskedForTests(SchoolTestMixin, APITestCase):
                 [one["name"] for one in services.scan_state(self.work)["readers"]],
                 ["anthropic", "yandex"],
             )
+
+
+class RememberedWritingTests(SchoolTestMixin, APITestCase):
+    """
+    Курс помнит, как читается почерк его учеников.
+
+    Учитель на шаге разбора и так называет хозяина спорной страницы. Раньше это
+    решение жило одну пачку: следующая контрольная того же класса начиналась с
+    того же вопроса про того же ученика.
+
+    Помнится **написанное**, а не имя, и потому память покрывает то, чего не
+    покроет никакой словарь имён: устойчивый промах распознавания. Mathpix
+    читает кириллицу латиницей, и «Степанов» у него всегда `Cocramol` — один
+    раз названный, он узнаётся дальше сам.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.year = make_year(self.school)
+        self.course = make_course(self.school, self.year)
+        self.student.first_name, self.student.last_name = "Артём", "Степанов"
+        self.student.save()
+        enrol(self.student, self.course, by=self.admin)
+
+    def pile(self, first, surname):
+        """Пачка из одного листа с таким написанием."""
+        work = make_work(self.user, self.course)
+        services.save_scan_reading(
+            work,
+            index=0,
+            fingerprint="f0",
+            data={"first_name": first, "surname": surname, "values": [1] + [None] * 15},
+        )
+        return work
+
+    def test_the_course_remembers_what_the_human_said(self):
+        first = self.pile("", "Cocramol")
+        services.edit_scan_page(first, index=0, student=self.student.pk)
+
+        again = self.pile("", "Cocramol")
+        state = services.scan_state(again)
+
+        self.assertEqual(state["pages"][0]["student"], self.student.pk)
+
+    def test_a_page_without_a_name_is_not_remembered(self):
+        """
+        Страница без имени похожа на любую другую такую же: запоминать по ней
+        нечего, а запомнив — раздали бы по ней всю следующую пачку.
+        """
+        first = self.pile("", "")
+        services.edit_scan_page(first, index=0, student=self.student.pk)
+
+        self.assertEqual(ScanAlias.objects.count(), 0)
+
+    def test_the_newer_decision_wins(self):
+        """Человек передумал — значит прежняя пара была ошибкой."""
+        other = make_user(self.school, "other@example.com", student=True)
+        other.first_name, other.last_name = "Пётр", "Тиборов"
+        other.save()
+        enrol(other, self.course, by=self.admin)
+
+        first = self.pile("", "Cocramol")
+        services.edit_scan_page(first, index=0, student=self.student.pk)
+        second = self.pile("", "Cocramol")
+        services.edit_scan_page(second, index=0, student=other.pk)
+
+        third = self.pile("", "Cocramol")
+
+        self.assertEqual(ScanAlias.objects.count(), 1)
+        self.assertEqual(services.scan_state(third)["pages"][0]["student"], other.pk)
+
+    def test_memory_belongs_to_the_course_and_not_to_the_school(self):
+        """
+        Список класса курсовой, и две «Ксюши» в разных курсах одной школы — это
+        норма, а не совпадение. Память школы свела бы их в одну.
+        """
+        first = self.pile("Ксюша", "")
+        services.edit_scan_page(first, index=0, student=self.student.pk)
+
+        elsewhere = make_course(self.school, self.year, name="Другой курс")
+        stranger = make_user(self.school, "ksenia@example.com", student=True)
+        stranger.first_name, stranger.last_name = "Ксения", "Панова"
+        stranger.save()
+        enrol(stranger, elsewhere, by=self.admin)
+        work = make_work(self.user, elsewhere)
+        services.save_scan_reading(
+            work,
+            index=0,
+            fingerprint="f0",
+            data={"first_name": "Ксюша", "surname": "", "values": [1] + [None] * 15},
+        )
+
+        self.assertEqual(services.scan_state(work)["pages"][0]["student"], stranger.pk)

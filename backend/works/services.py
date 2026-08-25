@@ -26,8 +26,9 @@ from .models import (
     Mark,
     MarkChange,
     PhotoNote,
-    StudentWork,
+    ScanAlias,
     ScanPage,
+    StudentWork,
     Submission,
     Task,
     Work,
@@ -1286,12 +1287,49 @@ def scan_roster(work) -> list:
     ]
 
 
+def remembered_writings(work) -> dict:
+    """
+    Что этот курс уже разбирал руками: написанное -> кто это оказался.
+
+    Память курсовая, а не школьная: список класса курсовой, и две «Ксюши» в
+    разных курсах одной школы — норма, а не совпадение.
+    """
+    return dict(
+        ScanAlias.objects.filter(course_id=work.course_id).values_list(
+            "written", "student_id"
+        )
+    )
+
+
+def remember_writing(work, row) -> None:
+    """
+    Запомнить, кем оказалось это написание. Зовётся, когда решил человек.
+
+    Молча пропускает страницу без имени: она похожа на любую другую такую же,
+    и запоминать по ней нечего. Новое решение человека побеждает прежнее —
+    спорить с ним памяти не о чем.
+    """
+    from .scanning import fold
+
+    written = fold(row.first_name, row.surname)
+    if not written or row.student_id is None:
+        return
+    ScanAlias.objects.update_or_create(
+        course_id=work.course_id,
+        written=written,
+        defaults={"student_id": row.student_id},
+    )
+
+
 def scan_pages(work) -> list:
     """Строки страниц из базы в объекты разбора."""
-    from .scanning import CELLS, Page
+    from .scanning import CELLS, Page, fold
+
+    known = remembered_writings(work)
 
     return [
         Page(
+            alias_id=known.get(fold(row.first_name, row.surname)),
             index=row.index,
             first=row.first_name,
             surname=row.surname,
@@ -1832,6 +1870,11 @@ def edit_scan_page(work, *, index: int, student=UNSET, cells=None):
         fields.append("second")
     if fields:
         row.save(update_fields=fields)
+    # Человек назвал хозяина — запоминаем, как читалось это написание. Со
+    # следующей пачки того же курса тот же почерк узнается сам, и уменьшительное
+    # имя, и устойчивый промах распознавателя.
+    if student is not UNSET:
+        remember_writing(work, row)
     return row
 
 

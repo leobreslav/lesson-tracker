@@ -1067,3 +1067,57 @@ class PhotoNote(models.Model):
 
     def __str__(self):
         return f"{self.attachment_id} ({self.x:.2f}, {self.y:.2f})"
+
+
+class ScanAlias(models.Model):
+    """
+    Как этот почерк читается — и кто за ним стоит. Память курса, а не школы.
+
+    Учитель на шаге разбора и так называет хозяина спорной страницы. Раньше это
+    решение жило одну пачку: следующая контрольная того же класса начиналась с
+    того же вопроса про того же ученика. Здесь оно живёт дальше.
+
+    **Помнится написанное, а не имя.** Пара — это «то, что прочитал читатель»
+    и «кто это оказался». Поэтому память покрывает не только уменьшительные
+    («Ксюша» — Ксения), но и то, чего не покроет никакой словарь имён:
+    устойчивый промах распознавания. Mathpix читает кириллицу латиницей, и
+    «Степанов» у него всегда `Cocramol` — один раз названный, он узнаётся
+    дальше сам.
+
+    **Курс, а не школа.** Список класса курсовой, и две Ксюши в разных курсах
+    одной школы — это норма, а не совпадение. Память школы свела бы их в одну.
+
+    **Новое решение человека побеждает старое.** Если то же написание он
+    однажды отдал другому ученику, значит прежняя пара была ошибкой: спорить с
+    человеком памяти не о чем.
+    """
+
+    course = models.ForeignKey(
+        "schedule.Course",
+        on_delete=models.CASCADE,
+        related_name="scan_aliases",
+        verbose_name="course",
+    )
+    # Написанное как прочитано, приведённое к сравнимому виду (`scanning.fold`).
+    written = models.CharField("as the reader saw it", max_length=200)
+    student = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="scan_aliases",
+        verbose_name="who it turned out to be",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "remembered handwriting"
+        verbose_name_plural = "remembered handwriting"
+        ordering = ("course", "written")
+        constraints = [
+            models.UniqueConstraint(
+                fields=("course", "written"), name="one_alias_per_writing"
+            )
+        ]
+
+    def __str__(self):
+        return f"{self.written} -> {self.student_id}"

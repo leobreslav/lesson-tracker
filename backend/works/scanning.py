@@ -34,6 +34,22 @@ QUESTIONS = 15
 CELLS = 16
 
 
+def fold(first: str, surname: str) -> str:
+    """
+    Написанное на листе -> ключ памяти курса.
+
+    Сравнимый вид, а не красивый: нижний регистр, `ё` как `е`, лишние пробелы
+    прочь. Имя и фамилия склеиваются **в порядке чтения**, потому что помнится
+    не имя человека, а то, что увидел читатель, — а он и графы путает, и
+    кириллицу пишет латиницей.
+
+    Пустое написание ключом не бывает: страница без имени похожа на любую
+    другую такую же, и запомнить по ней ничего нельзя.
+    """
+    words = f"{first or ''} {surname or ''}".lower().replace("ё", "е").split()
+    return " ".join(words)
+
+
 def similarity(one: str, two: str) -> float:
     one, two = (one or "").strip().lower(), (two or "").strip().lower()
     if not one or not two:
@@ -172,6 +188,10 @@ class Page:
     # Что увидел на той же полоске второй читатель и в чём он не сошёлся с
     # первым (`differs`). Пустой словарь — второго читателя не было.
     second: dict = field(default_factory=dict)
+    # Кем оказалось **это же написание** в прошлый раз (`works.ScanAlias`).
+    # Заполняется там, где живёт база, — разбор остаётся чистыми функциями и
+    # ходит только по тому, что ему дали.
+    alias_id: int | None = None
 
     @property
     def named(self) -> bool:
@@ -207,6 +227,12 @@ def candidates_for(page: Page, roster: list[Person]) -> list[tuple[Person, float
     """
     scored = []
     for person in roster:
+        # Это написание уже разбирал человек, и назвал вот этого. Свидетельство
+        # прямое: не «похоже на», а «в прошлый раз оказалось им». Побуквенное
+        # сходство тут не при чём — так узнаются и «Ксюша», и `Cocramol`.
+        if page.alias_id is not None and person.id == page.alias_id:
+            scored.append((person, 100.0))
+            continue
         first, last = page.first.strip(), page.surname.strip()
         if first and last:
             direct = (like_name(first, person.first) + like_name(last, person.last)) / 2

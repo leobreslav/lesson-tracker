@@ -474,7 +474,23 @@ def _scan_page(course, teacher):
             student=student,
             decided_by_human=number == 1,
         )
-    return "страницы пачки"
+
+    # Память курса: как читался почерк, когда человек назвал хозяина руками.
+    # Живой случай тут — уменьшительное имя: «Ксюша» на бумаге и Ксения в
+    # списке класса. Второй, ради которого память и заведена, словарём имён не
+    # покрывается вовсе — устойчивый промах распознавателя, латиница вместо
+    # кириллицы.
+    if students:
+        from works.models import ScanAlias
+
+        short = {"ксения": "ксюша", "софья": "соня", "даниил": "даня"}
+        first = students[0]
+        ScanAlias.objects.get_or_create(
+            course=course,
+            written=short.get(first.first_name.lower(), first.first_name.lower()),
+            defaults={"student": first},
+        )
+    return "страницы пачки и память почерка"
 
 
 def _spending(school, teacher, course):
