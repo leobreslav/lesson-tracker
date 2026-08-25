@@ -16,6 +16,7 @@ import {
 } from 'react-router-dom'
 import ErrorBoundary from './ErrorBoundary'
 import Journal from './Journal'
+import Messenger from './Messenger'
 import LessonScreen from './LessonScreen'
 import Calendar from './Calendar'
 import Login from './Login'
@@ -209,6 +210,9 @@ export default function App() {
               делают: `/works/:id` — как справились, `/works/:id/edit` — из
               чего работа состоит. Правка стояла окном и в него не влезала */}
           <Route path="/works/:id/edit" element={guarded(WorkEdit)} />
+          {/* переписка: один экран на учителя, ученика и родителя —
+              собеседник природы разговора не меняет */}
+          <Route path="/talks" element={guarded(Messenger)} />
           <Route path="/bank" element={guarded(Bank)} />
           <Route path="/track/:id" element={guarded(StudentTrack)} />
           <Route path="/bank/proposals" element={guarded(Proposals)} />

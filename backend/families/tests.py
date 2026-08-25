@@ -20,7 +20,7 @@ from schools.testing import (
     sign_in,
 )
 
-from .models import FamilyThread, Guardianship, link
+from .models import Guardianship, link
 from . import conversations, viewing
 
 
@@ -196,98 +196,3 @@ class WhoseScreenTests(SchoolTestMixin, APITestCase):
 
         self.assertEqual(answer.status_code, status.HTTP_403_FORBIDDEN)
         self.assertEqual(answer.json()["code"], "students_only")
-
-
-class ConversationTests(SchoolTestMixin, APITestCase):
-    """Разговор о ребёнке: тройка, и у мамы с папой она разная."""
-
-    def setUp(self):
-        super().setUp()
-        self.year = make_year(self.school)
-        self.course = make_course(self.school, self.year)
-        assign(self.user, self.course)
-
-        self.child = make_user(self.school, email="kid@example.com", student=True)
-        self.course.students.create(student=self.child)
-        self.mother = make_user(self.school, email="mama@example.com", parent=True)
-        self.father = make_user(self.school, email="papa@example.com", parent=True)
-        link(self.mother, self.child, relation="мама")
-        link(self.father, self.child, relation="папа")
-
-    def test_the_teachers_of_the_child_are_offered(self):
-        self.assertEqual(conversations.teachers_for(self.child), [self.user])
-
-    def test_mother_and_father_do_not_share_a_thread(self):
-        conversations.open_thread(
-            parent=self.mother, teacher=self.user, child=self.child
-        )
-        conversations.open_thread(
-            parent=self.father, teacher=self.user, child=self.child
-        )
-
-        self.assertEqual(FamilyThread.objects.count(), 2)
-
-    def test_a_thread_is_not_doubled(self):
-        first = conversations.open_thread(
-            parent=self.mother, teacher=self.user, child=self.child
-        )
-        again = conversations.open_thread(
-            parent=self.mother, teacher=self.user, child=self.child
-        )
-
-        self.assertEqual(first.pk, again.pk)
-
-    def test_a_stranger_does_not_read_the_conversation(self):
-        thread = conversations.open_thread(
-            parent=self.mother, teacher=self.user, child=self.child
-        )
-        sign_in(self.client, self.father)
-
-        answer = self.client.get(reverse("family-thread", args=[thread.pk]))
-
-        self.assertEqual(answer.status_code, status.HTTP_400_BAD_REQUEST)
-
-    def test_a_teacher_who_does_not_teach_the_child_is_refused(self):
-        stranger = make_user(self.school, email="nobodys-teacher@example.com")
-
-        with self.assertRaises(Exception) as caught:
-            conversations.open_thread(
-                parent=self.mother, teacher=stranger, child=self.child
-            )
-
-        self.assertIn("not_a_teacher_of_this_child", str(caught.exception.detail))
-
-    def test_both_sides_see_the_thread_in_their_list(self):
-        conversations.open_thread(
-            parent=self.mother, teacher=self.user, child=self.child
-        )
-
-        sign_in(self.client, self.mother)
-        as_parent = self.client.get(reverse("family-threads")).json()["threads"]
-        sign_in(self.client, self.user)
-        as_teacher = self.client.get(reverse("family-threads")).json()["threads"]
-
-        self.assertEqual(len(as_parent), 1)
-        self.assertEqual(len(as_teacher), 1)
-
-    def test_a_student_has_no_conversations_section(self):
-        """Разговор родителя с учителем — не его дело, и раздела у него нет."""
-        sign_in(self.client, self.child)
-
-        answer = self.client.get(reverse("family-threads"))
-
-        self.assertEqual(answer.status_code, status.HTTP_403_FORBIDDEN)
-
-    def test_the_teacher_answers_in_the_same_thread(self):
-        thread = conversations.open_thread(
-            parent=self.mother, teacher=self.user, child=self.child
-        )
-        conversations.say(thread, author=self.mother, text="Как дела?")
-        sign_in(self.client, self.user)
-
-        answer = self.client.post(
-            reverse("family-thread", args=[thread.pk]), {"text": "Хорошо"}
-        )
-
-        self.assertEqual(answer.status_code, status.HTTP_200_OK)
-        self.assertEqual(len(answer.json()["messages"]), 2)

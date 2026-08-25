@@ -49,6 +49,7 @@
 | `journal.md` | журнал курса: ученики × занятия, оценки и посещаемость | `works/journal.py`, `Journal*.jsx` |
 | `bank.md` | задачник: источники, теги, поиск, темы | `backend/bank/`, `Bank*.jsx` |
 | `onboarding.md` | первый вход и шаги настройки | `backend/onboarding/`, `StartHere.jsx` |
+| `talks.md` | переписка: кому можно писать, лента по собеседнику | `backend/talks/`, `Messenger.jsx` |
 | `feedback.md` | обращения к разработчику: ошибки и предложения | `backend/feedback/`, `Feedback*.jsx` |
 | `frontend-ui.md` | ширина, карточки, строка формы, тумблер, навигация | `styles.css`, `Modal.jsx`, `NavBar.jsx`, `api.js` |
 | `seed-data.md` | `seed_demo`, досев, `--rich` | `schools/rich_demo.py`, `*/management/` |

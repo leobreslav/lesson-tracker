@@ -27,6 +27,8 @@ const PAGES = [
   ['/works', PEOPLE.ivanova],
   // журнал: чипы четвертей — такой же ряд контролов, как остальные
   ['/journal', PEOPLE.ivanova],
+  // переписка: строка отправки — такой же ряд контролов
+  ['/talks', PEOPLE.ivanova],
   ['/bank', PEOPLE.ivanova],
   ['/bank/search', PEOPLE.ivanova],
   ['/bank/topics', PEOPLE.ivanova],

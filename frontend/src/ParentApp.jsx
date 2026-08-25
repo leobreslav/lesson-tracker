@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { BrowserRouter, Link, Route, Routes } from 'react-router-dom'
 import EmptyState from './EmptyState'
 import ErrorBoundary from './ErrorBoundary'
-import FamilyChat from './FamilyChat'
+import Messenger from './Messenger'
 import FeedbackButton from './FeedbackButton'
 import StudentCourse from './StudentCourse'
 import StudentWork from './StudentWork'
@@ -150,7 +150,7 @@ export default function ParentApp({ user, onLoggedOut, onLanguageChange }) {
             <Route path="/works/:id" element={<StudentWork />} />
             <Route
               path="/chat"
-              element={<FamilyChat user={user} onLoggedOut={onLoggedOut} />}
+              element={<Messenger onLoggedOut={onLoggedOut} />}
             />
             <Route path="*" element={<ParentNotFound />} />
           </Routes>

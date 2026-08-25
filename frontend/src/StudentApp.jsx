@@ -5,6 +5,7 @@ import EmptyState from './EmptyState'
 import FeedbackButton from './FeedbackButton'
 import ErrorBoundary from './ErrorBoundary'
 import StudentCourse from './StudentCourse'
+import Messenger from './Messenger'
 import StudentWork from './StudentWork'
 import UserMenu from './UserMenu'
 import { fetchStudentCourses, fetchStudentWorks } from './api'
@@ -36,6 +37,14 @@ export default function StudentApp({ user, onLoggedOut, onLanguageChange }) {
           <Link to="/" className="brand">
             {t('app.name')}
           </Link>
+
+          {/* Переписка: у ученика она с теми, кто его учит. Разделов у него
+              было два, и вопрос «а спросить-то как?» решался только внутри
+              задачи — то есть если задача есть. */}
+          <nav className="topbar-nav">
+            <Link to="/">{t('student.title')}</Link>
+            <Link to="/talks">{t('talks.title')}</Link>
+          </nav>
           {/* тот же правый угол, что у учителя: поломку ученик видит ту
               же, а сказать о ней ему было нечем — администратор школы
               интерфейс не чинит */}
@@ -59,6 +68,7 @@ export default function StudentApp({ user, onLoggedOut, onLanguageChange }) {
             element={<StudentCourse onLoggedOut={onLoggedOut} />}
           />
           <Route path="/works/:id" element={<StudentWork />} />
+          <Route path="/talks" element={<Messenger onLoggedOut={onLoggedOut} />} />
           <Route path="*" element={<StudentNotFound />} />
         </Routes>
       </ErrorBoundary>

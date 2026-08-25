@@ -48,7 +48,8 @@
     "works": "Assignments",
     "journal": "Gradebook",
     "bank": "Problem bank",
-    "feedback": "Feedback"
+    "feedback": "Feedback",
+    "talks": "Messages"
   },
   "auth": {
     "prompt": "Sign in to continue.",
@@ -60,17 +61,9 @@
     "child": "Child",
     "pickChild": "Choose a child",
     "pickChildHint": "These screens show one child's study — choose whose to look at.",
-    "about": "about {{name}}",
-    "writeTo": "Write to a teacher:",
-    "message": "Message",
-    "send": "Send",
     "noChildren": {
       "title": "No children yet",
       "hint": "A school administrator links a parent to a child — drop them a line."
-    },
-    "noThreads": {
-      "title": "No conversations yet",
-      "hint": "Write to a teacher first: they answer right here."
     }
   },
   "bells": {
@@ -1401,6 +1394,24 @@
     "paperMark": "Mark for this question",
     "maximum": "(max)",
     "checkColumn": "Check this column"
+  },
+  "talks": {
+    "title": "Messages",
+    "message": "message",
+    "send": "Send",
+    "writeTo": "Write to somebody new",
+    "nothingYet": "not started yet",
+    "pickSomebody": "Pick somebody on the left.",
+    "aboutTask": "to the assignment",
+    "kind": {
+      "teacher": "teacher",
+      "student": "student",
+      "parent": "parent"
+    },
+    "nobody": {
+      "title": "Nobody to write to yet",
+      "hint": "People turn up on their own: colleagues once you are admitted to a school, your child's teachers once they are enrolled on a course."
+    }
   },
   "devSwitch": {
     "label": "Sign in as (dev only)",

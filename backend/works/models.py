@@ -915,6 +915,22 @@ class Message(models.Model):
         blank=True,
         verbose_name="note on a photo",
     )
+    # Третий владелец: разговор двух людей — коллег, родителя с учителем,
+    # ученика с учителем о себе (`talks.Talk`).
+    #
+    # Появился он тогда, когда чат из «будет» стал «есть», и появился **сюда**,
+    # а не своей таблицей: у семейной переписки таблица сообщений была своя, и
+    # это ровно тот случай, о котором предупреждает докстринг выше — у одной
+    # завелась бы отметка о прочтении, у другой нет. Так и вышло, и потому она
+    # сюда и переехала.
+    talk = models.ForeignKey(
+        "talks.Talk",
+        on_delete=models.CASCADE,
+        related_name="messages",
+        null=True,
+        blank=True,
+        verbose_name="talk",
+    )
     author = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,
@@ -939,9 +955,19 @@ class Message(models.Model):
         verbose_name_plural = "messages"
         ordering = ("created_at", "id")
         constraints = [
+            # Ровно один владелец из трёх. Перечислены они здесь, а не «хотя бы
+            # один»: сообщение, принадлежащее и треду, и разговору, читалось бы
+            # дважды — и в ленте собеседника, и на экране задачи.
             models.CheckConstraint(
-                condition=models.Q(thread__isnull=False, note__isnull=True)
-                | models.Q(thread__isnull=True, note__isnull=False),
+                condition=models.Q(
+                    thread__isnull=False, note__isnull=True, talk__isnull=True
+                )
+                | models.Q(
+                    thread__isnull=True, note__isnull=False, talk__isnull=True
+                )
+                | models.Q(
+                    thread__isnull=True, note__isnull=True, talk__isnull=False
+                ),
                 name="message_belongs_to_one_conversation",
             ),
         ]

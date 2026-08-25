@@ -6,16 +6,11 @@
 
 from django.urls import path
 
-from .views import (
-    ChildTeachersView,
-    ChildrenView,
-    FamilyThreadView,
-    FamilyThreadsView,
-)
+from .views import ChildTeachersView, ChildrenView
 
 urlpatterns = [
     path("children/", ChildrenView.as_view(), name="family-children"),
     path("teachers/", ChildTeachersView.as_view(), name="family-teachers"),
-    path("threads/", FamilyThreadsView.as_view(), name="family-threads"),
-    path("threads/<int:pk>/", FamilyThreadView.as_view(), name="family-thread"),
+    # Переписки здесь больше нет: она общая для всех собеседников и живёт под
+    # `/api/talks/`. Разговор родителя с учителем — её случай, а не свой вид.
 ]

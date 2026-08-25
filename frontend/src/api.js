@@ -939,13 +939,20 @@ export const fetchChildren = () => request('/api/family/children/')
 
 export const fetchChildTeachers = () => request(withChild('/api/family/teachers/'))
 
-export const fetchFamilyThreads = () => request('/api/family/threads/')
+/**
+ * Переписка: список собеседников и один разговор.
+ *
+ * Разговор адресуется **человеком**, а не номером треда: так его и держат в
+ * голове — «переписка с Ивановой», а не «тред 47». Семейная переписка ходила
+ * своими адресами, пока казалась своим видом; собеседник природы разговора не
+ * меняет, и адрес теперь один на всех.
+ */
+export const fetchTalks = () => request('/api/talks/')
 
-export const startFamilyThread = (fields) =>
-  request('/api/family/threads/', { method: 'POST', body: fields })
+export const fetchTalk = (person) => request(`/api/talks/${person}/`)
 
-export const sendFamilyMessage = (thread, text) =>
-  request(`/api/family/threads/${thread}/`, { method: 'POST', body: { text } })
+export const sendTalkMessage = (person, text) =>
+  request(`/api/talks/${person}/`, { method: 'POST', body: { text } })
 
 export const sendAnswer = (task, answer) =>
   request(`/api/student/tasks/${task}/answer/`, { method: 'POST', body: { answer } })

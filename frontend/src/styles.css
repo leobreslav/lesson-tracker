@@ -8617,3 +8617,32 @@ button.dropzone:hover:not(:disabled) {
 .journal-legend {
   margin-top: 0.5rem;
 }
+
+/*
+ * Непрочитанное в списке собеседников.
+ *
+ * Числом, а не точкой: «три сообщения» и «одно» — разный повод открыть, и
+ * точка стирает эту разницу. Стоит у имени, а не у последней реплики: ищут
+ * взглядом, от кого ждут ответа, а не что именно сказано.
+ */
+.chat-pick .unread {
+  display: inline-block;
+  min-width: 1.1rem;
+  margin-left: 0.4rem;
+  padding: 0 0.3rem;
+  border-radius: 999px;
+  background: #1a73e8;
+  color: #fff;
+  font-size: 0.75rem;
+  line-height: 1.4;
+  text-align: center;
+}
+
+/* «Написать впервые» — второй ярус списка: те, с кем разговор ещё не начат.
+   Разделены заголовком, а не порядком: иначе начатое и незнакомое читаются
+   одним списком, и найти в нём переписку с непрочитанным труднее. */
+.chat-fresh {
+  margin-top: 0.75rem;
+  border-top: 1px solid #e0e0e0;
+  padding-top: 0.5rem;
+}

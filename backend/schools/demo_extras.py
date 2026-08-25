@@ -731,14 +731,15 @@ def _families(school, students):
       учётки на одних и тех же детей, и это решение видно только там, где они
       стоят рядом;
     * **разговор заводится тем же путём, что в приложении** — через
-      `conversations.open_thread`, который проверяет и родство, и то, что
-      учитель действительно ведёт курс ребёнка. Посев в обход выразил бы
-      состояние, которого в жизни не бывает.
+      `talks.say`, который проверяет, есть ли этим двоим о чём говорить: учитель
+      должен вести курс ребёнка. Посев в обход выразил бы состояние, которого в
+      жизни не бывает.
     """
     from accounts.models import User
     from allauth.account.models import EmailAddress
     from families import conversations, viewing
     from families.models import link
+    from talks import services as talks
 
     if not students:
         return ""
@@ -783,18 +784,18 @@ def _families(school, students):
             teachers = conversations.teachers_for(child)
             if not teachers:
                 continue
-            thread = conversations.open_thread(
-                parent=parent, teacher=teachers[0], child=child
-            )
-            if not thread.messages.exists():
-                conversations.say(
-                    thread,
-                    author=parent,
+            talk = talks.talk_with(parent, teachers[0], child=child)
+            if not talk.messages.exists():
+                talks.say(
+                    parent,
+                    teachers[0],
+                    child=child,
                     text=f"Здравствуйте! Как у {child.first_name} с последней работой?",
                 )
-                conversations.say(
-                    thread,
-                    author=teachers[0],
+                talks.say(
+                    teachers[0],
+                    parent,
+                    child=child,
                     text="Добрый день! Работу сдал, ошибки разберём на уроке.",
                 )
             break

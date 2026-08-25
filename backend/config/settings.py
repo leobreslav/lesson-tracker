@@ -71,6 +71,7 @@ INSTALLED_APPS = [
     'bank',
     'feedback',
     'families',
+    'talks',
 ]
 
 AUTH_USER_MODEL = "accounts.User"
