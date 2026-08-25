@@ -165,6 +165,29 @@ class StudentViewTests(PaperTestCase):
             [item["id"] for item in body["papers"]], [self.my_scan.pk]
         )
 
+    def test_the_scanned_pile_is_no_material_of_the_assignment(self):
+        """
+        Пачка приложена к работе — и в материалах задания её нет ни у кого.
+
+        Место опасное именно тем, что оно одно на обе стороны: `files_of`
+        собирает материалы и учителю, и ученику. Забудь тут условие, и стопка
+        со всем классом уехала бы ему молча — при живом `staff_only` во всех
+        остальных дверях. Учителю она нужна не здесь, а в столбце PDF сводной
+        таблицы, рядом с нарезанными из неё работами.
+        """
+        from . import services
+
+        pile = services.attach_batch(
+            self.work, data=b"%PDF-1.4 pile", name="pile.pdf", by=self.user
+        )
+
+        mine = self.client.get(reverse("work-detail", args=[self.work.pk])).json()
+        self.assertNotIn(pile.pk, [item["id"] for item in mine["files"]])
+
+        self.sign_in(self.student)
+        body = self.client.get(reverse("student-work", args=[self.work.pk])).json()
+        self.assertNotIn(pile.pk, [item["id"] for item in body["files"]])
+
     def test_the_scan_is_shown_even_when_results_are_hidden(self):
         """
         `show_result` — про отметку, разошедшуюся по классу. Своя исписанная

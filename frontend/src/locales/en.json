@@ -1304,6 +1304,8 @@
     "addScan": "Add a scan",
     "dropScan": "Drop a scan here, or click to choose",
     "column": "PDF",
+    "batch": "The whole pile",
+    "batchOnlyYou": "— the scan as it came, and only you can see it",
     "onPaper": "This work was written on paper. Your marked copy appears here once the teacher uploads it."
   },
   "split": {
@@ -1476,7 +1478,7 @@
       "afterStrip": "Only the header is read — the strip with the name and the mark cells. Solutions and rough work never leave your machine.",
       "afterSplit": "The pile sorts itself out by student, and anything doubtful is put to you: that step cannot be skipped.",
       "afterMarks": "The marks in the cells become grades, and the pages land in each student's own work.",
-      "afterSource": "The source file is not kept: we end up with the per-student pieces only, and the file stays on your computer."
+      "afterSource": "The whole pile stays with the work, next to the per-student pieces in the PDF column. Only you can see it, and the wizard can start from it again without you hunting for the file on disk."
     },
     "questionsSet_one": "{{count}} question",
     "questionsSet_other": "{{count}} questions",
@@ -1511,6 +1513,18 @@
     "noPreviewNoFile": "The pages are drawn from the PDF, and this browser no longer has it. Point at the same file to see them — nothing will be read or paid for twice.",
     "headerless": "No header found here: most likely a question paper.",
     "nobodyYet": "Nobody yet",
+    "batchRefused": "The run was recorded: the students have their work and their marks. The pile itself could not be kept, though — there was no room for it: either the file is over the limit or the school has used up its storage. Nothing here can start a new run from it, so keep your own copy of the scan.",
+    "commonConditions": "The questions, handed out once",
+    "commonConditionsHint": "This sheet comes before the first piece of work and carries no header, so it is the question paper — handed out once for everybody. A run like this marks no boundaries (there is nothing for it to divide) and is not worth reading for marks, but it does go into every student's PDF, at the front: otherwise they open their answers without the questions. If it is somebody's work after all, name the owner below and the sheet stops being shared.",
+    "commonConditionsLine_one": "{{count}} question sheet lies once at the top of the pile (page {{pages}}) — it goes to the front of every student's work.",
+    "commonConditionsLine_other": "{{count}} question sheets lie once at the top of the pile (pages {{pages}}) — they go to the front of every student's work.",
+    "saved": {
+      "title": "The pile kept with this work",
+      "resume": "Carry on from what was read",
+      "afresh": "Read it again",
+      "resumeHint": "Carrying on redraws the pages and does not re-read what has already been read: nobody pays for that twice.",
+      "afreshHint": "Reading it again means paying for the whole pile once more: nothing is left from the previous run."
+    },
     "byHand": "— you said so yourself",
     "pageSum": "Σ",
     "batchSpend_one": "This pile has cost {{amount}}, {{count}} reading.",

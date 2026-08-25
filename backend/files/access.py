@@ -63,7 +63,11 @@ def family_attachments(user):
 
     people = watched_students(user)
     return Attachment.objects.filter(
-        Q(student_work__student__in=people) | Q(work__in=visible_works_for(people))
+        Q(student_work__student__in=people)
+        # `staff_only` снимает у вложения работы одну вещь — класс. Приложенная
+        # к работе отсканированная пачка это работы всех учеников разом, и
+        # видеть её вправе только тот, кто её и принёс
+        | Q(work__in=visible_works_for(people), staff_only=False)
     )
 
 
@@ -147,7 +151,11 @@ def can_read(user, attachment) -> bool:
         # работа уже открыта. До открытия работы не существует ни для кого из
         # них, и вложение исчезает вместе с ней
         people = watched_students(user)
-        if people and visible_works_for(people).filter(pk=attachment.work_id).exists():
+        if (
+            people
+            and not attachment.staff_only
+            and visible_works_for(people).filter(pk=attachment.work_id).exists()
+        ):
             return True
         return (
             Course.objects.writable_by(user)

@@ -434,9 +434,16 @@ class WorkViewSet(CourseScopedViewSet):
 
         form = ScanApplySerializer(data=request.data)
         form.is_valid(raise_exception=True)
+        upload = form.validated_data["file"]
         return Response(
             services.scan_apply(
-                work, data=form.validated_data["file"].read(), by=request.user
+                work,
+                data=upload.read(),
+                # имя файла едет вместе с байтами: пачка остаётся у работы, и
+                # узнаётся она человеком по тому имени, под которым он её и
+                # сканировал
+                name=upload.name,
+                by=request.user,
             )
         )
 

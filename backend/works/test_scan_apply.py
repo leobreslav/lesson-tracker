@@ -28,6 +28,17 @@ from .models import Mark, ScanAlias, ScanPage, StudentWork
 from .test_splitting import book
 
 
+def pages_of(attachment) -> int:
+    """Сколько страниц в приложенном PDF — читая из бакета, как читает ученик."""
+    from io import BytesIO
+
+    from files import storage
+    from pypdf import PdfReader
+
+    with storage.backend().open(attachment.stored_file.key) as fp:
+        return len(PdfReader(BytesIO(fp.read())).pages)
+
+
 class ScanApplyTests(SchoolTestMixin, APITestCase):
     def setUp(self):
         super().setUp()
@@ -171,6 +182,104 @@ class ScanApplyTests(SchoolTestMixin, APITestCase):
 
         with storage.backend().open(paper.stored_file.key) as fp:
             self.assertEqual(len(PdfReader(BytesIO(fp.read())).pages), 2)
+
+    def test_the_pile_itself_stays_with_the_work(self):
+        """
+        Исходник сохраняется — и это отмена прежнего решения, а не недосмотр.
+
+        Не хранили его затем, чтобы в системе не лежало одного файла со всеми
+        работами класса. Риск снят правом (`staff_only`), а взамен получены два
+        случая, каждый из которых был тупиком: вкладку закрыли на середине
+        разбора, и страницы рисовать не из чего; разобралось не так, а скана на
+        диске уже нет.
+        """
+        self.read(0, "Fil", "Burmov", {0: 3})
+
+        response = self.apply()
+
+        self.assertEqual(response.status_code, 200)
+        pile = Attachment.objects.get(work=self.work, staff_only=True)
+        self.assertEqual(response.json()["batch"], pile.pk)
+        self.assertEqual(pages_of(pile), 2, "приложена вся пачка, а не кусок")
+
+    def test_the_same_pile_applied_twice_is_one_reference(self):
+        """
+        Повторный разбор той же пачки — обычное дело, а два скана — нет.
+
+        Байты дедуплицируются сами, а вот вторая ссылка на них сказала бы, что
+        стопку сканировали дважды, и выбирать между двумя одинаковыми строками
+        пришлось бы человеку.
+        """
+        self.read(0, "Fil", "Burmov", {0: 3})
+        self.apply()
+        self.read(0, "Fil", "Burmov", {0: 3})
+        self.apply()
+
+        self.assertEqual(Attachment.objects.filter(work=self.work).count(), 1)
+
+    def test_a_repeated_run_does_not_double_the_student_s_file(self):
+        """
+        И ученику не достаётся второй копии собственной работы.
+
+        Пока этого не было, каждый повторный разбор добавлял ему ещё один PDF
+        с теми же байтами — а отличаются они или нет, ученику неоткуда узнать.
+        """
+        self.read(0, "Fil", "Burmov", {0: 3})
+        self.apply()
+        self.read(0, "Fil", "Burmov", {0: 3})
+        self.apply()
+
+        mine = StudentWork.objects.get(work=self.work, student=self.student)
+        self.assertEqual(Attachment.objects.filter(student_work=mine).count(), 1)
+
+    def test_the_pile_reaches_the_table_and_the_wizard(self):
+        """
+        Столбец PDF отвечает на «где бумага», и пачка — часть этого ответа.
+
+        Мастеру она нужна затем же: шаг выбора файла был единственным местом,
+        где требовалось найти скан на диске.
+        """
+        self.read(0, "Fil", "Burmov", {0: 3})
+        self.apply()
+
+        table = self.client.get(reverse("work-table", args=[self.work.pk])).json()
+        state = self.client.get(
+            reverse("work-scan-state", args=[self.work.pk])
+        ).json()
+
+        self.assertEqual(len(table["batches"]), 1)
+        self.assertEqual(table["batches"][0]["title"], "scan.pdf")
+        self.assertEqual(len(state["batches"]), 1)
+
+    def test_a_pile_too_big_to_keep_does_not_undo_the_marks(self):
+        """
+        Отказ хранилища отменяет пачку, а не разбор.
+
+        Весит она столько же, сколько все куски вместе, и упереться в предел
+        файла может только она. Уронить из-за неё применение значило бы отдать
+        оценки заложником нашего же удобства — при том что удобство наше, а
+        оценки учительские.
+        """
+        from unittest.mock import patch
+
+        from files.services import UploadRefused
+
+        self.read(0, "Fil", "Burmov", {0: 3})
+
+        # отказывает именно пачка: куски меньше её и проходят, поэтому предел
+        # файла подменять нельзя — он завалил бы и их, то есть другой случай
+        with patch.object(
+            services,
+            "attach_batch",
+            side_effect=UploadRefused("file_too_large", "too big"),
+        ):
+            response = self.apply()
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIsNone(response.json()["batch"])
+        self.assertEqual(response.json()["batch_refused"], "file_too_large")
+        mine = StudentWork.objects.get(work=self.work, student=self.student)
+        self.assertTrue(Mark.objects.filter(student_work=mine).exists())
 
     def test_the_rows_are_gone_once_it_is_applied(self):
         """Работа сделана: дальше про неё отвечают вложения и оценки."""
@@ -762,3 +871,99 @@ class ConditionsBelongToSomebodyTests(SchoolTestMixin, APITestCase):
         self.assertEqual(pages[2]["student"], self.second.pk, "условия второго ничьи")
         self.assertEqual(pages[1]["student"], self.student.pk)
         self.assertEqual(pages[3]["student"], self.second.pk)
+
+
+class ConditionsAtTheTopBelongToEverybodyTests(SchoolTestMixin, APITestCase):
+    """
+    Ряд условий, лежащий **один раз в начале**, — общий, а не чей-то.
+
+    Границ он не задаёт: делить ему нечего, за ним идут все работы подряд. Зато
+    в PDF он уезжает каждому — иначе ученик открывает свои ответы без вопросов.
+
+    На экране у такой страницы до сих пор стоял хозяин — последний ученик
+    пачки, тот, кому её положили последним при обходе пакетов. Человек видел
+    уверенно названного владельца и шёл исправлять правильное, а исправить
+    «общий лист» на «лист Петра» значило бы отобрать условия у остальных
+    двенадцати.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.year = make_year(self.school)
+        self.course = make_course(self.school, self.year)
+        self.work = make_work(self.user, self.course)
+        services.set_questions(
+            self.work, [{"question": "Задача 1", "maximum": 3}], by=self.user
+        )
+        self.student.first_name, self.student.last_name = "Fil", "Burmov"
+        self.student.save()
+        self.second = make_user(self.school, "second@example.com", student=True)
+        self.second.first_name, self.second.last_name = "Peter", "Tibora"
+        self.second.save()
+        enrol(self.student, self.course, by=self.admin)
+        enrol(self.second, self.course, by=self.admin)
+        self.client.force_authenticate(self.user)
+
+        # условия, работа первого, работа второго: один ряд условий на всех
+        services.mark_headerless(self.work, index=0)
+        for index, person in ((1, self.student), (2, self.second)):
+            services.save_scan_reading(
+                self.work,
+                index=index,
+                fingerprint=f"f{index}",
+                data={
+                    "first_name": person.first_name,
+                    "surname": person.last_name,
+                    "values": [1] + [None] * 15,
+                },
+            )
+
+    def test_the_shared_sheet_is_named_as_shared_and_not_as_somebody_s(self):
+        state = services.scan_state(self.work)
+        pages = {page["index"]: page for page in state["pages"]}
+
+        self.assertTrue(pages[0]["common_conditions"])
+        self.assertIsNone(pages[0]["student"], "у общего листа хозяина нет")
+        self.assertEqual(state["common_conditions"], [0])
+        self.assertFalse(pages[1]["common_conditions"])
+
+    def test_the_shared_sheet_is_counted_once_and_not_once_per_packet(self):
+        """
+        Листов условий столько, сколько их в пачке.
+
+        Считалось это суммой по пакетам, а общий ряд лежит в каждом, — и два
+        листа условий на тринадцать работ объявлялись двадцатью шестью.
+        """
+        self.assertEqual(services.scan_state(self.work)["conditions"], 1)
+
+    def test_the_shared_sheet_opens_every_student_s_file(self):
+        """И уезжает оно в начало работы: условия читают до решения, не после."""
+        response = self.client.post(
+            reverse("work-scan-apply", args=[self.work.pk]),
+            {"file": SimpleUploadedFile("scan.pdf", book(3))},
+            format="multipart",
+        )
+        self.assertEqual(response.status_code, 200)
+
+        for person in (self.student, self.second):
+            row = StudentWork.objects.get(work=self.work, student=person)
+            paper = Attachment.objects.get(student_work=row)
+            self.assertEqual(pages_of(paper), 2, f"условий нет у {person.last_name}")
+
+    def test_a_human_naming_the_owner_takes_the_sheet_out_of_the_shared_run(self):
+        """
+        Сказанное человеком сильнее раскладки — и здесь тоже.
+
+        «Общий лист» это наш вывод, а не факт с бумаги: ряд без шапки бывает и
+        плохо снятой работой. Назвали хозяина — лист перестал быть общим.
+        """
+        # хозяин называется тот, чья работа идёт следом: лист лежит перед ней,
+        # и в стопке это его первая страница, а не чужая
+        services.edit_scan_page(self.work, index=0, student=self.student)
+
+        state = services.scan_state(self.work)
+        pages = {page["index"]: page for page in state["pages"]}
+
+        self.assertFalse(pages[0]["common_conditions"])
+        self.assertEqual(pages[0]["student"], self.student.pk)
+        self.assertEqual(state["common_conditions"], [])

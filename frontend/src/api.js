@@ -777,6 +777,25 @@ export const applyScan = (work, file) => {
   return request(`/api/works/${work}/scan/apply/`, { method: 'POST', body: form })
 }
 
+/**
+ * Взять приложенную к работе пачку обратно — файлом, как будто её выбрали.
+ *
+ * Мастеру нужен не адрес, а сам PDF: страницы рисует браузер, полоски режет
+ * он же, и на применение файл уезжает целиком. Поэтому подписанная ссылка
+ * тут же и скачивается, а наружу отдаётся `File` — тот самый объект, который
+ * до сих пор приходил из поля выбора файла. Ниже по течению про разницу
+ * «выбрали руками» и «взяли с сервера» не знает никто, и знать не должен.
+ *
+ * Ходит запрос **не** через `request`: адрес чужой (бакет), и заголовок с
+ * нашим токеном там не нужен и вреден — подпись в самой ссылке.
+ */
+export const fetchScanBatch = async (id, name = 'scan.pdf') => {
+  const url = await photoUrl(id)
+  const answer = await fetch(url)
+  if (!answer.ok) throw new ApiError(i18n.t('errors.downloadFailed'), answer.status)
+  return new File([await answer.blob()], name, { type: 'application/pdf' })
+}
+
 export const fetchAiBudget = () => request('/api/school/ai-budget/')
 
 export const saveAiBudget = (cents) =>

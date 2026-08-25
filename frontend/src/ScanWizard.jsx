@@ -10,6 +10,7 @@ import {
   applyScan,
   editScanPage,
   fetchQuestions,
+  fetchScanBatch,
   fetchScanState,
   markHeaderless,
   readScanPage,
@@ -234,6 +235,19 @@ export default function ScanWizard({ work, onClose, onDone }) {
     return run(async () => {
       const result = await applyScan(work.id, chosen)
       onDone?.(result)
+
+      /* Пачку не удалось сохранить — а применение прошло.
+         Закрыть окно молча тут нельзя: снаружи это выглядит как обычный
+         успех, и человек узнает о пропаже только тогда, когда придёт
+         перезапускать разбор и не найдёт файла. Оценки и работы при этом на
+         месте, поэтому это сообщение, а не отказ. */
+      if (result.batch_refused) {
+        setError(t('scan.batchRefused'))
+        setStage('file')
+        setState(await fetchScanState(work.id).catch(() => null))
+        return
+      }
+
       onClose()
     })
   }
@@ -292,6 +306,11 @@ export default function ScanWizard({ work, onClose, onDone }) {
           onSecond={setSecond}
           questions={scale.length}
           read={state?.pages?.length ?? 0}
+          /* Пачки, уже приложенные к работе. Раньше сюда можно было прийти
+             только со своим файлом, а он лежит на диске у человека — и через
+             неделю после контрольной может там и не лежать. */
+          batches={state?.batches ?? []}
+          onTake={(batch) => run(() => fetchScanBatch(batch.id, batch.title))}
           onReset={() => run(async () => setState(await resetScan(work.id)))}
           onBack={() => setStage('questions')}
           onForward={() => setStage('pages')}
@@ -510,6 +529,8 @@ function FileStep({
   busy,
   questions,
   read,
+  batches = [],
+  onTake,
   onReset,
   readQuestions,
   onReadQuestions,
@@ -551,6 +572,25 @@ function FileStep({
   const nameReader = ableNames.includes(reader) ? reader : ''
   const readerUsed = nameReader || ableNames[0] || ''
   const secondUsed = second && secondReader.able
+
+  /*
+   * Взять пачку, приложенную к работе, вместо файла с диска.
+   *
+   * Дальше она идёт той же дорогой, что и выбранная руками: ниже по течению
+   * про разницу не знает никто. Развилка ровно одна и она про деньги —
+   * **продолжить** или **перечитать**. Прочитанное узнаётся по отпечатку и
+   * второй раз не оплачивается, поэтому продолжение бесплатно; сброс стирает
+   * оплаченное, и потому спрашивается тем же `window.confirm`, что и «начать
+   * пачку заново» рядом.
+   */
+  const take = async (batch, afresh) => {
+    if (afresh && read > 0 && !window.confirm(t('scan.startOverConfirm', { count: read })))
+      return
+    const chosen = await onTake(batch)
+    if (!chosen) return
+    if (afresh && read > 0) await onReset()
+    onPick(chosen, readerUsed, secondUsed)
+  }
 
   return (
     <section className="scan-step">
@@ -732,6 +772,54 @@ function FileStep({
           <span className="hint">{t('scan.alreadyRead', { count: read })}</span>
         </div>
       )}
+
+      {/*
+        * Пачка, уже приложенная к работе.
+        *
+        * Шаг вёл только через файл с диска, и это был тупик в двух живых
+        * случаях сразу: вкладку закрыли на середине разбора (страницы рисует
+        * браузер, а файла у новой вкладки нет) и «разобралось не так» через
+        * неделю после контрольной, когда скан с диска уже убрали. Теперь
+        * пачка остаётся у работы, и оба случая решаются отсюда.
+        *
+        * Кнопок две, и разница между ними денежная, а не косметическая:
+        * продолжение перерисовывает страницы и не платит за прочитанное,
+        * перечитывание платит за всю пачку заново.
+        */}
+      {batches.length > 0 && (
+        <div className="scan-about">
+          <p className="hint">
+            <b>{t('scan.saved.title')}</b>
+          </p>
+          {batches.map((batch) => (
+            <div className="row middle" key={batch.id}>
+              <span>{batch.title}</span>
+              {read > 0 && (
+                <button
+                  type="button"
+                  className="secondary compact"
+                  disabled={busy}
+                  onClick={() => take(batch, false)}
+                >
+                  {t('scan.saved.resume')}
+                </button>
+              )}
+              <button
+                type="button"
+                className="secondary compact"
+                disabled={busy}
+                onClick={() => take(batch, true)}
+              >
+                {t('scan.saved.afresh')}
+              </button>
+            </div>
+          ))}
+          <p className="hint">
+            {t(read > 0 ? 'scan.saved.resumeHint' : 'scan.saved.afreshHint')}
+          </p>
+        </div>
+      )}
+
       <label
         className={over ? 'dropzone over' : 'dropzone'}
         onDragOver={(event) => { event.preventDefault(); setOver(true) }}
@@ -936,6 +1024,18 @@ function PagesStep({ state, all, byIndex, questions, busy, canFlip, onDecide, on
       {state.conditions > 0 && (
         <p className="hint">
           {t('scan.conditions', { count: state.conditions, packets: state.packets?.length ?? 0 })}
+        </p>
+      )}
+
+      {/* Ряд условий, лежащий один раз в начале, границ пачке не задаёт —
+          делить ему нечего. Зато он общий, и сказать об этом надо здесь, до
+          применения: раскладка от этого другая, и работа ученика тоже. */}
+      {(state.common_conditions ?? []).length > 0 && (
+        <p className="hint">
+          {t('scan.commonConditionsLine', {
+            count: state.common_conditions.length,
+            pages: state.common_conditions.map((index) => index + 1).join(', '),
+          })}
         </p>
       )}
 
@@ -1174,10 +1274,27 @@ function PagesStep({ state, all, byIndex, questions, busy, canFlip, onDecide, on
             </p>
           )}
 
-          <p>
-            <b>{row?.student ? nameOf(row.student) : t('scan.nobodyYet')}</b>
-            {row?.decided_by_human && <span className="hint"> {t('scan.byHand')}</span>}
-          </p>
+          {/*
+            * Общие условия — своё состояние, а не «ничья страница».
+            *
+            * Хозяина у такого листа нет и быть не может: он уедет в начало
+            * работы **каждого** ученика. Пока состояния не было, экран
+            * показывал здесь имя последнего ученика пачки — того, кому лист
+            * положили последним, — и человек шёл исправлять правильное.
+            */}
+          {row?.common_conditions ? (
+            <>
+              <p>
+                <b>{t('scan.commonConditions')}</b>
+              </p>
+              <p className="hint">{t('scan.commonConditionsHint')}</p>
+            </>
+          ) : (
+            <p>
+              <b>{row?.student ? nameOf(row.student) : t('scan.nobodyYet')}</b>
+              {row?.decided_by_human && <span className="hint"> {t('scan.byHand')}</span>}
+            </p>
+          )}
 
           {/* тройка лучших — по этой странице, а не по пакету: у пакета
               кандидатов может не быть вовсе, и тогда экран предлагал первых

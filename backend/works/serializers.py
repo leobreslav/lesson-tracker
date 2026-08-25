@@ -161,7 +161,7 @@ def work_files_prefetch():
 
     return Prefetch(
         "attachments",
-        queryset=Attachment.objects.filter(inline=False)
+        queryset=Attachment.objects.filter(inline=False, staff_only=False)
         .select_related("stored_file")
         .annotate(reference_count=Count("stored_file__attachments")),
     )
@@ -183,10 +183,22 @@ def files_of(work) -> list:
     функция одинаково работает и над готовым prefetch'ем (список работ), и
     над одной работой без него (страница ученика). Спроси она базу — prefetch
     списка не значил бы ничего.
+
+    Тем же отсевом уходит и отсканированная пачка (`staff_only`). Владелец у
+    неё тот же — работа, — а материалом задания она не является ни для кого:
+    ученику её показывать нельзя вовсе (там весь класс с отметками), а
+    учителю она нужна не здесь, а в столбце PDF сводной таблицы, рядом с
+    нарезанными из неё работами. Именно «одна функция на обе стороны» и
+    делает это место опасным: забудь тут условие, и пачка уехала бы классу
+    молча, при живом `staff_only` во всех остальных дверях.
     """
     from files.serializers import AttachmentSerializer
 
-    rows = [item for item in work.attachments.all() if not item.inline]
+    rows = [
+        item
+        for item in work.attachments.all()
+        if not item.inline and not item.staff_only
+    ]
     return AttachmentSerializer(rows, many=True).data
 
 

@@ -49,6 +49,12 @@ class AttachmentViewSet(viewsets.ModelViewSet):
         # где эта картинка и зачем.
         queryset = queryset.filter(inline=False)
 
+        # Отсканированная пачка целиком в списке материалов работы — не
+        # материал: её не задают классу и не правят строкой. Живёт она там,
+        # где её и заводят, — в столбце PDF сводной таблицы, рядом с
+        # нарезанными из неё работами.
+        queryset = queryset.filter(staff_only=False)
+
         for name in OWNER_FIELDS:
             raw = params.get(name)
             if not raw:

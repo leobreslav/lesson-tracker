@@ -9,7 +9,13 @@ import Modal from './Modal'
 import ScaleDialog from './ScaleDialog'
 import SplitDialog from './SplitDialog'
 import TaskBrief from './TaskBrief'
-import { fetchWorkTable, gradeStudent, saveScale, splitScan } from './api'
+import {
+  fetchWorkTable,
+  gradeStudent,
+  openAttachment,
+  saveScale,
+  splitScan,
+} from './api'
 import { POLL_MS } from './polling'
 
 /**
@@ -345,6 +351,43 @@ export default function WorkTable() {
                 </tr>
               ))}
             </tbody>
+
+            {/*
+              * Пачка целиком — в том же столбце PDF, что и нарезанные из неё
+              * работы, и отдельной строкой внизу: это не ученик, а то, из чего
+              * сделаны все строки выше.
+              *
+              * Классу она не видна вовсе, и это не оформление, а право
+              * (`staff_only` у вложения): в ней лежат работы всех учеников с
+              * отметками, и один показ — это показ всем сразу. Сказано об этом
+              * прямо в строке, потому что «PDF работы» рядом виден ученику, и
+              * разницу человек обязан видеть без догадок.
+              */}
+            {showRow && (table.batches ?? []).length > 0 && (
+              <tfoot>
+                {table.batches.map((batch) => (
+                  <tr key={batch.id} className="batch-row">
+                    <th className="who">
+                      {t('paper.batch')}
+                      <span className="hint"> {t('paper.batchOnlyYou')}</span>
+                    </th>
+                    {table.tasks.length > 0 && <td colSpan={table.tasks.length} />}
+                    <td className="mark">
+                      <button
+                        type="button"
+                        className="link"
+                        title={batch.title}
+                        disabled={busy}
+                        onClick={() => openAttachment(batch.id)}
+                      >
+                        📄
+                      </button>
+                    </td>
+                    {table.tasks.length > 0 && <td className="total" />}
+                  </tr>
+                ))}
+              </tfoot>
+            )}
           </table>
         </section>
       )}

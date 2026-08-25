@@ -1404,6 +1404,64 @@ class WorkHandoutTests(FilesTestCase):
         self.assertEqual(answer.status_code, 403)
         self.assertTrue(Attachment.objects.filter(pk=handout["id"]).exists())
 
+    def test_the_scanned_pile_is_kept_from_the_class(self):
+        """
+        Пачка приложена к работе — и всё же классу не видна.
+
+        Владелец у неё тот же, что у условий («что здесь задано»), а читатель
+        другой: в ней лежат работы всех учеников с отметками, и один показ —
+        это показ всем сразу. Разницу держит `staff_only`, а не оформление
+        экрана: экран показывает то, что ему отдали.
+        """
+        from works.services import attach_batch
+
+        pile = attach_batch(
+            self.work, data=b"%PDF-1.4 pile", name="pile.pdf", by=self.user
+        )
+        handout = self.attach().data
+        self.sign_in(self.student)
+
+        listed = self.client.get(reverse("attachment-list"), {"work": self.work.pk})
+        self.assertEqual([item["id"] for item in listed.data], [handout["id"]])
+        self.assertEqual(
+            self.client.get(reverse("attachment-detail", args=[pile.pk])).status_code,
+            404,
+            "чужая пачка для ученика не «запрещена», а не существует",
+        )
+
+    def test_the_pile_is_no_handout_for_the_teacher_either(self):
+        """
+        В списке материалов работы её тоже нет: её не задают, а разбирают.
+
+        Список — это то, чем на уроке пользуются и что правят строкой за
+        строкой; отсканированная стопка там была бы строкой, которую нельзя
+        ни отдать классу, ни объяснить.
+        """
+        from works.services import attach_batch
+
+        pile = attach_batch(
+            self.work, data=b"%PDF-1.4 pile", name="pile.pdf", by=self.user
+        )
+
+        listed = self.client.get(reverse("attachment-list"), {"work": self.work.pk})
+
+        self.assertNotIn(pile.pk, [item["id"] for item in listed.data])
+
+    def test_the_teacher_may_still_throw_the_pile_away(self):
+        """
+        Иначе она была бы файлом, который занимает квоту и не убирается.
+        """
+        from works.services import attach_batch
+
+        pile = attach_batch(
+            self.work, data=b"%PDF-1.4 pile", name="pile.pdf", by=self.user
+        )
+
+        answer = self.client.delete(reverse("attachment-detail", args=[pile.pk]))
+
+        self.assertEqual(answer.status_code, 204)
+        self.assertFalse(Attachment.objects.filter(pk=pile.pk).exists())
+
     def test_a_picture_pasted_into_the_explanation_stands_in_the_text(self):
         answer = self.client.post(
             reverse("attachment-list"),

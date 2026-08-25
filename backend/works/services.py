@@ -386,6 +386,11 @@ def table_version(work) -> str:
     shots = Attachment.objects.filter(student_work__work=work).aggregate(
         total=Count("id"), last=Max("id")
     )
+    # приложенная пачка стоит в той же таблице, и появляется она в чужой
+    # вкладке — разбирают скан из мастера, а таблица открыта рядом
+    piles = Attachment.objects.filter(work=work, staff_only=True).aggregate(
+        total=Count("id"), last=Max("id")
+    )
 
     return "|".join(
         str(part)
@@ -398,6 +403,8 @@ def table_version(work) -> str:
             graded["last"] and graded["last"].timestamp(),
             shots["total"],
             shots["last"],
+            piles["total"],
+            piles["last"],
         )
     )
 
@@ -445,7 +452,7 @@ def student_version(work, student) -> str:
     # классу пора их открыть, и ждать от ученика F5 тут значит не дать ему
     # условий вовсе. `updated_at` работы этого не ловит — вложение живёт
     # своей строкой и работу не трогает
-    handout = Attachment.objects.filter(work=work).aggregate(
+    handout = Attachment.objects.filter(work=work, staff_only=False).aggregate(
         total=Count("id"), last=Max("id")
     )
 
@@ -621,6 +628,10 @@ def build_table(work) -> dict:
         "students": students,
         "summary": summarise(students, columns),
         "marks_summary": mark_stats(students, tasks),
+        # Отсканированная пачка целиком — там же, где нарезанные из неё
+        # работы, и только у учителя. Столбец PDF отвечает на «где бумага», и
+        # ответ «у каждого своя, а вот вся стопка» — один ответ, а не два.
+        "batches": scan_batches(work),
     }
 
 
@@ -1227,6 +1238,16 @@ def attach_pages(work, student_id, *, data: bytes, numbers, by=None):
         school=work.course.school,
         user=by,
     )
+    # Тот же файл, уже лежащий у этого ученика, второй строкой не заводится.
+    #
+    # Пачку разбирают повторно — пересняли стопку, поправили раскладку, — и до
+    # сих пор каждый заход добавлял ученику ещё одну копию его же работы: байты
+    # дедуплицировались, а ссылок становилось две. Ученик видел два одинаковых
+    # PDF и не мог знать, отличаются ли они.
+    twin = Attachment.objects.filter(student_work=row, stored_file=stored).first()
+    if twin is not None:
+        return twin
+
     return Attachment.objects.create(
         student_work=row,
         kind="file",
@@ -1234,6 +1255,78 @@ def attach_pages(work, student_id, *, data: bytes, numbers, by=None):
         title=f"{surname}.pdf",
         position=file_services.next_position(student_work=row),
     )
+
+
+def attach_batch(work, *, data: bytes, name: str, by=None):
+    """
+    Приложить к работе саму отсканированную пачку — целиком, как она пришла.
+
+    Не хранить исходник было решением, а не забывчивостью: в системе он один
+    файл со всеми работами класса, самый опасный из всего, что тут лежит.
+    Решение отменено осознанно, и вот чем платим и что за это получаем.
+
+    **Платим местом и риском.** Пачка весит столько же, сколько все нарезанные
+    из неё работы вместе, то есть удваивает вложения этой работы, а лежит в ней
+    класс целиком с отметками. Риск снят не обещанием, а правом: `staff_only`
+    убирает её из всего, что видит семья, — см. `files.access`.
+
+    **Получаем два случая, каждый из которых до сих пор был тупиком.** Первый:
+    разбор идёт двумя заходами, и вернувшийся к прочитанной пачке человек
+    держал в руках только пометки — страницы рисует браузер из файла, а файла у
+    новой вкладки нет («укажите тот же PDF»). Второй: разобрали неверно, и
+    перерезать значило найти на диске тот самый скан — через неделю его там
+    может не быть вовсе.
+
+    Один и тот же файл дважды не заводится: повторное применение той же пачки —
+    обычное дело, а вторая ссылка на те же байты сказала бы, что сканов два.
+    """
+    from files import services as file_services
+    from files.models import Attachment
+
+    stored, _ = file_services.store_upload(
+        upload=SimpleUploadedFile(
+            (name or "scan.pdf")[:200], data, content_type="application/pdf"
+        ),
+        school=work.course.school,
+        user=by,
+    )
+    twin = Attachment.objects.filter(
+        work=work, stored_file=stored, staff_only=True
+    ).first()
+    if twin is not None:
+        return twin
+
+    return Attachment.objects.create(
+        work=work,
+        kind="file",
+        stored_file=stored,
+        staff_only=True,
+        title=stored.original_name,
+        position=file_services.next_position(work=work),
+    )
+
+
+def scan_batches(work) -> list:
+    """
+    Пачки, приложенные к этой работе, — новая первой.
+
+    Их бывает несколько, и это не мусор: стопку пересканируют, потерянный лист
+    доносят отдельным файлом. Выбрасывать прежнюю ради новой значило бы решать
+    за учителя, какая из них настоящая, — а это как раз то, ради чего он их и
+    открывает.
+    """
+    from files.models import Attachment
+
+    return [
+        {
+            "id": row.pk,
+            "title": row.title,
+            "size": row.stored_file.size if row.stored_file_id else None,
+        }
+        for row in Attachment.objects.filter(work=work, staff_only=True)
+        .select_related("stored_file")
+        .order_by("-id")
+    ]
 
 
 def split_scan(work, *, data: bytes, pieces, by=None) -> dict:
@@ -1430,7 +1523,16 @@ def scan_state(work) -> dict:
     questions = len(names) or scanning.QUESTIONS
 
     owner_of = {}
-    for packet in packets:
+    # Листы, которые достались **всем** пакетам разом: ряд условий, лежащий
+    # один раз в начале пачки. Хозяина у такого листа нет и быть не может —
+    # он общий, — а `owner_of` знает только последнего, кому его положили.
+    #
+    # Пока разницы не было, страница общих условий приезжала на экран под
+    # именем последнего ученика пачки: человек видел уверенно названного
+    # хозяина и шёл его исправлять, хотя исправлять было нечего — в PDF она
+    # уезжает **каждому**, и это не догадка, а устройство раскладки.
+    holders = {}
+    for number, packet in enumerate(packets):
         # Условия — тоже страницы этого ученика, и хозяин у них тот же.
         #
         # Разрезка пачки по рядам условий давно кладёт их в нужный пакет: ряд
@@ -1440,11 +1542,19 @@ def scan_state(work) -> dict:
         # уезжал правильно. Человек видел «ничей» и шёл назначать вручную то,
         # что уже назначено.
         for page in packet.all_pages:
+            # Считаются **пакеты**, а не попадания: слияние пакетов складывает
+            # их условия списком, и один и тот же лист может лежать в пакете
+            # дважды. По попаданиям он объявился бы общим, будучи ничьим,
+            # кроме своего.
+            holders.setdefault(page.index, set()).add(number)
             owner_of[page.index] = packet.student_id
+
+    shared = {index for index, who in holders.items() if len(who) > 1}
 
     rows = []
     for page in pages:
-        owner = owner_of.get(page.index)
+        common = page.index in shared
+        owner = None if common else owner_of.get(page.index)
         rows.append(
             {
                 "index": page.index,
@@ -1453,6 +1563,11 @@ def scan_state(work) -> dict:
                 "cells": page.cells,
                 "headerless": page.headerless,
                 "student": owner,
+                # «Условия в начале работы»: лист уедет в начало PDF каждого
+                # ученика и границы пачке не задаёт. Своё состояние, а не
+                # отсутствие хозяина: «ничей» звал бы назначить, а назначать
+                # тут нечего.
+                "common_conditions": common,
                 "decided_by_human": page.decided_by_human,
                 # Тройка лучших — по самой странице. От пакета кандидаты
                 # приходили пустыми всякий раз, когда пакет решился или был
@@ -1596,7 +1711,21 @@ def scan_state(work) -> dict:
         # тогда клетки зовутся своими номерами
         "question_names": names,
         "max_mark": limit,
-        "conditions": sum(len(packet.conditions) for packet in packets),
+        # Листов условий столько, сколько их в пачке, а не сколько раз они
+        # розданы: общий ряд лежит в каждом пакете, и сумма по пакетам
+        # объявляла бы два листа условий на тринадцать работ двадцатью шестью.
+        "conditions": len(
+            {page.index for packet in packets for page in packet.conditions}
+        ),
+        # Сколько из них общие — те, что уедут в начало работы каждого
+        # ученика. Разница видна человеку до применения: один ряд на всех и
+        # ряд перед каждой работой — это две разные пачки, и раскладываются
+        # они по-разному.
+        "common_conditions": sorted(shared),
+        # Пачки, уже приложенные к этой работе. Мастеру они нужны затем, что
+        # шаг выбора файла — единственное место, где до сих пор требовалось
+        # найти скан на диске; теперь его можно взять отсюда.
+        "batches": scan_batches(work),
         "doubts": [
             packet["number"] for packet in out_packets if "no_owner" in packet["trouble"]
         ],
@@ -1708,7 +1837,7 @@ def scan_spend(work) -> dict:
     }
 
 
-def scan_apply(work, *, data: bytes, by=None) -> dict:
+def scan_apply(work, *, data: bytes, name: str = "", by=None) -> dict:
     """
     Применить разобранную пачку: страницы ученикам, баллы в оценки.
 
@@ -1720,6 +1849,10 @@ def scan_apply(work, *, data: bytes, by=None) -> dict:
     **Листы условий уезжают в PDF ученика вместе с его решением.** Иначе он
     открывает свои ответы без вопросов — половину документа, — а ради того,
     чтобы он видел работу целиком, скан ему и отдают.
+
+    **Сама пачка остаётся у работы** (`attach_batch`) — той же транзакцией и
+    только для учителя. Раньше она не оставалась нигде, и второй заход к той же
+    стопке требовал найти её на диске.
     """
     from django.db import transaction
 
@@ -1792,9 +1925,34 @@ def scan_apply(work, *, data: bytes, by=None) -> dict:
                 )
                 graded += 1
 
+        # Пачка целиком — той же транзакцией, что и нарезанное из неё.
+        #
+        # А вот отказ хранилища её не отменяет, и это разница по существу.
+        # Пачка весит столько же, сколько все куски вместе, и упереться в
+        # предел файла или в квоту школы может **только** она: куски меньше.
+        # Уронить из-за неё применение значило бы отдать оценки и работы
+        # заложником удобства — при том что удобство это наше, а оценки
+        # учительские. Поэтому отказ называется в ответе, а не поднимается.
+        from files.services import UploadRefused
+
+        try:
+            batch = attach_batch(work, data=data, name=name, by=by)
+        except UploadRefused as refused:
+            batch, refusal = None, refused.code
+        else:
+            refusal = None
+
         work.scan_pages.all().delete()
 
-    return {"students": len(packets), "graded": graded, "pages": len(pages)}
+    return {
+        "students": len(packets),
+        "graded": graded,
+        "pages": len(pages),
+        "batch": batch.pk if batch else None,
+        # почему пачка не сохранилась, если не сохранилась: «слишком большой
+        # файл» и «кончилась квота школы» чинятся по-разному
+        "batch_refused": refusal,
+    }
 
 
 def save_scan_reading(work, *, index: int, fingerprint: str, data: dict):
