@@ -1,8 +1,13 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import JournalTable from './JournalTable'
 import MathText from './MathText'
 import { Link, useParams } from 'react-router-dom'
-import { fetchStudentCourse, fetchStudentWorks } from './api'
+import {
+  fetchStudentCourse,
+  fetchStudentJournal,
+  fetchStudentWorks,
+} from './api'
 import { dateTime, weekdayWithDate } from './dates'
 
 /**
@@ -27,6 +32,10 @@ export default function StudentCourse({ onLoggedOut }) {
   const { t } = useTranslation()
   const [data, setData] = useState(null)
   const [works, setWorks] = useState([])
+  const [journal, setJournal] = useState(null)
+  /* Какую четверть смотрим. `null` — «решай сам»: сервер откроет ту, в
+     которой идёт сегодняшний день, а в каникулы — прошедшую. */
+  const [term, setTerm] = useState(null)
   const [error, setError] = useState(null)
 
   const handleError = useCallback(
@@ -55,6 +64,27 @@ export default function StudentCourse({ onLoggedOut }) {
     }
   }, [id, handleError])
 
+  /*
+   * Журнал — отдельным запросом, и это не небрежность.
+   *
+   * План с работами приходят один раз, а четверть человек переключает, и
+   * складывать их в один заход значило бы перечитывать план на каждое
+   * нажатие. Ошибка сюда тоже не едет наверх: журнала может не быть вовсе
+   * (год без разметки, курс без занятий), и вся страница из-за этого падать
+   * не должна.
+   */
+  useEffect(() => {
+    let cancelled = false
+
+    fetchStudentJournal(id, term)
+      .then((answer) => !cancelled && setJournal(answer))
+      .catch(() => !cancelled && setJournal(null))
+
+    return () => {
+      cancelled = true
+    }
+  }, [id, term])
+
   if (data === null) {
     return (
       <main className="page">
@@ -80,6 +110,45 @@ export default function StudentCourse({ onLoggedOut }) {
       )}
 
       {!course.active && <p className="hint warning">{t('student.past.hint')}</p>}
+
+      {/*
+        * Свой журнал: оценки и посещаемость по датам, одной строкой.
+        *
+        * Тот же расчёт и тот же рисунок, что у учителя, — разойдись они, и
+        * родитель на собрании увидел бы не то, что учитель у себя. Отличий
+        * два, и оба про право: строка одна, а отметка, которую учитель ещё не
+        * разослал классу, сюда не приезжает вовсе.
+        *
+        * Ссылок на занятие тут нет: экрана занятия у ученика не существует, и
+        * ссылка вела бы в пустоту.
+        */}
+      {journal && journal.columns.length > 0 && (
+        <section className="panel">
+          <h3>{t('journal.mine')}</h3>
+          {(journal.terms ?? []).length > 0 && (
+            <div className="year-picker">
+              {journal.terms.map((one) => (
+                <button
+                  key={one.id}
+                  type="button"
+                  className={`chip ${String(journal.term) === String(one.id) ? 'on' : ''}`}
+                  onClick={() => setTerm(one.id)}
+                >
+                  {one.name}
+                </button>
+              ))}
+              <button
+                type="button"
+                className={`chip ${journal.term === null ? 'on' : ''}`}
+                onClick={() => setTerm('all')}
+              >
+                {t('journal.wholeYear')}
+              </button>
+            </div>
+          )}
+          <JournalTable journal={journal} lessonLinks={false} />
+        </section>
+      )}
 
       <section className="panel">
         <h3>{t('student.course.plan')}</h3>

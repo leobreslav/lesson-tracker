@@ -46,6 +46,7 @@
 | `lesson-content-and-files.md` | содержание урока, вложения, R2 | `backend/files/`, `LessonPanel.jsx`, `Markdown.jsx` |
 | `lesson-screen.md` | страница занятия, журнал, туннель в план | `LessonScreen.jsx`, `schedule/views.py` |
 | `works.md` | работы, проверка, оценки, разбор сканов | `backend/works/`, `backend/vision/`, `Work*.jsx`, `blank/` |
+| `journal.md` | журнал курса: ученики × занятия, оценки и посещаемость | `works/journal.py`, `Journal*.jsx` |
 | `bank.md` | задачник: источники, теги, поиск, темы | `backend/bank/`, `Bank*.jsx` |
 | `onboarding.md` | первый вход и шаги настройки | `backend/onboarding/`, `StartHere.jsx` |
 | `feedback.md` | обращения к разработчику: ошибки и предложения | `backend/feedback/`, `Feedback*.jsx` |

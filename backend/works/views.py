@@ -25,7 +25,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from . import assembling, photos, services, statements, threads, track
+from . import assembling, journal, photos, services, statements, threads, track
 from .models import Thread
 from vision import services as vision_services
 from .models import Submission, Task, Work
@@ -530,6 +530,117 @@ class WorkViewSet(CourseScopedViewSet):
             return Response({"version": version, "changed": False})
 
         return Response(services.build_table(work))
+
+
+class CourseJournalView(APIView):
+    """
+    Журнал курса: ученики по строкам, занятия по столбцам.
+
+    Учительская дверь. Считает всё `works.journal`, а здесь только две вещи,
+    которые расчёту знать незачем: **чей это курс** и **какой терм показывать**.
+
+    Курс берётся из тех, что человек ведёт, и чужой отвечает 404, а не «не
+    ваш»: журнал чужого класса — сведение, которого учителю знать неоткуда.
+
+    Терм — по умолчанию тот, в котором идёт сегодняшний день, а `?term=all`
+    открывает год целиком. Умолчание не «весь год» потому, что столбцов за год
+    от тридцати до семидесяти: таблица, в которую надо въезжать стрелками,
+    отвечает на вопрос хуже, чем таблица, в которую попадают глазами.
+    """
+
+    permission_classes = [IsAuthenticated, IsSchoolMember, IsTeacher]
+
+    def get(self, request):
+        from schedule.models import Course
+
+        course = get_object_or_404(
+            Course.objects.writable_by(request.user), pk=request.query_params.get("course")
+        )
+        terms = journal.terms_of(course)
+        asked = request.query_params.get("term")
+
+        if asked == "all":
+            term = None
+        elif asked:
+            term = next((one for one in terms if str(one.pk) == asked), None)
+            if term is None:
+                raise Http404
+        else:
+            term = journal.current_term(terms, timezone.localdate())
+
+        # Состав берётся **весь**, включая снятых: их оценки никуда не делись,
+        # и строка без них означала бы, что четверти у человека не было. Кто
+        # ещё в курсе, помечается — как в сводной таблице работы.
+        enrolments = list(
+            course.students.select_related("student").order_by(
+                "student__last_name", "student__email"
+            )
+        )
+        roster = [row.student for row in enrolments]
+        active = {row.student_id for row in enrolments if row.removed_at is None}
+
+        return Response(
+            journal.build(course, term=term, students=roster, active=active)
+            | {"terms": _terms_payload(terms)}
+        )
+
+
+class StudentJournalView(APIView):
+    """
+    Тот же журнал, но строка одна — своя.
+
+    Ученик и родитель спрашивают «как идут дела по этому курсу», и ответ на это
+    у них был разложен по страницам работ: тридцать переходов вместо одного
+    взгляда. Расчёт тот же самый (`journal.build`), и это не экономия строк:
+    разойдись он с учительским, и родитель на собрании увидел бы не то, что
+    учитель у себя.
+
+    Две вещи здесь отличаются, и обе — про право. Курс должен быть **его**,
+    иначе 404: чужой журнал для семьи не существует. И `show_result`
+    уважается — работа, результаты которой ещё не разосланы классу, показывает
+    пустую клетку: журнал не может быть дверью в обход того, что решает сам
+    учитель.
+    """
+
+    permission_classes = [IsAuthenticated, IsSchoolMember, IsFamily]
+
+    def get(self, request):
+        from schedule.models import Course
+
+        student = subject_of(request)
+        course = get_object_or_404(
+            Course.objects.for_student(student, active_only=False),
+            pk=request.query_params.get("course"),
+        )
+        terms = journal.terms_of(course)
+        asked = request.query_params.get("term")
+
+        if asked == "all":
+            term = None
+        elif asked:
+            term = next((one for one in terms if str(one.pk) == asked), None)
+            if term is None:
+                raise Http404
+        else:
+            term = journal.current_term(terms, timezone.localdate())
+
+        return Response(
+            journal.build(course, term=term, students=[student], family=True)
+            | {"terms": _terms_payload(terms)}
+        )
+
+
+def _terms_payload(terms) -> list:
+    """Термы для переключателя. Один список на обе двери — он у них общий."""
+    return [
+        {
+            "id": term.pk,
+            "name": term.name,
+            "start_date": term.start_date,
+            "end_date": term.end_date,
+        }
+        for term in terms
+    ]
 
 
 class StudentTrackView(APIView):

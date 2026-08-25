@@ -15,6 +15,7 @@ import {
   useLocation,
 } from 'react-router-dom'
 import ErrorBoundary from './ErrorBoundary'
+import Journal from './Journal'
 import LessonScreen from './LessonScreen'
 import Calendar from './Calendar'
 import Login from './Login'
@@ -200,6 +201,9 @@ export default function App() {
               курсы школы отдельной группой селектора */}
           <Route path="/plan" element={guarded(Plan, { user })} />
           <Route path="/works" element={guarded(Works)} />
+          {/* журнал курса: ученики по строкам, занятия по столбцам. Стоит
+              своим адресом, а не вкладкой работ: вопрос у него свой */}
+          <Route path="/journal" element={guarded(Journal)} />
           <Route path="/works/:id" element={guarded(WorkTable)} />
           {/* два адреса у одной работы, и названы они по тому, что на них
               делают: `/works/:id` — как справились, `/works/:id/edit` — из

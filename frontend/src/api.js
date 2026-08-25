@@ -813,6 +813,19 @@ export const fetchScanBatch = async (id, name = 'scan.pdf') => {
   return new File([await answer.blob()], name, { type: 'application/pdf' })
 }
 
+/**
+ * Журнал курса: ученики по строкам, занятия по столбцам.
+ *
+ * `term` — номер четверти, `'all'` для года целиком или `null`. Последнее не
+ * «без терма», а «решай сам»: сервер открывает ту четверть, в которой идёт
+ * сегодняшний день, и знает он это лучше браузера — часы у них разные, а
+ * границы четвертей лежат в базе.
+ */
+export const fetchJournal = (course, term = null) =>
+  request(
+    `/api/works/journal/?course=${course}${term === null ? '' : `&term=${term}`}`,
+  )
+
 export const fetchAiBudget = () => request('/api/school/ai-budget/')
 
 export const saveAiBudget = (cents) =>
@@ -899,6 +912,19 @@ export const fetchStudentCourse = (id) =>
 
 /** Работы ученика: открытые и закрытые, с его продвижением по ним. */
 export const fetchStudentWorks = () => request(withChild('/api/student/works/'))
+
+/**
+ * Журнал курса глазами семьи: строка одна — своя.
+ *
+ * `?child=` подставляется той же дверью, что и остальным ученическим
+ * адресам: вопрос «чей это экран» один, и ответ на него должен быть один.
+ */
+export const fetchStudentJournal = (course, term = null) =>
+  request(
+    withChild(
+      `/api/student/journal/?course=${course}${term === null ? '' : `&term=${term}`}`,
+    ),
+  )
 
 export const fetchStudentWork = (id, version) =>
   request(

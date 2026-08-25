@@ -46,6 +46,7 @@
     "school": "School",
     "schools": "Schools",
     "works": "Assignments",
+    "journal": "Gradebook",
     "bank": "Problem bank",
     "feedback": "Feedback"
   },
@@ -1342,6 +1343,35 @@
     "rename": "Rename…",
     "renameTitle": "New title",
     "openLesson": "Open the lesson"
+  },
+  "journal": {
+    "title": "Gradebook",
+    "student": "Student",
+    "wholeYear": "the whole year",
+    "noDate": "—",
+    "noLessons": "This course has no lessons in this term yet.",
+    "noStudents": "Nobody has been enrolled on this course yet.",
+    "mine": "My gradebook",
+    "legend": "In the header: {{summative}} — a test, {{homework}} — homework, {{work}} — any other work; the date opens the lesson, the letter opens the work. In a cell: {{absent}} — was away, {{late}} — came late, {{present}} — was there.",
+    "tag": {
+      "summative": "T",
+      "homework": "H",
+      "work": "W"
+    },
+    "att": {
+      "absent": "a",
+      "late": "L",
+      "present": "·"
+    },
+    "attendance": {
+      "absent": "Was away",
+      "late": "Came late",
+      "present": "Was there"
+    },
+    "needCourse": {
+      "title": "A gradebook belongs to a course",
+      "hint": "Add a class and a course under «School» — the gradebook then builds itself out of the timetable and the assignments."
+    }
   },
   "table": {
     "waiting_one": "{{count}} answer waiting",

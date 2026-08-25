@@ -11,6 +11,7 @@ from .photo_views import (
     PhotoStrokesView,
 )
 from .views import (
+    CourseJournalView,
     StudentTrackView,
     SubmissionViewSet,
     TaskThreadView,
@@ -25,6 +26,9 @@ router.register("", WorkViewSet, basename="work")
 
 urlpatterns = [
     path("thread/", TaskThreadView.as_view(), name="task-thread"),
+    # журнал до роутера — по тому же доводу, что справочник и просмотрщик:
+    # иначе «journal» уедет в работу с таким номером
+    path("journal/", CourseJournalView.as_view(), name="course-journal"),
     path(
         "track/<int:student>/",
         StudentTrackView.as_view(),

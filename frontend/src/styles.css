@@ -435,6 +435,18 @@ body {
   align-items: stretch;
   gap: 0.5rem;
   margin-left: auto;
+  /*
+   * Ужимается **нав**, а не угол. Разделы умеют переноситься на вторую
+   * строку — у них для этого `flex-wrap`, — а «Написать» и имя переносить
+   * некуда: там подпись, и сжатие ломает её посреди слова («Ольга
+   * Дирекова / director@e»).
+   *
+   * Поймано пятым пунктом бара: в английском подписи разделов длиннее, и
+   * добавленный «Gradebook» отобрал у угла те самые несколько пикселей.
+   * Сторож рядов (`controls.spec.js`) увидел это на восьми страницах разом
+   * — то есть беда была общей, а не у нового экрана.
+   */
+  flex-shrink: 0;
 }
 
 /*
@@ -8464,4 +8476,144 @@ button.dropzone:hover:not(:disabled) {
   height: 6px;
   border-radius: 2px;
   background: #1a73e8;
+}
+
+/*
+ * --- ЖУРНАЛ КУРСА ------------------------------------------------------------
+ *
+ * Ученики по строкам, занятия по столбцам. Столбцов бывает до семидесяти, и
+ * раскладка отсюда: имя ученика прибито к левому краю и не уезжает при
+ * прокрутке, а столбцы занятий узкие и одинаковые.
+ *
+ * `table-layout` тут **не** фиксированная, в отличие от сводной таблицы
+ * работы: там столбцов десяток и лишнюю ширину надо делить, здесь их
+ * семьдесят и делить нечего — ширину задаёт содержимое, а лишнее забирает
+ * прокрутка.
+ */
+.journal-table {
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+.journal-table th,
+.journal-table td {
+  padding: 0.2rem 0.3rem;
+  text-align: center;
+  border-bottom: 1px solid #eceff1;
+  border-right: 1px solid #f5f5f5;
+}
+
+/* Имя — единственный столбец, который читают словами, поэтому оно слева и
+   прибито: уехав за край, оно превращает журнал в таблицу без подписей. */
+.journal-table .who {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  background: #fff;
+  text-align: left;
+  white-space: nowrap;
+  font-weight: 500;
+}
+
+.journal-table thead th {
+  vertical-align: top;
+  min-width: 2.6rem;
+}
+
+.journal-table thead .day {
+  display: block;
+  font-variant-numeric: lining-nums tabular-nums;
+  font-weight: 500;
+}
+
+.journal-table thead .day.off {
+  color: #9aa0a6;
+}
+
+/* Значки работ — вторым этажом шапки, в столбик: работ на занятии бывает
+   несколько, и в строку они разъехали бы столбец вдвое. */
+.journal-table thead .heads {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.1rem;
+}
+
+.journal-table .work-tag {
+  display: inline-block;
+  min-width: 1.1rem;
+  padding: 0 0.15rem;
+  border-radius: 3px;
+  font-size: 0.75rem;
+  line-height: 1.4;
+  text-decoration: none;
+  color: #fff;
+  background: #5f6368;
+}
+
+/* Контрольная тяжелее домашней, и в шапке это единственное, чем они
+   различаются: цвет тут несёт смысл, а не украшает. */
+.journal-table .work-tag.summative {
+  background: #1a73e8;
+}
+
+.journal-table .work-tag.homework {
+  background: #7cb342;
+}
+
+.journal-table .work-tag:hover {
+  text-decoration: underline;
+}
+
+/* Отменённый час и час, который ещё не наступил, приглушены: клетки в них
+   быть не должно, и пустота там — норма, а не пропуск. */
+.journal-table .cancelled {
+  background: #fafafa;
+  color: #9aa0a6;
+  text-decoration: line-through;
+}
+
+.journal-table .ahead {
+  background: #fcfcfc;
+}
+
+.journal-table td .marks {
+  display: inline-flex;
+  gap: 0.25rem;
+}
+
+.journal-table td .mark {
+  color: inherit;
+  text-decoration: none;
+  font-variant-numeric: lining-nums tabular-nums;
+}
+
+.journal-table td .mark:hover {
+  text-decoration: underline;
+}
+
+/* Посещаемость — второй строкой в той же клетке и мельче оценки: она отвечает
+   на другой вопрос, и путать её с баллом нельзя. */
+.journal-table td .att {
+  display: block;
+  font-size: 0.75rem;
+  line-height: 1.2;
+  color: #9aa0a6;
+}
+
+.journal-table td .att.absent {
+  color: #b00020;
+  font-weight: 600;
+}
+
+.journal-table td .att.late {
+  color: #8a5a00;
+}
+
+.journal-table tr.past .who {
+  color: #9aa0a6;
+}
+
+.journal-legend {
+  margin-top: 0.5rem;
 }
