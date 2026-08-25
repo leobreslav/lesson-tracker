@@ -164,6 +164,7 @@ def read_and_charge(
     user,
     work,
     image: bytes,
+    plain: bytes | None = None,
     media_type: str = "image/jpeg",
     candidates: list[str] | None = None,
     model: str | None = None,
@@ -228,6 +229,7 @@ def read_and_charge(
         user,
         work,
         image,
+        plain or image,
         media_type,
         candidates=candidates,
         model=model,
@@ -314,6 +316,7 @@ def name_reading(
     user,
     work,
     image: bytes,
+    plain: bytes,
     media_type: str,
     *,
     candidates: list[str] | None,
@@ -378,8 +381,11 @@ def name_reading(
             data["model"] = model
             return data
 
+        # Полоска, а не собранный лист: рукописную строку имени распознаватель
+        # читает по бумаге, а на собранном листе склеивает её с первым рядом
+        # плиток. Измерено живой пачкой — «Миронова» приезжала «Леилоновой».
         module, priced = (yandex, prices.YANDEX)
-        data = module.read_strip(image, media_type=media_type)
+        data = module.read_strip(plain, media_type=media_type)
         if data.get("error"):
             # Запоминается только «не дозвонились»: остальные отказы приходят
             # мгновенно и ждать себя не заставляют, а этот стоит двадцати
@@ -401,7 +407,10 @@ def name_reading(
         # же, а не чужой. Наружу это одно чтение одним читателем: развилка тут
         # про модель сервиса, а не про выбор человека, и вытаскивать её на
         # экран значит спрашивать про то, чего человек не решает.
-        cells = _yandex_cells(school, user, work, image, media_type, purpose)
+        # И клетки ему тоже по полоске: на собранном листе табличная модель не
+        # увидела ни одной цифры, на полоске — часть. Сетку она узнаёт по
+        # печатным линиям, а на собранном листе их нет.
+        cells = _yandex_cells(school, user, work, plain, media_type, purpose)
         if cells:
             data["values"] = cells
         return data

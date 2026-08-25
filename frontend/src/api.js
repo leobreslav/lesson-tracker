@@ -734,10 +734,17 @@ export const fetchScanState = (work) => request(`/api/works/${work}/scan/state/`
 export const resetScan = (work) =>
   request(`/api/works/${work}/scan/state/`, { method: 'DELETE' })
 
-export const readScanPage = (work, { index, blob, mark, second = true, reader = '' }) => {
+export const readScanPage = (
+  work,
+  { index, blob, plain, mark, second = true, reader = '' },
+) => {
   const form = new FormData()
   form.append('index', index)
   form.append('strip', blob, `strip-${index}.jpg`)
+  // Та же шапка как на бумаге. По ней читают имя: распознаватель на собранном
+  // листе склеивает строку имени с первым рядом плиток. Необязательна — без
+  // неё читают по собранному листу, как читали раньше.
+  if (plain) form.append('plain', plain, `plain-${index}.jpg`)
   form.append('fingerprint', mark)
   // Звать ли поверх первого читателя Mathpix. Решение принимается один раз на
   // пачку — на шаге выбора файла, — а ехать ему приходится с каждой страницей:

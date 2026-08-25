@@ -60,8 +60,8 @@ const answer = await page.evaluate(
     await walk(file, {
       stop: () => false,
       onPage: (one) => seen.push({ index: one.index, score: one.score, ours: one.ours, readable: one.readable }),
-      send: async ({ index, blob, mark }) => {
-        await api.readScanPage(work, { index, blob, mark, second, reader })
+      send: async ({ index, blob, plain, mark }) => {
+        await api.readScanPage(work, { index, blob, plain, mark, second, reader })
         return true
       },
       blank: async (index, ours) => {

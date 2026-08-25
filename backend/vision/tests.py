@@ -863,6 +863,82 @@ class TwoReadersTests(PretendsThereIsAKey, SchoolTestMixin, APITestCase):
         self.assertEqual(data["values"][0], 3)
         self.assertEqual(data["values"][1], 4)
 
+    def test_each_reader_gets_the_picture_it_can_read(self):
+        """
+        Картинок у одной шапки две, и это не расточительство, а замер.
+
+        Собранный лист — строка имени и шестнадцать плиток с нашими
+        подписями — нужен **клеткам**: языковая модель без подписей сбивается
+        со счёта, а Mathpix на голой полоске не видит ни одной цифры вовсе.
+        Полоска как на бумаге нужна **имени**: распознаватель на собранном
+        листе склеивает строку имени с первым рядом плиток. Живая пачка из
+        тридцати четырёх листов: «Миронова» приезжала «Леилоновой», «Тимур
+        Кузнецов» — «иму Кузнецовым», и на полоске те же страницы читались
+        верно. Точных фамилий стало вдвое больше, страниц, разложенных без
+        человека, — в полтора раза.
+        """
+        from unittest.mock import patch
+
+        seen = {}
+
+        def yandex_reads(image, **kwargs):
+            seen["yandex"] = image
+            return dict(self.model_says) | {"reader": "yandex", "text": "Denis Orlov"}
+
+        def yandex_cells(image, **kwargs):
+            seen["cells"] = image
+            return {"reader": "yandex", "values": [None] * 16}
+
+        def mathpix_reads(image, **kwargs):
+            seen["mathpix"] = image
+            return dict(self.mathpix_says)
+
+        with self.settings(YANDEX_OCR_API_KEY="key", MATHPIX_APP_ID="id", MATHPIX_APP_KEY="key"):
+            with patch.object(services.yandex, "read_strip", yandex_reads), patch.object(
+                services.yandex, "read_cells", yandex_cells
+            ), patch.object(services.mathpix, "read_strip", mathpix_reads):
+                services.read_and_charge(
+                    school=self.school,
+                    user=self.user,
+                    work=None,
+                    image=b"sheet",
+                    plain=b"plain",
+                    reader=services.YANDEX,
+                )
+
+        self.assertEqual(seen["yandex"], b"plain", "имя читают по собранному листу")
+        self.assertEqual(seen["cells"], b"plain", "клетки Yandex читает не по полоске")
+        self.assertEqual(seen["mathpix"], b"sheet", "Mathpix читает не собранный лист")
+
+    def test_without_the_plain_strip_everything_reads_as_before(self):
+        """
+        Клиент мог отстать от сервера на одну выкатку. Тогда всё читается по
+        собранному листу — хуже, но читается: ронять из-за этого пачку, за
+        половину которой уже заплачено, плохой обмен.
+        """
+        from unittest.mock import patch
+
+        seen = {}
+
+        def yandex_reads(image, **kwargs):
+            seen["yandex"] = image
+            return dict(self.model_says) | {"reader": "yandex", "text": ""}
+
+        with self.settings(YANDEX_OCR_API_KEY="key"):
+            with patch.object(services.yandex, "read_strip", yandex_reads), patch.object(
+                services.yandex, "read_cells", lambda image, **kw: {"error": "no"}
+            ):
+                services.read_and_charge(
+                    school=self.school,
+                    user=self.user,
+                    work=None,
+                    image=b"sheet",
+                    reader=services.YANDEX,
+                    second=False,
+                )
+
+        self.assertEqual(seen["yandex"], b"sheet")
+
     def test_the_human_may_refuse_the_second_reader(self):
         """
         Второй вопрос на шаге файла, и он один: звать ли поверх первого

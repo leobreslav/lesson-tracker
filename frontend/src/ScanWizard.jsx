@@ -133,10 +133,11 @@ export default function ScanWizard({ work, onClose, onDone }) {
           setDone(seen.length)
           setTotal(count)
         },
-        send: async ({ index, blob, mark }) => {
+        send: async ({ index, blob, plain, mark }) => {
           const answer = await readScanPage(work.id, {
             index,
             blob,
+            plain,
             mark,
             second: alsoSecond,
             reader: byReader,
