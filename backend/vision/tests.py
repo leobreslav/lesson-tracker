@@ -397,6 +397,78 @@ class SecondReaderParseTests(SimpleTestCase):
         self.assertEqual(reading["values"][0], 3)
         self.assertEqual(reading["values"][1], 1)
 
+    def test_the_number_of_columns_is_not_a_mark(self):
+        """
+        Распознаватель, увидевший сетку, возвращает её латехом, и в разметке
+        стоят **числа**: сколько колонок объединено, какие линии проведены.
+        После чистки от скобок они оставались голыми цифрами и становились
+        неотличимы от балла.
+
+        Найдено на живой пачке: восемнадцать страниц приехали с одной и той же
+        четвёркой в клетке суммы, при том что на бумаге там пусто, а остальные
+        клетки прочитались пустыми. Четвёрка — это `\\multicolumn{4}`.
+        """
+        reading = strip.reading_from(
+            [
+                "First name: Ann Surname: Lee",
+                r"\begin{tabular}[t]{|l|l|l|}" "\n"
+                r"\hline Q1 & Q2 & \Sigma pg \\" "\n"
+                r"\hline \multicolumn{4}{|c|}{} \\" "\n"
+                r"\hline\end{tabular}",
+            ],
+            reader="mathpix",
+        )
+
+        self.assertEqual(reading["values"], [None] * 16)
+
+    def test_the_sum_cell_does_not_swallow_the_rest_of_the_reading(self):
+        """
+        У всех подписей границу куска ставит следующая подпись, а у сигмы
+        следующей нет — и до этой поправки ей доставался весь хвост текста:
+        вторая строка таблицы, разметка, всё, что дописано после сетки.
+
+        Клетка суммы от этого заполнялась там, где в ней ничего не написано, и
+        на экране это выглядело как честно прочитанный балл.
+        """
+        reading = strip.reading_from(
+            [
+                "Surname: Lee",
+                r"Q1 & Q2 & \Sigma pg \\" "\n" r"\hline & 4 & \\",
+            ],
+            reader="mathpix",
+        )
+
+        self.assertIsNone(reading["values"][15])
+
+    def test_the_sum_written_in_its_own_cell_is_still_read(self):
+        """
+        Граница по концу строки не должна отнимать то, ради чего клетка
+        заведена: сумма, написанная в самой клетке, читается как прежде.
+        """
+        reading = strip.reading_from(
+            ["Surname: Lee", r"Q1 3 Q2 1 \Sigma pg 4 \\" "\n" r"\hline"],
+            reader="mathpix",
+        )
+
+        self.assertEqual(reading["values"][15], 4)
+
+    def test_table_markup_is_not_the_date(self):
+        """
+        Разметка таблицы едет в тексте вместе с рукописным, а `Date:` — графа
+        последняя, и всё, что стоит после неё, попадало в дату. На живой пачке
+        она приезжала как «begin tabular t |l|l|…» на каждой странице.
+        """
+        reading = strip.reading_from(
+            [
+                r"First name: Ann Surname: Lee Grade: Date: "
+                r"\begin{tabular}[t]{|l|l|}" "\n" r"\hline Q1 & \Sigma pg \\",
+            ],
+            reader="mathpix",
+        )
+
+        self.assertEqual(reading["date"], "")
+        self.assertEqual(reading["surname"], "Lee")
+
     def test_without_the_printed_labels_two_words_are_the_name(self):
         """
         Подписей не нашлось — значит прочитано одно рукописное. Ошибиться в

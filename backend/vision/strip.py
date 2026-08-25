@@ -36,6 +36,29 @@ LABEL = re.compile(
 # распознаватель может склеить строку иначе, чем она напечатана.
 FIELDS = ("first name", "surname", "grade", "date")
 
+# Разметка таблицы — не то, что написано на бумаге.
+#
+# Распознаватель, увидевший сетку баллов, возвращает её латехом целиком:
+# `\begin{tabular}[t]{|l|l|…}`, `\hline`, `\multicolumn{4}{|c|}`. Беда не в
+# скобках — их снимал и `NOISE`, — а в **числах внутри команд**: количество
+# колонок и номера линий после чистки остаются голыми цифрами и становятся
+# неотличимы от балла. На живой пачке так и вышло: восемнадцать страниц
+# приехали с одной и той же четвёркой в клетке суммы при пустых остальных.
+#
+# Поэтому структурные команды вычёркиваются **вместе с аргументами**, и список
+# их поимённый. Всё подряд вычёркивать нельзя: рукописное слово Mathpix
+# оборачивает в `\text{Ann}`, и общее правило съело бы имя вместе с обёрткой.
+STRUCTURE = re.compile(
+    r"\\(?:begin|end|multicolumn|multirow|cline|hline|"
+    r"toprule|midrule|bottomrule|rowcolor|cellcolor)\b\s*"
+    r"(?:\[[^\]]*\]|\{[^{}]*\})*",
+    re.IGNORECASE,
+)
+
+# Конец строки таблицы: `\\`, горизонтальная линейка, конец окружения, перевод
+# строки. Дальше этого места значение клетки не ищется — см. `values_from`.
+ROW_BREAK = re.compile(r"\\\\|\\hline\b|\\end\b|\n")
+
 # Латех вокруг цифры: `$3$`, `\(3\)`, `{3}`. Цифра от этого не меняется.
 #
 # **И точки линеек бланка.** Под именем и фамилией напечатана линейка из
@@ -49,7 +72,7 @@ NOISE = re.compile(r"[$\\{}()\[\]…]|\.{2,}|\\text|\\mathrm")
 
 
 def clean(text: str) -> str:
-    return NOISE.sub(" ", text or "")
+    return NOISE.sub(" ", STRUCTURE.sub(" ", text or ""))
 
 
 def reading_from(lines: list[str], *, reader: str) -> dict:
@@ -106,7 +129,10 @@ def names_from(head: str) -> tuple[str, str, str]:
     for number, (place, name) in enumerate(found):
         start = place + len(name)
         end = found[number + 1][0] if number + 1 < len(found) else len(text)
-        values[name] = text[start:end].strip(" \t:;.,-—_")
+        # Перевод строки тут наравне с пробелом: строки распознавателя мы
+        # склеиваем, а он и сам переносит внутри одной — например, в латехе
+        # таблицы. Иначе графа приезжает непустой, а в ней один перенос.
+        values[name] = text[start:end].strip(" \t\r\n:;.,-—_")
 
     return values.get("first name", ""), values.get("surname", ""), values.get("date", "")
 
@@ -124,6 +150,14 @@ def values_from(tiles: str) -> list:
     принятая за цифру. Взять первое попавшееся значило бы выдать догадку за
     свидетельство — а всё, ради чего второй читатель заведён, это
     свидетельство.
+
+    **Кусок кончается концом строки, а не концом текста.** У всех подписей,
+    кроме последней, границу ставит следующая подпись; у сигмы следующей нет,
+    и до этой поправки ей доставался **весь хвост** — разметка таблицы, вторая
+    строка, всё, что распознаватель дописал после сетки. Клетка суммы от этого
+    заполнялась на страницах, где в ней ничего не написано, и выглядело это
+    как прочитанный балл. Цифра клетки стоит в самой клетке: перевод строки,
+    `\\\\` и линейка — это уже не она.
     """
     values: list = [None] * CELLS
     marks = list(LABEL.finditer(tiles))
@@ -132,7 +166,11 @@ def values_from(tiles: str) -> list:
         if place is None:
             continue
         end = marks[number + 1].start() if number + 1 < len(marks) else len(tiles)
-        digits = re.findall(r"\d+", clean(tiles[mark.end():end]))
+        piece = tiles[mark.end():end]
+        row_end = ROW_BREAK.search(piece)
+        if row_end:
+            piece = piece[: row_end.start()]
+        digits = re.findall(r"\d+", clean(piece))
         if len(digits) == 1 and len(digits[0]) <= 3:
             values[place] = int(digits[0])
     return values
