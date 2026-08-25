@@ -951,8 +951,13 @@ export const fetchTalks = () => request('/api/talks/')
 
 export const fetchTalk = (person) => request(`/api/talks/${person}/`)
 
-export const sendTalkMessage = (person, text) =>
-  request(`/api/talks/${person}/`, { method: 'POST', body: { text } })
+export const sendTalkMessage = (person, text, child = null) =>
+  request(`/api/talks/${person}/`, {
+    method: 'POST',
+    // `child` — о ком разговор. Ставит его только родитель, и берётся он из
+    // того же выбора, которым живёт весь его интерфейс (`viewedChild`)
+    body: child ? { text, child } : { text },
+  })
 
 export const sendAnswer = (task, answer) =>
   request(`/api/student/tasks/${task}/answer/`, { method: 'POST', body: { answer } })

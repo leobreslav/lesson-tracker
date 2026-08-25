@@ -6,6 +6,7 @@ import EmptyState from './EmptyState'
 import { dateTime } from './dates'
 import { fetchTalk, fetchTalks, sendTalkMessage } from './api'
 import { POLL_MS } from './polling'
+import { viewedChild } from './viewedChild'
 
 /**
  * Переписка: список собеседников слева, разговор справа, строка отправки внизу.
@@ -87,7 +88,11 @@ export default function Messenger({ onLoggedOut }) {
     setBusy(true)
     setError(null)
     try {
-      setTalk(await sendTalkMessage(open, text))
+      /* О ком разговор, знает бар родителя: он и так спрашивает «про кого
+         сейчас смотрим», и второй такой вопрос в переписке был бы вторым
+         ответом на то же. У учителя и ученика ребёнка нет — разговор о себе
+         или ни о ком, и повод пуст. */
+      setTalk(await sendTalkMessage(open, text, viewedChild()))
       setText('')
       await loadList()
     } catch (err) {

@@ -135,6 +135,22 @@ class TalkingTests(SchoolTestMixin, APITestCase):
 
         self.assertIn("not_a_teacher_of_this_child", str(caught.exception.detail))
 
+    def test_the_topic_has_to_be_your_own_child(self):
+        """
+        «Есть ли вам о чём говорить» и «о ком вы говорите» — разные вопросы.
+
+        Второй права не даёт: разговор с учителем законен, а пометить его чужим
+        ребёнком нельзя — иначе учитель видел бы у себя переписку о чужом
+        ученике с посторонним взрослым.
+        """
+        somebody = make_user(self.school, "other-kid@example.com", student=True)
+        self.course.students.create(student=somebody)
+
+        with self.assertRaises(Exception) as caught:
+            services.say(self.mother, self.user, text="Здравствуйте", child=somebody)
+
+        self.assertIn("not_your_child", str(caught.exception.detail))
+
     def test_reading_a_conversation_marks_it_read(self):
         """
         Непрочитанное нужно затем, чтобы найти, где тебя ждут, — а не затем,

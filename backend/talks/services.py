@@ -32,12 +32,38 @@ def talk_with(user, other, child=None) -> Talk:
     один разговор, и порядок в паре не должен заводить второй.
     """
     refuse_unless_allowed(user, other)
+    _refuse_a_stranger_s_child(user, other, child)
 
     lower, upper = sorted((user, other), key=lambda person: person.pk)
     talk, _ = Talk.objects.get_or_create(
         school_id=user.school_id, lower=lower, upper=upper, child=child
     )
     return talk
+
+
+def _refuse_a_stranger_s_child(user, other, child) -> None:
+    """
+    Повод проверяется отдельно от собеседника, и это не придирка.
+
+    «Есть ли вам о чём говорить» и «о ком вы говорите» — разные вопросы, и
+    второй права не даёт: разговор с учителем законен, а вот пометить его
+    чужим ребёнком нельзя. Иначе родитель заводил бы разговоры «о Петрове»,
+    ничего о Петрове не зная, — и учитель видел бы у себя переписку о чужом
+    ученике с посторонним взрослым.
+    """
+    if child is None:
+        return
+
+    from families.viewing import children_of
+
+    family = user if user.is_family else other
+    mine = [family] if family.is_student else children_of(family)
+    if child.pk not in {person.pk for person in mine}:
+        api_error(
+            Codes.NOT_YOUR_CHILD,
+            "That is not your child.",
+            field="child",
+        )
 
 
 def say(user, other, *, text: str, child=None):
