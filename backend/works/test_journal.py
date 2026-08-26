@@ -179,6 +179,42 @@ class JournalTests(SchoolTestMixin, APITestCase):
         self.assertNotIn(beyond.pk, [column["slot"] for column in inside["columns"]])
         self.assertIn(beyond.pk, [column["slot"] for column in whole["columns"]])
 
+    def test_a_term_from_another_year_opens_the_default_one(self):
+        """
+        Чужой терм — устаревшая просьба, а не ошибка, и отвечать на неё 404 нельзя.
+
+        Взяться ей есть откуда, и случай не выдуманный: выбранная четверть
+        переживает уход со страницы, а курс на журнале меняют — в том числе на
+        курс другого года, у которого четверти свои. Пока это был отказ,
+        человек, вернувшийся на страницу, видел «Not found» вместо журнала, ни
+        о чём не попросив: за него попросила память экрана.
+
+        Показывается поэтому умолчание — тот же терм, что и без просьбы вовсе.
+        Экран от этого не врёт: подсвечивается то, что **ответил сервер**.
+        """
+        stranger = make_year(self.school, name="2019/2020")
+        foreign = make_term(stranger, "1 четверть", start=stranger.start_date)
+
+        answer = self.client.get(
+            reverse("course-journal"), {"course": self.course.pk, "term": foreign.pk}
+        )
+
+        self.assertEqual(answer.status_code, 200)
+        self.assertEqual(answer.json()["term"], self.term.pk)
+
+    def test_a_term_that_is_not_a_number_is_still_refused(self):
+        """
+        Мусор вместо числа остаётся отказом: у такой просьбы нет истории.
+
+        Подменить её умолчанием значило бы отвечать на вопрос, которого никто
+        не задавал, — и прятать опечатку в ссылке вместо того, чтобы назвать её.
+        """
+        answer = self.client.get(
+            reverse("course-journal"), {"course": self.course.pk, "term": "осень"}
+        )
+
+        self.assertEqual(answer.status_code, 404)
+
     def test_somebody_else_s_course_does_not_exist(self):
         """Журнал чужого класса — сведение, которого учителю знать неоткуда."""
         other = make_course(self.school, self.year, name="10А")

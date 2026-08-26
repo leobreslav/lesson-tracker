@@ -557,16 +557,7 @@ class CourseJournalView(APIView):
             Course.objects.writable_by(request.user), pk=request.query_params.get("course")
         )
         terms = journal.terms_of(course)
-        asked = request.query_params.get("term")
-
-        if asked == "all":
-            term = None
-        elif asked:
-            term = next((one for one in terms if str(one.pk) == asked), None)
-            if term is None:
-                raise Http404
-        else:
-            term = journal.current_term(terms, timezone.localdate())
+        term = _term_asked(terms, request.query_params.get("term"), timezone.localdate())
 
         # Состав берётся **весь**, включая снятых: их оценки никуда не делись,
         # и строка без них означала бы, что четверти у человека не было. Кто
@@ -613,21 +604,42 @@ class StudentJournalView(APIView):
             pk=request.query_params.get("course"),
         )
         terms = journal.terms_of(course)
-        asked = request.query_params.get("term")
-
-        if asked == "all":
-            term = None
-        elif asked:
-            term = next((one for one in terms if str(one.pk) == asked), None)
-            if term is None:
-                raise Http404
-        else:
-            term = journal.current_term(terms, timezone.localdate())
+        term = _term_asked(terms, request.query_params.get("term"), timezone.localdate())
 
         return Response(
             journal.build(course, term=term, students=[student], family=True)
             | {"terms": _terms_payload(terms)}
         )
+
+
+def _term_asked(terms, asked, today):
+    """
+    Какой терм показывать: что попросили — или что решим сами.
+
+    Просьба здесь **подсказка, а не приказ**, и это следует из того, как
+    устроен экран: `null` значит «решай сам», а подсвечивается потом не то,
+    что просил браузер, а то, что ответил сервер. Отсюда и обращение с термом,
+    которого у этого курса нет: он не ошибка, а **устаревшая просьба**.
+
+    Взяться ей есть откуда, и это не выдуманный случай. Выбранный терм
+    переживает уход со страницы (`useKept`), а курс на журнале меняют — в том
+    числе на курс другого года, у которого свои четверти. Отвечать на это 404
+    значило показывать «Not found» человеку, который просто вернулся на
+    страницу: он ничего не просил, за него попросила память экрана.
+
+    Единственное, что здесь остаётся отказом, — `?term=` с мусором вместо
+    числа: у такой просьбы нет истории, и молча подменять её было бы враньём.
+    """
+    if asked == "all":
+        return None
+    if not asked:
+        return journal.current_term(terms, today)
+
+    if not asked.isdigit():
+        raise Http404
+
+    known = next((one for one in terms if str(one.pk) == asked), None)
+    return known or journal.current_term(terms, today)
 
 
 def _terms_payload(terms) -> list:
