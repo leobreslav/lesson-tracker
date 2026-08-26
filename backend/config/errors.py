@@ -266,6 +266,11 @@ class Codes:
     GRADING_NAME_REQUIRED = "grading_name_required"
     GRADING_NAME_TAKEN = "grading_name_taken"
 
+    # виды работ
+    WORK_KIND_NAME_REQUIRED = "work_kind_name_required"
+    WORK_KIND_NAME_TAKEN = "work_kind_name_taken"
+    WORK_KIND_LABEL_REQUIRED = "work_kind_label_required"
+
     # sign-in
     TOKEN_REQUIRED = "token_required"
     TOKEN_INVALID = "token_invalid"

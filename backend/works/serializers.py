@@ -240,6 +240,7 @@ class WorkSerializer(serializers.ModelSerializer):
             "show_result",
             "is_homework",
             "is_summative",
+            "kind",
             "grading_system",
             "grade",
             "slot",
@@ -297,6 +298,13 @@ class WorkSerializer(serializers.ModelSerializer):
         # значением в теле запроса нельзя
         school = getattr(self.context["request"].user, "school", None)
         fields["grading_system"].queryset = GradingSystem.objects.filter(
+            school=school, is_allowed=True
+        )
+        # виды работ — по тому же правилу и по той же причине: запрещённый
+        # администратором вид не должен доехать до работы телом запроса
+        from .models import WorkKind
+
+        fields["kind"].queryset = WorkKind.objects.filter(
             school=school, is_allowed=True
         )
         return fields

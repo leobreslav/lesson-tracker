@@ -85,7 +85,9 @@ def works_of(course, term, slot_ids):
     """
     works = (
         Work.objects.filter(course=course)
-        .select_related("grading_system")
+        # вид берётся тем же запросом: столбцов до семидесяти, и запрос на
+        # значок был бы тем самым запросом на клетку, только в шапке
+        .select_related("grading_system", "kind")
         .prefetch_related("tasks", "criteria", "grading_system__bands")
     )
 
@@ -240,10 +242,36 @@ def build(course, *, term, students, family=False, today=None, active=None) -> d
 
 
 def _work_head(work) -> dict:
-    """Работа глазами шапки столбца: имя, вид и по чему её оценивают."""
+    """
+    Работа глазами шапки столбца: имя, вид и по чему её оценивают.
+
+    Полосы системы едут сюда затем, что оценку ставят **в клетке**: меню
+    выбора наполняется ими, и брать их вторым запросом на каждый столбец
+    значило бы семьдесят запросов на открытие журнала. Пустой список —
+    законное состояние: у работы без системы отметка свободная, и предлагать
+    в меню нечего.
+    """
     return {
         "id": work.pk,
         "title": work.title,
+        "bands": (
+            [band.label for band in work.grading_system.bands.all()]
+            if work.grading_system_id
+            else []
+        ),
+        # Вид работы из справочника школы: им подписан значок в шапке и им же
+        # выбран его цвет. Пусто — законно и у школы без справочника обычно:
+        # тогда значок падает на прежний расчёт, «итоговая или нет».
+        "kind": (
+            {
+                "id": work.kind_id,
+                "name": work.kind.name,
+                "label": work.kind.label,
+                "color": work.kind.color,
+            }
+            if work.kind_id
+            else None
+        ),
         # итоговая ли она: в шапке это единственное, что отличает контрольную
         # от домашней, а вес у них разный
         "is_summative": work.is_summative,

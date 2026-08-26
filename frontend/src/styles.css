@@ -8723,6 +8723,55 @@ button.dropzone:hover:not(:disabled) {
   background: #5f6368;
 }
 
+/* Палитра значков видов работ. Цвет выбирает администратор школы, но **из
+   этих шести**, а не свободно: значок односимвольный, столбцов до семидесяти,
+   и произвольный цвет из поля ввода даёт нечитаемые метки — белым по
+   светло-жёлтому. Имена цветов живут в модели, сами цвета здесь. */
+.journal-table .work-tag.kind-slate,
+.grading-list .work-tag.kind-slate {
+  background: #5f6368;
+}
+
+.journal-table .work-tag.kind-blue,
+.grading-list .work-tag.kind-blue {
+  background: #1a73e8;
+}
+
+.journal-table .work-tag.kind-green,
+.grading-list .work-tag.kind-green {
+  background: #2e7d32;
+}
+
+.journal-table .work-tag.kind-amber,
+.grading-list .work-tag.kind-amber {
+  background: #b06000;
+}
+
+.journal-table .work-tag.kind-violet,
+.grading-list .work-tag.kind-violet {
+  background: #7b1fa2;
+}
+
+.journal-table .work-tag.kind-red,
+.grading-list .work-tag.kind-red {
+  background: #c5221f;
+}
+
+/* «Задано на дом» — пометка у значка, а не его цвет: домашность отвечает не
+   на «что это за работа», а на «где её показать», и домашняя контрольная
+   обязана читаться контрольной. Пока признаки схлопывались в одну букву, она
+   выглядела просто контрольной, то есть наполовину неправдой. */
+.journal-table .work-tag.at-home {
+  outline: 2px dotted #202124;
+  outline-offset: 1px;
+}
+
+/* Запрещённый вид в справочнике приглушён целиком: он остаётся в списке —
+   работы им уже подписаны, — но выбрать его нельзя. */
+.grading-list li.off {
+  opacity: 0.55;
+}
+
 /* Контрольная тяжелее домашней, и в шапке это единственное, чем они
    различаются: цвет тут несёт смысл, а не украшает. */
 .journal-table .work-tag.summative {
@@ -8832,6 +8881,107 @@ button.dropzone:hover:not(:disabled) {
 
 .journal-table td .mark:first-child {
   border-left: none;
+}
+
+/* Выведенная системой отметка и поставленная рукой — разные вещи, и видно это
+   должно быть без наведения. Учительская сильнее: она чёрная и прямая.
+   Выведенная приглушена и наклонна — «так посчитала система, пока никто не
+   решил иначе». Прятать разницу значило бы превратить осознанное расхождение
+   в незаметное, ровно от чего предостерегает `services.final_grade`. */
+.journal-table td .mark.by-teacher {
+  color: #202124;
+}
+
+.journal-table td .mark.derived {
+  color: #5f6368;
+  font-style: italic;
+}
+
+/* Клетка, которую можно править, ведёт себя как клетка таблицы, а не как
+   ссылка: курсор-ячейка и подсветка под указателем. Ссылкой отметка остаётся
+   только на семейной стороне, где править нечего. */
+.journal-table td .mark.editable,
+.journal-table td .att.editable {
+  cursor: cell;
+}
+
+.journal-table td .mark.editable:hover,
+.journal-table td .att.editable:hover {
+  background: #e8f0fe;
+}
+
+/* Поле правки — та же клетка, просто с кареткой: ни рамки, ни своей заливки,
+   тот же кегль и то же выравнивание. Рамка и фон здесь были бы «формой
+   поверх таблицы», а нужна таблица, в которой печатают. */
+.journal-table td .mark.editing,
+.journal-table td .att.editing {
+  position: relative;
+  padding: 0;
+  background: #fff;
+  box-shadow: inset 0 0 0 2px #1a73e8;
+}
+
+.journal-table .cell-editor {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.journal-table .cell-input {
+  box-sizing: border-box;
+  width: 100%;
+  height: 100%;
+  padding: 0 0.15rem;
+  border: none;
+  outline: none;
+  background: transparent;
+  font: inherit;
+  text-align: center;
+  color: #202124;
+}
+
+/* Меню полос висит **под** клеткой и не двигает таблицу: строка от него не
+   растёт, иначе журнал прыгал бы на каждый вход в клетку. */
+.journal-table .cell-menu {
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  z-index: 3;
+  display: flex;
+  transform: translateX(-50%);
+  margin-top: 2px;
+  padding: 2px;
+  gap: 2px;
+  background: #fff;
+  border: 1px solid #dadce0;
+  border-radius: 4px;
+  box-shadow: 0 2px 8px rgba(60, 64, 67, 0.2);
+}
+
+.journal-table .cell-menu button {
+  min-width: 1.6rem;
+  min-height: 1.6rem;
+  padding: 0 0.3rem;
+  font: inherit;
+  font-size: 0.85rem;
+  color: #202124;
+  background: #fff;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  white-space: nowrap;
+}
+
+.journal-table .cell-menu button:hover,
+.journal-table .cell-menu button.on {
+  background: #e8f0fe;
+  border-color: #1a73e8;
+}
+
+/* «снять отметку» — не пустой пункт, а действие: пустая строка возвращает
+   работу системе, и это не то же самое, что ноль. */
+.journal-table .cell-menu button.clear {
+  color: #5f6368;
+  font-size: 0.75rem;
 }
 
 /* Место работы, за которую этому ученику ничего не поставлено. Пустое, но

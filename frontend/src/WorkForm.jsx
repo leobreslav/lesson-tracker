@@ -84,6 +84,7 @@ export default function WorkForm({
     show_result: form.show_result,
     is_homework: form.is_homework ?? false,
     is_summative: form.is_summative ?? false,
+    kind: form.kind ?? null,
     grading_system: form.grading_system ?? null,
   })
 
@@ -156,6 +157,7 @@ function initial(work) {
       attempts: work.attempts ?? 1,
       show_result: work.show_result,
       is_summative: work.is_summative ?? false,
+      kind: work.kind ?? null,
       grading_system: work.grading_system ?? null,
       description: work.description ?? '',
       slot: work.slot ?? null,
@@ -174,6 +176,7 @@ function initial(work) {
     attempts: 1,
     show_result: true,
     is_summative: false,
+    kind: null,
     grading_system: null,
     description: '',
     slot: null,

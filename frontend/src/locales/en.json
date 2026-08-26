@@ -335,7 +335,10 @@
     "colour_invalid": "That is not a colour.",
     "room_in_use": "«{{name}}» holds {{slots}} lessons: archive it instead of deleting.",
     "homegroup_taken": "{{name}} already belongs to «{{homegroup}}» this year.",
-    "homegroup_in_use": "«{{name}}» still holds {{students}} students: move them out first."
+    "homegroup_in_use": "«{{name}}» still holds {{students}} students: move them out first.",
+    "work_kind_name_required": "A kind of work needs a name.",
+    "work_kind_name_taken": "The school already has a kind of work with that name.",
+    "work_kind_label_required": "A kind of work needs a short label — it is what the gradebook shows."
   },
   "classPicker": {
     "label": "Classes:",
@@ -1247,7 +1250,9 @@
     "attachHidden": "Hide from the class",
     "attachHiddenOn": "Files attached now are yours alone: answers, a worked solution, a draft variant. You can show them to the class later, from the list.",
     "attachHiddenOff": "Files attached now are seen by the class — students and parents. Question papers, the blank, a worked solution after the lesson.",
-    "saveBeforeFiles": "Name the work and set its dates first — files hang off a saved work."
+    "saveBeforeFiles": "Name the work and set its dates first — files hang off a saved work.",
+    "homework": "Set for home",
+    "homeworkHint": "Where the work is shown in the lesson, not what kind it is: a test set for home is still a test."
   },
   "grading": {
     "title": "Grading",
@@ -1372,7 +1377,8 @@
     "needCourse": {
       "title": "A gradebook belongs to a course",
       "hint": "Add a class and a course under «School» — the gradebook then builds itself out of the timetable and the assignments."
-    }
+    },
+    "clearMark": "clear"
   },
   "table": {
     "waiting_one": "{{count}} answer waiting",
@@ -1904,5 +1910,32 @@
     "wholeWork": "Photos of the work",
     "wholeWorkHint": "a whole page at a time, when sorting by question is too much — Ctrl+V pastes a screenshot",
     "width": "Pen width"
+  },
+  "workKinds": {
+    "catalogue": "Kinds of work",
+    "catalogueHint": "What the teachers may choose on a work of their own. You decide what the school offers; which one this particular work is stays with the teacher.",
+    "none": "The school has no kinds of work yet.",
+    "typical": "Add the typical ones",
+    "typicalHint": "Six usual kinds. Pressing it twice is safe: what is already there is left alone, including anything you renamed.",
+    "kind": "Kind of work",
+    "noKind": "Not stated",
+    "newName": "New kind",
+    "newLabel": "Short label",
+    "counts": "counts towards the term",
+    "count": "count towards the term",
+    "dontCount": "do not count",
+    "forbid": "forbid",
+    "allow": "allow",
+    "forbidden": "forbidden",
+    "delete": "Delete «{{name}}»",
+    "color": "Colour",
+    "colors": {
+      "slate": "grey",
+      "blue": "blue",
+      "green": "green",
+      "amber": "amber",
+      "violet": "violet",
+      "red": "red"
+    }
   }
 }

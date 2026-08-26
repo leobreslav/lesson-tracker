@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import BellsPanel from './BellsPanel'
 import GradingPanel from './GradingPanel'
+import WorkKindsPanel from './WorkKindsPanel'
 import { useTranslation } from 'react-i18next'
 import Hint from './Hint'
 import HomegroupsPanel from './HomegroupsPanel'
@@ -441,6 +442,9 @@ export default function SchoolReference() {
 
       <BellsPanel />
       <GradingPanel />
+      {/* виды работ стоят рядом с системами оценивания: оба отвечают на
+          «из чего учителю выбирать на своей работе» */}
+      <WorkKindsPanel />
     </>
   )
 }

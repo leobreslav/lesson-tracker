@@ -732,6 +732,22 @@ export const saveGradingSystem = (id, fields) =>
 export const deleteGradingSystem = (id) =>
   request(`/api/works/grading/${id}/`, { method: 'DELETE' })
 
+/* Виды работ — справочник школы той же формы, что и системы оценивания:
+   читают все учителя, правит администратор. */
+export const fetchWorkKinds = () => request('/api/works/kinds/')
+
+export const addTypicalKinds = () =>
+  request('/api/works/kinds/', { method: 'POST', body: { typical: true } })
+
+export const createWorkKind = (fields) =>
+  request('/api/works/kinds/', { method: 'POST', body: fields })
+
+export const saveWorkKind = (id, fields) =>
+  request(`/api/works/kinds/${id}/`, { method: 'PATCH', body: fields })
+
+export const deleteWorkKind = (id) =>
+  request(`/api/works/kinds/${id}/`, { method: 'DELETE' })
+
 export const fetchThread = (task, student) =>
   request(`/api/works/thread/?task=${task}${student ? `&student=${student}` : ''}`)
 

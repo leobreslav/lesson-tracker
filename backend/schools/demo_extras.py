@@ -39,6 +39,7 @@ def build(school, courses, people, students, *, log=print):
 
     made = []
     made.append(_grading(school, courses, teacher))
+    made.append(_work_kinds(school))
     made.append(_marks(course, teacher, students))
     made.append(_mixed(course))
     made.append(_talk(course, teacher, students))
@@ -74,6 +75,48 @@ def _paper(works):
         .distinct()
         .first()
     )
+
+
+def _work_kinds(school):
+    """
+    Виды работ школы и подписанные ими работы.
+
+    Заводятся тем же путём, каким их заводит администратор, — кнопкой
+    «типовые» (`kinds.add_typical`), а не своим списком: второй набор имён
+    разошёлся бы с первым в первой же правке.
+
+    Подписать хотя бы одну работу обязательно, иначе значок в журнале ни разу
+    не покажется видом: экран с пустым справочником и экран, где справочник
+    есть, а связи нет, выглядят одинаково, и второй никто не проверит.
+
+    Домашняя работа при этом получает вид **наравне с прочими** — она такая же
+    работа, а домашность у неё своя, отдельным признаком. Домашняя контрольная
+    ровно затем здесь и заведена: пока признак был один, она была невыразима.
+    """
+    from works import kinds
+    from works.models import Work
+
+    kinds.add_typical(school, "ru")
+    if Work.objects.filter(course__school=school, kind__isnull=False).exists():
+        return ""
+
+    by_name = {kind.name: kind for kind in school.work_kinds.all()}
+    works = list(
+        Work.objects.filter(course__school=school).order_by("opens_at", "id")[:4]
+    )
+    if not works or not by_name:
+        return ""
+
+    order = ["Контрольная", "Проверочная", "Самостоятельная", "Контрольная"]
+    for number, work in enumerate(works):
+        work.kind = by_name.get(order[number % len(order)])
+        # домашняя контрольная — тот самый случай, ради которого вид и
+        # домашность разведены
+        if number == len(works) - 1:
+            work.is_homework = True
+        work.save(update_fields=["kind", "is_homework"])
+
+    return f"видов работ {len(by_name)}, подписано работ {len(works)}"
 
 
 def _grading(school, courses, teacher):

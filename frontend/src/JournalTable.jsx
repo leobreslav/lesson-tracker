@@ -1,9 +1,10 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 
+import JournalCell from './JournalCell'
 import { dayMonth, longDate } from './dates'
-import { columnWidths } from './journalLayout'
+import { ATTENDANCE, columnWidths, nextPlace } from './journalLayout'
 
 /**
  * Журнал курса: ученики по строкам, занятия по столбцам.
@@ -44,10 +45,47 @@ import { columnWidths } from './journalLayout'
  * чтобы её заполнить. У столбцов без занятия кнопки нет: работу заводят
  * **на урок**, а «без занятия» — это его отсутствие, а не место.
  */
-export default function JournalTable({ journal, lessonLinks = true, onAddWork = null }) {
+export default function JournalTable({
+  journal,
+  lessonLinks = true,
+  onAddWork = null,
+  onSetGrade = null,
+  onSetAttendance = null,
+}) {
   const { t } = useTranslation()
   const columns = journal.columns ?? []
   const students = journal.students ?? []
+
+  /*
+   * Курсор — одна клетка на всю таблицу: `{student, column, order}`, где
+   * `order` это номер подколонки либо `ATTENDANCE`. Полем становится только
+   * она; всё остальное остаётся текстом, и в этом весь смысл: тысяча полей
+   * превращает журнал в бланк, который читать нельзя.
+   */
+  const [place, setPlace] = useState(null)
+  const [busy, setBusy] = useState(false)
+
+  const editing = (row, at, order) =>
+    place !== null &&
+    place.student === row.id &&
+    place.column === at &&
+    place.order === order
+
+  /**
+   * Записать и переехать. Ответ сервера кладёт наверх вызывающий — он же
+   * решает, чем записывать: отметкой или присутствием.
+   */
+  const commit = async (write, where) => {
+    setBusy(true)
+    try {
+      await write()
+    } finally {
+      setBusy(false)
+    }
+    setPlace((now) =>
+      now && where !== 'stay' ? nextPlace(now, where, { students, columns }) : null,
+    )
+  }
 
   /* Ширины подколонок — одним расчётом на шапку и клетку разом
      (`journalLayout.js`, там же почему `rem`, а не `ch`). */
@@ -124,21 +162,25 @@ export default function JournalTable({ journal, lessonLinks = true, onAddWork = 
                         совпадали по краям, но не по середине: зазор между
                         значками доставался соседу справа, и всё, кроме первой
                         подколонки, читалось сдвинутым влево */}
-                    {column.works.map((work, order) => (
-                      <span
-                        key={work.id}
-                        className="head-cell"
-                        style={{ width: widths[at][order] }}
-                      >
-                        <Link
-                          to={`/works/${work.id}`}
-                          className={`work-tag ${kindOf(work)}`}
-                          title={work.title}
+                    {column.works.map((work, order) => {
+                      const badge = badgeOf(work, t)
+
+                      return (
+                        <span
+                          key={work.id}
+                          className="head-cell"
+                          style={{ width: widths[at][order] }}
                         >
-                          {t(`journal.tag.${kindOf(work)}`)}
-                        </Link>
-                      </span>
-                    ))}
+                          <Link
+                            to={`/works/${work.id}`}
+                            className={badge.className}
+                            title={badge.title}
+                          >
+                            {badge.label}
+                          </Link>
+                        </span>
+                      )
+                    })}
                     {/* кнопка стоит не сама по себе, а в **колонке
                         присутствия**: колонка эта забирает всю ширину, что
                         осталась от работ (столбец шире их почти всегда — его
@@ -190,22 +232,63 @@ export default function JournalTable({ journal, lessonLinks = true, onAddWork = 
                       {columns[at].works.map((work, order) => {
                         const mark = cell.marks.find((one) => one.work === work.id)
 
+                        if (onSetGrade && editing(row, at, order)) {
+                          return (
+                            <span
+                              key={work.id}
+                              className="mark editing"
+                              style={{ width: widths[at][order] }}
+                            >
+                              <JournalCell
+                                value={mark ? mark.label : ''}
+                                options={work.bands ?? []}
+                                title={`${row.name} · ${work.title}`}
+                                busy={busy}
+                                onCancel={() => setPlace(null)}
+                                onCommit={(text, where) =>
+                                  commit(
+                                    () => onSetGrade(work, row.id, text),
+                                    where,
+                                  )
+                                }
+                              />
+                            </span>
+                          )
+                        }
+
+                        /* Клетка остаётся тем же, чем была, — текстом или
+                           пустым местом; кликом она становится полем. Пустая
+                           кликается тоже: поставить первую отметку и
+                           исправить поставленную — одно и то же движение. */
+                        const start = onSetGrade
+                          ? () => setPlace({ student: row.id, column: at, order })
+                          : undefined
+
                         return mark ? (
-                          <Link
+                          <span
                             key={work.id}
-                            to={`/works/${work.id}`}
-                            className="mark"
+                            className={`mark${mark.by_teacher ? ' by-teacher' : ' derived'}${
+                              onSetGrade ? ' editable' : ''
+                            }`}
                             style={{ width: widths[at][order] }}
                             title={titleOf(columns[at], mark)}
+                            onClick={start}
                           >
-                            {mark.label}
-                          </Link>
+                            {onSetGrade ? (
+                              mark.label
+                            ) : (
+                              <Link to={`/works/${work.id}`} className="mark-link">
+                                {mark.label}
+                              </Link>
+                            )}
+                          </span>
                         ) : (
                           <span
                             key={work.id}
-                            className="mark none"
+                            className={`mark none${onSetGrade ? ' editable' : ''}`}
                             style={{ width: widths[at][order] }}
-                            aria-hidden="true"
+                            title={onSetGrade ? `${row.name} · ${work.title}` : undefined}
+                            onClick={start}
                           />
                         )
                       })}
@@ -224,21 +307,66 @@ export default function JournalTable({ journal, lessonLinks = true, onAddWork = 
                           сплошной вертикали выходил бы пунктир. Пусто и
                           «отсутствовал» при этом по-прежнему разные вещи —
                           пустая клетка ничего не утверждает */}
-                      {columns[at].slot && (
-                        <span
-                          className={`att ${cell.attendance ?? 'unknown'}`}
-                          title={
-                            cell.attendance
-                              ? cell.note ||
-                                t(`journal.attendance.${cell.attendance}`)
-                              : undefined
-                          }
-                        >
-                          {cell.attendance
-                            ? t(`journal.att.${cell.attendance}`)
-                            : ''}
-                        </span>
-                      )}
+                      {columns[at].slot &&
+                        (onSetAttendance && editing(row, at, ATTENDANCE) ? (
+                          <span className="att editing">
+                            {/* присутствие правится тем же приёмом, что и
+                                оценка: своего движения оно не заводит. Меню
+                                тут не полосы системы, а три состояния — «был»,
+                                «не был», «опоздал», — и набрать их можно
+                                руками теми же буквами, какими они показаны */}
+                            <JournalCell
+                              value={
+                                cell.attendance
+                                  ? t(`journal.att.${cell.attendance}`)
+                                  : ''
+                              }
+                              options={ATTENDANCE_STATES.map((one) =>
+                                t(`journal.att.${one}`),
+                              )}
+                              title={`${row.name} · ${longDate(columns[at].date)}`}
+                              busy={busy}
+                              onCancel={() => setPlace(null)}
+                              onCommit={(text, where) =>
+                                commit(
+                                  () =>
+                                    onSetAttendance(
+                                      columns[at].slot,
+                                      row.id,
+                                      statusOf(text, t),
+                                    ),
+                                  where,
+                                )
+                              }
+                            />
+                          </span>
+                        ) : (
+                          <span
+                            className={`att ${cell.attendance ?? 'unknown'}${
+                              onSetAttendance ? ' editable' : ''
+                            }`}
+                            title={
+                              cell.attendance
+                                ? cell.note ||
+                                  t(`journal.attendance.${cell.attendance}`)
+                                : undefined
+                            }
+                            onClick={
+                              onSetAttendance
+                                ? () =>
+                                    setPlace({
+                                      student: row.id,
+                                      column: at,
+                                      order: ATTENDANCE,
+                                    })
+                                : undefined
+                            }
+                          >
+                            {cell.attendance
+                              ? t(`journal.att.${cell.attendance}`)
+                              : ''}
+                          </span>
+                        ))}
                     </span>
                   </td>
                 ))}
@@ -265,11 +393,66 @@ export default function JournalTable({ journal, lessonLinks = true, onAddWork = 
   )
 }
 
-/** Вид работы одним словом: по нему выбирается и значок, и цвет. */
-function kindOf(work) {
-  if (work.is_summative) return 'summative'
-  if (work.is_homework) return 'homework'
-  return 'work'
+/**
+ * Три состояния присутствия — те же, что у `schedule.Attendance`.
+ *
+ * Порядок здесь — порядок пунктов в меню, а не порядок в модели: сперва то,
+ * что ставят чаще всего.
+ */
+const ATTENDANCE_STATES = ['present', 'absent', 'late']
+
+/**
+ * Набранное присутствие обратно в состояние сервера.
+ *
+ * Сравнение идёт с показанными буквами, а не с именами состояний: в клетке
+ * стоит «·», «a» и «L» по-английски и свои по-русски, и набирают ровно то,
+ * что видят. Незнакомое — «не отмечено», и это честнее отказа: пустая клетка
+ * ничего не утверждает, а выдуманное состояние утверждало бы неправду.
+ */
+function statusOf(text, t) {
+  const typed = String(text ?? '').trim().toLowerCase()
+  if (!typed) return null
+
+  return (
+    ATTENDANCE_STATES.find(
+      (one) => t(`journal.att.${one}`).toLowerCase() === typed,
+    ) ?? null
+  )
+}
+
+/**
+ * Как выглядит значок работы: буква, цвет и подпись при наведении.
+ *
+ * **Вид работы называет школа**, и если он выбран — буква и цвет берутся у
+ * него. Прежний расчёт («итоговая → домашняя → прочая») остался запасным и
+ * работает у школы, которая справочник не заводила: он не хуже, он просто
+ * грубее — три ответа на вопрос, у которого их шесть.
+ *
+ * **Домашность буквой не показывается**, и это исправление старой неправды.
+ * Раньше признаки схлопывались приоритетом, и домашняя контрольная выглядела
+ * просто контрольной — то есть наполовину враньём. Домашность отвечает не на
+ * «что это за работа», а на «где её показать», поэтому она отдельная пометка
+ * у того же значка: пунктирный контур вокруг него.
+ */
+function badgeOf(work, t) {
+  const fallback = work.is_summative ? 'summative' : work.is_homework ? 'homework' : 'work'
+  const kind = work.kind ?? null
+
+  return {
+    label: kind ? kind.label : t(`journal.tag.${fallback}`),
+    className: [
+      'work-tag',
+      kind ? `kind-${kind.color}` : fallback,
+      work.is_homework ? 'at-home' : '',
+    ]
+      .filter(Boolean)
+      .join(' '),
+    // подсказка называет и работу, и её вид: буква коротка по необходимости,
+    // а спрашивают о ней ровно один раз — при первой встрече
+    title: [work.title, kind?.name, work.is_homework ? t('works.homework') : null]
+      .filter(Boolean)
+      .join(' · '),
+  }
 }
 
 /** Отменённый час помечен в шапке: клетки в нём быть не должно. */

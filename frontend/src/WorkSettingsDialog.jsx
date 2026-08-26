@@ -28,6 +28,8 @@ export default function WorkSettingsDialog({ work, onSaved, onClose }) {
     attempts: work.attempts ?? 1,
     show_result: work.show_result,
     is_summative: work.is_summative ?? false,
+    is_homework: work.is_homework ?? false,
+    kind: work.kind ?? null,
     grading_system: work.grading_system ?? null,
     slot: work.slot ?? null,
   }))
@@ -47,6 +49,8 @@ export default function WorkSettingsDialog({ work, onSaved, onClose }) {
         attempts: form.limited ? Number(form.attempts) : null,
         show_result: form.show_result,
         is_summative: form.is_summative,
+        is_homework: form.is_homework,
+        kind: form.kind ?? null,
         grading_system: form.grading_system ?? null,
         slot: form.slot ?? null,
       })

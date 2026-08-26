@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import Hint from './Hint'
-import { fetchCourseSlots, fetchGradingSystems } from './api'
+import { fetchCourseSlots, fetchGradingSystems, fetchWorkKinds } from './api'
 import { shortDate } from './dates'
 
 /**
@@ -28,6 +28,24 @@ export default function WorkSettings({ form, setForm, courseId = null, busy = fa
   const { t } = useTranslation()
   const [systems, setSystems] = useState([])
   const [slots, setSlots] = useState([])
+  const [kinds, setKinds] = useState([])
+
+  /* Виды работ школы — только разрешённые, по тому же правилу, что и системы:
+     сервер запрещённые всё равно не примет, и форма не должна предлагать то,
+     чего он не возьмёт. Пустой список — законное состояние: школа могла
+     справочник не заводить, и тогда выбирать не из чего. */
+  useEffect(() => {
+    let alive = true
+    fetchWorkKinds()
+      .then(
+        (answer) =>
+          alive && setKinds(answer.kinds.filter((one) => one.is_allowed)),
+      )
+      .catch(() => {})
+    return () => {
+      alive = false
+    }
+  }, [])
 
   /* Список систем школы: показываются только разрешённые — сервер их и не
      отдаёт другими, а форма не должна предлагать то, чего он не примет. */
@@ -126,6 +144,57 @@ export default function WorkSettings({ form, setForm, courseId = null, busy = fa
         <p className="hint">{t('works.slotHint')}</p>
       </>
     )}
+
+    {/* Вид работы — из справочника школы. Список пустой у школы, которая его
+        не заводила, и поля тогда нет вовсе: пустой выбор это вопрос без
+        ответов.
+
+        Выбор вида подставляет «идёт в итог» — контрольная почти всегда идёт,
+        проверочная почти никогда, и вид знает это лучше. Но подставляет, а не
+        решает: последнее слово за тем, кто ведёт курс, и галочка рядом
+        остаётся живой. Тот же довод, по которому администратор не выбирает
+        систему оценивания за учителя. */}
+    {kinds.length > 0 && (
+      <label className="field">
+        <span>{t('workKinds.kind')}</span>
+        <select
+          value={form.kind ?? ''}
+          disabled={busy}
+          onChange={(event) => {
+            const chosen = kinds.find(
+              (one) => String(one.id) === event.target.value,
+            )
+            setForm((current) => ({
+              ...current,
+              kind: chosen ? chosen.id : null,
+              is_summative: chosen ? chosen.counts_to_term : current.is_summative,
+            }))
+          }}
+        >
+          <option value="">{t('workKinds.noKind')}</option>
+          {kinds.map((kind) => (
+            <option key={kind.id} value={kind.id}>
+              {kind.name}
+            </option>
+          ))}
+        </select>
+      </label>
+    )}
+
+    {/* «Задано на дом» — не вид, а место: признак решает, в каком разделе
+        урока работу показать, и домашняя контрольная бывает. Ставился он
+        только тем, из какого раздела нажали, и у заведённой работы сменить
+        его было негде — в том числе у работы, заведённой из журнала. */}
+    <label className="checkbox">
+      <input
+        type="checkbox"
+        checked={form.is_homework ?? false}
+        disabled={busy}
+        onChange={change('is_homework')}
+      />
+      {t('works.homework')}
+    </label>
+    <p className="hint">{t('works.homeworkHint')}</p>
 
     {/* Система оценивания — решение учителя, на каждой работе своё:
         маленькая проверочная по пятибалльной рядом с контрольной по MYP

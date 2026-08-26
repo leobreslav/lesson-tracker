@@ -4,6 +4,7 @@ from django.urls import include, path
 from rest_framework.routers import DefaultRouter
 
 from .grading_views import GradingSystemsView, GradingSystemView
+from .kind_views import WorkKindsView, WorkKindView
 from .photo_views import (
     PhotoMarkupView,
     PhotoNoteView,
@@ -37,6 +38,10 @@ urlpatterns = [
     path("grading/", GradingSystemsView.as_view(), name="grading-systems"),
     # справочник до роутера: иначе «grading» уедет в работу с таким id
     path("grading/<int:pk>/", GradingSystemView.as_view(), name="grading-system"),
+    path("kinds/", WorkKindsView.as_view(), name="work-kinds"),
+    # и этот справочник до роутера, по той же причине: иначе «kinds» уедет в
+    # работу с таким номером
+    path("kinds/<int:pk>/", WorkKindView.as_view(), name="work-kind"),
     # просмотрщик — до роутера по той же причине, что и справочник
     path(
         "photos/<int:pk>/",
