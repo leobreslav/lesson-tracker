@@ -238,6 +238,66 @@ class TeacherHasTheLastWordTests(SchoolTestMixin, APITestCase):
         self.assertEqual(answer.data["grade"]["label"], "5")
         self.assertFalse(answer.data["grade"]["by_teacher"])
 
+    def test_a_hand_set_final_is_an_event_and_not_just_a_field(self):
+        """
+        Правка итога попадает в журнал правок — как и правка балла.
+
+        Пока итог ставили изредка, из окна проверки, его правки не
+        журналировались вовсе: ветка `final` записывала поле и выходила
+        раньше журнала. С журналом курса, где оценку ставят прямо в клетку,
+        руками поставленный итог стал самой частой оценкой в системе — и
+        остался бы единственной, у которой нельзя спросить, что тут было
+        раньше. Правило «исправленная оценка — событие» либо общее, либо его
+        нет вовсе.
+
+        Ось у такого события третья: ни вопроса, ни критерия, а значение
+        буквой — отметкой бывает «зачёт», и числа у неё нет.
+        """
+        from .models import MarkChange
+
+        self.score(9, final="3")
+        self.score(9, final="4")
+
+        events = list(
+            MarkChange.objects.filter(
+                student_work__work=self.work, task=None, criterion=None
+            ).order_by("id")
+        )
+
+        self.assertEqual([one.label for one in events], ["3", "4"])
+        self.assertEqual(events[-1].changed_by, self.user)
+
+    def test_the_same_final_saved_twice_is_not_a_second_event(self):
+        """
+        Событие — это изменение, а не сохранение. Журнал из одинаковых строк
+        ничем не отвечает на вопрос, ради которого заведён, а сохранять клетку
+        дважды журнал курса будет постоянно: ушли из неё, вернулись, нажали
+        Enter.
+        """
+        from .models import MarkChange
+
+        self.score(9, final="3")
+        self.score(9, final="3")
+
+        self.assertEqual(
+            MarkChange.objects.filter(task=None, criterion=None).count(), 1
+        )
+
+    def test_taking_the_final_off_is_an_event_too(self):
+        """
+        Снятие итога — тоже правка, и спрашивают о ней так же: «почему у него
+        было „3“, а стало то, что посчитала система». Пустая метка у события и
+        значит «вернули системе».
+        """
+        from .models import MarkChange
+
+        self.score(9, final="3")
+        self.score(9, final="")
+
+        events = MarkChange.objects.filter(task=None, criterion=None).order_by("id")
+
+        self.assertEqual([one.label for one in events], ["3", ""])
+
     def test_the_student_sees_one_answer_and_it_is_the_teacher_s(self):
         """
         Ученику приезжает ровно одна отметка — та, что действует. «Система

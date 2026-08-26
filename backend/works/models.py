@@ -168,6 +168,20 @@ class Work(models.Model):
         default=False,
         help_text="Формативную оценивают как придётся, и в итог она не идёт.",
     )
+    # Что это за работа — из справочника школы. Пусто законно и будет самым
+    # частым состоянием у школы, которая справочник не заводила: вид
+    # необязателен, и без него работа остаётся просто работой.
+    #
+    # `SET_NULL`: вид могут убрать из справочника, и работы это переживают —
+    # они про то, что уже решали, а не про то, как школа их называет.
+    kind = models.ForeignKey(
+        "works.WorkKind",
+        related_name="works",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        verbose_name="kind of work",
+    )
     slot = models.ForeignKey(
         "schedule.Slot",
         related_name="works",
@@ -617,6 +631,18 @@ class MarkChange(models.Model):
 
     Оси те же две, что у самой оценки, и по той же причине: исправленная
     отметка — событие, а не новое значение поля, и журнал у обеих осей общий.
+
+    **Осей на самом деле три, и третья — итог за работу.** У неё нет ни
+    вопроса, ни критерия: строка с обоими пустыми полями и есть «итог», а
+    значение у неё лежит в `label`, потому что отметкой бывает «зачёт» и «B»,
+    а не только число.
+
+    Заведена третья ось не для полноты. Пока итог ставили изредка, из окна
+    проверки, его правки не журналировались вовсе — ветка `final` в
+    `services.grade` записывала поле и выходила раньше журнала. С журналом
+    курса, где оценки ставят прямо в клетку, руками поставленный итог стал
+    самой частой оценкой в системе, то есть единственной без истории. Правило
+    «исправленная оценка — событие» либо общее, либо его нет.
     """
 
     student_work = models.ForeignKey(
@@ -642,6 +668,10 @@ class MarkChange(models.Model):
         verbose_name="criterion",
     )
     value = models.PositiveSmallIntegerField("value", null=True, blank=True)
+    # Итог за работу — буквой, как он и хранится у самой работы ученика:
+    # отметкой бывает «4», «зачёт» и «B», общего числа у них нет. Пусто у
+    # правок по вопросу и по критерию: там значение в `value`.
+    label = models.CharField("final grade as set", max_length=40, blank=True)
     changed_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         related_name="mark_changes",
@@ -657,7 +687,12 @@ class MarkChange(models.Model):
         ordering = ("changed_at", "id")
 
     def __str__(self):
-        return f"{self.task or self.criterion}: {self.value}"
+        axis = self.task or self.criterion
+        if axis is None:
+            return f"итог: {self.label or '—'}"
+        return f"{axis}: {self.value}"
+
+
 class ScanPage(models.Model):
     """
     Одна страница загруженного скана: что на ней прочитано и чья она.
@@ -797,6 +832,80 @@ class GradingSystem(models.Model):
         constraints = [
             models.UniqueConstraint(
                 fields=("school", "name"), name="one_grading_system_name_per_school"
+            )
+        ]
+
+    def __str__(self):
+        return self.name
+
+
+class WorkKind(models.Model):
+    """
+    Вид работы: контрольная, проверочная, самостоятельная, проект.
+
+    Справочник **школы**, и форма у него та же, что у систем оценивания:
+    читают все учителя — им выбирать вид на своей работе, — а правит
+    администратор, и рычаг у него один, честный: какие виды разрешены. Что
+    поставить на конкретной работе, решает тот, кто ведёт курс.
+
+    Новая школа не получает ничего: угаданный список хуже пустого — школе, у
+    которой «зачёт» вместо контрольных, пришлось бы удалять то, чего она не
+    просила. Вместо посева кнопка «типовые», и нажать её дважды не страшно.
+
+    **Вид — не то же, что «задано на дом».** Домашность отвечает на «где эту
+    работу показать» (у урока свой раздел), а вид — на «что это за работа»;
+    домашняя контрольная бывает, и сложи мы их в один список, она стала бы
+    невыразимой. Поэтому `Work.is_homework` остаётся отдельным признаком.
+
+    **`counts_to_term` здесь — умолчание, а не правда.** Контрольная почти
+    всегда идёт в итог, проверочная почти никогда, и вид знает это лучше; но
+    последнее слово за учителем, и живёт оно на самой работе
+    (`Work.is_summative`). Тот же довод, по которому администратор не выбирает
+    систему оценивания за учителя.
+    """
+
+    # Цвет значка — из палитры, а не свободный. Столбцов в журнале до
+    # семидесяти, значок односимвольный, и произвольный цвет из поля ввода
+    # даёт нечитаемые метки: белым по светло-жёлтому. Сами цвета живут в
+    # стилях, здесь только имена.
+    COLORS = (
+        ("slate", "slate"),
+        ("blue", "blue"),
+        ("green", "green"),
+        ("amber", "amber"),
+        ("violet", "violet"),
+        ("red", "red"),
+    )
+
+    school = models.ForeignKey(
+        "schools.School",
+        on_delete=models.CASCADE,
+        related_name="work_kinds",
+        verbose_name="school",
+    )
+    name = models.CharField("name", max_length=120)
+    # Один-два знака для шапки журнала: название работы там сделало бы таблицу
+    # нечитаемой в любом языке, а полное имя приезжает подсказкой.
+    label = models.CharField("short label for the gradebook", max_length=4)
+    color = models.CharField("colour", max_length=16, choices=COLORS, default="slate")
+    counts_to_term = models.BooleanField(
+        "counts towards the term result by default",
+        default=False,
+        help_text="Умолчание для новой работы этого вида; решает всё равно учитель.",
+    )
+    # Разрешён ли он учителям. Запрет — единственный рычаг администратора над
+    # выбором, и он честнее, чем выбирать за учителя.
+    is_allowed = models.BooleanField("teachers may choose it", default=True)
+    position = models.PositiveIntegerField("position", default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = "kind of work"
+        verbose_name_plural = "kinds of work"
+        ordering = ("position", "name")
+        constraints = [
+            models.UniqueConstraint(
+                fields=("school", "name"), name="one_work_kind_name_per_school"
             )
         ]
 
