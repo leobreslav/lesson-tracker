@@ -6,7 +6,15 @@ import CoursePicker from './CoursePicker'
 import EmptyState from './EmptyState'
 import JournalTable from './JournalTable'
 import WorkDialog from './WorkDialog'
-import { createWork, fetchCourses, fetchJournal, updateWork } from './api'
+import {
+  createWork,
+  fetchCourses,
+  fetchJournal,
+  gradeStudent,
+  markAttendance,
+  updateWork,
+} from './api'
+import { applyAttendance, applyGrade } from './journalLayout'
 import { lastChoice, rememberChoice, useKept } from './remember'
 
 /**
@@ -108,6 +116,45 @@ export default function Journal({ onLoggedOut }) {
 
   const terms = journal?.terms ?? []
 
+  /*
+   * Оценка ставится **в клетке**, и записывается она той же дверью, что и в
+   * окне проверки (`POST /api/works/<id>/grade/`): вторая дверь к тому же
+   * значению разошлась бы с первой в первой же правке. Пустая строка снимает
+   * итог и возвращает работу системе — это не ноль.
+   *
+   * Ответ кладётся в журнал как есть, **без пересчёта**: отметку выводит
+   * сервер (`services.final_grade`), и второй такой же расчёт в браузере
+   * разошёлся бы с ним молча. Перечитывать весь журнал на каждую оценку
+   * дорого и незачем — меняется одна клетка.
+   */
+  const setGrade = async (work, studentId, text) => {
+    try {
+      const answer = await gradeStudent(work.id, {
+        student: studentId,
+        final: text,
+      })
+      setJournal((now) =>
+        now ? applyGrade(now, work.id, studentId, answer.grade) : now,
+      )
+    } catch (failure) {
+      handleError(failure)
+    }
+  }
+
+  /* Присутствие — своя дверь (`POST /api/slots/<id>/attendance/`), потому что
+     это запись о занятии, а не об оценке. `status: null` снимает отметку:
+     строка удаляется, состояние возвращается в «не отмечено». */
+  const setAttendance = async (slotId, studentId, status) => {
+    try {
+      await markAttendance(slotId, [{ student: studentId, status }])
+      setJournal((now) =>
+        now ? applyAttendance(now, slotId, studentId, status) : now,
+      )
+    } catch (failure) {
+      handleError(failure)
+    }
+  }
+
   return (
     <main className="page wide">
       <header className="page-header">
@@ -172,6 +219,8 @@ export default function Journal({ onLoggedOut }) {
                   setDraft(null)
                   setAdding(column)
                 }}
+                onSetGrade={setGrade}
+                onSetAttendance={setAttendance}
               />
             )}
           </section>

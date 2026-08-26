@@ -192,6 +192,76 @@ test('занятие работы выбирается в её настройк�
   expect(await slots.inputValue()).not.toBe('')
 })
 
+test('оценка ставится прямо в клетке и переживает перезагрузку', async ({
+  page,
+  signIn,
+}) => {
+  await signIn(PEOPLE.ivanova)
+  await page.goto('/journal')
+  await ready(page)
+
+  const table = page.locator('.journal-table')
+  await expect(table).toBeVisible()
+
+  // заводим работу на первом занятии — в демо-наборе работы к часам не
+  // привязаны, и клетки с датой пусты
+  await table.locator('thead .work-tag.add').first().click()
+  const dialog = page.getByRole('dialog')
+  await dialog.getByLabel('Название').fill('Ответ у доски')
+  await dialog.getByRole('button', { name: 'Сохранить' }).click()
+  await expect(dialog).toBeHidden()
+
+  // клетка становится полем по клику — и только она одна: журнал не должен
+  // превращаться в бланк из тысячи полей
+  const cell = table.locator('tbody tr').first().locator('td .mark').first()
+  await cell.click()
+  await expect(table.locator('.cell-input')).toHaveCount(1)
+
+  await table.locator('.cell-input').fill('5')
+  await table.locator('.cell-input').press('Enter')
+
+  // после Enter поле уходит вниз, а поставленное остаётся текстом в клетке
+  await expect(cell).toHaveText('5')
+
+  // и это не состояние вкладки, а запись: перезагрузка её застаёт
+  await page.reload()
+  await ready(page)
+  await expect(
+    table.locator('tbody tr').first().locator('td .mark').first(),
+  ).toHaveText('5')
+
+  // поставленное рукой отличается от выведенного системой без наведения
+  await expect(
+    table.locator('tbody tr').first().locator('td .mark').first(),
+  ).toHaveClass(/by-teacher/)
+})
+
+test('присутствие правится тем же движением, что и оценка', async ({
+  page,
+  signIn,
+}) => {
+  await signIn(PEOPLE.ivanova)
+  await page.goto('/journal')
+  await ready(page)
+
+  const table = page.locator('.journal-table')
+  const att = table.locator('tbody tr').first().locator('td .att').first()
+  await att.click()
+
+  // меню — три состояния, и набрать их можно теми же буквами руками
+  const menu = table.locator('.cell-menu')
+  await expect(menu.getByRole('option')).toHaveCount(3)
+  await menu.getByRole('option').nth(1).click()
+
+  await expect(att).toHaveClass(/absent/)
+
+  await page.reload()
+  await ready(page)
+  await expect(
+    table.locator('tbody tr').first().locator('td .att').first(),
+  ).toHaveClass(/absent/)
+})
+
 test('ученику виден свой журнал и ровно одна строка', async ({ page, signIn }) => {
   await signIn(PEOPLE.student)
   await page.goto('/')
