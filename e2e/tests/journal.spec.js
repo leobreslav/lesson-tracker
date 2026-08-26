@@ -40,7 +40,7 @@ test('шапка столбца ведёт на занятие', async ({ page, 
   await page.goto('/journal')
   await ready(page)
 
-  const day = page.locator('.journal-table thead a.day').first()
+  const day = page.locator('.journal-table thead a.day-link').first()
   await expect(day).toBeVisible()
   await day.click()
   await ready(page)
@@ -56,22 +56,140 @@ test('четверть переключается, и таблица меняе�
   await page.goto('/journal')
   await ready(page)
 
-  const chips = page.locator('.year-picker .chip')
-  await expect(chips.first()).toBeVisible()
+  const picker = page.locator('.page-header select.course-filter')
+  await expect(picker).toBeVisible()
 
   const columns = await page.locator('.journal-table thead th').count()
 
-  // «весь год» стоит последним и отвечает на другой вопрос: столбцов в нём
-  // не меньше, чем в любой отдельной четверти
-  await chips.last().click()
+  // «весь год» стоит последним пунктом и отвечает на другой вопрос: столбцов
+  // в нём не меньше, чем в любой отдельной четверти
+  await picker.selectOption('all')
   // таблица на время запроса пропадает, и считать столбцы надо у вернувшейся:
   // иначе тест меряет пустоту и падает на ровном месте
-  await expect(chips.last()).toHaveClass(/on/)
+  await expect(picker).toHaveValue('all')
   await expect(page.locator('.journal-table')).toBeVisible()
 
   expect(await page.locator('.journal-table thead th').count()).toBeGreaterThanOrEqual(
     columns,
   )
+})
+
+test('работа заводится прямо из столбца, и журнал её показывает', async ({
+  page,
+  signIn,
+}) => {
+  await signIn(PEOPLE.ivanova)
+  await page.goto('/journal')
+  await ready(page)
+
+  const table = page.locator('.journal-table')
+  await expect(table).toBeVisible()
+
+  // кнопка стоит в шапке столбца с датой: журнал — то место, где видно
+  // пустую клетку, и до сих пор из него приходилось уходить, чтобы её заполнить
+  const add = table.locator('thead .work-tag.add').first()
+  await expect(add).toBeVisible()
+
+  const before = await table.locator('thead .work-tag:not(.add)').count()
+  await add.click()
+
+  const dialog = page.getByRole('dialog')
+  await expect(dialog).toBeVisible()
+  await dialog.getByLabel('Название').fill('Устный ответ у доски')
+  await dialog.getByRole('button', { name: 'Сохранить' }).click()
+
+  // окно закрылось, и журнал перечитан целиком: значок новой работы стоит
+  // в шапке того самого столбца
+  await expect(dialog).toBeHidden()
+  await expect(table.locator('thead .work-tag:not(.add)')).toHaveCount(before + 1)
+})
+
+test('работы столбца стоят в ряд, и клетка держит место под каждую', async ({
+  page,
+  signIn,
+}) => {
+  await signIn(PEOPLE.ivanova)
+  await page.goto('/journal')
+  await ready(page)
+
+  const table = page.locator('.journal-table')
+  await expect(table).toBeVisible()
+
+  // две работы на одном занятии — обычное дело: проверочная и домашняя разом.
+  // Заводим их с того же столбца, чтобы смотреть именно на его шапку
+  for (const title of ['Проверочная в ряд', 'Домашняя в ряд']) {
+    await table.locator('thead .work-tag.add').first().click()
+    const dialog = page.getByRole('dialog')
+    await dialog.getByLabel('Название').fill(title)
+    await dialog.getByRole('button', { name: 'Сохранить' }).click()
+    await expect(dialog).toBeHidden()
+  }
+
+  const head = table.locator('thead th').nth(1)
+  const tags = head.locator('.work-tag:not(.add)')
+  await expect(tags).toHaveCount(2)
+
+  // в ряд, а не в столбик: тот же верх, разные левые края
+  const first = await tags.nth(0).boundingBox()
+  const second = await tags.nth(1).boundingBox()
+  expect(Math.abs(first.y - second.y)).toBeLessThan(2)
+  expect(second.x).toBeGreaterThan(first.x)
+
+  // а в клетке под ними — место под каждую работу, даже когда оценки нет:
+  // пропусти неоценённую, и следующая встала бы под чужой работой
+  const cell = table.locator('tbody tr').first().locator('td').nth(0)
+  await expect(cell.locator('.mark')).toHaveCount(2)
+
+  /*
+   * Сходятся **подколонки**, а не значки: ширину держит полоса, а значок
+   * внутри неё только рисуется и потому стоит уже её. Сравнивать значок с
+   * отметкой значило бы мерить не то — совпадать обязаны полосы, из которых
+   * и складывается столбец.
+   */
+  for (const order of [0, 1]) {
+    const above = await head.locator('.head-cell').nth(order).boundingBox()
+    const below = await cell.locator('.mark').nth(order).boundingBox()
+    expect(Math.abs(above.x - below.x)).toBeLessThan(2)
+    expect(Math.abs(above.width - below.width)).toBeLessThan(2)
+  }
+
+  // присутствие — такая же полоса, и его шапка это кнопка «завести работу»:
+  // она стоит не в ряду работ, а над точкой присутствия
+  const addColumn = await head.locator('.att-head').boundingBox()
+  const attColumn = await cell.locator('.att').boundingBox()
+  expect(Math.abs(addColumn.x - attColumn.x)).toBeLessThan(2)
+  expect(Math.abs(addColumn.width - attColumn.width)).toBeLessThan(2)
+  expect(addColumn.x).toBeGreaterThan(second.x + second.width)
+
+  // и содержимое каждой полосы стоит по её середине, а не по краю
+  const middle = (box) => box.x + box.width / 2
+  const plus = await head.locator('.work-tag.add').boundingBox()
+  expect(Math.abs(middle(plus) - middle(addColumn))).toBeLessThan(2)
+})
+
+test('занятие работы выбирается в её настройках', async ({ page, signIn }) => {
+  await signIn(PEOPLE.ivanova)
+  await page.goto('/journal')
+  await ready(page)
+
+  const add = page.locator('.journal-table thead .work-tag.add').first()
+  await add.click()
+
+  const dialog = page.getByRole('dialog')
+  const slots = dialog.getByLabel('Занятие')
+  await expect(slots).toBeVisible()
+
+  // «без занятия» — рабочее состояние, а не заглушка: контрольная за
+  // четверть и пересдача ни к какому часу не привязаны
+  await expect(slots.locator('option', { hasText: 'Без занятия' })).toHaveCount(1)
+
+  // Часы приезжают запросом, и до его ответа выбранного занятия в списке
+  // просто нет — браузер показывает пустое значение, хотя форма помнит своё.
+  // Ждём список, а не значение: иначе тест меряет полсекунды сети
+  await expect.poll(() => slots.locator('option').count()).toBeGreaterThan(1)
+
+  // а подставлено то занятие, из столбца которого нажали
+  expect(await slots.inputValue()).not.toBe('')
 })
 
 test('ученику виден свой журнал и ровно одна строка', async ({ page, signIn }) => {
@@ -87,5 +205,5 @@ test('ученику виден свой журнал и ровно одна с�
   await expect(table.locator('tbody tr')).toHaveCount(1)
 
   // и ссылок на занятие у него нет: экрана занятия для ученика не существует
-  await expect(table.locator('thead a.day')).toHaveCount(0)
+  await expect(table.locator('thead a.day-link')).toHaveCount(0)
 })

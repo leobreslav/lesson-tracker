@@ -1,7 +1,9 @@
+import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 
 import { dayMonth, longDate } from './dates'
+import { columnWidths } from './journalLayout'
 
 /**
  * Журнал курса: ученики по строкам, занятия по столбцам.
@@ -23,16 +25,33 @@ import { dayMonth, longDate } from './dates'
  * приезжает подсказкой при наведении, а что значит буква — сказано легендой
  * под таблицей, один раз на весь экран.
  *
- * **Посещаемость стоит в той же клетке**, под оценками. Врозь это были бы две
- * таблицы с одинаковой шапкой, и читать их пришлось бы, ведя пальцем по двум
- * экранам сразу. «Не отмечено» при этом пусто, а «был» — точка: различать их
- * обязательно, пустой журнал и журнал, где весь класс отсутствовал, — разные
- * вещи.
+ * **Посещаемость стоит в той же клетке**, крайней правой подколонкой. Врозь
+ * это были бы две таблицы с одинаковой шапкой, и читать их пришлось бы, ведя
+ * пальцем по двум экранам сразу. «Не отмечено» при этом пусто, а «был» —
+ * точка: различать их обязательно, пустой журнал и журнал, где весь класс
+ * отсутствовал, — разные вещи.
+ *
+ * **Дата делится на подколонки один раз: сколько работ, столько и колонок,
+ * плюс одна на присутствие.** Значки работ идут в ряд, оценка встаёт ровно под
+ * своей работой (для неоценённой держится пустое место — иначе следующая
+ * съехала бы под чужую), а присутствие прибито к правому краю. Кнопка
+ * «завести работу» стоит там же, справа: она не ещё один значок в ряду, а
+ * шапка колонки присутствия.
+ *
+ * **`onAddWork` — единственное, чем таблица пишет**, и передаёт его только
+ * учительская сторона. Кнопка стоит в шапке столбца с датой: журнал — то
+ * место, где видно пустую клетку, и до сих пор из него приходилось уходить,
+ * чтобы её заполнить. У столбцов без занятия кнопки нет: работу заводят
+ * **на урок**, а «без занятия» — это его отсутствие, а не место.
  */
-export default function JournalTable({ journal, lessonLinks = true }) {
+export default function JournalTable({ journal, lessonLinks = true, onAddWork = null }) {
   const { t } = useTranslation()
   const columns = journal.columns ?? []
   const students = journal.students ?? []
+
+  /* Ширины подколонок — одним расчётом на шапку и клетку разом
+     (`journalLayout.js`, там же почему `rem`, а не `ch`). */
+  const widths = useMemo(() => columnWidths(columns, students), [columns, students])
 
   if (columns.length === 0) {
     return <p className="hint">{t('journal.noLessons')}</p>
@@ -47,17 +66,21 @@ export default function JournalTable({ journal, lessonLinks = true }) {
               <th className="who">{t('journal.student')}</th>
               {columns.map((column, at) => (
                 <th key={at} className={headClass(column)}>
+                  {/* дата и пометка о записи — одной строкой: пометка про этот
+                      день, а не про работы под ним, и уехав вниз она читалась
+                      бы как ещё один значок в их ряду */}
+                  <span className="dayrow">
                   {column.date ? (
                     lessonLinks ? (
                       <Link
                         to={`/lesson/${column.slot}`}
-                        className="day"
+                        className="day-link"
                         title={longDate(column.date)}
                       >
                         {dayMonth(column.date)}
                       </Link>
                     ) : (
-                      <span className="day" title={longDate(column.date)}>
+                      <span className="day-link" title={longDate(column.date)}>
                         {dayMonth(column.date)}
                       </span>
                     )
@@ -65,20 +88,80 @@ export default function JournalTable({ journal, lessonLinks = true }) {
                     /* у работы без занятия даты нет, и ставить сюда дату её
                        окна значило бы выдумать день, в который ничего не
                        происходило */
-                    <span className="day off">{t('journal.noDate')}</span>
+                    <span className="day-link off">{t('journal.noDate')}</span>
                   )}
 
-                  <span className="heads">
-                    {column.works.map((work) => (
-                      <Link
+                  {/* Прошло ли занятие по программе: галочка — учитель
+                      отметил, какой урок здесь прошёл (`Slot.lesson`), точка —
+                      час миновал, а записи нет.
+
+                      Спрашивается это только у **прошедших** и не отменённых:
+                      у будущего часа записи и быть не может, а точка на нём
+                      читалась бы как долг. Отменённый час помечен сам собой —
+                      и записи с него не спрашивают вовсе. */}
+                  {column.slot && column.past && !column.is_cancelled && (
+                    <span
+                      className={`held ${column.lesson ? 'yes' : 'no'}`}
+                      title={
+                        column.lesson
+                          ? t('journal.held', { title: column.lesson.title })
+                          : t('journal.notHeld')
+                      }
+                    >
+                      {column.lesson ? '✓' : ''}
+                    </span>
+                  )}
+                  </span>
+
+                  {/* День без работ — это не день с пустым местом слева.
+                      Колонка присутствия остаётся единственной и встаёт по
+                      центру: делить в таком столбце нечего, а прижатая вправо
+                      она читалась бы как «здесь что-то потеряли». */}
+                  <span className={`heads${column.works.length ? '' : ' alone'}`}>
+                    {/* значок лежит **в подколонке**, а не сам по себе:
+                        подколонка держит ширину, значок — только вид. Пока
+                        ширину держал сам значок, полосы шапки и клетки
+                        совпадали по краям, но не по середине: зазор между
+                        значками доставался соседу справа, и всё, кроме первой
+                        подколонки, читалось сдвинутым влево */}
+                    {column.works.map((work, order) => (
+                      <span
                         key={work.id}
-                        to={`/works/${work.id}`}
-                        className={`work-tag ${kindOf(work)}`}
-                        title={work.title}
+                        className="head-cell"
+                        style={{ width: widths[at][order] }}
                       >
-                        {t(`journal.tag.${kindOf(work)}`)}
-                      </Link>
+                        <Link
+                          to={`/works/${work.id}`}
+                          className={`work-tag ${kindOf(work)}`}
+                          title={work.title}
+                        >
+                          {t(`journal.tag.${kindOf(work)}`)}
+                        </Link>
+                      </span>
                     ))}
+                    {/* кнопка стоит не сама по себе, а в **колонке
+                        присутствия**: колонка эта забирает всю ширину, что
+                        осталась от работ (столбец шире их почти всегда — его
+                        растягивает дата), и содержимое в ней по центру. Иначе
+                        кнопка жалась к правому краю, а отметка под ней — к
+                        левому: обе «выровнены», и обе не там */}
+                    {onAddWork && column.slot && (
+                      <span className="att-head">
+                      <button
+                        type="button"
+                        className="work-tag add"
+                        title={t('journal.addWork', {
+                          date: longDate(column.date),
+                        })}
+                        aria-label={t('journal.addWork', {
+                          date: longDate(column.date),
+                        })}
+                        onClick={() => onAddWork(column)}
+                      >
+                        +
+                      </button>
+                      </span>
+                    )}
                   </span>
                 </th>
               ))}
@@ -95,29 +178,68 @@ export default function JournalTable({ journal, lessonLinks = true }) {
                 </th>
                 {row.cells.map((cell, at) => (
                   <td key={at} className={cellClass(columns[at], cell)}>
-                    <span className="marks">
-                      {cell.marks.map((mark) => (
-                        <Link
-                          key={mark.work}
-                          to={`/works/${mark.work}`}
-                          className="mark"
-                          title={titleOf(columns[at], mark)}
+                    {/* Место под каждую работу столбца, а не список одних
+                        поставленных оценок. Работы в шапке стоят в ряд, и
+                        оценка обязана стоять **под своей**: пропусти
+                        неоценённую — и все следующие в этой клетке съедут
+                        влево, то есть встанут под чужой работой. Пустое место
+                        тут не украшение, а то, чем держится столбец. */}
+                    <span
+                      className={`marks${columns[at].works.length ? '' : ' alone'}`}
+                    >
+                      {columns[at].works.map((work, order) => {
+                        const mark = cell.marks.find((one) => one.work === work.id)
+
+                        return mark ? (
+                          <Link
+                            key={work.id}
+                            to={`/works/${work.id}`}
+                            className="mark"
+                            style={{ width: widths[at][order] }}
+                            title={titleOf(columns[at], mark)}
+                          >
+                            {mark.label}
+                          </Link>
+                        ) : (
+                          <span
+                            key={work.id}
+                            className="mark none"
+                            style={{ width: widths[at][order] }}
+                            aria-hidden="true"
+                          />
+                        )
+                      })}
+
+                      {/* Посещаемость — **своя подколонка**, крайняя справа, и
+                          шапка у неё та самая кнопка «завести работу». Раньше
+                          она стояла вторым этажом под оценками, и клетка
+                          читалась двумя разными способами: слева направо для
+                          оценок и сверху вниз для присутствия. Теперь дата
+                          делится на колонки один раз: сколько работ, столько
+                          и колонок, плюс одна на присутствие. */}
+                      {/* колонка присутствия стоит всегда, когда есть занятие,
+                          — даже если этого ученика не отмечали. Рисуй её по
+                          наличию отметки, и черта, отделяющая её от оценок,
+                          пропадала бы в каждой неотмеченной строке: вместо
+                          сплошной вертикали выходил бы пунктир. Пусто и
+                          «отсутствовал» при этом по-прежнему разные вещи —
+                          пустая клетка ничего не утверждает */}
+                      {columns[at].slot && (
+                        <span
+                          className={`att ${cell.attendance ?? 'unknown'}`}
+                          title={
+                            cell.attendance
+                              ? cell.note ||
+                                t(`journal.attendance.${cell.attendance}`)
+                              : undefined
+                          }
                         >
-                          {mark.label}
-                        </Link>
-                      ))}
+                          {cell.attendance
+                            ? t(`journal.att.${cell.attendance}`)
+                            : ''}
+                        </span>
+                      )}
                     </span>
-                    {cell.attendance && (
-                      <span
-                        className={`att ${cell.attendance}`}
-                        title={
-                          cell.note ||
-                          t(`journal.attendance.${cell.attendance}`)
-                        }
-                      >
-                        {t(`journal.att.${cell.attendance}`)}
-                      </span>
-                    )}
                   </td>
                 ))}
               </tr>
