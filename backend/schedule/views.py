@@ -1203,6 +1203,12 @@ class SlotViewSet(SchoolScopedViewSet):
         Проверяет цель обычный `SlotSerializer` — границы года, занятость
         номера у ведущего, уникальность: правила переноса не должны быть
         мягче правил создания, а второй список правил разошёлся бы с первым.
+
+        **Так переносится сорванный час, и это не единственный вид
+        переноса.** Расписание меняют и насовсем — «со следующей недели
+        вторник третьим часом идёт в среду вторым», — и тогда ни отмены, ни
+        дополнительного не было: срыва не случилось, сдвинулся сам ряд. Этот
+        второй вид просит `mode=series` и уходит в `move_series` ниже.
         """
         slot = self.get_object()
         form = SlotMoveSerializer(data=request.data)
@@ -1218,6 +1224,9 @@ class SlotViewSet(SchoolScopedViewSet):
                 "The lesson is already at that date and number.",
                 field="date",
             )
+
+        if target["mode"] == SlotMoveSerializer.SERIES:
+            return self.move_series(slot, target)
 
         arrival = SlotSerializer(
             data={
@@ -1250,21 +1259,183 @@ class SlotViewSet(SchoolScopedViewSet):
             slot.taught_by = None
             slot.save(update_fields=["is_cancelled", "reason", "taught_by"])
 
-            # Порядок записей строгий и на календарной оси тоже: занятие,
-            # уехавшее за спину соседней записи, оставляет ровно ту дырку,
-            # которую запись напрямую сделать не даёт. Спрашивается это
-            # после переноса — отказ откатывает его целиком.
-            broken = Slot.broken_record(slot.course, timezone.localdate())
-            if broken is not None:
-                api_error(
-                    Codes.SLOT_MOVE_BREAKS_ORDER,
-                    f"The move would leave {broken.date} out of order: "
-                    "records go one after another, without gaps.",
-                    field="date",
-                    date=str(broken.date),
-                )
+            self.refuse_if_move_breaks_order(slot.course)
 
         return Response(arrival.data, status=status.HTTP_201_CREATED)
+
+    def refuse_if_move_breaks_order(self, course):
+        """
+        Порядок записей строгий и на календарной оси тоже.
+
+        Занятие, уехавшее за спину соседней записи, оставляет ровно ту
+        дырку, которую запись напрямую сделать не даёт. Спрашивается это
+        **после** переноса, внутри транзакции: отказ откатывает движение
+        целиком. Оба вида переноса — разовый и рядом — спрашивают это одной
+        функцией: два ответа на один вопрос разъехались бы молча.
+        """
+        broken = Slot.broken_record(course, timezone.localdate())
+        if broken is None:
+            return
+
+        api_error(
+            Codes.SLOT_MOVE_BREAKS_ORDER,
+            f"The move would leave {broken.date} out of order: "
+            "records go one after another, without gaps.",
+            field="date",
+            date=str(broken.date),
+        )
+
+    def move_series(self, slot, target):
+        """
+        Постоянная правка расписания: ряд переезжает, срыва не было.
+
+        Разовый перенос выше пишет две записи — отмену здесь и
+        дополнительное занятие там, — и это верно ровно тогда, когда час
+        **сорвался**. Расписание же меняют и насовсем: «вторник третьим
+        часом с этой недели идёт в среду вторым». Отмечать это тридцатью
+        отменами и тридцатью дополнительными значит объявить тридцать
+        срывов, которых не было, — а именно эти два числа администрация и
+        читает.
+
+        Поэтому здесь дата переписывается, и это тот самый случай, ради
+        которого разовый перенос её переписывать отказывается. Отличает их
+        вопрос «что произошло»: сорвался час — или сдвинулся ряд.
+
+        Ряд — тот же, что у удаления ряда: **курс, день недели, номер**, от
+        этого часа и до конца года. Прошлое не трогается вовсе: расписание
+        меняют вперёд, а прошедшие часы — уже история.
+
+        Три правила внутри, и все три взяты у соседей, а не выдуманы здесь:
+
+        - **переезжает только обычный час без записи.** Отменённый,
+          дополнительный и всё, на чём есть запись, остаются на месте и
+          возвращаются числом `kept` — то же правило, что у `sweepable` и
+          у удаления ряда;
+        - **занятое место и неучебный день пропускаются, а не отменяют
+          движение.** Ряд длиной в год почти всегда во что-нибудь упрётся, и
+          «не переехало ничего, потому что 14 октября занято» — худший из
+          возможных ответов. Так же считает `place_copies` у повтора;
+        - **сам перетащенный час проверяется строго.** По нему щёлкнули, и
+          молча оставить его на месте нельзя: цель занята — отказ, как у
+          обычного создания.
+        """
+        # Постоянная правка — это смена дня недели и номера, а не сдвиг
+        # всего года на девять дней. Цель в другой неделе такого смысла не
+        # имеет вовсе, и угадывать за человека, что он имел в виду, дороже
+        # названного отказа.
+        monday = plan_services.monday_of(slot.date)
+        if plan_services.monday_of(target["date"]) != monday:
+            api_error(
+                Codes.SLOT_MOVE_SERIES_WEEK,
+                "A permanent change moves the lesson inside its own week: "
+                f"pick a day of the week starting on {monday}.",
+                field="date",
+                start=str(plan_services.monday_of(slot.date)),
+            )
+
+        if not slot.is_regular:
+            api_error(
+                Codes.SLOT_MOVE_SERIES_ONE_OFF,
+                "A cancelled or extra lesson is a one-off: it has no row to "
+                "move. Move this lesson alone instead.",
+                field="mode",
+            )
+
+        if slot.has_record():
+            api_error(
+                Codes.SLOT_MOVE_SERIES_RECORDED,
+                "This lesson already carries a record, and a record stays on "
+                "the day it happened. Move this lesson alone instead.",
+                field="mode",
+            )
+
+        shift = timedelta(days=(target["date"] - slot.date).days)
+        number = target["lesson_number"]
+        year = slot.year
+        study = {day.date for day in year.build_days() if day.is_study}
+
+        row = [
+            other
+            for other in Slot.objects.filter(
+                course=slot.course,
+                date__gt=slot.date,
+                date__lte=year.end_date,
+                lesson_number=slot.lesson_number,
+            ).order_by("date")
+            if other.date.weekday() == slot.date.weekday()
+        ]
+
+        moved, skipped, kept = 1, 0, 0
+
+        with transaction.atomic():
+            # Первым едет сам перетащенный час, и проверяет его обычный
+            # `SlotSerializer`: границы года, занятость номера у ведущего,
+            # уникальность. Правила переноса не должны быть мягче правил
+            # создания — здесь ровно тот же довод, что у разового.
+            arrival = SlotSerializer(
+                slot,
+                data={
+                    "date": target["date"].isoformat(),
+                    "lesson_number": number,
+                },
+                partial=True,
+                context=self.get_serializer_context(),
+            )
+            arrival.is_valid(raise_exception=True)
+            arrival.save()
+
+            for other in row:
+                if not other.is_regular or other.has_record():
+                    kept += 1
+                    continue
+
+                landing = other.date + shift
+                if landing not in study or self.place_taken(other, landing, number):
+                    skipped += 1
+                    continue
+
+                other.date = landing
+                other.lesson_number = number
+                other.save(update_fields=["date", "lesson_number"])
+                moved += 1
+
+            self.refuse_if_move_breaks_order(slot.course)
+
+        return Response({"moved": moved, "skipped": skipped, "kept": kept})
+
+    def place_taken(self, slot, date, number) -> bool:
+        """
+        Занято ли место, куда едет час ряда.
+
+        Спрашивается дважды и о разном: у **курса** место занимает любой его
+        час, включая отменённый, — там стоит ключ уникальности; у
+        **ведущего** — только живой, потому что отменённый час его время
+        освобождает. Пока вопрос был один, ряд утыкался в собственную же
+        отмену и пропускал неделю без причины.
+        """
+        mine = (
+            Slot.objects.filter(course=slot.course, date=date, lesson_number=number)
+            .exclude(pk=slot.pk)
+            .exists()
+        )
+        if mine:
+            return True
+
+        lead = (
+            CourseAssignment.objects.filter(course=slot.course)
+            .values_list("teacher_id", flat=True)
+            .first()
+        )
+        return (
+            Slot.find_conflict(
+                teacher_id=lead,
+                year=slot.year,
+                date=date,
+                lesson_number=number,
+                exclude_pk=slot.pk,
+            )
+            is not None
+        )
 
     @action(detail=False, methods=["delete"])
     def bulk(self, request):

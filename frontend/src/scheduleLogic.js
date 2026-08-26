@@ -159,3 +159,20 @@ export function describeCopyResult(result, t) {
   )
 }
 
+/**
+ * A readable summary of a permanent move: what travelled, what stayed.
+ *
+ * The two extra numbers are not decoration. A row that spans a year almost
+ * always runs into something — an occupied number, a holiday, an hour that
+ * already carries a record — and those hours stay where they were. Reporting
+ * only «moved» would read as «the whole row moved», which is the one thing
+ * the reader must not assume.
+ */
+export function describeMoveResult(result, t) {
+  return (
+    t('agenda.menu.moveSeriesDone', { moved: result.moved }) +
+    (result.skipped ? t('agenda.menu.moveSeriesSkipped', { skipped: result.skipped }) : '') +
+    (result.kept ? t('agenda.menu.moveSeriesKept', { kept: result.kept }) : '') +
+    '.'
+  )
+}

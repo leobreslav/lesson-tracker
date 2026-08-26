@@ -2,9 +2,89 @@ import { useEffect, useLayoutEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
 import Modal from './Modal'
+import Switch from './Switch'
 import { useDismissable } from './UserMenu'
 import { fetchLayoutAgenda } from './api'
 import { weekdayWithDate } from './dates'
+import { addDays, startOfWeek } from './calendarLogic'
+
+/** Разовый перенос: отмена здесь, дополнительное занятие там. */
+export const MOVE_ONCE = 'once'
+/** Постоянная правка расписания: ряд переезжает, отмен и лишних часов нет. */
+export const MOVE_SERIES = 'series'
+
+/**
+ * Бывает ли у этого часа ряд, которым он может переехать.
+ *
+ * Отменённый и дополнительный разовые по определению, а за записанным
+ * стоит прошедший урок — он привязан к дню, в который случился. Сервер
+ * отказывает всем троим, и предлагать им выбор незачем: пункт, умеющий
+ * только отказать, честнее не рисоваться.
+ */
+export function movesAsRow(lesson) {
+  return !lesson.recorded && !lesson.is_extra && !lesson.is_cancelled
+}
+
+/**
+ * Тело запроса на перенос: у двух режимов оно разное.
+ *
+ * Причина уезжает в базу текстом отмены на старом месте и пишется на языке
+ * нажавшего — сервер контент не сочиняет, поэтому `t` приезжает сюда
+ * аргументом. У постоянной правки отменять нечего, и причины у неё нет
+ * вовсе.
+ *
+ * Живёт это здесь, а не в двух страницах сразу: обе сетки — учительская и
+ * школьная — зовут один и тот же перенос, и две копии одного тела
+ * разошлись бы молча, начиная с формулировки причины.
+ */
+export function moveBody(target, mode, t) {
+  if (mode === MOVE_SERIES) return { ...target, mode: MOVE_SERIES }
+
+  return {
+    ...target,
+    mode: MOVE_ONCE,
+    reason: t('agenda.menu.movedReason', { date: target.date }),
+  }
+}
+
+/**
+ * Чем этот перенос будет: срывом одного часа или новым расписанием.
+ *
+ * Вопрос один, а событий за ним два, и различает их не механика, а то, что
+ * произошло. Сорвался час — старое место остаётся отменённым, на новом
+ * появляется дополнительное занятие, и администрация видит срыв и
+ * компенсацию. Изменилось расписание — ряд просто переехал, и объявлять
+ * тридцать срывов, которых не было, было бы враньём в тех самых числах,
+ * которые она и читает.
+ *
+ * Поэтому подсказка меняется вместе с выбором: два предложения тут дороже
+ * самого тумблера — по названиям сегментов разница не читается.
+ */
+export function MoveModeChoice({ value, busy, onChange }) {
+  const { t } = useTranslation()
+
+  return (
+    <>
+      <Switch
+        label={t('agenda.menu.moveMode')}
+        value={value}
+        disabled={busy}
+        onChange={onChange}
+        options={[
+          { value: MOVE_ONCE, label: t('agenda.menu.moveOnce') },
+          { value: MOVE_SERIES, label: t('agenda.menu.moveSeries') },
+        ]}
+      />
+      <p className="hint">
+        {t(
+          value === MOVE_SERIES
+            ? 'agenda.menu.moveSeriesHint'
+            : 'agenda.menu.moveHint',
+        )}
+      </p>
+    </>
+  )
+}
 
 /**
  * Повтор нового урока: не повторять, каждую неделю или через неделю.
@@ -275,6 +355,53 @@ export function ContextMenu({ at, onClose, children }) {
 }
 
 /**
+ * Что за перенос сейчас произошёл — спрашивается там, где отпустили.
+ *
+ * Жест заведён ради скорости, и лишний вопрос ему дорог. Но ответов на
+ * него два, и молчаливое умолчание тут стоит дороже: разовый перенос
+ * оставляет отмену и дополнительный час, и человек, менявший расписание
+ * насовсем, узнаёт об этом к маю — по двенадцати срывам, которых не было.
+ *
+ * Поэтому вопрос ставится один и одним нажатием: два пункта у самого
+ * курсора, Escape и клик мимо отменяют перенос целиком. У часа, которому
+ * ряд не полагается (записанный, дополнительный), выбора нет вовсе — там
+ * жест работает как работал, без остановки.
+ */
+export function MoveModeMenu({ at, target, busy, onPick, onClose }) {
+  const { t } = useTranslation()
+
+  return (
+    <ContextMenu at={at} onClose={onClose}>
+      <li className="context-head">
+        <span className="hint">
+          {t('agenda.menu.moveTo', {
+            date: weekdayWithDate(target.date),
+            number: target.lesson_number,
+          })}
+        </span>
+      </li>
+
+      {[
+        [MOVE_ONCE, 'agenda.menu.moveOnce', 'agenda.menu.moveHint'],
+        [MOVE_SERIES, 'agenda.menu.moveSeries', 'agenda.menu.moveSeriesHint'],
+      ].map(([mode, label, hint]) => (
+        <li key={mode}>
+          <button
+            type="button"
+            className="menu-choice"
+            disabled={busy}
+            onClick={() => onPick(mode)}
+          >
+            {t(label)}
+            <span className="hint">{t(hint)}</span>
+          </button>
+        </li>
+      ))}
+    </ContextMenu>
+  )
+}
+
+/**
  * What can be done with a lesson that is already there.
  *
  * Перенос стоит здесь же, рядом с отменой, и это не случайно: для человека
@@ -311,6 +438,8 @@ export function LessonMenu({
   const [mode, setMode] = useState(null) // null | 'cancel' | 'move' | 'row' | 'room'
   const [room, setRoom] = useState(lesson.room ?? null)
   const [target, setTarget] = useState({ date: '', number: lesson.lesson_number })
+  // «этот час» или «и дальше по расписанию» — см. MoveModeChoice ниже
+  const [moveMode, setMoveMode] = useState(MOVE_ONCE)
   // строка плана, попавшая в этот час: {plan_row_id, title, section_title}
   const [row, setRow] = useState(null)
 
@@ -349,17 +478,50 @@ export function LessonMenu({
     onRoom(room)
   }
 
+  /**
+   * Смена режима заодно чистит дату, которая ему не годится.
+   *
+   * Границы у поля стоят, но набранное **до** переключения они не
+   * отменяют: у календаря появились бы серые дни, а в поле осталось бы
+   * число из другой недели — и отказ прилетел бы после нажатия, вместо
+   * ответа на месте.
+   */
+  const pickMoveMode = (next) => {
+    setMoveMode(next)
+
+    const week = startOfWeek(date)
+    if (
+      next === MOVE_SERIES &&
+      target.date &&
+      (target.date < week || target.date > addDays(week, 6))
+    ) {
+      setTarget((current) => ({ ...current, date: '' }))
+    }
+  }
+
   const handleMove = (event) => {
     event.preventDefault()
     if (!target.date) return
 
-    onMove({
-      date: target.date,
-      lesson_number: Number(target.number),
-      // причина пишется на языке того, кто нажал: это контент в базе, и
-      // сервер его не сочиняет
-      reason: reason.trim() || t('agenda.menu.movedReason', { date: target.date }),
-    })
+    onMove(
+      moveMode === MOVE_SERIES
+        ? // у постоянной правки причины нет вовсе: отменять нечего, и поле,
+          // которое некуда записать, обещало бы след, которого не будет
+          {
+            date: target.date,
+            lesson_number: Number(target.number),
+            mode: MOVE_SERIES,
+          }
+        : {
+            date: target.date,
+            lesson_number: Number(target.number),
+            mode: MOVE_ONCE,
+            // причина пишется на языке того, кто нажал: это контент в базе, и
+            // сервер его не сочиняет
+            reason:
+              reason.trim() || t('agenda.menu.movedReason', { date: target.date }),
+          },
+    )
   }
 
   /*
@@ -501,12 +663,24 @@ export function LessonMenu({
 
         {mode === 'move' && (
           <form onSubmit={handleMove}>
-            <p className="hint">{t('agenda.menu.moveHint')}</p>
+            {movesAsRow(lesson) ? (
+              <MoveModeChoice value={moveMode} busy={busy} onChange={pickMoveMode} />
+            ) : (
+              <p className="hint">{t('agenda.menu.moveHint')}</p>
+            )}
             <div className="row">
               <input
                 autoFocus
                 type="date"
                 value={target.date}
+                /* Постоянная правка — это смена дня недели, а не сдвиг года
+                   на девять дней вперёд, и сервер цель из чужой недели не
+                   принимает. Границы у поля стоят затем, чтобы отказ не
+                   понадобился вовсе: календарь просто не даст выбрать. */
+                min={moveMode === MOVE_SERIES ? startOfWeek(date) : undefined}
+                max={
+                  moveMode === MOVE_SERIES ? addDays(startOfWeek(date), 6) : undefined
+                }
                 aria-label={t('agenda.menu.moveDate')}
                 onChange={(event) =>
                   setTarget((current) => ({ ...current, date: event.target.value }))
@@ -523,13 +697,17 @@ export function LessonMenu({
                 }
               />
             </div>
-            <input
-              value={reason}
-              maxLength={200}
-              placeholder={t('agenda.menu.moveReason')}
-              aria-label={t('agenda.menu.moveReason')}
-              onChange={(event) => setReason(event.target.value)}
-            />
+            {/* причину спрашивает только разовый перенос: у постоянной
+                правки отменять нечего, и записать её было бы некуда */}
+            {moveMode === MOVE_ONCE && (
+              <input
+                value={reason}
+                maxLength={200}
+                placeholder={t('agenda.menu.moveReason')}
+                aria-label={t('agenda.menu.moveReason')}
+                onChange={(event) => setReason(event.target.value)}
+              />
+            )}
             <div className="actions">
               <button type="submit" disabled={busy || !target.date}>
                 {t('agenda.menu.moveSubmit')}

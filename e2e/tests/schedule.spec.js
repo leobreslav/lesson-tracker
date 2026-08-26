@@ -1,4 +1,4 @@
-import { PEOPLE, expect, liveCourse, ready, test } from './harness.js'
+import { PEOPLE, expect, liveCourse, pickMoveMode, ready, test } from './harness.js'
 
 /**
  * Scenarios 4 and 5: living with a personal schedule.
@@ -425,6 +425,48 @@ test('перенос оставляет отмену на прежнем мес�
   await expect(page.locator(`[data-lesson="${FRIDAY}:7"]`)).toBeVisible()
 })
 
+test('в меню переноса спрашивают, разовый он или насовсем', async ({
+  page,
+  signIn,
+}) => {
+  // Тумблер стоит внутри выпадающего меню, а не в окне, и это ровно то
+  // место, где в проекте уже разъезжалась вёрстка: правило для контролов
+  // формы написано потомковым селектором и достаёт до радиокнопок тумблера.
+  // Поэтому тест не только выбирает режим, но и смотрит на сами сегменты.
+  await signIn(PEOPLE.ivanova)
+  await openWeek(page, MONDAY)
+
+  await page.locator(`[data-lesson="${MONDAY}:1"]`).click({ button: 'right' })
+  const menu = page.locator('.context-menu')
+  await menu.getByRole('button', { name: 'Перенести…' }).click()
+
+  // сегменты равной ширины и рядом, а не друг на друге
+  const boxes = await menu.locator('.switch-option').evaluateAll((nodes) =>
+    nodes.map((node) => node.getBoundingClientRect()),
+  )
+  expect(boxes).toHaveLength(2)
+  expect(boxes[0].width).toBeGreaterThan(40)
+  expect(boxes[1].left).toBeGreaterThanOrEqual(boxes[0].right - 1)
+
+  // причину спрашивает только разовый: постоянной правке отменять нечего
+  await expect(menu.getByPlaceholder('Почему перенесли')).toBeVisible()
+  await menu.getByRole('radio', { name: 'И дальше' }).check()
+  await expect(menu.getByPlaceholder('Почему перенесли')).toHaveCount(0)
+
+  await menu.getByLabel('Новая дата').fill(THURSDAY)
+  await menu.getByLabel('Номер урока').fill('4')
+  await menu.getByRole('button', { name: 'Перенести', exact: true }).click()
+
+  await expect(menu).toHaveCount(0)
+  // отчёт числами — как у ряда уроков и копирования периода: часть ряда
+  // могла упереться в занятый номер или каникулы
+  await expect(page.getByText(/Занятий переехало/)).toBeVisible()
+
+  // час именно переехал: на прежнем месте пусто, а не перечёркнуто
+  await expect(page.locator(`[data-lesson="${THURSDAY}:4"]`)).toBeVisible()
+  await expect(page.locator(`[data-lesson="${MONDAY}:1"]`)).toHaveCount(0)
+})
+
 test('перетаскивание переносит занятие так же, как меню', async ({
   page,
   signIn,
@@ -460,16 +502,56 @@ test('перетаскивание переносит занятие так же
   await expect(page.locator('.cell-drop.over')).toHaveCount(1)
   await page.mouse.up()
 
+  // Бросок сам не переносит: за одним жестом два разных события — сорвался
+  // час или сдвинулось расписание, — и разница вылезает к маю. Спрашивается
+  // это одним нажатием там же, где отпустили.
+  // меню клетки при этом не открылось: жест забирает клик себе, иначе каждый
+  // перенос заканчивался бы двумя меню разом
+  await expect(
+    page.locator('.context-menu').getByRole('button', { name: 'Открыть урок' }),
+  ).toHaveCount(0)
+  await pickMoveMode(page, /Этот час/)
+
   await expect(source).toHaveClass(/cancelled/)
   await expect(page.locator(`[data-lesson="${THURSDAY}:4"]`)).toBeVisible()
-
-  // и нажатие меню при этом не открылось: жест забирает клик себе, иначе
-  // каждый перенос заканчивался бы висящим меню
-  await expect(page.locator('.context-menu')).toHaveCount(0)
 
   // обе половины уехали на сервер, как и у переноса из меню
   await openWeek(page, MONDAY)
   await expect(page.locator(`[data-lesson="${MONDAY}:1"]`)).toHaveClass(/cancelled/)
+  await expect(page.locator(`[data-lesson="${THURSDAY}:4"]`)).toBeVisible()
+})
+
+test('постоянная правка расписания не оставляет ни отмены, ни лишнего часа', async ({
+  page,
+  signIn,
+}) => {
+  // Второй вид переноса, ради которого и появился выбор. Разовый пишет
+  // отмену и дополнительное занятие — верно ровно тогда, когда час
+  // сорвался. Расписание же меняют и насовсем, и тридцать отмен объявили бы
+  // тридцать срывов, которых не было.
+  await signIn(PEOPLE.ivanova)
+  await openWeek(page, MONDAY)
+
+  const source = page.locator(`[data-lesson="${MONDAY}:1"]`)
+  await expect(source).toBeVisible()
+  await expect(source).toBeEnabled()
+
+  const from = await source.boundingBox()
+  const to = await page.locator(`[data-add="${THURSDAY}:4"]`).boundingBox()
+  await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(to.x + to.width / 2, to.y + to.height / 2, { steps: 12 })
+  await page.mouse.up()
+
+  await pickMoveMode(page, /И дальше/)
+
+  // час именно **переехал**: на прежнем месте пусто, а не перечёркнуто
+  await expect(page.locator(`[data-lesson="${THURSDAY}:4"]`)).toBeVisible()
+  await expect(page.locator(`[data-lesson="${MONDAY}:1"]`)).toHaveCount(0)
+
+  // и это уехало на сервер, а не нарисовалось
+  await openWeek(page, MONDAY)
+  await expect(page.locator(`[data-lesson="${MONDAY}:1"]`)).toHaveCount(0)
   await expect(page.locator(`[data-lesson="${THURSDAY}:4"]`)).toBeVisible()
 })
 

@@ -14,6 +14,8 @@
 
 from datetime import timedelta
 
+from calendars import services as calendar_services
+from calendars.models import DayException
 from django.urls import reverse
 from django.utils import timezone
 from rest_framework.test import APITestCase
@@ -338,6 +340,220 @@ class MoveTests(LessonRecordTestCase):
 
         self.assertEqual(response.status_code, 400)
         self.assertEqual(response.json()["code"], "slot_outside_year")
+
+
+class MoveSeriesTests(LessonRecordTestCase):
+    """
+    Второй вид переноса: не сорвался час, а сдвинулся ряд.
+
+    Разовый перенос пишет отмену и дополнительное занятие, и это верно ровно
+    тогда, когда занятие **не состоялось**. Расписание же меняют и насовсем
+    — «вторник третьим часом теперь идёт средой вторым», — и тридцать отмен
+    с тридцатью дополнительными объявили бы тридцать срывов, которых не
+    было. Именно эти два числа читает администрация, поэтому у постоянной
+    правки своя запись: дата переписывается, флаги не ставятся.
+
+    Ряд здесь тот же, что у удаления ряда: курс, день недели, номер, — от
+    этого часа и до конца года.
+    """
+
+    def setUp(self):
+        super().setUp()
+        # три понедельника подряд первым часом: ряд, который и переезжает
+        self.mondays = [MONDAY + timedelta(days=7 * week) for week in range(3)]
+        self.row = [make_slot(self.user, self.course, day, 1) for day in self.mondays]
+        self.slot = self.row[0]
+        self.wednesday = MONDAY + timedelta(days=2)
+
+    def move(self, slot=None, **body):
+        return self.client.post(
+            reverse("slot-move", args=[(slot or self.slot).pk]),
+            {
+                "date": self.wednesday.isoformat(),
+                "lesson_number": 2,
+                "mode": "series",
+                **body,
+            },
+            format="json",
+        )
+
+    def test_the_whole_row_changes_its_day_and_number(self):
+        response = self.move()
+
+        self.assertEqual(response.status_code, 200, response.content)
+        self.assertEqual(response.json(), {"moved": 3, "skipped": 0, "kept": 0})
+        for slot, monday in zip(self.row, self.mondays):
+            slot.refresh_from_db()
+            self.assertEqual(slot.date, monday + timedelta(days=2))
+            self.assertEqual(slot.lesson_number, 2)
+
+    def test_nothing_is_cancelled_and_nothing_is_extra(self):
+        """Ради этого всё и затевалось: срыва не было, и следа быть не должно."""
+        self.move()
+
+        for slot in self.row:
+            slot.refresh_from_db()
+            self.assertFalse(slot.is_cancelled)
+            self.assertFalse(slot.is_extra)
+            self.assertEqual(slot.reason, "")
+
+    def test_no_second_lesson_appears(self):
+        self.assertEqual(Slot.objects.filter(course=self.course).count(), 3)
+
+        self.move()
+
+        self.assertEqual(Slot.objects.filter(course=self.course).count(), 3)
+
+    def test_the_past_of_the_row_stays_where_it_was(self):
+        """Расписание меняют вперёд: прошедшие часы — уже история."""
+        past = make_slot(self.user, self.course, MONDAY - timedelta(days=7), 1)
+
+        self.move()
+
+        past.refresh_from_db()
+        self.assertEqual(past.date, MONDAY - timedelta(days=7))
+        self.assertEqual(past.lesson_number, 1)
+
+    def test_another_weekday_and_another_number_are_not_this_row(self):
+        tuesday = make_slot(self.user, self.course, MONDAY + timedelta(days=1), 1)
+        fifth = make_slot(self.user, self.course, self.mondays[1], 5)
+
+        self.move()
+
+        for stranger, where in ((tuesday, MONDAY + timedelta(days=1)), (fifth, self.mondays[1])):
+            stranger.refresh_from_db()
+            self.assertEqual(stranger.date, where)
+
+    def test_only_the_number_may_change(self):
+        """«Тот же день, но третьим часом» — такая же постоянная правка."""
+        response = self.move(date=MONDAY.isoformat(), lesson_number=3)
+
+        self.assertEqual(response.status_code, 200, response.content)
+        for slot, monday in zip(self.row, self.mondays):
+            slot.refresh_from_db()
+            self.assertEqual((slot.date, slot.lesson_number), (monday, 3))
+
+    def test_an_hour_with_a_record_stays_on_the_day_it_happened(self):
+        recorded = self.row[2]
+        recorded.taught_by = self.colleague
+        recorded.save(update_fields=["taught_by"])
+
+        response = self.move()
+
+        self.assertEqual(response.json(), {"moved": 2, "skipped": 0, "kept": 1})
+        recorded.refresh_from_db()
+        self.assertEqual(recorded.date, self.mondays[2])
+
+    def test_a_cancelled_hour_of_the_row_stays_too(self):
+        """Отменённый час — след срыва, и он привязан к своему дню."""
+        self.row[1].is_cancelled = True
+        self.row[1].save(update_fields=["is_cancelled"])
+
+        response = self.move()
+
+        self.assertEqual(response.json()["kept"], 1)
+        self.row[1].refresh_from_db()
+        self.assertEqual(self.row[1].date, self.mondays[1])
+
+    def test_an_occupied_place_is_skipped_and_counted(self):
+        """
+        Ряд длиной в год почти всегда во что-нибудь упрётся.
+
+        «Не переехало ничего, потому что 16 сентября занято» — худший из
+        возможных ответов, поэтому неделя пропускается и называется числом.
+        """
+        other = make_course(self.school, self.year, "10А")
+        make_slot(self.user, other, self.mondays[1] + timedelta(days=2), 2)
+
+        response = self.move()
+
+        self.assertEqual(response.json(), {"moved": 2, "skipped": 1, "kept": 0})
+        self.row[1].refresh_from_db()
+        self.assertEqual(self.row[1].date, self.mondays[1])
+
+    def test_a_holiday_week_leaves_its_hour_alone(self):
+        holiday = self.mondays[2] + timedelta(days=2)
+        DayException.objects.create(
+            year=self.year,
+            start_date=holiday,
+            end_date=holiday,
+            kind=calendar_services.KIND_HOLIDAY,
+            title="Праздник",
+        )
+
+        response = self.move()
+
+        self.assertEqual(response.json(), {"moved": 2, "skipped": 1, "kept": 0})
+        self.row[2].refresh_from_db()
+        self.assertEqual(self.row[2].date, self.mondays[2])
+
+    def test_the_dragged_hour_is_judged_strictly(self):
+        """
+        По этому часу щёлкнули, и молча оставить его на месте нельзя.
+
+        Хвост ряда пропускает занятое, а сам перетащенный час — нет: это
+        то самое действие, которое человек попросил, и отказ на него он
+        должен увидеть.
+        """
+        other = make_course(self.school, self.year, "10А")
+        make_slot(self.user, other, self.wednesday, 2)
+
+        response = self.move()
+
+        self.assertEqual(response.status_code, 400, response.content)
+        self.assertEqual(response.json()["code"], "slot_number_taken")
+
+    def test_a_refusal_rolls_the_whole_row_back(self):
+        other = make_course(self.school, self.year, "10А")
+        make_slot(self.user, other, self.wednesday, 2)
+
+        self.move()
+
+        for slot, monday in zip(self.row, self.mondays):
+            slot.refresh_from_db()
+            self.assertEqual((slot.date, slot.lesson_number), (monday, 1))
+
+    def test_a_target_in_another_week_is_refused(self):
+        """
+        Постоянная правка — это смена дня недели, а не сдвиг года на девять дней.
+
+        Угадывать за человека, что он имел в виду, дороже названного отказа.
+        """
+        response = self.move(date=(self.wednesday + timedelta(days=7)).isoformat())
+
+        self.assertEqual(response.status_code, 400, response.content)
+        self.assertEqual(response.json()["code"], "slot_move_series_week")
+
+    def test_a_recorded_hour_moves_alone_or_not_at_all(self):
+        self.slot.taught_by = self.colleague
+        self.slot.save(update_fields=["taught_by"])
+
+        response = self.move()
+
+        self.assertEqual(response.status_code, 400, response.content)
+        self.assertEqual(response.json()["code"], "slot_move_series_recorded")
+
+    def test_an_extra_hour_has_no_row(self):
+        """Дополнительный час разовый по определению — как и у повтора."""
+        extra = make_slot(self.user, self.course, self.mondays[0], 4, is_extra=True)
+
+        response = self.move(slot=extra)
+
+        self.assertEqual(response.status_code, 400, response.content)
+        self.assertEqual(response.json()["code"], "slot_move_series_one_off")
+
+    def test_without_a_mode_the_move_stays_what_it_always_was(self):
+        """Молчащий клиент обязан получить прежний разовый перенос."""
+        response = self.client.post(
+            reverse("slot-move", args=[self.slot.pk]),
+            {"date": self.wednesday.isoformat(), "lesson_number": 2},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 201, response.content)
+        self.slot.refresh_from_db()
+        self.assertTrue(self.slot.is_cancelled)
+        self.assertTrue(Slot.objects.get(pk=response.json()["id"]).is_extra)
 
 
 class MoveKeepsTheOrderTests(SchoolTestMixin, APITestCase):

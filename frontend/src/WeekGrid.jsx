@@ -86,7 +86,7 @@ export default function WeekGrid({
     }),
   )
 
-  const drop = ({ active, over }) => {
+  const drop = ({ active, over, activatorEvent, delta }) => {
     if (!over || !onDrop) return
     const [date, number] = String(over.id).replace('cell:', '').split(':')
     const from = active.data.current
@@ -94,7 +94,26 @@ export default function WeekGrid({
     // то же место — не перенос: сервер принял бы, но занятие уехало бы в
     // отмену и вернулось на ту же клетку, оставив ложный след
     if (from.date === date && String(from.lesson.lesson_number) === number) return
-    onDrop(from.lesson, from.date, { date, lesson_number: Number(number) })
+    onDrop(from.lesson, from.date, { date, lesson_number: Number(number) }, dropAt(activatorEvent, delta))
+  }
+
+  /*
+   * Где отпустили — в координатах экрана.
+   *
+   * Спрашивать после броска есть о чём: перенос бывает разовым и
+   * постоянным, и вопрос должен встать там же, где рука. Своей точки у
+   * `onDragEnd` нет — есть место **начала** жеста и пройденный путь, и
+   * сумма их и есть место, где палец отпустили.
+   *
+   * У жеста с клавиатуры координат нет вовсе (`clientX` там ноль), и тогда
+   * берётся центр окна: меню посреди экрана лучше меню в его углу. Тот же
+   * довод, что у меню клетки рядом.
+   */
+  const dropAt = (event, delta) => {
+    const x = event?.clientX ?? 0
+    const y = event?.clientY ?? 0
+    if (!x && !y) return { x: window.innerWidth / 2, y: window.innerHeight / 2 }
+    return { x: x + (delta?.x ?? 0), y: y + (delta?.y ?? 0) }
   }
 
   /*

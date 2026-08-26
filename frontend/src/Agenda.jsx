@@ -1,7 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
-import { AddLessonDialog, LessonMenu } from './AgendaDialogs'
+import {
+  AddLessonDialog,
+  LessonMenu,
+  MoveModeMenu,
+  MOVE_ONCE,
+  MOVE_SERIES,
+  moveBody,
+  movesAsRow,
+} from './AgendaDialogs'
 import EmptyState from './EmptyState'
 import CopyDialog from './CopyDialog'
 import { remember, remembered, useKept } from './remember'
@@ -31,7 +39,11 @@ import {
   today,
 } from './calendarLogic'
 import { dateRange, firstWeekday } from './dates'
-import { MAX_LESSON_NUMBER, describeCopyResult } from './scheduleLogic'
+import {
+  MAX_LESSON_NUMBER,
+  describeCopyResult,
+  describeMoveResult,
+} from './scheduleLogic'
 
 const NUMBERS = Array.from({ length: MAX_LESSON_NUMBER }, (_, index) => index + 1)
 
@@ -412,6 +424,21 @@ export default function Agenda({ views = null, onLoggedOut }) {
 
   const moveLesson = (date, lesson, fields) => {
     setDialog(null)
+
+    /*
+     * Постоянная правка двигает весь ряд до конца года, и нарисовать её
+     * заранее нечем: сколько недель упрётся в занятый номер и сколько
+     * съедят каникулы, знает только сервер. Поэтому здесь обычный запрос с
+     * перечитыванием и отчёт числами — ровно как у ряда уроков и
+     * копирования периода.
+     */
+    if (fields.mode === MOVE_SERIES) {
+      return runBulk(
+        () => moveSlot(lesson.id, fields),
+        (result) => describeMoveResult(result, t),
+      )
+    }
+
     // на старом месте остаётся отмена — её и рисуем сразу; новое занятие
     // может оказаться вне показанного периода, и обещать его заранее
     // значило бы обещать то, чего человек не увидит
@@ -680,18 +707,20 @@ export default function Agenda({ views = null, onLoggedOut }) {
       /* Перетаскивание — ускоритель для того же самого, что делает пункт
          «Перенести» в меню: тот же `moveLesson`, тот же запрос, та же
          причина по умолчанию. Отменённое занятие не тащим — переносить
-         нечего, час уже свободен, и «перенос отмены» ничего не значит. */
-      onDrop={(lesson, from, target) =>
-        lesson.is_cancelled
-          ? undefined
-          : moveLesson(from, lesson, {
-              ...target,
-              // та же причина по умолчанию, что у пункта меню: она уезжает в
-              // базу как текст отмены на старом месте, и разойтись двум
-              // формулировкам одного действия негде
-              reason: t('agenda.menu.movedReason', { date: target.date }),
-            })
-      }
+         нечего, час уже свободен, и «перенос отмены» ничего не значит.
+
+         А вот чем этот перенос будет, жест сам решить не может: разовый
+         оставляет отмену и дополнительный час, постоянный двигает весь ряд,
+         и разница вылезает к маю. Поэтому у часа, у которого ряд бывает,
+         спрашивается — одним нажатием, там же, где отпустили. У остальных
+         выбора нет, и жест работает как работал. */
+      onDrop={(lesson, from, target, at) => {
+        if (lesson.is_cancelled) return
+        if (!movesAsRow(lesson)) {
+          return moveLesson(from, lesson, moveBody(target, MOVE_ONCE, t))
+        }
+        setDialog({ type: 'moveMode', lesson, from, target, at })
+      }}
     />
   )
 
@@ -961,6 +990,20 @@ export default function Agenda({ views = null, onLoggedOut }) {
           onMove={(fields) => moveLesson(dialog.date, dialog.lesson, fields)}
           rooms={rooms}
           onRoom={(room) => patchLesson(dialog.date, dialog.lesson, { room })}
+          onClose={() => setDialog(null)}
+        />
+      )}
+
+      {/* бросок состоялся, и остался один вопрос: разовый это перенос или
+          новое расписание. Закрыть, не ответив, значит не переносить вовсе */}
+      {dialog?.type === 'moveMode' && (
+        <MoveModeMenu
+          at={dialog.at}
+          target={dialog.target}
+          busy={busy}
+          onPick={(mode) =>
+            moveLesson(dialog.from, dialog.lesson, moveBody(dialog.target, mode, t))
+          }
           onClose={() => setDialog(null)}
         />
       )}

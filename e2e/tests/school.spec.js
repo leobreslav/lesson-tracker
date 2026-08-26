@@ -1,4 +1,4 @@
-import { PEOPLE, expect, expectConsoleError, ready, test } from './harness.js'
+import { PEOPLE, expect, expectConsoleError, pickMoveMode, ready, test } from './harness.js'
 
 /**
  * Scenario 2: the «School» section — four tabs and the link between a
@@ -924,6 +924,10 @@ test('в неделе школы час переносится перетаск�
   // и «перенос не доехал» выглядят одинаково, а чинятся в разных файлах
   await expect(page.locator('.cell-drop.over')).toHaveCount(1)
   await page.mouse.up()
+
+  // бросок сам не переносит: разовый срыв и постоянная правка расписания —
+  // разные события, и выбор между ними стоит там, где отпустили
+  await pickMoveMode(page, /Этот час/)
 
   await expect(page.locator(`[data-lesson="${free}"]`)).toHaveCount(1)
   // на прежнем месте осталась отмена — тот же след, что у переноса из меню:

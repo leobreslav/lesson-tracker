@@ -1,6 +1,15 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { LessonMenu, RepeatChoice, RoomChoice } from './AgendaDialogs'
+import {
+  LessonMenu,
+  MoveModeMenu,
+  MOVE_ONCE,
+  MOVE_SERIES,
+  moveBody,
+  movesAsRow,
+  RepeatChoice,
+  RoomChoice,
+} from './AgendaDialogs'
 import CopyDialog from './CopyDialog'
 import DayGrid from './DayGrid'
 import EmptyState from './EmptyState'
@@ -34,7 +43,7 @@ import {
 import { dateRange, firstWeekday, longDate } from './dates'
 import { weekdayIndex } from './weekStart'
 import { useKept } from './remember'
-import { MAX_LESSON_NUMBER } from './scheduleLogic'
+import { MAX_LESSON_NUMBER, describeMoveResult } from './scheduleLogic'
 import { AXES, columns as axisColumns, layout, prefillFor } from './dayAxis'
 import {
   courseMatches,
@@ -398,6 +407,20 @@ export default function SchoolSchedule({
   const removeSlot = (slot) => run(() => deleteSlot(slot.id))
 
   /**
+   * Перенос: один запрос на оба режима, отчёт — только у постоянного.
+   *
+   * Разовый рисуется сам собой: отмена здесь, дополнительное занятие там, и
+   * обе записи видны в сетке. Постоянный двигает ряд до конца года, часть
+   * которого могла упереться в занятый номер или каникулы, — и молчание
+   * читалось бы как «переехало всё».
+   */
+  const runMove = (slot, fields) =>
+    run(
+      () => moveSlot(slot.id, fields),
+      fields.mode === MOVE_SERIES ? (result) => describeMoveResult(result, t) : undefined,
+    )
+
+  /**
    * Удаление ряда: этот час и все такие же до конца года.
    *
    * «Очистить период» тут было, и администратору оно годилось меньше всех:
@@ -657,17 +680,18 @@ export default function SchoolSchedule({
            отдельное решение: соседний столбец там — другой курс.)
 
            Отменённое не тащим — час уже свободен, и «перенос отмены» ничего
-           не значит. */
-        onDrop={(slot, from, target) =>
-          slot.is_cancelled
-            ? undefined
-            : run(() =>
-                moveSlot(slot.id, {
-                  ...target,
-                  reason: t('agenda.menu.movedReason', { date: target.date }),
-                }),
-              )
-        }
+           не значит.
+
+           Чем перенос будет — разовым срывом или новым расписанием, — жест
+           не знает, и спрашивается это там же, где отпустили. У часа без
+           ряда (записанный, дополнительный) выбора нет, и он едет сразу. */
+        onDrop={(slot, from, target, at) => {
+          if (slot.is_cancelled) return
+          if (!movesAsRow({ ...slot, recorded: Boolean(slot.lesson) })) {
+            return runMove(slot, moveBody(target, MOVE_ONCE, t))
+          }
+          setDialog({ type: 'moveMode', slot, target, at })
+        }}
       />
       )}
 
@@ -705,7 +729,7 @@ export default function SchoolSchedule({
           }}
           onMove={(fields) => {
             setDialog(null)
-            run(() => moveSlot(dialog.slot.id, fields))
+            runMove(dialog.slot, fields)
           }}
           rooms={rooms}
           onRoom={(room) => {
@@ -720,6 +744,18 @@ export default function SchoolSchedule({
             setDialog(null)
             removeRow(dialog.date, dialog.slot)
           }}
+          onClose={() => setDialog(null)}
+        />
+      )}
+
+      {/* бросок состоялся, и остался один вопрос: разовый это перенос или
+          новое расписание. Закрыть, не ответив, значит не переносить вовсе */}
+      {dialog?.type === 'moveMode' && (
+        <MoveModeMenu
+          at={dialog.at}
+          target={dialog.target}
+          busy={busy}
+          onPick={(mode) => runMove(dialog.slot, moveBody(dialog.target, mode, t))}
           onClose={() => setDialog(null)}
         />
       )}

@@ -238,6 +238,26 @@ export async function planMenu(page, name) {
   await page.locator('.plan-menu .dropdown').getByRole('button', { name }).click()
 }
 
+/**
+ * Ответить на вопрос, который встаёт после броска: разовый это перенос или
+ * постоянная правка расписания.
+ *
+ * Живёт в оснастке ради одной строки — **паузы**, и она не про медленный
+ * стенд. Начав жест, dnd-kit вешает на документ перехват `click` в фазе
+ * захвата и снимает его через 50 мс после броска (`detach`, `setTimeout`):
+ * так гасится тот самый клик, которым жест закончился, — иначе каждый
+ * перенос заканчивался бы ещё и открытым меню клетки.
+ *
+ * Человеку эти 50 мс незаметны — быстрее никто не отпускает и не нажимает,
+ * — а тест успевает нажать через десять, и нажатие пропадает молча: меню
+ * остаётся открытым, перенос не случается, и падает потом совсем другое
+ * утверждение. Пауза здесь одна на оба набора, вместе с этим объяснением.
+ */
+export async function pickMoveMode(page, name) {
+  await page.waitForTimeout(150)
+  await page.locator('.context-menu').getByRole('button', { name }).click()
+}
+
 /** The seeded cast, so tests name people rather than addresses. */
 export const PEOPLE = {
   admin: 'director@example.com',
