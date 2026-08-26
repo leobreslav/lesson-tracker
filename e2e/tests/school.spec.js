@@ -873,3 +873,66 @@ test('строка курса раскрывается кликом, а имя �
   await field.press('Enter')
   await expect(page.locator('.course-row', { hasText: '9Б Переименованный' })).toBeVisible()
 })
+
+test('в неделе школы час переносится перетаскиванием', async ({ page, signIn }) => {
+  // Сетка недели у школы и у учителя одна, а жест жил только у учителя: тот
+  // же самый перенос администратору приходилось делать через меню — и это
+  // ему, чинящему чужую неделю чаще всех.
+  await signIn(PEOPLE.admin)
+  await page.goto('/schedule?view=school')
+  await ready(page)
+  await expect(page.locator('.week-grid')).toBeVisible()
+
+  /*
+   * Что занято, а что свободно, знает посев — спрашиваем у самой сетки, как
+   * и соседний тест про дневной вид.
+   *
+   * Верхние ряды взяты не для красоты: при окне 1280×720 нижние лежат за
+   * краем, мышь до них не доезжает, и тест падал бы с «клетка не отозвалась»
+   * — то есть жаловался бы на код, сломан будучи сам. Клетка берётся с
+   * единственным часом: в стопке первый занятый и первый отменённый — разные
+   * элементы, и проверка «на прежнем месте отмена» смотрела бы не туда.
+   */
+  const inTopRows = (locator, attr) =>
+    locator.evaluateAll(
+      (nodes, name) =>
+        nodes
+          .map((el) => el.getAttribute(name))
+          .filter((key) => Number(key.split(':')[1]) <= 5),
+      attr,
+    )
+
+  const taken = await inTopRows(page.locator('[data-lesson]'), 'data-lesson')
+  const alone = taken.filter((key) => taken.indexOf(key) === taken.lastIndexOf(key))
+  const free = (await inTopRows(page.locator('[data-add]'), 'data-add')).find(
+    (key) => !taken.includes(key),
+  )
+  expect(alone[0], 'в посеянной неделе школы нет одинокого часа в верхних рядах').toBeTruthy()
+  expect(free, 'в посеянной неделе школы нет свободной клетки в верхних рядах').toBeTruthy()
+
+  const source = page.locator(`[data-lesson="${alone[0]}"]`)
+  await expect(source).toBeEnabled()
+  const from = await source.boundingBox()
+  const to = await page.locator(`[data-add="${free}"]`).boundingBox()
+
+  await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2)
+  await page.mouse.down()
+  // порог сенсора — пять пикселей, и берётся он не одним прыжком
+  await page.mouse.move(to.x + to.width / 2, to.y + to.height / 2, { steps: 12 })
+
+  // клетка отзывается, пока час держат: без этой проверки «жест не начался»
+  // и «перенос не доехал» выглядят одинаково, а чинятся в разных файлах
+  await expect(page.locator('.cell-drop.over')).toHaveCount(1)
+  await page.mouse.up()
+
+  await expect(page.locator(`[data-lesson="${free}"]`)).toHaveCount(1)
+  // на прежнем месте осталась отмена — тот же след, что у переноса из меню:
+  // календарной оси нужен срыв и его компенсация, а не тихая правка даты
+  await expect(source).toHaveClass(/cancelled/)
+
+  // и это уехало на сервер, а не нарисовалось
+  await page.reload()
+  await ready(page)
+  await expect(page.locator(`[data-lesson="${free}"]`)).toHaveCount(1)
+  await expect(page.locator(`[data-lesson="${alone[0]}"]`)).toHaveClass(/cancelled/)
+})

@@ -650,6 +650,24 @@ export default function SchoolSchedule({
            сеткой (отмена, перенос) просто не находилась */
         onMenu={(date, slot, at) => setDialog({ type: 'menu', date, slot, at })}
         onAdd={(date, number) => setDialog({ type: 'add', date, number })}
+        /* Тот же перенос, что пункт «Перенести» в меню: один `moveSlot`, одна
+           причина отмены по умолчанию. Неделя школы — та же сетка, что у
+           учителя, и час в ней принадлежит курсу, а не столбцу, поэтому жест
+           здесь значит ровно то же, что там. (В дневном виде его нет, и это
+           отдельное решение: соседний столбец там — другой курс.)
+
+           Отменённое не тащим — час уже свободен, и «перенос отмены» ничего
+           не значит. */
+        onDrop={(slot, from, target) =>
+          slot.is_cancelled
+            ? undefined
+            : run(() =>
+                moveSlot(slot.id, {
+                  ...target,
+                  reason: t('agenda.menu.movedReason', { date: target.date }),
+                }),
+              )
+        }
       />
       )}
 
