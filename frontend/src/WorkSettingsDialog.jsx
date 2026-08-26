@@ -29,6 +29,7 @@ export default function WorkSettingsDialog({ work, onSaved, onClose }) {
     show_result: work.show_result,
     is_summative: work.is_summative ?? false,
     grading_system: work.grading_system ?? null,
+    slot: work.slot ?? null,
   }))
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
@@ -47,6 +48,7 @@ export default function WorkSettingsDialog({ work, onSaved, onClose }) {
         show_result: form.show_result,
         is_summative: form.is_summative,
         grading_system: form.grading_system ?? null,
+        slot: form.slot ?? null,
       })
       onSaved(saved)
     } catch (failure) {
@@ -64,7 +66,12 @@ export default function WorkSettingsDialog({ work, onSaved, onClose }) {
           </p>
         )}
 
-        <WorkSettings form={form} setForm={setForm} busy={busy} />
+        <WorkSettings
+          form={form}
+          setForm={setForm}
+          courseId={work.course}
+          busy={busy}
+        />
 
         <div className="actions">
           <button

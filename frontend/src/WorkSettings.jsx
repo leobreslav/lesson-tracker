@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import Hint from './Hint'
-import { fetchGradingSystems } from './api'
+import { fetchCourseSlots, fetchGradingSystems } from './api'
+import { shortDate } from './dates'
 
 /**
  * Мелкие поля работы: окно времени, попытки, показ отметки, признак
@@ -23,9 +24,10 @@ import { fetchGradingSystems } from './api'
  * намеренно: у обоих мест форма одна на всю работу, и второй источник
  * правды для пяти полей разошёлся бы с первым в первую же правку.
  */
-export default function WorkSettings({ form, setForm, busy = false }) {
+export default function WorkSettings({ form, setForm, courseId = null, busy = false }) {
   const { t } = useTranslation()
   const [systems, setSystems] = useState([])
+  const [slots, setSlots] = useState([])
 
   /* Список систем школы: показываются только разрешённые — сервер их и не
      отдаёт другими, а форма не должна предлагать то, чего он не примет. */
@@ -38,6 +40,22 @@ export default function WorkSettings({ form, setForm, busy = false }) {
       alive = false
     }
   }, [])
+
+  /* Часы курса за весь год, а не две недели вокруг сегодня, как в сборке из
+     банка. Там вопрос «на каком уроке задам», и он всегда про ближайшие дни;
+     здесь — «на каком уроке появилась оценка», и это сплошь и рядом прошлое:
+     работу заводят со страницы работ, а привязывают потом, разбирая четверть. */
+  useEffect(() => {
+    if (!courseId) return undefined
+
+    let alive = true
+    fetchCourseSlots(courseId)
+      .then((list) => alive && setSlots(list.filter((one) => !one.is_cancelled)))
+      .catch(() => {})
+    return () => {
+      alive = false
+    }
+  }, [courseId])
 
   const change = (field) => (event) => {
     const value =
@@ -72,6 +90,42 @@ export default function WorkSettings({ form, setForm, busy = false }) {
         по задаче (треды окна не знают вовсе, право там по участию).
         Пропадает ровно одно — возможность прислать новое решение */}
     <Hint short={t('works.windowHint')} more={t('works.windowHintMore')} />
+
+    {/* Занятие, на котором за работу появилась оценка.
+
+        Поле необязательное, и «без занятия» — не заглушка, а рабочее
+        состояние: контрольная за четверть, пересдача, работа «на неделю». В
+        журнале такая идёт своим столбцом в конце, без даты.
+
+        До сих пор занятие подставлялось только оттуда, откуда работу
+        заводили: со страницы урока — само, из банка — списком. Работа,
+        заведённая со страницы работ, оставалась без часа **навсегда**:
+        сервер поле принимал, а нажать было негде. */}
+    {courseId && (
+      <>
+        <label className="field">
+          <span>{t('works.slot')}</span>
+          <select
+            value={form.slot ?? ''}
+            disabled={busy}
+            onChange={(event) =>
+              setForm((current) => ({
+                ...current,
+                slot: event.target.value ? Number(event.target.value) : null,
+              }))
+            }
+          >
+            <option value="">{t('works.noSlot')}</option>
+            {slots.map((one) => (
+              <option key={one.id} value={one.id}>
+                {shortDate(one.date)} · {t('works.slotNumber', { number: one.lesson_number })}
+              </option>
+            ))}
+          </select>
+        </label>
+        <p className="hint">{t('works.slotHint')}</p>
+      </>
+    )}
 
     {/* Система оценивания — решение учителя, на каждой работе своё:
         маленькая проверочная по пятибалльной рядом с контрольной по MYP

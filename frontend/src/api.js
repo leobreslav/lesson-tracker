@@ -1288,8 +1288,20 @@ export const addFromBank = (work, problems) =>
   request(`/api/works/${work}/add-from-bank/`, { method: 'POST', body: { problems } })
 
 /** Часы курса за период — ими называют занятие, на котором задали работу. */
-export const fetchCourseSlots = (course, { start, end }) =>
-  request(`/api/slots/?${new URLSearchParams({ course, start, end })}`)
+/**
+ * Часы курса. Границы необязательны: без них сервер отдаёт год целиком.
+ *
+ * Пустое имя в запрос не попадает вовсе — `URLSearchParams` пишет `undefined`
+ * строкой, и `start=undefined` сервер разберёт как «дату не поняли», то есть
+ * вернёт не тот список, о котором просили.
+ */
+export const fetchCourseSlots = (course, { start, end } = {}) => {
+  const query = new URLSearchParams({ course })
+  if (start) query.set('start', start)
+  if (end) query.set('end', end)
+
+  return request(`/api/slots/?${query}`)
+}
 
 /**
  * Накатить условие из банка на **эту** ячейку — или снять его (`null`).

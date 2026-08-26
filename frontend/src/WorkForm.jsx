@@ -131,7 +131,7 @@ export default function WorkForm({
           при заведении, они на месте: даты обязательны, без них работы не
           завести. На странице правки они уехали за кнопку «Настройки» —
           главное там задание, а не четыре флажка */}
-      <WorkSettings form={form} setForm={setForm} busy={busy} />
+      <WorkSettings form={form} setForm={setForm} courseId={courseId} busy={busy} />
 
       <div className="actions">
         <button type="submit" disabled={busy || !ready(form)}>
