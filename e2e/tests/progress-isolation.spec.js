@@ -73,7 +73,7 @@ test('отмена урока сдвигает даты в плане', async ({
   expect(after[1]).toBe(before[2])
 })
 
-test('второй учитель не видит ни уроков, ни планов первого', async ({
+test('второй учитель не видит уроков первого, а план его только читает', async ({
   page,
   signIn,
   api,
@@ -92,14 +92,31 @@ test('второй учитель не видит ни уроков, ни пла
   await expect(page.locator(`[data-lesson="${MONDAY}:1"]`)).toHaveCount(0)
   await expect(page.locator('.week-grid').getByText('Grade 6 Algebra')).toHaveCount(0)
 
-  // a course nobody assigned him is not even offered: «what do I teach» is
-  // now a table of its own, and hers is not in it
+  /*
+   * А вот план её курса ему предлагается — и это перемена, а не дыра.
+   *
+   * Тут стояло обратное утверждение: «курс, который ему не поручали, даже не
+   * предлагается». Оно было правдой ровно до того дня, когда живой план
+   * школы стал общим чтением: чужую программу открывают не затем, чтобы её
+   * подписать, — смежник сверяет, заменяющий смотрит, на чём остановились.
+   * Селект и есть то место, где чужой план ищут.
+   *
+   * Изоляция от этого не исчезла, она переехала в правку: читать — да,
+   * править — нет.
+   */
   await page.goto('/plan')
   await ready(page)
-  // курсы перечислены в селекте заголовка, и чужого там нет
-  const offered = await page.getByLabel('Курс').locator('option').allTextContents()
-  expect(offered).not.toContain('Grade 6 Algebra')
+  const picker = page.getByLabel('Курс')
+  const offered = await picker.locator('option').allTextContents()
   expect(offered).toContain('Grade 9 Algebra')
+  expect(offered).toContain('Grade 6 Algebra')
+
+  await picker.selectOption({ label: 'Grade 6 Algebra' })
+  await expect(page.locator('.review-plan li').first()).toBeVisible()
+  // ни таблицы с правкой, ни панели управления, ни решения по утверждению
+  await expect(page.locator('ul.plan')).toHaveCount(0)
+  await expect(page.locator('.plan-tools')).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Утвердить' })).toHaveCount(0)
 
   // and the API says the same, so it is not the interface hiding things
   const petrov = await api(PEOPLE.petrov)
