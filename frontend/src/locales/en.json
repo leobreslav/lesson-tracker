@@ -758,6 +758,7 @@
       "cancelAbort": "Never mind",
       "openPlan": "Open in the curriculum map",
       "move": "Move…",
+      "makeRegular": "Make it a regular lesson",
       "moveHint": "The old hour stays cancelled and a make-up lesson appears on the new date.",
       "moveMode": "What kind of move",
       "moveOnce": "This hour",

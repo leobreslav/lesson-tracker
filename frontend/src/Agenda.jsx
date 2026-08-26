@@ -988,6 +988,13 @@ export default function Agenda({ views = null, onLoggedOut }) {
           onDelete={() => removeLesson(dialog.date, dialog.lesson)}
           onDeleteRow={() => deleteRow(dialog.date, dialog.lesson)}
           onMove={(fields) => moveLesson(dialog.date, dialog.lesson, fields)}
+          /* причина уходит вместе с флагом: у неотменённого часа она может
+             объяснять только «почему он дополнительный», и пережившая
+             снятие объясняла бы то, чего больше нет. Тем же движением, что
+             «Вернуть» стирает причину отмены */
+          onRegular={() =>
+            patchLesson(dialog.date, dialog.lesson, { is_extra: false, reason: '' })
+          }
           rooms={rooms}
           onRoom={(room) => patchLesson(dialog.date, dialog.lesson, { room })}
           onClose={() => setDialog(null)}

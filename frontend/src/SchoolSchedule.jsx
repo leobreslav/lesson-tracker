@@ -731,6 +731,13 @@ export default function SchoolSchedule({
             setDialog(null)
             runMove(dialog.slot, fields)
           }}
+          /* причина уходит вместе с флагом — тем же движением, что «Вернуть»
+             стирает причину отмены: у неотменённого часа она объясняет
+             ровно то, что мы сейчас снимаем */
+          onRegular={() => {
+            setDialog(null)
+            run(() => updateSlot(dialog.slot.id, { is_extra: false, reason: '' }))
+          }}
           rooms={rooms}
           onRoom={(room) => {
             setDialog(null)

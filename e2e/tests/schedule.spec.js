@@ -184,6 +184,79 @@ test('урок добавляется, отменяется с причиной 
   await expect(page.locator(`[data-lesson="${MONDAY}:6"]`)).toBeVisible()
 })
 
+test('дополнительный час возвращается в обычные из того же меню', async ({
+  page,
+  signIn,
+}) => {
+  /*
+   * Пометку можно было только поставить, при создании, — снять её было
+   * нечем. В шапке меню при этом стояло «Дополнительный урок.», то есть
+   * единственное свойство часа, которое видно, но не правится; вернуть его
+   * в сетку значило удалить и завести заново, потеряв всё накопленное.
+   */
+  await signIn(PEOPLE.ivanova)
+  await openWeek(page, MONDAY)
+
+  await page.locator(`[data-add="${MONDAY}:6"]`).click()
+  const add = page.locator('dialog.modal')
+  await add.getByRole('combobox').first().selectOption({ label: 'Grade 6 Algebra' })
+  await add.getByRole('checkbox', { name: 'дополнительный урок' }).check()
+  await add.getByPlaceholder('Пояснение: замена, кружок…').fill('Замена коллеги')
+  await add.getByRole('button', { name: 'Добавить', exact: true }).click()
+
+  const lesson = page.locator(`[data-lesson="${MONDAY}:6"]`)
+  await expect(lesson).toHaveClass(/extra/)
+
+  await lesson.click({ button: 'right' })
+  const menu = page.locator('.context-menu')
+  // и пометка, и причина видны в шапке — снимаются они вместе
+  await expect(menu).toContainText('Дополнительный урок.')
+  await menu.getByRole('button', { name: 'Сделать обычным' }).click()
+
+  await expect(menu).toHaveCount(0)
+  await expect(lesson).not.toHaveClass(/extra/)
+
+  // уехало на сервер, а не нарисовалось; и пункта больше нет — снимать нечего
+  await openWeek(page, MONDAY)
+  const back = page.locator(`[data-lesson="${MONDAY}:6"]`)
+  await expect(back).not.toHaveClass(/extra/)
+  await back.click({ button: 'right' })
+  await expect(
+    page.locator('.context-menu').getByRole('button', { name: 'Сделать обычным' }),
+  ).toHaveCount(0)
+})
+
+test('у отменённого часа пункта «Сделать обычным» нет', async ({ page, signIn }) => {
+  // Причина у отменённого принадлежит отмене, а пункт стирает причину
+  // вместе с пометкой. Поэтому путь назад там в два шага: сперва «Вернуть»
+  // — он и причину уберёт, — и только потом снимается «дополнительный».
+  await signIn(PEOPLE.ivanova)
+  await openWeek(page, MONDAY)
+
+  await page.locator(`[data-add="${MONDAY}:6"]`).click()
+  const add = page.locator('dialog.modal')
+  await add.getByRole('combobox').first().selectOption({ label: 'Grade 6 Algebra' })
+  await add.getByRole('checkbox', { name: 'дополнительный урок' }).check()
+  await add.getByRole('button', { name: 'Добавить', exact: true }).click()
+
+  const lesson = page.locator(`[data-lesson="${MONDAY}:6"]`)
+  const menu = page.locator('.context-menu')
+
+  await lesson.click({ button: 'right' })
+  await menu.getByRole('button', { name: 'Отменить' }).click()
+  await menu.getByRole('button', { name: 'Отменить урок' }).click()
+  await expect(lesson).toHaveClass(/cancelled/)
+
+  // у отменённого в меню только «Вернуть»
+  await lesson.click({ button: 'right' })
+  await expect(menu.getByRole('button', { name: 'Сделать обычным' })).toHaveCount(0)
+  await menu.getByRole('button', { name: 'Вернуть' }).click()
+
+  // а после возврата пункт на месте
+  await lesson.click({ button: 'right' })
+  await expect(menu.getByRole('button', { name: 'Сделать обычным' })).toBeVisible()
+})
+
 test('из расписания открывается сам урок, а не только правка клетки', async ({
   page,
   signIn,

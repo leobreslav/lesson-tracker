@@ -205,6 +205,33 @@ class SlotCrudTests(SlotTestCase):
 
         self.assertEqual(response.status_code, 200, response.content)
 
+    def test_an_extra_hour_returns_to_the_regular_grid(self):
+        """
+        Дополнительный час снимается с пометки и становится обычным.
+
+        Поставить флаг можно было только при создании, а снять — ничем, и
+        вернуть такой час в сетку значило удалить его и завести заново, то
+        есть потерять всё, что на нём накопилось. Сервер это умел всегда —
+        `is_extra` обычное поле, — не умел интерфейс; тест стережёт саму
+        возможность, на которой стоит пункт меню.
+
+        Причина уходит вместе с флагом: у неотменённого часа она объясняет
+        ровно то, что мы снимаем, — тем же движением, каким возврат из
+        отмены стирает причину отмены.
+        """
+        slot = self.make_slot(MONDAY, 1, is_extra=True, reason="Замена коллеги")
+
+        response = self.client.patch(
+            reverse("slot-detail", args=[slot.pk]),
+            {"is_extra": False, "reason": ""},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200, response.content)
+        slot.refresh_from_db()
+        self.assertTrue(slot.is_regular)
+        self.assertEqual(slot.reason, "")
+
     def test_delete(self):
         slot = self.make_slot(MONDAY, 1)
 
