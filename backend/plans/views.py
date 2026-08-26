@@ -1273,11 +1273,37 @@ class PlanReviewViewSet(ReadOnlyModelViewSet):
     serializer_class = None
 
     def get_queryset(self):
-        """Курсы под надзором: чужой курс отсюда неотличим от несуществующего."""
-        return approval.supervised(self.request.user)
+        """
+        Курсы, чей план можно прочитать: **все курсы школы**.
+
+        Уже́ это было — «курсы под надзором», — и граница держалась не на
+        причине, а на том, что других входов сюда не завели. Читать чужую
+        программу нужно не одному методисту: смежник сверяет, когда у соседей
+        производная, заменяющий смотрит, на чём остановились, новый учитель
+        читает прошлогоднюю параллель. Всем им показывала библиотека, то есть
+        **снимок**, который кто-то положил на полку, — а живой план соседа
+        просто ни разу не открывали.
+
+        Чужая школа отсюда по-прежнему неотличима от несуществующей, и
+        править этот план нельзя ничем: экран только читает.
+        """
+        return approval.readable(self.request.user)
 
     def get_object(self):
         return get_object_or_404(self.get_queryset(), pk=self.kwargs["pk"])
+
+    def decided_course(self):
+        """
+        Курс, по которому этот человек вправе **решать**, — только надзорный.
+
+        Читать план школы может каждый её учитель, а утверждать и возвращать
+        — назначенный методист, и это разные вопросы к разным спискам.
+        Пока список был один, расширение чтения молча раздало бы и право
+        подписи; чужой курс здесь по-прежнему неотличим от несуществующего.
+        """
+        return get_object_or_404(
+            approval.supervised(self.request.user), pk=self.kwargs["pk"]
+        )
 
     def waiting_request(self, course):
         """
@@ -1326,11 +1352,32 @@ class PlanReviewViewSet(ReadOnlyModelViewSet):
         return Response(self.course_payload(self.get_object()))
 
     def course_payload(self, course, rows=None):
-        """Ответ на весь экран: чей курс, что в плане и ждёт ли он решения."""
+        """
+        Ответ на весь экран: чей курс, что в плане, и что с ним можно сделать.
+
+        **Строка состояния приезжает сюда целиком** (`row`), а не собирается
+        экраном из списка надзора. Раньше собиралась: числа над планом брались
+        из `reviews/`, то есть экран открывался только тому, у кого этот курс
+        в списке. Читать же чужой план вправе вся школа, а списка надзора у
+        рядового учителя нет вовсе — значит один запрос должен отвечать на
+        весь экран, иначе половина его осталась бы пустой.
+
+        Ключевые числа поэтому здесь не считаются заново: их считает тот же
+        `progress.rows_for`, что и у автора плана, — два расчёта одного и того
+        же разошлись бы молча, и разговор про «отстаёшь» начинался бы со спора
+        о цифрах.
+
+        Долги по записи из строки вынуты, и по той же причине, что из списка:
+        «не отметил двенадцать занятий» — про дисциплину заполнения, а не про
+        курс, и в чужом обзоре это поле выглядит фактом, за которым никто не
+        приходил.
+        """
         if rows is None:
             rows = services.plan_snapshot(course.pk)
-        slots = Slot.objects.filter(course=course, is_cancelled=False).count()
-        lessons = sum(1 for row in rows if not row.is_section)
+
+        # имя не `row`: строчкой ниже то же слово занято под строку плана
+        state = progress.rows_for([course], timezone.localdate())[0]
+        state.pop("records", None)
 
         return {
             "course": {
@@ -1345,11 +1392,14 @@ class PlanReviewViewSet(ReadOnlyModelViewSet):
                 {"position": position, "is_section": row.is_section, "title": row.title}
                 for position, row in enumerate(rows)
             ],
-            "lessons": lessons,
-            # ключевые числа рядом с планом: методист смотрит не только
-            # «что написано», но и «помещается ли это в год»
-            "slots_total": slots,
-            "reserve": slots - lessons,
+            # Право решать приезжает ответом, а не выводится из роли: правило
+            # сложнее роли — методист **этого курса**, — и экран, гадающий о
+            # нём сам, однажды разошёлся бы с сервером и нарисовал бы
+            # «Утвердить» тому, кому сервер откажет.
+            "may_decide": approval.supervised(self.request.user)
+            .filter(pk=course.pk)
+            .exists(),
+            "row": state,
         }
 
     @action(detail=True, methods=["get"])
@@ -1367,7 +1417,7 @@ class PlanReviewViewSet(ReadOnlyModelViewSet):
 
     @action(detail=True, methods=["post"])
     def approve(self, request, pk=None):
-        baseline = self.waiting_request(self.get_object())
+        baseline = self.waiting_request(self.decided_course())
         approval.approve(baseline, request.user)
 
         return Response(self.course_payload(baseline.course))
@@ -1383,7 +1433,7 @@ class PlanReviewViewSet(ReadOnlyModelViewSet):
                 field="comment",
             )
 
-        baseline = self.waiting_request(self.get_object())
+        baseline = self.waiting_request(self.decided_course())
         approval.send_back(baseline, request.user, comment)
 
         return Response(self.course_payload(baseline.course))

@@ -279,10 +279,13 @@ test('ожидающий и просто поднадзорный лежат в 
   await ready(page)
 
   const groups = page.getByLabel('Курс').locator('optgroup')
-  await expect(groups).toHaveCount(3)
+  await expect(groups).toHaveCount(4)
   await expect(groups.nth(0)).toHaveAttribute('label', 'Мои курсы')
   await expect(groups.nth(1)).toHaveAttribute('label', 'Ждут ответа')
   await expect(groups.nth(2)).toHaveAttribute('label', 'Под надзором')
+  // четвёртая — всё остальное, что есть в школе: живой план читают все её
+  // учителя, а не только назначенный методист
+  await expect(groups.nth(3)).toHaveAttribute('label', 'Курсы школы')
 
   // присланный — во второй группе, остальной надзор — в третьей
   await expect(groups.nth(1).locator('option')).toHaveText(['Grade 6 Algebra'])
@@ -307,10 +310,13 @@ test('свой курс показывает свой план, даже есл�
   await expect(page.locator('ul.plan .plan-row.lesson').first()).toBeVisible()
   await expect(page.locator('.plan-tools')).toBeVisible()
 
-  // и в селекте курс стоит один раз, без группы «Под надзором»
-  await expect(page.getByLabel('Курс').locator('optgroup')).toHaveCount(0)
+  // и в селекте курс стоит один раз, без группы «Под надзором»: группы тут
+  // есть (чужие курсы школы читает любой учитель), но своей среди них нет
+  const picker = page.getByLabel('Курс')
+  await expect(picker.locator('optgroup[label="Под надзором"]')).toHaveCount(0)
+  await expect(picker.locator('optgroup[label="Мои курсы"]')).toHaveCount(1)
   await expect(
-    page.getByLabel('Курс').locator('option', { hasText: 'Grade 6 Algebra' }),
+    picker.locator('option', { hasText: 'Grade 6 Algebra' }),
   ).toHaveCount(1)
 
   // отправляем на утверждение — решать можно тут же, по ссылке
@@ -324,10 +330,12 @@ test('свой курс показывает свой план, даже есл�
   await expect(page.locator('.review-plan li').first()).toBeVisible()
   await page.getByRole('button', { name: 'Утвердить' }).click()
 
-  // после решения возвращаемся к своему плану, и оно уже записано
+  // после решения возвращаемся к своему плану, и оно уже записано.
+  // Сперва — что решать больше нечего: список надзора перечитывается
+  // фоном, и это единственное утверждение здесь, которое умеет подождать
   await expect(page.locator('ul.plan .plan-row.lesson').first()).toBeVisible()
-  await expect(page.locator('.hint.approval')).toContainText('Утверждён')
   await expect(page.locator('.hint.approval.self')).toHaveCount(0)
+  await expect(page.locator('.hint.approval.approved')).toContainText('Утверждён')
 })
 
 test('сравнение с эталоном показывает строки, а не только числа', async ({
@@ -449,4 +457,67 @@ test('сравнивают с любым утверждением, а не то�
   await expect(page.locator('.diff-row.added').first()).toContainText(
     'Урок после первой',
   )
+})
+
+test('чужой план школы открывается на чтение любому учителю', async ({
+  page,
+  signIn,
+}) => {
+  /*
+   * Ради этого правило и меняли: живой план соседа читать было нечем.
+   *
+   * Библиотека отвечала снимком, который кто-то догадался положить на полку,
+   * а сам план курса видели ровно двое — назначенный методист и
+   * администратор школы. Ивановой ни та, ни другая роль не досталась: в
+   * посеве методистов нет вовсе, а администратор — завуч.
+   */
+  await signIn(PEOPLE.ivanova)
+  await page.goto('/plan')
+  await ready(page)
+
+  // курс Петрова — в группе «Курсы школы», рядом со своими
+  const picker = page.getByLabel('Курс')
+  await expect(
+    picker.locator('optgroup[label="Курсы школы"] option', {
+      hasText: 'Grade 9 Algebra',
+    }),
+  ).toHaveCount(1)
+
+  await picker.selectOption({ label: 'Grade 9 Algebra' })
+
+  // план виден целиком, вместе с числами и именем ведущего
+  await expect(page.locator('.review-plan li').first()).toBeVisible()
+  await expect(page.locator('.review-plan')).toContainText('Точки и прямые')
+  await expect(page.locator('.progress-list')).toContainText('Пётр Петров')
+
+  // и только на чтение: ни таблицы с правкой, ни решения по утверждению
+  await expect(page.locator('ul.plan')).toHaveCount(0)
+  await expect(page.locator('.plan-tools')).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Утвердить' })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Вернуть' })).toHaveCount(0)
+
+  // а свой открывается как открывался — правкой
+  await picker.selectOption({ label: 'Grade 6 Algebra' })
+  await expect(page.locator('ul.plan .plan-row.lesson').first()).toBeVisible()
+  await expect(page.locator('.plan-tools')).toBeVisible()
+})
+
+test('чужой план ищется учителем и предметом, а не глазами', async ({
+  page,
+  signIn,
+}) => {
+  // Селект, в котором лежит вся школа, — это несколько десятков строк, и
+  // «найти план Петровой по геометрии» в нём значит прочитать весь список.
+  // Сужение стояло тут и раньше, но доставалось одному администратору.
+  await signIn(PEOPLE.ivanova)
+  await page.goto('/plan')
+  await ready(page)
+
+  await page.getByLabel('Любой учитель').selectOption({ label: 'Пётр Петров' })
+
+  const options = page.getByLabel('Курс').locator('option')
+  await expect(options.filter({ hasText: 'Grade 9 Algebra' })).toHaveCount(1)
+  // чужие курсы других учителей ушли; свой выбранный остаётся всегда —
+  // это то, про что страница сейчас
+  await expect(options.filter({ hasText: 'Grade 6 Physics' })).toHaveCount(0)
 })

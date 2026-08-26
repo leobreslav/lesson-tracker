@@ -1068,7 +1068,6 @@ class ActionDoorTests(AccessTestCase):
 
         self.assertActionRules(
             actions=(
-                "planreview-diff",
                 {"name": "planreview-approve", "method": "post"},
                 {
                     "name": "planreview-return",
@@ -1082,6 +1081,16 @@ class ActionDoorTests(AccessTestCase):
             # ни коллега, ни администратор школы методистом не назначены:
             # роль висит на паре «курс и человек», а не на должности
             people=(self.colleague, self.admin, self.stranger, self.alien_admin),
+        )
+
+        # А **читать** чужой план вправе вся школа — тот же ответ, что давно
+        # дан расписанию, — поэтому у сравнения границей осталась только
+        # школа. Коллеги в этом списке нет намеренно: для него курс теперь
+        # отличается от несуществующего, и это и есть суть правила.
+        self.assertActionRules(
+            actions=("planreview-diff",),
+            obj=self.course,
+            people=(self.stranger, self.alien_admin),
         )
 
     def test_plan_template(self):

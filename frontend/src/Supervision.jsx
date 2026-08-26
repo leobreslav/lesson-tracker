@@ -8,28 +8,35 @@ import { shortDate } from './dates'
 import { approveReview, fetchReview, fetchReviewDiff, returnReview } from './api'
 
 /**
- * Чужой план глазами методиста — на месте своего.
+ * Чужой план — на месте своего.
  *
- * Раздела «Мои курсы» больше нет, и надзор переехал сюда: курс выбирается тем
- * же селектом, только из другой его группы. Числа те же, что видит учитель у
- * себя, и считает их тот же `plans/progress.py` — два ответа на один вопрос
- * означали бы, что разговор про «отстаёшь» начинается со спора о цифрах.
+ * Экраном методиста это было, и осталось им же: числа те же, что видит
+ * учитель у себя, и считает их тот же `plans/progress.py` — два ответа на
+ * один вопрос означали бы, что разговор про «отстаёшь» начинается со спора о
+ * цифрах.
  *
- * План виден **всегда**, а не только по присланному запросу. Границей права
- * это никогда и не было: право читать даёт назначение методистом, а очередь
- * на подпись была просто единственным входом — и потому решала заодно, что
- * методисту видно. Спрашивают же с него ровно про то, чего в очереди нет:
- * кто отстаёт, у кого план не помещается в год, что вообще написано в курсе,
- * который никто не присылал.
+ * **Читает его теперь вся школа**, а не один назначенный методист. Границей
+ * права надзор никогда и не был: чужую программу открывают не только затем,
+ * чтобы её подписать, — смежник сверяет, когда у соседей производная,
+ * заменяющий смотрит, на чём остановились, новый учитель читает прошлогоднюю
+ * параллель. Всем им отвечала библиотека, то есть **снимок**, который кто-то
+ * догадался положить на полку; живой план соседа просто ни разу не
+ * открывали. Второго экрана под это не завели: он показывал бы ровно то же
+ * самое и разошёлся бы с этим в первую же правку.
  *
- * Поэтому ключ здесь — курс, а не запрос: запрос стал пометкой в строке и
- * подписью над планом («на утверждение не присылали»).
+ * План виден **всегда**, а не только по присланному запросу: запрос — это
+ * пометка в строке и подпись над планом («на утверждение не присылали»).
  *
- * Утвердить или вернуть — здесь же, и только когда есть что решать. Возврат
- * без замечания не принимается: учителю нечего исправлять, а «верните как
- * было» — не разговор.
+ * Утвердить или вернуть — здесь же, и только у того, кому это можно
+ * (`may_decide` с сервера). Возврат без замечания не принимается: учителю
+ * нечего исправлять, а «верните как было» — не разговор.
+ *
+ * **Собирается экран из одного ответа, по одному id курса.** Строка
+ * состояния приезжала пропом из списка надзора — то есть экран открывался
+ * только тому, у кого этот курс в списке, а у рядового учителя списка нет
+ * вовсе, и половина экрана осталась бы пустой.
  */
-export default function Supervision({ row, busy, onError, onDone }) {
+export default function Supervision({ courseId, busy, onError, onDone }) {
   const { t } = useTranslation()
   const [plan, setPlan] = useState(null)
   // сравнение с эталоном — второй взгляд на тот же присланный план, а не
@@ -41,7 +48,8 @@ export default function Supervision({ row, busy, onError, onDone }) {
   const [returning, setReturning] = useState(false)
   const [comment, setComment] = useState('')
 
-  const request = row.review?.status === 'pending' ? row.review : null
+  const row = plan?.row ?? null
+  const request = row?.review?.status === 'pending' ? row.review : null
 
   useEffect(() => {
     setPlan(null)
@@ -51,14 +59,14 @@ export default function Supervision({ row, busy, onError, onDone }) {
     setReturning(false)
     setComment('')
 
-    fetchReview(row.id).then(setPlan).catch(onError)
-  }, [row.id])
+    fetchReview(courseId).then(setPlan).catch(onError)
+  }, [courseId])
 
   useEffect(() => {
     // прежнее сравнение остаётся на экране, пока едет новая версия: иначе
     // смена версии на миг возвращала бы к списку плана
-    fetchReviewDiff(row.id, chosen).then(setDiff).catch(onError)
-  }, [row.id, chosen])
+    fetchReviewDiff(courseId, chosen).then(setDiff).catch(onError)
+  }, [courseId, chosen])
 
   /**
    * Что сказать про утверждение — ровно то же, что видит учитель.
@@ -67,8 +75,8 @@ export default function Supervision({ row, busy, onError, onDone }) {
    * должен читаться одинаково на обоих экранах, иначе разговор про план
    * начинается со сверки формулировок.
    */
-  const approved = row.baseline
-  const waiting = row.review
+  const approved = row?.baseline
+  const waiting = row?.review
   const state = (() => {
     if (waiting?.status === 'pending') {
       return {
@@ -101,14 +109,34 @@ export default function Supervision({ row, busy, onError, onDone }) {
     return null
   })()
 
+  /**
+   * Решили — и экран показывает решённое, не дожидаясь ничего.
+   *
+   * Состояние приезжало сюда пропом из списка надзора, и обновлял его
+   * `onDone` снаружи, перечитывая список. Теперь экран собирает себя сам, и
+   * тот же `onDone` его не касается — после «Утвердить» кнопки оставались
+   * на месте, а заголовок по-прежнему говорил «Присланный план».
+   *
+   * Перечитывать при этом нечего: и утверждение, и возврат отвечают **тем
+   * же** полным ответом экрана, что и открытие. Второй запрос следом
+   * означал бы состояние между ними — то, за которое отвечать некому.
+   */
   const decide = async (action) => {
     try {
-      await action()
+      setPlan(await action())
+      setReturning(false)
+      setComment('')
       onDone()
     } catch (err) {
       onError(err)
     }
   }
+
+  /*
+   * Пока ответа нет, экрана нет: рисовать шапку из полупустых полей
+   * незачем, а собирается она вся из одного запроса.
+   */
+  if (!row) return null
 
   return (
     <>
@@ -146,7 +174,10 @@ export default function Supervision({ row, busy, onError, onDone }) {
       */}
       {state && <p className={`hint approval ${state.kind}`}>{state.text}</p>}
 
-      {!row.review && !row.baseline && (
+      {/* «На утверждение не присылали» сказано тому, кто утверждает: для
+          него это состояние работы. Читателю со стороны эта строка сообщает
+          про процедуру, в которой он не участвует, — то есть ни о чём */}
+      {plan.may_decide && !row.review && !row.baseline && (
         <p className="hint">{t('reviews.nothingSent')}</p>
       )}
 
@@ -204,9 +235,14 @@ export default function Supervision({ row, busy, onError, onDone }) {
             </ul>
           )}
 
-          {/* решают только то, что прислали: у курса без запроса кнопки
-              обещали бы действие, которого сервер не сделает */}
-          {request &&
+          {/* Решают только то, что прислали, и только те, кому это можно:
+              у курса без запроса кнопки обещали бы действие, которого
+              сервер не сделает, а у читателя со стороны — действие, на
+              которое он получит отказ. Право приезжает ответом, а не
+              выводится из роли: правило сложнее роли — методист **этого
+              курса**. */}
+          {plan.may_decide &&
+            request &&
             (returning ? (
             <>
               <label className="field-with-hint">
@@ -222,7 +258,7 @@ export default function Supervision({ row, busy, onError, onDone }) {
                 <button
                   type="button"
                   disabled={busy || !comment.trim()}
-                  onClick={() => decide(() => returnReview(row.id, comment.trim()))}
+                  onClick={() => decide(() => returnReview(courseId, comment.trim()))}
                 >
                   {t('reviews.sendBack')}
                 </button>
@@ -240,7 +276,7 @@ export default function Supervision({ row, busy, onError, onDone }) {
               <button
                 type="button"
                 disabled={busy}
-                onClick={() => decide(() => approveReview(row.id))}
+                onClick={() => decide(() => approveReview(courseId))}
               >
                 {t('reviews.approve')}
               </button>

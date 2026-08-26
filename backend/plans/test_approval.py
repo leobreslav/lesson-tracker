@@ -17,7 +17,7 @@ from django.db import connection
 from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 from schedule.models import CourseMethodist, Subject
-from schools.testing import MONDAY, assign, make_course, make_node, make_slot
+from schools.testing import MONDAY, assign, make_course, make_node, make_slot, make_user
 
 from .models import PlanBaseline, PlanNode
 from .tests import PlanTestCase
@@ -49,6 +49,23 @@ class ApprovalTestCase(PlanTestCase):
             f"{reverse('plannode-baseline-submit')}?course={(course or self.course).pk}",
             body,
             format="json",
+        )
+
+    def waiting_request(self, course=None):
+        """
+        Ждущий решения запрос — прямо моделью, а не через отправку.
+
+        Отправляет автор, а тест к этому моменту сидит под другим человеком:
+        переавторизация туда и обратно ради одной строки читалась бы как
+        часть проверки, хотя она про подготовку.
+        """
+        from django.utils import timezone
+
+        return PlanBaseline.objects.create(
+            submitted_by=self.user,
+            course=course or self.course,
+            status=PlanBaseline.Status.PENDING,
+            submitted_at=timezone.now(),
         )
 
     def state(self, course=None):
@@ -189,8 +206,9 @@ class ReviewTests(ApprovalTestCase):
         self.assertEqual(len(body["rows"]), 10)
         self.assertEqual(body["rows"][0]["title"], "Тригонометрия")
         self.assertTrue(body["rows"][0]["is_section"])
-        self.assertEqual(body["slots_total"], 0)
-        self.assertEqual(body["reserve"], -7)
+        # числа приезжают строкой состояния — той же, что у автора плана
+        self.assertEqual(body["row"]["slots_total"], 0)
+        self.assertEqual(body["row"]["reserve"], -7)
 
     def test_approving_puts_the_baseline_in_force(self):
         self.client.force_authenticate(self.methodist)
@@ -252,7 +270,16 @@ class ReviewTests(ApprovalTestCase):
         self.assertEqual(sum(1 for row in rows if not row.is_section), 7)
         self.assertEqual(rows.count(), 10)
 
-    def test_a_methodist_of_another_course_sees_nothing(self):
+    def test_a_methodist_of_another_course_supervises_only_his_own(self):
+        """
+        Надзор адресуется курсом, и чужой в список не попадает.
+
+        Раньше здесь стояло и второе утверждение — «наш план он не откроет
+        вовсе», — и оно было верно ровно до тех пор, пока чтение чужого плана
+        не стало школьным правом. Читать он его теперь может, как и любой
+        учитель школы; надзор от этого не расширился ни на курс, и решать по
+        нему по-прежнему нечего.
+        """
         other = make_course(self.school, year=self.course.year, name="9А")
         CourseMethodist.objects.create(course=other, user=self.stranger)
         self.stranger.school = self.school
@@ -262,10 +289,9 @@ class ReviewTests(ApprovalTestCase):
 
         # свой курс он видит, наш — нет
         self.assertNotIn(self.course.pk, [row["id"] for row in self.supervised()])
-        self.assertEqual(
-            self.review().status_code,
-            404,
-        )
+        self.assertEqual(self.review().status_code, 200)
+        self.assertFalse(self.review().json()["may_decide"])
+        self.assertEqual(self.approve().status_code, 404)
 
     def test_a_teacher_without_the_role_sees_no_queue(self):
         self.client.force_authenticate(self.user)
@@ -335,7 +361,7 @@ class SupervisionTests(ApprovalTestCase):
 
         self.assertEqual(len(body["rows"]), 10)
         self.assertEqual(body["rows"][0]["title"], "Тригонометрия")
-        self.assertEqual(body["lessons"], 7)
+        self.assertEqual(body["row"]["lessons_total"], 7)
         # запрос — состояние плана, а не пропуск к нему
         self.assertIsNone(body["review"])
         self.assertEqual(body["course"]["id"], self.course.pk)
@@ -595,4 +621,112 @@ class DiffVersionTests(ApprovalTestCase):
         self.assertEqual(
             [row["title"] for row in body["rows"] if row["state"] == "added"],
             ["Новый урок"],
+        )
+
+
+class AnyTeacherReadsThePlanTests(ApprovalTestCase):
+    """
+    Живой план курса читает **вся школа**, а решает по нему методист.
+
+    Границей права надзор не был: чужую программу читают не только те, кто её
+    подписывает. Смежник сверяет, когда у соседей производная; заменяющий
+    смотрит, на чём остановились; новый учитель читает прошлогоднюю
+    параллель. Всем им отвечала библиотека, то есть снимок, который кто-то
+    догадался положить на полку, — а живой план соседа просто ни разу не
+    открывали.
+
+    Ответ здесь тот же, что давно дан расписанию: читает вся школа, пишет
+    ведущий или администратор.
+    """
+
+    def setUp(self):
+        super().setUp()
+        # рядовой учитель школы: не ведёт этот курс и не назначен методистом
+        self.reader = make_user(self.school, "reader@example.com")
+        self.client.force_authenticate(self.reader)
+
+    def test_a_plain_teacher_opens_the_plan_of_a_colleague(self):
+        response = self.review()
+
+        self.assertEqual(response.status_code, 200, response.content)
+        body = response.json()
+        self.assertEqual(len(body["rows"]), 10)
+        self.assertEqual(body["rows"][0]["title"], "Тригонометрия")
+        self.assertEqual(body["course"]["id"], self.course.pk)
+
+    def test_the_numbers_come_with_it(self):
+        """Пустой экран с одними названиями отвечает на половину вопроса."""
+        body = self.review().json()
+
+        self.assertEqual(body["row"]["lessons_total"], 7)
+        self.assertEqual(body["row"]["id"], self.course.pk)
+        self.assertEqual(body["teacher"]["id"], self.user.pk)
+
+    def test_the_comparison_opens_too(self):
+        """Сравнение с эталоном — другой взгляд на то же, а не второе право."""
+        response = self.client.get(
+            reverse("planreview-diff", args=[self.course.pk])
+        )
+
+        self.assertEqual(response.status_code, 200, response.content)
+
+    def test_reading_is_not_deciding(self):
+        """
+        Расширять чтение и раздавать подпись — разные вещи.
+
+        Пока список был один, второе приехало бы вместе с первым молча: тот
+        же `get_object` стоял и под «Утвердить».
+        """
+        self.waiting_request()
+
+        self.assertEqual(self.approve().status_code, 404)
+        self.assertEqual(self.send_back("нет").status_code, 404)
+
+    def test_the_screen_is_told_it_may_not_decide(self):
+        """
+        Право решать приезжает ответом, а не выводится из роли.
+
+        Иначе экран нарисовал бы «Утвердить» тому, кому сервер откажет, — и
+        разошёлся бы с ним в тот день, когда правило станет чуть сложнее.
+        """
+        self.waiting_request()
+
+        self.assertFalse(self.review().json()["may_decide"])
+
+    def test_the_methodist_is_told_he_may(self):
+        self.make_methodist(self.methodist)
+        self.waiting_request()
+        self.client.force_authenticate(self.methodist)
+
+        self.assertTrue(self.review().json()["may_decide"])
+
+    def test_the_supervision_list_stays_the_methodists_own(self):
+        """
+        Читать может каждый, а список надзора остаётся списком надзора.
+
+        Иначе группа «Под надзором» в селекторе набилась бы всей школой, и
+        методист перестал бы отличать свои курсы от чужих.
+        """
+        self.assertEqual(self.supervised(), [])
+
+    def test_reading_does_not_open_writing(self):
+        """Правит план его автор: чужой курс для правки — по-прежнему 404."""
+        node = PlanNode.objects.filter(course=self.course).first()
+
+        response = self.client.patch(
+            reverse("plannode-detail", args=[node.pk]),
+            {"title": "Чужая правка"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 404)
+
+    def test_another_school_still_sees_nothing(self):
+        """Школа — граница: за ней курс неотличим от несуществующего."""
+        self.client.force_authenticate(self.stranger)
+
+        self.assertEqual(self.review().status_code, 404)
+        self.assertEqual(
+            self.client.get(reverse("planreview-diff", args=[self.course.pk])).status_code,
+            404,
         )
