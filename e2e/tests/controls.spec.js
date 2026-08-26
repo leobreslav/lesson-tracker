@@ -34,7 +34,10 @@ const PAGES = [
   ['/bank/topics', PEOPLE.ivanova],
   ['/bank/chronology', PEOPLE.ivanova],
   ['/bank/proposals', PEOPLE.ivanova],
+  // год смотрят двое, и видят разное: у администратора ряд правки, у
+  // учителя — только чтение, и ряды там свои
   ['/year', PEOPLE.admin],
+  ['/year', PEOPLE.ivanova],
   ['/school', PEOPLE.admin],
   ['/school/teachers', PEOPLE.admin],
   ['/school/courses', PEOPLE.admin],

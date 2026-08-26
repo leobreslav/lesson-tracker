@@ -79,9 +79,23 @@ test('клик по учебному дню делает его праздник
 })
 
 test('учитель видит календарь, но не правит его', async ({ page, signIn }) => {
+  /*
+   * Дверь в бару, и это не украшение.
+   *
+   * Читать год учителю сервер давал всегда — календарь принадлежит школе, —
+   * и страница умела режим чтения. А попасть на неё было нечем: из бара
+   * «Учебный год» убрали в раздел «Школа», которого у учителя нет вовсе.
+   * Получалось право без входа: адрес работал, если его знать.
+   */
   await signIn(PEOPLE.ivanova)
-  await page.goto('/year')
+  await page.goto('/schedule')
   await ready(page)
+  await page.getByRole('link', { name: 'Учебный год' }).click()
+  await ready(page)
+  await expect(page).toHaveURL(/\/year$/)
+
+  // и сказано прямо, почему кнопок нет: календарь школьный
+  await expect(page.getByText('его правит только администратор')).toBeVisible()
 
   await expect(studyDays(page)).not.toHaveText('—')
   await expect(page.getByRole('button', { name: '+ Новый год' })).toHaveCount(0)
