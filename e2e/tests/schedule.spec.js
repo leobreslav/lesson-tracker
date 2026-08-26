@@ -9,6 +9,7 @@ import { PEOPLE, expect, liveCourse, ready, test } from './harness.js'
  */
 
 const MONDAY = '2026-09-07'
+const THURSDAY = '2026-09-10'
 const FRIDAY = '2026-09-11'
 // inside the seeded autumn break: 26 October — 3 November
 const IN_BREAK = '2026-10-28'
@@ -422,6 +423,54 @@ test('перенос оставляет отмену на прежнем мес�
   await openWeek(page, MONDAY)
   await expect(page.locator(`[data-lesson="${MONDAY}:7"]`)).toHaveClass(/cancelled/)
   await expect(page.locator(`[data-lesson="${FRIDAY}:7"]`)).toBeVisible()
+})
+
+test('перетаскивание переносит занятие так же, как меню', async ({
+  page,
+  signIn,
+}) => {
+  // Жест — второй путь к тому же переносу, и ломается он **молча**: занятие
+  // поднимается, бледнеет и возвращается на место, а отличить это от
+  // дрогнувшей руки нельзя. Так он и прожил всё своё время нерабочим —
+  // клетка-приёмник стояла `display: contents`, то есть без прямоугольника,
+  // а dnd-kit ищет приёмник пересечением прямоугольников.
+  await signIn(PEOPLE.ivanova)
+  await openWeek(page, MONDAY)
+
+  // берём посеянный первый час и целимся в середину сетки. Оба условия из
+  // опыта: занятие, заведённое тут же, ещё держит сетку занятой — выключенная
+  // кнопка не получает pointer-событий вовсе, — а нижние ряды при вьюпорте
+  // 1280×720 лежат за краем окна, и мышь до них не доезжает. И то и другое
+  // снаружи выглядит как сломанный жест, хотя сломан был бы тест
+  const source = page.locator(`[data-lesson="${MONDAY}:1"]`)
+  await expect(source).toBeVisible()
+  await expect(source).toBeEnabled()
+
+  const from = await source.boundingBox()
+  const to = await page.locator(`[data-add="${THURSDAY}:4"]`).boundingBox()
+  await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2)
+  await page.mouse.down()
+  // порог сенсора — пять пикселей, и берётся он не одним прыжком: без
+  // промежуточных шагов жест не начинается вовсе
+  await page.mouse.move(to.x + to.width / 2, to.y + to.height / 2, { steps: 12 })
+
+  // клетка под занятием отзывается, пока его держат. Проверяется отдельно от
+  // результата: без этого «перенос не доехал» и «жест не начался» выглядят
+  // одинаково, а чинятся в разных местах
+  await expect(page.locator('.cell-drop.over')).toHaveCount(1)
+  await page.mouse.up()
+
+  await expect(source).toHaveClass(/cancelled/)
+  await expect(page.locator(`[data-lesson="${THURSDAY}:4"]`)).toBeVisible()
+
+  // и нажатие меню при этом не открылось: жест забирает клик себе, иначе
+  // каждый перенос заканчивался бы висящим меню
+  await expect(page.locator('.context-menu')).toHaveCount(0)
+
+  // обе половины уехали на сервер, как и у переноса из меню
+  await openWeek(page, MONDAY)
+  await expect(page.locator(`[data-lesson="${MONDAY}:1"]`)).toHaveClass(/cancelled/)
+  await expect(page.locator(`[data-lesson="${THURSDAY}:4"]`)).toBeVisible()
 })
 
 
