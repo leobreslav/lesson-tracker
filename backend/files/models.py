@@ -27,12 +27,21 @@ KINDS = ((KIND_FILE, "file"), (KIND_LINK, "link"), (KIND_TEXT, "text"))
 
 # У ссылки ровно один владелец, и вот все, кем он бывает.
 #
-# Список написан один раз намеренно: владельцев было три, стало четыре, и
+# Список написан один раз намеренно: владельцев было три, стало пять, и
 # перечисление их по месту — в ограничении, в `clean`, в сериализаторе, во
-# вьюхе — означало бы четыре списка, расходящихся молча. Забытый в
+# вьюхе — означало бы пять списков, расходящихся молча. Забытый в
 # ограничении владелец не запрещает ничего, забытый в `clean` — молчит,
 # забытый в сериализаторе — не даёт приложить вовсе.
-OWNER_FIELDS = ("plan_row", "template_row", "student_work", "work")
+#
+# Пятый — **человек**, и он единственный не про школу и не про курс: это
+# личный стол сотрудника, где лежит нужное ему самому (`bookmarks`).
+OWNER_FIELDS = (
+    "plan_row",
+    "template_row",
+    "student_work",
+    "work",
+    "bookmark_owner",
+)
 
 
 def owned_by(field: str) -> Q:
@@ -100,10 +109,16 @@ class Attachment(models.Model):
     заводить ради него отдельную таблицу значило бы делить надвое один
     список, который человек видит и правит как один.
 
-    Мест три, и ровно одно у каждой ссылки: строка учебного плана, строка
-    шаблона на полке и **работа конкретного ученика**. Все три `CASCADE`:
-    уходит владелец — уходят его ссылки, а сигнал потом решает, нужен ли ещё
-    файл за ними.
+    Мест пять, и ровно одно у каждой ссылки: строка учебного плана, строка
+    шаблона на полке, работа, **работа конкретного ученика** и личный стол
+    сотрудника. Все пять `CASCADE`: уходит владелец — уходят его ссылки, а
+    сигнал потом решает, нужен ли ещё файл за ними.
+
+    Пятый не про школу и не про курс вовсе: это то, что человек сложил себе
+    сам, и читает это он один. Заведён он был вместе с экраном закладок, и
+    заведён именно владельцем, а не своей таблицей: виды материала тут те же
+    три, и вторая таблица означала бы вторую загрузку, вторую дедупликацию и
+    второй снос осиротевших объектов — расходящиеся с первыми молча.
 
     Третий владелец отличается от первых двух правом на чтение: план и
     шаблон читают учителя, а работу ученика — учитель, **сам ученик** и его
@@ -118,7 +133,9 @@ class Attachment(models.Model):
     Различие нужно ровно в одном месте — кто вправе это убрать.
 
     Внутри работы у ссылки есть ещё и адрес: `task` называет вопрос, к
-    которому приложено, или пуст — «это про работу целиком».
+    которому приложено, или пуст — «это про работу целиком». На личном столе
+    такой же адрес — `bookmark_folder`: папка, а пусто значит «лежит на
+    виду».
 
     `stored_file` is `PROTECT` so that a file can never be deleted out from
     under a reference. Removal happens the other way round, from the last
@@ -163,6 +180,42 @@ class Attachment(models.Model):
         blank=True,
         on_delete=models.CASCADE,
         verbose_name="work",
+    )
+    # Пятый владелец: личный стол сотрудника.
+    #
+    # Не школа и не курс — **человек**, и это единственная такая ссылка в
+    # проекте. «Мои материалы» не принадлежат ни курсу (их берут с собой из
+    # курса в курс), ни школе (никто, кроме хозяина, их не читает), и с
+    # уходом человека уходят вместе с ним — отсюда `CASCADE`.
+    #
+    # Виды здесь те же три, что у урока, и это главный довод в пользу того,
+    # чтобы стол был вложением, а не своей таблицей: файл, ссылка и запись
+    # уже написаны — вместе с загрузкой, дедупликацией и сносом объекта,
+    # оставшегося без ссылок.
+    bookmark_owner = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        related_name="bookmarks",
+        null=True,
+        blank=True,
+        on_delete=models.CASCADE,
+        verbose_name="personal shelf of",
+    )
+    # Где на этом столе: в папке или на виду.
+    #
+    # Адрес внутри владельца, а не владелец, — как `task` внутри работы
+    # ученика. Разница здесь стоит файла: `SET_NULL` означает, что снос
+    # папки перекладывает вещи на стол, а не выбрасывает их. Будь папка
+    # владельцем, «прибрался в папках» значило бы «удалил свои файлы».
+    #
+    # Пусто — законное состояние, а не «ещё не разложено»: половину нужного
+    # человек держит на виду и никогда не раскладывает.
+    bookmark_folder = models.ForeignKey(
+        "bookmarks.Folder",
+        related_name="items",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        verbose_name="folder on that shelf",
     )
     # Куда **внутри** работы ученика это приложено: к вопросу или ко всей
     # работе разом.
@@ -252,6 +305,19 @@ class Attachment(models.Model):
     # отметками, и показать её ученику значит показать её всем сразу.
     staff_only = models.BooleanField("teachers only", default=False)
     title = models.CharField("title", max_length=200)
+    # Что человек написал об этом материале своими словами: «здесь бланк для
+    # печати», «спросить у Петровой пароль», сама записка целиком.
+    #
+    # Не второе название и не описание файла: название отвечает на «что
+    # это», а приписка — на «зачем это мне». Заведена она под личный стол,
+    # где записка это половина смысла, но принадлежит не ему, а самой
+    # ссылке: у материала урока ровно тот же вопрос возникает («карточки
+    # печатать по две на лист»), и второе поле под ту же приписку разошлось
+    # бы с первым в первой же правке.
+    #
+    # Видна тем же, кому видно само вложение: у закладки это один человек,
+    # у материала урока — те, кто ведёт курс.
+    note = models.TextField("note", blank=True)
     position = models.PositiveIntegerField("position", default=0)
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -266,6 +332,7 @@ class Attachment(models.Model):
                     | owned_by("template_row")
                     | owned_by("student_work")
                     | owned_by("work")
+                    | owned_by("bookmark_owner")
                 ),
                 name="attachment_has_exactly_one_owner",
             ),
@@ -291,6 +358,16 @@ class Attachment(models.Model):
                 condition=Q(task__isnull=True) | Q(student_work__isnull=False),
                 name="attachment_task_lives_inside_a_students_work",
             ),
+            # папка — адрес на личном столе, и вне стола её нет: у урока и
+            # у работы папок не бывает, а «папка без хозяина» была бы
+            # закладкой, которую никто не откроет
+            models.CheckConstraint(
+                condition=(
+                    Q(bookmark_folder__isnull=True)
+                    | Q(bookmark_owner__isnull=False)
+                ),
+                name="attachment_folder_lives_on_a_personal_shelf",
+            ),
         ]
         indexes = [
             models.Index(fields=("plan_row", "position"), name="attachment_plan_idx"),
@@ -306,6 +383,11 @@ class Attachment(models.Model):
             # просмотрщик спрашивает «что приложено к этому вопросу этого
             # ученика», и спрашивает по разу на клетку таблицы
             models.Index(fields=("task", "position"), name="attachment_task_idx"),
+            # «что лежит у меня на столе» — один запрос на весь экран
+            # закладок: папки приезжают отдельно, вещи все разом
+            models.Index(
+                fields=("bookmark_owner", "position"), name="attachment_shelf_idx"
+            ),
         ]
 
     def __str__(self):
@@ -326,12 +408,18 @@ class Attachment(models.Model):
         if sum(1 for owner in owners if owner is not None) != 1:
             problems["plan_row"] = (
                 "An attachment belongs to a plan lesson, a template row, a "
-                "work or a student's work — to exactly one of them."
+                "work, a student's work or a personal shelf — to exactly "
+                "one of them."
             )
 
         if self.task_id is not None and self.student_work_id is None:
             problems["task"] = (
                 "A question can only be named inside a student's work."
+            )
+
+        if self.bookmark_folder_id is not None and self.bookmark_owner_id is None:
+            problems["bookmark_folder"] = (
+                "A folder can only be named on a personal shelf."
             )
 
         if self.kind == KIND_FILE and self.stored_file_id is None:

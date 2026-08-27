@@ -72,6 +72,7 @@ INSTALLED_APPS = [
     'feedback',
     'families',
     'talks',
+    'bookmarks',
 ]
 
 AUTH_USER_MODEL = "accounts.User"

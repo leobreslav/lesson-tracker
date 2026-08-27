@@ -25,6 +25,9 @@ urlpatterns = [
     path('api/library/', include('library.urls')),
     path('api/works/', include('works.urls')),
     path('api/bank/', include('bank.urls')),
+    # личный стол сотрудника: не школьный раздел и не курсовой, поэтому и
+    # адрес свой — как у обращений к разработчику
+    path('api/bookmarks/', include('bookmarks.urls')),
     path('api/', include('files.urls')),
     # обращения к разработчику: не школьный раздел, поэтому и адрес свой,
     # а не под /api/school/

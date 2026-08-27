@@ -29,6 +29,9 @@ const PAGES = [
   ['/journal', PEOPLE.ivanova],
   // переписка: строка отправки — такой же ряд контролов
   ['/talks', PEOPLE.ivanova],
+  // личный стол: форма заведения, форма папки и ряд поиска с кнопками
+  // папки — три ряда контролов, и все три свои
+  ['/bookmarks', PEOPLE.ivanova],
   ['/bank', PEOPLE.ivanova],
   ['/bank/search', PEOPLE.ivanova],
   ['/bank/topics', PEOPLE.ivanova],
@@ -67,6 +70,9 @@ const problems = (page) =>
       // считали, и различались на несколько пикселей — непостоянно, потому
       // что у имени, совпавшего с адресом, строка одна вместо двух
       '.topbar-right,' +
+      // ряды внутри форм личного стола: сама форма — колонка (в ней ещё и
+      // приписка), а рядом контролов является то, что внутри
+      '.shelf-add .row, .shelf-edit .row,' +
       '.actions, .modal-body .row'
     const CONTROLS =
       'input:not([type=checkbox]):not([type=radio]):not([type=file]),' +

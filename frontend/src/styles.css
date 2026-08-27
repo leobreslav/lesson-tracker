@@ -9099,3 +9099,112 @@ button.dropzone:hover:not(:disabled) {
   border-top: 1px solid #e0e0e0;
   padding-top: 0.5rem;
 }
+
+/* --- ЛИЧНЫЙ СТОЛ (ЗАКЛАДКИ) -------------------------------------------------
+   Две колонки: папки слева, содержимое справа. Та же раскладка, что у
+   переписки, и по той же причине — слева выбирают, справа работают, — но
+   свои классы: сложить их в один означало бы, что правка ширины собеседников
+   двигает папки, и наоборот. */
+.shelf {
+  display: grid;
+  grid-template-columns: minmax(11rem, 16rem) 1fr;
+  gap: var(--card-gap);
+  align-items: start;
+}
+
+@media (max-width: 40rem) {
+  .shelf {
+    grid-template-columns: 1fr;
+  }
+}
+
+.shelf-folders {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.shelf-pick {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.4rem 0.6rem;
+  text-align: left;
+  color: inherit;
+  background: #fff;
+  border: 1px solid transparent;
+  border-radius: var(--row-radius);
+  box-shadow: var(--row-shadow);
+}
+
+.shelf-pick .title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.shelf-pick.active {
+  border-color: #1a73e8;
+}
+
+/* Строка стола — строка материала урока плюс приписка под ней.
+   Приписка занимает всю ширину и потому переносит строку: это второй ярус,
+   а не ещё один контрол в ряду. */
+.shelf-item {
+  flex-wrap: wrap;
+}
+
+.shelf-item .note {
+  flex-basis: 100%;
+  margin: 0.1rem 0 0 1.75rem;
+  font-size: 0.875rem;
+  color: #5f6368;
+  white-space: pre-wrap;
+}
+
+/* Правка строки и форма заведения — колонки, а не ряды: приписка
+   многострочна, и ряд контролов её ростом растянуло бы целиком. Ряды внутри
+   них остаются рядами и правило «СТРОКА ФОРМЫ» их догоняет само. */
+.shelf-edit,
+.shelf-add {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  width: 100%;
+  min-width: 0;
+}
+
+/*
+ * Приписка задаёт свой вид сама, а не берёт его у соседа.
+ *
+ * Тот же урок, что у поля содержания (`.md-field`): пока вид приезжал из
+ * `.modal-body textarea` и `.lesson-field textarea`, поле оказывалось на
+ * месте по случайности — правило принадлежало не ему, а тому, внутри чего
+ * оно в этот раз лежит. Здесь соседей нет вовсе: страница, а не окно.
+ *
+ * `width` и `box-sizing` стоят одной строфой намеренно: порознь они и
+ * разъезжались — сто процентов плюс отступы дают поле шире карточки.
+ */
+.shelf-note {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 0.35rem 0.5rem;
+  font: inherit;
+  color: inherit;
+  background: #fff;
+  border: 1px solid #c6c6c6;
+  border-radius: 4px;
+  resize: vertical;
+}
+
+.shelf-note:focus {
+  outline: 2px solid #1a73e8;
+  outline-offset: -1px;
+  border-color: #1a73e8;
+}

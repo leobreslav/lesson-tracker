@@ -150,6 +150,10 @@ class AttachmentViewSet(viewsets.ModelViewSet):
             # успевает посмотреть
             staff_only=data.get("staff_only", False),
             url=data.get("url", ""),
+            # папка — адрес внутри владельца, а не владелец, поэтому едет
+            # рядом с `owner`, а не внутри него (как `task` у работы ученика)
+            bookmark_folder=data.get("bookmark_folder"),
+            note=data.get("note", ""),
             title=(
                 data.get("title")
                 or (stored.original_name if stored else data.get("url", ""))

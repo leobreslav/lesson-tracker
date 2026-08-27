@@ -551,8 +551,15 @@ export const uploadAttachment = ({
   // сама работа: условия pdf'ом и картинка в пояснениях. Не путать с
   // `studentWork` — то тетрадь одного человека, а это задание на весь класс
   work,
+  // личный стол сотрудника: владелец — человек, папка — адрес внутри стола
+  // и бывает пустой («лежит на виду»)
+  bookmarkOwner,
+  bookmarkFolder,
   file,
   title,
+  // приписка своими словами: «зачем это мне». Едет с загрузкой, потому что
+  // пишут её тогда же, когда кладут файл, — см. экран закладок
+  note,
   inline = false,
   // видно ли это классу. Едет **с загрузкой**, а не выставляется следом:
   // приложенные видимыми ответы к контрольной успевают побывать открытыми
@@ -563,8 +570,11 @@ export const uploadAttachment = ({
   if (templateRow) form.append('template_row', templateRow)
   if (studentWork) form.append('student_work', studentWork)
   if (work) form.append('work', work)
+  if (bookmarkOwner) form.append('bookmark_owner', bookmarkOwner)
+  if (bookmarkFolder) form.append('bookmark_folder', bookmarkFolder)
   form.append('file', file)
   if (title) form.append('title', title)
+  if (note) form.append('note', note)
   // «эта картинка встала в текст»: в списке материалов её не будет, и
   // распоряжается ею содержание, а не список
   if (inline) form.append('inline', 'true')
@@ -633,6 +643,67 @@ export const openAttachment = async (id) => {
  * картинка нести не умеет, поэтому за адресом ходит страница.
  */
 export const fetchImageUrl = (fileId) => request(`/api/images/${fileId}/`)
+
+// --- личный стол: папки и то, что на нём лежит ---
+
+/**
+ * Стол приезжает **двумя** запросами: папки и вещи.
+ *
+ * Вещи спрашиваются по хозяину, а не по папке, и это решает две вещи сразу:
+ * поиск по всему столу не стоит ни одного запроса на букву, а лежащее вне
+ * папок приезжает тем же списком, а не отдельным случаем. Раскладывает по
+ * папкам экран — у него для этого есть всё.
+ */
+export const fetchBookmarkFolders = () => request('/api/bookmarks/folders/')
+
+export const fetchBookmarks = (owner) =>
+  request(`/api/attachments/?bookmark_owner=${encodeURIComponent(owner)}`)
+
+export const createBookmarkFolder = (title) =>
+  request('/api/bookmarks/folders/', { method: 'POST', body: { title } })
+
+export const renameBookmarkFolder = (id, title) =>
+  request(`/api/bookmarks/folders/${id}/`, { method: 'PATCH', body: { title } })
+
+/** Снос папки: лежавшее в ней остаётся на столе — см. `bookmarks/models.py`. */
+export const deleteBookmarkFolder = (id) =>
+  request(`/api/bookmarks/folders/${id}/`, { method: 'DELETE' })
+
+/**
+ * Ссылка или записка на стол — той же дверью, что и материал урока.
+ *
+ * Вид решает написанное, а не отдельный вопрос человеку: целиком адрес —
+ * ссылка, всё остальное — записка. То же правило, что в панели урока, и
+ * живёт оно в одном месте (`fileKind.looksLikeUrl`).
+ */
+export const addBookmark = ({ owner, folder, url, title, note }) =>
+  request('/api/attachments/', {
+    method: 'POST',
+    body: {
+      bookmark_owner: owner,
+      ...(folder ? { bookmark_folder: folder } : {}),
+      ...(url ? { url } : { kind: 'text' }),
+      title,
+      ...(note ? { note } : {}),
+    },
+  })
+
+/**
+ * Правка строки стола: название, приписка, папка.
+ *
+ * Папка едет тем же PATCH'ем, потому что переложить — это правка ссылки, а
+ * не вторая загрузка того же файла. `null` означает «на виду», поэтому
+ * ключ ставится по наличию поля, а не по его истинности.
+ */
+export const updateBookmark = (id, changes) =>
+  request(`/api/attachments/${id}/`, {
+    method: 'PATCH',
+    body: {
+      ...('title' in changes ? { title: changes.title } : {}),
+      ...('note' in changes ? { note: changes.note } : {}),
+      ...('folder' in changes ? { bookmark_folder: changes.folder } : {}),
+    },
+  })
 
 /**
  * Как идут дела по всем курсам сразу — страница «Раскладка».

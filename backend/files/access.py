@@ -72,7 +72,15 @@ def family_attachments(user):
 
 
 def school_attachments(user):
-    """Everything hanging off a lesson row of this person's school."""
+    """
+    Everything hanging off a lesson row of this person's school.
+
+    Чужой стол сюда **не входит**, и это решает, каким будет отказ. Соседний
+    урок отвечает «не ваше» (403): внутри школы все и так знают, что коллеги
+    существуют. Про чужие закладки не знает никто — их и не должно быть
+    видно, — поэтому они остаются вне выборки и отвечают 404, как объект
+    другой школы.
+    """
     if user is None or not user.is_authenticated or user.school_id is None:
         return Attachment.objects.none()
 
@@ -87,6 +95,8 @@ def school_attachments(user):
         | Q(template_row__template__school_id=user.school_id)
         | Q(student_work__work__course__school_id=user.school_id)
         | Q(work__course__school_id=user.school_id)
+        # свой стол: чужой не попадает сюда намеренно — см. докстринг
+        | Q(bookmark_owner=user)
     )
 
 
@@ -116,6 +126,9 @@ def readable_attachments(user):
         | Q(template_row__template__in=visible_templates(user))
         | Q(student_work__work__course__in=Course.objects.writable_by(user))
         | Q(work__course__in=Course.objects.writable_by(user))
+        # свой стол читается всегда: он не принадлежит ни курсу, ни школе, и
+        # снятие с курса его не забирает — в этом половина его смысла
+        | Q(bookmark_owner=user)
     )
 
 
@@ -145,6 +158,11 @@ def readable_stored_file(user, file_id: int):
 def can_read(user, attachment) -> bool:
     from schedule.models import Course
     from works.services import visible_works_for
+
+    if attachment.bookmark_owner_id is not None:
+        # личный стол: хозяин, и никто больше. Ни администратор школы, ни
+        # методист курса — вопрос «чьё это» здесь не имеет второго ответа
+        return attachment.bookmark_owner_id == user.pk
 
     if attachment.work_id is not None:
         # приложенное к заданию: ведущий курса и весь класс, которому эта
@@ -196,6 +214,11 @@ def can_write(user, attachment) -> bool:
     what counts here.
     """
     from schedule.models import CourseAssignment
+
+    if attachment.bookmark_owner_id is not None:
+        # свой стол правит хозяин: читатель и писатель тут один человек, и
+        # разводить эти два ответа было бы выдумыванием роли, которой нет
+        return attachment.bookmark_owner_id == user.pk
 
     if attachment.work_id is not None:
         # задание правит тот, кто его задал: ведущий курса. Ученику сюда
@@ -261,6 +284,33 @@ def writable_plan_rows(user):
     return PlanNode.objects.filter(
         course__assignments__teacher=user, is_section=False
     )
+
+
+def writable_shelf_owners(user):
+    """
+    Чей стол этому человеку можно пополнять: ровно свой.
+
+    Выглядит вырожденным, а нужно ради того же, ради чего остальные выборки
+    здесь: владелец приезжает **телом запроса**, и без этой границы «положи
+    это на стол коллеге» было бы законным запросом. Отказ при этом выходит
+    не отдельной проверкой, а невалидным полем — тем же путём, каким
+    отказывает чужая строка плана.
+    """
+    from django.contrib.auth import get_user_model
+
+    model = get_user_model()
+    if user is None or not user.is_authenticated:
+        return model.objects.none()
+    return model.objects.filter(pk=user.pk)
+
+
+def writable_shelf_folders(user):
+    """Папки, в которые этот человек может положить: свои."""
+    from bookmarks.models import Folder
+
+    if user is None or not user.is_authenticated:
+        return Folder.objects.none()
+    return Folder.objects.filter(owner=user)
 
 
 def writable_template_rows(user):

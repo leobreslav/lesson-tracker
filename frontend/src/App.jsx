@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import Bank from './Bank'
+import Bookmarks from './Bookmarks'
 import BankProblem from './BankProblem'
 import BankChronology from './BankChronology'
 import BankSearch from './BankSearch'
@@ -213,6 +214,9 @@ export default function App() {
           {/* переписка: один экран на учителя, ученика и родителя —
               собеседник природы разговора не меняет */}
           <Route path="/talks" element={guarded(Messenger)} />
+          {/* личный стол: чей он, знает только сервер, но `user` тут нужен —
+              вещи спрашиваются по хозяину, и его номер идёт в запрос */}
+          <Route path="/bookmarks" element={guarded(Bookmarks, { user })} />
           <Route path="/bank" element={guarded(Bank)} />
           <Route path="/track/:id" element={guarded(StudentTrack)} />
           <Route path="/bank/proposals" element={guarded(Proposals)} />

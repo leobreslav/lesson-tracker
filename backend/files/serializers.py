@@ -21,15 +21,38 @@ def with_sharing(queryset):
     Counted in the query rather than per row: «this file is used elsewhere»
     is drawn next to every attachment, and a lesson with six of them would
     otherwise ask the database six extra times to say so.
+
+    Сортировка тут **не украшение, а починка**. `annotate` с агрегатом
+    добавляет к запросу GROUP BY, и Django в таком запросе снимает
+    `Meta.ordering` — молча: список приезжает в том порядке, в каком его
+    вернула база. Полтора года это сходило с рук, потому что позиция росла
+    вместе с id и порядки совпадали; первое же перекладывание закладки в
+    другую папку (позиция меняется, id остаётся) совпадение сломало — вещь
+    садилась не туда, куда её положили.
+
+    Порядок повторяет `Attachment.Meta.ordering` намеренно: он и есть ответ
+    на вопрос «в каком порядке человек это разложил».
     """
-    return queryset.select_related("stored_file").annotate(
-        reference_count=Count("stored_file__attachments")
+    return (
+        queryset.select_related("stored_file")
+        .annotate(reference_count=Count("stored_file__attachments"))
+        .order_by("position", "id")
     )
 
 
 class AttachmentSerializer(serializers.ModelSerializer):
     """One reference, as the panel shows it."""
 
+    # Папка на личном столе: единственное «место», которое у ссылки можно
+    # переменить после заведения.
+    #
+    # Владельца переменить нельзя — это был бы способ утащить чужой урок к
+    # себе, — а вот переложить своё из папки в папку человек должен уметь,
+    # не загружая файл заново. Отсюда и выборка: только свои папки, и только
+    # у того, что и так лежит на своём столе (см. `validate_bookmark_folder`).
+    bookmark_folder = serializers.PrimaryKeyRelatedField(
+        queryset=Attachment.objects.none(), required=False, allow_null=True
+    )
     file_name = serializers.CharField(source="stored_file.original_name", default=None)
     size = serializers.IntegerField(source="stored_file.size", default=None)
     content_type = serializers.CharField(
@@ -46,6 +69,9 @@ class AttachmentSerializer(serializers.ModelSerializer):
             "id",
             "kind",
             "title",
+            # приписка своими словами: «зачем это мне». У записки на личном
+            # столе она и есть весь текст, у материала урока — пометка
+            "note",
             "url",
             "position",
             "inline",
@@ -54,12 +80,62 @@ class AttachmentSerializer(serializers.ModelSerializer):
             "size",
             "content_type",
             "is_shared",
+            "bookmark_folder",
             # «видно только учителю» — не показ, а право, и правится оно тут
             # же, строкой в списке: решают это в тот же заход, что и
             # прикладывают, а перепутанное решение исправляют немедленно
             "staff_only",
         )
         read_only_fields = ("id", "kind", "url", "position", "inline")
+
+    def get_fields(self):
+        fields = super().get_fields()
+        request = self.context.get("request")
+        # сериализатор ходит и без запроса — вложенным в чужой ответ,
+        # например, — и тогда выбирать папку некому: пустая выборка
+        # означает «этим полем ничего не изменить»
+        if request is not None:
+            from .access import writable_shelf_folders
+
+            fields["bookmark_folder"].queryset = writable_shelf_folders(request.user)
+        return fields
+
+    def validate_bookmark_folder(self, value):
+        """
+        Разложить по папкам можно то, что и так лежит на своём столе.
+
+        Иначе это не «переложить», а «сменить владельца»: PATCH с папкой у
+        вложения урока увёл бы материал курса на личную полку — молча и
+        необратимо для тех, кто ведёт курс после.
+        """
+        if self.instance is not None and self.instance.bookmark_owner_id is None:
+            api_error(
+                Codes.ATTACHMENT_KIND_MISMATCH,
+                "Only what lies on a personal shelf can be put in a folder.",
+                field="bookmark_folder",
+            )
+        return value
+
+    def update(self, instance, validated_data):
+        """
+        Переложенное встаёт в конец, а не остаётся на прежнем месте.
+
+        Позиция считается по столу целиком, поэтому вещь, переехавшая из
+        первой папки в третью, села бы в её середину — на место, которого
+        человек ей не назначал. Порядок внутри папки от пересчёта не
+        страдает: он относительный.
+        """
+        moved = (
+            "bookmark_folder" in validated_data
+            and validated_data["bookmark_folder"] != instance.bookmark_folder
+        )
+        if moved and instance.bookmark_owner_id is not None:
+            from .services import next_position
+
+            validated_data["position"] = next_position(
+                bookmark_owner_id=instance.bookmark_owner_id
+            )
+        return super().update(instance, validated_data)
 
     def validate_staff_only(self, value):
         """
@@ -107,7 +183,20 @@ class AttachmentCreateSerializer(serializers.Serializer):
     work = serializers.PrimaryKeyRelatedField(
         queryset=Attachment.objects.none(), required=False, allow_null=True
     )
+    # Личный стол: владелец — человек, и назвать можно только себя (выборка
+    # в `get_fields`). Спрашивается он телом, а не берётся из токена молча,
+    # ровно потому же, почему остальные владельцы: «куда это положить» —
+    # вопрос запроса, и пятый ответ на него должен выглядеть как остальные
+    # четыре, иначе `OWNER_FIELDS` перестаёт быть одним списком.
+    bookmark_owner = serializers.PrimaryKeyRelatedField(
+        queryset=Attachment.objects.none(), required=False, allow_null=True
+    )
+    # Не владелец, а адрес внутри стола: пусто — «положить на виду».
+    bookmark_folder = serializers.PrimaryKeyRelatedField(
+        queryset=Attachment.objects.none(), required=False, allow_null=True
+    )
     title = serializers.CharField(max_length=200, required=False, allow_blank=True)
+    note = serializers.CharField(required=False, allow_blank=True)
     url = serializers.URLField(max_length=500, required=False, allow_blank=True)
     file = serializers.FileField(required=False)
     # вид называется только у записи: у файла и ссылки он и так виден по
@@ -125,6 +214,8 @@ class AttachmentCreateSerializer(serializers.Serializer):
     def get_fields(self):
         from .access import (
             writable_plan_rows,
+            writable_shelf_folders,
+            writable_shelf_owners,
             writable_student_works,
             writable_template_rows,
             writable_works,
@@ -136,17 +227,28 @@ class AttachmentCreateSerializer(serializers.Serializer):
         fields["template_row"].queryset = writable_template_rows(user)
         fields["student_work"].queryset = writable_student_works(user)
         fields["work"].queryset = writable_works(user)
+        fields["bookmark_owner"].queryset = writable_shelf_owners(user)
+        fields["bookmark_folder"].queryset = writable_shelf_folders(user)
         return fields
 
     def validate(self, attrs):
+        # папка названа, а хозяин нет — обычный случай экрана закладок:
+        # раскладывают по своим папкам, и хозяин у них по построению один.
+        # Выводится он из папки, а не берётся из токена: так владелец
+        # по-прежнему приезжает телом запроса, и правило «ровно один
+        # владелец» проверяет то же, что и у остальных четверых
+        folder = attrs.get("bookmark_folder")
+        if folder is not None and attrs.get("bookmark_owner") is None:
+            attrs["bookmark_owner"] = folder.owner
+
         owners = {name: attrs.get(name) for name in OWNER_FIELDS}
         named = [name for name, value in owners.items() if value is not None]
 
         if len(named) != 1:
             api_error(
                 Codes.ATTACHMENT_OWNER_REQUIRED,
-                "Name exactly one owner: «plan_row», «template_row», «work» "
-                "or «student_work».",
+                "Name exactly one owner: «plan_row», «template_row», «work», "
+                "«student_work» or «bookmark_owner».",
                 field="plan_row",
             )
 
@@ -180,6 +282,14 @@ class AttachmentCreateSerializer(serializers.Serializer):
                     "Only an image can stand inside the lesson text.",
                     field="file",
                     allowed=sorted(INLINE_EXTENSIONS),
+                )
+            if owners["bookmark_owner"] is not None:
+                # на столе нет текста, в который встают картинки: закладка
+                # это сама вещь, а не абзац с картинкой внутри
+                api_error(
+                    Codes.ATTACHMENT_KIND_MISMATCH,
+                    "A personal shelf has no text to stand in.",
+                    field="bookmark_owner",
                 )
             if owners["student_work"] is not None:
                 # у работы ученика текста нет — есть его тетрадь. Ставить

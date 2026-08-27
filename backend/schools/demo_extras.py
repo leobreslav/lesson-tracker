@@ -53,6 +53,7 @@ def build(school, courses, people, students, *, log=print):
     made.append(_bank_variety(school, teacher, admin, course))
     made.append(_feedback(school, teacher, students))
     made.append(_families(school, students))
+    made.append(_bookmarks(teacher, admin))
     made.append(_bells(school))
     made.append(_rooms(school, courses))
     made.append(_homegroups(school, courses, students, teacher))
@@ -947,6 +948,110 @@ def _homegroups(school, courses, students, teacher):
         HomegroupStudent.objects.get_or_create(homegroup=group, student=student)
 
     return f"классов {len(groups)}"
+
+
+def _bookmarks(teacher, admin):
+    """
+    Личный стол: папка, вещи в ней и вещь на виду.
+
+    Живой случай тут — не «одна закладка», а **разложенность**: экран
+    показывает папки слева и содержимое справа, и с одной строкой в одной
+    папке он выглядит правильно, будучи неправильным. Поэтому папки две, в
+    одной из них лежат оба вида сразу — ссылка и записка, — а одна вещь
+    лежит вне папок: состояние законное и на экране отдельное.
+
+    Столов тоже два, у разных людей, и это второе, ради чего шаг заведён:
+    личный раздел ломается не тем, что он пуст, а тем, что в нём видно
+    чужое. Пустая база такого не покажет никогда.
+
+    Файла здесь нет намеренно: он ничего не добавляет к тому, что показывает
+    экран (значок и размер уже показывает материал урока), зато стоит
+    объекта в бакете на каждом посеве — а посев зовут часто.
+    """
+    from bookmarks.models import Folder
+    from files.models import KIND_LINK, KIND_TEXT, Attachment
+
+    shelves = {
+        teacher: [
+            (
+                "Методика",
+                [
+                    (
+                        KIND_LINK,
+                        "Десмос: графики к линейной функции",
+                        "https://www.desmos.com/calculator",
+                        "Показывать с проектора, ссылку не диктовать",
+                    ),
+                    (
+                        KIND_TEXT,
+                        "Мордкович, §14 — задачи на скорость",
+                        "",
+                        "Оттуда же берём домашнее на две недели вперёд",
+                    ),
+                ],
+            ),
+            (
+                "Олимпиада",
+                [
+                    (
+                        KIND_LINK,
+                        "Положение о школьном туре",
+                        "https://example.org/olympiad",
+                        "",
+                    )
+                ],
+            ),
+        ],
+        admin: [
+            (
+                "Педсовет",
+                [
+                    (
+                        KIND_TEXT,
+                        "Протокол августовского педсовета",
+                        "",
+                        "Спросить у Ивановой недостающие подписи",
+                    )
+                ],
+            )
+        ],
+    }
+
+    made = 0
+    for owner, folders in shelves.items():
+        for position, (title, items) in enumerate(folders):
+            folder, _ = Folder.objects.get_or_create(
+                owner=owner, title=title, defaults={"position": position}
+            )
+            for index, (kind, name, url, note) in enumerate(items):
+                _, fresh = Attachment.objects.get_or_create(
+                    bookmark_owner=owner,
+                    bookmark_folder=folder,
+                    title=name,
+                    defaults={
+                        "kind": kind,
+                        "url": url,
+                        "note": note,
+                        "position": index,
+                    },
+                )
+                made += int(fresh)
+
+        # вещь на виду: половину нужного человек так и не раскладывает, и
+        # экран обязан это уметь показывать
+        _, fresh = Attachment.objects.get_or_create(
+            bookmark_owner=owner,
+            bookmark_folder=None,
+            title="Расписание звонков на печать",
+            defaults={
+                "kind": KIND_LINK,
+                "url": "https://example.org/bells.pdf",
+                "position": 90,
+            },
+        )
+        made += int(fresh)
+
+    return f"закладок {made}" if made else ""
 
 
 def _bells(school):

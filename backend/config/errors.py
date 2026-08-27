@@ -201,6 +201,9 @@ class Codes:
     # словаря могла быть верной ровно для одного из двух отказов.
     PHOTO_TYPE_NOT_ALLOWED = "photo_type_not_allowed"
     URL_REQUIRED = "url_required"
+    # личный стол: у папки нет ничего, кроме имени, и безымянная папка —
+    # это строка, по которой не выбрать, куда класть
+    FOLDER_TITLE_REQUIRED = "folder_title_required"
     FILE_TYPE_NOT_ALLOWED = "file_type_not_allowed"
     SCHOOL_QUOTA_EXCEEDED = "school_quota_exceeded"
     STORAGE_UNAVAILABLE = "storage_unavailable"

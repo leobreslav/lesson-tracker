@@ -50,7 +50,8 @@
     "journal": "Gradebook",
     "bank": "Problem bank",
     "feedback": "Feedback",
-    "talks": "Messages"
+    "talks": "Messages",
+    "bookmarks": "Bookmarks"
   },
   "auth": {
     "prompt": "Sign in to continue.",
@@ -210,6 +211,7 @@
     "attachment_kind_mismatch": "Send either a file or a link, not both.",
     "attachment_forbidden": "This attachment belongs to somebody else's lesson.",
     "url_required": "A link needs an address.",
+    "folder_title_required": "A folder is its name — give it one.",
     "file_type_not_allowed": "This kind of file cannot be attached: «{{extension}}». Allowed: images, pdf, docx, xlsx, pptx, txt, tex, md, zip.",
     "school_quota_exceeded": "The school has used up its storage quota ({{quota_mb}} MB). Remove some files to make room.",
     "storage_unavailable": "The file store is not answering. Everything else works; try the file again in a moment.",
@@ -1932,6 +1934,34 @@
     "wholeWork": "Photos of the work",
     "wholeWorkHint": "a whole page at a time, when sorting by question is too much — Ctrl+V pastes a screenshot",
     "width": "Pen width"
+  },
+  "bookmarks": {
+    "title": "Bookmarks",
+    "lead": "Files, links and notes you keep for yourself. Nobody else in the school can see them.",
+    "all": "Everything",
+    "loose": "Not in a folder",
+    "folder": "Folder",
+    "folderPlaceholder": "New folder",
+    "search": "Search your shelf",
+    "rename": "Rename",
+    "removeFolder": "Delete the folder «{{title}}»? What is inside stays on the shelf.",
+    "removeItem": "Remove «{{title}}» from the shelf?",
+    "itemTitle": "Name",
+    "note": "Note",
+    "notePlaceholder": "A note to yourself: what this is for",
+    "what": "An address or a note",
+    "whatPlaceholder": "Paste a link — or write a note",
+    "linkTitle": "Name of the link",
+    "addFile": "Add a file",
+    "dropHere": "Drop a file here, or click to pick one",
+    "download": "Download",
+    "willLieLoose": "New items go on the shelf, outside any folder.",
+    "willLieIn": "New items go into «{{folder}}».",
+    "empty": {
+      "title": "Nothing here yet",
+      "shelf": "Keep here what you reach for often: the textbook you teach from, the link you show on the projector, the note you would otherwise write on a sticker.",
+      "found": "Nothing on the shelf matches that."
+    }
   },
   "workKinds": {
     "catalogue": "Kinds of work",
