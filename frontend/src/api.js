@@ -318,6 +318,16 @@ export const refreshTemplate = (id, courseId) =>
     body: { course: courseId },
   })
 
+/**
+ * Вести дальше **этот** шаблон, а не прежний.
+ *
+ * Одно действие на две записи: пометка снимается с прежнего живого и
+ * ставится сюда. Двумя запросами это было бы состояние «живых два» между
+ * ними, а его не пустит ограничение базы.
+ */
+export const keepUpdatingTemplate = (id) =>
+  request(`/api/library/templates/${id}/keep-updating/`, { method: 'POST' })
+
 /** Take a template into a course plan — a copy, not a link. */
 export const importTemplate = (payload) =>
   request('/api/plan/import-from-template/', { method: 'POST', body: payload })

@@ -1157,6 +1157,78 @@ test('в библиотеку кладут сразу с ответом «ком
   expect(draft.is_published).toBe(false)
 })
 
+test('копия ложится снимком, а пометку «веду» можно перевесить', async ({
+  page,
+  signIn,
+  api,
+}) => {
+  /*
+   * Какой из моих шаблонов обновляют, а какой лежит снимком — **запись**.
+   *
+   * Пометки не было, а кнопка «Обновить» была: клиент искал «мой шаблон с
+   * тем же предметом и параллелью» и брал первый, то есть алфавитно первый.
+   * Стоило положить рядом копию — и обновление уходило неизвестно куда.
+   */
+  const teacher = await api(PEOPLE.ivanova)
+  const courses = await teacher.get('/api/courses/')
+  const empty = courses.body.find((item) => item.name === 'Grade 6 Geometry')
+  for (const title of ['Первый урок', 'Второй урок']) {
+    await teacher.post('/api/plan/', { course: empty.id, title })
+  }
+
+  await signIn(PEOPLE.ivanova)
+  await page.goto('/plan')
+  await ready(page)
+  await page.getByLabel('Курс').selectOption({ label: 'Grade 6 Geometry' })
+  await expect(page.locator('.plan-cards')).toBeVisible()
+
+  // пока на полке ничего своего нет, копировать нечего — и пункта нет
+  await page.getByRole('button', { name: 'Библиотека', exact: true }).click()
+  const menu = page.locator('.plan-menu .dropdown')
+  await expect(menu.getByRole('button', { name: /^Сохранить копию/ })).toHaveCount(0)
+  await menu.getByRole('button', { name: /^Сохранить в библиотеку/ }).click()
+
+  const dialog = page.locator('dialog[open]')
+  await dialog.getByLabel('Название').fill('Геометрия, основная')
+  await dialog.getByRole('button', { name: /Сохранить в библиотеку/ }).click()
+  await expect(dialog).toBeHidden()
+
+  // теперь на полке есть ведомый — и рядом с «Обновить» появилась копия
+  await page.getByRole('button', { name: 'Библиотека', exact: true }).click()
+  await expect(menu.getByRole('button', { name: /^Обновить в библиотеке/ })).toBeVisible()
+  await menu.getByRole('button', { name: /^Сохранить копию/ }).click()
+
+  await dialog.getByLabel('Название').fill('Геометрия, копия')
+  await dialog.getByRole('button', { name: /Сохранить копию/ }).click()
+  await expect(dialog).toBeHidden()
+
+  // и это настоящая запись, а не состояние экрана
+  const shelf = await teacher.get('/api/library/templates/')
+  const led = shelf.body.find((item) => item.title === 'Геометрия, основная')
+  const copy = shelf.body.find((item) => item.title === 'Геометрия, копия')
+  expect(led.is_live).toBe(true)
+  expect(copy.is_live).toBe(false)
+
+  // на полке видно, который из них какой
+  await page.getByRole('button', { name: 'Библиотека', exact: true }).click()
+  await menu.getByRole('button', { name: 'Открыть библиотеку' }).click()
+  const shelfRow = (title) => dialog.locator('li').filter({ hasText: title })
+  await expect(shelfRow('Геометрия, основная')).toContainText('веду')
+  await expect(shelfRow('Геометрия, копия')).not.toContainText('веду')
+
+  // «вот эта версия удачнее, дальше веду её»
+  await shelfRow('Геометрия, копия')
+    .getByRole('button', { name: 'Вести отсюда' })
+    .click()
+  await expect(shelfRow('Геометрия, копия')).toContainText('веду')
+
+  const after = await teacher.get('/api/library/templates/')
+  const titleOf = (id) => after.body.find((item) => item.id === id)
+  expect(titleOf(copy.id).is_live).toBe(true)
+  // прежний остаётся на полке — его уже могли взять коллеги
+  expect(titleOf(led.id).is_live).toBe(false)
+})
+
 test('удаление называет цену: строка по имени, тема — числом и галочкой', async ({
   page,
   signIn,

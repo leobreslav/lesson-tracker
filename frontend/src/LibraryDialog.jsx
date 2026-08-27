@@ -25,6 +25,7 @@ export default function LibraryDialog({
   onTake,
   onOpen,
   onPublish,
+  onKeepUpdating,
   onDelete,
   onClose,
 }) {
@@ -97,9 +98,23 @@ export default function LibraryDialog({
                     {item.title}
                   </button>
                   <span className="hint">{line(item)}</span>
-                  {!item.is_published && (
-                    <span className="badge">{t('library.draft')}</span>
-                  )}
+                  {/* Метки — одной ячейкой, и это не косметика: каждая из
+                      них прибита к одной клетке сетки, и вторая легла бы
+                      поверх первой. У своего черновика, который я веду, их
+                      как раз две.
+
+                      Какой из моих шаблонов обновляется кнопкой на плане, а
+                      какой лежит снимком, — видно здесь, и это единственное
+                      место, где обе версии стоят рядом. Чужие не помечаем:
+                      их ведёт не читатель, и слово было бы про чужую кухню. */}
+                  <span className="badges">
+                    {!item.is_published && (
+                      <span className="badge">{t('library.draft')}</span>
+                    )}
+                    {item.mine && item.is_live && (
+                      <span className="badge">{t('library.live')}</span>
+                    )}
+                  </span>
 
                   {/* действия одной ячейкой: их от одного до трёх, и в
                       отдельных колонках сетка разъезжалась бы построчно */}
@@ -120,6 +135,20 @@ export default function LibraryDialog({
                         onClick={() => onPublish(item, !item.is_published)}
                       >
                         {t(item.is_published ? 'library.unpublish' : 'library.publish')}
+                      </button>
+                    )}
+                    {/* «Вести отсюда» — у снимка, и только у своего. Без
+                        него ответом на «эта версия удачнее» было бы «снимите
+                        шаблон заново», то есть третья запись на полке ради
+                        переезда одной пометки */}
+                    {item.can_edit && !item.is_live && (
+                      <button
+                        type="button"
+                        className="link"
+                        disabled={busy}
+                        onClick={() => onKeepUpdating(item)}
+                      >
+                        {t('library.keepUpdating')}
                       </button>
                     )}
                     {item.can_delete && (

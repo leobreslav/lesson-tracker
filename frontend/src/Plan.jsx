@@ -17,7 +17,8 @@ import PlanDiff from './PlanDiff'
 import { dragId } from './PlanDnd'
 import Modal from './Modal'
 import { usePlanLayout } from './usePlanLayout'
-import { shortDate } from './dates'
+import { longDate, shortDate } from './dates'
+import { today } from './calendarLogic'
 import CoursePicker from './CoursePicker'
 import { useDismissable } from './UserMenu'
 import DebtsDialog from './DebtsDialog'
@@ -41,6 +42,7 @@ import {
   fetchTemplates,
   importTemplate,
   updateTemplate,
+  keepUpdatingTemplate,
   publishPlan,
   refreshTemplate,
   undoPlan,
@@ -668,6 +670,16 @@ export default function Plan({ user, onLoggedOut }) {
   const publishTemplate = (template, published) =>
     run(() => updateTemplate(template.id, { is_published: published })).then(loadShelf)
 
+  /**
+   * Вести дальше этот шаблон, а не прежний.
+   *
+   * Перечитываем полку целиком, а не правим запись в состоянии: действие
+   * трогает **две** записи — пометка снимается с прежнего живого, — и
+   * подправив одну, мы показали бы двух живых там, где их не бывает.
+   */
+  const keepUpdating = (template) =>
+    run(() => keepUpdatingTemplate(template.id)).then(loadShelf)
+
   const removeTemplate = (template) => {
     if (!window.confirm(t('library.deleteConfirm', { title: template.title }))) return
     setPreview(null)
@@ -702,13 +714,24 @@ export default function Plan({ user, onLoggedOut }) {
       }
     })
 
-  /** A template of mine matching this course's subject and grade, if any. */
+  /**
+   * Мой **живой** шаблон по предмету и параллели этого курса, если он есть.
+   *
+   * Раньше здесь стояло «первый мой с тем же предметом», и слово «первый»
+   * значило «раньше по алфавиту»: полка приезжает отсортированной по
+   * названию. У человека с черновиком и опубликованным по одному предмету
+   * «Обновить» молча уходило не туда.
+   *
+   * Теперь выбирает не порядок списка, а пометка `is_live`, и живой такой
+   * один — это держит ограничение базы, а не договорённость.
+   */
   const mineOnShelf = useMemo(() => {
     if (!course?.subject) return null
     return (
       templates.find(
         (item) =>
           item.mine &&
+          item.is_live &&
           item.subject === course.subject &&
           // the shelf stores the year of study, the course points at the
           // school's name for it — «MYP 4» and 9 are the same year
@@ -1644,6 +1667,25 @@ export default function Plan({ user, onLoggedOut }) {
                       >
                         {t(mineOnShelf ? 'plan.refreshTemplate' : 'plan.publish')}
                       </button>
+                      {/*
+                        «Сохранить копию» стоит только рядом с «Обновить», и
+                        это не экономия пункта. Копия — это копия **рядом с
+                        ведомым**: пока на полке ничего своего нет, выбор
+                        «вести или положить снимком» человеку не о чем
+                        задавать, а лишний пункт пришлось бы объяснять.
+                      */}
+                      {mineOnShelf && (
+                        <button
+                          type="button"
+                          disabled={busy}
+                          onClick={() => {
+                            setMenuOpen(null)
+                            setDialog({ type: 'publish', copy: true })
+                          }}
+                        >
+                          {t('plan.publishCopy')}
+                        </button>
+                      )}
                     </div>
                   )}
                 </div>
@@ -1831,6 +1873,7 @@ export default function Plan({ user, onLoggedOut }) {
             fetchTemplate(item.id).then(setPreview).catch(handleError)
           }
           onPublish={publishTemplate}
+          onKeepUpdating={keepUpdating}
           onDelete={removeTemplate}
           onClose={() => setDialog(null)}
         />
@@ -1880,12 +1923,21 @@ export default function Plan({ user, onLoggedOut }) {
         <PublishDialog
           course={course}
           subjects={subjects}
-          existing={mineOnShelf}
+          // копия просит ту же форму, что и первое сохранение: у неё своё
+          // название, иначе на полке лягут два «Алгебра 9» без различий
+          existing={dialog.copy ? null : mineOnShelf}
+          copy={Boolean(dialog.copy)}
           busy={busy}
           onSubmit={(fields) => {
-            const request = mineOnShelf
-              ? refreshTemplate(mineOnShelf.id, classId)
-              : publishPlan({ course: classId, ...fields })
+            const request =
+              mineOnShelf && !dialog.copy
+                ? refreshTemplate(mineOnShelf.id, classId)
+                : publishPlan({
+                    course: classId,
+                    ...fields,
+                    // копия не претендует на ведение: её никто не перезапишет
+                    is_live: !dialog.copy,
+                  })
 
             setBusy(true)
             request
@@ -2034,11 +2086,18 @@ export default function Plan({ user, onLoggedOut }) {
  * Refreshing asks nothing: the entry already knows its title and subject,
  * and the only question — «take the current plan?» — is the button itself.
  */
-function PublishDialog({ course, subjects, existing, busy, onSubmit, onClose }) {
+function PublishDialog({ course, subjects, existing, copy = false, busy, onSubmit, onClose }) {
   const { t } = useTranslation()
-  const [title, setTitle] = useState(
-    course ? `${course.subject_name ?? ''} ${course.grade_name ?? ''}`.trim() : '',
-  )
+  const [title, setTitle] = useState(() => {
+    const name = course
+      ? `${course.subject_name ?? ''} ${course.grade_name ?? ''}`.trim()
+      : ''
+    // У копии название по умолчанию с датой: два «Алгебра 9» на полке
+    // различить нельзя, а копию кладут именно затем, чтобы к ней вернуться.
+    // Дата — через `dates.js`, то есть по языку интерфейса: своего формата
+    // тут заводить нельзя, он разъедется с остальными датами в проекте
+    return copy && name ? `${name} — ${longDate(today())}` : name
+  })
   const [description, setDescription] = useState('')
   const [subject, setSubject] = useState(subjects[0]?.id ?? null)
   const [grade, setGrade] = useState('')
@@ -2093,7 +2152,10 @@ function PublishDialog({ course, subjects, existing, busy, onSubmit, onClose }) 
           }
         }}
       >
-        <h3>{t('plan.publish')}</h3>
+        <h3>{t(copy ? 'plan.publishCopy' : 'plan.publish')}</h3>
+        {/* копия обещает ровно одно — что останется такой; сказать это надо
+            здесь, иначе разница с соседним пунктом меню только в слове */}
+        {copy && <p className="hint">{t('plan.publishCopyHint')}</p>}
 
         <div className="field">
           <label htmlFor="template-title">{t('plan.titleLabel')}</label>
@@ -2177,7 +2239,7 @@ function PublishDialog({ course, subjects, existing, busy, onSubmit, onClose }) 
 
         <div className="actions">
           <button type="submit" disabled={busy || !title.trim()}>
-            {t('plan.publish')}
+            {t(copy ? 'plan.publishCopy' : 'plan.publish')}
           </button>
           <button type="button" className="secondary" onClick={onClose}>
             {t('common.cancel')}

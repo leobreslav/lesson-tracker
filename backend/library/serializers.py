@@ -99,6 +99,10 @@ class PlanTemplateSerializer(serializers.ModelSerializer):
             "author",
             "author_name",
             "is_published",
+            # «этот я веду» против «это снимок»: по нему интерфейс решает, что
+            # написать на кнопке — «Обновить» или «Сохранить», — и показывает
+            # на полке, какой из моих шаблонов живой
+            "is_live",
             "lessons",
             "mine",
             "can_edit",
@@ -106,7 +110,15 @@ class PlanTemplateSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
         )
-        read_only_fields = ("id", "author", "created_at", "updated_at")
+        read_only_fields = (
+            "id",
+            "author",
+            # пометку не правят полем: она одна на предмет и параллель, и
+            # перевешивают её отдельным действием, которое снимает прежнюю
+            "is_live",
+            "created_at",
+            "updated_at",
+        )
 
     def get_fields(self):
         fields = super().get_fields()
@@ -154,6 +166,12 @@ class FromPlanSerializer(serializers.Serializer):
     # и описание: на полку кладут ради того, чтобы этим пользовались, и
     # отдельным шагом публикация означала лишь шанс про неё забыть
     is_published = serializers.BooleanField(required=False, default=False)
+    # «веду» или «копия». Живой шаблон обновляют кнопкой, снимок лежит как
+    # положили — и лежит навсегда, пока пометку не перевесят руками.
+    #
+    # Умолчание `True`, потому что обычное «Сохранить в библиотеку» — это
+    # именно начало ведения; копию просят отдельным пунктом и осознанно.
+    is_live = serializers.BooleanField(required=False, default=True)
 
     def get_fields(self):
         fields = super().get_fields()

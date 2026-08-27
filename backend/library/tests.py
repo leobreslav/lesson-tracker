@@ -196,6 +196,8 @@ class TemplateReadTests(LibraryTestCase):
             self.school,
             self.user,
             title="Длинный",
+            # второй шаблон того же автора по тому же предмету — снимок
+            live=False,
             rows=tuple((False, f"Урок {i}") for i in range(60)),
         )
 
@@ -752,8 +754,10 @@ class TakingPartOfATemplateTests(LibraryTestCase):
         Строка чужого шаблона так же не должна приниматься, как чужой
         шаблон, — и отказ обязан называться, а не терять лишнее по дороге.
         """
+        # снимком: живой шаблон у автора один на предмет и параллель, а
+        # `self.template` того же автора и предмета уже занял эту роль
         other = make_template(
-            self.school, self.colleague, subject=self.subject, rows=SAMPLE
+            self.school, self.colleague, subject=self.subject, live=False, rows=SAMPLE
         )
         alien = other.rows.first().pk
 
@@ -858,3 +862,260 @@ class RowEditingTests(LibraryTestCase):
 
         self.assertEqual(response.status_code, 403)
         self.assertEqual(self.rows_of(self.template), list(SAMPLE))
+
+
+class LiveAndSnapshotTests(LibraryTestCase):
+    """
+    Какой шаблон обновляют, а какой лежит снимком, — **запись**, не догадка.
+
+    Пометки не было, а кнопка «Обновить шаблон» была: клиент искал «мой
+    шаблон с тем же предметом и той же параллелью» и брал первый. Список
+    отсортирован по названию, значит выбирал алфавит, и у человека с
+    черновиком и опубликованным по одному предмету обновление молча уходило
+    не туда. Та же болезнь, что была у раскладки: позиция вместо записи.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.build_plan()
+
+    def save(self, title="Из плана", **extra):
+        return self.client.post(
+            reverse("plantemplate-from-plan"),
+            {"course": self.course.pk, "title": title, **extra},
+            format="json",
+        )
+
+    def refresh(self, template):
+        return self.client.post(
+            reverse("plantemplate-update-from-plan", args=[template.pk]),
+            {"course": self.course.pk},
+            format="json",
+        )
+
+    def keep_updating(self, template):
+        return self.client.post(
+            reverse("plantemplate-keep-updating", args=[template.pk]),
+            {},
+            format="json",
+        )
+
+    # --- что кладут на полку ---
+
+    def test_saving_starts_keeping_the_template_up_to_date(self):
+        """Обычное «Сохранить» — это начало ведения, а не снимок."""
+        response = self.save()
+
+        self.assertEqual(response.status_code, 201, response.content)
+        self.assertIs(PlanTemplate.objects.get().is_live, True)
+        self.assertIs(response.json()["is_live"], True)
+
+    def test_a_copy_is_a_snapshot(self):
+        self.save()
+
+        response = self.save(title="Копия", is_live=False)
+
+        self.assertEqual(response.status_code, 201, response.content)
+        self.assertIs(PlanTemplate.objects.get(title="Копия").is_live, False)
+
+    def test_copies_may_lie_next_to_the_live_one_as_many_as_you_like(self):
+        """
+        Ограничен только живой. Снимков по одному предмету сколько угодно —
+        иначе «сохранить копию» работало бы ровно один раз.
+        """
+        self.save()
+        self.save(title="Копия за сентябрь", is_live=False)
+        self.save(title="Копия за октябрь", is_live=False)
+
+        self.assertEqual(PlanTemplate.objects.count(), 3)
+        self.assertEqual(PlanTemplate.objects.filter(is_live=True).count(), 1)
+
+    def test_a_second_live_template_is_refused_by_name(self):
+        """
+        Отказ, а не отбор пометки у прежнего: отобрать её молча значит
+        превратить чужую работу в снимок, о котором никто не просил.
+        """
+        self.save(title="Ведомый")
+
+        response = self.save(title="Ещё один")
+
+        self.assertEqual(response.status_code, 400, response.content)
+        body = response.json()
+        self.assertEqual(body["code"], "template_already_live")
+        self.assertEqual(body["params"]["title"], "Ведомый")
+        self.assertEqual(PlanTemplate.objects.count(), 1)
+
+    def test_another_subject_has_its_own_live_template(self):
+        """Ограничение — на предмет и параллель, а не на человека."""
+        self.save()
+
+        other = make_course(self.school, self.year, "9В")
+        other.subject = self.geometry
+        other.grade = self.course.grade
+        other.save(update_fields=["subject", "grade"])
+        assign(self.user, other)
+        make_node(self.user, other, "Точка", position=0)
+
+        response = self.client.post(
+            reverse("plantemplate-from-plan"),
+            {"course": other.pk, "title": "Геометрия"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 201, response.content)
+        self.assertEqual(PlanTemplate.objects.filter(is_live=True).count(), 2)
+
+    def test_a_colleague_keeps_his_own_live_template(self):
+        """Полка школьная, а ведёт каждый своё."""
+        self.save()
+        mine = PlanTemplate.objects.get()
+
+        make_template(
+            self.school, self.colleague, subject=self.subject, title="Соседский"
+        )
+
+        self.assertEqual(PlanTemplate.objects.filter(is_live=True).count(), 2)
+        self.assertIs(PlanTemplate.objects.get(pk=mine.pk).is_live, True)
+
+    # --- снимок не переписывают ---
+
+    def test_a_snapshot_refuses_to_be_refreshed(self):
+        """
+        Единственное, что снимок обещает, — что он останется таким.
+
+        Обещание должно держаться и тогда, когда id пришёл не с нашей
+        кнопки, поэтому его стережёт вьюха, а не разметка.
+        """
+        self.save()
+        self.save(title="Копия", is_live=False)
+        copy = PlanTemplate.objects.get(title="Копия")
+        before = self.rows_of(copy)
+        make_node(self.user, self.course, "Новый урок", position=3)
+
+        response = self.refresh(copy)
+
+        self.assertEqual(response.status_code, 400, response.content)
+        self.assertEqual(response.json()["code"], "template_is_a_snapshot")
+        self.assertEqual(self.rows_of(copy), before)
+
+    def test_the_live_one_is_refreshed_as_before(self):
+        self.save()
+        live = PlanTemplate.objects.get()
+        make_node(self.user, self.course, "Новый урок", position=3)
+
+        response = self.refresh(live)
+
+        self.assertEqual(response.status_code, 200, response.content)
+        self.assertIn((False, "Новый урок"), self.rows_of(live))
+
+    # --- перевесить пометку ---
+
+    def test_the_mark_moves_and_the_old_one_becomes_a_snapshot(self):
+        """
+        «Вот эта версия удачнее, дальше веду её» — обычная просьба.
+
+        Прежний живой при этом остаётся на полке: его уже могли взять
+        коллеги, и он по-прежнему то, чем был.
+        """
+        self.save(title="Прежний")
+        self.save(title="Копия", is_live=False)
+        previous = PlanTemplate.objects.get(title="Прежний")
+        copy = PlanTemplate.objects.get(title="Копия")
+
+        response = self.keep_updating(copy)
+
+        self.assertEqual(response.status_code, 200, response.content)
+        previous.refresh_from_db()
+        copy.refresh_from_db()
+        self.assertIs(copy.is_live, True)
+        self.assertIs(previous.is_live, False)
+        self.assertEqual(PlanTemplate.objects.count(), 2)
+
+    def test_the_moved_mark_makes_the_copy_refreshable(self):
+        """Перевесили — и «Обновить» теперь бьёт сюда, а не отказывает."""
+        self.save(title="Прежний")
+        self.save(title="Копия", is_live=False)
+        copy = PlanTemplate.objects.get(title="Копия")
+        self.keep_updating(copy)
+        make_node(self.user, self.course, "Новый урок", position=3)
+
+        response = self.refresh(copy)
+
+        self.assertEqual(response.status_code, 200, response.content)
+        self.assertIn((False, "Новый урок"), self.rows_of(copy))
+
+    def test_asking_for_what_is_already_true_is_not_an_error(self):
+        """Просили состояние, а оно уже такое: отказывать тут не за что."""
+        self.save()
+        live = PlanTemplate.objects.get()
+
+        response = self.keep_updating(live)
+
+        self.assertEqual(response.status_code, 200, response.content)
+        self.assertIs(PlanTemplate.objects.get(pk=live.pk).is_live, True)
+
+    def test_only_the_author_moves_the_mark(self):
+        alien = make_template(
+            self.school, self.colleague, subject=self.geometry, live=False
+        )
+
+        response = self.keep_updating(alien)
+
+        self.assertEqual(response.status_code, 403, response.content)
+        self.assertIs(PlanTemplate.objects.get(pk=alien.pk).is_live, False)
+
+    def test_the_mark_cannot_be_set_by_editing_the_template(self):
+        """
+        Пометку не правят полем: она одна на предмет и параллель, и её
+        перевешивание снимает чужую. PATCH'ем это прошло бы мимо снятия.
+        """
+        self.save(title="Прежний")
+        self.save(title="Копия", is_live=False)
+        copy = PlanTemplate.objects.get(title="Копия")
+
+        self.client.patch(
+            reverse("plantemplate-detail", args=[copy.pk]),
+            {"is_live": True},
+            format="json",
+        )
+
+        self.assertIs(PlanTemplate.objects.get(pk=copy.pk).is_live, False)
+
+    # --- переезд предмета вслед за курсом ---
+
+    def test_a_refresh_that_would_collide_is_refused_by_name(self):
+        """
+        «Обновить» тащит предмет и год за курсом — и умеет столкнуть шаблон
+        с другим моим живым. База это поймает ограничением, но её отказ
+        человеку ничего не скажет; отвечаем сами.
+        """
+        self.save(title="Алгебра 9")
+
+        eighth = make_course(self.school, self.year, "8Б")
+        eighth.subject = self.subject
+        eighth.grade = make_grade(self.school, 8)
+        eighth.save(update_fields=["subject", "grade"])
+        assign(self.user, eighth)
+        make_node(self.user, eighth, "Урок", position=0)
+
+        self.client.post(
+            reverse("plantemplate-from-plan"),
+            {"course": eighth.pk, "title": "Алгебра 8"},
+            format="json",
+        )
+        eighth_template = PlanTemplate.objects.get(title="Алгебра 8")
+
+        # администратор поправил параллель курса: теперь он девятый
+        eighth.grade = self.course.grade
+        eighth.save(update_fields=["grade"])
+
+        response = self.client.post(
+            reverse("plantemplate-update-from-plan", args=[eighth_template.pk]),
+            {"course": eighth.pk},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400, response.content)
+        self.assertEqual(response.json()["code"], "template_already_live")
+        eighth_template.refresh_from_db()
+        self.assertEqual(eighth_template.grade, 8)

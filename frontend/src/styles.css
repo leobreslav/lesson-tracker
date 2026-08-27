@@ -2042,10 +2042,17 @@ button.modal-close:hover {
   min-width: 0;
 }
 
-.template-list .badge {
+/* Метки строкой под названием: их бывает две — «черновик» и «веду», — и
+   каждая по отдельности прибивалась к одной и той же клетке сетки, то есть
+   вторая ложилась поверх первой. Ячейка одна, внутри ряд. Пустая ячейка
+   ничего не занимает: у неё нет ни отступов, ни содержимого. */
+.template-list .badges {
   grid-column: 1;
   grid-row: 2;
   justify-self: start;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
 }
 
 .template-list li.chosen {

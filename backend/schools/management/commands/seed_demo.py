@@ -1045,16 +1045,24 @@ class Command(BaseCommand):
         """
         source = courses["Grade 6 Algebra"], people["ivanova@example.com"]
 
+        # Последняя строка — **копия рядом с ведомым**, и она тут не для
+        # объёма. Живой шаблон у автора один на предмет и параллель, остальные
+        # его шаблоны снимки; пока на полке нет обоих сразу, разницу между
+        # «Обновить в библиотеке» и «Сохранить копию» не увидеть глазами
+        # вовсе — а увидеть её надо, потому что вторая кнопка обещает, что
+        # первая эту запись не тронет.
         shelf = (
             ("Алгебра 6, по учебнику", subjects["Алгебра"], 6,
-             people["ivanova@example.com"], True, source),
+             people["ivanova@example.com"], True, True, source),
             ("Геометрия 9, базовая", subjects["Геометрия"], 9,
-             people["petrov@example.com"], True, PARTIAL_PLAN),
+             people["petrov@example.com"], True, True, PARTIAL_PLAN),
             ("Алгебра 9, черновик", subjects["Алгебра"], 9,
-             people["petrov@example.com"], False, PARTIAL_PLAN),
+             people["petrov@example.com"], False, True, PARTIAL_PLAN),
+            ("Алгебра 6, как было в сентябре", subjects["Алгебра"], 6,
+             people["ivanova@example.com"], True, False, PARTIAL_PLAN),
         )
 
-        for title, subject, grade, author, published, blocks in shelf:
+        for title, subject, grade, author, published, live, blocks in shelf:
             if PlanTemplate.objects.filter(school=school, title=title).exists():
                 continue
 
@@ -1066,6 +1074,7 @@ class Command(BaseCommand):
                 description="Демонстрационный шаблон из seed_demo.",
                 author=author,
                 is_published=published,
+                is_live=live,
             )
 
             if blocks is source:

@@ -321,13 +321,18 @@ def make_subject(school, name="Алгебра"):
 
 
 def make_template(school, author, *, subject=None, grade=9, title="Шаблон",
-                  published=True, rows=()):
+                  published=True, live=True, rows=()):
     """
     A shelf entry. `rows` are (is_header, title) pairs in display order.
 
     Published by default: a draft is the special case worth spelling out at
     the call site, since «who can see it» is what most of these tests are
     about.
+
+    `live=False` — снимок. Живой шаблон у автора один на предмет и параллель
+    (`one_live_template_per_subject_and_grade`), поэтому **второй шаблон того
+    же автора по тому же предмету обязан быть снимком** — иначе фикстура
+    описывает состояние, которого в базе не бывает.
     """
     from library.models import PlanTemplate, PlanTemplateRow
 
@@ -338,6 +343,7 @@ def make_template(school, author, *, subject=None, grade=9, title="Шаблон"
         title=title,
         author=author,
         is_published=published,
+        is_live=live,
     )
     PlanTemplateRow.objects.bulk_create(
         PlanTemplateRow(

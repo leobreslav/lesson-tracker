@@ -129,6 +129,12 @@ class Codes:
     GRADE_REQUIRED = "grade_required"
     PLAN_EMPTY = "plan_empty"
     TEMPLATE_ROW_UNKNOWN = "template_row_unknown"
+    # живой шаблон по предмету и параллели один: второй сделал бы «Обновить»
+    # снова двусмысленным, а именно от этого и уходим
+    TEMPLATE_ALREADY_LIVE = "template_already_live"
+    # снимок не переписывают: он затем и снимок. Передумали — сначала
+    # перевесьте пометку, и это видимое действие, а не побочный эффект
+    TEMPLATE_IS_A_SNAPSHOT = "template_is_a_snapshot"
     SUBJECT_NAME_TAKEN = "subject_name_taken"
     SUBJECT_IN_USE = "subject_in_use"
     ROOM_IN_USE = "room_in_use"

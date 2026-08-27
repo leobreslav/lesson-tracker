@@ -1108,6 +1108,9 @@ class ActionDoorTests(AccessTestCase):
         self.assertActionRules(
             actions=(
                 {"name": "plantemplate-update-from-plan", "method": "post"},
+                # перевешивание пометки «веду» — такое же авторское действие,
+                # как перезапись строк, и граница у него та же
+                {"name": "plantemplate-keep-updating", "method": "post"},
                 {"name": "plantemplate-rows", "method": "put", "body": {"rows": []}},
             ),
             obj=template,
