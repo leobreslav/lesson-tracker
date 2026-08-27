@@ -359,7 +359,7 @@ export default function Agenda({ views = null, onLoggedOut }) {
     [data, load, handleError],
   )
 
-  const handleAdd = ({ course, is_extra, reason, step, until }) => {
+  const handleAdd = ({ course, room, is_extra, reason, step, until }) => {
     const { date, number } = dialog
     setDialog(null)
 
@@ -371,7 +371,7 @@ export default function Agenda({ views = null, onLoggedOut }) {
      */
     if (step) {
       runBulk(
-        () => repeatSlot({ course, date, lesson_number: number, step, until }),
+        () => repeatSlot({ course, room, date, lesson_number: number, step, until }),
         // отчёт тот же, что у копирования периода: сколько создано, сколько
         // пропущено и что именно помешало
         (result) => describeCopyResult(result, t),
@@ -389,6 +389,11 @@ export default function Agenda({ views = null, onLoggedOut }) {
       is_cancelled: false,
       is_extra,
       reason,
+      // кабинет рисуется в клетке при включённом переключателе, и без него
+      // только что заведённый час стоял бы пустым до перечитывания — то
+      // есть выглядел бы ровно так, как выглядит потерянный кабинет
+      room,
+      room_name: rooms.find((item) => item.id === room)?.name ?? null,
     }
 
     return mutate(
@@ -401,6 +406,7 @@ export default function Agenda({ views = null, onLoggedOut }) {
       () =>
         createSlot({
           course,
+          room,
           date,
           lesson_number: number,
           is_extra,

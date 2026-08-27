@@ -32,6 +32,10 @@ test('урок ставится рядом и в своём расписании
   await page.locator(`[data-add="${MONDAY}:7"]`).click()
   const add = page.locator('dialog.modal')
   await add.getByRole('combobox').first().selectOption({ label: 'Grade 6 Algebra' })
+  // кабинет спрашивают в том же окне, что и повтор, значит он свойство
+  // ряда целиком. Терялся он молча и на обеих сторонах разом: занятия
+  // появлялись, число в отчёте сходилось, кабинета не было ни у одного
+  await add.getByLabel('Кабинет').selectOption({ label: 'Лаборатория' })
   await add.getByRole('radio', { name: 'через неделю' }).check()
   // «до» подстрокой попадает и в «дополнительный урок» — берём точное
   await add.getByLabel('до', { exact: true }).fill('2026-10-05')
@@ -50,11 +54,20 @@ test('урок ставится рядом и в своём расписании
     .filter(
       (slot) => slot.lesson_number === 7 && slot.course_name === 'Grade 6 Algebra',
     )
-    .map((slot) => slot.date)
-    .sort()
+    .sort((a, b) => a.date.localeCompare(b.date))
 
   // «через неделю» — каждый второй понедельник, и ни одного за границей
-  expect(row).toEqual(['2026-09-07', '2026-09-21', '2026-10-05'])
+  expect(row.map((slot) => slot.date)).toEqual([
+    '2026-09-07',
+    '2026-09-21',
+    '2026-10-05',
+  ])
+  // и кабинет достался каждому часу, а не только первому
+  expect(row.map((slot) => slot.room_name)).toEqual([
+    'Лаборатория',
+    'Лаборатория',
+    'Лаборатория',
+  ])
 })
 
 test('любое нажатие по уроку открывает одно и то же меню', async ({

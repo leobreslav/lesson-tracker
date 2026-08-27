@@ -45,6 +45,25 @@ def school_teachers(serializer):
     return User.objects.filter(school_id=user.school_id, kind=User.Kind.TEACHER)
 
 
+def school_rooms(serializer):
+    """
+    Кабинеты своей школы — единственные, которые можно назвать в занятии.
+
+    Сужение здесь по тому же доводу, что у курса и учителя рядом: ключ в
+    теле запроса проходит мимо фильтра вьюхи, и без выборки занятие можно
+    было бы поставить в кабинет чужой школы. Стоило бы это не только
+    неверной записи: имя кабинета едет обратно в `room_name`, то есть
+    ответ рассказывал бы, как называются кабинеты у соседей.
+
+    Архивные остаются: из **выбора** они убраны на экране, а запрос может
+    прийти и про давнее занятие, которое в этом кабинете как раз и шло.
+    """
+    user = getattr(serializer.context.get("request"), "user", None)
+    if user is None or not user.is_authenticated or user.school_id is None:
+        return Room.objects.none()
+    return Room.objects.filter(school_id=user.school_id)
+
+
 def school_courses(serializer):
     """
     Courses of the requester's school — another school's cannot be referenced.
@@ -589,6 +608,10 @@ class SlotSerializer(serializers.ModelSerializer):
         fields["lesson"].validators = []
         # кто вёл — сотрудник школы: замену ведёт учитель, а не ученик
         fields["taught_by"].queryset = school_teachers(self)
+        # где идёт — кабинет своей школы. Сужается наравне с остальными
+        # ключами: без этого чужой кабинет проставился бы молча, а его имя
+        # уехало бы обратно в `room_name`
+        fields["room"].queryset = school_rooms(self)
         return fields
 
     def lead(self, obj):
@@ -1082,10 +1105,18 @@ class RepeatSerializer(serializers.Serializer):
     # который идёт раз в две недели, иначе рисуется вдвое чаще, чем бывает
     step = serializers.ChoiceField(choices=(1, 2), default=1)
     until = serializers.DateField()
+    # Кабинет — свойство **ряда**, а не одной его клетки. Спрашивается он в
+    # том же окне, что и повтор, и молча терялся: у ряда поля не было вовсе,
+    # так что «вторник, третий час, 214, до конца года» заводило тридцать
+    # четыре часа без кабинета — и проставлять его приходилось по одному.
+    room = serializers.PrimaryKeyRelatedField(
+        queryset=Room.objects.none(), required=False, allow_null=True
+    )
 
     def get_fields(self):
         fields = super().get_fields()
         fields["course"].queryset = school_courses(self)
+        fields["room"].queryset = school_rooms(self)
         return fields
 
     def validate(self, attrs):

@@ -242,3 +242,75 @@ class RoomTravelsWithTheLessonTests(RoomTestCase):
         empty = self.slot(self.mine, room=self.room)
 
         self.assertIn(empty, Slot.objects.filter(**Slot.empty_conditions()))
+
+    def test_a_row_carries_the_room_into_every_hour_it_creates(self):
+        """
+        Кабинет — свойство **ряда**, а не той клетки, с которой он начался.
+
+        «Вторник, третий час, 214, до конца года» — одно решение, и ряд без
+        кабинета заставлял бы проставлять его потом по одному часу, то есть
+        отменял бы смысл самого ряда. Спрашивают о нём в том же окне, что и
+        о повторе, и терялся он молча: занятия появлялись, число в ответе
+        сходилось, не хватало ровно того, о чём спросили рядом.
+        """
+        self.client.force_authenticate(self.admin)
+
+        answer = self.client.post(
+            reverse("slot-repeat"),
+            {
+                "course": self.mine.pk,
+                "date": MONDAY.isoformat(),
+                "lesson_number": 4,
+                "step": 1,
+                "until": (MONDAY + timedelta(days=14)).isoformat(),
+                "room": self.room.pk,
+            },
+            format="json",
+        )
+
+        self.assertEqual(answer.status_code, 200, answer.content)
+        row = Slot.objects.filter(course=self.mine, lesson_number=4)
+        self.assertGreater(row.count(), 1, "ряд должен был завести больше часа")
+        self.assertFalse(
+            row.exclude(room=self.room).exists(),
+            "часы ряда завелись без кабинета: он спрошен один раз на весь ряд",
+        )
+
+    def test_a_room_of_another_school_cannot_be_named(self):
+        """
+        Ключ в теле запроса идёт мимо фильтра вьюхи, поэтому сужено поле.
+
+        Без сужения занятие вставало бы в кабинет соседней школы — и это не
+        только неверная запись: имя кабинета едет обратно в `room_name`, то
+        есть ответ рассказывал бы, как называются кабинеты у соседей.
+        Спрашивают кабинет две двери, и сужены обе: одиночный час и ряд.
+        """
+        alien = Room.objects.create(school=self.alien_school, name="Чужой 101")
+        self.client.force_authenticate(self.admin)
+
+        one = self.client.post(
+            reverse("slot-list"),
+            {
+                "course": self.mine.pk,
+                "date": MONDAY.isoformat(),
+                "lesson_number": 5,
+                "room": alien.pk,
+            },
+            format="json",
+        )
+        row = self.client.post(
+            reverse("slot-repeat"),
+            {
+                "course": self.mine.pk,
+                "date": MONDAY.isoformat(),
+                "lesson_number": 6,
+                "step": 1,
+                "until": (MONDAY + timedelta(days=14)).isoformat(),
+                "room": alien.pk,
+            },
+            format="json",
+        )
+
+        self.assertEqual(one.status_code, 400, one.content)
+        self.assertEqual(row.status_code, 400, row.content)
+        self.assertFalse(Slot.objects.filter(room=alien).exists())

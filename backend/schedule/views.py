@@ -1111,8 +1111,15 @@ class SlotViewSet(SchoolScopedViewSet):
                 skipped=skipped,
                 occupied=occupied,
                 busy=busy,
+                # кабинет — свойство ряда целиком: «вторник, третий час, 214»
+                # это одно решение, а не тридцать четыре, и проставлять его
+                # потом по одному часу значило бы отменять смысл ряда
                 make=lambda day, at: Slot(
-                    year=year, course=course, date=day, lesson_number=at
+                    year=year,
+                    course=course,
+                    date=day,
+                    lesson_number=at,
+                    room=data.get("room"),
                 ),
             )
             Slot.objects.bulk_create(result["created"])
