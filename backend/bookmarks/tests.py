@@ -136,6 +136,35 @@ class TheShelfBelongsToOnePersonTests(ShelfTestMixin, APITestCase):
                 self.assertEqual(answer.status_code, 403, answer.content)
                 self.assertEqual(answer.json()["code"], "teachers_only")
 
+    def test_the_family_lays_nothing_on_a_shelf_of_its_own(self):
+        """
+        Раздел закрыт дверью папок, а вещи заводятся **общей** дверью.
+
+        `/api/attachments/` спрашивает только членство в школе, и семья
+        доходит до неё наравне с учителем — ей туда и надо, за своими же
+        фотографиями работ. Значит граница стола стоит не в двери, а в
+        выборке владельца, иначе ученик завёл бы себе закладку, которой
+        потом не увидит: `readable_attachments` уводит семью в свою ветку
+        раньше, чем доходит до стола.
+
+        Пропущенная проверка выглядела бы не как лишнее право, а как вещь,
+        которой нет ни на одном экране: найти и убрать её было бы нечем, а
+        файл при ней занимал бы место в квоте школы.
+        """
+        parent = make_user(self.school, "parent@example.com", parent=True)
+
+        for person in (self.student, parent):
+            with self.subTest(person.email):
+                self.sign_in(person)
+                answer = self.add(
+                    bookmark_owner=person.pk,
+                    url="https://example.org/mine",
+                    title="Себе на стол",
+                )
+                self.assertEqual(answer.status_code, 400, answer.content)
+
+        self.assertFalse(Attachment.objects.exists())
+
 
 class WhatLiesOnTheShelfTests(ShelfTestMixin, APITestCase):
     def test_a_link_a_note_and_a_file_all_go_on_the_shelf(self):
