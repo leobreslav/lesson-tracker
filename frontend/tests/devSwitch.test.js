@@ -3,7 +3,9 @@ import assert from 'node:assert/strict'
 
 import {
   ORIGIN_KEY,
+  forgetIfHome,
   forgetOrigin,
+  homeToken,
   origin,
   rememberOrigin,
   wayHome,
@@ -76,6 +78,41 @@ test('испорченное значение — это «дома не пом�
 
   assert.equal(origin(box), null)
   assert.equal(wayHome({ email: TEACHER.email }, box), null)
+})
+
+test('дома дорога домой забывается вместе с её токеном', () => {
+  // База стенда пересеяна или подменена целиком, а запись о доме её
+  // пережила: токен в ней мёртвый. Стучаться им в дверь нельзя — она
+  // ответит как анониму, и переключатель пропадёт совсем
+  const box = shelf()
+  rememberOrigin(ADMIN, box)
+
+  assert.equal(forgetIfHome({ email: ADMIN.email }, box), true)
+  assert.equal(origin(box), null)
+  // а раз записи нет, дверь спросят текущим токеном, и он живой
+  assert.equal(homeToken(box), null)
+})
+
+test('в гостях дорога домой не трогается', () => {
+  // подменившийся ходит чужим токеном, и home-токен — единственное, чем он
+  // может достучаться до двери на контуре со списком допущенных
+  const box = shelf()
+  rememberOrigin(ADMIN, box)
+
+  assert.equal(forgetIfHome({ email: TEACHER.email }, box), false)
+  assert.deepEqual(origin(box), ADMIN)
+  assert.equal(homeToken(box), ADMIN.token)
+})
+
+test('забывать нечего, когда пользователя ещё нет', () => {
+  // меню рисуется раньше, чем приехал профиль: не знать, кто мы, — это не
+  // повод стирать дорогу домой
+  const box = shelf()
+  rememberOrigin(ADMIN, box)
+
+  assert.equal(forgetIfHome(null, box), false)
+  assert.equal(forgetIfHome({}, box), false)
+  assert.deepEqual(origin(box), ADMIN)
 })
 
 test('приватный режим ничего не ломает', () => {

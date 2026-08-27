@@ -2,7 +2,13 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link, useLocation } from 'react-router-dom'
 import { fetchTestPeople, loginAsTestUser, logout } from './api'
-import { forgetOrigin, homeToken, rememberOrigin, wayHome } from './devSwitch'
+import {
+  forgetIfHome,
+  forgetOrigin,
+  homeToken,
+  rememberOrigin,
+  wayHome,
+} from './devSwitch'
 import { LANGUAGES } from './i18n'
 
 /**
@@ -151,6 +157,11 @@ function SwitchUser({ user }) {
 
   useEffect(() => {
     let cancelled = false
+
+    // Дома дороги домой нет, а запись о ней бывает старше текущей базы:
+    // мёртвым токеном дверь стучать нельзя, она ответит как анониму — и
+    // переключатель пропадёт там, где он как раз и нужен
+    forgetIfHome(user)
 
     fetchTestPeople(homeToken())
       .then((result) => !cancelled && setPeople(result.people))
