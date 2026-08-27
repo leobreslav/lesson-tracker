@@ -16,16 +16,8 @@ import PlanTable from './PlanTable'
 import PlanDiff from './PlanDiff'
 import { dragId } from './PlanDnd'
 import Modal from './Modal'
-import {
-  debtSlots,
-  freeSlots,
-  layoutTotals,
-  passedSlots,
-  recordedSlots,
-  stitchLayout,
-} from './planLayout'
+import { usePlanLayout } from './usePlanLayout'
 import { shortDate } from './dates'
-import { today } from './calendarLogic'
 import CoursePicker from './CoursePicker'
 import { useDismissable } from './UserMenu'
 import DebtsDialog from './DebtsDialog'
@@ -285,25 +277,45 @@ export default function Plan({ user, onLoggedOut }) {
       .then((answer) => !cancelled && setSupervised(answer.plans))
       .catch(() => !cancelled && setSupervised([]))
 
-    /*
-     * Курсы школы — всем, и гейта по роли тут больше нет.
-     *
-     * Стоял он не из осторожности, а по факту: чужой план отдавался только
-     * администратору и назначенному методисту, поэтому у рядового учителя
-     * группа «Курсы школы» обещала бы то, чего сервер не даст, — и каждый
-     * выбор ронял бы в консоль пару 404. Теперь живой план курса читает вся
-     * школа (`plans/approval.readable`), и обещать нечему: чужой открывается
-     * на чтение, свой правится как правился.
-     */
-    fetchCourses(null, { scope: 'school' })
-      .then((list) => !cancelled && setSchoolCourses(list))
-      .catch(() => !cancelled && setSchoolCourses([]))
-
     Promise.all([fetchCourses(), fetchSchoolYears()])
       .then(([classList, yearList]) => {
         if (cancelled) return
         setClasses(classList)
         setYears(yearList)
+
+        /*
+         * Курсы школы — всем, и гейта по роли тут больше нет.
+         *
+         * Стоял он не из осторожности, а по факту: чужой план отдавался
+         * только администратору и назначенному методисту, поэтому у
+         * рядового учителя группа «Курсы школы» обещала бы то, чего сервер
+         * не даст, — и каждый выбор ронял бы в консоль пару 404. Теперь
+         * живой план курса читает вся школа (`plans/approval.readable`), и
+         * обещать нечему: чужой открывается на чтение, свой правится как
+         * правился.
+         *
+         * А вот **год тут один — текущий**, и это не про право: читать
+         * прошлогодний план школа по-прежнему вправе, ручка отдаёт его как
+         * отдавала. Это про то, на какой вопрос отвечает экран.
+         *
+         * Чужой план открывают ради раскладки: когда у вас производная, на
+         * чём вы остановились, успеваете ли до конца четверти. Все три
+         * вопроса — про идущий год; у прошлого «остановились» нет вовсе, а
+         * даты его сетки отвечают на вопрос, которого никто не задавал.
+         * Прошлогодняя программа нужна другим и по-другому — как образец,
+         * с которого начинают свой план, — и на это в проекте есть
+         * библиотека: снимок на полке, который берут копией.
+         *
+         * Год берётся тот же, каким его считают «Школа» и школьное
+         * расписание, — самый свежий: `SchoolYear` отдаётся упорядоченным
+         * по убыванию начала. Второго определения «текущего года» в
+         * проекте нет и заводить его тут незачем.
+         */
+        const current = yearList[0]?.id ?? null
+
+        fetchCourses(current, { scope: 'school' })
+          .then((list) => !cancelled && setSchoolCourses(list))
+          .catch(() => !cancelled && setSchoolCourses([]))
       })
       .catch((err) => {
         if (!cancelled) handleError(err)
@@ -564,29 +576,11 @@ export default function Plan({ user, onLoggedOut }) {
   /**
    * Даты, границы термов и сводка — пересчитываются на каждый рендер.
    *
-   * Это и есть смысл задачи: добавили урок — строки ниже съехали, а конец
-   * четверти пришёлся на другую строку. Пересчёт стоит один проход по
-   * плану, поэтому ни дебаунса, ни запроса здесь не нужно.
+   * Считает их `usePlanLayout` — тот же хук, каким считает свою раскладку
+   * экран чужого плана: два прохода по одному плану дали бы две ленты дат,
+   * и расходиться они начали бы молча.
    */
-  const layout = useMemo(() => {
-    // сшивка одна на всё: и строки таблицы, и сводка, и хвост свободных
-    // слотов — это разные взгляды на один проход, а не три расчёта
-    const stitched = stitchLayout(planRows(data?.nodes ?? []), ribbon, today())
-
-    return {
-      byId: new Map(stitched.map((row) => [row.id, row])),
-      totals: layoutTotals(stitched, ribbon),
-      free: freeSlots(stitched, ribbon),
-      // прошедшие часы без записи: их видно строкой в таблице, а не только
-      // счётчиком — час стоит в окружении, с датой, темой и соседями
-      debts: debtSlots(ribbon, today()),
-      // записанные — рядом с долгами и той же лентой: одно без другого не
-      // читается
-      recorded: recordedSlots(ribbon),
-      // прошедшие часы: пока их нет, год не начался и учёт показывать нечем
-      passed: passedSlots(ribbon, today()),
-    }
-  }, [data, ribbon])
+  const layout = usePlanLayout(data?.nodes, ribbon)
 
   const debtIds = useMemo(
     () => new Set(layout.debts.map((slot) => slot.id)),

@@ -1087,8 +1087,16 @@ class ActionDoorTests(AccessTestCase):
         # дан расписанию, — поэтому у сравнения границей осталась только
         # школа. Коллеги в этом списке нет намеренно: для него курс теперь
         # отличается от несуществующего, и это и есть суть правила.
+        # Лента дат и выгрузка стоят ровно там же и той же границей: коллеге
+        # чужой план виден, значит видна и раскладка, и файл — это тот же
+        # экран, доведённый до конца, а не новое право.
         self.assertActionRules(
-            actions=("planreview-diff",),
+            actions=(
+                "planreview-diff",
+                "planreview-layout-slots",
+                "planreview-export",
+                "planreview-export-xlsx",
+            ),
             obj=self.course,
             people=(self.stranger, self.alien_admin),
         )

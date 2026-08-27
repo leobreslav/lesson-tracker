@@ -485,12 +485,20 @@ export const previewPlanRows = (classId, rows, mode) =>
  *
  * A plain link will not do: the endpoint wants a token in the header, so the
  * file is fetched and handed to the browser as a blob.
+ *
+ * Адреса два, а работа одна. Свой план выгружается со страницы плана, чужой
+ * — с экрана чужого плана, и ходят они в разные ручки: у автора курс в
+ * `?course=`, у читателя — в пути, потому что и право там другое. Всё
+ * остальное — заголовок с токеном, разбор имени файла, blob — совпадает
+ * целиком, и вторая копия этого разошлась бы с первой на первой же правке.
  */
-export const downloadPlan = async (classId, format = 'xlsx') => {
+export const downloadPlan = async (classId, format = 'xlsx', { foreign = false } = {}) => {
   const token = getToken()
-  const query = new URLSearchParams({ course: classId })
   const path = format === 'xlsx' ? 'export-xlsx' : 'export'
-  const response = await fetch(`/api/plan/${path}/?${query}`, {
+  const address = foreign
+    ? `/api/plan/reviews/${encodeURIComponent(classId)}/${path}/`
+    : `/api/plan/${path}/?${new URLSearchParams({ course: classId })}`
+  const response = await fetch(address, {
     headers: token ? { Authorization: `Token ${token}` } : {},
   })
 
@@ -1059,6 +1067,16 @@ export const fetchReviews = () => request('/api/plan/reviews/')
  * поэтому адрес теперь — курс, а запрос стал состоянием плана.
  */
 export const fetchReview = (courseId) => request(`/api/plan/reviews/${courseId}/`)
+
+/**
+ * Лента слотов чужого курса — вторая половина его раскладки.
+ *
+ * Та же лента, что у автора (`fetchPlanSlots`), и сшивается она тем же
+ * `stitchLayout`: раскладка — правило, а не оформление, и «вид для
+ * читателя», посчитанный отдельно, разошёлся бы с авторским молча.
+ */
+export const fetchReviewSlots = (courseId) =>
+  request(`/api/plan/reviews/${courseId}/layout/slots/`)
 
 export const approveReview = (courseId) =>
   request(`/api/plan/reviews/${courseId}/approve/`, { method: 'POST' })

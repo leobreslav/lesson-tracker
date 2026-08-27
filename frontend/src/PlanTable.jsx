@@ -78,6 +78,10 @@ const FREE_INLINE = 5
 
 const EMPTY_SET = new Set()
 
+// пустой список сенсоров живёт снаружи: новый массив на каждый рендер
+// заставлял бы dnd-kit пересобирать их без повода
+const NO_SENSORS = []
+
 export default function PlanTable({
   nodes,
   layout,
@@ -93,7 +97,28 @@ export default function PlanTable({
   // выбор строк пачкой: сама таблица его только показывает и сообщает о
   // нажатиях, а что выбрано и что с этим делать — знает страница
   selected = EMPTY_SET,
-  actions,
+  /*
+   * Режим чтения: **та же** таблица, только смотреть.
+   *
+   * Заведён ради чужого плана. Соседу его показывали отдельным списком
+   * названий — и это был второй ответ на вопрос «как выглядит план»: без
+   * дат, без недель, без границ четвертей, без хвоста незанятых часов. То
+   * есть коллега видел не то же самое, что автор, а его пересказ, и
+   * расходиться этот пересказ начал бы с первой же правки таблицы.
+   *
+   * Поэтому режим, а не второй компонент. Разница между «править» и
+   * «смотреть» — это ровно набор органов управления, а не другая вёрстка:
+   * строка, дата, неделя, черта четверти и «сегодня» одинаковы у обоих, и
+   * одинаковыми они остаются по построению, а не по договорённости.
+   *
+   * Убрано всё, что пишет: перетаскивание, стрелки, «+», «✕», флажки
+   * выбора, формы добавления и правка названия. Ссылка с даты на занятие
+   * тоже: страница занятия принадлежит тому, кто его ведёт.
+   *
+   * Свёртка тем при этом осталась — это вид, а не правка.
+   */
+  readOnly = false,
+  actions = {},
 }) {
   const {
     toggleSection,
@@ -412,7 +437,9 @@ export default function PlanTable({
    * переезжает за созданную строку, и якорем становится она.
    */
   const addFormFor = (parent, after) =>
-    adding && adding.parent === parent && adding.after === after ? addForm() : null
+    !readOnly && adding && adding.parent === parent && adding.after === after
+      ? addForm()
+      : null
 
   /**
    * Проведённая строка стоит на месте — и тема, в которой такая есть.
@@ -423,7 +450,9 @@ export default function PlanTable({
    * отклоняет; кнопки убраны затем, чтобы это было видно до нажатия.
    */
   const locked = (node) =>
-    Boolean(node.taught) || (node.children ?? []).some((child) => child.taught)
+    readOnly ||
+    Boolean(node.taught) ||
+    (node.children ?? []).some((child) => child.taught)
 
   /**
    * Сквозной номер последней проведённой строки — граница прошлого.
@@ -546,7 +575,7 @@ export default function PlanTable({
   const heldNoRoom = heldNode ? locked(heldNode) || beforeTaught(heldNode) : false
 
   const moveButtons = (node, isSection) => {
-    if (locked(node)) return null
+    if (readOnly || locked(node)) return null
 
     const noRoom = beforeTaught(node)
 
@@ -714,27 +743,29 @@ export default function PlanTable({
                   {labelled && t('plan.week', { number: slot.week })}
                 </span>
                 <span className="plan-state" />
-                <Link
-                  className="plan-date"
-                  to={`/lesson/${slot.id}`}
-                  title={t('plan.openLesson')}
-                >
-                  {dayMonth(slot.date)} <em>{shortWeekday(slot.date)}</em>
-                </Link>
+                {dateText(slot)}
                 {selectCell()}
                 {/* ни ручки, ни номера: это не строка плана, а пустое место
                     в расписании */}
                 <span />
                 <span />
                 <span className="plan-title-cell">
-                  <button
-                    type="button"
-                    className="link title free-slot"
-                    disabled={busy}
-                    onClick={() => add({ parent: null, fixedKind: true })}
-                  >
-                    {t('plan.freeSlot')}
-                  </button>
+                  {/* «Урок не назначен» — приглашение дописать строку, и в
+                      чужом плане оно ведёт туда, куда нельзя. Сам факт при
+                      этом остаётся: незанятые часы в конце года читателю
+                      как раз и интересны */}
+                  {readOnly ? (
+                    <span className="title free-slot">{t('plan.freeSlot')}</span>
+                  ) : (
+                    <button
+                      type="button"
+                      className="link title free-slot"
+                      disabled={busy}
+                      onClick={() => add({ parent: null, fixedKind: true })}
+                    >
+                      {t('plan.freeSlot')}
+                    </button>
+                  )}
                 </span>
               </li>
             ))}
@@ -770,7 +801,8 @@ export default function PlanTable({
    * это десять нажатий, а именно от них и уходим.
    */
   const selectCell = (node = null) => {
-    if (!node || node.is_section || node.taught) return <span className="plan-pick" />
+    if (readOnly || !node || node.is_section || node.taught)
+      return <span className="plan-pick" />
 
     return (
       <span className={selected.has(node.id) ? 'plan-pick picked' : 'plan-pick'}>
@@ -784,6 +816,30 @@ export default function PlanTable({
           onChange={() => {}}
         />
       </span>
+    )
+  }
+
+  /**
+   * Дата часа — и ссылка на него, пока план свой.
+   *
+   * Строка плана отвечает «что проходим», занятие — «как оно прошло», и
+   * ведёт туда именно дата: она и есть то место строки, где речь заходит о
+   * конкретном дне. У чужого плана вести некуда — страница занятия
+   * принадлежит тому, кто его ведёт, — и дата остаётся датой.
+   */
+  const dateText = (slot) => {
+    const text = (
+      <>
+        {dayMonth(slot.date)} <em>{shortWeekday(slot.date)}</em>
+      </>
+    )
+
+    if (readOnly) return <span className="plan-date">{text}</span>
+
+    return (
+      <Link className="plan-date" to={`/lesson/${slot.id}`} title={t('plan.openLesson')}>
+        {text}
+      </Link>
     )
   }
 
@@ -835,13 +891,7 @@ export default function PlanTable({
           {recorded ? '✓' : unclosed ? '•' : ''}
         </span>
         {slot ? (
-          <Link
-            className="plan-date"
-            to={`/lesson/${slot.id}`}
-            title={t('plan.openLesson')}
-          >
-            {dayMonth(slot.date)} <em>{shortWeekday(slot.date)}</em>
-          </Link>
+          dateText(slot)
         ) : (
           <span className="plan-date missing">{t('plan.noSlot')}</span>
         )}
@@ -874,18 +924,27 @@ export default function PlanTable({
           {handle}
           <span className="plan-number">{node.number}</span>
           <span className={parent ? 'plan-title-cell nested' : 'plan-title-cell'}>
-            <button
-              type="button"
-              className="link title"
-              title={node.title}
-              disabled={busy}
-              onClick={() => openLesson(node.id)}
-            >
-              {/* `$\sin(a+b)$` в сорока строках подряд читается хуже, чем
-                  сама формула; в `title=` при этом остаётся исходный текст —
-                  подсказка должна показывать то, что правят */}
-              <MathText text={node.title} />
-            </button>
+            {/* `$\sin(a+b)$` в сорока строках подряд читается хуже, чем
+                сама формула; в `title=` при этом остаётся исходный текст —
+                подсказка должна показывать то, что правят.
+
+                В режиме чтения название не кнопка: за ним открывается окно
+                урока, где содержание правят, — а чужой урок не правят */}
+            {readOnly ? (
+              <span className="title" title={node.title}>
+                <MathText text={node.title} />
+              </span>
+            ) : (
+              <button
+                type="button"
+                className="link title"
+                title={node.title}
+                disabled={busy}
+                onClick={() => openLesson(node.id)}
+              >
+                <MathText text={node.title} />
+              </button>
+            )}
 
             {/* Значков «есть содержание» и «есть вложения» тут больше нет.
                 Они отвечали на вопрос, которого таблице не задают: за
@@ -902,29 +961,35 @@ export default function PlanTable({
                 там же, где содержание, — в окне урока. */}
           </span>
 
+          {/* колонка действий нужна пустой и в режиме чтения: сетка одна
+              на все строки, и без неё названия поехали бы вправо */}
           <span className="row-actions">
-            {moveButtons(node, false)}
-            {mayInsertAfter(node) && (
-              <button
-                type="button"
-                className="link"
-                title={t('plan.insertAfter')}
-                disabled={busy}
-                onClick={() => add({ parent, after: node.id })}
-              >
-                +
-              </button>
-            )}
-            {!locked(node) && (
-              <button
-                type="button"
-                className="link"
-                title={t('common.delete')}
-                disabled={busy}
-                onClick={() => removeLesson(node)}
-              >
-                ✕
-              </button>
+            {!readOnly && (
+              <>
+                {moveButtons(node, false)}
+                {mayInsertAfter(node) && (
+                  <button
+                    type="button"
+                    className="link"
+                    title={t('plan.insertAfter')}
+                    disabled={busy}
+                    onClick={() => add({ parent, after: node.id })}
+                  >
+                    +
+                  </button>
+                )}
+                {!locked(node) && (
+                  <button
+                    type="button"
+                    className="link"
+                    title={t('common.delete')}
+                    disabled={busy}
+                    onClick={() => removeLesson(node)}
+                  >
+                    ✕
+                  </button>
+                )}
+              </>
             )}
           </span>
         </>
@@ -973,15 +1038,23 @@ export default function PlanTable({
               ) : (
                 <>
                   <span className="plan-title-cell">
-                    <button
-                      type="button"
-                      className="link title"
-                      title={t('plan.rename')}
-                      disabled={busy}
-                      onClick={() => startEdit(node)}
-                    >
-                      <MathText text={node.title} />
-                    </button>
+                    {/* за названием темы прячется переименование — в чужом
+                        плане прятать там нечего */}
+                    {readOnly ? (
+                      <span className="title">
+                        <MathText text={node.title} />
+                      </span>
+                    ) : (
+                      <button
+                        type="button"
+                        className="link title"
+                        title={t('plan.rename')}
+                        disabled={busy}
+                        onClick={() => startEdit(node)}
+                      >
+                        <MathText text={node.title} />
+                      </button>
+                    )}
                     {/* только число уроков: даты этой главы и так стоят в её
                         строках, а левая колонка — не место для правой зоны */}
                     <span className="hint block-count">
@@ -992,6 +1065,8 @@ export default function PlanTable({
                   </span>
 
                   <span className="row-actions">
+                    {!readOnly && (
+                      <>
                     {moveButtons(node, true)}
                     {/*
                       «+» везде значит одно: вставить **сразу под этой
@@ -1033,6 +1108,8 @@ export default function PlanTable({
                     >
                       ✕
                     </button>
+                      </>
+                    )}
                   </span>
                 </>
               )}
@@ -1070,7 +1147,9 @@ export default function PlanTable({
   return (
     <>
       <DndContext
-        sensors={sensors}
+        // в режиме чтения сенсоров нет вовсе: строки не «заперты», а
+        // перетаскивания на этом экране не существует
+        sensors={readOnly ? NO_SENSORS : sensors}
         collisionDetection={collisionDetection}
         accessibility={{ screenReaderInstructions: dndInstructions }}
         onDragStart={handleDragStart}

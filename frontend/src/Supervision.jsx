@@ -1,11 +1,23 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import CourseRow from './CourseRow'
-import MathText from './MathText'
+import PlanTable from './PlanTable'
 import { DiffBody } from './PlanDiff'
 import Switch from './Switch'
 import { shortDate } from './dates'
-import { approveReview, fetchReview, fetchReviewDiff, returnReview } from './api'
+import { countBlocks, planRows } from './planLogic'
+import { usePlanLayout } from './usePlanLayout'
+import {
+  approveReview,
+  downloadPlan,
+  fetchReview,
+  fetchReviewDiff,
+  fetchReviewSlots,
+  returnReview,
+} from './api'
+
+/** Во что выгружают чужой план — те же два формата, что у автора. */
+const FORMATS = ['xlsx', 'csv']
 
 /**
  * Чужой план — на месте своего.
@@ -27,6 +39,27 @@ import { approveReview, fetchReview, fetchReviewDiff, returnReview } from './api
  * План виден **всегда**, а не только по присланному запросу: запрос — это
  * пометка в строке и подпись над планом («на утверждение не присылали»).
  *
+ * **Показан он той же таблицей, что у автора** (`PlanTable` с `readOnly`), а
+ * не своим списком названий. Список тут стоял и отвечал ровно на один вопрос
+ * — «что написано»; приходят же с другими: когда у вас производная, на чём
+ * вы остановились, успеваете ли до конца четверти. Отвечают на них даты,
+ * номера недель, границы четвертей, черта «сегодня» и хвост незанятых часов
+ * — то есть раскладка, которой в списке не было вовсе. Заодно список был
+ * вторым ответом на вопрос «как выглядит план» и разошёлся бы с первым в
+ * первую же правку таблицы.
+ *
+ * Разница между «править» и «смотреть» — это набор органов управления, а не
+ * другая вёрстка, и живёт она одним пропом. Долги по записи сюда при этом не
+ * приезжают: «не отметил двенадцать занятий» — про дисциплину заполнения, а
+ * не про программу, и в чужом обзоре выглядит фактом, за которым никто не
+ * приходил. Проведённые часы видны — за ними и пришли.
+ *
+ * **Выгрузка стоит здесь же.** Показать и не дать взять — не защита, а
+ * неудобство: сорок строк, которые видно, но нельзя ни сверить столбцом к
+ * столбцу, ни распечатать, всё равно перепишут руками и с ошибками. Файл
+ * собирает тот же код, что у автора, и отдаёт по той же границе, по которой
+ * этот план и открылся.
+ *
  * Утвердить или вернуть — здесь же, и только у того, кому это можно
  * (`may_decide` с сервера). Возврат без замечания не принимается: учителю
  * нечего исправлять, а «верните как было» — не разговор.
@@ -47,6 +80,11 @@ export default function Supervision({ courseId, busy, onError, onDone }) {
   const [chosen, setChosen] = useState(null)
   const [returning, setReturning] = useState(false)
   const [comment, setComment] = useState('')
+  // лента слотов чужого курса: даты, четверти и каникулы между уроками
+  const [ribbon, setRibbon] = useState([])
+  // свёрнутые темы: это вид, а не правка, и читателю он нужен так же —
+  // план на сорок строк листают, свернув то, что уже посмотрели
+  const [collapsed, setCollapsed] = useState(() => new Set())
 
   const row = plan?.row ?? null
   const request = row?.review?.status === 'pending' ? row.review : null
@@ -58,8 +96,22 @@ export default function Supervision({ courseId, busy, onError, onDone }) {
     setChosen(null)
     setReturning(false)
     setComment('')
+    setRibbon([])
+    setCollapsed(new Set())
 
     fetchReview(courseId).then(setPlan).catch(onError)
+
+    /*
+     * Лента дат — вторым запросом, и её отказ экран не роняет.
+     *
+     * План без дат читается: это программа, и «что написано» она отвечает
+     * и так. А вот у курса, которому ещё не составили расписание, ленты
+     * нет вовсе — состояние законное и частое (сентябрь ещё не собрали),
+     * и падать на нём было бы неверно вдвойне.
+     */
+    fetchReviewSlots(courseId)
+      .then((answer) => setRibbon(answer.slots))
+      .catch(() => setRibbon([]))
   }, [courseId])
 
   useEffect(() => {
@@ -67,6 +119,37 @@ export default function Supervision({ courseId, busy, onError, onDone }) {
     // смена версии на миг возвращала бы к списку плана
     fetchReviewDiff(courseId, chosen).then(setDiff).catch(onError)
   }, [courseId, chosen])
+
+  /**
+   * Раскладка — тем же хуком, каким её считает автор плана.
+   *
+   * Даты у строк, номера недель, границы четвертей, черта «сегодня» и
+   * хвост незанятых часов. Своим расчётом «для читателя» это быть не
+   * может: раскладка — правило (час со связью показывает свой урок,
+   * отменённый час места не занимает), и два прохода разошлись бы молча —
+   * ровно там, где двое смотрят в один план и спорят о датах.
+   */
+  const dated = ribbon.length > 0
+  const layout = usePlanLayout(plan?.nodes, ribbon)
+  const blocks = useMemo(
+    () => countBlocks(planRows(plan?.nodes ?? [])),
+    [plan],
+  )
+
+  const toggleSection = (id) =>
+    setCollapsed((current) => {
+      const next = new Set(current)
+      if (!next.delete(id)) next.add(id)
+      return next
+    })
+
+  const takeAway = async (format) => {
+    try {
+      await downloadPlan(courseId, format, { foreign: true })
+    } catch (err) {
+      onError(err)
+    }
+  }
 
   /**
    * Что сказать про утверждение — ровно то же, что видит учитель.
@@ -211,28 +294,72 @@ export default function Supervision({ courseId, busy, onError, onDone }) {
                   ]}
                 />
               )}
+              {/*
+                Взять файлом — не только посмотреть.
+
+                Показать и не дать взять — это не защита, а неудобство:
+                сорок строк, которые видно, но нельзя ни сверить столбцом к
+                столбцу, ни распечатать перед разговором, всё равно
+                перепишут руками и с ошибками. Права выгрузка не расширяет
+                ни на грамм — файл собирает тот же код, что у автора, и
+                отдаёт по той же границе, по какой этот план и открылся.
+
+                Формат называет саму кнопку: у выгрузки это вопрос «во
+                что», а не настройка, которую держат включённой. Меню тут
+                не заводим — в ряду и так тумблер, а двух кнопок меньше,
+                чем меню с двумя пунктами.
+              */}
+              {FORMATS.map((name) => (
+                <button
+                  key={name}
+                  type="button"
+                  className="secondary"
+                  disabled={busy}
+                  onClick={() => takeAway(name)}
+                >
+                  {t('plan.exportAs', { format: name })}
+                </button>
+              ))}
             </span>
           </div>
 
           {/* план целиком — тот, что методист видит сейчас: правки после
               отправки ничего не отзывают, и утверждается увиденное */}
+          {/*
+            План целиком — **той же таблицей**, что у автора, только на
+            чтение.
+
+            Своим списком названий это было, и список отвечал ровно на один
+            вопрос: «что написано». А приходят к соседу с другими — когда у
+            вас производная, на чём вы остановились, успеваете ли до конца
+            четверти, — и на них отвечают даты, недели, границы четвертей и
+            хвост незанятых часов, то есть всё то, чего в списке не было.
+            Заодно это был второй ответ на вопрос «как выглядит план»,
+            который начал бы расходиться с первым в первую же правку
+            таблицы.
+
+            Долги по записи (прошедший час без записи) сюда не приезжают, и
+            это то же решение, что вынуло их из строки состояния: «не
+            отметил двенадцать занятий» — про дисциплину заполнения, а не
+            про программу, и в чужом обзоре это поле выглядит фактом, за
+            которым никто не приходил. Проведённые часы при этом видны:
+            «на чём остановились» — как раз то, зачем сюда пришли.
+          */}
           {comparing && diff ? (
             <DiffBody data={diff} onVersion={setChosen} />
           ) : (
-            <ul className="review-plan">
-              {plan.rows.map((item) => (
-                <li
-                  key={item.position}
-                  className={item.is_section ? 'section' : 'lesson'}
-                >
-                  {/* формулы рисуются формулами, как в таблице плана и в
-                      сравнении: `$\sin(a+b)$` в списке из сорока строк
-                      читается хуже, чем сама математика, — и методисту
-                      незачем видеть план хуже, чем его видит автор */}
-                  <MathText text={item.title} />
-                </li>
-              ))}
-            </ul>
+            <PlanTable
+              readOnly
+              nodes={plan.nodes}
+              layout={layout}
+              blocks={blocks}
+              dated={dated}
+              busy={busy}
+              collapsed={collapsed}
+              editing={null}
+              adding={null}
+              actions={{ toggleSection }}
+            />
           )}
 
           {/* Решают только то, что прислали, и только те, кому это можно:

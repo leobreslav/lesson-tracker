@@ -62,7 +62,7 @@ test('учитель отправляет план, методист утвер�
   // методист видит запрос и присланный план
   await signIn(PEOPLE.petrov)
   await openSupervised(page, 'Grade 6 Algebra')
-  await expect(page.locator('.review-plan li').first()).toBeVisible()
+  await expect(page.locator('.plan .plan-row').first()).toBeVisible()
   await page.getByRole('button', { name: 'Утвердить' }).click()
   // план с экрана не уходит — он виден и без запроса; уходит то, что было
   // про запрос: кнопки решения и заголовок «Присланный план»
@@ -129,7 +129,7 @@ test('правка после отправки запрос не отзывае�
 
   await signIn(PEOPLE.petrov)
   await openSupervised(page, 'Grade 6 Algebra')
-  await expect(page.locator('.review-plan')).toContainText('Урок после отправки')
+  await expect(page.locator('ul.plan')).toContainText('Урок после отправки')
 })
 
 test('без методиста у курса отправка объясняет, почему нельзя', async ({
@@ -203,7 +203,7 @@ test('методист без своих курсов видит прислан�
   // и ждущий подписи встаёт впереди курсов школы, которые он вправе чинить
   await expect(page.locator('.empty-state')).toHaveCount(0)
   await expect(page.getByLabel('Курс')).toHaveValue(String(course.id))
-  await expect(page.locator('.review-plan li').first()).toBeVisible()
+  await expect(page.locator('.plan .plan-row').first()).toBeVisible()
   await expect(page.getByRole('button', { name: 'Утвердить' })).toBeVisible()
 })
 
@@ -249,7 +249,7 @@ test('методист видит курс, план которого никто
   // на подпись была просто единственным входом. Заголовок при этом другой —
   // это рабочий черновик, за который автор ещё не отвечал
   await expect(page.getByRole('heading', { name: 'План курса' })).toBeVisible()
-  await expect(page.locator('.review-plan .lesson').first()).not.toBeEmpty()
+  await expect(page.locator('.plan-row.lesson').first()).not.toBeEmpty()
 
   // решать при этом нечего, и кнопок нет: они обещали бы то, чего сервер
   // не сделает
@@ -327,7 +327,7 @@ test('свой курс показывает свой план, даже есл�
   )
 
   await page.getByRole('button', { name: 'Рассмотреть запрос' }).click()
-  await expect(page.locator('.review-plan li').first()).toBeVisible()
+  await expect(page.locator('.plan .plan-row').first()).toBeVisible()
   await page.getByRole('button', { name: 'Утвердить' }).click()
 
   // после решения возвращаемся к своему плану, и оно уже записано.
@@ -406,17 +406,17 @@ test('методист смотрит на то же сравнение, что 
 
   await signIn(PEOPLE.petrov)
   await openSupervised(page, 'Grade 6 Algebra')
-  await expect(page.locator('.review-plan li').first()).toBeVisible()
+  await expect(page.locator('.plan .plan-row').first()).toBeVisible()
 
   await page.getByRole('radio', { name: 'Сравнение' }).click()
   const added = page.locator('.diff-row.added')
   await expect(added).toHaveCount(1)
   await expect(added).toContainText('Дополнительный урок')
   // список плана уступил место сравнению, а не встал рядом с ним
-  await expect(page.locator('.review-plan')).toHaveCount(0)
+  await expect(page.locator('ul.plan')).toHaveCount(0)
 
   await page.getByRole('radio', { name: 'План', exact: true }).click()
-  await expect(page.locator('.review-plan li').first()).toBeVisible()
+  await expect(page.locator('.plan .plan-row').first()).toBeVisible()
 })
 
 test('сравнивают с любым утверждением, а не только с последним', async ({
@@ -486,12 +486,29 @@ test('чужой план школы открывается на чтение л
   await picker.selectOption({ label: 'Grade 9 Algebra' })
 
   // план виден целиком, вместе с числами и именем ведущего
-  await expect(page.locator('.review-plan li').first()).toBeVisible()
-  await expect(page.locator('.review-plan')).toContainText('Точки и прямые')
+  await expect(page.locator('.plan .plan-row').first()).toBeVisible()
+  await expect(page.locator('ul.plan')).toContainText('Точки и прямые')
   await expect(page.locator('.progress-list')).toContainText('Пётр Петров')
 
-  // и только на чтение: ни таблицы с правкой, ни решения по утверждению
-  await expect(page.locator('ul.plan')).toHaveCount(0)
+  // и виден он раскладкой, а не программой без дат: «когда у вас
+  // производная» и «на чём вы остановились» — это и есть те вопросы, с
+  // которыми приходят к чужому плану
+  // у темы ячейка даты пустая по построению — её диапазон стоит в строках,
+  // — поэтому спрашиваем строку урока
+  await expect(
+    page.locator('ul.plan .plan-row.lesson .plan-date').first(),
+  ).not.toBeEmpty()
+
+  // Таблица та же, что у автора, — и только на чтение.
+  //
+  // Раньше тут стояло «таблицы нет вовсе»: чужой план показывали отдельным
+  // списком названий. Теперь список и таблица — одно, а разница между
+  // «править» и «смотреть» это набор органов управления, и проверяется
+  // именно он: ни ручки перетаскивания, ни кнопок строки, ни флажков
+  // выбора, ни панели инструментов, ни решения по утверждению.
+  await expect(page.locator('ul.plan button.handle')).toHaveCount(0)
+  await expect(page.locator('ul.plan .row-actions button')).toHaveCount(0)
+  await expect(page.locator('ul.plan input[type="checkbox"]')).toHaveCount(0)
   await expect(page.locator('.plan-tools')).toHaveCount(0)
   await expect(page.getByRole('button', { name: 'Утвердить' })).toHaveCount(0)
   await expect(page.getByRole('button', { name: 'Вернуть' })).toHaveCount(0)

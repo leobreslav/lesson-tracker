@@ -296,6 +296,73 @@ def diff_payload(course, chosen=None) -> dict:
     }
 
 
+def course_ribbon(course) -> list:
+    """
+    Лента слотов курса: даты, термы и каникулы между уроками.
+
+    Половина раскладки, **не зависящая от плана**, — и потому единственная,
+    которую спрашивают у сервера: сшивает её с планом страница у себя
+    (`planLayout.js`), и даты сдвигаются в тот же миг, когда урок добавили
+    или перетащили.
+
+    Функция, а не метод, потому что ленту просят с двух экранов: автор — у
+    своего плана, коллега — у чужого. Лента обязана быть **той же**: даты,
+    границы четвертей и каникулы — это календарь школы, и два ответа на
+    один вопрос разошлись бы ровно там, где по ним начинают спорить.
+    """
+    slots = Slot.objects.filter(
+        course=course, is_cancelled=False
+    ).order_by("date", "lesson_number")
+    breaks = course.year.exceptions.filter(
+        kind=DayException.Kind.VACATION
+    ).order_by("start_date")
+
+    # учебные дни года нужны ради нумерации недель: каникулярная неделя
+    # номера не получает, и счёт идёт по занятиям, а не по календарю
+    study = [day.date for day in course.year.build_days() if day.is_study]
+
+    return services.slot_ribbon(
+        list(slots), course.year.terms.all(), breaks, study_days=study
+    )
+
+
+#: чем собирается файл плана и чем он назовётся в ответе
+PLAN_FORMATS = {
+    "csv": (services.build_plan_csv, "text/csv; charset=utf-8"),
+    "xlsx": (
+        xlsx.build_plan_xlsx,
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    ),
+}
+
+
+def plan_download(course, extension):
+    """
+    План файлом «план_<курс>_<дата>.<расширение>».
+
+    Функция, а не метод вьюсета, потому что просят выгрузку с **двух**
+    экранов: автор — со своей страницы плана (`?course=`), коллега — с
+    экрана чужого плана (по id курса в пути). Формат при этом обязан быть
+    один: файл коллеги, отличающийся от файла автора хоть столбцом, — это
+    второй формат, который разойдётся с импортом в первую же правку.
+
+    Права сюда не входят намеренно: кто дошёл до курса, решает вызывающий,
+    и решает он это по-разному — своим `requested_course` у автора,
+    queryset'ом чтения у читателя со стороны.
+    """
+    build, content_type = PLAN_FORMATS[extension]
+    content = build(services.get_tree(course.pk))
+
+    name = f"план_{course.name}_{timezone.localdate()}.{extension}"
+    response = HttpResponse(content, content_type=content_type)
+    # имя с кириллицей — только через RFC 5987, плюс ascii-запасное
+    response["Content-Disposition"] = (
+        f'attachment; filename="plan.{extension}"; '
+        f"filename*=UTF-8''{quote(name)}"
+    )
+    return response
+
+
 def perform_move(node, data) -> Response:
     form = MoveSerializer(data=data)
     form.is_valid(raise_exception=True)
@@ -462,25 +529,7 @@ class PlanNodeViewSet(CourseScopedViewSet):
         дальше сшивает с планом у себя — и даты сдвигаются в тот же миг,
         когда урок добавили или перетащили.
         """
-        course = self.requested_course()
-        slots = Slot.objects.filter(
-            course=course, is_cancelled=False
-        ).order_by("date", "lesson_number")
-        breaks = course.year.exceptions.filter(
-            kind=DayException.Kind.VACATION
-        ).order_by("start_date")
-
-        # учебные дни года нужны ради нумерации недель: каникулярная неделя
-        # номера не получает, и счёт идёт по занятиям, а не по календарю
-        study = [day.date for day in course.year.build_days() if day.is_study]
-
-        return Response(
-            {
-                "slots": services.slot_ribbon(
-                    list(slots), course.year.terms.all(), breaks, study_days=study
-                )
-            }
-        )
+        return Response({"slots": course_ribbon(self.requested_course())})
 
     @action(detail=False, methods=["get"])
     def layout(self, request):
@@ -874,12 +923,7 @@ class PlanNodeViewSet(CourseScopedViewSet):
     @action(detail=False, methods=["get"], url_path="export", url_name="export")
     def export_csv(self, request):
         """Выгрузка плана в CSV — формат тот же, что понимает импорт."""
-        course = self.requested_course()
-        content = services.build_plan_csv(services.get_tree(course.pk))
-
-        return self.as_download(
-            content, course, "csv", "text/csv; charset=utf-8"
-        )
+        return plan_download(self.requested_course(), "csv")
 
     @action(detail=False, methods=["get"], url_path="export-xlsx",
             url_name="export-xlsx")
@@ -890,26 +934,7 @@ class PlanNodeViewSet(CourseScopedViewSet):
         Оформление (текстовый формат ячеек, закреплённая шапка, запертый
         столбец id) живёт в `plans/xlsx.py` — здесь только выдача файла.
         """
-        course = self.requested_course()
-        content = xlsx.build_plan_xlsx(services.get_tree(course.pk))
-
-        return self.as_download(
-            content,
-            course,
-            "xlsx",
-            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        )
-
-    def as_download(self, content, course, extension, content_type):
-        """Файл под именем «план_<курс>_<дата>.<расширение>»."""
-        name = f"план_{course.name}_{timezone.localdate()}.{extension}"
-        response = HttpResponse(content, content_type=content_type)
-        # имя с кириллицей — только через RFC 5987, плюс ascii-запасное
-        response["Content-Disposition"] = (
-            f'attachment; filename="plan.{extension}"; '
-            f"filename*=UTF-8''{quote(name)}"
-        )
-        return response
+        return plan_download(self.requested_course(), "xlsx")
 
     @action(detail=False, methods=["get"])
     def diff(self, request):
@@ -1351,7 +1376,7 @@ class PlanReviewViewSet(ReadOnlyModelViewSet):
         """
         return Response(self.course_payload(self.get_object()))
 
-    def course_payload(self, course, rows=None):
+    def course_payload(self, course):
         """
         Ответ на весь экран: чей курс, что в плане, и что с ним можно сделать.
 
@@ -1372,9 +1397,6 @@ class PlanReviewViewSet(ReadOnlyModelViewSet):
         курс, и в чужом обзоре это поле выглядит фактом, за которым никто не
         приходил.
         """
-        if rows is None:
-            rows = services.plan_snapshot(course.pk)
-
         # имя не `row`: строчкой ниже то же слово занято под строку плана
         state = progress.rows_for([course], timezone.localdate())[0]
         state.pop("records", None)
@@ -1388,10 +1410,16 @@ class PlanReviewViewSet(ReadOnlyModelViewSet):
             "teacher": person(progress.teachers_of([course]).get(course.pk)),
             # запрос — состояние плана, а не причина его показывать
             "review": request_payload(approval.open_request(course.pk)),
-            "rows": [
-                {"position": position, "is_section": row.is_section, "title": row.title}
-                for position, row in enumerate(rows)
-            ],
+            # План приезжает **тем же деревом**, что у автора
+            # (`tree_payload`), а не плоским списком названий.
+            #
+            # Плоским он был, и это был второй ответ на вопрос «как выглядит
+            # план»: без дат, без недель, без границ четвертей, без хвоста
+            # незанятых часов — пересказ, который начал бы расходиться с
+            # оригиналом с первой же правки таблицы. Рисует его теперь та же
+            # `PlanTable` в режиме чтения, и ей нужно ровно это дерево:
+            # номера уроков, вложенность и пометка «проведён».
+            **tree_payload(course.pk),
             # Право решать приезжает ответом, а не выводится из роли: правило
             # сложнее роли — методист **этого курса**, — и экран, гадающий о
             # нём сам, однажды разошёлся бы с сервером и нарисовал бы
@@ -1414,6 +1442,60 @@ class PlanReviewViewSet(ReadOnlyModelViewSet):
         return Response(
             diff_payload(self.get_object(), request.query_params.get("baseline"))
         )
+
+    @action(detail=True, methods=["get"], url_path="layout/slots",
+            url_name="layout-slots")
+    def layout_slots(self, request, pk=None):
+        """
+        Лента слотов чужого курса — то, чего экрану не хватало, чтобы
+        показать план **раскладкой**, а не списком.
+
+        Программа без дат отвечает только на «что написано», а спрашивают у
+        соседа обычно другое: «когда у вас производная», «на чём вы
+        остановились», «успеваете ли до конца четверти». Список из сорока
+        строк на эти вопросы не отвечает вовсе — по нему даже не видно, что
+        началось, а что ещё нет.
+
+        Ленту берёт та же `course_ribbon`, а сшивает её с планом тот же
+        `stitchLayout` на клиенте, что и у автора. Это не аккуратность:
+        раскладка — правило (связь сильнее позиции, отменённый час не
+        занимает места), и второй её расчёт «для читателя» разошёлся бы с
+        первым молча, ровно там, где двое смотрят в одно и спорят.
+
+        Границы права новой тут нет: `get_object` берёт курс из queryset'а
+        чтения, того же, что у `retrieve`.
+        """
+        return Response({"slots": course_ribbon(self.get_object())})
+
+    @action(detail=True, methods=["get"], url_path="export", url_name="export")
+    def export_csv(self, request, pk=None):
+        """
+        Чужой план — файлом, а не только глазами.
+
+        Читать план соседа школа уже вправе, и просят его именно затем,
+        чтобы с ним что-то сделать: смежник сверяет две программы столбцом
+        к столбцу, заменяющий несёт план в свою таблицу, методист
+        распечатывает перед разговором. До сих пор всё это упиралось в
+        экран: сорок строк, которые можно только переписать руками.
+
+        Права нового тут нет ни на грамм — граница та же, что у `retrieve`
+        и `diff`: `get_object` берёт курс из того же queryset'а чтения, и
+        чужая школа по-прежнему неотличима от несуществующей. Выгрузка не
+        расширяет чтение, она его **заканчивает**: показать и не дать взять
+        — это не защита, а неудобство, потому что взять всё равно возьмут,
+        только руками и с ошибками.
+
+        Файл тот же, что у автора (`plan_download`), и это главное: план,
+        выгруженный коллегой, обязан импортироваться обратно так же, как
+        свой. Второй формат «для чтения» разошёлся бы с импортом молча.
+        """
+        return plan_download(self.get_object(), "csv")
+
+    @action(detail=True, methods=["get"], url_path="export-xlsx",
+            url_name="export-xlsx")
+    def export_xlsx(self, request, pk=None):
+        """Тот же чужой план книгой Excel — оформление из `plans/xlsx.py`."""
+        return plan_download(self.get_object(), "xlsx")
 
     @action(detail=True, methods=["post"])
     def approve(self, request, pk=None):

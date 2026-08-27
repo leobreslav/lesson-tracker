@@ -88,6 +88,21 @@ class ApprovalTestCase(PlanTestCase):
             reverse("planreview-detail", args=[(course or self.course).pk])
         )
 
+    def review_titles(self, body):
+        """
+        Названия строк подряд, как их читают глазами.
+
+        План приезжает сюда **деревом** — тем же, что у автора, — потому
+        что рисует его та же таблица. Плоский вид у двухуровневого дерева
+        ровно один: тема, за ней её уроки.
+        """
+        titles = []
+        for node in body["nodes"]:
+            titles.append(node["title"])
+            titles.extend(child["title"] for child in node.get("children", []))
+
+        return titles
+
     def approve(self, course=None):
         return self.client.post(
             reverse("planreview-approve", args=[(course or self.course).pk])
@@ -203,9 +218,9 @@ class ReviewTests(ApprovalTestCase):
 
         body = self.review().json()
 
-        self.assertEqual(len(body["rows"]), 10)
-        self.assertEqual(body["rows"][0]["title"], "Тригонометрия")
-        self.assertTrue(body["rows"][0]["is_section"])
+        self.assertEqual(len(self.review_titles(body)), 10)
+        self.assertEqual(body["nodes"][0]["title"], "Тригонометрия")
+        self.assertTrue(body["nodes"][0]["is_section"])
         # числа приезжают строкой состояния — той же, что у автора плана
         self.assertEqual(body["row"]["slots_total"], 0)
         self.assertEqual(body["row"]["reserve"], -7)
@@ -254,7 +269,7 @@ class ReviewTests(ApprovalTestCase):
         body = self.review().json()
 
         self.assertEqual(self.supervised_row()["review"]["status"], "pending")
-        self.assertIn("Дописанный после отправки", [row["title"] for row in body["rows"]])
+        self.assertIn("Дописанный после отправки", self.review_titles(body))
 
         self.approve()
 
@@ -359,8 +374,8 @@ class SupervisionTests(ApprovalTestCase):
         """
         body = self.review().json()
 
-        self.assertEqual(len(body["rows"]), 10)
-        self.assertEqual(body["rows"][0]["title"], "Тригонометрия")
+        self.assertEqual(len(self.review_titles(body)), 10)
+        self.assertEqual(body["nodes"][0]["title"], "Тригонометрия")
         self.assertEqual(body["row"]["lessons_total"], 7)
         # запрос — состояние плана, а не пропуск к нему
         self.assertIsNone(body["review"])
@@ -650,8 +665,8 @@ class AnyTeacherReadsThePlanTests(ApprovalTestCase):
 
         self.assertEqual(response.status_code, 200, response.content)
         body = response.json()
-        self.assertEqual(len(body["rows"]), 10)
-        self.assertEqual(body["rows"][0]["title"], "Тригонометрия")
+        self.assertEqual(len(self.review_titles(body)), 10)
+        self.assertEqual(body["nodes"][0]["title"], "Тригонометрия")
         self.assertEqual(body["course"]["id"], self.course.pk)
 
     def test_the_numbers_come_with_it(self):
@@ -730,3 +745,157 @@ class AnyTeacherReadsThePlanTests(ApprovalTestCase):
             self.client.get(reverse("planreview-diff", args=[self.course.pk])).status_code,
             404,
         )
+
+
+class ColleagueSeesTheDatesTests(ApprovalTestCase):
+    """
+    Чужой план читается **раскладкой**, а не списком названий.
+
+    Программа без дат отвечает ровно на один вопрос — «что написано», — а к
+    соседу приходят с другими: когда у вас производная, на чём вы
+    остановились, успеваете ли до конца четверти. Список из сорока строк не
+    отвечает ни на один: по нему не видно даже, что уже прошло.
+
+    Лента дат для этого нужна та же, что у автора (`course_ribbon`), и
+    сшивается она тем же `stitchLayout` на клиенте. Раскладка — правило, а
+    не оформление: связь сильнее позиции, отменённый час места не занимает,
+    — и второй её расчёт «для читателя» разошёлся бы с первым молча, ровно
+    там, где двое смотрят в одно и спорят.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.first = make_slot(self.user, self.course, day=MONDAY, number=1)
+        self.second = make_slot(
+            self.user, self.course, day=MONDAY + timedelta(days=1), number=1
+        )
+        self.reader = make_user(self.school, "reader@example.com")
+        self.client.force_authenticate(self.reader)
+
+    def ribbon(self, course=None):
+        return self.client.get(
+            reverse("planreview-layout-slots", args=[(course or self.course).pk])
+        )
+
+    def test_a_colleague_gets_the_dates_of_a_foreign_course(self):
+        response = self.ribbon()
+
+        self.assertEqual(response.status_code, 200, response.content)
+        dates = [slot["date"] for slot in response.json()["slots"]]
+        self.assertEqual(dates, [str(MONDAY), str(MONDAY + timedelta(days=1))])
+
+    def test_it_is_the_very_same_ribbon_the_author_sees(self):
+        """
+        Две ленты одного курса — это два ответа на вопрос про календарь
+        школы, и разойтись им негде, кроме как молча.
+        """
+        seen_by_reader = self.ribbon().json()
+
+        self.client.force_authenticate(self.user)
+        seen_by_author = self.client.get(
+            f"{reverse('plannode-layout-slots')}?course={self.course.pk}"
+        ).json()
+
+        self.assertEqual(seen_by_reader, seen_by_author)
+
+    def test_the_plan_arrives_as_the_very_tree_the_author_edits(self):
+        """
+        Читателю приезжает **то же дерево**, что автору, а не список названий.
+
+        Списком это было, и рисовать по нему можно было только список: ни
+        дат, ни номеров уроков, ни вложенности, ни пометки «проведён». То
+        есть коллега видел не тот же план, а его пересказ — и пересказ
+        начал бы расходиться с оригиналом в первую же правку таблицы.
+        """
+        nodes = self.review().json()["nodes"]
+        trig = nodes[0]
+
+        self.assertTrue(trig["is_section"])
+        self.assertEqual(
+            [child["title"] for child in trig["children"]],
+            ["Синус суммы", "Косинус суммы"],
+        )
+        # сквозной номер — то, чем строка названа в разговоре: «мы на
+        # четвёртом уроке». Считается он обходом дерева, и у читателя
+        # обязан совпадать с авторским
+        self.assertEqual([child["number"] for child in trig["children"]], [1, 2])
+
+    def test_a_top_level_lesson_stays_at_the_top_level(self):
+        """
+        Урок верхнего уровня и урок внутри темы — разные вещи, и плоский
+        список их не различал: «Повторение» стоит сразу за темой «Векторы»
+        и в списке выглядело её частью. У темы от этого поехал бы диапазон
+        дат — ровно тот ответ, ради которого раскладку и открывают.
+        """
+        titles = [node["title"] for node in self.review().json()["nodes"]]
+
+        self.assertIn("Повторение", titles)
+
+    def test_a_cancelled_hour_takes_no_place_in_the_ribbon(self):
+        """Тот же расчёт, что у автора: сорванный час места в году не занимает."""
+        self.second.is_cancelled = True
+        self.second.save(update_fields=["is_cancelled"])
+
+        self.assertEqual(len(self.ribbon().json()["slots"]), 1)
+
+    def test_another_school_gets_no_dates_either(self):
+        self.client.force_authenticate(self.stranger)
+
+        self.assertEqual(self.ribbon().status_code, 404)
+
+
+class ColleagueTakesThePlanAsAFileTests(ApprovalTestCase):
+    """
+    Чужой план — файлом, а не только глазами.
+
+    Показать и не дать взять — не защита, а неудобство: сорок строк, которые
+    видно, но нельзя ни сверить столбцом к столбцу, ни распечатать перед
+    разговором, переписывают руками и с ошибками. Права это не расширяет ни
+    на грамм: граница у выгрузки та же, что у чтения.
+
+    Файл при этом обязан быть **тем же**, что у автора: план, выгруженный
+    коллегой, ложится обратно импортом так же, как свой, а второй формат
+    «для чтения» разошёлся бы с импортом в первую же правку.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.reader = make_user(self.school, "reader@example.com")
+        self.client.force_authenticate(self.reader)
+
+    def export(self, kind="export", course=None):
+        return self.client.get(
+            reverse(f"planreview-{kind}", args=[(course or self.course).pk])
+        )
+
+    def test_a_colleague_downloads_the_plan_as_csv(self):
+        response = self.export()
+
+        self.assertEqual(response.status_code, 200, response.content)
+        text = response.content.decode("utf-8-sig")
+        self.assertEqual(text.splitlines()[0], "id,Тема,Урок")
+        self.assertIn("Синус суммы", text)
+
+    def test_the_file_is_the_one_the_author_gets(self):
+        taken_by_reader = self.export().content
+
+        self.client.force_authenticate(self.user)
+        taken_by_author = self.client.get(
+            f"{reverse('plannode-export')}?course={self.course.pk}"
+        ).content
+
+        self.assertEqual(taken_by_reader, taken_by_author)
+
+    def test_the_book_opens_too_and_carries_the_class_in_its_name(self):
+        response = self.export("export-xlsx")
+
+        self.assertEqual(response.status_code, 200, response.content)
+        # xlsx — это zip, и начинается он подписью «PK»
+        self.assertTrue(response.content.startswith(b"PK"))
+        self.assertIn("filename*=UTF-8''", response["Content-Disposition"])
+
+    def test_another_school_takes_nothing(self):
+        self.client.force_authenticate(self.stranger)
+
+        self.assertEqual(self.export().status_code, 404)
+        self.assertEqual(self.export("export-xlsx").status_code, 404)
