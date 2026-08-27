@@ -566,6 +566,10 @@ test('черновик публикуется и снимается с публ�
   await teacher.post('/api/library/templates/from-plan/', {
     course: course.id,
     title: 'Свежий черновик',
+    // Петров уже ведёт «Алгебра 9, черновик», а живой по предмету и
+    // параллели один — второй отклоняется. Значит эта запись по определению
+    // копия, и кладём её так же, как её положил бы человек.
+    is_live: false,
   })
 
   await signIn(PEOPLE.petrov)
@@ -574,13 +578,15 @@ test('черновик публикуется и снимается с публ�
 
   const shelf = page.locator('dialog.modal')
   const row = shelf.locator('li', { hasText: 'Свежий черновик' })
-  await expect(row.locator('.badge')).toHaveText('черновик')
+  // именно метка черновика: рядом с ней у ведомого шаблона стоит вторая
+  const draftBadge = row.locator('.badge', { hasText: 'черновик' })
+  await expect(draftBadge).toBeVisible()
 
   await row.getByRole('button', { name: 'Опубликовать' }).click()
-  await expect(row.locator('.badge')).toHaveCount(0)
+  await expect(draftBadge).toHaveCount(0)
 
   await row.getByRole('button', { name: 'Вернуть в черновики' }).click()
-  await expect(row.locator('.badge')).toHaveText('черновик')
+  await expect(draftBadge).toBeVisible()
 })
 
 test('просмотр шаблона показывает уроки до того, как его взяли', async ({
@@ -592,8 +598,10 @@ test('просмотр шаблона показывает уроки до то�
   await planMenu(page, 'Открыть библиотеку')
 
   const shelf = page.locator('dialog.modal').first()
+  // название целиком: на полке лежат и «Алгебра 6, по учебнику», и её копия
+  // «Алгебра 6, как было в сентябре» — по префиксу находятся обе
   await shelf
-    .locator('li', { hasText: 'Алгебра 6' })
+    .locator('li', { hasText: 'Алгебра 6, по учебнику' })
     .getByRole('button', { name: 'Посмотреть' })
     .click()
 

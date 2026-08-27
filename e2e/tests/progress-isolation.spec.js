@@ -159,6 +159,9 @@ test('автор свой черновик видит и помечен метк
 
   const draft = shelf.locator('li', { hasText: 'Алгебра 9, черновик' })
   await expect(draft).toBeVisible()
-  await expect(draft.locator('.badge')).toHaveText('черновик')
+  // меток в строке бывает две: «черновик» и «веду». Этот шаблон петров и
+  // ведёт, поэтому спрашиваем про нужную, а не про единственную
+  await expect(draft.locator('.badge', { hasText: 'черновик' })).toBeVisible()
+  await expect(draft.locator('.badge', { hasText: 'веду' })).toBeVisible()
 })
 
