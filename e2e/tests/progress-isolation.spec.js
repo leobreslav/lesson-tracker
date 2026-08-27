@@ -112,9 +112,15 @@ test('второй учитель не видит уроков первого, �
   expect(offered).toContain('Grade 6 Algebra')
 
   await picker.selectOption({ label: 'Grade 6 Algebra' })
-  await expect(page.locator('.review-plan li').first()).toBeVisible()
-  // ни таблицы с правкой, ни панели управления, ни решения по утверждению
-  await expect(page.locator('ul.plan')).toHaveCount(0)
+  await expect(page.locator('.plan .plan-row').first()).toBeVisible()
+  // Таблица та же, что у автора, — и только на чтение.
+  //
+  // Раньше тут стояло «таблицы нет вовсе»: чужой план показывали отдельным
+  // списком названий. Теперь список и таблица — одно, а изоляция переехала
+  // туда, где ей и место: в органы правки, которых у читателя нет.
+  await expect(page.locator('ul.plan button.handle')).toHaveCount(0)
+  await expect(page.locator('ul.plan .row-actions button')).toHaveCount(0)
+  await expect(page.locator('ul.plan input[type="checkbox"]')).toHaveCount(0)
   await expect(page.locator('.plan-tools')).toHaveCount(0)
   await expect(page.getByRole('button', { name: 'Утвердить' })).toHaveCount(0)
 
