@@ -22,7 +22,7 @@ const SAMPLE = [
   '414,,Повторение',
 ]
 
-const RULES = ['oneRow', 'repeat', 'emptyTheme', 'emptyId']
+const RULES = ['oneRow', 'repeat', 'emptyTheme', 'emptyId', 'dates']
 const MODES = ['sync', 'append', 'replace']
 
 export default function PlanCsvHelp() {

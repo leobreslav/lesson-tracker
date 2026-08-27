@@ -11,17 +11,22 @@
 потому что непонятно, какая половина.
 """
 
+from datetime import date, timedelta
 from unittest.mock import patch
 
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import SimpleTestCase
 from django.urls import reverse
+from schedule.models import Slot
 
 from . import services
 from .models import PlanNode
 from .tests import PlanTestCase
 
 HEAD = "id,Тема,Урок\n"
+HEAD_DATED = "id,Тема,Урок,Дата\n"
+
+MONDAY = date(2026, 9, 7)
 
 SAMPLE = HEAD + (
     ",Тригонометрические формулы,Синус и косинус суммы\n"
@@ -260,7 +265,14 @@ class ImportApiTests(PlanTestCase):
         self.assertEqual(response.status_code, 200, response.content)
         self.assertEqual(
             response.json(),
-            {"created_rows": 5, "created_headers": 2, "created_lessons": 3},
+            {
+                "created_rows": 5,
+                "created_headers": 2,
+                "created_lessons": 3,
+                # столбца дат в этом файле не было, и ответ говорит об этом
+                # прямо: молча отброшенный столбец выглядел бы применённым
+                "dates_ignored": False,
+            },
         )
         self.assertEqual(
             self.titles(),
@@ -526,3 +538,207 @@ class ExportApiTests(PlanTestCase):
         self.client.credentials()
 
         self.assertEqual(self.export().status_code, 401)
+
+
+class DatedColumnParseTests(SimpleTestCase):
+    """
+    Четвёртый столбец «Дата»: читается и отбрасывается.
+
+    Дата в плане не живёт — её даёт раскладка, то есть расписание, — и
+    приехать импортом ей некуда. Отклонять такой файл при этом нельзя:
+    столбец пишет **наша же** выгрузка, и отказ означал бы, что выгруженное
+    не импортируется, а это главное свойство формата.
+
+    Угадывания тут не прибавилось: шапки ровно две, обе сравниваются
+    дословно, и всё, что не совпало ни с одной, по-прежнему отклоняется.
+    """
+
+    def test_the_dated_header_is_accepted(self):
+        parsed_plan = services.parse_plan_csv(
+            HEAD_DATED + ",Векторы,Понятие вектора,2026-09-07\n"
+        )
+
+        self.assertEqual(parsed_plan.errors, [])
+        self.assertEqual(
+            parsed(parsed_plan.rows), [("тема", "Векторы"), ("урок", "Понятие вектора")]
+        )
+
+    def test_the_file_says_that_the_dates_were_dropped(self):
+        # молча отброшенный столбец выглядит как применённый, а человек
+        # правил в нём даты и ждёт, что они куда-то поехали
+        dated = services.parse_plan_csv(HEAD_DATED + ",Векторы,Понятие,2026-09-07\n")
+        plain = services.parse_plan_csv(HEAD + ",Векторы,Понятие\n")
+
+        self.assertIs(dated.dates_ignored, True)
+        self.assertIs(plain.dates_ignored, False)
+
+    def test_an_empty_date_cell_is_fine(self):
+        """Уроку могло не достаться часа — тогда ячейка пуста, и это не отказ."""
+        parsed_plan = services.parse_plan_csv(HEAD_DATED + ",Векторы,Понятие,\n")
+
+        self.assertEqual(parsed_plan.errors, [])
+        self.assertEqual(parsed_plan.lessons, 1)
+
+    def test_a_fourth_column_without_the_dated_header_is_still_refused(self):
+        """
+        Ширину объявляет шапка, а не первая попавшаяся строка.
+
+        Иначе вернулось бы ровно то угадывание, ради отказа от которого
+        формат и сузили: файл с лишним столбцом читался бы «как-нибудь».
+        """
+        self.assertEqual(
+            codes(services.parse_plan_csv(HEAD + ",Векторы,Понятие,лишнее\n").errors),
+            ["csv_bad_columns"],
+        )
+
+    def test_a_fifth_column_is_refused_even_with_the_dated_header(self):
+        self.assertEqual(
+            codes(
+                services.parse_plan_csv(
+                    HEAD_DATED + ",Векторы,Понятие,2026-09-07,лишнее\n"
+                ).errors
+            ),
+            ["csv_bad_columns"],
+        )
+
+    def test_the_dated_header_alone_is_not_a_lesson(self):
+        """Шапка остаётся шапкой: строк данных в таком файле ноль."""
+        parsed_plan = services.parse_plan_csv(HEAD_DATED)
+
+        self.assertEqual(parsed_plan.rows, [])
+        self.assertEqual(parsed_plan.data_rows, 0)
+
+
+class ExportWithDatesTests(PlanTestCase):
+    """
+    Выгрузка «с датами» — тот же файл, которому объявили четвёртый столбец.
+
+    Не второй формат «для чтения»: такой файл ложится обратно импортом, и
+    круговой прогон это стережёт. Второй формат разошёлся бы с импортом в
+    первую же правку, и печатать план было бы не на чем.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.section = self.add("Тригонометрия", position=0, is_section=True)
+        self.sine = self.add("Синус суммы", parent=self.section, position=0)
+        self.cosine = self.add("Косинус суммы", parent=self.section, position=1)
+
+    def add_slot(self, day, number=1):
+        return Slot.objects.create(
+            year=self.course.year,
+            course=self.course,
+            date=day,
+            lesson_number=number,
+        )
+
+    def export(self, **params):
+        return self.client.get(
+            reverse("plannode-export"), {"course": self.course.pk, **params}
+        )
+
+    def lines(self, **params):
+        return self.export(**params).content.decode("utf-8-sig").splitlines()
+
+    def test_without_the_flag_the_file_is_the_old_one(self):
+        self.add_slot(MONDAY)
+
+        lines = self.lines()
+
+        self.assertEqual(lines[0], "id,Тема,Урок")
+        self.assertEqual(lines[1], f"{self.sine.pk},Тригонометрия,Синус суммы")
+
+    def test_the_dates_come_from_the_layout(self):
+        self.add_slot(MONDAY)
+        self.add_slot(MONDAY + timedelta(days=1))
+
+        lines = self.lines(dates="1")
+
+        self.assertEqual(lines[0], "id,Тема,Урок,Дата")
+        self.assertEqual(
+            lines[1], f"{self.sine.pk},Тригонометрия,Синус суммы,2026-09-07"
+        )
+        self.assertEqual(
+            lines[2], f"{self.cosine.pk},Тригонометрия,Косинус суммы,2026-09-08"
+        )
+
+    def test_a_lesson_without_an_hour_gets_an_empty_cell(self):
+        """
+        Пусто — это не «дата неизвестна», а «часа этому уроку не досталось».
+
+        План бывает длиннее расписания, и такие строки лежат в раскладке
+        как `no_slot`. Прочерк сказал бы то, чего раскладка не говорит.
+        """
+        self.add_slot(MONDAY)
+
+        lines = self.lines(dates="1")
+
+        self.assertEqual(
+            lines[2], f"{self.cosine.pk},Тригонометрия,Косинус суммы,"
+        )
+
+    def test_a_plan_without_a_schedule_exports_empty_cells(self):
+        lines = self.lines(dates="1")
+
+        self.assertEqual(lines[0], "id,Тема,Урок,Дата")
+        self.assertTrue(all(line.endswith(",") for line in lines[1:]), lines)
+
+    def test_the_dated_file_imports_back_unchanged(self):
+        """
+        Круговой прогон — то, ради чего столбец принимается, а не отклоняется.
+
+        Файл с датами уходит обратно тем же `sync`, и план от этого не
+        меняется ни строчкой: ноль созданных, ноль удалённых.
+        """
+        self.add_slot(MONDAY)
+        self.add_slot(MONDAY + timedelta(days=1))
+        before = self.titles_with_notes()
+
+        exported = self.export(dates="1").content
+        response = self.client.post(
+            f"{reverse('plannode-import')}?course={self.course.pk}",
+            {
+                "file": SimpleUploadedFile(
+                    "план.csv", exported, content_type="text/csv"
+                ),
+                "mode": "sync",
+            },
+            format="multipart",
+        )
+
+        self.assertEqual(response.status_code, 200, response.content)
+        body = response.json()
+        self.assertEqual(body["created"], 0)
+        self.assertEqual(body["deleted"], 0)
+        self.assertIs(body["dates_ignored"], True)
+        self.assertEqual(self.titles_with_notes(), before)
+
+    def test_editing_a_date_in_the_file_changes_nothing(self):
+        """
+        Дата приезжает обратно ничем, и это надо было закрепить тестом.
+
+        Место даты — в расписании: правка её в таблице плана не должна ни
+        двигать часы, ни отклонять файл. Иначе столбец обещал бы то, чего
+        не делает.
+        """
+        slot = self.add_slot(MONDAY)
+
+        self.client.post(
+            f"{reverse('plannode-import')}?course={self.course.pk}",
+            {
+                "file": SimpleUploadedFile(
+                    "план.csv",
+                    (
+                        HEAD_DATED
+                        + f"{self.sine.pk},Тригонометрия,Синус суммы,2030-01-01\n"
+                        + f"{self.cosine.pk},Тригонометрия,Косинус суммы,2030-01-02\n"
+                    ).encode(),
+                    content_type="text/csv",
+                ),
+                "mode": "sync",
+            },
+            format="multipart",
+        )
+
+        slot.refresh_from_db()
+        self.assertEqual(slot.date, MONDAY)

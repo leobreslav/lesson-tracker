@@ -492,12 +492,21 @@ export const previewPlanRows = (classId, rows, mode) =>
  * остальное — заголовок с токеном, разбор имени файла, blob — совпадает
  * целиком, и вторая копия этого разошлась бы с первой на первой же правке.
  */
-export const downloadPlan = async (classId, format = 'xlsx', { foreign = false } = {}) => {
+export const downloadPlan = async (
+  classId,
+  format = 'xlsx',
+  { foreign = false, dates = false } = {},
+) => {
   const token = getToken()
   const path = format === 'xlsx' ? 'export-xlsx' : 'export'
+  // `dates` — вопрос запроса, а не настройки: тот же файл с объявленным
+  // четвёртым столбцом, который импорт принимает и отбрасывает
+  const query = new URLSearchParams(foreign ? {} : { course: classId })
+  if (dates) query.set('dates', '1')
+  const suffix = query.toString() ? `?${query}` : ''
   const address = foreign
-    ? `/api/plan/reviews/${encodeURIComponent(classId)}/${path}/`
-    : `/api/plan/${path}/?${new URLSearchParams({ course: classId })}`
+    ? `/api/plan/reviews/${encodeURIComponent(classId)}/${path}/${suffix}`
+    : `/api/plan/${path}/${suffix}`
   const response = await fetch(address, {
     headers: token ? { Authorization: `Token ${token}` } : {},
   })

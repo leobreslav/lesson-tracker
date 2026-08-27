@@ -148,6 +148,9 @@ export default function Plan({ user, onLoggedOut }) {
   // оставляет в плане, который человек и не собирался открывать
   const [returnTo, setReturnTo] = useState(null)
   const [helpOpen, setHelpOpen] = useState(false) // справка о формате
+  // «с датами» — уточнение к выгрузке, а не настройка страницы: живёт
+  // столько же, сколько открытый экран, и никуда не сохраняется
+  const [exportDates, setExportDates] = useState(false)
   // xlsx по умолчанию: в нём нет ни кодировки, ни разделителя, ни кавычек,
   // то есть ровно тех трёх вещей, на которых спотыкается CSV
   const [ribbon, setRibbon] = useState([])
@@ -1057,7 +1060,7 @@ export default function Plan({ user, onLoggedOut }) {
   const handleExport = async (chosen) => {
     setError(null)
     try {
-      await downloadPlan(classId, chosen)
+      await downloadPlan(classId, chosen, { dates: exportDates })
     } catch (err) {
       handleError(err)
     }
@@ -1562,6 +1565,21 @@ export default function Plan({ user, onLoggedOut }) {
                       >
                         {t('plan.importFile')}
                       </button>
+                      <span className="dropdown-sep" />
+                      {/* «с датами» стоит над форматами, потому что уточняет
+                          их оба: вопрос «во что» и вопрос «с датами ли» —
+                          про один и тот же файл. Меню при этом не
+                          закрывается: ответив, человек тут же выгружает */}
+                      <label className="checkbox">
+                        <input
+                          type="checkbox"
+                          checked={exportDates}
+                          onChange={(event) =>
+                            setExportDates(event.target.checked)
+                          }
+                        />
+                        {t('plan.exportWithDates')}
+                      </label>
                       {/* формат называет пункт меню: у выгрузки он вопрос
                           «во что», а не настройка, которую держат включённой */}
                       {FORMATS.map((name) => (

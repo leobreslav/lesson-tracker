@@ -412,7 +412,8 @@ class RoundTripTests(SyncTestCase):
         # ноль созданных и ноль удалённых: файл описывает ровно тот план,
         # из которого он получен
         self.assertEqual(
-            response.json(), {"created": 0, "updated": 4, "deleted": 0}
+            response.json(),
+            {"created": 0, "updated": 4, "deleted": 0, "dates_ignored": False},
         )
         self.assertEqual(self.structure(), before)
         self.sine.refresh_from_db()

@@ -12,8 +12,18 @@
  */
 
 const CSV_HEADER = ['id', 'Тема', 'Урок']
+/**
+ * Тот же формат плюс столбец дат — им выгружают план «с датами».
+ *
+ * Дата в плане не живёт: её даёт раскладка, то есть расписание, и приехать
+ * обратно ей некуда. Поэтому столбец читается и отбрасывается, а не отвергает
+ * файл: иначе собственная выгрузка не ложилась бы обратно. Зеркало сервера
+ * (`services.CSV_HEADER_DATED`) — правьте оба места вместе.
+ */
+const CSV_HEADER_DATED = [...CSV_HEADER, 'Дата']
 const HEADER_TEXT = CSV_HEADER.join(',')
 const HEADER_NORMALIZED = CSV_HEADER.map(normalizedCell)
+const HEADER_DATED_NORMALIZED = CSV_HEADER_DATED.map(normalizedCell)
 
 const TITLE_LIMIT = 200
 const MAX_ROWS = 2000
@@ -89,16 +99,35 @@ export function sniffDelimiter(text) {
 }
 
 /**
- * Три ячейки строки — или null, если столбцов не три.
+ * Ячейки строки по объявленной ширине — или null, если столбцов не столько.
  *
- * Пустые столбцы справа Excel дописывает сам; заполненный пятый — уже
- * другой файл.
+ * Ширину называет шапка: три столбца у обычного файла, четыре у файла с
+ * датами. Пустые столбцы справа Excel дописывает сам; заполненный столбец за
+ * объявленной шириной — уже другой файл.
  */
-function rowCells(raw) {
-  const width = CSV_HEADER.length
+function rowCells(raw, width = CSV_HEADER.length) {
   if (raw.length < width) return null
   if (raw.slice(width).some((cell) => cell.trim())) return null
   return raw.slice(0, width).map((cell) => cell.trim())
+}
+
+/**
+ * Сколько столбцов объявила первая строка: три, четыре — или null, не шапка.
+ *
+ * Шапки ровно две, и обе сравниваются дословно. Угадыванием ширины это не
+ * является: либо шапка совпала целиком, либо файл отклонён — как и раньше.
+ */
+function headerWidth(raw) {
+  for (const expected of [HEADER_NORMALIZED, HEADER_DATED_NORMALIZED]) {
+    const head = rowCells(raw, expected.length)
+    if (
+      head !== null &&
+      head.every((cell, index) => normalizedCell(cell) === expected[index])
+    ) {
+      return expected.length
+    }
+  }
+  return null
 }
 
 const problem = (code, params) => ({ code, params })
@@ -107,18 +136,21 @@ export function parsePlanCsv(text) {
   const raws = readRows(text, sniffDelimiter(text))
 
   if (raws.length > MAX_ROWS + 1) {
-    return { rows: [], errors: [problem('file_too_many_rows', {})], dataRows: 0 }
+    return {
+      rows: [],
+      errors: [problem('file_too_many_rows', {})],
+      dataRows: 0,
+      datesIgnored: false,
+    }
   }
 
-  const head = raws.length ? rowCells(raws[0]) : null
-  const headerOk =
-    head !== null &&
-    head.every((cell, index) => normalizedCell(cell) === HEADER_NORMALIZED[index])
+  const width = raws.length ? headerWidth(raws[0]) : null
 
-  if (!headerOk) {
+  if (width === null) {
     return {
       rows: [],
       dataRows: 0,
+      datesIgnored: false,
       errors: [
         problem('csv_header_invalid', {
           expected: HEADER_TEXT,
@@ -139,12 +171,16 @@ export function parsePlanCsv(text) {
 
     dataRows += 1
 
-    const cells = rowCells(raw)
+    const cells = rowCells(raw, width)
     if (cells === null) {
-      errors.push(problem('csv_bad_columns', { row, count: raw.length }))
+      errors.push(
+        problem('csv_bad_columns', { row, count: raw.length, expected: width })
+      )
       return
     }
 
+    // четвёртая ячейка — дата, и она отбрасывается здесь: дальше формат
+    // ровно один, и знать про даты ему незачем
     const [idCell, theme, lesson] = cells
 
     if (theme && !lesson) {
@@ -185,5 +221,5 @@ export function parsePlanCsv(text) {
     })
   })
 
-  return { rows, errors, dataRows }
+  return { rows, errors, dataRows, datesIgnored: width > CSV_HEADER.length }
 }

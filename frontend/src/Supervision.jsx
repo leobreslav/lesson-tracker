@@ -82,6 +82,10 @@ export default function Supervision({ courseId, busy, onError, onDone }) {
   const [comment, setComment] = useState('')
   // лента слотов чужого курса: даты, четверти и каникулы между уроками
   const [ribbon, setRibbon] = useState([])
+  // «с датами» — уточнение к выгрузке, живёт столько же, сколько экран.
+  // Коллеге оно нужнее, чем автору: чужой план и открывают ради раскладки,
+  // а печатают перед разговором
+  const [exportDates, setExportDates] = useState(false)
   // свёрнутые темы: это вид, а не правка, и читателю он нужен так же —
   // план на сорок строк листают, свернув то, что уже посмотрели
   const [collapsed, setCollapsed] = useState(() => new Set())
@@ -145,7 +149,10 @@ export default function Supervision({ courseId, busy, onError, onDone }) {
 
   const takeAway = async (format) => {
     try {
-      await downloadPlan(courseId, format, { foreign: true })
+      await downloadPlan(courseId, format, {
+        foreign: true,
+        dates: exportDates,
+      })
     } catch (err) {
       onError(err)
     }
@@ -309,6 +316,18 @@ export default function Supervision({ courseId, busy, onError, onDone }) {
                 не заводим — в ряду и так тумблер, а двух кнопок меньше,
                 чем меню с двумя пунктами.
               */}
+              {/* «с датами» — то же уточнение, что у автора в меню, и здесь
+                  оно нужнее: чужой план открывают ради раскладки, а
+                  распечатывают перед разговором. Стоит перед кнопками,
+                  потому что уточняет их обе */}
+              <label className="checkbox">
+                <input
+                  type="checkbox"
+                  checked={exportDates}
+                  onChange={(event) => setExportDates(event.target.checked)}
+                />
+                {t('plan.exportWithDates')}
+              </label>
               {FORMATS.map((name) => (
                 <button
                   key={name}

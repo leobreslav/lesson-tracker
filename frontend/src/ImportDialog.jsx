@@ -336,6 +336,14 @@ export default function ImportDialog({ classId, busy, onSubmit, onClose }) {
           </p>
         )}
 
+        {/* столбец дат прочитан и отброшен: молча отброшенный столбец
+            выглядит как применённый, а правили в нём именно даты */}
+        {/* у CSV это видно сразу — разбор зеркальный и идёт в браузере;
+            у книги приезжает с сервера, потому что её клиент не читает */}
+        {(parsed?.datesIgnored || cost?.dates_ignored) && (
+          <p className="hint">{t('csv.datesIgnored')}</p>
+        )}
+
         {cost?.create_sections > 0 && mode === 'sync' && (
           <p className="hint">
             {t('csv.newSections', { count: cost.create_sections })}

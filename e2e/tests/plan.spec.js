@@ -426,6 +426,49 @@ test('xlsx: выгрузка возвращается обратно без ед
   await expect(lessonCount(page)).toHaveText(before)
 })
 
+test('xlsx с датами: тот же файл, и он тоже возвращается обратно', async ({
+  page,
+  signIn,
+}) => {
+  /*
+   * Выгрузка «с датами» — не второй формат «для чтения».
+   *
+   * Второй формат разошёлся бы с импортом в первую же правку, и печатать
+   * план было бы не на чем. Поэтому столбец «Дата» импорт **принимает** и
+   * отбрасывает — а раз отбрасывает, то говорит об этом вслух: молча
+   * выброшенный столбец выглядит как применённый.
+   */
+  await signIn(PEOPLE.ivanova)
+  await openPlan(page, 'Grade 6 Algebra')
+  const before = await lessonCount(page).textContent()
+
+  // галочка лежит в том же меню, что и форматы, и меню от неё не
+  // закрывается: ответив «с датами ли», человек тут же отвечает «во что»
+  await page.getByRole('button', { name: 'Файл', exact: true }).click()
+  const menu = page.locator('.plan-menu .dropdown')
+  await menu.getByRole('checkbox', { name: 'с датами' }).check()
+
+  const [download] = await Promise.all([
+    page.waitForEvent('download'),
+    menu.getByRole('button', { name: 'Экспорт в xlsx' }).click(),
+  ])
+  const saved = '/tmp/' + download.suggestedFilename()
+  await download.saveAs(saved)
+
+  await planMenu(page, /^Импорт/)
+  const dialog = page.locator('dialog.modal')
+  await dialog.locator('input[type="file"]').setInputFiles(saved)
+
+  await expect(dialog).toContainText('Столбец «Дата»')
+  await expect(dialog).toContainText('новых: 0')
+  await expect(dialog).toContainText('удалено: 0')
+
+  await dialog.getByRole('button', { name: 'Импортировать' }).click()
+  await expect(dialog).toBeHidden()
+
+  await expect(lessonCount(page)).toHaveText(before)
+})
+
 test('xlsx: чужой файл отклоняется понятным текстом', async ({ page, signIn }) => {
   await signIn(PEOPLE.petrov)
   await openPlan(page, EMPTY_COURSE)

@@ -326,6 +326,51 @@ def course_ribbon(course) -> list:
     )
 
 
+def wants_dates(request) -> bool:
+    """
+    Просят ли выгрузку с датами.
+
+    Вопрос запроса, а не настройки: «во что выгрузить» спрашивают раз в жизни
+    и отвечают на него в тот же миг, поэтому в странице состояния от этого не
+    прибавляется — как и у выбора формата.
+    """
+    return request.query_params.get("dates") == "1"
+
+
+def course_layout(course) -> list:
+    """
+    Раскладка курса: какой урок плана в каком часе.
+
+    Функция, а не метод, по той же причине, что и `course_ribbon`: раскладку
+    спрашивают с двух сторон — своя страница плана и выгрузка, которую просит
+    в том числе коллега, — и второй её расчёт разошёлся бы с первым молча.
+
+    Слоты берутся **по курсу**, а не по себе: курс мог сменить ведущего среди
+    года, и сентябрь тогда лежит у предшественника.
+    """
+    slots = Slot.objects.filter(
+        course=course, is_cancelled=False
+    ).order_by("date", "lesson_number")
+
+    return services.build_layout(
+        services.flatten_lessons(course.pk), list(slots), course.year.terms.all()
+    )
+
+
+def plan_dates(course) -> dict:
+    """
+    Даты строк плана: `pk строки → дата часа`, в котором она прошла или пройдёт.
+
+    Строки без часа сюда не попадают вовсе, и это не пропуск: план бывает
+    длиннее расписания, и у таких строк даты **нет** — не «неизвестна», а нет.
+    """
+    return {
+        entry.lesson.node.pk: entry.slot.date
+        for entry in course_layout(course)
+        if entry.lesson is not None and entry.slot is not None
+    }
+
+
 #: чем собирается файл плана и чем он назовётся в ответе
 PLAN_FORMATS = {
     "csv": (services.build_plan_csv, "text/csv; charset=utf-8"),
@@ -336,7 +381,7 @@ PLAN_FORMATS = {
 }
 
 
-def plan_download(course, extension):
+def plan_download(course, extension, *, with_dates=False):
     """
     План файлом «план_<курс>_<дата>.<расширение>».
 
@@ -346,12 +391,21 @@ def plan_download(course, extension):
     один: файл коллеги, отличающийся от файла автора хоть столбцом, — это
     второй формат, который разойдётся с импортом в первую же правку.
 
+    `with_dates` этого не нарушает, и в этом весь замысел. Столбец дат —
+    не второй формат «для чтения», а тот же самый файл с объявленной
+    четвёртой колонкой: импорт такую шапку принимает и колонку отбрасывает,
+    потому что дата в плане не живёт — её даёт расписание. Выгруженное
+    ложится обратно и с датами, и без.
+
     Права сюда не входят намеренно: кто дошёл до курса, решает вызывающий,
     и решает он это по-разному — своим `requested_course` у автора,
     queryset'ом чтения у читателя со стороны.
     """
     build, content_type = PLAN_FORMATS[extension]
-    content = build(services.get_tree(course.pk))
+    content = build(
+        services.get_tree(course.pk),
+        plan_dates(course) if with_dates else None,
+    )
 
     name = f"план_{course.name}_{timezone.localdate()}.{extension}"
     response = HttpResponse(content, content_type=content_type)
@@ -816,7 +870,9 @@ class PlanNodeViewSet(CourseScopedViewSet):
                 # обогнать записи, и это ловится тем же правилом
                 refuse_if_records_broken(course)
 
-            return Response({**done, **about})
+            return Response(
+                {**done, **about, "dates_ignored": parsed.dates_ignored}
+            )
 
         if mode == "replace":
             # replace сносит план целиком, а с ним и записи о занятиях —
@@ -838,6 +894,7 @@ class PlanNodeViewSet(CourseScopedViewSet):
                 "created_headers": created["headers"],
                 "created_lessons": created["lessons"],
                 **about,
+                "dates_ignored": parsed.dates_ignored,
             }
         )
 
@@ -917,13 +974,18 @@ class PlanNodeViewSet(CourseScopedViewSet):
                 **loss_payload(doomed),
                 "errors": errors,
                 **about,
+                # столбец дат в файле был и отброшен: молча отброшенный
+                # столбец выглядит как применённый
+                "dates_ignored": parsed.dates_ignored,
             }
         )
 
     @action(detail=False, methods=["get"], url_path="export", url_name="export")
     def export_csv(self, request):
         """Выгрузка плана в CSV — формат тот же, что понимает импорт."""
-        return plan_download(self.requested_course(), "csv")
+        return plan_download(
+            self.requested_course(), "csv", with_dates=wants_dates(request)
+        )
 
     @action(detail=False, methods=["get"], url_path="export-xlsx",
             url_name="export-xlsx")
@@ -934,7 +996,9 @@ class PlanNodeViewSet(CourseScopedViewSet):
         Оформление (текстовый формат ячеек, закреплённая шапка, запертый
         столбец id) живёт в `plans/xlsx.py` — здесь только выдача файла.
         """
-        return plan_download(self.requested_course(), "xlsx")
+        return plan_download(
+            self.requested_course(), "xlsx", with_dates=wants_dates(request)
+        )
 
     @action(detail=False, methods=["get"])
     def diff(self, request):
@@ -1489,13 +1553,17 @@ class PlanReviewViewSet(ReadOnlyModelViewSet):
         выгруженный коллегой, обязан импортироваться обратно так же, как
         свой. Второй формат «для чтения» разошёлся бы с импортом молча.
         """
-        return plan_download(self.get_object(), "csv")
+        return plan_download(
+            self.get_object(), "csv", with_dates=wants_dates(request)
+        )
 
     @action(detail=True, methods=["get"], url_path="export-xlsx",
             url_name="export-xlsx")
     def export_xlsx(self, request, pk=None):
         """Тот же чужой план книгой Excel — оформление из `plans/xlsx.py`."""
-        return plan_download(self.get_object(), "xlsx")
+        return plan_download(
+            self.get_object(), "xlsx", with_dates=wants_dates(request)
+        )
 
     @action(detail=True, methods=["post"])
     def approve(self, request, pk=None):

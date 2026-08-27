@@ -15,6 +15,7 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import SimpleTestCase
 from django.urls import reverse
 from openpyxl import Workbook, load_workbook
+from schedule.models import Slot
 
 from . import xlsx
 from .models import PlanNode
@@ -22,6 +23,8 @@ from .tests import PlanTestCase
 
 XLSX_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 HEADER = ("id", "Тема", "Урок")
+
+MONDAY = dt.date(2026, 9, 7)
 
 
 def book_bytes(rows, *, sheets=(), title="План"):
@@ -84,9 +87,10 @@ class ReadTests(SimpleTestCase):
 
 
 class ExportTests(PlanTestCase):
-    def export(self, course=None):
+    def export(self, course=None, **params):
         return self.client.get(
-            reverse("plannode-export-xlsx"), {"course": (course or self.course).pk}
+            reverse("plannode-export-xlsx"),
+            {"course": (course or self.course).pk, **params},
         )
 
     def sheet(self, response):
@@ -381,7 +385,7 @@ class RoundTripTests(PlanTestCase):
         self.assertEqual(response.status_code, 200, response.content)
         self.assertEqual(response.json(), {
             "created": 0, "updated": 4, "deleted": 0,
-            "sheet": "Sheet1", "sheets_ignored": 0,
+            "sheet": "Sheet1", "sheets_ignored": 0, "dates_ignored": False,
         })
         self.assertEqual(self.titles_with_notes(), before)
 
@@ -436,3 +440,111 @@ class PreviewTests(PlanTestCase):
         self.assertEqual(
             [error["code"] for error in body.json()["errors"]], ["file_not_xlsx"]
         )
+
+
+class ExportWithDatesTests(PlanTestCase):
+    """
+    Книга «с датами»: четвёртый столбец и его оформление.
+
+    Оформление тут не украшение. Дата приезжает обратно ничем — её место в
+    расписании, — поэтому столбец заперт наравне с id: не запрет, а знак,
+    что править тут нечего. Пароля у листа по-прежнему нет.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.section = self.add("Тригонометрия", position=0, is_section=True)
+        self.sine = self.add("Синус суммы", parent=self.section, position=0)
+        self.cosine = self.add("Косинус суммы", parent=self.section, position=1)
+
+    def add_slot(self, day, number=1):
+        return Slot.objects.create(
+            year=self.course.year,
+            course=self.course,
+            date=day,
+            lesson_number=number,
+        )
+
+    def export(self, **params):
+        return self.client.get(
+            reverse("plannode-export-xlsx"), {"course": self.course.pk, **params}
+        )
+
+    def sheet(self, **params):
+        return load_workbook(io.BytesIO(self.export(**params).content)).worksheets[0]
+
+    def test_without_the_flag_the_book_is_the_old_one(self):
+        self.add_slot(MONDAY)
+
+        sheet = self.sheet()
+
+        self.assertEqual([cell.value for cell in sheet[1]], list(HEADER))
+
+    def test_the_dated_book_has_a_fourth_column(self):
+        self.add_slot(MONDAY)
+        self.add_slot(MONDAY + dt.timedelta(days=1))
+
+        sheet = self.sheet(dates="1")
+
+        self.assertEqual(
+            [cell.value for cell in sheet[1]], [*HEADER, "Дата"]
+        )
+        self.assertEqual(
+            [xlsx.cell_text(cell.value) for cell in sheet[2]],
+            [str(self.sine.pk), "Тригонометрия", "Синус суммы", "2026-09-07"],
+        )
+
+    def test_a_lesson_without_an_hour_has_an_empty_cell(self):
+        self.add_slot(MONDAY)
+
+        sheet = self.sheet(dates="1")
+
+        self.assertEqual(xlsx.cell_text(sheet.cell(row=3, column=4).value), "")
+
+    def test_the_date_is_text_and_not_a_date(self):
+        """
+        Иначе Excel покажет её по своему формату ячейки, а не по нашему.
+
+        Тот же приём, что спасает название «10.09» от превращения в дату:
+        текстовый формат у всех ячеек листа.
+        """
+        self.add_slot(MONDAY)
+
+        cell = self.sheet(dates="1").cell(row=2, column=4)
+
+        self.assertEqual(cell.number_format, xlsx.TEXT_FORMAT)
+        self.assertIsInstance(cell.value, str)
+
+    def test_the_date_column_is_locked_like_the_id(self):
+        self.add_slot(MONDAY)
+
+        sheet = self.sheet(dates="1")
+
+        self.assertTrue(sheet.cell(row=2, column=1).protection.locked)
+        self.assertTrue(sheet.cell(row=2, column=4).protection.locked)
+        # а название по-прежнему правят: файл для того и выгружен
+        self.assertFalse(sheet.cell(row=2, column=3).protection.locked)
+
+    def test_the_dated_book_imports_back_unchanged(self):
+        """Круговой прогон — то, ради чего столбец принимается."""
+        self.add_slot(MONDAY)
+        self.add_slot(MONDAY + dt.timedelta(days=1))
+        before = self.titles_with_notes()
+
+        response = self.client.post(
+            f"{reverse('plannode-import-xlsx')}?course={self.course.pk}",
+            {
+                "file": SimpleUploadedFile(
+                    "план.xlsx", self.export(dates="1").content, content_type=XLSX_TYPE
+                ),
+                "mode": "sync",
+            },
+            format="multipart",
+        )
+
+        self.assertEqual(response.status_code, 200, response.content)
+        body = response.json()
+        self.assertEqual(body["created"], 0)
+        self.assertEqual(body["deleted"], 0)
+        self.assertIs(body["dates_ignored"], True)
+        self.assertEqual(self.titles_with_notes(), before)

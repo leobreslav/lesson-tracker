@@ -602,6 +602,19 @@ def structure_problems(*, course_id, parent, is_section) -> dict:
 # **весь** файл с номером строки: лучше отказ, чем принятый не тот план.
 
 CSV_HEADER = ("id", "Тема", "Урок")
+
+#: Тот же формат плюс столбец дат — им выгружают план «с датами».
+#:
+#: Дата в плане не живёт: её даёт раскладка, то есть расписание, и приехать
+#: обратно ей некуда. Поэтому столбец **читается и отбрасывается**, а не
+#: отвергает файл. Иначе собственная выгрузка не ложилась бы обратно, а это
+#: главное свойство формата: что выгрузили, то и импортируется.
+#:
+#: Шапок ровно две, и обе названы дословно. Угадыванием ширины это не
+#: является — по-прежнему либо шапка совпала, либо отказ.
+DATE_COLUMN = "Дата"
+CSV_HEADER_DATED = CSV_HEADER + (DATE_COLUMN,)
+
 CSV_MAX_ROWS = 2000
 TITLE_LIMIT = 200
 
@@ -612,6 +625,9 @@ def normalized_cell(cell: str) -> str:
 
 
 HEADER_NORMALIZED = tuple(normalized_cell(cell) for cell in CSV_HEADER)
+HEADER_DATED_NORMALIZED = tuple(
+    normalized_cell(cell) for cell in CSV_HEADER_DATED
+)
 HEADER_TEXT = ",".join(CSV_HEADER)
 
 
@@ -703,14 +719,14 @@ def sniff_delimiter(text: str) -> str:
     return ";" if score(";") > score(",") else ","
 
 
-def row_cells(raw: Sequence[str]) -> list | None:
+def row_cells(raw: Sequence[str], width: int = len(CSV_HEADER)) -> list | None:
     """
-    Три ячейки строки — или None, если столбцов не три.
+    Ячейки строки по объявленной ширине — или None, если столбцов не столько.
 
-    Пустые столбцы справа Excel дописывает сам, и это не повод для отказа;
-    заполненный пятый столбец — уже другой файл.
+    Ширину называет шапка: три столбца у обычного файла, четыре у файла с
+    датами. Пустые столбцы справа Excel дописывает сам, и это не повод для
+    отказа; заполненный столбец **за** объявленной шириной — уже другой файл.
     """
-    width = len(CSV_HEADER)
     if len(raw) < width:
         return None
     if any(cell.strip() for cell in raw[width:]):
@@ -727,6 +743,11 @@ class ParsedPlan(NamedTuple):
     # строк с данными в файле — всех, включая отклонённые. Рядом с числом
     # уроков это и говорит, сколько строк не прочиталось
     data_rows: int = 0
+    # в файле был столбец дат, и он отброшен. Не ошибка и не предупреждение,
+    # а факт о прочитанном — такой же, как «листов пропущено» у книги:
+    # сказать о нём надо, потому что молча отброшенный столбец выглядит как
+    # применённый
+    dates_ignored: bool = False
 
     @property
     def ok(self) -> bool:
@@ -749,13 +770,29 @@ def parse_plan_csv(text: str, *, max_rows: int = CSV_MAX_ROWS) -> ParsedPlan:
     )
 
 
+def header_width(raw: Sequence[str]) -> int | None:
+    """
+    Сколько столбцов объявила первая строка: три, четыре — или None, не шапка.
+
+    Шапки ровно две, и обе сравниваются дословно. Угадыванием ширины это не
+    является: либо шапка совпала целиком, либо файл отклонён — как и раньше.
+    Спутать их нельзя, и проверять это отдельно не нужно: у трёхстолбцовой
+    шапки четвёртой ячейки нет вовсе, а у четырёхстолбцовой она заполнена, и
+    по ширине три такая строка не проходит.
+    """
+    for expected in (HEADER_NORMALIZED, HEADER_DATED_NORMALIZED):
+        head = row_cells(raw, len(expected))
+        if head is not None and tuple(
+            normalized_cell(cell) for cell in head
+        ) == expected:
+            return len(expected)
+
+    return None
+
+
 def is_header(raw: Sequence[str]) -> bool:
     """Первая строка — это шапка? Сравнение дословное, без догадок."""
-    head = row_cells(raw)
-    return (
-        head is not None
-        and tuple(normalized_cell(cell) for cell in head) == HEADER_NORMALIZED
-    )
+    return header_width(raw) is not None
 
 
 def parse_plan_rows(
@@ -794,7 +831,8 @@ def parse_plan_rows(
         rows_read.append(list(raw))
     raw_rows = rows_read
 
-    has_header = bool(raw_rows) and is_header(raw_rows[0])
+    width = header_width(raw_rows[0]) if raw_rows else None
+    has_header = width is not None
     if header_required and not has_header:
         # без шапки читать нечего: порядок столбцов больше не угадывается
         return ParsedPlan([], [
@@ -805,6 +843,12 @@ def parse_plan_rows(
                 got=",".join(raw_rows[0]) if raw_rows else "",
             )
         ])
+
+    # без шапки читаем узкий формат: вставку из таблицы копируют куском, и
+    # объявить ширину там нечем — а угадывать её по первой строке значит
+    # вернуть ровно то угадывание, ради отказа от которого формат и сузили
+    if width is None:
+        width = len(CSV_HEADER)
 
     rows: list[ImportedRow] = []
     errors: list[dict] = []
@@ -819,18 +863,20 @@ def parse_plan_rows(
 
         data_rows += 1
 
-        cells = row_cells(raw)
+        cells = row_cells(raw, width)
         if cells is None:
             errors.append(
                 error_payload(
                     Codes.CSV_BAD_COLUMNS,
-                    f"Row {number}: the file must have exactly three columns.",
-                    row=number, count=len(raw),
+                    f"Row {number}: the file must have exactly {width} columns.",
+                    row=number, count=len(raw), expected=width,
                 )
             )
             continue
 
-        id_cell, theme, lesson = cells
+        # четвёртая ячейка — дата, и она отбрасывается здесь: дальше по коду
+        # формат ровно один, и знать про даты ему незачем
+        id_cell, theme, lesson = cells[:len(CSV_HEADER)]
 
         if theme and not lesson:
             # раньше это был заголовок темы; сказать об этом прямо, иначе
@@ -893,15 +939,35 @@ def parse_plan_rows(
             )
         )
 
-    return ParsedPlan(rows, errors, data_rows)
+    return ParsedPlan(
+        rows, errors, data_rows, dates_ignored=width > len(CSV_HEADER)
+    )
 
 
-def build_plan_csv(tree: Iterable[Branch]) -> str:
+def plan_date_cell(dates, node) -> str:
+    """
+    Дата строки плана в файл — или пустая ячейка.
+
+    Пусто это не «нет данных», а «этому уроку час ещё не достался»: план
+    бывает длиннее расписания, и такие строки лежат в раскладке как `no_slot`.
+    Писать вместо них прочерк значило бы сказать то, чего раскладка не
+    говорит.
+    """
+    date = (dates or {}).get(node.pk)
+    return date.isoformat() if date else ""
+
+
+def build_plan_csv(tree: Iterable[Branch], dates=None) -> str:
     """
     План в CSV: одна строка — один урок, тема повторяется в каждой.
 
     Формат тот же самый, что понимает импорт, и другого нет: круговой прогон
     экспорт → импорт в режиме sync не меняет ни строчки.
+
+    `dates` — раскладка, `pk строки плана → дата`. С ней файл получает
+    четвёртый столбец, и это **та же** выгрузка, а не второй формат: импорт
+    такую шапку принимает и столбец отбрасывает, потому что даты в плане не
+    живут — их даёт расписание. Без `dates` файл прежний, до байта.
 
     Чего в файле нет: темы без уроков (строки для неё не существует) и
     заметки — её столбца в формате не осталось. Обратный импорт такую тему
@@ -911,10 +977,13 @@ def build_plan_csv(tree: Iterable[Branch]) -> str:
     """
     buffer = io.StringIO()
     writer = csv.writer(buffer, delimiter=",", lineterminator="\r\n")
-    writer.writerow(CSV_HEADER)
+    writer.writerow(CSV_HEADER_DATED if dates is not None else CSV_HEADER)
 
     def put(node, theme):
-        writer.writerow([node.pk, theme, node.title])
+        row = [node.pk, theme, node.title]
+        if dates is not None:
+            row.append(plan_date_cell(dates, node))
+        writer.writerow(row)
 
     for branch in tree:
         if branch.node.is_section:

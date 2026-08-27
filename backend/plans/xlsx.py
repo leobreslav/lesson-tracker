@@ -22,13 +22,20 @@ from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Alignment, Font, Protection
 from openpyxl.utils import get_column_letter
 
-from .services import CSV_HEADER, Branch, PlanImportError
+from .services import (
+    CSV_HEADER,
+    CSV_HEADER_DATED,
+    Branch,
+    PlanImportError,
+    plan_date_cell,
+)
 
 SHEET_TITLE = "План"
 
 # ширина столбца: минимум, запас на символ и потолок. Потолок нужен: одна
-# заметка в пол-экрана иначе растянула бы столбец на всю ширину листа
-COLUMN_SIZES = ((5, 8), (24, 50), (32, 70))
+# заметка в пол-экрана иначе растянула бы столбец на всю ширину листа.
+# Четвёртый — дата, и она всегда одной длины, поэтому минимум равен потолку
+COLUMN_SIZES = ((5, 8), (24, 50), (32, 70), (12, 12))
 
 TEXT_FORMAT = "@"
 
@@ -106,21 +113,29 @@ def read_plan_xlsx(data: bytes, *, filename: str = "") -> ReadWorkbook:
         book.close()
 
 
-def build_plan_xlsx(tree: Iterable[Branch]) -> bytes:
+def build_plan_xlsx(tree: Iterable[Branch], dates=None) -> bytes:
     """
     План книгой — тем же форматом, который читает импорт.
 
     Оформление здесь не украшение, а защита от того, чем xlsx портят:
     текстовый формат ячеек не даёт Excel превратить «10.09» в дату,
     закреплённая шапка не уезжает на длинном плане, а лист защищён с
-    разблокированными ячейками — кроме столбца id. Пароля нет: снять
-    защиту легко, задача только в том, чтобы id не стёрли не глядя.
+    разблокированными ячейками — кроме столбцов, которые правит не человек.
+    Пароля нет: снять защиту легко, задача только в том, чтобы их не стёрли
+    не глядя.
+
+    `dates` — раскладка, `pk строки плана → дата`; с ней появляется четвёртый
+    столбец. Он заперт наравне с id, и по той же причине, только сильнее:
+    id правкой хотя бы можно испортить план, а дата приедет обратно ничем —
+    её место в расписании, и импорт этот столбец отбрасывает.
     """
+    header = CSV_HEADER_DATED if dates is not None else CSV_HEADER
+
     book = Workbook()
     sheet = book.active
     sheet.title = SHEET_TITLE
 
-    widths = [len(title) for title in CSV_HEADER]
+    widths = [len(title) for title in header]
     line = 0
 
     def put(values, *, header=False):
@@ -134,20 +149,27 @@ def build_plan_xlsx(tree: Iterable[Branch]) -> bytes:
                 wrap_text=index in (2, 3) and not header,
                 vertical="center" if header else "top",
             )
-            # заперт только id: остальное для того и выгружено, чтобы правили
-            cell.protection = Protection(locked=index == 1)
+            # заперты id и дата: их правит не человек, а остальное для того и
+            # выгружено, чтобы правили
+            cell.protection = Protection(locked=index in (1, 4))
             widths[index - 1] = max(widths[index - 1], len(str(value)))
 
-    put(CSV_HEADER, header=True)
+    put(header, header=True)
+
+    def row(node, theme):
+        cells = [node.pk, theme, node.title]
+        if dates is not None:
+            cells.append(plan_date_cell(dates, node))
+        return cells
 
     for branch in tree:
         if branch.node.is_section:
             for child in branch.children:
-                put([child.pk, branch.node.title, child.title])
+                put(row(child, branch.node.title))
         else:
-            put([branch.node.pk, "", branch.node.title])
+            put(row(branch.node, ""))
 
-    for index, (minimum, cap) in enumerate(COLUMN_SIZES, start=1):
+    for index, (minimum, cap) in enumerate(COLUMN_SIZES[:len(header)], start=1):
         sheet.column_dimensions[get_column_letter(index)].width = min(
             max(minimum, widths[index - 1] + 2), cap
         )

@@ -222,7 +222,7 @@
     "grade_preset_invalid": "The number of years must be between 1 and {{limit}}.",
     "mode_required": "Choose the import mode.",
     "csv_header_invalid": "The first row must be the header «{{expected}}».",
-    "csv_bad_columns": "Row {{row}}: the file must have exactly four columns, this one has {{count}}.",
+    "csv_bad_columns": "Row {{row}}: the file must have exactly {{expected}} columns, this one has {{count}}.",
     "csv_section_row": "Row {{row}}: «{{title}}» has no lesson. The format has changed: one row is one lesson, and the theme is written on every row of it.",
     "csv_row_empty": "Row {{row}}: neither a theme nor a lesson.",
     "csv_row_too_long": "Row {{row}}: the title is longer than {{limit}} characters.",
@@ -405,6 +405,7 @@
     "modeReplace": "replace the plan",
     "modeAppend": "add to the end",
     "replaceWarning": "The current plan of the course will be deleted in full.",
+    "datesIgnored": "The «Дата» column is read and left out: dates live in the timetable, not in the plan.",
     "sheetUsed_one": "Read the sheet «{{sheet}}»; {{count}} more sheet in the book is left alone.",
     "sheetUsed_other": "Read the sheet «{{sheet}}»; {{count}} more sheets in the book are left alone.",
     "source": {
@@ -516,7 +517,8 @@
         "oneRow": "One row is one lesson — there is no row for a theme of its own.",
         "repeat": "The theme is repeated on every row; a new theme starts where the value changes.",
         "emptyTheme": "An empty theme means the lesson sits outside any theme.",
-        "emptyId": "An empty id means the lesson is new; keep the id and the row is recognised."
+        "emptyId": "An empty id means the lesson is new; keep the id and the row is recognised.",
+        "dates": "Exporting «with dates» adds a fourth column, «Дата». Such a file imports back just as well: the column is read and left out, because dates live in the timetable."
       },
       "keeps": "Lesson content, notes and attachments are not in the file and stay in the system: bring the file back as «Sync» and they survive. A theme without lessons is not written to the file.",
       "modes": {
@@ -577,6 +579,7 @@
     "recordedHint": "The lesson is taught and recorded",
     "beforeTaught": "There is no room before a lesson already taught",
     "exportAs": "Export as {{format}}",
+    "exportWithDates": "with dates",
     "debtsLabel_one": "lesson not marked",
     "debtsLabel_other": "lessons not marked",
     "diff": {

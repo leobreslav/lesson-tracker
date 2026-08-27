@@ -644,6 +644,23 @@ body {
   border-top: 1px solid #eee;
 }
 
+/* Галочка пунктом меню: не действие, а уточнение к соседним действиям —
+   «во что выгрузить» стоит ниже, и ответ на «с датами ли» читается перед
+   ним. Отступы те же, что у пунктов, иначе строка выпадает из столбика. */
+.dropdown label.checkbox {
+  display: flex;
+  width: 100%;
+  padding: 0.45rem 0.6rem;
+  font-size: 0.9rem;
+  color: #222;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.dropdown label.checkbox:hover {
+  background: #f1f5fd;
+}
+
 /* переключатель языка: строка меню, но кнопки в ней — чипы в ряд, а не
    пункты во всю ширину, как остальное содержимое выпадающего списка */
 .dropdown-languages {
