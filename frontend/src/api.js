@@ -555,6 +555,8 @@ export const uploadAttachment = ({
   // и бывает пустой («лежит на виду»)
   bookmarkOwner,
   bookmarkFolder,
+  // общая полка школы: кладёт администратор, видят все сотрудники
+  schoolShelf,
   file,
   title,
   // приписка своими словами: «зачем это мне». Едет с загрузкой, потому что
@@ -572,6 +574,7 @@ export const uploadAttachment = ({
   if (work) form.append('work', work)
   if (bookmarkOwner) form.append('bookmark_owner', bookmarkOwner)
   if (bookmarkFolder) form.append('bookmark_folder', bookmarkFolder)
+  if (schoolShelf) form.append('school_shelf', schoolShelf)
   form.append('file', file)
   if (title) form.append('title', title)
   if (note) form.append('note', note)
@@ -658,6 +661,28 @@ export const fetchBookmarkFolders = () => request('/api/bookmarks/folders/')
 
 export const fetchBookmarks = (owner) =>
   request(`/api/attachments/?bookmark_owner=${encodeURIComponent(owner)}`)
+
+/**
+ * Общая полка школы — то же вложение, только владелец у него школа.
+ *
+ * Спрашивают её **все** сотрудники, а наполняет администратор; сервер решает
+ * это сам, поэтому запрос один на обе роли. Отдельной двери нет намеренно:
+ * второй адрес для того же списка означал бы второе место, где чинить показ
+ * файла, ссылки и записки.
+ */
+export const fetchSchoolShelf = (school) =>
+  request(`/api/attachments/?school_shelf=${encodeURIComponent(school)}`)
+
+export const addSchoolShelfItem = ({ school, url, title, note }) =>
+  request('/api/attachments/', {
+    method: 'POST',
+    body: {
+      school_shelf: school,
+      ...(url ? { url } : { kind: 'text' }),
+      title,
+      ...(note ? { note } : {}),
+    },
+  })
 
 export const createBookmarkFolder = (title) =>
   request('/api/bookmarks/folders/', { method: 'POST', body: { title } })

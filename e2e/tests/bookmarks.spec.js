@@ -33,7 +33,8 @@ test('учитель кладёт ссылку и записку, находит
   await page.getByLabel('Приписка').fill('Заявку подают за две недели')
   await page.locator('.shelf-add').getByRole('button', { name: 'Добавить' }).click()
 
-  const items = page.locator('.shelf-item')
+  // строки **личной** части: школьная полка выше рисуется теми же строками
+  const items = page.locator('.shelf-body .shelf-item')
   await expect(items).toHaveCount(1)
   await expect(items.first()).toContainText('Музей: заявка на класс')
   await expect(items.first().locator('.note')).toContainText('за две недели')
@@ -63,7 +64,7 @@ test('учитель кладёт ссылку и записку, находит
   await page.getByRole('button', { name: 'Сохранить' }).click()
 
   await page.locator('.shelf-pick', { hasText: 'Без папки' }).click()
-  await expect(page.locator('.shelf-item').first()).toContainText(
+  await expect(page.locator('.shelf-body .shelf-item').first()).toContainText(
     'Музей: заявка на класс',
   )
 })
@@ -77,7 +78,7 @@ test('снос папки оставляет лежавшее в ней на с�
 
   const folder = page.locator('.shelf-pick', { hasText: 'Методика' })
   await folder.click()
-  const inside = await page.locator('.shelf-item').count()
+  const inside = await page.locator('.shelf-body .shelf-item').count()
   expect(inside).toBeGreaterThan(0)
 
   await page.getByRole('button', { name: 'Удалить' }).click()
@@ -85,7 +86,7 @@ test('снос папки оставляет лежавшее в ней на с�
   await expect(page.locator('.shelf-pick', { hasText: 'Методика' })).toHaveCount(0)
   // вещи не исчезли вместе с папкой — они на столе, и стол их показывает
   await page.locator('.shelf-pick', { hasText: 'Всё' }).first().click()
-  await expect(page.locator('.shelf-item')).toContainText(['Десмос'])
+  await expect(page.locator('.shelf-body .shelf-item')).toContainText(['Десмос'])
 })
 
 test('чужого стола не видно даже директору', async ({ page, signIn }) => {
@@ -98,7 +99,7 @@ test('чужого стола не видно даже директору', asyn
   await expect(page.locator('.shelf-pick', { hasText: 'Методика' })).toHaveCount(0)
 
   await page.locator('.shelf-pick', { hasText: 'Всё' }).first().click()
-  await expect(page.locator('.shelf-item')).not.toContainText(['Десмос'])
+  await expect(page.locator('.shelf-body .shelf-item')).not.toContainText(['Десмос'])
 })
 
 test('ученику раздела не показывают вовсе', async ({ page, signIn }) => {
@@ -107,4 +108,57 @@ test('ученику раздела не показывают вовсе', async
   await ready(page)
 
   await expect(page.locator('.topbar-nav a[href="/bookmarks"]')).toHaveCount(0)
+})
+
+test('администратор кладёт на полку школы, учитель это видит и не правит', async ({
+  page,
+  signIn,
+}) => {
+  await signIn(PEOPLE.admin)
+  await page.goto('/bookmarks')
+  await ready(page)
+
+  const shelf = page.locator('.school-shelf')
+  await expect(shelf).toBeVisible()
+
+  await shelf.getByLabel('Адрес или записка для всей школы').fill(
+    'https://example.org/timetable',
+  )
+  await shelf.getByLabel('Название ссылки').fill('Расписание звонков на год')
+  await shelf.getByLabel('Приписка').fill('Действует с сентября')
+  await shelf.getByRole('button', { name: 'Добавить' }).click()
+
+  await expect(shelf.locator('.shelf-item', { hasText: 'Расписание звонков на год' }))
+    .toBeVisible()
+
+  // тот же экран у обычного учителя: видно, но править нечем
+  await signIn(PEOPLE.ivanova)
+  await page.goto('/bookmarks')
+  await ready(page)
+
+  const theirs = page
+    .locator('.school-shelf .shelf-item', { hasText: 'Расписание звонков на год' })
+  await expect(theirs).toBeVisible()
+  await expect(theirs.locator('.note')).toContainText('Действует с сентября')
+  await expect(theirs.getByTitle('Изменить')).toHaveCount(0)
+  await expect(theirs.getByTitle('Удалить')).toHaveCount(0)
+  // и положить на неё своё тоже нечем: формы у него нет
+  await expect(page.locator('.school-shelf .shelf-add')).toHaveCount(0)
+
+  // а своё он по-прежнему правит — полки не перепутаны
+  await expect(
+    page.locator('.shelf-body .shelf-item').first().getByTitle('Изменить'),
+  ).toBeVisible()
+})
+
+test('поиск находит и школьное, и своё', async ({ page, signIn }) => {
+  await signIn(PEOPLE.ivanova)
+  await page.goto('/bookmarks')
+  await ready(page)
+
+  await page.getByLabel('Найти у себя').fill('журнал')
+
+  await expect(
+    page.locator('.school-shelf .shelf-item', { hasText: 'журнал' }),
+  ).toBeVisible()
 })

@@ -191,6 +191,10 @@ class AttachmentCreateSerializer(serializers.Serializer):
     bookmark_owner = serializers.PrimaryKeyRelatedField(
         queryset=Attachment.objects.none(), required=False, allow_null=True
     )
+    # Общая полка школы: кладёт администратор, видят все сотрудники.
+    school_shelf = serializers.PrimaryKeyRelatedField(
+        queryset=Attachment.objects.none(), required=False, allow_null=True
+    )
     # Не владелец, а адрес внутри стола: пусто — «положить на виду».
     bookmark_folder = serializers.PrimaryKeyRelatedField(
         queryset=Attachment.objects.none(), required=False, allow_null=True
@@ -214,6 +218,7 @@ class AttachmentCreateSerializer(serializers.Serializer):
     def get_fields(self):
         from .access import (
             writable_plan_rows,
+            writable_school_shelves,
             writable_shelf_folders,
             writable_shelf_owners,
             writable_student_works,
@@ -229,6 +234,7 @@ class AttachmentCreateSerializer(serializers.Serializer):
         fields["work"].queryset = writable_works(user)
         fields["bookmark_owner"].queryset = writable_shelf_owners(user)
         fields["bookmark_folder"].queryset = writable_shelf_folders(user)
+        fields["school_shelf"].queryset = writable_school_shelves(user)
         return fields
 
     def validate(self, attrs):
@@ -248,7 +254,7 @@ class AttachmentCreateSerializer(serializers.Serializer):
             api_error(
                 Codes.ATTACHMENT_OWNER_REQUIRED,
                 "Name exactly one owner: «plan_row», «template_row», «work», "
-                "«student_work» or «bookmark_owner».",
+                "«student_work», «bookmark_owner» or «school_shelf».",
                 field="plan_row",
             )
 
@@ -283,13 +289,21 @@ class AttachmentCreateSerializer(serializers.Serializer):
                     field="file",
                     allowed=sorted(INLINE_EXTENSIONS),
                 )
-            if owners["bookmark_owner"] is not None:
-                # на столе нет текста, в который встают картинки: закладка
-                # это сама вещь, а не абзац с картинкой внутри
+            if (
+                owners["bookmark_owner"] is not None
+                or owners["school_shelf"] is not None
+            ):
+                # на полке нет текста, в который встают картинки: закладка
+                # это сама вещь, а не абзац с картинкой внутри. Верно для
+                # обеих полок, личной и школьной
                 api_error(
                     Codes.ATTACHMENT_KIND_MISMATCH,
-                    "A personal shelf has no text to stand in.",
-                    field="bookmark_owner",
+                    "A shelf has no text to stand in.",
+                    field=(
+                        "bookmark_owner"
+                        if owners["bookmark_owner"] is not None
+                        else "school_shelf"
+                    ),
                 )
             if owners["student_work"] is not None:
                 # у работы ученика текста нет — есть его тетрадь. Ставить

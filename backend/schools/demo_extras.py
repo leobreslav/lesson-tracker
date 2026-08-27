@@ -54,6 +54,7 @@ def build(school, courses, people, students, *, log=print):
     made.append(_feedback(school, teacher, students))
     made.append(_families(school, students))
     made.append(_bookmarks(teacher, admin))
+    made.append(_school_shelf(school))
     made.append(_bells(school))
     made.append(_rooms(school, courses))
     made.append(_homegroups(school, courses, students, teacher))
@@ -948,6 +949,55 @@ def _homegroups(school, courses, students, teacher):
         HomegroupStudent.objects.get_or_create(homegroup=group, student=student)
 
     return f"классов {len(groups)}"
+
+
+def _school_shelf(school):
+    """
+    Полка школы: то, что администратор положил всем сразу.
+
+    Сеется отдельным шагом от личных столов, хотя лежит на том же экране, и
+    это не мелочь: вся суть общей полки в том, что она **у всех одна**, а
+    показать это можно только тогда, когда рядом с ней есть чьи-то личные
+    вещи. Экран с одним столом выглядел бы правильным, будучи неправильным.
+    """
+    from files.models import KIND_LINK, KIND_TEXT, Attachment
+
+    items = [
+        (
+            KIND_LINK,
+            "Электронный журнал школы",
+            "https://example.org/journal",
+            "Вход по школьной почте, пароль у секретаря",
+        ),
+        (
+            KIND_LINK,
+            "Бланк заявления на отпуск",
+            "https://example.org/leave.pdf",
+            "",
+        ),
+        (
+            KIND_TEXT,
+            "Педсовет — последняя пятница месяца, 15:30",
+            "",
+            "Кабинет 204, отчёты сдавать накануне",
+        ),
+    ]
+
+    made = 0
+    for position, (kind, title, url, note) in enumerate(items):
+        _, fresh = Attachment.objects.get_or_create(
+            school_shelf=school,
+            title=title,
+            defaults={
+                "kind": kind,
+                "url": url,
+                "note": note,
+                "position": position,
+            },
+        )
+        made += int(fresh)
+
+    return f"полка школы: {made}" if made else ""
 
 
 def _bookmarks(teacher, admin):

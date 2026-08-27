@@ -1938,6 +1938,13 @@
   "bookmarks": {
     "title": "Bookmarks",
     "lead": "Files, links and notes you keep for yourself. Nobody else in the school can see them.",
+    "mine": "Mine",
+    "fromSchool": "From the school",
+    "schoolLead": "Shared with everyone on the staff. An administrator keeps it up.",
+    "schoolLeadAdmin": "Everyone on the staff sees this — above their own bookmarks.",
+    "removeShared": "Remove «{{title}}» from the school shelf? It goes away for everyone.",
+    "addSchoolFile": "Add a file to the school shelf",
+    "whatSchool": "An address or a note for the whole school",
     "all": "Everything",
     "loose": "Not in a folder",
     "folder": "Folder",

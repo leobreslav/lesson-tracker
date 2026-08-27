@@ -6,11 +6,13 @@ import { formatSize, iconFor, looksLikeUrl } from './fileKind'
 import { useKept } from './remember'
 import {
   addBookmark,
+  addSchoolShelfItem,
   createBookmarkFolder,
   deleteAttachment,
   deleteBookmarkFolder,
   fetchBookmarkFolders,
   fetchBookmarks,
+  fetchSchoolShelf,
   openAttachment,
   renameBookmarkFolder,
   updateBookmark,
@@ -21,34 +23,46 @@ import {
 const ALL = 'all'
 const LOOSE = 'loose'
 
+const EMPTY_DRAFT = { what: '', title: '', note: '' }
+
 /**
- * Закладки: личный стол сотрудника.
+ * Закладки: полка школы сверху, личный стол под ней.
  *
  * Файл, ссылка и записка — те же три вида материала, что у урока, и это не
  * совпадение: на сервере это одно и то же вложение, у которого владельцем
- * стал человек. Поэтому и заводятся они здесь тем же жестом, что в панели
- * урока — одно поле и зона перетаскивания, — а вид решает написанное:
+ * стал человек или школа. Поэтому и заводятся они здесь тем же жестом, что в
+ * панели урока — одно поле и зона перетаскивания, — а вид решает написанное:
  * целиком адрес значит ссылку, всё остальное записку.
  *
- * **Стол приезжает целиком, одним списком вещей и одним списком папок**, и
- * раскладывает их эта страница. Отсюда две вещи, которых иначе не было бы:
- * поиск идёт по всему столу сразу, не спрашивая сервер на каждую букву, а
- * лежащее вне папок — обычная строка того же списка, а не особый случай.
+ * **Полок две, и они не равны.** Общая принадлежит школе: её наполняет
+ * администратор, а сотрудники видят её над своим и не правят. Личная
+ * принадлежит человеку, и чужой не бывает вовсе — ни у администратора, ни у
+ * методиста. Строка при этом рисуется одна и та же: если бы они разошлись
+ * видом, каждая следующая правка чинила бы одну из двух.
  *
- * Чужого здесь не бывает вовсе: ни у администратора школы, ни у методиста
- * доступа к чужому столу нет, и «показать коллеге» тут не действие, которое
- * забыли сделать, — это то, чего раздел не умеет намеренно.
+ * **Стол приезжает целиком**, тремя списками, и раскладывает их эта
+ * страница. Отсюда две вещи, которых иначе не было бы: поиск идёт по обеим
+ * полкам сразу, не спрашивая сервер на каждую букву, а лежащее вне папок —
+ * обычная строка того же списка, а не особый случай.
  */
 export default function Bookmarks({ user, onLoggedOut }) {
   const { t } = useTranslation()
 
+  // Школа у вошедшего может и отсутствовать — так живёт суперпользователь,
+  // которого никто не приглашал. Общей полки у него нет вовсе, и спрашивать
+  // её значило бы слать запрос с `undefined` в адресе.
+  const schoolId = user?.school?.id ?? null
+  const mayFillSchoolShelf = Boolean(user?.is_school_admin && schoolId)
+
   const [folders, setFolders] = useState(null)
   const [items, setItems] = useState([])
+  const [shared, setShared] = useState([])
   // открытая папка — поза за работой, а не настройка: живёт во вкладке
   const [open, setOpen] = useKept('bookmarks.open', ALL)
   const [query, setQuery] = useKept('bookmarks.query', '')
 
-  const [draft, setDraft] = useState({ what: '', title: '', note: '' })
+  const [draft, setDraft] = useState(EMPTY_DRAFT)
+  const [schoolDraft, setSchoolDraft] = useState(EMPTY_DRAFT)
   const [editing, setEditing] = useState(null)
   const [form, setForm] = useState({ title: '', note: '', folder: '' })
   const [folderDraft, setFolderDraft] = useState('')
@@ -56,8 +70,9 @@ export default function Bookmarks({ user, onLoggedOut }) {
 
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
-  const [over, setOver] = useState(false)
+  const [over, setOver] = useState(null)
   const fileInput = useRef(null)
+  const schoolFileInput = useRef(null)
 
   const handleError = useCallback(
     (err) => {
@@ -69,13 +84,18 @@ export default function Bookmarks({ user, onLoggedOut }) {
 
   const load = useCallback(
     () =>
-      Promise.all([fetchBookmarkFolders(), fetchBookmarks(user.id)])
-        .then(([shelves, things]) => {
+      Promise.all([
+        fetchBookmarkFolders(),
+        fetchBookmarks(user.id),
+        schoolId ? fetchSchoolShelf(schoolId) : Promise.resolve([]),
+      ])
+        .then(([shelves, mine, school]) => {
           setFolders(shelves)
-          setItems(things)
+          setItems(mine)
+          setShared(school)
         })
         .catch(handleError),
-    [handleError, user.id],
+    [handleError, schoolId, user.id],
   )
 
   useEffect(() => {
@@ -92,42 +112,56 @@ export default function Bookmarks({ user, onLoggedOut }) {
   const searching = query.trim().length > 0
   const folderId = typeof open === 'number' ? open : null
 
-  const shown = useMemo(() => {
-    if (searching) {
+  const matches = useCallback(
+    (item) => {
       const needle = query.trim().toLowerCase()
-      return items.filter((item) =>
-        [item.title, item.note, item.url]
-          .filter(Boolean)
-          .some((text) => text.toLowerCase().includes(needle)),
-      )
-    }
+      return [item.title, item.note, item.url]
+        .filter(Boolean)
+        .some((text) => text.toLowerCase().includes(needle))
+    },
+    [query],
+  )
+
+  const shown = useMemo(() => {
+    if (searching) return items.filter(matches)
     if (open === ALL) return items
     if (open === LOOSE) return items.filter((item) => !item.bookmark_folder)
     return items.filter((item) => item.bookmark_folder === open)
-  }, [items, open, query, searching])
+  }, [items, matches, open, searching])
+
+  /* Полка школы поиском сужается тоже: искать «бланк» и не найти школьный
+     бланк, лежащий на экране выше, — ровно та неожиданность, из-за которой
+     поиску перестают верить. */
+  const shownShared = useMemo(
+    () => (searching ? shared.filter(matches) : shared),
+    [matches, searching, shared],
+  )
 
   const countIn = (folder) =>
     items.filter((item) => item.bookmark_folder === folder).length
 
   // --- заведение ---
 
-  const attach = async (files) => {
+  const attach = async (files, { school = false } = {}) => {
     if (!files.length) return
+    const note = (school ? schoolDraft : draft).note.trim()
+
     setBusy(true)
     setError(null)
     try {
       for (const file of files) {
         await uploadAttachment({
-          bookmarkOwner: user.id,
-          bookmarkFolder: folderId ?? undefined,
+          ...(school
+            ? { schoolShelf: schoolId }
+            : { bookmarkOwner: user.id, bookmarkFolder: folderId ?? undefined }),
           file,
           // приписка, набранная до выбора файла, относится к нему: человек
           // объясняет, зачем несёт файл, а не пишет отдельную записку.
           // Название не шлём вовсе — им станет имя файла
-          note: draft.note.trim(),
+          note,
         })
       }
-      setDraft({ what: '', title: '', note: '' })
+      ;(school ? setSchoolDraft : setDraft)(EMPTY_DRAFT)
       await load()
     } catch (err) {
       handleError(err)
@@ -143,22 +177,36 @@ export default function Bookmarks({ user, onLoggedOut }) {
    * адрес значит ссылку, всё остальное — записку. То же правило, что в
    * панели урока, и живёт оно там же (`fileKind.looksLikeUrl`).
    */
-  const submit = async (event) => {
+  const submit = (school) => async (event) => {
     event.preventDefault()
-    const what = draft.what.trim()
+    const current = school ? schoolDraft : draft
+    const what = current.what.trim()
     if (!what) return
+
+    const url = looksLikeUrl(what) ? what : ''
+    const title = url ? current.title.trim() || url : what
 
     setBusy(true)
     setError(null)
     try {
-      await addBookmark({
-        owner: user.id,
-        folder: folderId,
-        url: looksLikeUrl(what) ? what : '',
-        title: looksLikeUrl(what) ? draft.title.trim() || what : what,
-        note: draft.note.trim(),
-      })
-      setDraft({ what: '', title: '', note: '' })
+      if (school) {
+        await addSchoolShelfItem({
+          school: schoolId,
+          url,
+          title,
+          note: current.note.trim(),
+        })
+        setSchoolDraft(EMPTY_DRAFT)
+      } else {
+        await addBookmark({
+          owner: user.id,
+          folder: folderId,
+          url,
+          title,
+          note: current.note.trim(),
+        })
+        setDraft(EMPTY_DRAFT)
+      }
       await load()
     } catch (err) {
       handleError(err)
@@ -199,7 +247,7 @@ export default function Bookmarks({ user, onLoggedOut }) {
     })
   }
 
-  const saveEdit = async (event) => {
+  const saveEdit = (mine) => async (event) => {
     event.preventDefault()
     setBusy(true)
     setError(null)
@@ -207,9 +255,13 @@ export default function Bookmarks({ user, onLoggedOut }) {
       await updateBookmark(editing, {
         title: form.title.trim(),
         note: form.note,
-        // пустая строка селекта — это «на виду», то есть `null`, а не
-        // «поле не трогали»
-        folder: form.folder === '' ? null : Number(form.folder),
+        // папка — принадлежность личного стола: у общей полки её нет вовсе,
+        // и слать пустое поле значило бы просить сервер о невозможном
+        ...(mine
+          ? // пустая строка селекта — это «на виду», то есть `null`, а не
+            // «поле не трогали»
+            { folder: form.folder === '' ? null : Number(form.folder) }
+          : {}),
       })
       setEditing(null)
       await load()
@@ -220,14 +272,17 @@ export default function Bookmarks({ user, onLoggedOut }) {
     }
   }
 
-  const remove = async (item) => {
-    if (!window.confirm(t('bookmarks.removeItem', { title: item.title }))) return
+  const remove = async (item, { mine }) => {
+    const question = mine ? 'bookmarks.removeItem' : 'bookmarks.removeShared'
+    if (!window.confirm(t(question, { title: item.title }))) return
 
     setBusy(true)
     setError(null)
     try {
       await deleteAttachment(item.id)
-      setItems((current) => current.filter((row) => row.id !== item.id))
+      const drop = (rows) => rows.filter((row) => row.id !== item.id)
+      if (mine) setItems(drop)
+      else setShared(drop)
     } catch (err) {
       handleError(err)
     } finally {
@@ -299,13 +354,22 @@ export default function Bookmarks({ user, onLoggedOut }) {
     </li>
   )
 
-  const itemRow = (item) => {
+  /**
+   * Строка полки — одна на обе, и различий у неё ровно два.
+   *
+   * `mine` решает, показывать ли папку (у общей полки папок нет) и кому
+   * доступны кнопки: своё правит хозяин, общее — администратор. Всё
+   * остальное — значок, название, размер, приписка — у них общее, и
+   * общим должно остаться: две похожие строки расходятся в первой же правке.
+   */
+  const itemRow = (item, { mine }) => {
     const size = formatSize(item.size)
+    const mayEdit = mine || mayFillSchoolShelf
 
     if (editing === item.id) {
       return (
         <li key={item.id} className="attachment shelf-item editing">
-          <form className="shelf-edit" onSubmit={saveEdit}>
+          <form className="shelf-edit" onSubmit={saveEdit(mine)}>
             <div className="row">
               <input
                 value={form.title}
@@ -316,20 +380,22 @@ export default function Bookmarks({ user, onLoggedOut }) {
                   setForm({ ...form, title: event.target.value })
                 }
               />
-              <select
-                value={form.folder}
-                aria-label={t('bookmarks.folder')}
-                onChange={(event) =>
-                  setForm({ ...form, folder: event.target.value })
-                }
-              >
-                <option value="">{t('bookmarks.loose')}</option>
-                {folders.map((folder) => (
-                  <option key={folder.id} value={folder.id}>
-                    {folder.title}
-                  </option>
-                ))}
-              </select>
+              {mine && (
+                <select
+                  value={form.folder}
+                  aria-label={t('bookmarks.folder')}
+                  onChange={(event) =>
+                    setForm({ ...form, folder: event.target.value })
+                  }
+                >
+                  <option value="">{t('bookmarks.loose')}</option>
+                  {folders.map((folder) => (
+                    <option key={folder.id} value={folder.id}>
+                      {folder.title}
+                    </option>
+                  ))}
+                </select>
+              )}
             </div>
 
             <textarea
@@ -393,31 +459,129 @@ export default function Bookmarks({ user, onLoggedOut }) {
 
         {/* какая это папка — видно только там, где список смешанный: внутри
             открытой папки подпись повторяла бы её заголовок в каждой строке */}
-        {(searching || open === ALL) && item.bookmark_folder && (
+        {mine && (searching || open === ALL) && item.bookmark_folder && (
           <span className="badge">{folderName(item.bookmark_folder)}</span>
         )}
 
-        <button
-          type="button"
-          className="link"
-          title={t('common.edit')}
-          disabled={busy}
-          onClick={() => startEdit(item)}
-        >
-          ✎
-        </button>
-        <button
-          type="button"
-          className="link remove"
-          title={t('common.delete')}
-          disabled={busy}
-          onClick={() => remove(item)}
-        >
-          ✕
-        </button>
+        {mayEdit && (
+          <>
+            <button
+              type="button"
+              className="link"
+              title={t('common.edit')}
+              disabled={busy}
+              onClick={() => startEdit(item)}
+            >
+              ✎
+            </button>
+            <button
+              type="button"
+              className="link remove"
+              title={t('common.delete')}
+              disabled={busy}
+              onClick={() => remove(item, { mine })}
+            >
+              ✕
+            </button>
+          </>
+        )}
 
         {item.note && <p className="note">{item.note}</p>}
       </li>
+    )
+  }
+
+  /**
+   * Форма заведения — одна на обе полки, с разными черновиками.
+   *
+   * Зона перетаскивания стоит первой и она же кнопка выбора: тащить умеют не
+   * все и не везде, а нажать — везде.
+   */
+  const addBlock = ({ school }) => {
+    const current = school ? schoolDraft : draft
+    const set = school ? setSchoolDraft : setDraft
+    const input = school ? schoolFileInput : fileInput
+    const zone = school ? 'school' : 'mine'
+
+    return (
+      <>
+        <input
+          ref={input}
+          type="file"
+          multiple
+          hidden
+          aria-label={t(school ? 'bookmarks.addSchoolFile' : 'bookmarks.addFile')}
+          onChange={(event) => {
+            attach([...event.target.files], { school })
+            event.target.value = ''
+          }}
+        />
+
+        <button
+          type="button"
+          className={over === zone ? 'dropzone over' : 'dropzone'}
+          disabled={busy}
+          onClick={() => input.current.click()}
+          onDragOver={(event) => {
+            event.preventDefault()
+            setOver(zone)
+          }}
+          onDragLeave={() => setOver(null)}
+          onDrop={(event) => {
+            event.preventDefault()
+            setOver(null)
+            attach([...(event.dataTransfer?.files ?? [])], { school })
+          }}
+        >
+          {t('bookmarks.dropHere')}
+        </button>
+
+        <form className="shelf-add" onSubmit={submit(school)}>
+          <div className="row">
+            <input
+              value={current.what}
+              maxLength={200}
+              placeholder={t('bookmarks.whatPlaceholder')}
+              aria-label={t(school ? 'bookmarks.whatSchool' : 'bookmarks.what')}
+              onChange={(event) => set({ ...current, what: event.target.value })}
+            />
+            {looksLikeUrl(current.what) && (
+              <input
+                value={current.title}
+                maxLength={200}
+                placeholder={t('bookmarks.linkTitle')}
+                aria-label={t('bookmarks.linkTitle')}
+                onChange={(event) => set({ ...current, title: event.target.value })}
+              />
+            )}
+            <button type="submit" disabled={busy || !current.what.trim()}>
+              {t('common.add')}
+            </button>
+          </div>
+
+          {/*
+            Приписка стоит здесь, а не открывается правкой уже заведённого.
+
+            Пишут её тогда же, когда кладут вещь: «зачем это мне» помнится
+            ровно в этот момент и не помнится через неделю. Она же — способ
+            записать длинное: название держит двести знаков и обрезается,
+            а записка на три строки в него не помещается вовсе.
+
+            И она относится к тому, что заводят **следующим**, включая
+            файл: набрал, зачем несёшь, перетащил файл — приписка уехала
+            вместе с ним.
+          */}
+          <textarea
+            className="shelf-note"
+            rows={2}
+            value={current.note}
+            maxLength={2000}
+            placeholder={t('bookmarks.notePlaceholder')}
+            aria-label={t('bookmarks.note')}
+            onChange={(event) => set({ ...current, note: event.target.value })}
+          />
+        </form>
+      </>
     )
   }
 
@@ -440,6 +604,45 @@ export default function Bookmarks({ user, onLoggedOut }) {
         <p className="error" role="alert">
           {error}
         </p>
+      )}
+
+      {/*
+        Полка школы стоит **над** личной, и порядок тут содержательный.
+
+        Кладут туда то, что нужно всем и сегодня: бланк, регламент, адрес
+        журнала. Внизу страницы это читалось бы как приписка, а смысл её
+        ровно обратный — «сначала посмотри сюда».
+
+        Пустую полку сотруднику не показываем вовсе: пустая карточка с
+        заголовком обещает содержимое, которого нет. Администратору
+        показываем — ему её наполнять.
+      */}
+      {(shownShared.length > 0 || mayFillSchoolShelf) && (
+        <section className="panel school-shelf">
+          <h2>{t('bookmarks.fromSchool')}</h2>
+          <p className="hint">
+            {t(mayFillSchoolShelf ? 'bookmarks.schoolLeadAdmin' : 'bookmarks.schoolLead')}
+          </p>
+
+          {shownShared.length > 0 && (
+            <ul className="attachments">
+              {shownShared.map((item) => itemRow(item, { mine: false }))}
+            </ul>
+          )}
+
+          {shownShared.length === 0 && searching && (
+            <p className="hint">{t('bookmarks.empty.found')}</p>
+          )}
+
+          {mayFillSchoolShelf && addBlock({ school: true })}
+        </section>
+      )}
+
+      {/* Заголовок «Моё» нужен ровно тогда, когда выше есть чужое: без
+          школьной полки страница и так вся про своё, и подпись читалась бы
+          повтором названия. */}
+      {(shownShared.length > 0 || mayFillSchoolShelf) && (
+        <h2 className="shelf-heading">{t('bookmarks.mine')}</h2>
       )}
 
       <div className="shelf">
@@ -521,7 +724,11 @@ export default function Bookmarks({ user, onLoggedOut }) {
             </form>
           )}
 
-          {shown.length > 0 && <ul className="attachments">{shown.map(itemRow)}</ul>}
+          {shown.length > 0 && (
+            <ul className="attachments">
+              {shown.map((item) => itemRow(item, { mine: true }))}
+            </ul>
+          )}
 
           {shown.length === 0 && (
             <EmptyState title={t('bookmarks.empty.title')}>
@@ -532,84 +739,7 @@ export default function Bookmarks({ user, onLoggedOut }) {
           {/* Заводить можно и во время поиска, но кладётся оно **не туда,
               что нашлось**: поиск — это способ дойти до вещи, а не место.
               Поэтому форма показывает, куда именно ляжет новое. */}
-          <input
-            ref={fileInput}
-            type="file"
-            multiple
-            hidden
-            aria-label={t('bookmarks.addFile')}
-            onChange={(event) => {
-              attach([...event.target.files])
-              event.target.value = ''
-            }}
-          />
-
-          <button
-            type="button"
-            className={over ? 'dropzone over' : 'dropzone'}
-            disabled={busy}
-            onClick={() => fileInput.current.click()}
-            onDragOver={(event) => {
-              event.preventDefault()
-              setOver(true)
-            }}
-            onDragLeave={() => setOver(false)}
-            onDrop={(event) => {
-              event.preventDefault()
-              setOver(false)
-              attach([...(event.dataTransfer?.files ?? [])])
-            }}
-          >
-            {t('bookmarks.dropHere')}
-          </button>
-
-          <form className="shelf-add" onSubmit={submit}>
-            <div className="row">
-              <input
-                value={draft.what}
-                maxLength={200}
-                placeholder={t('bookmarks.whatPlaceholder')}
-                aria-label={t('bookmarks.what')}
-                onChange={(event) => setDraft({ ...draft, what: event.target.value })}
-              />
-              {looksLikeUrl(draft.what) && (
-                <input
-                  value={draft.title}
-                  maxLength={200}
-                  placeholder={t('bookmarks.linkTitle')}
-                  aria-label={t('bookmarks.linkTitle')}
-                  onChange={(event) =>
-                    setDraft({ ...draft, title: event.target.value })
-                  }
-                />
-              )}
-              <button type="submit" disabled={busy || !draft.what.trim()}>
-                {t('common.add')}
-              </button>
-            </div>
-
-            {/*
-              Приписка стоит здесь, а не открывается правкой уже заведённого.
-
-              Пишут её тогда же, когда кладут вещь: «зачем это мне» помнится
-              ровно в этот момент и не помнится через неделю. Она же — способ
-              записать длинное: название держит двести знаков и обрезается,
-              а записка на три строки в него не помещается вовсе.
-
-              И она относится к тому, что заводят **следующим**, включая
-              файл: набрал, зачем несёшь, перетащил файл — приписка уехала
-              вместе с ним.
-            */}
-            <textarea
-              className="shelf-note"
-              rows={2}
-              value={draft.note}
-              maxLength={2000}
-              placeholder={t('bookmarks.notePlaceholder')}
-              aria-label={t('bookmarks.note')}
-              onChange={(event) => setDraft({ ...draft, note: event.target.value })}
-            />
-          </form>
+          {addBlock({ school: false })}
 
           <p className="hint">
             {folderId === null

@@ -37,6 +37,16 @@ class ShelfTestMixin(SchoolTestMixin):
     def make_folder(self, owner=None, title="Методика"):
         return Folder.objects.create(owner=owner or self.user, title=title)
 
+    def put_on_school_shelf(self, school=None, **fields):
+        """Вещь на общей полке школы — мимо API, для тестов про чтение."""
+        return Attachment.objects.create(
+            school_shelf=school or self.school,
+            kind=fields.pop("kind", "link"),
+            url=fields.pop("url", "https://example.org/regulations"),
+            title=fields.pop("title", "Регламент"),
+            **fields,
+        )
+
     def put_on_shelf(self, owner=None, *, folder=None, **fields):
         """Вещь на столе, заведённая мимо API: тестам про чтение так проще."""
         owner = owner or self.user
@@ -449,3 +459,169 @@ class TheShelfIsNotACourseTests(ShelfTestMixin, APITestCase):
 
         self.assertEqual(client.get(f"/api/attachments/{item.pk}/").status_code, 404)
         self.assertEqual(client.get(self.folder_url(folder)).status_code, 404)
+
+
+class TheSchoolShelfTests(ShelfTestMixin, APITestCase):
+    """
+    Общая полка: администратор кладёт, сотрудники видят и не правят.
+
+    Форма доступа тут обычная школьная — «читают все, пишет администратор», —
+    и этим полка отличается от личного стола обоими краями. Проверять её
+    поэтому надо отдельно: правило «чужое не видно», верное для стола,
+    здесь неверно, и наоборот.
+    """
+
+    def test_an_administrator_puts_a_link_on_the_school_shelf(self):
+        self.sign_in(self.admin)
+        answer = self.add(
+            school_shelf=self.school.pk,
+            url="https://example.org/regulations",
+            title="Регламент",
+            note="Подписи собирает секретарь",
+        )
+
+        self.assertEqual(answer.status_code, 201, answer.content)
+        item = Attachment.objects.get()
+        self.assertEqual(item.school_shelf, self.school)
+        self.assertIsNone(item.bookmark_owner)
+
+    def test_an_ordinary_teacher_cannot_put_anything_there(self):
+        """
+        Отказ приходит **невалидным полем**, а не отдельной проверкой.
+
+        Та же граница, что у чужого стола: выборка поля не знает школ, куда
+        этому человеку класть нельзя, — и «положить на полку, не будучи
+        администратором» отклоняется на входе, до всякой загрузки файла.
+
+        Отказ поэтому 400, а не 403, и это осознанно. Право здесь спрашивает
+        **поле**, а не вьюха: правил бы полку кто-то ещё — скажем, завуч, —
+        и разрешение выражалось бы одной строкой в `writable_school_shelves`,
+        а не второй проверкой в третьем месте. Цена названа: по коду ответа
+        «нельзя вам» неотличимо от «нет такой школы».
+        """
+        answer = self.add(
+            school_shelf=self.school.pk,
+            url="https://example.org/mine",
+            title="Подложу всем",
+        )
+
+        self.assertEqual(answer.status_code, 400, answer.content)
+        self.assertFalse(Attachment.objects.exists())
+
+    def test_every_employee_of_the_school_sees_the_shelf(self):
+        item = self.put_on_school_shelf()
+
+        for person in (self.user, self.colleague, self.admin):
+            with self.subTest(person.email):
+                self.sign_in(person)
+                answer = self.client.get(
+                    f"/api/attachments/?school_shelf={self.school.pk}"
+                )
+                self.assertEqual(answer.status_code, 200, answer.content)
+                self.assertEqual([row["id"] for row in answer.json()], [item.pk])
+
+    def test_a_teacher_reads_it_but_may_not_change_it(self):
+        """
+        Отказ здесь **403, а не 404**, и это не мелочь.
+
+        Полка у учителя на экране: он на неё смотрит каждый день. Ответить
+        «нет такого» на объект, который человек видит, значит соврать так,
+        что это заметно, — а «не ваше» отвечает на его настоящий вопрос.
+        """
+        item = self.put_on_school_shelf()
+
+        answer = self.client.patch(
+            f"/api/attachments/{item.pk}/", {"title": "Переименую"}
+        )
+        self.assertEqual(answer.status_code, 403, answer.content)
+        self.assertEqual(answer.json()["code"], "attachment_forbidden")
+
+        self.assertEqual(
+            self.client.delete(f"/api/attachments/{item.pk}/").status_code, 403
+        )
+        item.refresh_from_db()
+        self.assertEqual(item.title, "Регламент")
+
+    def test_the_administrator_renames_and_removes(self):
+        item = self.put_on_school_shelf()
+        self.sign_in(self.admin)
+
+        renamed = self.client.patch(
+            f"/api/attachments/{item.pk}/", {"title": "Регламент 2027"}
+        )
+        self.assertEqual(renamed.status_code, 200, renamed.content)
+
+        self.assertEqual(
+            self.client.delete(f"/api/attachments/{item.pk}/").status_code, 204
+        )
+        self.assertFalse(Attachment.objects.exists())
+
+    def test_another_schools_shelf_does_not_exist_here(self):
+        theirs = self.put_on_school_shelf(self.alien_school)
+
+        answer = self.client.get(f"/api/attachments/{theirs.pk}/")
+
+        self.assertEqual(answer.status_code, 404, answer.content)
+        self.assertEqual(
+            self.client.get(
+                f"/api/attachments/?school_shelf={self.alien_school.pk}"
+            ).json(),
+            [],
+        )
+
+    def test_the_family_never_sees_the_school_shelf(self):
+        """
+        Ученику и родителю полка не показывается вовсе.
+
+        На ней лежит то, что нужно **работающим**: регламенты, бланки,
+        внутренние адреса. Семье это не «лишняя строка», а чужая изнанка
+        школы, и попасть туда она может ровно одним способом — если кто-то
+        забудет, что членство в школе есть и у неё.
+        """
+        self.put_on_school_shelf()
+        parent = make_user(self.school, "parent@example.com", parent=True)
+
+        for person in (self.student, parent):
+            with self.subTest(person.email):
+                self.sign_in(person)
+                answer = self.client.get(
+                    f"/api/attachments/?school_shelf={self.school.pk}"
+                )
+                self.assertEqual(answer.status_code, 200, answer.content)
+                self.assertEqual(answer.json(), [])
+
+    def test_the_school_shelf_is_not_a_personal_folder(self):
+        """Папки — принадлежность личного стола: у общей полки их нет."""
+        item = self.put_on_school_shelf()
+        folder = self.make_folder()
+        self.sign_in(self.admin)
+
+        answer = self.client.patch(
+            f"/api/attachments/{item.pk}/", {"bookmark_folder": folder.pk}
+        )
+
+        self.assertEqual(answer.status_code, 400, answer.content)
+        item.refresh_from_db()
+        self.assertIsNone(item.bookmark_folder)
+
+    def test_the_shelf_outlives_the_person_who_filled_it(self):
+        """
+        Ушёл администратор — регламент остался.
+
+        Ради этого полка и сделана владельцем, а не признаком «общее» у
+        личной вещи: у признака остался бы хозяин, и `CASCADE` унёс бы
+        общее у всех разом в день, когда человек уходит из школы.
+        """
+        self.sign_in(self.admin)
+        answer = self.add(
+            school_shelf=self.school.pk,
+            url="https://example.org/regulations",
+            title="Регламент",
+        )
+        self.assertEqual(answer.status_code, 201, answer.content)
+
+        self.admin.delete()
+
+        self.assertEqual(
+            Attachment.objects.filter(school_shelf=self.school).count(), 1
+        )

@@ -97,6 +97,10 @@ def school_attachments(user):
         | Q(work__course__school_id=user.school_id)
         # свой стол: чужой не попадает сюда намеренно — см. докстринг
         | Q(bookmark_owner=user)
+        # полка школы — общая: она и есть «объект этой школы», и отказ на
+        # ней должен быть «не ваше» (403 у не-администратора), а не «нет
+        # такого»
+        | Q(school_shelf_id=user.school_id)
     )
 
 
@@ -129,6 +133,9 @@ def readable_attachments(user):
         # свой стол читается всегда: он не принадлежит ни курсу, ни школе, и
         # снятие с курса его не забирает — в этом половина его смысла
         | Q(bookmark_owner=user)
+        # полку школы читают все её сотрудники: она для того и заведена,
+        # чтобы регламент лежал в одном месте, а не в почте у каждого
+        | Q(school_shelf_id=user.school_id)
     )
 
 
@@ -163,6 +170,14 @@ def can_read(user, attachment) -> bool:
         # личный стол: хозяин, и никто больше. Ни администратор школы, ни
         # методист курса — вопрос «чьё это» здесь не имеет второго ответа
         return attachment.bookmark_owner_id == user.pk
+
+    if attachment.school_shelf_id is not None:
+        # общая полка: её читает вся школа — но сотрудники, а не семья.
+        # Ученику и родителю она не показывается вовсе: там регламенты и
+        # бланки для тех, кто работает, а не для тех, кто учится
+        return attachment.school_shelf_id == user.school_id and getattr(
+            user, "is_teacher", False
+        )
 
     if attachment.work_id is not None:
         # приложенное к заданию: ведущий курса и весь класс, которому эта
@@ -219,6 +234,15 @@ def can_write(user, attachment) -> bool:
         # свой стол правит хозяин: читатель и писатель тут один человек, и
         # разводить эти два ответа было бы выдумыванием роли, которой нет
         return attachment.bookmark_owner_id == user.pk
+
+    if attachment.school_shelf_id is not None:
+        # общая полка — школьный объект обычной формы: читают все, правит
+        # администратор. Тут читатель и писатель как раз разные, и потому
+        # отказ не 404, а «не ваше»: учитель знает, что полка есть, он на
+        # неё смотрит — ему нельзя её менять
+        return (
+            attachment.school_shelf_id == user.school_id and user.is_school_admin
+        )
 
     if attachment.work_id is not None:
         # задание правит тот, кто его задал: ведущий курса. Ученику сюда
@@ -302,6 +326,24 @@ def writable_shelf_owners(user):
     if user is None or not user.is_authenticated:
         return model.objects.none()
     return model.objects.filter(pk=user.pk)
+
+
+def writable_school_shelves(user):
+    """
+    Полка школы, которую этот человек может пополнять: своя, и только админу.
+
+    Как и у личного стола, граница держится **выборкой поля**, а не отдельной
+    проверкой во вьюхе: «положить на полку соседней школы» и «положить на
+    свою, не будучи администратором» отклоняются одинаково — невалидным
+    полем, на входе, до всякой загрузки файла.
+    """
+    from schools.models import School
+
+    if user is None or not user.is_authenticated or user.school_id is None:
+        return School.objects.none()
+    if not user.is_school_admin:
+        return School.objects.none()
+    return School.objects.filter(pk=user.school_id)
 
 
 def writable_shelf_folders(user):
