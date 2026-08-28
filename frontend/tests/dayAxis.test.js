@@ -1,7 +1,15 @@
 import assert from 'node:assert/strict'
 import { describe, test } from 'node:test'
 
-import { NONE, columns, keysOf, layout, prefillFor, teacherOf } from '../src/dayAxis.js'
+import {
+  AXES,
+  NONE,
+  columns,
+  keysOf,
+  layout,
+  prefillFor,
+  teacherOf,
+} from '../src/dayAxis.js'
 
 const slot = (fields) => ({
   id: 1,
@@ -16,10 +24,6 @@ const slot = (fields) => ({
   ...fields,
 })
 
-const courses = [
-  { id: 10, name: '9Б Алгебра', teachers: [{ id: 100, name: 'Мария Иванова' }] },
-  { id: 11, name: '10А Физика', teachers: [] },
-]
 const teachers = [
   { id: 100, name: 'Мария Иванова' },
   { id: 101, name: 'Пётр Петров' },
@@ -31,8 +35,16 @@ const rooms = [
 ]
 
 describe('в какой столбец попадает час', () => {
-  test('на оси курсов столбец ровно один — его держит база', () => {
-    assert.deepEqual(keysOf(slot({}), 'course'), ['10'])
+  test('оси курсов нет: столбец с названием курса не отвечал ни на чей вопрос', () => {
+    // с неё дневная сетка начиналась, и убрана она по просьбе: столбец
+    // «9Б Алгебра» пересказывал то, что и так стоит в фильтрах, и молчал о
+    // том, где урок идёт и кто его ведёт. Тест сторожит решение, а не код:
+    // вернуть ось — значит сначала объяснить, кому она отвечает
+    assert.deepEqual(AXES, ['teacher', 'room', 'homegroup'])
+  })
+
+  test('на оси кабинетов столбец ровно один — тот, что записан в часе', () => {
+    assert.deepEqual(keysOf(slot({}), 'room'), ['200'])
   })
 
   test('замена ведёт час в столбец того, кто ведёт на самом деле', () => {
@@ -90,18 +102,6 @@ describe('какие столбцы показать', () => {
     )
   })
 
-  test('на оси курсов в подписи столбца — кто ведёт', () => {
-    const shown = columns('course', { courses, slots: [] })
-
-    assert.deepEqual(
-      shown.map((one) => [one.name, one.note]),
-      [
-        ['9Б Алгебра', 'Мария Иванова'],
-        ['10А Физика', ''],
-      ],
-    )
-  })
-
   test('на оси учителей столбцы — люди школы', () => {
     const shown = columns('teacher', { teachers, slots: [] })
     assert.deepEqual(shown.map((one) => one.name), ['Мария Иванова', 'Пётр Петров'])
@@ -121,14 +121,14 @@ describe('раскладка часов по клеткам', () => {
     )
   })
 
-  test('на оси курсов те же два часа расходятся по своим столбцам', () => {
+  test('на оси учителей те же два часа расходятся по своим столбцам', () => {
     const byColumn = layout(
-      [slot({ id: 1, course: 10 }), slot({ id: 2, course: 11 })],
-      'course',
+      [slot({ id: 1, teacher: 100 }), slot({ id: 2, teacher: 101 })],
+      'teacher',
     )
 
-    assert.deepEqual(byColumn.get('10').get(1).length, 1)
-    assert.deepEqual(byColumn.get('11').get(1).length, 1)
+    assert.deepEqual(byColumn.get('100').get(1).length, 1)
+    assert.deepEqual(byColumn.get('101').get(1).length, 1)
   })
 })
 
@@ -138,7 +138,7 @@ describe('что знает форма, когда нажали «+» в сто�
     // подставляются, но про курс форма всё равно спросит
     assert.deepEqual(prefillFor('room', { id: 200 }), { room: 200 })
     assert.deepEqual(prefillFor('teacher', { id: 100 }), { teacher: 100 })
-    assert.deepEqual(prefillFor('course', { id: 10 }), { course: 10 })
+    assert.deepEqual(prefillFor('homegroup', { id: 300 }), { homegroup: 300 })
   })
 
   test('в крайнем столбце подставлять нечего', () => {

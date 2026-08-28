@@ -42,7 +42,7 @@ export default function Schedule({ user, onLoggedOut }) {
   const span = search.get('span') === 'day' ? 'day' : 'week'
   // ось столбцов дневного вида — там же, в адресе: «вот вторник по
   // кабинетам» посылают ссылкой ровно так же, как сам вторник
-  const axis = AXES.includes(search.get('by')) ? search.get('by') : 'course'
+  const axis = AXES.includes(search.get('by')) ? search.get('by') : AXES[0]
 
   // `replace` — тем же доводом, что у вида: размах не шаг в истории
   const setParam = (key, value, fallback) => {
@@ -70,7 +70,7 @@ export default function Schedule({ user, onLoggedOut }) {
       span={span}
       onSpan={(value) => setParam('span', value, 'week')}
       axis={axis}
-      onAxis={(value) => setParam('by', value, 'course')}
+      onAxis={(value) => setParam('by', value, AXES[0])}
       onLoggedOut={onLoggedOut}
     />
   ) : (

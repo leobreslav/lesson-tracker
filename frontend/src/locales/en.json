@@ -822,7 +822,6 @@
     "rooms": "Rooms",
     "axis": {
       "label": "Columns are",
-      "course": "Courses",
       "teacher": "Teachers",
       "room": "Rooms",
       "homegroup": "Classes",
@@ -1030,8 +1029,6 @@
     "copyNote": "Cancellations and substitutions are neither copied nor wiped when a period is replaced: bulk edits leave hand-made markup alone.",
     "copied": "Created {{created}}, skipped {{skipped}}.",
     "day": {
-      "lesson": "Lesson",
-      "extra": "Extra",
       "cancelled": "Cancelled",
       "addTo": "Add lesson {{number}} to {{column}}",
       "noCourses": "No courses match the filter, so there are no columns to show.",

@@ -54,7 +54,6 @@ import {
 } from './scheduleLogic'
 import { AXES, columns as axisColumns, layout, prefillFor } from './dayAxis'
 import {
-  courseMatches,
   emptyFilters,
   filterOptions,
   pick,
@@ -111,7 +110,7 @@ export default function SchoolSchedule({
   views = null,
   span = 'week',
   onSpan = null,
-  axis = 'course',
+  axis = 'teacher',
   onAxis = null,
   onLoggedOut,
 }) {
@@ -312,17 +311,16 @@ export default function SchoolSchedule({
    * Столбцы дневного вида и раскладка часов по ним — по выбранной оси.
    *
    * Считает это чистый модуль (`dayAxis.js`), и здесь остаётся только то,
-   * чего он знать не может: какие курсы прошли сужение, кто из людей школы
-   * ведёт хоть что-нибудь и какие кабинеты завела школа.
+   * чего он знать не может: кто из людей школы ведёт хоть что-нибудь, какие
+   * кабинеты завела школа и какие в ней классы.
    *
    * Пустой столбец остаётся на любой оси: свободный кабинет — это и есть
-   * ответ, ради которого на ось кабинетов смотрят, а курс без часов — место,
-   * куда час ставят.
+   * ответ, ради которого на ось кабинетов смотрят, а учитель без часов —
+   * тот, кем закрывают окно.
    */
   const columns = useMemo(
     () =>
       axisColumns(axis, {
-        courses: courses.filter((course) => courseMatches(course, filters)),
         teachers: options.teachers.map((person) => ({
           id: person.id,
           name: personName(person),
@@ -331,16 +329,7 @@ export default function SchoolSchedule({
         homegroups,
         slots: visible.filter((slot) => slot.date === period.start),
       }),
-    [
-      axis,
-      courses,
-      filters,
-      options.teachers,
-      rooms,
-      homegroups,
-      visible,
-      period.start,
-    ],
+    [axis, options.teachers, rooms, homegroups, visible, period.start],
   )
 
   const byColumn = useMemo(
@@ -427,14 +416,9 @@ export default function SchoolSchedule({
    */
   const dayCell = (slot) => (
     <>
-      <span className="cell-course">
-        {axis === 'course'
-          ? slot.lesson_title ||
-            (slot.is_extra
-              ? t('schoolSchedule.day.extra')
-              : t('schoolSchedule.day.lesson'))
-          : slot.course_name}
-      </span>
+      {/* Курс назван в клетке всегда: столбец теперь про кабинет, учителя
+          или класс, и без имени курса непонятно, что за урок там стоит */}
+      <span className="cell-course">{slot.course_name}</span>
       {(axis === 'room' || axis === 'homegroup') && slot.teacher_name && (
         <span className="cell-topic">{slot.teacher_name}</span>
       )}
@@ -446,11 +430,7 @@ export default function SchoolSchedule({
           {slot.reason || t('schoolSchedule.day.cancelled')}
         </span>
       )}
-      {/* На оси курсов записанная тема уже стоит первой строкой, и
-          планируемая под ней была бы той же фразой дважды. У часа без записи
-          показать её нечем, кроме этого переключателя, — там она и появляется */}
-      {(axis !== 'course' || !slot.lesson_title) && topicOf(slot)}
-      {axis === 'course' && roomOf(slot)}
+      {topicOf(slot)}
     </>
   )
 
