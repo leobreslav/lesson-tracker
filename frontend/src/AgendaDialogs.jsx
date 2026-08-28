@@ -441,6 +441,11 @@ export function LessonMenu({
   const [target, setTarget] = useState({ date: '', number: lesson.lesson_number })
   // «этот час» или «и дальше по расписанию» — см. MoveModeChoice ниже
   const [moveMode, setMoveMode] = useState(MOVE_ONCE)
+  // тот же вопрос у кабинета, и по той же причине: расписание строят рядами,
+  // и «алгебра по вторникам третьим часом идёт в 214» — одно решение, а не
+  // тридцать четыре. Своё состояние, а не общее с переносом: два разговора
+  // идут по очереди, и ответ на один не должен подставляться во второй
+  const [roomScope, setRoomScope] = useState(MOVE_ONCE)
   // строка плана, попавшая в этот час: {plan_row_id, title, section_title}
   const [row, setRow] = useState(null)
 
@@ -476,7 +481,7 @@ export function LessonMenu({
 
   const handleRoom = (event) => {
     event.preventDefault()
-    onRoom(room)
+    onRoom(room, roomScope)
   }
 
   /**
@@ -742,6 +747,23 @@ export function LessonMenu({
           <form onSubmit={handleRoom}>
             <p className="hint">{t('agenda.menu.roomHint')}</p>
             <RoomChoice rooms={rooms} value={room} busy={busy} onChange={setRoom} />
+            <Switch
+              label={t('agenda.menu.roomScope')}
+              value={roomScope}
+              disabled={busy}
+              onChange={setRoomScope}
+              options={[
+                { value: MOVE_ONCE, label: t('agenda.menu.roomOnce') },
+                { value: MOVE_SERIES, label: t('agenda.menu.roomSeries') },
+              ]}
+            />
+            <p className="hint">
+              {t(
+                roomScope === MOVE_SERIES
+                  ? 'agenda.menu.roomSeriesHint'
+                  : 'agenda.menu.roomOnceHint',
+              )}
+            </p>
             <div className="actions">
               <button type="submit" disabled={busy}>
                 {t('common.save')}

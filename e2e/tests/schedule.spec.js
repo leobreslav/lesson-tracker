@@ -1305,3 +1305,59 @@ test('листание недель не уносит страницу в нач
   await expect(page.locator('.week-grid')).toBeVisible()
   expect(await page.evaluate(() => window.scrollY)).toBe(before)
 })
+
+test('кабинет ставится на весь ряд, а не по клетке', async ({
+  page,
+  signIn,
+  api,
+}) => {
+  /*
+   * Расписание строят рядами, и кабинет — свойство того же решения, что
+   * день недели и номер: «алгебра по понедельникам идёт в 214» говорят один
+   * раз. Пока выбора не было, это означало тридцать четыре нажатия, и
+   * первая же пропущенная клетка читалась потом как ошибка расписания, а не
+   * как забытое нажатие.
+   */
+  await signIn(PEOPLE.ivanova)
+  await openWeek(page, MONDAY)
+
+  const lesson = page.locator(`[data-lesson="${MONDAY}:1"]`).first()
+  await lesson.click()
+  const menu = page.locator('.context-menu')
+  await menu.getByRole('button', { name: 'Кабинет…' }).click()
+
+  await menu.getByLabel('Кабинет').selectOption({ label: 'Лаборатория' })
+  // тот же тумблер и те же слова, что у переноса: вопрос один и тот же
+  await menu.getByRole('radio', { name: 'И дальше' }).check()
+  await menu.getByRole('button', { name: 'Сохранить' }).click()
+
+  // ряд считает сервер: сколько его часов несут запись, заранее не знает
+  // никто, поэтому ответ — числа, а не перерисованная неделя
+  await expect(page.getByText(/Часов переставлено в этот кабинет/)).toBeVisible()
+
+  const teacher = await api(PEOPLE.ivanova)
+  const slots = await teacher.get('/api/slots/?start=2026-09-01&end=2027-05-31')
+  const clicked = slots.body.find(
+    (slot) => slot.date === MONDAY && slot.lesson_number === 1,
+  )
+  // ряд — тот же день недели и тот же номер у того же курса, вперёд
+  const ahead = slots.body.filter(
+    (slot) =>
+      slot.course === clicked.course &&
+      slot.lesson_number === 1 &&
+      slot.date > MONDAY &&
+      new Date(slot.date).getUTCDay() === new Date(MONDAY).getUTCDay(),
+  )
+
+  expect(clicked.room_name).toBe('Лаборатория')
+  expect(ahead.length).toBeGreaterThan(0)
+  // переезжают обычные часы без записи; отменённый, дополнительный и
+  // записанный остаются при своём — это и есть `kept` в ответе
+  const travelled = ahead.filter(
+    (slot) => !slot.lesson && !slot.is_cancelled && !slot.is_extra,
+  )
+  expect(travelled.length).toBeGreaterThan(0)
+  expect(travelled.map((slot) => slot.room_name)).toEqual(
+    travelled.map(() => 'Лаборатория'),
+  )
+})

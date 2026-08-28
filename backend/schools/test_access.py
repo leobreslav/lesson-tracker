@@ -457,6 +457,14 @@ class PersonalObjectTests(AccessTestCase):
                     "body": {"date": str(MONDAY), "lesson_number": 7},
                 },
                 "slot-card",
+                # кабинет ходит тем же путём, что перенос: id в адресе, а
+                # `mode=series` правит ещё и весь ряд — то есть чужому он
+                # обязан отвечать ровно то же, что и несуществующий id
+                {
+                    "name": "slot-room",
+                    "method": "post",
+                    "body": {"room": None},
+                },
                 {
                     "name": "slot-attendance",
                     "method": "post",

@@ -28,6 +28,7 @@ import {
   fetchSchoolYears,
   moveSlot,
   repeatSlot,
+  setSlotRoom,
   updateSlot,
 } from './api'
 import {
@@ -43,6 +44,7 @@ import {
   MAX_LESSON_NUMBER,
   describeCopyResult,
   describeMoveResult,
+  describeRoomResult,
 } from './scheduleLogic'
 
 const NUMBERS = Array.from({ length: MAX_LESSON_NUMBER }, (_, index) => index + 1)
@@ -425,6 +427,43 @@ export default function Agenda({ views = null, onLoggedOut }) {
         ),
       },
       () => updateSlot(lesson.id, fields),
+    )
+  }
+
+  /**
+   * Кабинет: этому часу или всему его ряду.
+   *
+   * Разделено ровно там же, где у заведения часа: одну клетку видно сразу и
+   * рисовать её нечем, кроме как самой, а ряд считает сервер — сколько его
+   * часов несут запись и потому останутся при своём, заранее не знает
+   * никто. Отсюда и два ответа: клетка меняется на месте, ряд отвечает
+   * числами.
+   */
+  const setRoomOn = (date, lesson, room, scope) => {
+    setDialog(null)
+
+    if (scope === MOVE_SERIES) {
+      runBulk(
+        () => setSlotRoom(lesson.id, { room, mode: MOVE_SERIES }),
+        (result) => describeRoomResult(result, t),
+      )
+      return
+    }
+
+    return mutate(
+      {
+        ...data.lessons,
+        [date]: data.lessons[date].map((item) =>
+          item.id === lesson.id
+            ? {
+                ...item,
+                room,
+                room_name: rooms.find((one) => one.id === room)?.name ?? null,
+              }
+            : item,
+        ),
+      },
+      () => setSlotRoom(lesson.id, { room, mode: MOVE_ONCE }),
     )
   }
 
@@ -1002,7 +1041,7 @@ export default function Agenda({ views = null, onLoggedOut }) {
             patchLesson(dialog.date, dialog.lesson, { is_extra: false, reason: '' })
           }
           rooms={rooms}
-          onRoom={(room) => patchLesson(dialog.date, dialog.lesson, { room })}
+          onRoom={(room, scope) => setRoomOn(dialog.date, dialog.lesson, room, scope)}
           onClose={() => setDialog(null)}
         />
       )}

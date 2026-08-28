@@ -790,6 +790,13 @@
       "cancel": "Cancel the lesson",
       "room": "Room…",
       "roomHint": "Where this lesson takes place. Empty means not set.",
+      "roomScope": "Apply to",
+      "roomOnce": "This hour",
+      "roomSeries": "And onwards",
+      "roomOnceHint": "Only this hour changes rooms.",
+      "roomSeriesHint": "The whole row — this hour and every one like it, same weekday and number, until the end of the year. Hours that already carry a record keep the room they were held in.",
+      "roomSeriesDone": "Hours moved to this room: {{updated}}",
+      "roomSeriesKept": ", left as history: {{kept}}",
       "roomIs": "Room {{name}}"
     },
     "copyDay": "Copy the day…",

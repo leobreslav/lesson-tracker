@@ -176,3 +176,19 @@ export function describeMoveResult(result, t) {
     '.'
   )
 }
+
+/**
+ * A readable summary of a room set on a whole row.
+ *
+ * Same shape and same reason as the move above: an hour that already carries
+ * a record keeps the room it was held in — «the lesson took place in 214» is
+ * a fact of a past day — and reporting only «updated» would read as «the
+ * whole row», which is exactly what the reader must not assume.
+ */
+export function describeRoomResult(result, t) {
+  return (
+    t('agenda.menu.roomSeriesDone', { updated: result.updated }) +
+    (result.kept ? t('agenda.menu.roomSeriesKept', { kept: result.kept }) : '') +
+    '.'
+  )
+}

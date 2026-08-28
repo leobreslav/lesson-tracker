@@ -1292,6 +1292,17 @@ export const deleteSlot = (id) =>
 export const moveSlot = (id, fields) =>
   request(`/api/slots/${id}/move/`, { method: 'POST', body: fields })
 
+/*
+ * Кабинет: этому часу или всему его ряду.
+ *
+ * Ряд — тот же, что у переноса и удаления: курс, день недели, номер, от
+ * этого часа до конца года. Считает его сервер и отвечает числами: сколько
+ * часов ряда несут запись, заранее не известно, а обещанное и разошедшееся
+ * число хуже, чем названное после.
+ */
+export const setSlotRoom = (id, fields) =>
+  request(`/api/slots/${id}/room/`, { method: 'POST', body: fields })
+
 // одно занятие целиком — то, с чем работают на его странице: тема из
 // плана, работы и соседи по курсу
 export const fetchSlotCard = (id) => request(`/api/slots/${id}/card/`)

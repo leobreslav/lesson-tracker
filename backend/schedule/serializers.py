@@ -965,6 +965,39 @@ class SlotMoveSerializer(serializers.Serializer):
     reason = serializers.CharField(max_length=200, required=False, allow_blank=True)
 
 
+class SlotRoomSerializer(serializers.Serializer):
+    """
+    Куда поставить занятие — и одно ли его ставят.
+
+    Вопрос тот же, что у переноса, и спрашивается теми же двумя словами:
+    кабинет назначают на **этот час** или на **ряд**. Расписание строят
+    рядами, и «алгебра по вторникам третьим часом идёт в 214» — одно
+    решение, а не тридцать четыре; проставлять его по клетке значило бы
+    повторять руками то, что человек уже сказал один раз.
+
+    Умолчание — `once`, по тому же доводу, что у переноса: разовая правка
+    случается чаще, и молчащий клиент должен получить то же, что получал
+    всегда (PATCH одного поля).
+
+    `room` может быть пустым — это «кабинет не указан», законное состояние,
+    а не пропуск. Снять кабинет с ряда так же нужно, как проставить: класс
+    переехал, помещение отдали под склад.
+    """
+
+    ONCE = "once"
+    SERIES = "series"
+
+    room = serializers.PrimaryKeyRelatedField(
+        queryset=Room.objects.none(), allow_null=True
+    )
+    mode = serializers.ChoiceField(choices=(ONCE, SERIES), default=ONCE)
+
+    def get_fields(self):
+        fields = super().get_fields()
+        fields["room"].queryset = school_rooms(self)
+        return fields
+
+
 from plans.models import PlanNode
 
 

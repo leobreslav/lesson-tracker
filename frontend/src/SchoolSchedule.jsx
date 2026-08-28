@@ -31,6 +31,7 @@ import {
   fetchYearDays,
   moveSlot,
   repeatSlot,
+  setSlotRoom,
   updateSlot,
 } from './api'
 import {
@@ -43,7 +44,11 @@ import {
 import { dateRange, firstWeekday, longDate } from './dates'
 import { weekdayIndex } from './weekStart'
 import { useKept } from './remember'
-import { MAX_LESSON_NUMBER, describeMoveResult } from './scheduleLogic'
+import {
+  MAX_LESSON_NUMBER,
+  describeMoveResult,
+  describeRoomResult,
+} from './scheduleLogic'
 import { AXES, columns as axisColumns, layout, prefillFor } from './dayAxis'
 import {
   courseMatches,
@@ -739,9 +744,17 @@ export default function SchoolSchedule({
             run(() => updateSlot(dialog.slot.id, { is_extra: false, reason: '' }))
           }}
           rooms={rooms}
-          onRoom={(room) => {
+          onRoom={(room, scope) => {
             setDialog(null)
-            run(() => updateSlot(dialog.slot.id, { room }))
+            // ряд отвечает числами, одиночный час — самим часом: сколько
+            // часов ряда несут запись и потому останутся при своём кабинете,
+            // знает только сервер
+            run(
+              () => setSlotRoom(dialog.slot.id, { room, mode: scope }),
+              scope === MOVE_SERIES
+                ? (result) => describeRoomResult(result, t)
+                : undefined,
+            )
           }}
           onDelete={() => {
             setDialog(null)

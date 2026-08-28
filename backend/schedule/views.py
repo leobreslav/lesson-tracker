@@ -66,6 +66,7 @@ from .serializers import (
     HomegroupStudentSerializer,
     RoomSerializer,
     SlotMoveSerializer,
+    SlotRoomSerializer,
     SlotSerializer,
     PeriodSerializer,
     full_name,
@@ -1409,6 +1410,76 @@ class SlotViewSet(SchoolScopedViewSet):
             self.refuse_if_move_breaks_order(slot.course)
 
         return Response({"moved": moved, "skipped": skipped, "kept": kept})
+
+    @action(detail=True, methods=["post"])
+    def room(self, request, pk=None):
+        """
+        Поставить занятие в кабинет — этот час или весь его ряд.
+
+        Расписание строят рядами, и кабинет — свойство ряда ровно в той же
+        мере, что день недели и номер: «алгебра по вторникам третьим часом
+        идёт в 214» — одно решение, а не тридцать четыре. Проставленный по
+        клетке, он повторяет руками то, что человек уже сказал один раз, и
+        первая же пропущенная клетка выглядит потом как ошибка расписания,
+        а не как забытое нажатие.
+
+        Ряд здесь **тот же**, что у переноса и у удаления ряда: курс, день
+        недели, номер, от этого часа и до конца года. Третьего определения
+        ряда в проекте быть не должно — они разошлись бы молча, и первым
+        это заметил бы человек, у которого «весь ряд» означал разное в
+        соседних пунктах одного меню.
+
+        Два правила, и оба взяты у соседей:
+
+        - **час, по которому щёлкнули, получает кабинет всегда.** По нему
+          нажали, и это ровно то, что делает одиночная правка сегодня:
+          отменённому и записанному кабинет проставить можно, потому что
+          «где стоял час» — не запись о том, что в нём произошло;
+        - **остальные часы ряда — только обычные и без записи.** «Урок шёл
+          в 214» — факт прошедшего дня, и переписывать его задним числом
+          нельзя; у дополнительного часа ряда нет по определению. Оба
+          возвращаются числом `kept` — то же правило, что у `sweepable`, у
+          удаления ряда и у постоянного переноса.
+
+        Отчёт числами, а не перерисованной сеткой: сколько часов ряда
+        окажется записанными, знает только сервер, и обещать это заранее
+        было бы четвёртым зеркалом его расчёта.
+        """
+        slot = self.get_object()
+        form = SlotRoomSerializer(
+            data=request.data, context=self.get_serializer_context()
+        )
+        form.is_valid(raise_exception=True)
+        room = form.validated_data["room"]
+
+        slot.room = room
+        slot.save(update_fields=["room"])
+
+        if form.validated_data["mode"] != SlotRoomSerializer.SERIES:
+            return Response(SlotSerializer(slot, context=self.get_serializer_context()).data)
+
+        updated, kept = 1, 0
+        row = [
+            other
+            for other in Slot.objects.filter(
+                course=slot.course,
+                date__gt=slot.date,
+                date__lte=slot.year.end_date,
+                lesson_number=slot.lesson_number,
+            ).order_by("date")
+            if other.date.weekday() == slot.date.weekday()
+        ]
+
+        with transaction.atomic():
+            for other in row:
+                if not other.is_regular or other.has_record():
+                    kept += 1
+                    continue
+                other.room = room
+                other.save(update_fields=["room"])
+                updated += 1
+
+        return Response({"updated": updated, "kept": kept})
 
     def place_taken(self, slot, date, number) -> bool:
         """

@@ -314,3 +314,196 @@ class RoomTravelsWithTheLessonTests(RoomTestCase):
         self.assertEqual(one.status_code, 400, one.content)
         self.assertEqual(row.status_code, 400, row.content)
         self.assertFalse(Slot.objects.filter(room=alien).exists())
+
+
+class RoomGoesOnTheWholeRowTests(RoomTestCase):
+    """
+    Кабинет ставят ряду, а не клетке за клеткой.
+
+    Расписание строят рядами — «алгебра по вторникам третьим часом», — и
+    кабинет принадлежит этому решению ровно так же, как день недели и
+    номер. Проставленный по одной клетке, он повторяет руками сказанное
+    один раз, и первая же пропущенная клетка читается потом как ошибка
+    расписания, а не как забытое нажатие.
+
+    Ряд здесь **тот же**, что у переноса и у удаления ряда: курс, день
+    недели, номер, от этого часа и до конца года. Третьего определения ряда
+    в проекте быть не должно, и проверяется тут в том числе это: прошлое не
+    трогается, а часы с записью остаются в кабинете, в котором прошли.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.client.force_authenticate(self.admin)
+
+    def row_url(self, slot):
+        return reverse("slot-room", args=[slot.pk])
+
+    def test_the_whole_row_moves_into_the_room(self):
+        first = self.slot(self.mine, day=MONDAY, number=3)
+        second = self.slot(self.mine, day=MONDAY + timedelta(days=7), number=3)
+        third = self.slot(self.mine, day=MONDAY + timedelta(days=14), number=3)
+
+        answer = self.client.post(
+            self.row_url(first),
+            {"room": self.room.pk, "mode": "series"},
+            format="json",
+        )
+
+        self.assertEqual(answer.status_code, 200, answer.content)
+        self.assertEqual(answer.json(), {"updated": 3, "kept": 0})
+        for slot in (first, second, third):
+            slot.refresh_from_db()
+            self.assertEqual(slot.room, self.room)
+
+    def test_another_weekday_and_another_number_are_a_different_row(self):
+        """Ряд — это день недели и номер, а не «все часы курса вперёд»."""
+        first = self.slot(self.mine, day=MONDAY, number=3)
+        other_number = self.slot(self.mine, day=MONDAY + timedelta(days=7), number=4)
+        other_day = self.slot(self.mine, day=TUESDAY + timedelta(days=7), number=3)
+
+        self.client.post(
+            self.row_url(first),
+            {"room": self.room.pk, "mode": "series"},
+            format="json",
+        )
+
+        for stranger in (other_number, other_day):
+            stranger.refresh_from_db()
+            self.assertIsNone(stranger.room, "чужой ряд трогать нельзя")
+
+    def test_the_past_of_the_row_stays_as_it_was(self):
+        """
+        Расписание меняют вперёд: прошедшие часы — уже история.
+
+        То же правило, что у постоянного переноса, и записано оно один раз:
+        ряд считается **от этого часа**, а не от начала года.
+        """
+        earlier = self.slot(self.mine, room=self.gym, day=MONDAY, number=3)
+        clicked = self.slot(self.mine, day=MONDAY + timedelta(days=7), number=3)
+
+        self.client.post(
+            self.row_url(clicked),
+            {"room": self.room.pk, "mode": "series"},
+            format="json",
+        )
+
+        earlier.refresh_from_db()
+        self.assertEqual(earlier.room, self.gym, "прошлое ряда не трогают")
+
+    def test_an_hour_with_a_record_keeps_the_room_it_was_held_in(self):
+        """
+        «Урок шёл в 214» — факт прошедшего дня, и задним числом он не правится.
+
+        Отменённый и дополнительный остаются по тому же правилу, что у
+        `sweepable` и у удаления ряда: у первого урока не было, у второго
+        ряда нет по определению. Все трое возвращаются числом `kept` —
+        молчаливая потеря хуже названной.
+        """
+        clicked = self.slot(self.mine, day=MONDAY, number=3)
+        recorded = self.slot(
+            self.mine,
+            room=self.gym,
+            day=MONDAY + timedelta(days=7),
+            number=3,
+            taught_by=self.colleague,
+        )
+        cancelled = self.slot(
+            self.mine,
+            room=self.gym,
+            day=MONDAY + timedelta(days=14),
+            number=3,
+            is_cancelled=True,
+        )
+        plain = self.slot(self.mine, day=MONDAY + timedelta(days=21), number=3)
+
+        answer = self.client.post(
+            self.row_url(clicked),
+            {"room": self.room.pk, "mode": "series"},
+            format="json",
+        )
+
+        self.assertEqual(answer.json(), {"updated": 2, "kept": 2})
+        for kept in (recorded, cancelled):
+            kept.refresh_from_db()
+            self.assertEqual(kept.room, self.gym)
+        plain.refresh_from_db()
+        self.assertEqual(plain.room, self.room)
+
+    def test_without_a_mode_only_this_hour_changes(self):
+        """
+        Умолчание — «этот час»: молчащий клиент получает прежнее поведение.
+
+        Тот же довод, что у переноса: разовая правка случается чаще, и
+        режим, меняющий год расписания по умолчанию, был бы ловушкой.
+        """
+        clicked = self.slot(self.mine, day=MONDAY, number=3)
+        neighbour = self.slot(self.mine, day=MONDAY + timedelta(days=7), number=3)
+
+        answer = self.client.post(
+            self.row_url(clicked), {"room": self.room.pk}, format="json"
+        )
+
+        self.assertEqual(answer.status_code, 200, answer.content)
+        self.assertEqual(answer.json()["room_name"], "214")
+        clicked.refresh_from_db()
+        neighbour.refresh_from_db()
+        self.assertEqual(clicked.room, self.room)
+        self.assertIsNone(neighbour.room)
+
+    def test_the_row_can_be_emptied_of_its_room(self):
+        """
+        Снять кабинет с ряда нужно так же, как поставить: класс переехал.
+
+        Пусто — законное состояние («не указан»), а не пропуск, поэтому
+        `null` здесь обычное значение, а не ошибка.
+        """
+        first = self.slot(self.mine, room=self.room, day=MONDAY, number=3)
+        second = self.slot(
+            self.mine, room=self.room, day=MONDAY + timedelta(days=7), number=3
+        )
+
+        answer = self.client.post(
+            self.row_url(first), {"room": None, "mode": "series"}, format="json"
+        )
+
+        self.assertEqual(answer.status_code, 200, answer.content)
+        for slot in (first, second):
+            slot.refresh_from_db()
+            self.assertIsNone(slot.room)
+
+    def test_a_room_of_another_school_is_refused_here_too(self):
+        """Дверей, спрашивающих кабинет, три, и сужены все три."""
+        alien = Room.objects.create(school=self.alien_school, name="Чужой 101")
+        clicked = self.slot(self.mine, day=MONDAY, number=3)
+
+        answer = self.client.post(
+            self.row_url(clicked),
+            {"room": alien.pk, "mode": "series"},
+            format="json",
+        )
+
+        self.assertEqual(answer.status_code, 400, answer.content)
+        clicked.refresh_from_db()
+        self.assertIsNone(clicked.room)
+
+    def test_a_teacher_may_not_set_a_room_on_a_colleagues_row(self):
+        """
+        Право то же, что у остальной правки часа: свой курс или админ школы.
+
+        Спрашивается оно объектом (`IsCourseTeacherOrSchoolAdmin`), и
+        отдельной проверки здесь нет намеренно — второй список правил
+        разошёлся бы с первым.
+        """
+        theirs = self.slot(self.theirs, day=MONDAY, number=3)
+        self.client.force_authenticate(self.user)
+
+        answer = self.client.post(
+            self.row_url(theirs),
+            {"room": self.room.pk, "mode": "series"},
+            format="json",
+        )
+
+        self.assertEqual(answer.status_code, 403, answer.content)
+        theirs.refresh_from_db()
+        self.assertIsNone(theirs.room)
