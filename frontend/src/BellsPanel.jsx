@@ -2,23 +2,37 @@ import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import Hint from './Hint'
 import { MAX_LESSON_NUMBER } from './scheduleLogic'
-import { fetchBells, saveBells } from './api'
+import { fetchSchoolDay, saveSchoolDay } from './api'
 
 /**
- * Расписание звонков: во сколько начинается и кончается каждый урок.
+ * Школьный день: сколько в нём уроков и во сколько каждый начинается.
  *
  * Правится **целиком**, одной кнопкой: это одна вещь, а не десять
  * независимых строк, и номер урока в ней ключ. Построчное сохранение
  * потребовало бы отдельного разговора про удаление там, где удаляют ровно
  * тогда, когда школа сократила день, — а сокращают его сразу, а не по уроку.
  *
- * Показываются **все** номера до максимума, а не только заполненные. Пустая
- * строка значит «этого урока в школе нет», и увидеть, где кончается день,
- * можно только рядом с пустыми: список из шести строк не отвечает на вопрос,
- * бывает ли седьмой.
+ * **Строк ровно столько, сколько уроков в дне.** Раньше их было десять
+ * всегда, а пустая значила «этого урока в школе нет»; читалось это ровно
+ * наоборот — как незаполненная настройка, — и ответить на вопрос «сколько у
+ * нас уроков» было нечем: молчание пустой строки ничем не отличается от
+ * забытой. Теперь длина дня — число, которое школа ставит сама, а сетка
+ * расписания рисует столько рядов, сколько уроков.
  *
- * Заполнено может быть не всё, и это не незаконченная настройка: до звонков
- * школа жила, сетка показывала номера — и покажет, если строку стереть.
+ * **Убирается только последний урок.** Снос из середины означал бы
+ * перенумерацию уже расставленных часов, а номер в этом проекте — ключ
+ * занятия: перенос звонка не должен переписывать расписание. День сокращают
+ * с конца, им же и удлиняют.
+ *
+ * **Сокращение ничего не отменяет.** Занятия, уже стоящие на снимаемых
+ * номерах, остаются: иначе школа с восьмиурочным прошлым не перешла бы на
+ * шесть уроков никогда. Сказано об этом словами и заранее — по числу
+ * `busiest` с сервера, — потому что молчаливое «кнопка нажалась, а в сетке
+ * всё по-старому» читается как поломка.
+ *
+ * Время при этом заполнено может быть не всё, и это не незаконченная
+ * настройка: до звонков школа жила, сетка показывала номера — и покажет,
+ * если строку стереть.
  */
 // Права здесь не спрашиваются: раздел «Справочники» и так открыт
 // администратору, а отказ не-администратору приходит с сервера кодом — как у
@@ -27,6 +41,8 @@ import { fetchBells, saveBells } from './api'
 export default function BellsPanel() {
   const { t } = useTranslation()
   const [rows, setRows] = useState(null)
+  // самый поздний занятый номер: не запрет, а то, о чём предупреждают
+  const [busiest, setBusiest] = useState(0)
   const [busy, setBusy] = useState(false)
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState(null)
@@ -34,14 +50,15 @@ export default function BellsPanel() {
   useEffect(() => {
     let cancelled = false
 
-    fetchBells()
+    fetchSchoolDay()
       .then((answer) => {
         if (cancelled) return
         const known = Object.fromEntries(
           answer.bells.map((bell) => [bell.number, bell]),
         )
+        setBusiest(answer.busiest)
         setRows(
-          Array.from({ length: MAX_LESSON_NUMBER }, (_, index) => ({
+          Array.from({ length: answer.lessons_per_day }, (_, index) => ({
             number: index + 1,
             starts_at: known[index + 1]?.starts_at ?? '',
             ends_at: known[index + 1]?.ends_at ?? '',
@@ -62,13 +79,31 @@ export default function BellsPanel() {
     )
   }
 
+  const addLesson = () => {
+    setSaved(false)
+    setRows((current) => [
+      ...current,
+      { number: current.length + 1, starts_at: '', ends_at: '' },
+    ])
+  }
+
+  const removeLesson = () => {
+    setSaved(false)
+    setRows((current) => current.slice(0, -1))
+  }
+
   const save = async () => {
     setBusy(true)
     setError(null)
     try {
-      // наверх уезжают только заполненные строки: пустая — это «такого урока
-      // нет», а не «время не указали», и сервер о ней знать не должен
-      await saveBells(rows.filter((row) => row.starts_at && row.ends_at))
+      // наверх уезжают только заполненные строки: пустая — это «время не
+      // указали», а не отдельная сущность, и сервер о ней знать не должен.
+      // Длину дня несёт само число строк — она и есть ответ на «сколько уроков»
+      const answer = await saveSchoolDay({
+        lessonsPerDay: rows.length,
+        bells: rows.filter((row) => row.starts_at && row.ends_at),
+      })
+      setBusiest(answer.busiest)
       setSaved(true)
     } catch (err) {
       setError(err.message)
@@ -119,6 +154,32 @@ export default function BellsPanel() {
           </li>
         ))}
       </ul>
+
+      <div className="row middle">
+        <button
+          type="button"
+          className="secondary"
+          disabled={busy || rows.length >= MAX_LESSON_NUMBER}
+          onClick={addLesson}
+        >
+          {t('bells.addLesson')}
+        </button>
+        <button
+          type="button"
+          className="secondary"
+          disabled={busy || rows.length <= 1}
+          onClick={removeLesson}
+        >
+          {t('bells.removeLesson', { number: rows.length })}
+        </button>
+      </div>
+
+      {/* Предупреждение, а не отказ: занятия на снимаемых номерах остаются */}
+      {rows.length < busiest && (
+        <p className="hint" role="status">
+          {t('bells.busiest', { number: busiest })}
+        </p>
+      )}
 
       <div className="actions">
         <button type="button" disabled={busy} onClick={save}>

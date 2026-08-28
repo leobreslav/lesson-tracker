@@ -6,6 +6,7 @@ import { useTranslation } from 'react-i18next'
 import Hint from './Hint'
 import HomegroupsPanel from './HomegroupsPanel'
 import RoomsPanel from './RoomsPanel'
+import StudyDaysPanel from './StudyDaysPanel'
 import {
   addGradePreset,
   clearUnusedGrades,
@@ -62,6 +63,9 @@ export default function SchoolReference() {
   // год классов: в следующем году 6А становится 7А, и это другая строка.
   // Берём тот же, что по умолчанию берёт расписание, — первый в списке
   const [year, setYear] = useState(null)
+  // весь список нужен панели учебных дней: неделя — свойство года, и какого
+  // именно, там спрашивается явно
+  const [years, setYears] = useState([])
   const [subjectName, setSubjectName] = useState('')
   // `named` — трогали ли поле названия: пока нет, оно следует за уровнем
   const [grade, setGrade] = useState({ level: '', name: '', named: false })
@@ -86,8 +90,9 @@ export default function SchoolReference() {
         fetchSchoolYears(),
         fetchMembers(),
       ])
-        .then(([subjectList, gradeList, roomList, years, people]) => {
+        .then(([subjectList, gradeList, roomList, yearList, people]) => {
           setSubjects(subjectList)
+          setYears(yearList)
           setGrades(gradeList)
           setRooms(roomList)
           setTeachers(
@@ -99,7 +104,7 @@ export default function SchoolReference() {
             })),
           )
 
-          const current = years[0] ?? null
+          const current = yearList[0] ?? null
           setYear(current)
           return current ? fetchHomegroups({ year: current.id }) : []
         })
@@ -440,7 +445,10 @@ export default function SchoolReference() {
         onDelete={(id) => run(() => deleteRoom(id))}
       />
 
+      {/* два вопроса про устройство недели стоят рядом: сколько уроков в
+          дне и какие дни учебные — школа отвечает на них одним заходом */}
       <BellsPanel />
+      <StudyDaysPanel years={years} busy={busy} onSaved={load} />
       <GradingPanel />
       {/* виды работ стоят рядом с системами оценивания: оба отвечают на
           «из чего учителю выбирать на своей работе» */}

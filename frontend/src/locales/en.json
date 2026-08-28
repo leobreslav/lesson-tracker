@@ -69,11 +69,22 @@
     }
   },
   "bells": {
-    "title": "Bell times",
-    "hint": "When a lesson with this number starts and ends.",
-    "hintMore": "You need not fill them all in: a school with six lessons leaves the seventh row empty, and the week grid shows that number as before, without a time. The time labels the row of the grid, while a lesson still sits on its number — moving a bell does not rewrite the timetable already drawn.",
+    "title": "The school day",
+    "hint": "How many lessons the day holds, and when each of them runs.",
+    "hintMore": "The number of rows is the length of the school day: the week grid draws exactly this many. Only the last lesson is removed — a lesson number is what an hour is keyed by, and renumbering would rewrite the timetable already drawn. Times need not all be filled in: a row left empty shows in the grid as a number without a time, and moving a bell does not move the lessons. Shortening the day leaves the hours already scheduled where they are; new ones just cannot be put beyond it.",
     "startsAt": "Lesson {{number}}: start",
     "endsAt": "Lesson {{number}}: end",
+    "addLesson": "Add a lesson",
+    "removeLesson": "Remove lesson {{number}}",
+    "busiest": "Lessons are already scheduled up to number {{number}}: they stay in the grid, but no new ones can be put beyond the day.",
+    "saved": "Saved"
+  },
+  "studyDays": {
+    "title": "Study days of the week",
+    "hint": "Which weekdays the school teaches on.",
+    "hintMore": "A Saturday is a school day in plenty of schools. A weekday left unchecked is a day off for the whole school: the week grid locks it, copying a period skips it, and no lesson count includes it. Single days are marked up in the school year — a holiday, a break, a Saturday worked in lieu; here you set the week itself. The setting belongs to the year, so a school changing its week does so from the new year on and leaves last year's timetable as it was.",
+    "year": "School year",
+    "noYear": "The week belongs to a school year, and there is none yet — start one on the school year page.",
     "saved": "Saved"
   },
   "notFound": {
@@ -250,6 +261,9 @@
     "not_a_teacher_of_this_child": "This teacher does not teach your child.",
     "bell_number_twice": "A lesson number appears twice.",
     "bell_ends_before_it_starts": "A lesson ends before it starts.",
+    "lessons_per_day_range": "A school day holds from 1 to {{max}} lessons.",
+    "bell_beyond_day": "There is no lesson {{number}} in the school day.",
+    "slot_number_beyond_day": "The school day holds {{lessons_per_day}} lessons — lesson {{number}} is outside it.",
     "students_only": "This section is for students.",
     "email_other_kind": "«{{email}}» is already used by an account of the other kind: one address is either a teacher or a student.",
     "roster_empty": "There is not a single address in what was pasted.",

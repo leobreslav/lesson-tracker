@@ -37,6 +37,10 @@ class Codes:
     NOT_A_TEACHER_OF_THIS_CHILD = "not_a_teacher_of_this_child"
     BELL_NUMBER_TWICE = "bell_number_twice"
     BELL_ENDS_BEFORE_IT_STARTS = "bell_ends_before_it_starts"
+    # Длина школьного дня: сколько уроков в нём и что в него не помещается
+    LESSONS_PER_DAY_RANGE = "lessons_per_day_range"
+    BELL_BEYOND_DAY = "bell_beyond_day"
+    SLOT_NUMBER_BEYOND_DAY = "slot_number_beyond_day"
     EMAIL_OTHER_KIND = "email_other_kind"
     NOT_A_STUDENT = "not_a_student"
     SUPERUSER_REQUIRED = "superuser_required"

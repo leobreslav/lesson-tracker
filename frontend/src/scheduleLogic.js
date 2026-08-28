@@ -16,7 +16,30 @@
 // достраивает
 import { addDays, daysBetween, eachDate } from './calendarLogic.js'
 
+// Потолок номера урока: дальше него не пускает ни база, ни настройка школы.
+// Сколько уроков **в этой школе** — отдельный вопрос, и отвечает на него
+// `School.lessons_per_day`, а не эта константа.
 export const MAX_LESSON_NUMBER = 10
+
+/**
+ * Ряды сетки: номера от первого до последнего, который надо показать.
+ *
+ * Обычно это длина школьного дня, но не всегда: день сокращают задним
+ * числом, а уже расставленные часы сокращение переживают. Пропавший с
+ * экрана урок — худший вид ошибки, его не находят месяцами, поэтому сетка
+ * растягивается до самого позднего занятого номера, если тот дальше границы.
+ *
+ * Обратное — прятать пустые ряды внутри дня — не делается: пустая клетка это
+ * окно, в которое ставят час, и без неё ставить будет некуда.
+ */
+export function dayNumbers(lessonsPerDay, slots = []) {
+  const occupied = slots.reduce(
+    (top, slot) => Math.max(top, slot.lesson_number ?? 0),
+    0,
+  )
+  const rows = Math.max(lessonsPerDay, occupied)
+  return Array.from({ length: rows }, (_, index) => index + 1)
+}
 
 /** The source cycle in days, rounded up to whole weeks. */
 /**

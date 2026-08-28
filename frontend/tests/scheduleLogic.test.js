@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 
 import { buildDays, STATUS_STUDY } from '../src/calendarLogic.js'
-import { cycleDays, planCopy, sourceDateFor } from '../src/scheduleLogic.js'
+import { cycleDays, dayNumbers, planCopy, sourceDateFor } from '../src/scheduleLogic.js'
 
 /**
  * Клиентская половина общих случаев копирования.
@@ -92,3 +92,19 @@ test('целевая дата смотрит в источник по остат
   assert.equal(sourceDateFor('2026-08-31', '2026-09-07', 7), '2026-09-07')
 })
 
+
+test('рядов в сетке столько, сколько уроков в школьном дне', () => {
+  assert.deepEqual(dayNumbers(6, []), [1, 2, 3, 4, 5, 6])
+  // ответа про день ещё нет — рисуем по самим занятиям, а не десять рядов
+  assert.deepEqual(dayNumbers(0, []), [])
+})
+
+test('сокращённый день не прячет уже стоящий час', () => {
+  // день сокращают задним числом, и восьмой урок остаётся в расписании:
+  // пропавший с экрана урок — худший вид ошибки, его не находят месяцами
+  const slots = [{ lesson_number: 3 }, { lesson_number: 8 }]
+  assert.deepEqual(dayNumbers(6, slots), [1, 2, 3, 4, 5, 6, 7, 8])
+  // а пустые ряды внутри дня не схлопываются: клетка — это окно, в которое
+  // ставят час
+  assert.deepEqual(dayNumbers(6, [{ lesson_number: 2 }]), [1, 2, 3, 4, 5, 6])
+})

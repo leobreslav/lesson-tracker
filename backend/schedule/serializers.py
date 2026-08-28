@@ -892,6 +892,14 @@ class SlotSerializer(serializers.ModelSerializer):
                 field="year",
             )
 
+        # Длина школьного дня. Спрашивается **только про новый номер**: день
+        # сокращают задним числом, и уже расставленные часы это переживают —
+        # иначе школа, отменившая седьмой урок, не смогла бы ни вернуть час,
+        # ни поставить ему кабинет, ни отметить, что он сорвался.
+        number = value("lesson_number")
+        if self.instance is None or self.instance.lesson_number != number:
+            refuse_number_beyond_day(course, number)
+
         if not year.start_date <= slot_date <= year.end_date:
             api_error(
                 Codes.SLOT_OUTSIDE_YEAR,
@@ -1159,6 +1167,11 @@ class RepeatSerializer(serializers.Serializer):
                 "The end date is earlier than the start date.",
                 field="until",
             )
+        # Ряд заводит часы `bulk_create`, мимо `SlotSerializer`, — значит
+        # границу дня он обязан спросить сам. Без этого «убрали седьмой урок»
+        # не значило бы ничего: одиночный час на нём получал бы отказ, а
+        # тридцать четыре разом заводились бы молча
+        refuse_number_beyond_day(attrs["course"], attrs["lesson_number"])
         return attrs
 
 
@@ -1306,6 +1319,32 @@ class CourseMethodistSerializer(serializers.ModelSerializer):
         return fields
 
 
+def refuse_number_beyond_day(course, number) -> None:
+    """
+    Час ставят на номер, которого в школьном дне нет.
+
+    Спрашивается это ровно там, где номер **выбирает человек**: у одиночного
+    часа, у цели переноса (её проверяет тот же `SlotSerializer`) и у ряда. Два
+    списка правил разошлись бы молча, поэтому отказ один на всех.
+
+    Копирование периода сюда не входит намеренно: оно не выбирает номер, а
+    повторяет уже нарисованную неделю, и отказ там отменял бы копирование
+    целиком из-за одного часа, оставшегося за границей сокращённого дня.
+    Цена названа: восьмой час, скопированный на второе полугодие, восьмым и
+    останется.
+    """
+    limit = course.school.lessons_per_day
+    if number > limit:
+        api_error(
+            Codes.SLOT_NUMBER_BEYOND_DAY,
+            f"The school day holds {limit} lessons: there is no lesson "
+            f"{number} to put this hour in.",
+            field="lesson_number",
+            number=number,
+            lessons_per_day=limit,
+        )
+
+
 class BellSerializer(serializers.Serializer):
     """Одна строка звонков: номер урока и его границы."""
 
@@ -1316,15 +1355,52 @@ class BellSerializer(serializers.Serializer):
 
 class BellsSerializer(serializers.Serializer):
     """
-    Расписание звонков целиком. Пустой список — «звонков нет», это законно.
+    Школьный день целиком: сколько в нём уроков и когда каждый из них идёт.
+
+    Две вещи в одном теле потому, что это одна вещь: длина дня и есть то,
+    сколько строк у звонков. Порознь они разъезжались бы в обе стороны —
+    школа сокращает день, а время седьмого урока остаётся жить и
+    подставляться в сетку; школа удлиняет день, а строку для нового урока
+    завести нечем.
+
+    Пустой список звонков — «звонков нет», это законно и при любой длине
+    дня: до звонков школа жила, и сетка показывала номера.
 
     Проверяется здесь то, чего не выразить ограничением строки: номер не
-    повторяется и урок не кончается раньше начала. Второе стоит и в базе —
-    отрицательная перемена ломает не показ, а расчёты по нему, — но сказать об
-    этом человеку словами должен сервер, а не пятисотка от Postgres.
+    повторяется, урок не кончается раньше начала и звонок не звонит на урок,
+    которого в дне нет. Второе стоит и в базе — отрицательная перемена ломает
+    не показ, а расчёты по нему, — но сказать об этом человеку словами должен
+    сервер, а не пятисотка от Postgres.
     """
 
+    # Отдельным кодом, а не отказом поля DRF: «сколько уроков» человек правит
+    # кнопками, и упереться в границу для него обычное дело, а не ошибка ввода
+    lessons_per_day = serializers.IntegerField()
     bells = BellSerializer(many=True)
+
+    def validate_lessons_per_day(self, value):
+        if not 1 <= value <= MAX_LESSON_NUMBER:
+            api_error(
+                Codes.LESSONS_PER_DAY_RANGE,
+                f"A school day holds from 1 to {MAX_LESSON_NUMBER} lessons.",
+                field="lessons_per_day",
+                max=MAX_LESSON_NUMBER,
+            )
+        return value
+
+    def validate(self, attrs):
+        limit = attrs["lessons_per_day"]
+        for one in attrs["bells"]:
+            if one["number"] > limit:
+                api_error(
+                    Codes.BELL_BEYOND_DAY,
+                    f"The day holds {limit} lessons: there is no lesson "
+                    f"{one['number']} to ring for.",
+                    field="bells",
+                    number=one["number"],
+                    lessons_per_day=limit,
+                )
+        return attrs
 
     def validate_bells(self, value):
         numbers = [one["number"] for one in value]

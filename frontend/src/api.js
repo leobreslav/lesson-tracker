@@ -1523,13 +1523,27 @@ export const fetchFeedbackSummary = () => request('/api/feedback/summary/')
 export const markFeedbackHandled = (id) =>
   request(`/api/feedback/${id}/handled/`, { method: 'POST' })
 
-// --- расписание звонков ---------------------------------------------------------
+// --- школьный день: сколько уроков и когда звонки ---------------------------------
 //
-// Читают все в школе, правит администратор; список приходит и уходит целиком —
+// Читают все в школе, правит администратор; день приходит и уходит целиком —
 // номер урока и есть ключ, и построчная правка потребовала бы разговора про
-// удаление там, где удаляют ровно при сокращении дня.
+// удаление там, где удаляют ровно при сокращении дня. Длина дня едет здесь же
+// по той же причине: «убрать седьмой урок» и «стереть время седьмого» — одно
+// движение человека.
+//
+// В ответе кроме `lessons_per_day` и `bells` приезжает `busiest` — самый
+// поздний номер, на котором в школе стоит занятие. Сокращение дня их не
+// отменяет, поэтому число это не запрет, а предупреждение рядом с кнопкой.
 
-export const fetchBells = () => request('/api/school/bells/')
+export const fetchSchoolDay = () => request('/api/school/bells/')
 
-export const saveBells = (bells) =>
-  request('/api/school/bells/', { method: 'PUT', body: { bells } })
+export const saveSchoolDay = ({ lessonsPerDay, bells }) =>
+  request('/api/school/bells/', {
+    method: 'PUT',
+    body: { lessons_per_day: lessonsPerDay, bells },
+  })
+
+// Учебные дни недели — поле учебного года: разные годы школа может жить по
+// разной неделе, и суббота, ставшая учебной, — решение про год, а не навсегда.
+export const updateSchoolYear = (id, fields) =>
+  request(`/api/calendar/years/${id}/`, { method: 'PATCH', body: fields })

@@ -113,10 +113,14 @@ def free_number(*, teacher_id, year, day, start: int = 1):
     допускает.
 
     `None`, если свободного номера в дне нет вовсе.
-    """
-    from .models import MAX_LESSON_NUMBER, Slot
 
-    for number in range(start, MAX_LESSON_NUMBER + 1):
+    Дно перебора — **день этой школы**, а не общий потолок номера: у школы с
+    шестью уроками свободного седьмого не бывает, и предложить его значило бы
+    поставить занятие туда, куда человек его руками поставить не может.
+    """
+    from .models import Slot
+
+    for number in range(start, year.school.lessons_per_day + 1):
         busy = Slot.find_conflict(
             teacher_id=teacher_id, year=year, date=day, lesson_number=number
         )
@@ -312,23 +316,31 @@ def suggested_topics(course) -> dict:
     }
 
 
-def set_bells(school_id, rows) -> None:
+def set_school_day(school_id, lessons_per_day: int, rows) -> None:
     """
-    Заменить расписание звонков целиком.
+    Заменить школьный день целиком: его длину и расписание звонков.
 
     Тот же приём, что у шкалы работы: список приходит полностью, и «строки,
     которой не стало» не бывает — есть новое расписание. Построчная правка
     потребовала бы отдельного разговора про удаление, а удаляют тут ровно
     тогда, когда школа сократила день.
 
-    Одной транзакцией: половина расписания звонков хуже отсутствующего —
-    по нему считают, успевает ли класс перейти между кабинетами.
+    Длина едет вместе со звонками, а не своим запросом рядом: сокращение дня
+    — это и есть снятие последних строк, и два запроса на одно движение
+    оставляли бы школу с семью звонками в шестиурочном дне ровно между ними.
+
+    Одной транзакцией по той же причине: половина расписания звонков хуже
+    отсутствующего — по нему считают, успевает ли класс перейти между
+    кабинетами.
     """
     from django.db import transaction
+
+    from schools.models import School
 
     from .models import BellTime
 
     with transaction.atomic():
+        School.objects.filter(pk=school_id).update(lessons_per_day=lessons_per_day)
         BellTime.objects.filter(school_id=school_id).delete()
         BellTime.objects.bulk_create(
             BellTime(
@@ -339,3 +351,27 @@ def set_bells(school_id, rows) -> None:
             )
             for row in rows
         )
+
+
+def busiest_lesson_number(school_id) -> int:
+    """
+    Самый поздний номер урока, на котором в школе стоит хоть одно занятие.
+
+    Ноль, если расписания нет вовсе. Нужен там, где день сокращают: уже
+    расставленные часы сокращение переживают — иначе школа с восьмиурочным
+    прошлым не смогла бы перейти на шесть уроков никогда, — и человек должен
+    видеть заранее, что снимаемый номер не пустой.
+
+    Считается на чтение и одним запросом: это не запрет, а то, что показывают
+    рядом с кнопкой.
+    """
+    from django.db.models import Max
+
+    from .models import Slot
+
+    return (
+        Slot.objects.filter(course__school_id=school_id).aggregate(
+            top=Max("lesson_number")
+        )["top"]
+        or 0
+    )

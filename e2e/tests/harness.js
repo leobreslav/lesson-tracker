@@ -60,7 +60,16 @@ export const test = base.extend({
 
     page.on('console', (message) => {
       if (message.type() !== 'error') return
-      problems.push(`console: ${message.text()}`)
+      // Адрес приписывается к тексту, потому что у отказа загрузки ресурса
+      // текст всегда один и тот же — «Failed to load resource: net::ERR_…»,
+      // — а чей это адрес, лежит в `location`. Список глушений выше
+      // написан по адресам, и, глядя в один текст, он глушил недостижимый
+      // Google в одной сети и не глушил в другой: за прокси, подменяющим
+      // TLS, тот же скрипт отказывает словами `ERR_CERT_AUTHORITY_INVALID`,
+      // в которых имени `accounts.google.com` нет вовсе. Правило от этого
+      // не менялось — совпадение стало надёжным, а отказ заодно читается.
+      const where = message.location()?.url ?? ''
+      problems.push(`console: ${message.text()}${where ? ` (${where})` : ''}`)
     })
 
     page.on('pageerror', (error) => {

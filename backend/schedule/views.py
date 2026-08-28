@@ -35,6 +35,7 @@ from plans import services as plan_services
 from . import services
 from .services import sweepable
 from schools import roster, services as school_services
+from schools.models import School
 
 from .models import (
     BellTime,
@@ -228,7 +229,7 @@ class RoomViewSet(SchoolScopedViewSet):
 
 class BellsView(APIView):
     """
-    Расписание звонков школы: во сколько начинается и кончается каждый урок.
+    Школьный день: сколько в нём уроков и во сколько каждый из них идёт.
 
     Читают все, правит администратор — как предметы и параллели рядом.
 
@@ -237,8 +238,18 @@ class BellsView(APIView):
     независимых. Построчный CRUD потребовал бы своей нумерации ради формы, у
     которой её нет: номер урока и есть ключ.
 
-    Пустой список законен и означает «звонков нет»: до них школа жила, и сетка
-    покажет номера, как показывала.
+    Длина дня едет здесь же, а не своим адресом рядом: «убрать седьмой урок» и
+    «стереть время седьмого урока» — одно движение человека, и разными
+    запросами оно оставляло бы школу в состоянии, которого она не просила.
+
+    Пустой список звонков законен и означает «звонков нет»: до них школа жила,
+    и сетка покажет номера, как показывала.
+
+    Ответ несёт ещё и `busiest` — самый поздний номер, на котором в школе
+    стоит занятие. Сокращение дня уже расставленные часы не отменяет (иначе
+    школа с восьмиурочным прошлым не перешла бы на шесть уроков никогда),
+    поэтому число это не запрет, а то, что показывают рядом с кнопкой: видно
+    заранее, что снимаемый номер не пустой.
     """
 
     # `IsTeacher` рядом с админской проверкой, а не вместо: раздел стоит под
@@ -260,12 +271,20 @@ class BellsView(APIView):
         form = BellsSerializer(data=request.data)
         form.is_valid(raise_exception=True)
 
-        services.set_bells(school_id, form.validated_data["bells"])
+        services.set_school_day(
+            school_id,
+            form.validated_data["lessons_per_day"],
+            form.validated_data["bells"],
+        )
         return Response(self._payload(school_id))
 
     @staticmethod
     def _payload(school_id) -> dict:
         return {
+            "lessons_per_day": School.objects.values_list(
+                "lessons_per_day", flat=True
+            ).get(pk=school_id),
+            "busiest": services.busiest_lesson_number(school_id),
             "bells": [
                 {
                     "number": bell.number,
@@ -273,7 +292,7 @@ class BellsView(APIView):
                     "ends_at": bell.ends_at.strftime("%H:%M"),
                 }
                 for bell in BellTime.objects.filter(school_id=school_id)
-            ]
+            ],
         }
 
 

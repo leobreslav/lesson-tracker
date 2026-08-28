@@ -18,7 +18,7 @@ import WeekGrid from './WeekGrid'
 import {
   deleteSlots,
   copySlots,
-  fetchBells,
+  fetchSchoolDay,
   fetchLayoutAgenda,
   createSlot,
   deleteSlot,
@@ -41,13 +41,11 @@ import {
 } from './calendarLogic'
 import { dateRange, firstWeekday } from './dates'
 import {
-  MAX_LESSON_NUMBER,
+  dayNumbers,
   describeCopyResult,
   describeMoveResult,
   describeRoomResult,
 } from './scheduleLogic'
-
-const NUMBERS = Array.from({ length: MAX_LESSON_NUMBER }, (_, index) => index + 1)
 
 const EMPTY = { lessons: {}, days: {} }
 
@@ -116,15 +114,18 @@ export default function Agenda({ views = null, onLoggedOut }) {
 
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
-  // Звонки школы: номер урока → время. Тянутся один раз и молча — сетка без
-  // них рисуется как рисовалась, а падать из-за подписи к ряду она не должна
+  // Школьный день: сколько в нём уроков и во сколько каждый идёт. Тянется
+  // один раз и молча — сетка без ответа рисуется по самим занятиям, а падать
+  // из-за подписи к ряду она не должна
   const [bells, setBells] = useState({})
+  const [lessonsPerDay, setLessonsPerDay] = useState(0)
 
   useEffect(() => {
     let cancelled = false
-    fetchBells()
+    fetchSchoolDay()
       .then((answer) => {
         if (cancelled) return
+        setLessonsPerDay(answer.lessons_per_day)
         setBells(Object.fromEntries(answer.bells.map((one) => [one.number, one])))
       })
       .catch(() => {})
@@ -338,6 +339,15 @@ export default function Agenda({ views = null, onLoggedOut }) {
   const lessonsOn = useCallback(
     (date) => (data.lessons[date] || []).filter((item) => !hidden.has(item.course_id)),
     [data, hidden],
+  )
+
+  // Ряды сетки — школьный день, растянутый до самого позднего занятого
+  // номера: день сокращают задним числом, и уже стоящий час не должен
+  // исчезать с экрана. Скрытые курсы тут не вычитаются: ряд, пропадающий от
+  // снятой галочки фильтра, читался бы как правка расписания
+  const numbers = useMemo(
+    () => dayNumbers(lessonsPerDay, Object.values(data.lessons).flat()),
+    [lessonsPerDay, data],
   )
 
   /** An optimistic edit: draw at once, restore the old answer on failure. */
@@ -721,7 +731,7 @@ export default function Agenda({ views = null, onLoggedOut }) {
     <WeekGrid
       dates={dates}
       days={data.days}
-      numbers={NUMBERS}
+      numbers={numbers}
       bells={bells}
       busy={busy}
       selected={inSelection}

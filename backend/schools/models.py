@@ -1,6 +1,12 @@
 from accounts.models import Kind
 from django.conf import settings
+from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
+# Потолок номера урока живёт там же, где сам номер, — в `schedule.models`, и
+# импортируется сюда, а не переписывается числом: два ответа на «сколько
+# уроков бывает» разошлись бы молча. Цикла нет — `schedule` знает школу
+# только строкой `"schools.School"`, то есть модуль этот не импортирует.
+from schedule.models import MAX_LESSON_NUMBER
 
 
 class School(models.Model):
@@ -13,6 +19,24 @@ class School(models.Model):
     """
 
     name = models.CharField("name", max_length=200)
+    # Сколько уроков в школьном дне. Не «сколько бывает вообще» — это
+    # `MAX_LESSON_NUMBER`, потолок номера в базе, — а сколько их **у этой
+    # школы**: одна ведёт шесть, другая восемь, и обеим сетка должна
+    # показывать свой день, а не общий максимум.
+    #
+    # Умолчание — потолок: до этого поля сетка рисовала все десять рядов
+    # всем, и школа, которая ничего не настраивала, не должна заметить
+    # перемены.
+    #
+    # Число это **предложение, а не запрет задним числом**: оно решает, что
+    # рисует сетка и какой номер примет новое занятие, но уже расставленных
+    # часов не отменяет. Иначе школа, у которой в прошлом году было восемь
+    # уроков, не смогла бы перейти на шесть никогда.
+    lessons_per_day = models.PositiveSmallIntegerField(
+        "lessons per day",
+        default=MAX_LESSON_NUMBER,
+        validators=[MinValueValidator(1), MaxValueValidator(MAX_LESSON_NUMBER)],
+    )
     # Потолок расхода на чтение сканов, центы в календарный месяц. Ставит
     # администратор школы: платит она, и решать, сколько не жалко, ей.
     # Ноль значит «нельзя»: школа без выставленного лимита не должна тратить,

@@ -24,6 +24,7 @@ import {
   fetchCourses,
   fetchHomegroups,
   fetchRooms,
+  fetchSchoolDay,
   fetchSchoolSlots,
   fetchScheduleSummary,
   fetchMembers,
@@ -45,7 +46,7 @@ import { dateRange, firstWeekday, longDate } from './dates'
 import { weekdayIndex } from './weekStart'
 import { useKept } from './remember'
 import {
-  MAX_LESSON_NUMBER,
+  dayNumbers,
   describeMoveResult,
   describeRoomResult,
 } from './scheduleLogic'
@@ -58,8 +59,6 @@ import {
   reconcile,
   slotMatches,
 } from './scheduleFilters'
-
-const NUMBERS = Array.from({ length: MAX_LESSON_NUMBER }, (_, index) => index + 1)
 
 /** Как зовут человека: имя с фамилией, а без них — почта. */
 const personName = (member) =>
@@ -104,6 +103,7 @@ export default function SchoolSchedule({
   const [rooms, setRooms] = useState([])
   const [homegroups, setHomegroups] = useState([])
   const [slots, setSlots] = useState([])
+  const [lessonsPerDay, setLessonsPerDay] = useState(0)
   const [days, setDays] = useState({})
   const [summary, setSummary] = useState(null)
   /*
@@ -177,6 +177,11 @@ export default function SchoolSchedule({
     // кабинеты — справочник школы: короткий список, один запрос на заход.
     // Молча: школа, не заведшая ни одного, живёт как жила
     fetchRooms().then(setRooms).catch(() => setRooms([]))
+    // длина школьного дня: столько рядов в обеих сетках. Молча, как кабинеты
+    // рядом, — сетка без ответа рисуется по самим занятиям
+    fetchSchoolDay()
+      .then((answer) => setLessonsPerDay(answer.lessons_per_day))
+      .catch(() => {})
     // классы года: столбцы дневного вида «по классам». Год важен — в
     // следующем 6А становится 7А, и это другая строка
     fetchHomegroups({ year: yearId })
@@ -231,6 +236,12 @@ export default function SchoolSchedule({
   )
 
   const lessonsOn = (date) => visible.filter((slot) => slot.date === date)
+
+  // Ряды обеих сеток — школьный день, растянутый до самого позднего занятого
+  // номера: сокращение дня уже стоящий час с экрана не убирает. Считается по
+  // всем часам периода, а не по суженным: ряд, пропадающий от выбранного
+  // фильтра, читался бы как правка расписания
+  const numbers = useMemo(() => dayNumbers(lessonsPerDay, slots), [lessonsPerDay, slots])
 
   /*
    * Столбцы дневного вида и раскладка часов по ним — по выбранной оси.
@@ -644,7 +655,7 @@ export default function SchoolSchedule({
           date={period.start}
           day={days[period.start] || {}}
           columns={columns}
-          numbers={NUMBERS}
+          numbers={numbers}
           busy={busy}
           lessonsIn={lessonsIn}
           renderLesson={dayCell}
@@ -659,7 +670,7 @@ export default function SchoolSchedule({
       <WeekGrid
         dates={dates}
         days={days}
-        numbers={NUMBERS}
+        numbers={numbers}
         busy={busy}
         lessonsOn={lessonsOn}
         renderLesson={(slot) => (
