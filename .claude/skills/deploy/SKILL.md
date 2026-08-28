@@ -70,6 +70,59 @@ Ssh-ключ есть только на ноутбуке, но выкатка к
 переменных — нужен ноутбук (`./scripts/sync-env.sh prod`), и об этом надо
 сказать человеку, а не выкатывать «как есть».
 
+## Перенести боевую базу на стенд
+
+Когда смотреть надо на настоящие данные, а не на посев. Ssh нужен к обоим
+контурам, и идёт всё **через ноутбук**: ключа между серверами нет.
+Устройство и грабли — в `.claude/rules/deploy.md`, «Боевую базу на стенд
+возят руками».
+
+Адреса: прод `leobreslav@194.67.111.40:~/lesson-tracker` (база `lessons`),
+стенд `leobreslav@194.67.119.42:~/apps/lesson-tracker` (база
+`lessons_staging`). Ниже `C` — это
+`docker compose --env-file .env.prod -f docker-compose.prod.yml`.
+
+```bash
+B=~/backups/transfer-$(date +%F)
+
+# 1. дамп прода — с --no-owner --no-acl, иначе упрётся в чужую роль
+ssh <прод> "mkdir -p $B; cd ~/lesson-tracker && \$C exec -T db \
+  pg_dump -U lessons -d lessons --no-owner --no-acl | gzip > $B/prod-lessons.sql.gz"
+
+# 2. довезти через ноутбук и сверить md5
+scp <прод>:$B/prod-lessons.sql.gz .   &&   scp prod-lessons.sql.gz <стенд>:$B/
+
+# 3. НА СТЕНДЕ: страховочный дамп цели — до всего остального
+cd ~/apps/lesson-tracker
+$C exec -T db pg_dump -U lessons_staging -d lessons_staging --no-owner --no-acl \
+  | gzip > $B/staging-before.sql.gz
+
+# 4. погасить backend: он держит соединения, DROP SCHEMA встанет насмерть
+$C stop backend
+
+# 5. снести схему (не --clean) и залить
+$C exec -T db psql -U lessons_staging -d lessons_staging -v ON_ERROR_STOP=1 \
+  -c "DROP SCHEMA public CASCADE;
+      CREATE SCHEMA public AUTHORIZATION lessons_staging;
+      GRANT ALL ON SCHEMA public TO public;"
+zcat $B/prod-lessons.sql.gz | $C exec -T db psql -U lessons_staging \
+  -d lessons_staging -q -v ON_ERROR_STOP=1
+
+# 6. поднять backend — миграции идут при старте, и им есть куда идти:
+#    прод стоит на production и отстаёт от main, на котором стенд
+$C start backend
+```
+
+Проверка после: `showmigrations --plan | grep -c '^\[ \]'` даёт ноль, а
+`School.objects.count()` — школу с боевым названием, не «Тестовую».
+
+**Страховочный дамп цели — первый шаг, а не последний.** Его снимают до
+того, как что-то погашено: если он не снялся, дальше идти нельзя, и `set -e`
+в цепочке это обеспечивает.
+
+**После переноса вложения битые** — бакеты R2 у контуров разные, — и на
+стенде лежат чужие персональные данные. `--reseed` их сотрёт.
+
 ## Обо что спотыкаются
 
 - **Скрипту нужен терминал — но только когда набор переменных менялся.**
