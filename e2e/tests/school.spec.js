@@ -458,11 +458,16 @@ test('в школьном расписании урок ставится в об
   await expect(page.locator('[data-lesson="2026-09-07:6"]')).toHaveCount(1)
 })
 
-test('день школы разворачивает курсы по столбцам', async ({ page, signIn, api }) => {
+test('день школы разворачивает часы по столбцам', async ({ page, signIn, api }) => {
   // В неделе клетка — это окно «день + номер», и в школе в него попадают
   // все курсы разом: первых уроков в понедельник примерно столько же,
   // сколько курсов. Стопку из полутора десятков строк нельзя ни прочитать,
-  // ни пополнить, и разворачивается она курсом в столбец.
+  // ни пополнить, и разворачивается она столбцами.
+  //
+  // Столбцами были курсы, и ось курсов убрана: столбец пересказывал
+  // название, уже стоящее в сужении. По умолчанию день раскладывается по
+  // учителям — «кто чем занят», — и столбец теперь курс не заменяет, а
+  // сужает: про курс окно всё равно спросит.
   const admin = await api(PEOPLE.admin)
   const courses = await admin.get('/api/courses/?scope=school')
 
@@ -501,24 +506,36 @@ test('день школы разворачивает курсы по столб�
   const day = await grid.getAttribute('data-day')
   expect(day, 'учебный день не нашёлся за неделю').toBeTruthy()
 
-  // столбец на каждый курс школы — включая те, у которых в этот день часов
-  // нет: пустой столбец и есть то место, куда час ставят
-  await expect(page.locator('[data-column]')).toHaveCount(courses.body.length)
+  // столбец на каждого учителя школы — включая тех, у кого в этот день
+  // часов нет: пустой столбец и есть ответ «этим можно закрыть окно»
+  const columns = page.locator('[data-column]')
+  expect(await columns.count(), 'столбцов нет вовсе').toBeGreaterThan(1)
+  await expect(columns.filter({ hasText: 'Мария Иванова' })).toHaveCount(1)
+  // а столбца с названием курса нет: этой оси больше нет
+  await expect(columns.filter({ hasText: 'Grade 6 Algebra' })).toHaveCount(0)
 
-  // ставим час в столбец курса: курс в окне уже выбран — переспрашивать то,
-  // во что человек нажал, незачем. Клетку берём свободную, а её номер —
-  // у самой сетки: какие часы в этот день заняты, решает посев
-  const free = page.locator('[data-add]').last()
-  const spot = await free.getAttribute('data-add')
+  // Ставим час в столбец учителя. Клетку берём свободную и такую, чей
+  // столбец кому-то принадлежит: у учителя без курсов сужать нечего, и
+  // проверять на нём подстановку бессмысленно.
+  const spots = await page
+    .locator('[data-add]')
+    .evaluateAll((cells) => cells.map((cell) => cell.getAttribute('data-add')))
+  const ownerOf = (key) =>
+    courses.body.find((one) =>
+      (one.teachers ?? []).some((who) => String(who.id) === key),
+    )
+  const spot = spots.find((one) => ownerOf(one.split(':')[2]))
+  expect(spot, 'свободной клетки в столбце учителя с курсами не нашлось').toBeTruthy()
   const [, number, columnKey] = spot.split(':')
-  await free.click()
+  await page.locator(`[data-add="${spot}"]`).click()
 
   const dialog = page.locator('dialog.modal')
-  // в поле стоит **название** курса, а не его id: выбор стал поиском по
-  // набранному, и `datalist` работает строками. Столбец по-прежнему называет
-  // курс сам — переспрашивать то, во что нажали, незачем
-  const column = courses.body.find((one) => String(one.id) === columnKey)
-  await expect(dialog.getByLabel('Курс', { exact: true })).toHaveValue(column.name)
+  // **Курс не подставлен, и это правило, а не недоделка**: час принадлежит
+  // курсу, а столбец теперь называет учителя — он выбор сужает, но не
+  // заменяет. Раньше столбец и был курсом, и переспрашивать было незачем.
+  const field = dialog.getByLabel('Курс', { exact: true })
+  await expect(field).toHaveValue('')
+  await field.fill(ownerOf(columnKey).name)
   await dialog.getByRole('button', { name: 'Добавить', exact: true }).click()
 
   await expect(dialog).toBeHidden()
@@ -819,7 +836,7 @@ test('администратор чинит чужой план — из тог�
   await expect(page.locator('.plan-cards')).toBeVisible()
 
   // и правка проходит: строка появляется в чужом плане
-  await page.getByRole('button', { name: 'Добавить урок' }).click()
+  await page.getByRole('button', { name: 'Добавить тему или урок' }).click()
   const form = page.locator('.plan-add-form')
   await form.getByLabel('Название').fill('Починено завучем')
   await form.getByRole('button', { name: 'Добавить' }).click()

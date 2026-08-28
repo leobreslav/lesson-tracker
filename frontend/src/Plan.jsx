@@ -1510,56 +1510,19 @@ export default function Plan({ user, onLoggedOut }) {
                 Приём тот же, что на странице занятия: редкое живёт под
                 «⋯», частое стоит на виду.
               */}
-              <button
-                type="button"
-                disabled={busy}
-                onClick={() => openAdd({ parent: null, fixedKind: true })}
-              >
-                {t('plan.addLesson')}
-              </button>
-              <button
-                type="button"
-                className="secondary"
-                disabled={busy}
-                onClick={() => openAdd({ parent: null, is_section: true, fixedKind: true })}
-              >
-                {t('plan.addSection')}
-              </button>
-
               {/*
-                «Отменить» появляется, только когда есть что отменять, и
-                **называет действие**: безымянная отмена страшнее, чем
-                полезна — по ней не поймёшь, вернёшь ты удалённый урок или
-                чужую правку получасовой давности. Что именно она тронет,
-                стоит в подсказке.
+                Кнопка одна, а вид выбирают в самой форме — тем же тумблером,
+                что у «+» на строке. Кнопок было две, и они обещали две разные
+                формы там, где форма одна: нажав «Добавить урок», человек уже
+                не мог передумать, не закрыв её и не найдя соседнюю.
               */}
-              {lastStep && (
-                <button
-                  type="button"
-                  className="secondary"
-                  disabled={busy}
-                  title={
-                    lastStep.detail
-                      ? t('plan.undo.what', {
-                          action: t(`plan.undo.action.${lastStep.action}`, {
-                            defaultValue: lastStep.action,
-                          }),
-                          detail: lastStep.detail,
-                          who: lastStep.mine
-                            ? t('plan.undo.mine')
-                            : (lastStep.who?.name ?? ''),
-                        })
-                      : undefined
-                  }
-                  onClick={() => undo()}
-                >
-                  {t('plan.undo.label', {
-                    action: t(`plan.undo.action.${lastStep.action}`, {
-                      defaultValue: lastStep.action,
-                    }),
-                  })}
-                </button>
-              )}
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => openAdd({ parent: null })}
+              >
+                {t('plan.addRow')}
+              </button>
 
               {/* два меню в одной обёртке: клик мимо закрывает открытое,
                   каким бы из двух оно ни было */}
@@ -1690,6 +1653,52 @@ export default function Plan({ user, onLoggedOut }) {
                   )}
                 </div>
               </span>
+
+              {/*
+                «Отменить» появляется, только когда есть что отменять, и
+                **называет действие**: безымянная отмена страшнее, чем
+                полезна — по ней не поймёшь, вернёшь ты удалённый урок или
+                чужую правку получасовой давности. Что именно она тронет,
+                стоит в подсказке.
+
+                Стоит она **последней в ряду и прижата к правому краю**
+                (`margin-left: auto`), а не между добавлением и меню.
+                Отмена — не соседка тому, что делают каждый день: она
+                появляется и исчезает, и, стоя в середине, каждым своим
+                появлением сдвигала бы меню под курсором. У правого края
+                двигать нечего, а место у неё то же, где действия-исходы
+                стоят и в окнах.
+
+                Перенос сделан в разметке, а не `order`: порядок обхода с
+                клавиатуры обязан совпадать с видимым.
+              */}
+              {lastStep && (
+                <button
+                  type="button"
+                  className="secondary plan-undo"
+                  disabled={busy}
+                  title={
+                    lastStep.detail
+                      ? t('plan.undo.what', {
+                          action: t(`plan.undo.action.${lastStep.action}`, {
+                            defaultValue: lastStep.action,
+                          }),
+                          detail: lastStep.detail,
+                          who: lastStep.mine
+                            ? t('plan.undo.mine')
+                            : (lastStep.who?.name ?? ''),
+                        })
+                      : undefined
+                  }
+                  onClick={() => undo()}
+                >
+                  {t('plan.undo.label', {
+                    action: t(`plan.undo.action.${lastStep.action}`, {
+                      defaultValue: lastStep.action,
+                    }),
+                  })}
+                </button>
+              )}
             </div>
 
             {helpOpen && <PlanCsvHelp />}

@@ -81,7 +81,7 @@ test('над таблицей одна панель управления, а п�
 
   // на виду только частое — добавление и выбор; редкое под двумя меню,
   // и каждое названо своей темой: обмен файлами и полка
-  for (const name of ['Добавить урок', 'Добавить тему', 'Файл', 'Библиотека']) {
+  for (const name of ['Добавить тему или урок', 'Файл', 'Библиотека']) {
     await expect(tools.getByRole('button', { name, exact: true })).toBeVisible()
   }
 
@@ -605,24 +605,26 @@ test('урок вне темы стоит на уровне темы, а вло�
   await page.getByLabel('Курс').selectOption({ label: 'Grade 9 Geometry' })
   await expect(page.locator('.plan-cards')).toBeVisible()
 
-  const add = async (button, title) => {
-    await page.getByRole('button', { name: button }).click()
+  // кнопка одна на оба вида, вид выбирают тумблером в самой форме
+  const add = async (kind, title) => {
+    await page.getByRole('button', { name: 'Добавить тему или урок' }).click()
     const form = page.locator('.plan-add-form')
+    await form.getByRole('radio', { name: kind }).click()
     await form.getByLabel('Название').fill(title)
     await form.getByRole('button', { name: 'Добавить' }).click()
     await expect(page.locator('.plan-row', { hasText: title })).toBeVisible()
   }
 
-  await add('Добавить тему', 'Треугольники')
+  await add('Тема', 'Треугольники')
   const head = page.locator('.plan-section .section-head').first()
   await head.hover()
-  await head.getByTitle('Добавить урок в тему').click()
+  await head.getByTitle('Добавить урок в тему или тему после неё').click()
   const inner = page.locator('.plan-add-form')
   await inner.getByLabel('Название').fill('Первый признак')
   await inner.getByRole('button', { name: 'Добавить' }).click()
   await expect(page.locator('.plan-row', { hasText: 'Первый признак' })).toBeVisible()
 
-  await add('Добавить урок', 'Сам по себе')
+  await add('Урок', 'Сам по себе')
 
   const left = (title) =>
     page
@@ -1125,7 +1127,7 @@ test('в тему, где всё проведено, урок не встави�
   // новая строка встала бы перед записью, и кнопки нет
   const head = page.locator('.plan-section .section-head', { hasText: 'Тема с записью' })
   await head.hover()
-  await expect(head.getByTitle('Добавить урок в тему')).toHaveCount(0)
+  await expect(head.getByTitle('Добавить урок в тему или тему после неё')).toHaveCount(0)
 
   // дописать в конец темы при этом можно, и тем же жестом: «+» у её
   // последнего урока — он же последняя запись
