@@ -645,7 +645,7 @@ export default function Bookmarks({ user, onLoggedOut }) {
         <h2 className="shelf-heading">{t('bookmarks.mine')}</h2>
       )}
 
-      <div className="shelf">
+      <div className="shelf-grid">
         <aside className="panel">
           <ul className="shelf-folders">
             {pick(ALL, t('bookmarks.all'), items.length)}

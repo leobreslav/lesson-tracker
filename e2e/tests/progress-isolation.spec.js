@@ -141,6 +141,17 @@ async function openShelf(page, course) {
   await expect(page.locator('.plan-cards')).toBeVisible()
   await planMenu(page, 'Открыть библиотеку')
   await expect(page.locator('dialog.modal')).toBeVisible()
+  // Тело окна — колонка, а не сетка. Проверяется потому, что однажды
+  // сломалось молча: страница личного стола завела класс `.shelf`, а
+  // `Modal.jsx` вешает свой className и на диалог, и на тело — окно
+  // библиотеки объявлено тем же словом и получило чужой `display: grid`.
+  // Ни один тест этого не заметил, и правка уехала на прод.
+  await expect(page.locator('dialog.modal .modal-body')).toHaveCSS('display', 'flex')
+  // И окно не прилипает к верхнему краю. Тоже проверено поломкой: `.page > *`
+  // обнуляет вертикальные отступы у детей страницы, а окно — её прямой
+  // ребёнок, и `margin: auto`, которым `<dialog>` центрируется, пропадал.
+  // Выглядит это как «окно не помещается», хотя места вдвое больше нужного
+  await expect(page.locator('dialog.modal')).not.toHaveCSS('margin-top', '0px')
   return page.locator('dialog.modal')
 }
 
