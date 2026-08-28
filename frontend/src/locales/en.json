@@ -734,7 +734,7 @@
     "views": {
       "label": "Which timetable",
       "mine": "Mine",
-      "school": "The whole school"
+      "school": "School"
     },
     "gridHint": "A click on a lesson opens its menu: the lesson itself, cancelling, moving, the whole row.",
     "copySelected": "Copy the selected days",
@@ -1017,6 +1017,9 @@
     "bySubject": "Subject:",
     "byTeacher": "Teacher:",
     "byCourse": "Course:",
+    "pickSubject": "Subject",
+    "pickTeacher": "Teacher",
+    "pickCourse": "Course",
     "allSubjects": "all subjects",
     "everyone": "everyone",
     "allCourses": "all courses",

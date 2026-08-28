@@ -179,3 +179,65 @@ class LayoutAgendaTests(LayoutApiTestCase):
             f"запросы растут с курсами: {len(one_course)} против "
             f"{len(four_courses)}",
         )
+
+
+class LayoutAgendaSchoolScopeTests(LayoutApiTestCase):
+    """
+    `?scope=school` — те же темы для расписания школы.
+
+    Экран расписания школы показывает часы всех курсов, и переключатель «Темы
+    уроков» на нём обязан отвечать про них же. Без размаха сводка отвечает
+    только про свои курсы — то есть у администратора, ведущего два курса из
+    девятнадцати, тема появлялась бы у двух клеток из сотни, и выглядело бы
+    это не как право доступа, а как потерянные данные.
+
+    Курсы берутся по `writable_by`, а не по «кому показать экран»:
+    администратору школы — все её курсы, учителю — его собственные. Значит
+    учитель, попросивший школьный размах, получает ровно то же, что и без
+    него: не отказ и не чужие темы.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.colleague_course = make_course(
+            self.school, year=self.course.year, name="9В"
+        )
+        assign(self.colleague, self.colleague_course)
+        self.add("Чужая тема", course=self.colleague_course, teacher=self.colleague)
+        self.colleague_slot = self.add_slot(course=self.colleague_course, number=2)
+        self.mine = self.fill_slots(1)[0]
+
+    def agenda(self, start=None, end=None, **extra):
+        params = {
+            "start": (start or MONDAY).isoformat(),
+            "end": (end or MONDAY + timedelta(days=13)).isoformat(),
+            **extra,
+        }
+        return self.client.get(reverse("plannode-layout-agenda"), params)
+
+    def test_an_admin_sees_the_topics_of_the_whole_school(self):
+        self.sign_in(self.admin)
+
+        payload = self.agenda(scope="school").json()["slots"]
+
+        self.assertEqual(payload[str(self.colleague_slot.pk)]["title"], "Чужая тема")
+        self.assertEqual(payload[str(self.mine.pk)]["title"], "Синус суммы")
+
+    def test_without_the_scope_an_admin_sees_only_their_own(self):
+        """Умолчание не поехало: `/api/plan/layout/agenda/` — личный вопрос."""
+        self.sign_in(self.admin)
+
+        payload = self.agenda().json()["slots"]
+
+        self.assertEqual(payload, {})
+
+    def test_a_teacher_asking_for_the_school_gets_their_own(self):
+        """
+        Не отказ и не чужое: учитель на этом экране бывает — расписание школы
+        читает вся школа, — и переключатель тем не должен ни падать ошибкой,
+        ни показывать ему курсы коллеги.
+        """
+        payload = self.agenda(scope="school").json()["slots"]
+
+        self.assertEqual(payload[str(self.mine.pk)]["title"], "Синус суммы")
+        self.assertNotIn(str(self.colleague_slot.pk), payload)

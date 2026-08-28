@@ -1237,9 +1237,21 @@ export const enrolRoster = (course, text) =>
     body: { text },
   })
 
-/** Topics across every class for a period: slot_id → the plan lesson. */
-export const fetchLayoutAgenda = (start, end) =>
-  request(`/api/plan/layout/agenda/?${new URLSearchParams({ start, end })}`)
+/**
+ * Topics across every class for a period: slot_id → the plan lesson.
+ *
+ * `scope: 'school'` asks for every course of the school the caller may edit —
+ * the school-wide timetable shows the same topics as a personal one, and the
+ * word for that span is the same one courses and slots already use.
+ */
+export const fetchLayoutAgenda = (start, end, { scope } = {}) =>
+  request(
+    `/api/plan/layout/agenda/?${new URLSearchParams({
+      start,
+      end,
+      ...(scope ? { scope } : {}),
+    })}`,
+  )
 
 export const movePlanNodeTo = (id, parent, position) =>
   request(`/api/plan/${id}/move_to/`, {

@@ -620,6 +620,18 @@ class PlanNodeViewSet(CourseScopedViewSet):
         Сводному расписанию иначе пришлось бы спрашивать раскладку по
         каждому классу отдельно. Сопоставление, как и всегда, считается по
         всему плану и всему расписанию класса, а период только режет ответ.
+
+        **`?scope=school` — те же темы для расписания школы**, и размах тут
+        читается тем же словом, что у курсов и у самих часов: третьего
+        названия одному и тому же вопросу быть не должно.
+
+        Курсы при этом берутся не по «кому показать экран», а по
+        `writable_by`: администратору школы — все её курсы, учителю — его
+        собственные. Значит учитель, попросивший школьный размах, получит
+        ровно то же, что и без него, — не отказ и не чужие темы. Отказ был
+        бы хуже: экран расписания школы читает вся школа, и переключатель
+        «Темы уроков» на нём не должен отвечать ошибкой тому, у кого просто
+        нет чужих курсов.
         """
         start = read_date(request.query_params.get("start"))
         end = read_date(request.query_params.get("end"))
@@ -636,9 +648,15 @@ class PlanNodeViewSet(CourseScopedViewSet):
                 field="end",
             )
 
-        # свои курсы, в которых за период вообще что-то есть
+        # свои курсы, в которых за период вообще что-то есть; со школьным
+        # размахом — все, что человек вправе править
+        wanted = (
+            Course.objects.writable_by(request.user)
+            if request.query_params.get("scope") == "school"
+            else Course.objects.for_teacher(request.user)
+        )
         courses = list(
-            Course.objects.for_teacher(request.user)
+            wanted
             .filter(
                 slots__date__range=(start, end),
                 slots__is_cancelled=False,

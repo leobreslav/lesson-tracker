@@ -14,6 +14,7 @@ import CopyDialog from './CopyDialog'
 import DayGrid from './DayGrid'
 import EmptyState from './EmptyState'
 import Modal from './Modal'
+import PersonPicker, { matchItem } from './PersonPicker'
 import Switch from './Switch'
 import WeekGrid from './WeekGrid'
 import {
@@ -29,6 +30,7 @@ import {
   fetchScheduleSummary,
   fetchMembers,
   fetchSchoolYears,
+  fetchLayoutAgenda,
   fetchYearDays,
   moveSlot,
   repeatSlot,
@@ -42,9 +44,9 @@ import {
   startOfWeek,
   today,
 } from './calendarLogic'
-import { dateRange, firstWeekday, longDate } from './dates'
+import { dateRange, firstWeekday, weekdayWithFullDate } from './dates'
 import { weekdayIndex } from './weekStart'
-import { useKept } from './remember'
+import { remember, remembered, useKept } from './remember'
 import {
   dayNumbers,
   describeMoveResult,
@@ -59,6 +61,24 @@ import {
   reconcile,
   slotMatches,
 } from './scheduleFilters'
+
+/*
+ * Переключатели вида школьной сетки — своими ключами, а не общими с личной.
+ *
+ * Вопрос один и тот же («показать ли тему и кабинет»), а ответ на него у
+ * одного человека разный: свою неделю он знает наизусть и смотрит в неё за
+ * темой, а школьную читает кабинетами — где что стоит. Общий ключ связал бы
+ * два несвязанных решения, и выключенное на одном экране пропадало бы на
+ * другом.
+ *
+ * **Кабинеты тут по умолчанию включены, а в своём расписании — нет.** Разница
+ * не в предпочтении, а в том, что было до переключателя: школьная клетка
+ * показывала кабинет всегда, и умолчание «выключено» означало бы, что первая
+ * же загрузка после этой правки выглядит как пропавшие данные. Переключатель
+ * заведён, чтобы кабинеты можно было **убрать**, а не чтобы их искать.
+ */
+const SCHOOL_TOPICS_KEY = 'schoolShowTopics'
+const SCHOOL_ROOMS_KEY = 'schoolShowRooms'
 
 /** Как зовут человека: имя с фамилией, а без них — почта. */
 const personName = (member) =>
@@ -104,8 +124,21 @@ export default function SchoolSchedule({
   const [homegroups, setHomegroups] = useState([])
   const [slots, setSlots] = useState([])
   const [lessonsPerDay, setLessonsPerDay] = useState(0)
+  // время звонка на ряд: та же подпись, что в своём расписании. Приезжает
+  // тем же запросом, что и длина дня, — это один справочник школьного дня,
+  // и спрашивать его дважды не о чем
+  const [bells, setBells] = useState({})
   const [days, setDays] = useState({})
   const [summary, setSummary] = useState(null)
+  // темы уроков и кабинеты в клетке — теми же двумя переключателями, что и в
+  // своём расписании: вопрос к сетке один и тот же, кем бы она ни открыта
+  const [topics, setTopics] = useState(null)
+  const [showTopics, setShowTopics] = useState(() =>
+    remembered(SCHOOL_TOPICS_KEY, false),
+  )
+  const [showRooms, setShowRooms] = useState(() =>
+    remembered(SCHOOL_ROOMS_KEY, true),
+  )
   /*
    * Неделя и сужение переживают уход отсюда (`remember.useKept`).
    *
@@ -180,7 +213,10 @@ export default function SchoolSchedule({
     // длина школьного дня: столько рядов в обеих сетках. Молча, как кабинеты
     // рядом, — сетка без ответа рисуется по самим занятиям
     fetchSchoolDay()
-      .then((answer) => setLessonsPerDay(answer.lessons_per_day))
+      .then((answer) => {
+        setLessonsPerDay(answer.lessons_per_day)
+        setBells(Object.fromEntries(answer.bells.map((one) => [one.number, one])))
+      })
       .catch(() => {})
     // классы года: столбцы дневного вида «по классам». Год важен — в
     // следующем 6А становится 7А, и это другая строка
@@ -211,6 +247,35 @@ export default function SchoolSchedule({
   useEffect(() => {
     load()
   }, [load])
+
+  /*
+   * Темы тянутся, только пока их показывают, — иначе каждая неделя стоила бы
+   * лишнего запроса. Тем же правилом, что и в своём расписании, и тем же
+   * эндпоинтом: размах `school` отличает школьный вопрос от личного.
+   *
+   * `slots` в зависимостях намеренно: отмена часа сдвигает темы у всех
+   * следующих за ним, и раскладку надо спросить заново.
+   */
+  useEffect(() => {
+    if (!showTopics) {
+      setTopics(null)
+      return undefined
+    }
+
+    let cancelled = false
+    fetchLayoutAgenda(period.start, period.end, { scope: 'school' })
+      .then((payload) => {
+        if (!cancelled) setTopics(payload.slots)
+      })
+      .catch(() => {
+        // молча: тема — приложение к клетке, и сетка из-за неё падать не должна
+        if (!cancelled) setTopics(null)
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [showTopics, period, slots])
 
   /*
    * Сохранённый выбор сверяется с приехавшими курсами: за время отсутствия
@@ -318,6 +383,40 @@ export default function SchoolSchedule({
     (busyStudents(slot).length ? ' student-clash' : '')
 
   /**
+   * Тема урока из плана — строкой в клетке и только по просьбе.
+   *
+   * Та же функция и то же правило, что в своём расписании: пока темы не
+   * приехали, не пишем ничего (`topics === null` значит «ещё не знаем»), а
+   * приехавшее «ничего» говорим словами — молчание не отличить от
+   * выключенного показа.
+   */
+  const topicOf = (slot) => {
+    if (!showTopics || !topics) return null
+
+    const topic = topics[slot.id]
+    if (!topic) {
+      return <span className="cell-topic missing">{t('agenda.noTopic')}</span>
+    }
+
+    return (
+      <span className="cell-topic" title={topic.title}>
+        {topic.title}
+      </span>
+    )
+  }
+
+  /**
+   * Где идёт занятие — строкой в клетке и только по просьбе.
+   *
+   * Метка занятого кабинета (`room-clash`) от переключателя не зависит и
+   * стоит на самой клетке: строку человек выключает, а предупреждение — нет.
+   */
+  const roomOf = (slot) =>
+    showRooms && slot.room_name ? (
+      <span className="cell-room">{slot.room_name}</span>
+    ) : null
+
+  /**
    * Что написано в клетке дня — зависит от оси.
    *
    * Правило одно: в клетке лежит то, чего **не видно по столбцу и ряду**.
@@ -347,9 +446,11 @@ export default function SchoolSchedule({
           {slot.reason || t('schoolSchedule.day.cancelled')}
         </span>
       )}
-      {axis === 'course' && slot.room_name && (
-        <span className="cell-room">{slot.room_name}</span>
-      )}
+      {/* На оси курсов записанная тема уже стоит первой строкой, и
+          планируемая под ней была бы той же фразой дважды. У часа без записи
+          показать её нечем, кроме этого переключателя, — там она и появляется */}
+      {(axis !== 'course' || !slot.lesson_title) && topicOf(slot)}
+      {axis === 'course' && roomOf(slot)}
     </>
   )
 
@@ -532,11 +633,13 @@ export default function SchoolSchedule({
         {/* День называется днём недели и числом: диапазон из одной даты в
             обе стороны читался бы как ошибка */}
         <strong>
-          {byDay ? longDate(period.start) : dateRange(period.start, period.end)}
+          {byDay
+            ? weekdayWithFullDate(period.start)
+            : dateRange(period.start, period.end)}
         </strong>
 
         {/* Размах — тумблер, а не две кнопки: один орган на один вопрос, тот
-            же, что «Мои · Вся школа» строкой выше */}
+            же, что «Мои · Школа» строкой выше */}
         {onSpan && (
           <Switch
             className="compact"
@@ -634,6 +737,42 @@ export default function SchoolSchedule({
         </label>
       </div>
 
+      {/*
+        Переключатели вида — своей строкой, а не в хвосте сужения, и по той же
+        причине, что в своём расписании: слева выбирают, **что** показать,
+        справа — **как**. Второе от недели не зависит вовсе, а общая строка
+        вдобавок скакала через порог переноса и меняла рост страницы.
+      */}
+      <div className="class-filter view-toggles">
+        <label className="checkbox">
+          <input
+            type="checkbox"
+            checked={showTopics}
+            onChange={(event) => {
+              setShowTopics(event.target.checked)
+              remember(SCHOOL_TOPICS_KEY, event.target.checked)
+            }}
+          />
+          {t('agenda.topics')}
+        </label>
+
+        {/* переключателя нет, пока школа не завела ни одного кабинета: он
+            обещал бы строку, которой неоткуда взяться */}
+        {rooms.length > 0 && (
+          <label className="checkbox">
+            <input
+              type="checkbox"
+              checked={showRooms}
+              onChange={(event) => {
+                setShowRooms(event.target.checked)
+                remember(SCHOOL_ROOMS_KEY, event.target.checked)
+              }}
+            />
+            {t('agenda.rooms')}
+          </label>
+        )}
+      </div>
+
       {error && (
         <p className="error" role="alert">
           {error}
@@ -656,6 +795,7 @@ export default function SchoolSchedule({
           day={days[period.start] || {}}
           columns={columns}
           numbers={numbers}
+          bells={bells}
           busy={busy}
           lessonsIn={lessonsIn}
           renderLesson={dayCell}
@@ -671,6 +811,7 @@ export default function SchoolSchedule({
         dates={dates}
         days={days}
         numbers={numbers}
+        bells={bells}
         busy={busy}
         lessonsOn={lessonsOn}
         renderLesson={(slot) => (
@@ -679,7 +820,8 @@ export default function SchoolSchedule({
             <span className="cell-topic">
               {slot.teacher_name || t('schoolSchedule.nobody')}
             </span>
-            {slot.room_name && <span className="cell-room">{slot.room_name}</span>}
+            {topicOf(slot)}
+            {roomOf(slot)}
           </>
         )}
         lessonClassName={cellClass}
@@ -796,6 +938,7 @@ export default function SchoolSchedule({
           date={dialog.date}
           number={dialog.number}
           courses={courses}
+          members={members}
           rooms={rooms}
           /* в дневном виде столбец и есть курс: спрашивать о нём заново
              значит переспрашивать то, во что человек только что нажал */
@@ -872,6 +1015,9 @@ function AddSchoolSlot({
   date,
   number,
   courses,
+  // люди школы: из них считается список учителей в сужении — тот же
+  // `filterOptions`, что и над сеткой
+  members = [],
   rooms = [],
   // курс, в столбец которого нажали (дневной вид); в недельном его нет —
   // там клетка это окно, а не курс
@@ -898,7 +1044,55 @@ function AddSchoolSlot({
     .filter(
       (course) => !onlyHomegroup || (course.homegroups ?? []).includes(onlyHomegroup),
     )
-  const [courseId, setCourseId] = useState(initialCourse ?? shown[0]?.id ?? null)
+  /*
+   * Курс выбирается той же цепочкой, что и над сеткой: предмет → учитель →
+   * курс, `scheduleFilters.js`, третьего свода правил выбора в проекте быть
+   * не должно.
+   *
+   * Списком это было — одним, на все курсы школы. На четырёх курсах он
+   * читается, на девятнадцати это простыня, а школа с выбором предметов даёт
+   * и полторы сотни: найти в схлопнутом списке нужный можно только пролистав
+   * его глазами. Причём тот же самый вопрос человек уже задал себе фильтрами
+   * над сеткой — и, открыв окно, начинал с чистого листа.
+   *
+   * Выбранное держится **одним** значением, а не тремя: `pick` меняет соседние
+   * уровни (курс называет и ведущего, и предмет), и три состояния подряд
+   * оставляли бы промежуточное — учитель уже новый, курс ещё старый.
+   *
+   * Курс из столбца (дневной вид) заезжает сюда тем же `pick`, поэтому
+   * предмет и учитель над ним встают сами: окно открывается уже сужённым до
+   * того, во что нажали.
+   */
+  const [filters, setFilters] = useState(() =>
+    initialCourse
+      ? pick(shown, emptyFilters(), 'course', String(initialCourse))
+      : emptyFilters(),
+  )
+  const options = filterOptions(shown, members, filters)
+  const courseId = filters.course ? Number(filters.course) : null
+  const describeCourse = (course) => course.name
+  // набранное в поиске курса; сам курс из него считается, как у кабинета
+  const [typedCourse, setTypedCourse] = useState(
+    () => shown.find((course) => course.id === initialCourse)?.name ?? '',
+  )
+
+  /*
+   * Сужение и набранное в поиске меняются **вместе**.
+   *
+   * Выбор предмета или учителя снимает курс, если тот им противоречит
+   * (`pick` снимает узкое ради широкого), — и набранное имя, оставшееся в
+   * поле, врало бы: курс в нём написан, а выбран не он. Ровно та пара
+   * состояний, о которой предупреждает `PersonPicker`, поэтому оба обновления
+   * стоят в одном месте, а не в трёх обработчиках.
+   */
+  const narrow = (next) => {
+    setFilters(next)
+    setTypedCourse(
+      next.course
+        ? (shown.find((course) => String(course.id) === next.course)?.name ?? '')
+        : '',
+    )
+  }
   const [room, setRoom] = useState(initialRoom)
   // 0 — не повторять, 1 — каждую неделю, 2 — через неделю
   const [step, setStep] = useState(0)
@@ -917,20 +1111,62 @@ function AddSchoolSlot({
     <Modal onClose={onClose} title={t('schoolSchedule.addTitle', { number })}>
       <form onSubmit={submit}>
 
-        <label>
-          {t('school.courses.title')}
+        {/* Два верхних уровня цепочки — списками: предметов и учителей в школе
+            десятки, а не сотни, и выбирают из них глазами. Курс ниже — поиском:
+            его и ищут по названию */}
+        <label className="field-with-hint">
+          <span>{t('schoolSchedule.pickSubject')}</span>
           <select
-            autoFocus
-            value={courseId ?? ''}
+            value={filters.subject}
             disabled={busy}
-            onChange={(event) => setCourseId(Number(event.target.value))}
+            onChange={(event) =>
+              narrow(pick(shown, filters, 'subject', event.target.value))
+            }
           >
-            {shown.map((course) => (
-              <option key={course.id} value={course.id}>
-                {course.name}
+            <option value="">{t('schoolSchedule.allSubjects')}</option>
+            {options.subjects.map((subject) => (
+              <option key={subject.id} value={subject.id}>
+                {subject.name}
               </option>
             ))}
           </select>
+        </label>
+
+        <label className="field-with-hint">
+          <span>{t('schoolSchedule.pickTeacher')}</span>
+          <select
+            value={filters.teacher}
+            disabled={busy}
+            onChange={(event) =>
+              narrow(pick(shown, filters, 'teacher', event.target.value))
+            }
+          >
+            <option value="">{t('schoolSchedule.everyone')}</option>
+            {options.teachers.map((member) => (
+              <option key={member.id} value={member.id}>
+                {personName(member)}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <label className="field-with-hint">
+          <span>{t('schoolSchedule.pickCourse')}</span>
+          <PersonPicker
+            items={options.courses}
+            value={typedCourse}
+            label={t('schoolSchedule.pickCourse')}
+            placeholder={t('schoolSchedule.allCourses')}
+            disabled={busy}
+            describe={describeCourse}
+            onChange={(text) => {
+              const found = matchItem(options.courses, text, describeCourse)
+              // набранное показываем как есть — иначе не набрать и половины
+              // слова, — а сужение двигаем только по разрешившемуся курсу
+              setFilters(pick(shown, filters, 'course', found ? String(found.id) : ''))
+              setTypedCourse(text)
+            }}
+          />
         </label>
 
         <RoomChoice rooms={rooms} value={room} busy={busy} onChange={setRoom} />

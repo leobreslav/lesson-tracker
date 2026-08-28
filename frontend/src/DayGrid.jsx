@@ -1,5 +1,6 @@
 import { Fragment } from 'react'
 import { useTranslation } from 'react-i18next'
+import RowHead from './RowHead'
 
 /**
  * Один день как таблица: номера уроков сверху вниз, столбцы — по выбранной оси.
@@ -90,7 +91,7 @@ export default function DayGrid({
         className="day-grid"
         data-day={date}
         style={{
-          gridTemplateColumns: `3rem repeat(${columns.length}, minmax(7.5rem, 1fr))`,
+          gridTemplateColumns: `var(--row-head) repeat(${columns.length}, minmax(7.5rem, 1fr))`,
         }}
       >
         <div className="corner" />
@@ -119,17 +120,9 @@ export default function DayGrid({
 
         {numbers.map((number) => (
           <Fragment key={number}>
-            {/* номер и время звонка под ним — тем же порядком, что в неделе */}
-            <div className="row-head">
-              <span>{number}</span>
-              {bells[number] && (
-                <em className="row-bell">
-                  {bells[number].starts_at}
-                  <br />
-                  {bells[number].ends_at}
-                </em>
-              )}
-            </div>
+            {/* номер и время звонка под ним — той же разметкой, что в
+                неделе: один и тот же час, показанный с другой стороны */}
+            <RowHead number={number} bell={bells[number]} />
 
             {columns.map((column) => {
               const inCell = lessonsIn(column.key, number)

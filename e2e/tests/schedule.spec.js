@@ -35,7 +35,7 @@ test('урок ставится рядом и в своём расписании
   // кабинет спрашивают в том же окне, что и повтор, значит он свойство
   // ряда целиком. Терялся он молча и на обеих сторонах разом: занятия
   // появлялись, число в отчёте сходилось, кабинета не было ни у одного
-  await add.getByLabel('Кабинет').selectOption({ label: 'Лаборатория' })
+  await add.getByLabel('Кабинет').fill('Лаборатория')
   await add.getByRole('radio', { name: 'через неделю' }).check()
   // «до» подстрокой попадает и в «дополнительный урок» — берём точное
   await add.getByLabel('до', { exact: true }).fill('2026-10-05')
@@ -1326,7 +1326,7 @@ test('кабинет ставится на весь ряд, а не по кле�
   const menu = page.locator('.context-menu')
   await menu.getByRole('button', { name: 'Кабинет…' }).click()
 
-  await menu.getByLabel('Кабинет').selectOption({ label: 'Лаборатория' })
+  await menu.getByLabel('Кабинет').fill('Лаборатория')
   // тот же тумблер и те же слова, что у переноса: вопрос один и тот же
   await menu.getByRole('radio', { name: 'И дальше' }).check()
   await menu.getByRole('button', { name: 'Сохранить' }).click()

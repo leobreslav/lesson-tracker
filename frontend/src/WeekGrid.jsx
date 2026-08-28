@@ -11,6 +11,7 @@ import {
 import { useTranslation } from 'react-i18next'
 import { parseDate, today } from './calendarLogic'
 import { shortWeekday } from './dates'
+import RowHead from './RowHead'
 
 /**
  * A week as a grid: lesson numbers down the side, days across the top.
@@ -145,7 +146,9 @@ export default function WeekGrid({
   const grid = (
     <div
       className="week-grid"
-      style={{ gridTemplateColumns: `2.5rem repeat(${dates.length}, minmax(0, 1fr))` }}
+      style={{
+        gridTemplateColumns: `var(--row-head) repeat(${dates.length}, minmax(0, 1fr))`,
+      }}
     >
       <div className="corner" />
       {dates.map((date) => {
@@ -173,17 +176,8 @@ export default function WeekGrid({
           {/* Номер и, если школа завела звонки, время под ним. Время
               подписывает **строку**, а не каждую клетку: оно одно на весь
               ряд, и повторённое семь раз оно закрыло бы собой расписание.
-              Звонков нет — ряд выглядит как раньше, одним номером. */}
-          <div className="row-head">
-            <span>{number}</span>
-            {bells[number] && (
-              <em className="row-bell">
-                {bells[number].starts_at}
-                <br />
-                {bells[number].ends_at}
-              </em>
-            )}
-          </div>
+              Разметка общая с дневной сеткой — `RowHead.jsx`. */}
+          <RowHead number={number} bell={bells[number]} />
           {dates.map((date) => {
             const inCell = lessonsOn(date).filter(
               (item) => item.lesson_number === number,

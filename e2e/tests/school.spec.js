@@ -214,10 +214,14 @@ test('справочники: предмет заводится и паралл�
 test('кабинет заводится в справочнике и виден в расписании', async ({
   page,
   signIn,
+  api,
 }) => {
   // Кабинет — четвёртый справочник школы, и заводится он тем же порядком,
   // что предметы и параллели. Проверяется здесь дорога целиком: завели —
   // выбрали, ставя час, — увидели в клетке.
+  const admin = await api(PEOPLE.admin)
+  const courses = await admin.get('/api/courses/?scope=school')
+
   await signIn(PEOPLE.admin)
   await openSection(page, '/school/reference')
 
@@ -242,10 +246,15 @@ test('кабинет заводится в справочнике и виден 
   // остаётся: сетку демо-набор заполняет с первого.
   await page.locator('[data-add="2026-09-07:8"]').click()
   const dialog = page.locator('dialog.modal')
-  await dialog.getByLabel('Курсы').selectOption({ index: 1 })
+  // курс и кабинет выбираются набором: списками это было, а курсов в школе
+  // бывает полторы сотни. Имя пишем целиком — `datalist` отдаёт строку, и
+  // разрешает её в курс само окно
+  // тот же курс, что выбирался раньше вторым пунктом списка: порядок в окне
+  // тот же, что у ответа сервера, а первый курс мог бы упереться в занятость
+  await dialog.getByLabel('Курс', { exact: true }).fill(courses.body[1].name)
   // пусто — законное состояние: школа, не ведущая кабинеты, живёт как жила
   await expect(dialog.getByLabel('Кабинет')).toHaveValue('')
-  await dialog.getByLabel('Кабинет').selectOption({ label: 'Кабинет 404' })
+  await dialog.getByLabel('Кабинет').fill('Кабинет 404')
   await dialog.getByRole('button', { name: 'Добавить', exact: true }).click()
 
   await expect(dialog).toBeHidden()
@@ -328,11 +337,11 @@ test('расписание одно: вид переключается на ме
   // её тумблером, и `check` проверял бы состояние уже отсоединённого поля.
   // Для человека это незаметно — на месте старого тумблера сразу стоит
   // новый, уже переключённый, — а тест иначе падает на здоровой странице
-  await page.getByRole('radio', { name: 'Вся школа' }).click()
+  await page.getByRole('radio', { name: 'Школа' }).click()
   await ready(page)
   await expect(page.locator('h1')).toHaveText('Расписание школы')
   await expect(page).toHaveURL(/view=school/)
-  await expect(page.getByRole('radio', { name: 'Вся школа' })).toBeChecked()
+  await expect(page.getByRole('radio', { name: 'Школа' })).toBeChecked()
 
   // и обратно, тем же тумблером
   await page.getByRole('radio', { name: 'Мои', exact: true }).click()
@@ -350,7 +359,7 @@ test('учителю тумблера видов не показывают', asy
   await signIn(PEOPLE.ivanova)
   await openSection(page, '/schedule')
 
-  await expect(page.getByRole('radio', { name: 'Вся школа' })).toHaveCount(0)
+  await expect(page.getByRole('radio', { name: 'Школа' })).toHaveCount(0)
 })
 
 test('фильтры школьного расписания сужают друг друга, а не пересекаются', async ({
@@ -418,7 +427,11 @@ test('фильтры школьного расписания сужают дру
 test('в школьном расписании урок ставится в обычный будний день', async ({
   page,
   signIn,
+  api,
 }) => {
+  const admin = await api(PEOPLE.admin)
+  const courses = await admin.get('/api/courses/?scope=school')
+
   await signIn(PEOPLE.admin)
   await openSection(page, '/school/schedule')
 
@@ -438,7 +451,7 @@ test('в школьном расписании урок ставится в об
   await page.locator('[data-add="2026-09-07:6"]').click()
 
   const dialog = page.locator('dialog.modal')
-  await dialog.getByLabel('Курсы').selectOption({ index: 1 })
+  await dialog.getByLabel('Курс', { exact: true }).fill(courses.body[1].name)
   await dialog.getByRole('button', { name: 'Добавить', exact: true }).click()
 
   await expect(dialog).toBeHidden()
@@ -501,7 +514,11 @@ test('день школы разворачивает курсы по столб�
   await free.click()
 
   const dialog = page.locator('dialog.modal')
-  await expect(dialog.getByLabel('Курсы')).toHaveValue(columnKey)
+  // в поле стоит **название** курса, а не его id: выбор стал поиском по
+  // набранному, и `datalist` работает строками. Столбец по-прежнему называет
+  // курс сам — переспрашивать то, во что нажали, незачем
+  const column = courses.body.find((one) => String(one.id) === columnKey)
+  await expect(dialog.getByLabel('Курс', { exact: true })).toHaveValue(column.name)
   await dialog.getByRole('button', { name: 'Добавить', exact: true }).click()
 
   await expect(dialog).toBeHidden()
@@ -591,7 +608,7 @@ test('урок ставится рядом на каждую неделю, а н
 
   await page.locator('[data-add="2026-09-07:7"]').click()
   const dialog = page.locator('dialog.modal')
-  await dialog.getByLabel('Курсы').selectOption({ label: 'Grade 6 Algebra' })
+  await dialog.getByLabel('Курс', { exact: true }).fill('Grade 6 Algebra')
 
   // граница спрашивается, а не подразумевается: конец года подставлен, но
   // «до конца четверти» встречается не реже

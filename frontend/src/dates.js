@@ -44,6 +44,17 @@ export const longDate = (iso) =>
 export const weekdayWithDate = (iso) =>
   format(iso, { weekday: 'long', day: 'numeric', month: 'long' })
 
+/**
+ * "Wednesday, 14 October 2026" — the heading of the day-wide timetable.
+ *
+ * The weekday is what the reader actually navigates by: a timetable repeats
+ * itself weekly, so "which Tuesday" is answered by the date and "what is
+ * taught at all" by the weekday. The year stays because the heading sits
+ * next to a year picker and the two must agree.
+ */
+export const weekdayWithFullDate = (iso) =>
+  format(iso, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
+
 /** "Mon" — a column heading in the schedule grid. */
 export const shortWeekday = (iso) => format(iso, { weekday: 'short' })
 

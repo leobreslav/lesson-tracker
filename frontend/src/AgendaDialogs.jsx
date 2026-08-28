@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
 import Modal from './Modal'
+import PersonPicker, { matchItem } from './PersonPicker'
 import Switch from './Switch'
 import { useDismissable } from './UserMenu'
 import { fetchLayoutAgenda } from './api'
@@ -156,25 +157,49 @@ export function RoomChoice({ rooms, value, busy, onChange }) {
   const { t } = useTranslation()
 
   const shown = rooms.filter((room) => !room.is_archived || room.id === value)
+  /*
+   * Набранное живёт **здесь**, а выбранный кабинет считается из него.
+   *
+   * `PersonPicker` предупреждает про вторую копию состояния, и предупреждение
+   * верное: пара «печатаю» против «выбрано» расходится на первом же наборе.
+   * Здесь копии нет — есть одно состояние (строка) и производное от него
+   * (`matchItem` на каждое нажатие клавиши). Наружу по-прежнему уезжает
+   * идентификатор, потому что кабинет вызывающему нужен именно им; внутрь
+   * `value` приходит только тем, что мы сами и отдали.
+   *
+   * Списком это было, и на десятке кабинетов список читался прекрасно. В
+   * школе их под сотню, и найти нужный в схлопнутом списке можно только
+   * пролистав его глазами — та же беда, из-за которой поиск завели для людей
+   * и курсов.
+   *
+   * Пустая строка — законное «не указан», и первым делом именно она: кабинет,
+   * подставленный сам собой, это тихо сказанная неправда о том, где идёт
+   * урок. Набранное и ни во что не разрешившееся значит то же самое, и об
+   * этом `PersonPicker` говорит подписью под полем — молча приравнять «набрал
+   * с опечаткой» к «снял кабинет» нельзя.
+   */
+  const describe = (room) => room.name
+  const [typed, setTyped] = useState(
+    () => shown.find((room) => room.id === value)?.name ?? '',
+  )
+
   if (!rooms.length) return null
 
   return (
-    <label>
-      {t('agenda.add.roomLabel')}
-      <select
-        value={value ?? ''}
+    <label className="field-with-hint">
+      <span>{t('agenda.add.roomLabel')}</span>
+      <PersonPicker
+        items={shown}
+        value={typed}
+        label={t('agenda.add.roomLabel')}
+        placeholder={t('agenda.add.noRoom')}
         disabled={busy}
-        onChange={(event) =>
-          onChange(event.target.value ? Number(event.target.value) : null)
-        }
-      >
-        <option value="">{t('agenda.add.noRoom')}</option>
-        {shown.map((room) => (
-          <option key={room.id} value={room.id}>
-            {room.name}
-          </option>
-        ))}
-      </select>
+        describe={describe}
+        onChange={(text) => {
+          setTyped(text)
+          onChange(matchItem(shown, text, describe)?.id ?? null)
+        }}
+      />
     </label>
   )
 }
