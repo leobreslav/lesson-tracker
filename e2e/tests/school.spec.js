@@ -236,7 +236,11 @@ test('кабинет заводится в справочнике и виден 
   }
   await expect(monday).toBeVisible()
 
-  await page.locator('[data-add="2026-09-07:9"]').click()
+  // Восьмой час, а не девятый: у демо-школы день восьмиурочный, и девятого
+  // ряда в сетке больше нет вовсе — рядов ровно столько, сколько уроков в
+  // школьном дне. Номер тут нужен только свободный, и последний в дне им и
+  // остаётся: сетку демо-набор заполняет с первого.
+  await page.locator('[data-add="2026-09-07:8"]').click()
   const dialog = page.locator('dialog.modal')
   await dialog.getByLabel('Курсы').selectOption({ index: 1 })
   // пусто — законное состояние: школа, не ведущая кабинеты, живёт как жила
@@ -245,7 +249,7 @@ test('кабинет заводится в справочнике и виден 
   await dialog.getByRole('button', { name: 'Добавить', exact: true }).click()
 
   await expect(dialog).toBeHidden()
-  const cell = page.locator('[data-lesson="2026-09-07:9"]')
+  const cell = page.locator('[data-lesson="2026-09-07:8"]')
   await expect(cell).toHaveCount(1)
   await expect(cell).toHaveAttribute('title', /Кабинет 404/)
 })
