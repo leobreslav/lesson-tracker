@@ -74,9 +74,21 @@ class DebugGuardTests(TestCase):
 
 @override_settings(DEBUG=True)
 class SeedTests(TestCase):
-    def test_an_empty_database_gets_a_whole_school(self):
+    """
+    Что кладёт в пустую базу обычный посев.
+
+    Сеется один раз на класс — по той же причине, что и крупный набор в
+    `RichSeedTests`: семь одинаковых посевов подряд ничего не проверяют
+    сверх одного. Сам зовёт команду только тот тест, которому нужен её
+    **вывод**.
+    """
+
+    @classmethod
+    def setUpTestData(cls):
+        super().setUpTestData()
         seed()
 
+    def test_an_empty_database_gets_a_whole_school(self):
         school = School.objects.get()
         self.assertEqual(school.name, "Тестовая школа")
 
@@ -105,8 +117,6 @@ class SeedTests(TestCase):
         Демо показывает не ровный список, а состояния, на которых экраны и
         расходятся: обычный ученик, снятый с курса и ещё не входивший.
         """
-        seed()
-
         # число берётся из самого списка: класс в демо должен быть
         # похож на класс, и подгонять тест под каждого нового ученика — не
         # то же самое, что проверять три состояния
@@ -137,16 +147,12 @@ class SeedTests(TestCase):
         )
 
     def test_the_markup_has_breaks_and_holidays(self):
-        seed()
-
         markup = DayException.objects.all()
         self.assertEqual(markup.filter(kind="vacation").count(), 3)
         self.assertEqual(markup.filter(kind="holiday").count(), 4)
 
     def test_the_schedule_avoids_non_study_days(self):
         """The seeder asks the calendar rather than guessing."""
-        seed()
-
         year = SchoolYear.objects.get()
         study = {day.date for day in year.build_days() if day.is_study}
         # extra lessons are put next to a regular one on purpose and may
@@ -165,8 +171,6 @@ class SeedTests(TestCase):
         A course with a full plan, one with a plan that runs out, one with
         neither plan nor timetable, plus cancellations and extra lessons.
         """
-        seed()
-
         courses = {course.name: course for course in Course.objects.all()}
 
         full = PlanNode.objects.filter(
@@ -188,8 +192,6 @@ class SeedTests(TestCase):
         self.assertTrue(Slot.objects.filter(is_extra=True).exists())
 
     def test_the_plans_are_split_into_blocks(self):
-        seed()
-
         sections = PlanNode.objects.filter(is_section=True)
         self.assertGreater(sections.count(), 3)
         self.assertTrue(
@@ -246,14 +248,19 @@ class RepeatTests(TestCase):
 
 @override_settings(DEBUG=True)
 class WorksTests(TestCase):
+    """Работы и ответы посева. Сеется один раз на класс, как и соседи."""
+
+    @classmethod
+    def setUpTestData(cls):
+        super().setUpTestData()
+        seed()
+
     def test_the_works_come_in_their_three_states(self):
         """
         Открытая, закрытая и запланированная — те же три состояния, что у
         остального seed'а, и расходятся экраны как раз на них: закрытая не
         принимает ответы, запланированной ученик не видит вовсе.
         """
-        seed()
-
         states = sorted(work.state() for work in Work.objects.all())
 
         # состояния должны **встречаться** — а не быть единственными: досев
@@ -268,8 +275,6 @@ class WorksTests(TestCase):
         и то, что переделали после проверки: балл за прошлый ответ и
         просьба посмотреть новый.
         """
-        seed()
-
         closed = Work.objects.get(title__startswith="Контрольная")
         cells = defaultdict(list)
         for row in Submission.objects.filter(task__work=closed).order_by(
@@ -283,7 +288,7 @@ class WorksTests(TestCase):
         self.assertLess(len(cells), closed.tasks.count() * CourseStudent.objects.count())
 
     def test_running_it_twice_does_not_double_the_answers(self):
-        seed()
+        """Первый прогон — из `setUpTestData`; здесь второй."""
         before = Submission.objects.count()
 
         seed()
@@ -407,7 +412,23 @@ class RichSeedTests(TestCase):
     Проверяется не содержимое (оно выдуманное и меняется), а три свойства,
     без которых набором нельзя пользоваться: год содержит сегодня, данные
     возможны, второй прогон ничего не удваивает.
+
+    **Сеется он один раз на класс, и это не оформление, а замер.** Посев
+    богатой школы стоит около 27 секунд; пока он стоял в теле каждого теста,
+    восемь тестов этого класса съедали 190 секунд — половину всего
+    питоновского набора из двух тысяч тестов. `setUpTestData` строит их мир
+    однажды, а каждый тест откатывается к нему транзакцией, и правки внутри
+    теста соседям не видны.
+
+    Кто сеет сам — тот, кому нужен **второй** прогон: он и проверяет, что
+    повтор ничего не удваивает. Такому тесту посев из `setUpTestData` служит
+    первым прогоном.
     """
+
+    @classmethod
+    def setUpTestData(cls):
+        super().setUpTestData()
+        seed("--rich")
 
     def test_the_year_always_holds_today(self):
         """
@@ -416,8 +437,6 @@ class RichSeedTests(TestCase):
         А без прошлого не видно ни связи «занятие проведено», ни долгов, ни
         разложения резерва — то есть половины того, ради чего он и нужен.
         """
-        seed("--rich")
-
         today = timezone.localdate()
         year = SchoolYear.objects.order_by("-start_date").first()
 
@@ -428,8 +447,6 @@ class RichSeedTests(TestCase):
         )
 
     def test_every_teacher_has_three_big_plans(self):
-        seed("--rich")
-
         for email in ("sidorova@example.com", "kovalev@example.com",
                       "nikitina@example.com"):
             teacher = User.objects.get(email=email)
@@ -453,8 +470,6 @@ class RichSeedTests(TestCase):
         (`rich_demo.check_conflicts`), а этот тест следит, что проверка на
         месте и что данные её проходят.
         """
-        seed("--rich")
-
         clashes = (
             Slot.objects.filter(
                 is_cancelled=False, course__assignments__teacher__isnull=False
@@ -468,7 +483,6 @@ class RichSeedTests(TestCase):
 
     def test_the_guard_catches_an_impossible_timetable(self):
         """Проверено поломкой: иначе сторож — просто вызов без последствий."""
-        seed("--rich")
         first = Slot.objects.filter(is_cancelled=False).first()
         twin = (
             Course.objects.filter(
@@ -488,7 +502,7 @@ class RichSeedTests(TestCase):
             rich_demo.check_conflicts()
 
     def test_running_twice_does_not_double_anything(self):
-        seed("--rich")
+        """Первый прогон — тот, что сделал `setUpTestData`; здесь второй."""
         before = (
             Course.objects.count(),
             PlanNode.objects.count(),
@@ -523,7 +537,6 @@ class RichSeedTests(TestCase):
         незакрытыми **позади** записанных, а строгая очередь этого не
         прощает — следующую запись такая дырка держит навсегда.
         """
-        seed("--rich")
         today = timezone.localdate()
 
         # Между посевами проходят дни, и вчерашнее будущее становится
@@ -584,7 +597,6 @@ class RichSeedTests(TestCase):
         показывал шестнадцать занятий в один неучебный день — то есть учил
         читать предупреждение как фон.
         """
-        seed("--rich")
         year = SchoolYear.objects.order_by("-start_date").first()
         study = {day.date for day in year.build_days() if day.status == "study"}
 
@@ -604,7 +616,6 @@ class RichSeedTests(TestCase):
         выглядел бы правильно: «ноль» одинаково честен и когда закрывать
         нечего, и когда никто не начинал.
         """
-        seed("--rich")
         today = timezone.localdate()
 
         states = set()
@@ -623,6 +634,17 @@ class RichSeedTests(TestCase):
                 states.add("есть долги")
 
         self.assertEqual(states, {"не начинали", "закрыто всё", "есть долги"})
+
+
+@override_settings(DEBUG=True)
+class PlainSeedYearTests(TestCase):
+    """
+    Отдельный класс, потому что этому тесту нужна база **без** крупного
+    набора: он спрашивает `SchoolYear.objects.get()`, а рядом с живым годом
+    крупного набора лет становится два и `get()` падает. Пока посев стоял в
+    теле каждого теста, соседство было безвредным; с общим `setUpTestData`
+    оно стало бы поломкой.
+    """
 
     def test_the_plain_seed_keeps_its_fixed_year(self):
         """
