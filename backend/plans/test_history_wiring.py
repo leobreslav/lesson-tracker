@@ -17,8 +17,18 @@ from library import views as library_views
 
 from . import views as plan_views
 
-#: как снимок снимается: через метод вьюсета или напрямую
-CALLS = ("self.snapshot(", "history.take(", "plan_history.take(")
+#: как снимок снимается: через метод вьюсета, напрямую или ходом по ленте.
+#:
+#: `jump_to` тут потому, что снимает он **сам** — состоянием, из которого
+#: уходят, — и снимает ровно один раз за весь ход. Не назвав его, сторож
+#: потребовал бы от отмены второго снимка, то есть ровно той беды, ради
+#: которой ход и переписан.
+CALLS = (
+    "self.snapshot(",
+    "history.take(",
+    "plan_history.take(",
+    "history.jump_to(",
+)
 
 #: пути, которые ничего не пишут в план, и потому снимка не требуют
 EXCUSED = {
@@ -29,6 +39,11 @@ EXCUSED = {
     "PlanNodeViewSet.import_csv": "разбор файла; пишет общий run_import",
     "PlanNodeViewSet.import_rows": "разбор вставки; пишет общий run_import",
     "PlanNodeViewSet.import_xlsx": "разбор книги; пишет общий run_import",
+    "PlanNodeViewSet.redo": (
+        "ход вперёд по ленте: состояние уже записано, снимать нечего — "
+        "а снятый снимок сделал бы возврат новым действием и вернул бы "
+        "«отменить отмену»"
+    ),
     "PlanTemplateViewSet.from_plan": "заводит новый шаблон, а не правит чужой",
     "PlanTemplateViewSet.keep_updating": "перевешивает пометку, план не трогает",
     "PlanTemplateViewSet.perform_create": "то же заведение, другой конец DRF",

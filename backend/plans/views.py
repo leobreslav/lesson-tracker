@@ -1320,28 +1320,39 @@ class PlanNodeViewSet(CourseScopedViewSet):
         Отдаётся и то, что нужно кнопке: какое действие последовало за
         снимком и чего оно коснулось, — иначе «отменить последнее» не
         сможет назвать себя, а безымянная отмена страшнее, чем полезна.
+
+        **Цели обеих кнопок считает сервер**, а не клиент по `steps[0]`.
+        Правило непростое — где стоит курсор, что уже пройдено, чем «Вернуть»
+        называет себя, — и второй его расчёт на клиенте был бы зеркалом,
+        которое разъедется молча. Ровно так и жила прежняя кнопка: она брала
+        самый свежий снимок, а после отмены самым свежим был снимок самой
+        отмены, и она предлагала «отменить отмену».
+
+        Брошенная ветка в список не попадает: предлагать вернуться в
+        будущее, которого у этого плана больше нет, — обещание, которого
+        сервер не сдержит.
         """
         owner = self.requested_owner()
-        rows = (
-            history.PlanSnapshot.objects.filter(**owner.lookup)
-            .select_related("made_by")
-            .order_by("-made_at", "-id")
-        )
+        rows = history.live(owner).select_related("made_by")
+
+        def named(item):
+            if item is None:
+                return None
+            return {
+                "id": item.pk,
+                "action": item.action,
+                "detail": item.detail,
+                "made_at": item.made_at,
+                "by_lead": item.by_lead,
+                "who": person(item.made_by),
+                "mine": item.made_by_id == request.user.pk,
+            }
 
         return Response(
             {
-                "steps": [
-                    {
-                        "id": item.pk,
-                        "action": item.action,
-                        "detail": item.detail,
-                        "made_at": item.made_at,
-                        "by_lead": item.by_lead,
-                        "who": person(item.made_by),
-                        "mine": item.made_by_id == request.user.pk,
-                    }
-                    for item in rows
-                ]
+                "steps": [named(item) for item in rows],
+                "undo": named(history.step_back(owner)),
+                "redo": named(history.undone_step(owner)),
             }
         )
 
@@ -1350,10 +1361,19 @@ class PlanNodeViewSet(CourseScopedViewSet):
         """
         Вернуть план к состоянию снимка.
 
-        Без `snapshot` в теле берётся последний — это и есть «отменить
-        последнее действие». С номером — любой из списка, и это же
-        обслуживает откат чужих правок: снимок вмешательства живёт дольше
-        остальных, и восстановить надо тот, что снят **перед** ним.
+        Без `snapshot` — шаг назад по ленте, и шагов этих столько, сколько в
+        журнале состояний: отменяется не только последнее действие. С номером
+        — сразу в названное состояние, и это же обслуживает откат чужих
+        правок: снимок вмешательства живёт дольше остальных, и восстановить
+        надо тот, что снят **перед** ним. Дорога у обоих одна (`jump_to`):
+        второе — тот же указатель, просто поставленный сразу.
+
+        **Ход записывает в журнал ровно один раз**, в самом начале, — тем
+        состоянием, из которого уходят. Раньше снимок клался на каждое
+        нажатие, и отсюда шли обе беды: следующая отмена целилась в него же,
+        то есть возвращала только что отменённое, а двадцать нажатий подряд
+        выносили из журнала всю настоящую историю. Замечание об этом пришло
+        от учителя дословно: «зацикливаясь на undo: undo».
 
         Отменить можно и чужое: это не дыра, а смысл. Учитель, у которого в
         плане поработал администратор, должен уметь вернуть как было —
@@ -1374,27 +1394,60 @@ class PlanNodeViewSet(CourseScopedViewSet):
         owner = self.requested_owner(write=True)
         wanted = request.data.get("snapshot")
 
-        rows = history.PlanSnapshot.objects.filter(**owner.lookup)
-        step = (
-            rows.filter(pk=wanted).first()
-            if wanted
-            else rows.order_by("-made_at", "-id").first()
-        )
-        if step is None:
-            api_error(
-                Codes.PLAN_NOTHING_TO_UNDO,
-                "There is nothing to undo: no snapshot of this plan was kept.",
-                field="snapshot",
-            )
-
         with transaction.atomic():
-            # сам откат — тоже изменение плана, и его тоже надо уметь
-            # отменить: иначе «вернул не то» становится тупиком
-            self.snapshot(owner, "undo", step.detail)
-            result = history.restore(step)
+            step = (
+                history.live(owner).filter(pk=wanted).first()
+                if wanted
+                else history.step_back(owner)
+            )
+            if step is None:
+                api_error(
+                    Codes.PLAN_NOTHING_TO_UNDO,
+                    "There is nothing to undo: no snapshot of this plan was kept.",
+                    field="snapshot",
+                )
+
+            result = history.jump_to(owner, request.user, step)
             if not owner.is_template:
                 # пост-условие про очередь записей: у полки записей нет вовсе,
                 # и спрашивать «не осталось ли дыры» там не у чего
+                refuse_if_records_broken(step.course)
+
+        return Response(result)
+
+    @action(detail=False, methods=["post"], url_path="redo")
+    def redo(self, request):
+        """
+        Шаг вперёд по ленте: вернуть то, что только что отменили.
+
+        Нужен он не ради симметрии. Отмена без возврата — дорога в один
+        конец, и человек, отменивший на шаг больше, чем хотел, остаётся с
+        планом, которого не просил. Спрошено это было прямо: «отменил, но
+        зря» и «отменил двенадцать шагов, а решил вернуться на два».
+
+        В журнал не пишет ничего: ход по ленте — движение указателя, а не
+        новое действие. Дойдя до конца ленты, убирает за собой снимок,
+        снятый ради самого хода: отменённая отмена действием не была, и
+        предлагать отменить **её** было бы возвратом к прежней беде.
+
+        Пост-условие про очередь записей то же, что у отмены: вперёд ходят
+        по тем же состояниям, что и назад, и «после отката записи идут без
+        дыр» верно в обе стороны.
+        """
+        owner = self.requested_owner(write=True)
+
+        with transaction.atomic():
+            moved = history.walk_forward(owner)
+            if moved is None:
+                api_error(
+                    Codes.PLAN_NOTHING_TO_REDO,
+                    "There is nothing to bring back: the plan is at the end "
+                    "of its history.",
+                    field="snapshot",
+                )
+
+            step, result = moved
+            if not owner.is_template:
                 refuse_if_records_broken(step.course)
 
         return Response(result)

@@ -43,6 +43,11 @@ class SnapshotTestCase(SchoolTestMixin, APITestCase):
             f"{reverse('plannode-undo')}?course={self.course.pk}", body, format="json"
         )
 
+    def redo(self):
+        return self.client.post(
+            f"{reverse('plannode-redo')}?course={self.course.pk}", {}, format="json"
+        )
+
 
 class UndoTests(SnapshotTestCase):
     def test_a_deleted_lesson_comes_back_with_its_content(self):
@@ -133,7 +138,14 @@ class UndoTests(SnapshotTestCase):
         self.assertEqual(self.titles(), ["Первый", "Второй"])
 
     def test_the_undo_itself_can_be_undone(self):
-        """«Вернул не то» не должно быть тупиком."""
+        """
+        «Вернул не то» не должно быть тупиком — но возвращает это `redo`.
+
+        Возвращала это вторая отмена, и ровно поэтому отменить больше одного
+        действия было нельзя: нажатие через раз шло назад, а через раз
+        вперёд. Тупика по-прежнему нет, просто у двух разных движений теперь
+        две разные кнопки, и каждая называет, что сделает.
+        """
         self.lesson("Первый", position=0)
         node = self.lesson("Второй", position=1)
 
@@ -141,8 +153,9 @@ class UndoTests(SnapshotTestCase):
         self.undo()
         self.assertEqual(self.titles(), ["Первый", "Второй"])
 
-        self.undo()
+        answer = self.redo()
 
+        self.assertEqual(answer.status_code, 200, answer.content)
         self.assertEqual(self.titles(), ["Первый"])
 
     def test_with_nothing_kept_it_says_so(self):
@@ -639,3 +652,176 @@ class ARefusedEditLeavesNoStepTests(SnapshotTestCase):
 
         self.assertEqual(answer.status_code, 200, answer.content)
         self.assertEqual(self.steps(), before + 1)
+
+
+class WalkingTheHistoryTests(SnapshotTestCase):
+    """
+    Отмена ходит по ленте состояний, а не переключает два последних.
+
+    Замечание пришло от учителя и звучало дословно: «если ты нажал undo, то
+    последним действием должно считаться предпоследнее, а не последнее.
+    Потому что в текущем виде undo не помогает отменить более одного
+    действия, зацикливаясь на undo: undo».
+
+    Так и было, и причина в устройстве: журнал хранит состояния **перед**
+    действиями, состояние после последнего живёт в самом плане, а указателя
+    «где мы сейчас на этой ленте» не было вовсе. Отмена подменяла его тем,
+    что дописывала в журнал ещё один снимок, — и следующая отмена целилась
+    уже в него.
+    """
+
+    def add(self, title):
+        return self.client.post(
+            reverse("plannode-list"),
+            {"course": self.course.pk, "title": title},
+            format="json",
+        )
+
+    def three(self):
+        self.lesson("Первый", position=0)
+        for title in ("Второй", "Третий"):
+            self.add(title)
+
+    def steps(self):
+        return self.client.get(
+            f"{reverse('plannode-plan-history')}?course={self.course.pk}"
+        ).json()
+
+    def test_two_undos_in_a_row_walk_two_steps_back(self):
+        self.three()
+
+        self.undo()
+        self.assertEqual(self.titles(), ["Первый", "Второй"])
+        self.undo()
+        self.assertEqual(self.titles(), ["Первый"])
+
+    def test_the_walk_stops_at_the_oldest_state(self):
+        """Дойдя до начала ленты, отмена отказывает, а не ходит по кругу."""
+        self.three()
+
+        for _ in range(3):
+            self.undo()
+
+        answer = self.undo()
+
+        self.assertEqual(answer.status_code, 400, answer.content)
+        self.assertEqual(answer.json()["code"], "plan_nothing_to_undo")
+
+    def test_walking_back_writes_to_the_journal_once(self):
+        """
+        Двенадцать шагов назад стоят одной записи, а не двенадцати.
+
+        Раньше каждое нажатие клало снимок, и двадцать нажатий выносили из
+        журнала всю настоящую историю — двадцать держится на план. То есть
+        человек, нажимавший «отменить», терял возможность отменить.
+        """
+        self.three()
+        before = history.PlanSnapshot.objects.filter(course=self.course).count()
+
+        self.undo()
+        self.undo()
+
+        after = history.PlanSnapshot.objects.filter(course=self.course).count()
+        self.assertEqual(after, before + 1)
+
+    def test_walking_forward_brings_the_steps_back(self):
+        """«Отменил двенадцать, а решил вернуться на два»."""
+        self.three()
+        self.undo()
+        self.undo()
+        self.assertEqual(self.titles(), ["Первый"])
+
+        self.redo()
+        self.assertEqual(self.titles(), ["Первый", "Второй"])
+        self.redo()
+        self.assertEqual(self.titles(), ["Первый", "Второй", "Третий"])
+
+    def test_a_full_round_trip_leaves_no_trace(self):
+        """
+        Отменил и вернул — журнал такой же, каким был.
+
+        Снимок, снятый ради самого хода, к этому моменту хранит то же
+        состояние, что и живой план. Оставить его значило бы предложить
+        «отменить отмену» — то самое, с чего началось замечание.
+        """
+        self.three()
+        before = list(
+            history.PlanSnapshot.objects.filter(course=self.course)
+            .order_by("id")
+            .values_list("pk", flat=True)
+        )
+
+        self.undo()
+        self.undo()
+        self.redo()
+        self.redo()
+
+        after = list(
+            history.PlanSnapshot.objects.filter(course=self.course)
+            .order_by("id")
+            .values_list("pk", flat=True)
+        )
+        self.assertEqual(after, before)
+        self.assertEqual(self.titles(), ["Первый", "Второй", "Третий"])
+
+    def test_at_the_end_of_the_tape_there_is_nothing_to_bring_back(self):
+        self.three()
+
+        answer = self.redo()
+
+        self.assertEqual(answer.status_code, 400, answer.content)
+        self.assertEqual(answer.json()["code"], "plan_nothing_to_redo")
+
+    def test_an_edit_cuts_off_the_branch_ahead(self):
+        """
+        Отошли назад и стали писать оттуда — вперёд возвращать больше некуда.
+
+        Так ведёт себя всякая отмена, и неожиданностью это не будет; важно,
+        что кнопка «Вернуть» при этом исчезает, а не обещает ветку, которой
+        у плана уже нет.
+        """
+        self.three()
+        self.undo()
+        self.undo()
+
+        self.add("Другой")
+
+        answer = self.redo()
+        self.assertEqual(answer.status_code, 400, answer.content)
+        self.assertEqual(answer.json()["code"], "plan_nothing_to_redo")
+        self.assertEqual(self.titles(), ["Первый", "Другой"])
+
+    def test_the_buttons_name_what_they_will_do(self):
+        """
+        Сервер говорит цели обеих кнопок, и «Вернуть» называет **действие**.
+
+        Считать это на клиенте нельзя: правило непростое, а второй его
+        расчёт разъехался бы молча. Ровно так и жила прежняя кнопка — брала
+        самый свежий снимок и после отмены предлагала «отменить отмену».
+        """
+        self.three()
+
+        fresh = self.steps()
+        self.assertEqual(fresh["undo"]["action"], "create")
+        self.assertIsNone(fresh["redo"])
+
+        self.undo()
+
+        walking = self.steps()
+        self.assertEqual(walking["undo"]["action"], "create")
+        self.assertEqual(
+            walking["redo"]["action"],
+            "create",
+            "«Вернуть» называет действие, которое вернёт, а не снимок хода",
+        )
+
+    def test_the_abandoned_branch_is_not_offered(self):
+        """Брошенное не показывается в списке: обещать его сервер не станет."""
+        self.three()
+        self.undo()
+        self.undo()
+        self.add("Другой")
+
+        actions = [step["action"] for step in self.steps()["steps"]]
+
+        self.assertNotIn("undo", actions)

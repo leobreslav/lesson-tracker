@@ -35,7 +35,7 @@ from django.db import models, transaction
 from config.errors import Codes, api_error
 
 from .content import CONTENT_FIELDS
-from .owning import exactly_one_owner, owner_of
+from .owning import OWNER_FIELDS, exactly_one_owner, owner_of
 
 #: сколько снимков держать на один план ради обычной отмены. Отменяют почти
 #: всегда последние минуты, и двадцати шагов на это с запасом.
@@ -106,6 +106,17 @@ class PlanSnapshot(models.Model):
             "не узнает."
         ),
     )
+    abandoned = models.BooleanField(
+        "no longer on the live timeline",
+        default=False,
+        help_text=(
+            "Отошли назад по ленте и стали править оттуда — всё, что было "
+            "впереди, ходом больше не достижимо. Помечается, а не удаляется "
+            "на месте: среди брошенного бывает запись о чужой правке, а она "
+            "девяносто дней и есть аудит, а не удобство. Остальное уносит "
+            "обычная уборка при следующей записи."
+        ),
+    )
 
     class Meta:
         verbose_name = "plan snapshot"
@@ -130,6 +141,89 @@ class PlanSnapshot(models.Model):
     def __str__(self):
         whose = self.course or self.template
         return f"{whose} — {self.action} @ {self.made_at:%Y-%m-%d %H:%M}"
+
+
+class PlanUndoCursor(models.Model):
+    """
+    Где план стоит на своей ленте состояний.
+
+    Журнал хранит состояния **перед** действиями, а состояние после
+    последнего живёт в самом плане. Вместе они и есть полная лента, и вся
+    отмена — это движение указателя по ней. Указателя-то и не было: `undo`
+    подменял его тем, что дописывал в журнал ещё один снимок, — и потому
+    отменял ровно одно действие, а второе нажатие возвращало сделанное.
+    Наружу это выглядело переключателем, а на двадцатом нажатии выносило из
+    журнала всю настоящую историю.
+
+    Строки нет — план на конце ленты, и «вернуть» нечего. Строка есть —
+    идёт ход назад, и `at` называет снимок, чьё состояние сейчас на экране.
+
+    **Курсор один на план, а не на человека.** План в каждый момент в одном
+    состоянии, и другого у него для второго читателя нет: отошёл учитель на
+    двенадцать шагов назад — завуч открывает план ровно там же и может
+    вернуть вперёд. Курсор на человека означал бы, что двое видят разные
+    планы под одним именем.
+
+    Хранится он записью, а не флажком на каждом снимке. Флажки выражали бы
+    одно число двадцатью значениями, и правило «пройденные идут подряд»
+    держалось бы на честном слове; здесь же поломать нечего.
+    """
+
+    course = models.ForeignKey(
+        "schedule.Course",
+        related_name="undo_cursor",
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        verbose_name="course",
+    )
+    template = models.ForeignKey(
+        "library.PlanTemplate",
+        related_name="undo_cursor",
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        verbose_name="library template",
+    )
+    #: Снимок, чьё состояние сейчас показано. `CASCADE` тут — безопасный
+    #: отказ: уборка унесла снимок, курсор исчез вместе с ним, и план просто
+    #: считается стоящим на конце ленты.
+    at = models.ForeignKey(
+        PlanSnapshot,
+        related_name="cursors",
+        on_delete=models.CASCADE,
+        verbose_name="showing this state",
+    )
+
+    class Meta:
+        verbose_name = "plan undo cursor"
+        verbose_name_plural = "plan undo cursors"
+        constraints = [
+            models.CheckConstraint(
+                condition=exactly_one_owner(),
+                name="plan_undo_cursor_has_exactly_one_owner",
+            ),
+            # «на план — один курсор» держит база, а не порядок вызовов:
+            # второй курсор означал бы два мнения о том, где стоит план.
+            # Собирается по списку владельцев, чтобы третий получил своё
+            # ограничение сам
+            *[
+                models.UniqueConstraint(
+                    fields=[field],
+                    condition=models.Q(**{f"{field}__isnull": False}),
+                    name=f"one_undo_cursor_per_{field}",
+                )
+                for field in OWNER_FIELDS
+            ],
+        ]
+
+    @property
+    def owner(self):
+        """Чей это курсор — курса или шаблона; см. `plans/owning.py`."""
+        return owner_of(self)
+
+    def __str__(self):
+        return f"{self.course or self.template} @ {self.at_id}"
 
 
 class PlanSnapshotRow(models.Model):
@@ -263,6 +357,104 @@ class PlanSnapshotIntroduction(models.Model):
 ROW_FIELDS = ("position", "is_section", "title", "note", "origin_id", *CONTENT_FIELDS)
 
 
+# --- лента и указатель --------------------------------------------------------
+
+
+def live(owner):
+    """Снимки живой ленты, свежие первыми: брошенная ветка сюда не входит."""
+    return PlanSnapshot.objects.filter(**owner.lookup, abandoned=False).order_by(
+        "-made_at", "-id"
+    )
+
+
+def cursor_of(owner):
+    """Где план стоит на ленте; `None` — на её конце, возвращать нечего."""
+    return (
+        PlanUndoCursor.objects.filter(**owner.lookup).select_related("at").first()
+    )
+
+
+def _older_than(item):
+    """Строго раньше этого снимка — по той же паре, по какой лента и сортируется."""
+    return models.Q(made_at__lt=item.made_at) | models.Q(
+        made_at=item.made_at, id__lt=item.pk
+    )
+
+
+def _newer_than(item):
+    return models.Q(made_at__gt=item.made_at) | models.Q(
+        made_at=item.made_at, id__gt=item.pk
+    )
+
+
+def step_back(owner):
+    """
+    Какое состояние восстановит следующая отмена; `None` — отменять нечего.
+
+    Спрашивается и до нажатия: кнопка обязана назвать, что именно тронет, —
+    а безымянная отмена страшнее, чем полезна.
+    """
+    here = cursor_of(owner)
+    if here is None:
+        return live(owner).first()
+    return live(owner).filter(_older_than(here.at)).first()
+
+
+def step_forward(owner):
+    """Какое состояние восстановит «Вернуть»; `None` — план на конце ленты."""
+    here = cursor_of(owner)
+    if here is None:
+        return None
+    return live(owner).filter(_newer_than(here.at)).order_by("made_at", "id").first()
+
+
+def undone_step(owner):
+    """
+    Какое действие вернёт «Вернуть» — им кнопка и называет себя.
+
+    Это **не** тот снимок, который она восстановит, и путать их дорого:
+    восстанавливает она состояние **после** действия, то есть следующий
+    снимок вперёд, а называет само действие — а оно записано на снимке, снятом
+    **перед** ним, то есть на том, под которым стоит курсор. Пока это было
+    одним и тем же, кнопка говорила «вернуть отмену»: имя бралось у снимка,
+    снятого ради самого хода.
+    """
+    here = cursor_of(owner)
+    if here is None or step_forward(owner) is None:
+        return None
+    return here.at
+
+
+def abandon_the_branch(owner) -> int:
+    """
+    Правка посреди хода назад обрывает всё, что было впереди.
+
+    Отошли на двенадцать шагов и стали писать оттуда — те двенадцать
+    состояний больше не будущее этого плана, и предлагать «вернуть» в них
+    значило бы обещать ветку, которой нет. Так ведёт себя всякая отмена, и
+    неожиданностью это не будет.
+
+    Помечает, а не удаляет: среди брошенного бывает снимок чужой правки, а
+    он живёт девяносто дней не ради удобства — по нему учитель узнаёт, что в
+    его плане поработал администратор. Остальное уносит `prune`.
+
+    Стоит внутри `take`, а не в каждом пишущем пути: путей девять, и правило,
+    расставленное по ним руками, перестанет действовать на десятом. Полноту
+    вызовов самого `take` стережёт `plans/test_history_wiring.py`.
+    """
+    here = cursor_of(owner)
+    if here is None:
+        return 0
+
+    dropped = (
+        PlanSnapshot.objects.filter(**owner.lookup, abandoned=False)
+        .filter(_newer_than(here.at))
+        .update(abandoned=True)
+    )
+    here.delete()
+    return dropped
+
+
 # --- снятие -------------------------------------------------------------------
 
 
@@ -292,6 +484,12 @@ def take(owner, user, action: str, detail: str = "") -> PlanSnapshot:
     from bank.models import Introduction
     from files.models import Attachment
     from .models import PlanNode
+
+    # Правка посреди хода назад обрывает ветку возврата. Стоит это здесь, а
+    # не в девяти пишущих путях: правило, расставленное руками, перестаёт
+    # действовать на десятом. Отмена сама сюда приходит только в начале хода
+    # — когда курсора ещё нет, — так что себе она ветку не рубит.
+    abandon_the_branch(owner)
 
     snapshot = PlanSnapshot.objects.create(
         **owner.lookup,
@@ -382,11 +580,10 @@ def prune(owner) -> int:
 
     from django.utils import timezone
 
-    fresh = list(
-        PlanSnapshot.objects.filter(**owner.lookup)
-        .order_by("-made_at", "-id")
-        .values_list("pk", flat=True)[:KEEP_PER_PLAN]
-    )
+    # Считаются только живые: брошенная ветка не должна съедать глубину
+    # отмены. Сама она переживает уборку, лишь пока остаётся записью о чужой
+    # правке, — второе условие ниже про это.
+    fresh = list(live(owner).values_list("pk", flat=True)[:KEEP_PER_PLAN])
     edge = timezone.now() - timedelta(days=KEEP_INTERVENTION_DAYS)
 
     doomed = (
@@ -395,6 +592,86 @@ def prune(owner) -> int:
         .exclude(by_lead=False, made_at__gte=edge)
     )
     return doomed.delete()[0]
+
+
+# --- ход по ленте ---------------------------------------------------------------
+
+
+@transaction.atomic
+def walk_back(owner, user):
+    """
+    Шаг назад по ленте состояний. `None` — отменять нечего.
+
+    Записывает в журнал **один раз за весь ход** — в самом начале, снимком
+    того состояния, из которого уходим. Без него лента неполна: журнал
+    хранит состояния перед действиями, а состояние после последнего живёт
+    только в самом плане, и «вернуть» последнюю отмену было бы некуда.
+    Дальше ход — движение указателя, и второго, третьего, двенадцатого шага
+    журнал не замечает вовсе.
+
+    Раньше снимок клался на **каждое** нажатие, и отсюда шли обе беды сразу:
+    следующая отмена целилась в него же, то есть возвращала только что
+    отменённое, — а двадцать нажатий подряд выносили из журнала всю
+    настоящую историю, потому что держится их двадцать.
+    """
+    target = step_back(owner)
+    if target is None:
+        return None
+    return target, jump_to(owner, user, target)
+
+
+@transaction.atomic
+def jump_to(owner, user, target) -> dict:
+    """
+    Поставить план на это состояние ленты.
+
+    Одна дорога и для шага назад, и для «вернуть как было» после чужой
+    правки: второе — тот же указатель, просто поставленный сразу, а не
+    двенадцатью нажатиями. Пока дороги было две, у них было два мнения о
+    том, где после этого стоит план.
+
+    Снимок снимается, только если ход ещё не начат: он нужен один раз за
+    весь ход — тем состоянием, из которого уходим.
+    """
+    if cursor_of(owner) is None:
+        take(owner, user, "undo", target.detail)
+
+    result = restore(target)
+    PlanUndoCursor.objects.update_or_create(**owner.lookup, defaults={"at": target})
+    return result
+
+
+@transaction.atomic
+def walk_forward(owner):
+    """
+    Шаг вперёд по ленте. `None` — план на её конце, возвращать нечего.
+
+    В журнал не пишет ничего: возврат — это тот же указатель, только в другую
+    сторону. А дойдя до конца ленты, ход **убирает за собой** снимок, снятый
+    ради него самого: отменённая отмена действием не была, и следа от неё
+    остаться не должно — иначе кнопка предлагала бы отменить её же.
+    """
+    here = cursor_of(owner)
+    if here is None:
+        return None
+
+    target = (
+        live(owner).filter(_newer_than(here.at)).order_by("made_at", "id").first()
+    )
+    if target is None:
+        return None
+
+    result = restore(target)
+
+    if live(owner).filter(_newer_than(target)).exists():
+        here.at = target
+        here.save(update_fields=["at"])
+    else:
+        # вернулись на конец ленты — курсор и стартовый снимок отработали
+        here.delete()
+        target.delete()
+
+    return target, result
 
 
 # --- восстановление -----------------------------------------------------------
