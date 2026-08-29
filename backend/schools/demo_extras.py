@@ -48,6 +48,7 @@ def build(school, courses, people, students, *, log=print):
     methodist = people["petrov@example.com"]
     made.append(_methodist_and_baseline(supervised, methodist, admin))
     made.append(_history(course, teacher))
+    made.append(_plan_walk(courses, teacher))
     made.append(_slot_history(course, teacher))
     made.append(_scan_page(course, teacher))
     made.append(_spending(school, teacher, course))
@@ -496,6 +497,47 @@ def _history(course, teacher):
     row.title = f"{row.title}"
     row.save(update_fields=["title"])
     return "снимок плана"
+
+
+def _plan_walk(courses, teacher):
+    """
+    План, оставленный посреди хода назад: только так видна кнопка «Вернуть».
+
+    Нужно это не ради галочки сторожа, а ради самой кнопки — как и снимок
+    расписания ниже. «Вернуть» показывается, только когда ход начат, и в
+    наборе, где его никто не начинал, второй кнопки хода не видно вовсе: ни
+    человеку, смотрящему демо, ни браузерному обходу страниц.
+
+    Правка тут — переименование, и это выбор: восстановление ничего не
+    удаляет, значит и упереться в «отмена не уносит проведённую строку»
+    здесь не во что. После хода назад название возвращается прежнее, то есть
+    план набора выглядит ровно как выглядел, — меняется одно: у него
+    появилась кнопка возврата.
+    """
+    from plans import history
+    from plans.models import PlanNode
+    from plans.owning import of_course
+
+    if history.PlanUndoCursor.objects.exists():
+        return ""
+
+    # не «Grade 6 Algebra»: на нём стоят браузерные тесты плана, и план,
+    # оставленный посреди хода, менял бы им начальное состояние — та же
+    # причина, по которой на другом курсе заведён эталон
+    for name, course in courses.items():
+        if name == "Grade 6 Algebra":
+            continue
+        row = PlanNode.objects.filter(course=course, is_section=False).first()
+        if row is not None:
+            break
+    else:
+        return ""
+
+    history.take(of_course(course), teacher, "edit", row.title)
+    row.title = f"{row.title} (уточнение)"
+    row.save(update_fields=["title"])
+    history.walk_back(of_course(course), teacher)
+    return "план посреди отмены"
 
 
 def _slot_history(course, teacher):
