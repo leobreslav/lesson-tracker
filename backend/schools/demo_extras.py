@@ -48,7 +48,13 @@ def build(school, courses, people, students, *, log=print):
     methodist = people["petrov@example.com"]
     made.append(_methodist_and_baseline(supervised, methodist, admin))
     made.append(_history(course, teacher))
-    made.append(_plan_walk(courses, teacher))
+    # Ход по ленте — на том же курсе, где эталон и методист, и по той же
+    # причине: «Grade 6 Algebra» пинят браузерные тесты плана, и план,
+    # оставленный посреди хода, менял бы им начальное состояние. Курс выбран
+    # **по имени**, а не первым попавшимся с непустым планом: перебор давал
+    # тот же ответ, но давал его молча — и завтра, с четвёртым курсом,
+    # ответил бы другим.
+    made.append(_plan_walk(supervised, teacher))
     made.append(_slot_history(course, teacher))
     made.append(_scan_page(course, teacher))
     made.append(_spending(school, teacher, course))
@@ -499,7 +505,7 @@ def _history(course, teacher):
     return "снимок плана"
 
 
-def _plan_walk(courses, teacher):
+def _plan_walk(course, teacher):
     """
     План, оставленный посреди хода назад: только так видна кнопка «Вернуть».
 
@@ -521,16 +527,8 @@ def _plan_walk(courses, teacher):
     if history.PlanUndoCursor.objects.exists():
         return ""
 
-    # не «Grade 6 Algebra»: на нём стоят браузерные тесты плана, и план,
-    # оставленный посреди хода, менял бы им начальное состояние — та же
-    # причина, по которой на другом курсе заведён эталон
-    for name, course in courses.items():
-        if name == "Grade 6 Algebra":
-            continue
-        row = PlanNode.objects.filter(course=course, is_section=False).first()
-        if row is not None:
-            break
-    else:
+    row = PlanNode.objects.filter(course=course, is_section=False).first()
+    if row is None:
         return ""
 
     history.take(of_course(course), teacher, "edit", row.title)

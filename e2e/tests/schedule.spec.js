@@ -1420,6 +1420,21 @@ test('последнее действие отменяется одной кно
   await expect(page.locator(`[data-add="${MONDAY}:6"]`)).toBeVisible()
   await expect(page.locator(`[data-lesson="${MONDAY}:6"]`)).toHaveCount(0)
 
-  // и сама отмена тоже отменяема: «вернул не то» не тупик
-  await expect(undo).toContainText('отмену')
+  /*
+   * После отмены кнопка **переворачивается**: «вернул не то» тут не тупик,
+   * но и не вторая отмена.
+   *
+   * Читалось это раньше как «Отменить: отмену» — и было ровно тем, чем
+   * выглядело: второе нажатие возвращало сделанное, а называлось отменой.
+   * Понять по надписи, куда попадёшь, было нельзя, и расписание качалось
+   * между двумя состояниями. Шаг тут по-прежнему один — глубже не ходят, —
+   * поэтому «Отменить» после отката пропадает вовсе, а не стоит рядом.
+   */
+  await expect(undo).toHaveCount(0)
+  const back = page.getByRole('button', { name: /^Вернуть:/ })
+  await expect(back).toContainText('добавление занятия')
+
+  await back.click()
+  await expect(page.locator(`[data-lesson="${MONDAY}:6"]`)).toBeVisible()
+  await expect(page.getByRole('button', { name: /^Отменить:/ })).toBeVisible()
 })
