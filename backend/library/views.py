@@ -6,10 +6,11 @@ from files.models import Attachment
 from files.serializers import with_sharing
 from plans import history as plan_history
 from plans import services as plan_services
+from plans import views as plan_views
 from plans.views import refuse_if_taught_lost
 from plans.content import CONTENT_FIELDS
 from plans.models import PlanNode
-from plans.owning import of_course
+from plans.owning import of_course, of_template
 from rest_framework.decorators import action
 from rest_framework.permissions import SAFE_METHODS, BasePermission, IsAuthenticated
 from rest_framework.response import Response
@@ -205,6 +206,34 @@ class PlanTemplateViewSet(SchoolScopedViewSet):
             status=201,
         )
 
+    @action(detail=True, methods=["get"], url_path="diff-from-plan")
+    def diff_from_plan(self, request, pk=None):
+        """
+        Что станет с шаблоном, если обновить его планом курса.
+
+        Спрашивается **до** нажатия и ничего не пишет. Раньше «Обновить»
+        переписывало строки молча — и это было безопасно ровно потому, что
+        шаблон был снимком плана и своей работы в нём не было. Теперь она
+        там есть: план на полке пишут руками, и обновление с курса способно
+        стереть написанное.
+
+        Отказываться от обновления при этом незачем — годовой цикл «вёл год,
+        обновил полку» никуда не делся, — а вот показать, что уйдёт, надо.
+        Плюс снимок перед записью: `update-from-plan` берёт его, и ошибка
+        отменяется одной кнопкой.
+        """
+        template = self.get_object()
+        self.check_object_permissions(request, template)
+
+        form = UpdateFromPlanSerializer(data=request.query_params, context={"request": request})
+        form.is_valid(raise_exception=True)
+
+        return Response(
+            plan_views.overwrite_payload(
+                of_template(template), of_course(form.validated_data["course"])
+            )
+        )
+
     @action(detail=True, methods=["post"], url_path="update-from-plan")
     def update_from_plan(self, request, pk=None):
         """
@@ -285,6 +314,12 @@ class PlanTemplateViewSet(SchoolScopedViewSet):
         # обе записи одной транзакцией: строки уже свежие, а предмет и год
         # ещё старые — состояние, которого никто потом не объяснит, и найти
         # такой шаблон по фильтру нельзя
+        # снимок до записи: обновление с курса теперь способно стереть
+        # написанное руками, и ошибка обязана отменяться одной кнопкой
+        plan_history.take(
+            of_template(template), request.user, "template_refresh", course.name
+        )
+
         with transaction.atomic():
             services.write_rows(template, rows)
             if moved:
@@ -383,6 +418,9 @@ class PlanTemplateViewSet(SchoolScopedViewSet):
             )
             for row in form.validated_data
         ]
+        plan_history.take(
+            of_template(template), request.user, "rows", template.title
+        )
         services.write_rows(template, rows)
 
         return Response(

@@ -14,7 +14,7 @@ import ImportDialog from './ImportDialog'
 import LibraryDialog, { TemplateView } from './LibraryDialog'
 import PlanCsvHelp from './PlanCsvHelp'
 import PlanTable from './PlanTable'
-import PlanDiff from './PlanDiff'
+import PlanDiff, { DiffBody } from './PlanDiff'
 import { dragId } from './PlanDnd'
 import Modal from './Modal'
 import { usePlanLayout } from './usePlanLayout'
@@ -40,6 +40,8 @@ import {
   deleteTemplate,
   fetchSubjects,
   createTemplate,
+  fetchRefreshDiff,
+  fetchTakeDiff,
   fetchTemplate,
   fetchTemplates,
   importTemplate,
@@ -155,6 +157,8 @@ export default function Plan({ user, onLoggedOut, template = null }) {
   )
   /** Шапка полки: название шаблона вместо селектора курсов. */
   const [shelfCard, setShelfCard] = useState(null)
+  /** Окно «переписать план»: что уйдёт, что придёт и чем это подтвердить. */
+  const [overwrite, setOverwrite] = useState(null)
   const scrolled = useRef(false)
   const panelOpened = useRef(false)
   const [data, setData] = useState(null) // {nodes, counts}
@@ -753,22 +757,42 @@ export default function Plan({ user, onLoggedOut, template = null }) {
    * произошедшее — план длинный, дописанное ушло в конец, и на экране
    * ничего не сдвинулось.
    */
-  const takeTemplate = ({ template, mode, rows }) =>
-    run(() =>
-      importTemplate({ course: classId, template, mode, ...(rows ? { rows } : {}) }),
-    ).then((result) => {
-      setDialog(null)
-      setPreview(null)
-      if (result) {
-        setNotice(
-          t('plan.imported', {
-            rows: result.created_rows,
-            sections: result.created_headers,
-            lessons: result.created_lessons,
-          }),
-        )
-      }
-    })
+  const takeTemplate = ({ template, mode, rows }) => {
+    const apply = () =>
+      run(() =>
+        importTemplate({ course: classId, template, mode, ...(rows ? { rows } : {}) }),
+      ).then((result) => {
+        setDialog(null)
+        setPreview(null)
+        setOverwrite(null)
+        if (result) {
+          setNotice(
+            t('plan.imported', {
+              rows: result.created_rows,
+              sections: result.created_headers,
+              lessons: result.created_lessons,
+            }),
+          )
+        }
+      })
+
+    /*
+     * Спрашиваем ровно там, где есть что терять.
+     *
+     * «Дописать» ничего не уносит, выбранные строки тоже дописываются, а
+     * пустой план терять нечего — во всех трёх случаях лишний вопрос был бы
+     * шумом, который приучают проматывать не глядя. А вот «взять целиком»
+     * поверх набранного плана стирает его и строит заново, и это
+     * единственное действие полки, уносящее чужую работу.
+     */
+    if (mode !== 'replace' || rows || !data?.nodes.length) return apply()
+
+    return fetchTakeDiff(classId, template)
+      .then((diff) =>
+        setOverwrite({ what: t('plan.overwrite.take'), diff, apply }),
+      )
+      .catch(handleError)
+  }
 
   /**
    * Мой **живой** шаблон по предмету и параллели этого курса, если он есть.
@@ -2067,6 +2091,16 @@ export default function Plan({ user, onLoggedOut, template = null }) {
         />
       )}
 
+      {overwrite && (
+        <OverwriteDialog
+          what={overwrite.what}
+          diff={overwrite.diff}
+          busy={busy}
+          onConfirm={overwrite.apply}
+          onClose={() => setOverwrite(null)}
+        />
+      )}
+
       {dialog?.type === 'publish' && (
         <PublishDialog
           course={course}
@@ -2077,15 +2111,58 @@ export default function Plan({ user, onLoggedOut, template = null }) {
           copy={Boolean(dialog.copy)}
           busy={busy}
           onSubmit={(fields) => {
-            const request =
-              mineOnShelf && !dialog.copy
-                ? refreshTemplate(mineOnShelf.id, classId)
-                : publishPlan({
-                    course: classId,
-                    ...fields,
-                    // копия не претендует на ведение: её никто не перезапишет
-                    is_live: !dialog.copy,
-                  })
+            const refreshing = Boolean(mineOnShelf && !dialog.copy)
+
+            /*
+             * Обновление спрашивает, а первое сохранение — нет.
+             *
+             * Раньше «Обновить» переписывало строки молча, и это было
+             * безопасно ровно потому, что шаблон был снимком плана: своей
+             * работы в нём не было. Теперь она там есть — план на полке
+             * пишут руками, — и молчаливая перезапись стирала бы написанное.
+             *
+             * Класть **новый** шаблон при этом не о чем спрашивать: он
+             * пустой, терять нечего.
+             */
+            if (refreshing) {
+              setBusy(true)
+              fetchRefreshDiff(mineOnShelf.id, classId)
+                .then((diff) =>
+                  setOverwrite({
+                    what: t('plan.overwrite.refresh', {
+                      title: mineOnShelf.title,
+                    }),
+                    diff,
+                    apply: () => {
+                      setBusy(true)
+                      return refreshTemplate(mineOnShelf.id, classId)
+                        .then((template) => {
+                          setTemplates((current) => [
+                            ...current.filter((item) => item.id !== template.id),
+                            template,
+                          ])
+                          setNotice(
+                            t('plan.published', { title: template.title }),
+                          )
+                          setOverwrite(null)
+                          setDialog(null)
+                        })
+                        .catch(handleError)
+                        .finally(() => setBusy(false))
+                    },
+                  }),
+                )
+                .catch(handleError)
+                .finally(() => setBusy(false))
+              return
+            }
+
+            const request = publishPlan({
+              course: classId,
+              ...fields,
+              // копия не претендует на ведение: её никто не перезапишет
+              is_live: !dialog.copy,
+            })
 
             setBusy(true)
             request
@@ -2419,6 +2496,56 @@ function PublishDialog({
           </button>
         </div>
       </form>
+    </Modal>
+  )
+}
+
+
+/**
+ * Переписать план — но сперва показать, что именно уйдёт.
+ *
+ * Действий, стирающих план целиком, в проекте два: взять шаблон «целиком» в
+ * курс и обновить шаблон с курса. Оба долго молчали, и оба были при этом
+ * безопасны: план на полке был снимком, своей работы в нём не было. Теперь
+ * есть — его пишут руками, — и молчаливая перезапись стирала бы написанное.
+ *
+ * Строки показывает **тот же** `DiffBody`, что и сравнение с эталоном:
+ * вопрос один — «что именно изменится», — и второй его разметки быть не
+ * должно. Разные списки для одного ответа расходятся в первой же правке.
+ *
+ * Когда родства между планами нет — шаблон писали руками, план набирали с
+ * нуля, — сравнение молчит и говорит числами. Показать вместо этого список,
+ * где каждая строка удалена и каждая добавлена, было бы формально правдой,
+ * а читалось бы как поломка.
+ *
+ * Отмену это не отменяет и не заменяет: снимок берётся перед записью, и
+ * ошибку возвращает одна кнопка. Вопрос тут — чтобы не ошибиться, отмена —
+ * чтобы ошибка не стоила дня.
+ */
+function OverwriteDialog({ what, diff, busy, onConfirm, onClose }) {
+  const { t } = useTranslation()
+
+  return (
+    <Modal onClose={onClose} title={what}>
+      {diff.matched ? (
+        <DiffBody data={diff} caption={t('plan.overwrite.caption')} />
+      ) : (
+        <p className="hint">
+          {t('plan.overwrite.unrelated', {
+            replacing: diff.replacing,
+            arriving: diff.arriving,
+          })}
+        </p>
+      )}
+
+      <div className="actions">
+        <button type="button" disabled={busy} onClick={onConfirm}>
+          {t('plan.overwrite.confirm')}
+        </button>
+        <button type="button" className="secondary" onClick={onClose}>
+          {t('common.cancel')}
+        </button>
+      </div>
     </Modal>
   )
 }

@@ -568,6 +568,13 @@
       "create": "Написать новый план…",
       "back": "В библиотеку"
     },
+    "overwrite": {
+      "take": "Взять план с полки целиком",
+      "refresh": "Обновить «{{title}}» с этого курса",
+      "caption": "Что изменится:",
+      "unrelated": "Эти два плана не родня: уйдёт строк — {{replacing}}, придёт — {{arriving}}.",
+      "confirm": "Заменить"
+    },
     "importFile": "Импорт…",
     "noSlot": "не помещается",
     "breakBetween": "{{title}} · {{start}} — {{end}}",

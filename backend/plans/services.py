@@ -669,6 +669,10 @@ class ImportedRow:
     row_number: int = 0
     # «этот урок не внутри предыдущей темы»: в файле у него пустая тема
     at_top_level: bool = False
+    # с какой строки эта скопирована. Заполняет только копирование между
+    # планами (`library/services.py`); у строки из файла происхождения нет —
+    # файл не помнит, из какого плана он выгружен, и врать об этом нельзя
+    origin: int | None = None
 
 
 def decode_csv(data: bytes) -> str:
@@ -1218,6 +1222,7 @@ def apply_import(owner, rows: Iterable[ImportedRow], *, append: bool) -> dict:
                 is_section=True,
                 title=row.title,
                 note=row.note,
+                origin_id=row.origin,
             )
             top_position += 1
             section_position = 0
@@ -1232,6 +1237,7 @@ def apply_import(owner, rows: Iterable[ImportedRow], *, append: bool) -> dict:
             is_section=False,
             title=row.title,
             note=row.note,
+            origin_id=row.origin,
             **{field: content.get(field, "") for field in CONTENT_FIELDS},
         )
         if section:
@@ -1584,6 +1590,76 @@ def plan_snapshot(owner) -> list[SnapshotRow]:
         rows.extend(row(child) for child in branch.children)
 
     return rows
+
+
+def origins_of(owner) -> dict:
+    """`{номер строки: номер той, с которой её скопировали}` — только у копий."""
+    from .models import PlanNode
+
+    return dict(
+        PlanNode.objects.filter(**owner.lookup, origin_id__isnull=False).values_list(
+            "pk", "origin_id"
+        )
+    )
+
+
+def aligned_snapshots(before, after):
+    """
+    Два плана, приведённые к **одному пространству номеров**.
+
+    Сравнение в проекте точное: строки узнаются по устойчивому номеру, а не
+    по названию, как в текстовых diff'ах, — потому переименование у нас видно
+    переименованием, а не парой «удалили и добавили». Копирование этот
+    порядок рвёт: взятый с полки план — это новые строки с новыми номерами, и
+    в лоб два таких плана сравнивать нельзя.
+
+    Чинит это `origin_id` — запись «откуда я родом», — и читается она **в обе
+    стороны**. Шаблон, снятый с курса, помнит его строки; курс, набранный с
+    полки, помнит строки шаблона. Годовой цикл (взял шаблон → вёл год →
+    обновил шаблон) сходится по первой из них, а «взять шаблон поверх плана,
+    который из него же и вырос» — по второй.
+
+    Третий ответ — **честное «соответствия нет»**: шаблон написали руками, а
+    план набрали с нуля, и общего у них нет ничего. Тогда возвращается
+    `False`, и спрашивающий обязан сказать это словами, а не показать
+    сравнение, в котором заменяется всё. Приблизительное сопоставление по
+    названиям тут было бы хуже молчания: оно соврало бы про переименования
+    ровно так, как соврал бы текстовый diff.
+
+    Возвращает `(строки «было», строки «стало», нашлось ли соответствие)`.
+    """
+    left = plan_snapshot(before)
+    right = plan_snapshot(after)
+    right_ids = {row.node_id for row in right}
+    left_ids = {row.node_id for row in left}
+
+    # прямая: строки «было» помнят строки «стало»
+    forward = {
+        pk: origin
+        for pk, origin in origins_of(before).items()
+        if origin in right_ids
+    }
+    if forward:
+        return (
+            [row._replace(node_id=forward.get(row.node_id, row.node_id)) for row in left],
+            right,
+            True,
+        )
+
+    # обратная: строки «стало» помнят строки «было». Переписываем **правую**
+    # сторону, а не левую: номера должны сойтись, а какую из двух подвинуть —
+    # безразлично, пока подвинута ровно одна
+    back = {
+        pk: origin for pk, origin in origins_of(after).items() if origin in left_ids
+    }
+    if back:
+        return (
+            left,
+            [row._replace(node_id=back.get(row.node_id, row.node_id)) for row in right],
+            True,
+        )
+
+    return left, right, False
 
 
 def flatten_lessons(owner) -> list[Lesson]:

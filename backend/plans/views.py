@@ -304,6 +304,37 @@ def diff_payload(course, chosen=None) -> dict:
     }
 
 
+def overwrite_payload(before, after) -> dict:
+    """
+    Что станет с планом `before`, если переписать его планом `after`.
+
+    Тот же ответ, что у сравнения с эталоном, и намеренно тот же: вопрос
+    один — «что именно изменится», — и второй его формы в проекте быть не
+    должно. Показывает его та же разметка (`DiffBody`), поэтому и поля здесь
+    прежние: строки с пометками и числа.
+
+    Два поля сверх этого, и оба нужны как раз тогда, когда сравнивать нечего:
+
+    * `matched` — нашлось ли соответствие между планами. Не нашлось, значит
+      сказать надо словами: «эти планы не родня, заменится всё». Показать
+      вместо этого список, где каждая строка удалена и каждая добавлена, —
+      формально правда, а читается как поломка;
+    * `replacing` и `arriving` — сколько строк уйдёт и сколько придёт. Числа
+      честны в обоих случаях и отвечают на «сильно ли это», когда построчный
+      ответ невозможен.
+    """
+    left, right, matched = services.aligned_snapshots(before, after)
+    changes = diff.plan_diff(left, right) if matched else []
+
+    return {
+        "matched": matched,
+        "replacing": len(left),
+        "arriving": len(right),
+        "rows": [change.payload() for change in changes],
+        "counts": diff.summary(changes) if matched else {},
+    }
+
+
 def course_ribbon(course) -> list:
     """
     Лента слотов курса: даты, термы и каникулы между уроками.
@@ -1244,6 +1275,38 @@ class PlanNodeViewSet(CourseScopedViewSet):
                 services.reindex(owner, parent_id)
 
         return Response({"deleted": len(nodes)})
+
+    @action(detail=False, methods=["get"], url_path="diff-from-template")
+    def diff_from_template(self, request):
+        """
+        Что станет с планом курса, если взять шаблон поверх него.
+
+        Спрашивается **до** нажатия и ничего не пишет: «взять целиком»
+        стирает план и строит его заново, а это единственное действие полки,
+        которое уносит чужую работу. Показать, что именно уйдёт, дешевле
+        любого объяснения после.
+
+        Курс и шаблон названы оба, поэтому владелец тут не спрашивается
+        общим путём: `requested_owner` требует ровно одного, и правильно —
+        там речь о том, **чьё** дерево правят, а здесь их два, и оба свои.
+        """
+        course = self.requested_course()
+
+        raw = request.query_params.get("template")
+        if not raw or not raw.isdigit():
+            api_error(
+                Codes.PLAN_OWNER_REQUIRED,
+                "The «template» query parameter with a template id is required.",
+                field="template",
+            )
+
+        from library.serializers import visible_templates
+
+        template = get_object_or_404(visible_templates(request.user), pk=raw)
+
+        return Response(
+            overwrite_payload(of_course(course), of_template(template))
+        )
 
     @action(detail=False, methods=["get"], url_path="history")
     def plan_history(self, request):

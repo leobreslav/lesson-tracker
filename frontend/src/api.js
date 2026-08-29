@@ -340,6 +340,26 @@ export const refreshTemplate = (id, courseId) =>
 export const keepUpdatingTemplate = (id) =>
   request(`/api/library/templates/${id}/keep-updating/`, { method: 'POST' })
 
+/**
+ * Что станет с планом курса, если взять этот шаблон поверх него.
+ *
+ * Спрашивается до нажатия и ничего не пишет: «взять целиком» стирает план и
+ * строит его заново — единственное действие полки, которое уносит чужую
+ * работу.
+ */
+export const fetchTakeDiff = (courseId, templateId) =>
+  request(
+    `/api/plan/diff-from-template/?course=${encodeURIComponent(courseId)}` +
+      `&template=${encodeURIComponent(templateId)}`,
+  )
+
+/** И симметрично: что станет с шаблоном, если обновить его планом курса. */
+export const fetchRefreshDiff = (templateId, courseId) =>
+  request(
+    `/api/library/templates/${templateId}/diff-from-plan/` +
+      `?course=${encodeURIComponent(courseId)}`,
+  )
+
 /** Take a template into a course plan — a copy, not a link. */
 export const importTemplate = (payload) =>
   request('/api/plan/import-from-template/', { method: 'POST', body: payload })

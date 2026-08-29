@@ -17,10 +17,22 @@ const COUNTS = ['added', 'removed', 'changed', 'moved']
  * утверждением не изменилось ничего. Иначе «с тех пор всё то же» было бы
  * тупиком: спросить «а с начала года?» стало бы негде.
  */
-export function DiffBody({ data, onVersion }) {
+export function DiffBody({ data, onVersion, caption = null }) {
   const { t } = useTranslation()
   const changed = data.rows.filter((row) => row.state !== 'same')
   const versions = data.versions ?? []
+  /*
+   * Эталон есть не у всякого сравнения.
+   *
+   * Третий спрашивающий — окно «переписать план» на полке и в курсе: там
+   * сравниваются два **живых** плана, и подписанной версии у них нет вовсе.
+   * Строки при этом те же самые, и второй разметки для них заводить нельзя:
+   * разные списки для одного ответа разошлись бы в первой же правке.
+   *
+   * Поэтому подпись сверху необязательна: есть эталон — его дата, нет —
+   * `caption` от того, кто позвал, или ничего.
+   */
+  const baseline = data.baseline ?? null
 
   /**
    * Подпись версии — дата, а при совпадении дат ещё и время.
@@ -43,7 +55,7 @@ export function DiffBody({ data, onVersion }) {
         <label className="row middle diff-version">
           <span className="hint">{t('plan.diff.version')}</span>
           <select
-            value={data.baseline.id}
+            value={baseline?.id}
             onChange={(event) => onVersion(event.target.value)}
           >
             {versions.map((item) => (
@@ -53,12 +65,14 @@ export function DiffBody({ data, onVersion }) {
             ))}
           </select>
         </label>
-      ) : (
+      ) : baseline ? (
         <p className="hint">
           {t('plan.diff.since', {
-            date: longDate(data.baseline.approved_at.slice(0, 10)),
+            date: longDate(baseline.approved_at.slice(0, 10)),
           })}
         </p>
+      ) : (
+        caption && <p className="hint">{caption}</p>
       )}
 
       {changed.length === 0 ? (

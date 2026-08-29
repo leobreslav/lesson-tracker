@@ -558,6 +558,13 @@
       "create": "Write a new plan…",
       "back": "To the library"
     },
+    "overwrite": {
+      "take": "Take the whole plan from the shelf",
+      "refresh": "Refresh «{{title}}» from this course",
+      "caption": "What will change:",
+      "unrelated": "These two plans have nothing in common: {{replacing}} rows will go, {{arriving}} will arrive.",
+      "confirm": "Replace"
+    },
     "importFile": "Import…",
     "noSlot": "no slot",
     "breakBetween": "{{title}} · {{start}} — {{end}}",

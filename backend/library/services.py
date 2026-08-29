@@ -67,6 +67,10 @@ def plan_as_rows(owner, only=None) -> list[plan_services.ImportedRow]:
             content=None if node.is_section else _content_of(node),
             attachments=() if node.is_section else file_services.attachments_of(node),
             at_top_level=at_top_level,
+            # откуда эта строка родом. Копия остаётся копией — правки по
+            # этой памяти не бегут, — но без неё сравнение «что изменилось с
+            # тех пор» вырождается в «удалено всё, добавлено всё»
+            origin=node.pk,
         )
 
     rows = []

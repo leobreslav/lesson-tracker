@@ -76,3 +76,28 @@ test('у плана на полке нет ни дат, ни утвержден�
     page.getByRole('button', { name: 'Добавить тему или урок' }),
   ).toBeVisible()
 })
+
+test('взять план с полки целиком — сначала показать, что уйдёт', async ({
+  page,
+  signIn,
+}) => {
+  /*
+   * Единственное действие полки, уносящее чужую работу: «заменить план»
+   * стирает набранное и строит заново. Раньше оно делало это молча, и
+   * молчание было безопасным ровно потому, что своей работы в шаблоне не
+   * было — он был снимком плана.
+   */
+  await signIn(PEOPLE.ivanova)
+  await page.goto('/plan')
+  await ready(page)
+  await expect(page.locator('.plan-cards')).toBeVisible()
+
+  await planMenu(page, 'Открыть библиотеку')
+  const shelf = page.locator('.modal')
+  await shelf.locator('.template-list .name').first().click()
+  await shelf.getByRole('radio', { name: 'заменить план' }).click()
+  await shelf.getByRole('button', { name: 'Импортировать в курс' }).click()
+
+  // вопрос вместо тихой перезаписи, и в нём сказано, что именно изменится
+  await expect(page.getByRole('button', { name: 'Заменить' })).toBeVisible()
+})

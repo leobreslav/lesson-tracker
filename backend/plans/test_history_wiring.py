@@ -29,6 +29,9 @@ EXCUSED = {
     "PlanNodeViewSet.import_csv": "разбор файла; пишет общий run_import",
     "PlanNodeViewSet.import_rows": "разбор вставки; пишет общий run_import",
     "PlanNodeViewSet.import_xlsx": "разбор книги; пишет общий run_import",
+    "PlanTemplateViewSet.from_plan": "заводит новый шаблон, а не правит чужой",
+    "PlanTemplateViewSet.keep_updating": "перевешивает пометку, план не трогает",
+    "PlanTemplateViewSet.perform_create": "то же заведение, другой конец DRF",
 }
 
 WRITING = ("post", "perform_create", "perform_update", "destroy", "perform_destroy")
@@ -43,6 +46,9 @@ class HistoryWiringTests(SimpleTestCase):
             plan_views.PlanNodeViewSet,
             plan_views.SectionMoveView,
             library_views.ImportFromTemplateView,
+            # полка пишет **план**: её строки — обычные узлы плана, и
+            # обновление с курса способно стереть написанное руками
+            library_views.PlanTemplateViewSet,
         ):
             for name in dir(view):
                 method = getattr(view, name, None)

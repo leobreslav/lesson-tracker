@@ -116,6 +116,7 @@ class MatrixTests(AccessTestCase):
                 {"name": "plannode-import", "param": "course", "method": "post"},
                 {"name": "plannode-delete-many", "param": "course", "method": "post"},
                 ("plannode-plan-history", "course"),
+                ("plannode-diff-from-template", "course"),
                 {"name": "plannode-undo", "param": "course", "method": "post"},
                 # журнал расписания спрашивается тем же `?course=`, что и
                 # журнал плана, и закрыт так же: чужой курс неотличим от
@@ -1121,6 +1122,7 @@ class ActionDoorTests(AccessTestCase):
         self.assertActionRules(
             actions=(
                 {"name": "plantemplate-update-from-plan", "method": "post"},
+                {"name": "plantemplate-diff-from-plan"},
                 # перевешивание пометки «веду» — такое же авторское действие,
                 # как перезапись строк, и граница у него та же
                 {"name": "plantemplate-keep-updating", "method": "post"},
