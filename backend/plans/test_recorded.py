@@ -20,6 +20,7 @@ from schedule.models import Slot
 
 from . import services
 from .models import PlanNode
+from .owning import of_course
 from .test_layout import MONDAY, LayoutApiTestCase
 
 
@@ -30,7 +31,7 @@ class RecordedLayoutTests(LayoutApiTestCase):
         self.slots = self.fill_slots(7)
         # именно в порядке показа: раскладка идёт по нему, а не по pk
         self.rows = [
-            lesson.node for lesson in services.flatten_lessons(self.course.pk)
+            lesson.node for lesson in services.flatten_lessons(of_course(self.course))
         ]
 
     def layout(self):
@@ -256,7 +257,7 @@ class NoRoomBeforeTaughtTests(LayoutApiTestCase):
 
     def positions(self):
         return [
-            lesson.node.pk for lesson in services.flatten_lessons(self.course.pk)
+            lesson.node.pk for lesson in services.flatten_lessons(of_course(self.course))
         ]
 
     def test_stepping_up_into_the_taught_row_is_refused(self):

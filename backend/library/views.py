@@ -9,6 +9,7 @@ from plans import services as plan_services
 from plans.views import refuse_if_taught_lost
 from plans.content import CONTENT_FIELDS
 from plans.models import PlanNode
+from plans.owning import of_course
 from rest_framework.decorators import action
 from rest_framework.permissions import SAFE_METHODS, BasePermission, IsAuthenticated
 from rest_framework.response import Response
@@ -408,7 +409,7 @@ class ImportFromTemplateView(APIView):
         # ровно то, за что отказывает импорт файлом
         if data["mode"] != "append":
             refuse_if_taught_lost(
-                data["course"], plan_services.plan_nodes(data["course"].pk)
+                data["course"], plan_services.plan_nodes(of_course(data["course"]))
             )
 
         # снимок до записи: полка сносит план так же, как импорт файлом, и

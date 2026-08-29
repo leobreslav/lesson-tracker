@@ -25,6 +25,7 @@ from schedule.models import Course, CourseMethodist, Slot
 
 from . import services
 from .models import PlanBaseline, PlanBaselineRow
+from .owning import of_course
 
 logger = logging.getLogger(__name__)
 
@@ -209,7 +210,7 @@ def approve(baseline: PlanBaseline, reviewer) -> PlanBaseline:
             node_id=row.node_id,
             content_hash=row.content_hash,
         )
-        for position, row in enumerate(services.plan_snapshot(baseline.course_id))
+        for position, row in enumerate(services.plan_snapshot(of_course(baseline.course_id)))
     )
 
     baseline.status = PlanBaseline.Status.APPROVED

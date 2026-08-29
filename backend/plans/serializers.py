@@ -60,15 +60,24 @@ def node_payload(node, number=None, *, taught=()) -> dict:
     }
 
 
-def tree_payload(course_id: int) -> dict:
+def tree_payload(owner) -> dict:
     from schedule.models import Slot
 
-    tree = services.get_tree(course_id)
+    tree = services.get_tree(owner)
     numbers = services.lesson_numbers(tree)
-    # один запрос на всё дерево: строк плана бывает две сотни
-    taught = set(
-        Slot.objects.filter(course_id=course_id, lesson__isnull=False).values_list(
-            "lesson_id", flat=True
+    # один запрос на всё дерево: строк плана бывает две сотни.
+    #
+    # У шаблона занятий не бывает вовсе — он к учебному году не привязан, —
+    # поэтому спрашивать нечего и незачем: пустое множество здесь не заглушка,
+    # а точный ответ. Ручка перетаскивания от этого никуда не денется: она
+    # прячется у **проведённых** строк, а таких на полке нет по построению.
+    taught = (
+        set()
+        if owner.is_template
+        else set(
+            Slot.objects.filter(course_id=owner.id, lesson__isnull=False).values_list(
+                "lesson_id", flat=True
+            )
         )
     )
 
@@ -210,7 +219,7 @@ class PlanNodeCreateSerializer(serializers.ModelSerializer):
         elif before is not None:
             index = before.position
         else:
-            index = len(services.level(node.course_id, parent))
+            index = len(services.level(node.owner, parent))
         services.place(node, parent, index)
 
         return node

@@ -1011,30 +1011,31 @@ def _parent_id(parent):
     return parent.pk if hasattr(parent, "pk") else parent
 
 
-def level(course_id, parent=None) -> list:
+def level(owner, parent=None) -> list:
     """
     Соседи по уровню, в порядке следования.
 
-    План принадлежит **курсу**: один курс — одно дерево, поэтому ключ
-    уровня — курс и родитель, и больше ничего. Пока план был личным, ключей
-    было два, и уровень нельзя было спрашивать, не назвав ещё и учителя.
+    Ключ уровня — **владелец и родитель**, и больше ничего: одно дерево на
+    владельца. Пока план был личным, ключей было два, и уровень нельзя было
+    спрашивать, не назвав ещё и учителя; потом владельцем стал курс, а
+    теперь их двое — курс и шаблон с полки (`plans/owning.py`).
     """
     from .models import PlanNode
 
     return sorted(
         PlanNode.objects.filter(
-            course_id=course_id,
+            **owner.lookup,
             parent_id=_parent_id(parent),
         ),
         key=_order_key,
     )
 
 
-def reindex(course_id, parent=None) -> list:
+def reindex(owner, parent=None) -> list:
     """Renumber a level without gaps: 0, 1, 2, …"""
     from .models import PlanNode
 
-    nodes = level(course_id, parent)
+    nodes = level(owner, parent)
     changed = []
 
     for position, node in enumerate(nodes):
@@ -1055,7 +1056,7 @@ def place(node, parent, index: int) -> None:
     parent_id = _parent_id(parent)
     previous_parent_id = node.parent_id
 
-    siblings = [item for item in level(node.course_id, parent_id) if item.pk != node.pk]
+    siblings = [item for item in level(node.owner, parent_id) if item.pk != node.pk]
     index = max(0, min(index, len(siblings)))
 
     node.parent_id = parent_id
@@ -1068,7 +1069,7 @@ def place(node, parent, index: int) -> None:
 
     if previous_parent_id != parent_id:
         # the level just left behind now has a gap
-        reindex(node.course_id, previous_parent_id)
+        reindex(node.owner, previous_parent_id)
 
 
 def move(node, direction: str) -> bool:
@@ -1082,7 +1083,7 @@ def move(node, direction: str) -> bool:
     Returns False when there is nowhere to go: the edge of the tree.
     """
     step = -1 if direction == UP else 1
-    siblings = level(node.course_id, node.parent_id)
+    siblings = level(node.owner, node.parent_id)
     index = next(i for i, item in enumerate(siblings) if item.pk == node.pk)
     target = index + step
 
@@ -1093,7 +1094,7 @@ def move(node, direction: str) -> bool:
         neighbour = siblings[target]
         if neighbour.is_section and not node.is_section:
             # from above we enter first, from below last
-            inside = level(node.course_id, neighbour)
+            inside = level(node.owner, neighbour)
             place(node, neighbour, 0 if step > 0 else len(inside))
             return True
 
@@ -1105,7 +1106,7 @@ def move(node, direction: str) -> bool:
         return True
 
     # the edge of a section — surface to the top level next to it
-    top = level(node.course_id, None)
+    top = level(node.owner, None)
     section_index = next(i for i, item in enumerate(top) if item.pk == node.parent_id)
     place(node, None, section_index + (1 if step > 0 else 0))
     return True
@@ -1142,15 +1143,15 @@ def split_at(anchor, title: str):
         block, tail = anchor, []
     else:
         block = anchor.parent
-        siblings = level(anchor.course_id, anchor.parent_id)
+        siblings = level(anchor.owner, anchor.parent_id)
         index = next(i for i, item in enumerate(siblings) if item.pk == anchor.pk)
         tail = siblings[index + 1 :]
 
-    top = level(anchor.course_id, None)
+    top = level(anchor.owner, None)
     at = next(i for i, item in enumerate(top) if item.pk == block.pk) + 1
 
     section = PlanNode.objects.create(
-        course_id=anchor.course_id, is_section=True, title=title, position=0
+        **anchor.owner.lookup, is_section=True, title=title, position=0
     )
     place(section, None, at)
 
@@ -1164,8 +1165,8 @@ def dissolve_section(section) -> None:
     """Delete a section, lifting its lessons to its place on the top level."""
     from .models import PlanNode
 
-    children = level(section.course_id, section)
-    top = level(section.course_id, None)
+    children = level(section.owner, section)
+    top = level(section.owner, None)
 
     order = []
     for item in top:
@@ -1184,7 +1185,7 @@ def dissolve_section(section) -> None:
     section.delete()
 
 
-def apply_import(course_id: int, rows: Iterable[ImportedRow], *, append: bool) -> dict:
+def apply_import(owner, rows: Iterable[ImportedRow], *, append: bool) -> dict:
     """
     Create nodes from the parsed rows. Called inside a transaction.
 
@@ -1197,7 +1198,7 @@ def apply_import(course_id: int, rows: Iterable[ImportedRow], *, append: bool) -
     """
     from .models import PlanNode
 
-    top_position = len(level(course_id, None)) if append else 0
+    top_position = len(level(owner, None)) if append else 0
     section = None
     section_position = 0
     created = {"headers": 0, "lessons": 0, "pairs": []}
@@ -1211,7 +1212,7 @@ def apply_import(course_id: int, rows: Iterable[ImportedRow], *, append: bool) -
 
         if row.is_section:
             section = PlanNode.objects.create(
-                course_id=course_id,
+                **owner.lookup,
                 parent=None,
                 position=top_position,
                 is_section=True,
@@ -1225,7 +1226,7 @@ def apply_import(course_id: int, rows: Iterable[ImportedRow], *, append: bool) -
             continue
 
         node = PlanNode.objects.create(
-            course_id=course_id,
+            **owner.lookup,
             parent=section,
             position=section_position if section else top_position,
             is_section=False,
@@ -1376,7 +1377,7 @@ def adopt_section(lessons, known: dict, claimed: set):
     return None
 
 
-def plan_sync(course_id: int, rows: Iterable[ImportedRow]) -> SyncPlan:
+def plan_sync(owner, rows: Iterable[ImportedRow]) -> SyncPlan:
     """
     Работает без записи: тем же расчётом пользуются и предпросмотр, и импорт.
 
@@ -1385,7 +1386,7 @@ def plan_sync(course_id: int, rows: Iterable[ImportedRow]) -> SyncPlan:
     сдвинутого дерева.
     """
     rows = list(rows)
-    known = {node.pk: node for node in plan_nodes(course_id)}
+    known = {node.pk: node for node in plan_nodes(owner)}
 
     errors = _sync_errors(rows, known)
     if errors:
@@ -1434,7 +1435,7 @@ def plan_sync(course_id: int, rows: Iterable[ImportedRow]) -> SyncPlan:
     return SyncPlan(create=create, update=update, delete=delete, errors=[])
 
 
-def apply_sync(course_id: int, plan: SyncPlan) -> dict:
+def apply_sync(owner, plan: SyncPlan) -> dict:
     """Записать посчитанное. Вызывается внутри транзакции."""
     from .models import PlanNode
 
@@ -1449,7 +1450,7 @@ def apply_sync(course_id: int, plan: SyncPlan) -> dict:
 
     def build(row, parent_ref, position):
         return PlanNode.objects.create(
-            course_id=course_id,
+            **owner.lookup,
             parent_id=pk_of(parent_ref),
             position=position,
             is_section=row.is_section,
@@ -1488,9 +1489,10 @@ def apply_sync(course_id: int, plan: SyncPlan) -> dict:
     return {"created": created, "updated": len(plan.update), "deleted": deleted}
 
 
-def plan_nodes(course_id: int):
+def plan_nodes(owner):
     """
-    A teacher's nodes in a course, with the attachment count alongside.
+    The nodes of one plan — a course's or a template's — with the attachment
+    count alongside.
 
     Counting here rather than per row: the plan page draws a paperclip on
     every lesson that has one, and asking the database once beats asking it
@@ -1498,15 +1500,15 @@ def plan_nodes(course_id: int):
     """
     from .models import PlanNode
 
-    return PlanNode.objects.filter(course_id=course_id).annotate(
+    return PlanNode.objects.filter(**owner.lookup).annotate(
         # скрепка означает материалы; картинка в тексте — не материал, и
         # рисовать её скрепкой значило бы обещать список, где её нет
         attachment_count=Count("attachments", filter=Q(attachments__inline=False))
     )
 
 
-def get_tree(course_id: int) -> list[Branch]:
-    return build_tree(plan_nodes(course_id))
+def get_tree(owner) -> list[Branch]:
+    return build_tree(plan_nodes(owner))
 
 
 def lessons_by_course(course_ids: Iterable[int]) -> dict:
@@ -1564,7 +1566,7 @@ def content_hash(node) -> str:
     return hashlib.sha256(payload.encode()).hexdigest()[:32]
 
 
-def plan_snapshot(course_id: int) -> list[SnapshotRow]:
+def plan_snapshot(owner) -> list[SnapshotRow]:
     """
     План плоским списком в порядке отображения — форма эталона.
 
@@ -1577,13 +1579,13 @@ def plan_snapshot(course_id: int) -> list[SnapshotRow]:
         )
 
     rows = []
-    for branch in get_tree(course_id):
+    for branch in get_tree(owner):
         rows.append(row(branch.node))
         rows.extend(row(child) for child in branch.children)
 
     return rows
 
 
-def flatten_lessons(course_id: int) -> list[Lesson]:
+def flatten_lessons(owner) -> list[Lesson]:
     """The flat lesson sequence — the one that later lands on the slots."""
-    return number_lessons(get_tree(course_id))
+    return number_lessons(get_tree(owner))

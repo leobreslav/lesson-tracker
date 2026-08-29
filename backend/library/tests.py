@@ -10,6 +10,7 @@ from django.db import connection
 from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 from plans.models import PlanNode
+from plans.owning import of_course
 from rest_framework.test import APITestCase
 from schools.testing import (
     assign,
@@ -83,7 +84,7 @@ class LibraryTestCase(SchoolTestMixin, APITestCase):
         from plans import services
 
         rows = []
-        for branch in services.get_tree((course or self.course).pk):
+        for branch in services.get_tree(of_course(course or self.course)):
             rows.append((branch.node.is_section, branch.node.title, None))
             rows.extend(
                 (False, child.title, branch.node.title) for child in branch.children

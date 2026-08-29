@@ -978,6 +978,7 @@ class Slot(models.Model):
         `None` значит «очередь цела»; курс без записей цел по определению.
         """
         from plans.services import flatten_lessons
+        from plans.owning import of_course
 
         past = list(
             Slot.objects.filter(
@@ -1002,7 +1003,7 @@ class Slot(models.Model):
         if hole is not None:
             return hole
 
-        order = {lesson.node.pk: lesson.number for lesson in flatten_lessons(course.pk)}
+        order = {lesson.node.pk: lesson.number for lesson in flatten_lessons(of_course(course))}
         numbered = [(past[i], order.get(past[i].lesson_id, 0)) for i in recorded]
         for (slot, number), (_, before) in zip(numbered[1:], numbered):
             if number <= before:

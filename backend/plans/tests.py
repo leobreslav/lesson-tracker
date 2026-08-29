@@ -8,6 +8,7 @@ from schools.testing import assign, SchoolTestMixin, make_course, make_node
 
 from . import services
 from .models import PlanNode
+from .owning import of_course
 
 
 class PlanTestCase(SchoolTestMixin, APITestCase):
@@ -19,7 +20,7 @@ class PlanTestCase(SchoolTestMixin, APITestCase):
 
     def owner(self, course=None):
         """Курс, которому принадлежит план: ключ всех выборок ниже."""
-        return (course or self.course).pk
+        return of_course(course or self.course)
 
     def make_course(self, school, name):
         return make_course(school, name=name)

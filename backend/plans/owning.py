@@ -63,6 +63,23 @@ class PlanOwner(NamedTuple):
         return self.field == "template"
 
 
+def of_course(course) -> PlanOwner:
+    """
+    Дерево этого курса.
+
+    Принимает и объект, и номер — тем же приёмом, что `_parent_id` в
+    `services`: зовут её и там, где курс уже загружен, и там, где на руках
+    только `course_id` из строки запроса, а лишний поход в базу ради ключа
+    выборки не нужен ни в одном из двух случаев.
+    """
+    return PlanOwner("course", getattr(course, "pk", course))
+
+
+def of_template(template) -> PlanOwner:
+    """Дерево этого шаблона с полки. Принимает и объект, и номер."""
+    return PlanOwner("template", getattr(template, "pk", template))
+
+
 def owner_of(node) -> PlanOwner:
     """
     Владелец узла — то из полей, которое названо.

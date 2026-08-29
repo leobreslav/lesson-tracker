@@ -58,10 +58,11 @@ def introduced(course, *, upto=None) -> set[int]:
 def _order(course) -> dict[int, int]:
     """Сквозной порядок строк плана: тем же обходом, что и нумерация уроков."""
     from plans import services as plan_services
+    from plans.owning import of_course
 
     return {
         lesson.node.pk: lesson.number
-        for lesson in plan_services.flatten_lessons(course.pk)
+        for lesson in plan_services.flatten_lessons(of_course(course))
     }
 
 
@@ -135,6 +136,7 @@ def chronology(course) -> list[dict]:
     когда видно порядок, — «производная в марте, а задача на неё в октябре».
     """
     from plans import services as plan_services
+    from plans.owning import of_course
 
     rows = {}
     for row in Introduction.objects.filter(course=course).select_related("tag"):
@@ -150,7 +152,7 @@ def chronology(course) -> list[dict]:
             "section": lesson.section.title if lesson.section else None,
             "tags": rows.get(lesson.node.pk, []),
         }
-        for lesson in plan_services.flatten_lessons(course.pk)
+        for lesson in plan_services.flatten_lessons(of_course(course))
     ]
 
 

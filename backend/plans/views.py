@@ -27,6 +27,7 @@ from schedule.models import Course, Slot
 
 from . import approval, diff, history, progress, services, xlsx
 from .models import PlanBaseline, PlanNode
+from .owning import of_course
 from .serializers import (
     MoveSerializer,
     MoveToSerializer,
@@ -143,9 +144,16 @@ def refuse_if_before_taught(node) -> None:
     входов и выходов из тем, и второй такой расчёт разошёлся бы с первым.
     Отказ откатывает перенос целиком.
     """
-    lessons = services.flatten_lessons(node.course_id)
+    owner = node.owner
+    if owner.is_template:
+        # у шаблона нет ни часов, ни записей: правило про очередь записей, а
+        # очереди там не бывает. Спрашивать базу тут не просто незачем —
+        # вопрос «чьи слоты» у дерева без курса не имеет ответа
+        return
+
+    lessons = services.flatten_lessons(owner)
     taught = set(
-        Slot.objects.filter(lesson__course_id=node.course_id)
+        Slot.objects.filter(lesson__course_id=owner.id)
         .exclude(lesson=None)
         .values_list("lesson_id", flat=True)
     )
@@ -278,7 +286,7 @@ def diff_payload(course, chosen=None) -> dict:
             )
 
     changes = diff.plan_diff(
-        list(baseline.rows.all()), services.plan_snapshot(course.pk)
+        list(baseline.rows.all()), services.plan_snapshot(of_course(course))
     )
 
     def version(item):
@@ -353,7 +361,7 @@ def course_layout(course) -> list:
     ).order_by("date", "lesson_number")
 
     return services.build_layout(
-        services.flatten_lessons(course.pk), list(slots), course.year.terms.all()
+        services.flatten_lessons(of_course(course)), list(slots), course.year.terms.all()
     )
 
 
@@ -403,7 +411,7 @@ def plan_download(course, extension, *, with_dates=False):
     """
     build, content_type = PLAN_FORMATS[extension]
     content = build(
-        services.get_tree(course.pk),
+        services.get_tree(of_course(course)),
         plan_dates(course) if with_dates else None,
     )
 
@@ -477,7 +485,7 @@ class PlanNodeViewSet(CourseScopedViewSet):
         return get_object_or_404(self.my_courses(), pk=raw)
 
     def list(self, request, *args, **kwargs):
-        return Response(tree_payload(self.requested_course().pk))
+        return Response(tree_payload(of_course(self.requested_course())))
 
     def layout_entries(self, course):
         """
@@ -494,7 +502,7 @@ class PlanNodeViewSet(CourseScopedViewSet):
         ).order_by("date", "lesson_number")
 
         return services.build_layout(
-            services.flatten_lessons(course.pk),
+            services.flatten_lessons(of_course(course)),
             list(slots),
             course.year.terms.all(),
         )
@@ -874,7 +882,7 @@ class PlanNodeViewSet(CourseScopedViewSet):
         self.snapshot(course, f"import_{mode}")
 
         if mode == "sync":
-            plan = services.plan_sync(course.pk, parsed.rows)
+            plan = services.plan_sync(of_course(course), parsed.rows)
             if not plan.ok:
                 # весь файл или ничего: применить половину значит оставить
                 # человека разбираться, какую именно
@@ -883,7 +891,7 @@ class PlanNodeViewSet(CourseScopedViewSet):
             refuse_if_taught_lost(course, plan.delete)
 
             with transaction.atomic():
-                done = services.apply_sync(course.pk, plan)
+                done = services.apply_sync(of_course(course), plan)
                 # файл задаёт и порядок: переставленные строки способны
                 # обогнать записи, и это ловится тем же правилом
                 refuse_if_records_broken(course)
@@ -896,14 +904,14 @@ class PlanNodeViewSet(CourseScopedViewSet):
             # replace сносит план целиком, а с ним и записи о занятиях —
             # молча и без следа. Это то же удаление проведённой строки, за
             # которое поодиночке отказывает `plan_delete_taught`
-            refuse_if_taught_lost(course, services.plan_nodes(course.pk))
+            refuse_if_taught_lost(course, services.plan_nodes(of_course(course)))
 
         with transaction.atomic():
             if mode == "replace":
                 PlanNode.objects.filter(course=course).delete()
 
             created = services.apply_import(
-                course.pk, parsed.rows, append=(mode == "append")
+                of_course(course), parsed.rows, append=(mode == "append")
             )
 
         return Response(
@@ -963,7 +971,7 @@ class PlanNodeViewSet(CourseScopedViewSet):
                 )
             ]
         elif mode == "sync":
-            plan = services.plan_sync(course.pk, parsed.rows)
+            plan = services.plan_sync(of_course(course), parsed.rows)
             errors = plan.errors
             new_sections = sum(1 for row, _, _ in plan.create if row.is_section)
             new_lessons = len(plan.create) - new_sections
@@ -971,7 +979,7 @@ class PlanNodeViewSet(CourseScopedViewSet):
         else:
             new_sections, new_lessons = parsed.sections, parsed.lessons
             # append не удаляет ничего, replace — всё, что было
-            doomed = list(services.plan_nodes(course.pk)) if mode == "replace" else []
+            doomed = list(services.plan_nodes(of_course(course))) if mode == "replace" else []
 
         return Response(
             {
@@ -1162,7 +1170,7 @@ class PlanNodeViewSet(CourseScopedViewSet):
         with transaction.atomic():
             PlanNode.objects.filter(pk__in=[node.pk for node in nodes]).delete()
             for parent_id in parents:
-                services.reindex(course.pk, parent_id)
+                services.reindex(of_course(course), parent_id)
 
         return Response({"deleted": len(nodes)})
 
@@ -1271,7 +1279,7 @@ class PlanNodeViewSet(CourseScopedViewSet):
                 parent_id = node.parent_id
                 # узел ещё нужен: по нему берут курс, чтобы перенумеровать
                 node.delete()
-                services.reindex(node.course_id, parent_id)
+                services.reindex(node.owner, parent_id)
 
         return Response(status=status.HTTP_204_NO_CONTENT)
 
@@ -1291,10 +1299,10 @@ class PlanNodeViewSet(CourseScopedViewSet):
         form.is_valid(raise_exception=True)
         parent = form.validated_data["parent"]
 
-        if parent is not None and parent.course_id != node.course_id:
+        if parent is not None and parent.owner != node.owner:
             api_error(
                 Codes.PARENT_OTHER_CLASS,
-                "That section belongs to another course.",
+                "That section belongs to another plan.",
                 field="parent",
             )
         check_structure(node, parent)
@@ -1501,7 +1509,7 @@ class PlanReviewViewSet(ReadOnlyModelViewSet):
             # оригиналом с первой же правки таблицы. Рисует его теперь та же
             # `PlanTable` в режиме чтения, и ей нужно ровно это дерево:
             # номера уроков, вложенность и пометка «проведён».
-            **tree_payload(course.pk),
+            **tree_payload(of_course(course)),
             # Право решать приезжает ответом, а не выводится из роли: правило
             # сложнее роли — методист **этого курса**, — и экран, гадающий о
             # нём сам, однажды разошёлся бы с сервером и нарисовал бы
@@ -1653,7 +1661,7 @@ class StudentCourseView(APIView):
         slots = Slot.objects.filter(
             course=course, is_cancelled=False
         ).order_by("date", "lesson_number")
-        lessons = services.flatten_lessons(course.pk)
+        lessons = services.flatten_lessons(of_course(course))
         placed = {
             entry.lesson.node.pk: entry
             for entry in services.build_layout(
@@ -1672,7 +1680,7 @@ class StudentCourseView(APIView):
         )
 
         rows = []
-        for branch in services.get_tree(course.pk):
+        for branch in services.get_tree(of_course(course)):
             if branch.node.is_section:
                 rows.append({"id": branch.node.pk, "is_section": True,
                              "title": branch.node.title})

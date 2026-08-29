@@ -13,6 +13,7 @@ from files import services as file_services
 from plans import services as plan_services
 from plans.content import CONTENT_FIELDS
 from plans.models import PlanNode
+from plans.owning import of_course
 
 from .models import PlanTemplateRow
 
@@ -44,7 +45,7 @@ def plan_as_rows(course_id: int) -> list[plan_services.ImportedRow]:
             attachments=() if node.is_section else file_services.attachments_of(node),
         )
 
-    for branch in plan_services.get_tree(course_id):
+    for branch in plan_services.get_tree(of_course(course_id)):
         rows.append(line(branch.node))
         rows.extend(line(child) for child in branch.children)
 
@@ -170,7 +171,7 @@ def import_into_course(*, template, course_id: int, append: bool, rows=None) -> 
         PlanNode.objects.filter(course_id=course_id).delete()
 
     created = plan_services.apply_import(
-        course_id, template_as_rows(template, rows), append=append
+        of_course(course_id), template_as_rows(template, rows), append=append
     )
 
     files = 0

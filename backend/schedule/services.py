@@ -299,10 +299,11 @@ def suggested_topics(course) -> dict:
     `build_layout`, что и везде.
     """
     from plans import services as plan_services
+    from plans.owning import of_course
 
     from .models import Slot
 
-    lessons = plan_services.flatten_lessons(course.pk)
+    lessons = plan_services.flatten_lessons(of_course(course))
     slots = list(
         Slot.objects.filter(course=course, is_cancelled=False).order_by(
             "date", "lesson_number"
