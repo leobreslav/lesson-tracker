@@ -553,11 +553,13 @@ class PreviewTests(SyncTestCase):
         self.assertEqual(body["delete"], 0)
 
     def make_template_row(self):
-        from library.models import PlanTemplateRow
+        """Строка чужого дерева: у шаблона она такая же, как у курса."""
         from schools.testing import make_template
 
+        from .models import PlanNode
+
         template = make_template(self.school, self.user, rows=((False, "Урок"),))
-        return PlanTemplateRow.objects.get(template=template)
+        return PlanNode.objects.get(template=template)
 
 
 class PasteTests(SyncTestCase):

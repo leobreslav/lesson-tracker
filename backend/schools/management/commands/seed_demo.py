@@ -41,7 +41,9 @@ from files.models import KIND_FILE, KIND_LINK, Attachment, StoredFile
 from onboarding.services import typical_terms, typical_vacations
 from plans.models import PlanNode
 from library import services as library_services
-from library.models import PlanTemplate, PlanTemplateRow
+from plans import services as plan_services
+from plans.owning import of_course
+from library.models import PlanTemplate
 from schedule.models import (
     Course,
     CourseAssignment,
@@ -1081,27 +1083,26 @@ class Command(BaseCommand):
                 course, teacher = blocks
                 library_services.write_rows(
                     template,
-                    library_services.plan_as_rows(course.pk),
+                    library_services.plan_as_rows(of_course(course)),
                 )
                 continue
 
-            rows, position = [], 0
-            for header, lessons in blocks:
-                rows.append(
-                    PlanTemplateRow(
-                        template=template, position=position, is_header=True, title=header
-                    )
-                )
-                position += 1
-                for lesson in lessons:
-                    rows.append(
-                        PlanTemplateRow(
-                            template=template, position=position, title=lesson
-                        )
-                    )
-                    position += 1
-
-            PlanTemplateRow.objects.bulk_create(rows)
+            # план шаблона — то же дерево, что у курса, поэтому и пишется он
+            # тем же путём: плоская последовательность и общий `apply_import`
+            library_services.write_rows(
+                template,
+                [
+                    row
+                    for header, lessons in blocks
+                    for row in [
+                        plan_services.ImportedRow(is_section=True, title=header),
+                        *(
+                            plan_services.ImportedRow(is_section=False, title=lesson)
+                            for lesson in lessons
+                        ),
+                    ]
+                ],
+            )
 
     def bank(self, school, people, courses=None):
         """

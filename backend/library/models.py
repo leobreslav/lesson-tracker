@@ -1,9 +1,7 @@
 from django.conf import settings
-from django.core.exceptions import ValidationError
 from django.db import models
 from schedule.models import MIN_GRADE
-from django.core.validators import MaxValueValidator, MinValueValidator
-from plans.content import CONTENT_FIELDS, LessonContent, content_problems
+from django.core.validators import MinValueValidator
 
 
 class PlanTemplate(models.Model):
@@ -103,53 +101,5 @@ class PlanTemplate(models.Model):
 
     @property
     def lesson_count(self) -> int:
-        return self.rows.filter(is_header=False).count()
+        return self.nodes.filter(is_section=False).count()
 
-
-class PlanTemplateRow(LessonContent):
-    """
-    One line of a template: a block header or a lesson.
-
-    Flat, unlike `PlanNode`, and deliberately so. A plan tree is exactly two
-    levels deep, which a flat ordered list with header markers expresses
-    completely — it is the same shape the CSV import and export already use,
-    and reusing it means the conversion between a plan and a template is the
-    conversion the project already had.
-
-    It carries the one limitation of that shape: a top-level lesson standing
-    **after** a header cannot be told apart from a lesson inside it. The CSV
-    format has always had that limit; taking a template from such a plan
-    folds those lessons into the preceding block.
-    """
-
-    template = models.ForeignKey(
-        PlanTemplate,
-        related_name="rows",
-        on_delete=models.CASCADE,
-        verbose_name="template",
-    )
-    position = models.PositiveIntegerField("position", default=0)
-    is_header = models.BooleanField("is a block header", default=False)
-    title = models.CharField("title", max_length=300)
-    note = models.TextField("note", blank=True)
-
-    class Meta:
-        verbose_name = "template row"
-        verbose_name_plural = "template rows"
-        ordering = ("position", "id")
-        indexes = [
-            models.Index(fields=("template", "position"), name="template_row_idx"),
-        ]
-
-    def __str__(self):
-        return self.title
-
-    def clean(self):
-        super().clean()
-
-        problems = content_problems(
-            is_section=self.is_header,
-            values={field: getattr(self, field) for field in CONTENT_FIELDS},
-        )
-        if problems:
-            raise ValidationError(problems)

@@ -102,7 +102,7 @@ class PlanTemplateViewSet(SchoolScopedViewSet):
             # менеджера кэш предвыборки отбрасывает и снова идёт в базу
             queryset = queryset.prefetch_related(
                 Prefetch(
-                    "rows__attachments",
+                    "nodes__attachments",
                     queryset=with_sharing(Attachment.objects.all()),
                 )
             )
@@ -177,7 +177,7 @@ class PlanTemplateViewSet(SchoolScopedViewSet):
                     id=standing.pk,
                 )
 
-        rows = services.plan_as_rows(data["course"].pk)
+        rows = services.plan_as_rows(of_course(data["course"]))
         if not rows:
             api_error(
                 Codes.PLAN_EMPTY,
@@ -246,7 +246,7 @@ class PlanTemplateViewSet(SchoolScopedViewSet):
         form.is_valid(raise_exception=True)
 
         course = form.validated_data["course"]
-        rows = services.plan_as_rows(course.pk)
+        rows = services.plan_as_rows(of_course(course))
         if not rows:
             api_error(
                 Codes.PLAN_EMPTY,
@@ -347,13 +347,14 @@ class PlanTemplateViewSet(SchoolScopedViewSet):
     @action(detail=True, methods=["put"])
     def rows(self, request, pk=None):
         """
-        Replace the lines of a template in one go. The author only.
+        Заменить план шаблона списком целиком. Только автор.
 
-        A whole-list write rather than per-row endpoints: the list is flat
-        and short, and positions have no other source of truth than the
-        order they arrive in — so there is nothing to renumber and no way to
-        leave a gap. Per-row editing would need a second copy of the
-        trickiest code in `plans/services.py` for a shape that has no nesting.
+        Запись целиком, а не по строке, и это по-прежнему не наследство
+        плоского хранения. Построчная правка у шаблона теперь тоже есть —
+        обычной ручкой плана (`/api/plan/?template=`), — но это другой
+        вопрос: там правят одну строку, здесь заменяют весь список разом,
+        и у списка нет другого источника правды о порядке, кроме того, в
+        каком он приехал.
         """
         template = self.get_object()
         self.check_object_permissions(request, template)
@@ -365,17 +366,20 @@ class PlanTemplateViewSet(SchoolScopedViewSet):
         # write replaces every row, and without this the attachments would go
         # with them
         carried = {
-            row.pk: list(row.attachments.all())
-            for row in template.rows.prefetch_related("attachments")
+            node.pk: list(node.attachments.all())
+            for node in template.nodes.prefetch_related("attachments")
         }
 
         rows = [
             plan_services.ImportedRow(
-                is_section=row["is_header"],
+                is_section=row["is_section"],
                 title=row["title"],
                 note=row.get("note", ""),
                 content={field: row.get(field, "") for field in CONTENT_FIELDS},
                 attachments=carried.get(row.get("id"), ()),
+                # плоский список ничего не вкладывает: урок ложится в
+                # последний виденный заголовок, как и при импорте файлом
+                at_top_level=False,
             )
             for row in form.validated_data
         ]

@@ -1,10 +1,10 @@
 from config.errors import Codes, api_error
-from plans.content import CONTENT_EXTRA_KWARGS, CONTENT_FIELDS, content_problems
+from plans.content import CONTENT_FIELDS, content_problems
 from rest_framework import serializers
 from schedule.models import Course, Subject
 from schedule.serializers import teacher_courses
 
-from .models import PlanTemplate, PlanTemplateRow
+from .models import PlanTemplate
 
 
 def school_subjects(serializer):
@@ -15,60 +15,108 @@ def school_subjects(serializer):
     return Subject.objects.filter(school_id=user.school_id)
 
 
-class TemplateRowSerializer(serializers.ModelSerializer):
+class TemplateRowSerializer(serializers.Serializer):
     """
-    One line of a template, both ways.
+    Одна строка шаблона на вход — плоской формой, списком целиком.
 
-    `id` is writable on the way in, and only for one reason: the rows are
-    rewritten as a whole list (see `services.write_rows`), which would
-    otherwise drop the attachments of every row on every save. A line that
-    names the row it came from keeps its files.
+    Хранится дерево, а форма записи осталась плоской, и это не наследство:
+    список короткий, порядок в нём единственный источник правды о порядке, и
+    запись целиком не оставит ни дыры, ни дубля. Построчная правка у шаблона
+    теперь тоже есть — обычной ручкой плана, — но это другой вопрос: там
+    правят одну строку, здесь заменяют весь список разом.
+
+    `id` принимается на входе ровно по одной причине: запись целиком заводит
+    строки заново, и без имени прежней строка теряла бы свои файлы. Строка,
+    назвавшая, откуда она, свои файлы сохраняет.
     """
 
     id = serializers.IntegerField(required=False)
-    attachments = serializers.SerializerMethodField()
+    # `is_section` у модели, «заголовок» в разговоре про полку: слово тут
+    # осталось прежним, потому что его читает окно просмотра, а вопрос
+    # «что лежит на полке» от переезда хранения не изменился
+    is_header = serializers.BooleanField(
+        source="is_section", required=False, default=False
+    )
+    title = serializers.CharField(max_length=300)
+    note = serializers.CharField(
+        required=False, allow_blank=True, default="", trim_whitespace=False
+    )
 
-    class Meta:
-        model = PlanTemplateRow
-        fields = (
-            "id",
-            "position",
-            "is_header",
-            "title",
-            "note",
-            *CONTENT_FIELDS,
-            "attachments",
-        )
-        read_only_fields = ("position",)
-        extra_kwargs = CONTENT_EXTRA_KWARGS
-
-    def get_attachments(self, obj):
+    def get_fields(self):
         """
-        Вложения строки. Считанные заранее — берём как есть.
+        Четыре поля содержания — по списку, а не перечислением.
 
-        `with_sharing` навешивает `annotate`, а он поверх предвыбранного
-        менеджера означает новый запрос: у шаблона в полсотни строк это
-        полсотни запросов на одно окно просмотра. Поэтому просмотр шаблона
-        приносит их уже посчитанными (см. `PlanTemplateViewSet.get_queryset`),
-        а поодиночке считаем только там, где предвыборки нет.
+        Список один на весь проект (`plans/content.py`), и переписанный сюда
+        руками он разошёлся бы с ним в первый же день, когда полей станет
+        пять. `trim_whitespace=False` тут по той же причине, что и везде:
+        markdown **и есть** пробелы, а пустая строка в конце отделяет
+        последний абзац от того, что приклеят следом.
         """
-        from files.serializers import AttachmentSerializer, with_sharing
-
-        prefetched = getattr(obj, "_prefetched_objects_cache", {})
-        rows = (
-            obj.attachments.all()
-            if "attachments" in prefetched
-            else with_sharing(obj.attachments.all())
-        )
-        return AttachmentSerializer(rows, many=True).data
+        fields = super().get_fields()
+        for name in CONTENT_FIELDS:
+            fields[name] = serializers.CharField(
+                required=False, allow_blank=True, default="", trim_whitespace=False
+            )
+        return fields
 
     def validate(self, attrs):
         problems = content_problems(
-            is_section=attrs.get("is_header", False), values=attrs
+            is_section=attrs.get("is_section", False), values=attrs
         )
         for field, message in problems.items():
             api_error(Codes.CONTENT_ON_SECTION, message, field=field)
         return attrs
+
+
+def template_rows_payload(template) -> list:
+    """
+    План шаблона плоским списком — тем же, каким его рисует окно полки.
+
+    Дерево у шаблона такое же, как у курса, но окно просмотра показывает
+    блоки заголовками и ничего не вкладывает, поэтому ответ остаётся плоским:
+    менять форму ответа ради переезда хранения незачем.
+
+    Вложения берутся **предвыбранными**: `with_sharing` навешивает `annotate`,
+    а он поверх предвыбранного менеджера означает новый запрос — у шаблона в
+    полсотни уроков это полсотни запросов на одно нажатие «Посмотреть».
+    Предвыборку ставит `PlanTemplateViewSet.get_queryset`, и только на
+    просмотр одного шаблона.
+    """
+    from files.serializers import AttachmentSerializer, with_sharing
+    from plans import services as plan_services
+    from plans.owning import of_template
+
+    def files_of(node):
+        prefetched = getattr(node, "_prefetched_objects_cache", {})
+        rows = (
+            node.attachments.all()
+            if "attachments" in prefetched
+            else with_sharing(node.attachments.all())
+        )
+        return AttachmentSerializer(rows, many=True).data
+
+    def row(node, position):
+        return {
+            "id": node.pk,
+            "position": position,
+            "is_header": node.is_section,
+            "title": node.title,
+            "note": node.note,
+            **{field: getattr(node, field) for field in CONTENT_FIELDS},
+            "attachments": [] if node.is_section else files_of(node),
+        }
+
+    # дерево строится по **предвыбранным** узлам, а не спрашивается заново:
+    # `get_tree` ушёл бы в базу своим запросом и отбросил бы предвыборку
+    # вложений вместе с ней — то есть вернул бы ровно ту полусотню запросов,
+    # ради которой предвыборка и заведена
+    rows = []
+    for branch in plan_services.build_tree(template.nodes.all()):
+        rows.append(row(branch.node, len(rows)))
+        for child in branch.children:
+            rows.append(row(child, len(rows)))
+
+    return rows
 
 
 class PlanTemplateSerializer(serializers.ModelSerializer):
@@ -146,10 +194,15 @@ class PlanTemplateSerializer(serializers.ModelSerializer):
 
 
 class PlanTemplateDetailSerializer(PlanTemplateSerializer):
-    rows = TemplateRowSerializer(many=True, read_only=True)
+    #: План шаблона плоским списком: окно просмотра рисует блоки заголовками,
+    #: и форма ответа осталась той же, какой была при плоском хранении
+    rows = serializers.SerializerMethodField()
 
     class Meta(PlanTemplateSerializer.Meta):
         fields = PlanTemplateSerializer.Meta.fields + ("rows",)
+
+    def get_rows(self, obj):
+        return template_rows_payload(obj)
 
 
 class FromPlanSerializer(serializers.Serializer):
@@ -247,7 +300,7 @@ class UseTemplateSerializer(serializers.Serializer):
             return attrs
 
         known = set(
-            attrs["template"].rows.filter(pk__in=picked).values_list("pk", flat=True)
+            attrs["template"].nodes.filter(pk__in=picked).values_list("pk", flat=True)
         )
         missing = sorted(set(picked) - known)
         if missing:

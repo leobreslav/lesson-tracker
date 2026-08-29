@@ -334,7 +334,8 @@ def make_template(school, author, *, subject=None, grade=9, title="Шаблон"
     же автора по тому же предмету обязан быть снимком** — иначе фикстура
     описывает состояние, которого в базе не бывает.
     """
-    from library.models import PlanTemplate, PlanTemplateRow
+    from library.models import PlanTemplate
+    from plans.models import PlanNode
 
     template = PlanTemplate.objects.create(
         school=school,
@@ -345,12 +346,32 @@ def make_template(school, author, *, subject=None, grade=9, title="Шаблон"
         is_published=published,
         is_live=live,
     )
-    PlanTemplateRow.objects.bulk_create(
-        PlanTemplateRow(
-            template=template, position=position, is_header=header, title=name
+
+    # план шаблона — обычное дерево плана, и раскладывается плоский список в
+    # него тем же правилом, что у импорта: урок ложится в последний виденный
+    # заголовок, а до первого заголовка остаётся наверху
+    section = None
+    top, inner = 0, 0
+    for header, name in rows:
+        if header:
+            section = PlanNode.objects.create(
+                template=template, position=top, is_section=True, title=name
+            )
+            top += 1
+            inner = 0
+            continue
+
+        PlanNode.objects.create(
+            template=template,
+            parent=section,
+            position=inner if section else top,
+            title=name,
         )
-        for position, (header, name) in enumerate(rows)
-    )
+        if section:
+            inner += 1
+        else:
+            top += 1
+
     return template
 
 
@@ -383,10 +404,10 @@ def make_attachment(row, stored=None, *, title="Worksheet", url=""):
     """A reference from a plan lesson or a template row. Files are not copied."""
     from files.models import KIND_FILE, KIND_LINK, Attachment
 
-    owner = "template_row" if hasattr(row, "is_header") else "plan_row"
-
+    # владелец один на обе стороны: строка плана курса и строка плана с полки
+    # — это одна и та же строка
     return Attachment.objects.create(
-        **{owner: row},
+        plan_row=row,
         kind=KIND_LINK if stored is None else KIND_FILE,
         stored_file=stored,
         url=url,

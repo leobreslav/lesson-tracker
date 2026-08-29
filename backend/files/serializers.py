@@ -174,9 +174,6 @@ class AttachmentCreateSerializer(serializers.Serializer):
     plan_row = serializers.PrimaryKeyRelatedField(
         queryset=Attachment.objects.none(), required=False, allow_null=True
     )
-    template_row = serializers.PrimaryKeyRelatedField(
-        queryset=Attachment.objects.none(), required=False, allow_null=True
-    )
     student_work = serializers.PrimaryKeyRelatedField(
         queryset=Attachment.objects.none(), required=False, allow_null=True
     )
@@ -222,14 +219,12 @@ class AttachmentCreateSerializer(serializers.Serializer):
             writable_shelf_folders,
             writable_shelf_owners,
             writable_student_works,
-            writable_template_rows,
             writable_works,
         )
 
         fields = super().get_fields()
         user = self.context["request"].user
         fields["plan_row"].queryset = writable_plan_rows(user)
-        fields["template_row"].queryset = writable_template_rows(user)
         fields["student_work"].queryset = writable_student_works(user)
         fields["work"].queryset = writable_works(user)
         fields["bookmark_owner"].queryset = writable_shelf_owners(user)
@@ -253,8 +248,8 @@ class AttachmentCreateSerializer(serializers.Serializer):
         if len(named) != 1:
             api_error(
                 Codes.ATTACHMENT_OWNER_REQUIRED,
-                "Name exactly one owner: «plan_row», «template_row», «work», "
-                "«student_work», «bookmark_owner» or «school_shelf».",
+                "Name exactly one owner: «plan_row», «work», «student_work», "
+                "«bookmark_owner» or «school_shelf».",
                 field="plan_row",
             )
 
@@ -267,13 +262,12 @@ class AttachmentCreateSerializer(serializers.Serializer):
                 field="staff_only",
             )
 
-        plan_row, template_row = owners["plan_row"], owners["template_row"]
         row = owners[named[0]]
-        if getattr(row, "is_section", False) or getattr(row, "is_header", False):
+        if getattr(row, "is_section", False):
             api_error(
                 Codes.CONTENT_ON_SECTION,
                 "A section header holds no lesson content.",
-                field="plan_row" if plan_row else "template_row",
+                field="plan_row",
             )
 
         upload = attrs.get("file")

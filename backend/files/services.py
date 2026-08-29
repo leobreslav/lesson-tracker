@@ -210,7 +210,7 @@ def store_upload(*, upload, school, user) -> tuple[StoredFile, bool]:
 # --- copying references ------------------------------------------------------
 
 
-def copy_attachments(sources, *, plan_row=None, template_row=None) -> int:
+def copy_attachments(sources, *, plan_row) -> int:
     """
     Point a new row at the same files as an old one.
 
@@ -227,7 +227,6 @@ def copy_attachments(sources, *, plan_row=None, template_row=None) -> int:
     copies = [
         Attachment(
             plan_row=plan_row,
-            template_row=template_row,
             kind=source.kind,
             stored_file_id=source.stored_file_id,
             url=source.url,

@@ -17,6 +17,6 @@ class StoredFileAdmin(admin.ModelAdmin):
 
 @admin.register(Attachment)
 class AttachmentAdmin(admin.ModelAdmin):
-    list_display = ("title", "kind", "plan_row", "template_row", "stored_file")
+    list_display = ("title", "kind", "plan_row", "stored_file")
     list_filter = ("kind",)
     search_fields = ("title", "url")

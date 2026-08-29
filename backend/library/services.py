@@ -1,11 +1,22 @@
 """
 Turning a plan into a template and back.
 
-Both directions go through the flat «header or lesson» sequence that the CSV
-import and export already speak, so there is one conversion in the project
-rather than three. `plans.services.apply_import` does the writing in both
-cases: taking a template into a course is the same operation as importing a
-CSV, with the rows coming from the database instead of a file.
+Обе стороны — план курса и план на полке — теперь одно и то же дерево, и
+копия идёт через ту же плоскую последовательность `ImportedRow`, которой уже
+говорят импорт и экспорт CSV. Конверсия в проекте одна, а не три: пишет её
+`plans.services.apply_import`, то есть взять шаблон в курс — та же операция,
+что импортировать файл, только строки приезжают из базы.
+
+**Предел плоской формы снят, и снят записью.** Раньше строка шаблона не
+умела сказать «этот урок вне темы»: у неё был только флаг «заголовок», и урок
+верхнего уровня, стоящий после темы, при копировании уходил в эту тему.
+Теперь у строки есть `at_top_level`, и она говорит это прямо — тем же полем,
+которым это давно говорит CSV, где у каждого урока написана своя тема, а
+пустая ячейка значит «вне темы».
+
+Копия остаётся копией: после неё ни одна сторона на другую не ссылается.
+Единственное исключение — **файлы**: они не копируются, а разделяются, и
+новые ссылки смотрят на тот же объект в бакете.
 """
 
 from django.db import transaction
@@ -13,165 +24,128 @@ from files import services as file_services
 from plans import services as plan_services
 from plans.content import CONTENT_FIELDS
 from plans.models import PlanNode
-from plans.owning import of_course
-
-from .models import PlanTemplateRow
+from plans.owning import of_course, of_template
 
 
 def _content_of(row) -> dict:
     return {field: getattr(row, field) for field in CONTENT_FIELDS}
 
 
-def plan_as_rows(course_id: int) -> list[plan_services.ImportedRow]:
+def plan_as_rows(owner, only=None) -> list[plan_services.ImportedRow]:
     """
-    A teacher's plan flattened into header/lesson lines, in display order.
+    План — плоской последовательностью «заголовок или урок», в порядке показа.
 
-    A top-level lesson standing after a header cannot be expressed in this
-    shape — it will read as part of that block when the template is used.
-    The CSV export has always had the same limit; it is stated on the model.
+    Одна функция на обе стороны: `owner` — это либо курс, с которого снимают
+    шаблон, либо шаблон, который берут в курс. Разными они были, пока разным
+    было хранение; теперь единственное, чем они отличаются, — чьё дерево
+    спросить.
 
-    Content and attachments ride along. The attachments are the teacher's own
-    `Attachment` rows, handed over as they are: `write_rows` points the
-    template's copies at the same files rather than uploading anything.
+    Содержание и вложения едут вместе со строками. Вложения отдаются как
+    есть — своими `Attachment` автора: тот, кто пишет их дальше, заводит
+    **новые ссылки на те же файлы**, а не загружает что-либо заново.
+
+    `only` — идентификаторы строк, которые берут: блок, два блока или один
+    урок. Курс собирают из чужих блоков и отдельных уроков, а не только
+    целыми планами: «возьму отсюда тему про векторы, а оттуда два урока» —
+    обычная просьба, и до сих пор ответом на неё было «возьмите план целиком
+    и удалите лишнее».
+
+    Выбор — это **фильтр**, а не новая раскладка: порядок остаётся исходным,
+    и решать, что за чем идёт, человеку не приходится.
+
+    Урок, чей заголовок не взяли, приезжает на верхний уровень — иначе он
+    попал бы в предыдущий **взятый** блок, то есть «взял урок из темы А»
+    молча значило бы «положи его в тему Б».
     """
-    rows = []
+    chosen = None if only is None else set(only)
 
-    def line(node):
+    def line(node, *, at_top_level=False):
         return plan_services.ImportedRow(
             is_section=node.is_section,
             title=node.title,
             note=node.note,
             content=None if node.is_section else _content_of(node),
             attachments=() if node.is_section else file_services.attachments_of(node),
+            at_top_level=at_top_level,
         )
 
-    for branch in plan_services.get_tree(of_course(course_id)):
-        rows.append(line(branch.node))
-        rows.extend(line(child) for child in branch.children)
+    rows = []
+    for branch in plan_services.get_tree(owner):
+        node = branch.node
 
-    return rows
-
-
-def _as_imported(row, *, at_top_level: bool) -> plan_services.ImportedRow:
-    return plan_services.ImportedRow(
-        is_section=row.is_header,
-        title=row.title,
-        note=row.note,
-        content=None if row.is_header else _content_of(row),
-        attachments=() if row.is_header else file_services.attachments_of(row),
-        at_top_level=at_top_level,
-    )
-
-
-def template_as_rows(template, only=None) -> list[plan_services.ImportedRow]:
-    """
-    Template rows in the shape `apply_import` expects.
-
-    `only` — идентификаторы строк, которые берут. Курс собирают из чужих
-    блоков и отдельных уроков, а не только целыми планами: «возьму отсюда
-    тему про векторы, а оттуда два урока» — обычная просьба, и до сих пор
-    ответом на неё было «возьмите план целиком и удалите лишнее».
-
-    Выбор — это **фильтр**, а не новая раскладка: порядок остаётся
-    шаблонным, и решать, что за чем идёт, человеку не приходится.
-
-    Урок, чей заголовок не взяли, приезжает на верхний уровень. Иначе он
-    попал бы в предыдущий **взятый** блок — `apply_import` кладёт урок в
-    последний виденный заголовок, — то есть «взял урок из темы А» молча
-    значило бы «положи его в тему Б».
-    """
-    rows = template.rows.prefetch_related("attachments__stored_file")
-
-    if only is None:
-        return [_as_imported(row, at_top_level=False) for row in rows]
-
-    chosen = set(only)
-    taken = []
-    header = None
-
-    for row in rows:
-        if row.is_header:
-            header = row
-            if row.pk in chosen:
-                taken.append(_as_imported(row, at_top_level=False))
+        if not node.is_section:
+            # урок верхнего уровня говорит об этом прямо: без такой записи он
+            # прилипал бы к предыдущей теме при первом же копировании
+            if chosen is None or node.pk in chosen:
+                rows.append(line(node, at_top_level=True))
             continue
 
-        if row.pk in chosen:
-            orphan = header is None or header.pk not in chosen
-            taken.append(_as_imported(row, at_top_level=orphan))
+        taken = chosen is None or node.pk in chosen
+        if taken:
+            rows.append(line(node))
 
-    return taken
+        for child in branch.children:
+            if chosen is not None and child.pk not in chosen:
+                continue
+            rows.append(line(child, at_top_level=not taken))
+
+    return rows
 
 
 @transaction.atomic
 def write_rows(template, rows) -> int:
     """
-    Replace the template's lines with these. Positions are the index.
+    Переписать план шаблона этими строками. Позиции считает `apply_import`.
 
-    Rewriting the lot rather than patching row by row: the list is short,
-    ordering has no other source of truth, and a whole-list write cannot
-    leave a gap or a duplicate position behind.
+    Целиком, а не построчно: у списка нет другого источника порядка, кроме
+    того, в каком он приехал, и запись целиком не оставит ни дыры, ни дубля.
 
-    The old rows go first, and with them their attachments — but the files
-    behind those attachments survive, because the new rows are pointed at the
-    same `StoredFile` inside this transaction. The orphan sweep runs on
-    commit and finds nothing to do.
+    Старые узлы уходят первыми, и вместе с ними их ссылки на файлы, — но сами
+    файлы переживают это, потому что новые ссылки заводятся на те же
+    `StoredFile` внутри одной транзакции. Уборка сирот идёт после коммита и
+    не находит работы.
     """
     rows = list(rows)
-    template.rows.all().delete()
+    PlanNode.objects.filter(template=template).delete()
 
-    created = PlanTemplateRow.objects.bulk_create(
-        PlanTemplateRow(
-            template=template,
-            position=position,
-            is_header=row.is_section,
-            title=row.title,
-            note=row.note,
-            **(row.content or {}),
-        )
-        for position, row in enumerate(rows)
-    )
+    created = plan_services.apply_import(of_template(template), rows, append=False)
 
-    for source, target in zip(rows, created):
-        if source.attachments:
-            file_services.copy_attachments(source.attachments, template_row=target)
-        # то же правило, что у строки плана: картинка живёт ровно столько,
-        # сколько в тексте стоит ссылка на неё. Обычно тут не срабатывает
-        # ничего — содержание и вложения приехали из одной строки, — но
-        # переписать строки шаблона можно и списком, и тогда картинка,
-        # выпавшая из текста, осталась бы висеть ссылкой ни на что
-        file_services.prune_inline(target)
+    for row, node in created["pairs"]:
+        if row.attachments:
+            file_services.copy_attachments(row.attachments, plan_row=node)
+        # то же правило, что у строки плана курса: картинка живёт ровно
+        # столько, сколько в тексте стоит ссылка на неё
+        file_services.prune_inline(node)
 
     # touch updated_at so the list can show when the shelf last moved
     template.save(update_fields=["updated_at"])
 
-    return len(created)
+    return created["headers"] + created["lessons"]
 
 
 @transaction.atomic
 def import_into_course(*, template, course_id: int, append: bool, rows=None) -> dict:
     """
-    Copy a template into the plan of a course.
+    Скопировать шаблон в план курса.
 
-    Straight through `apply_import`, the same call the CSV import makes, so
-    numbering and the replace/append behaviour cannot drift between the two
-    ways of filling a plan.
+    Прямо через `apply_import` — тот же вызов, что делает импорт CSV, — чтобы
+    нумерация и поведение replace/append не разъезжались между тремя
+    способами заполнить план.
 
-    `rows` — взять не весь шаблон, а перечисленные строки: блок, два
-    блока или один урок. Всё остальное при этом не меняется, включая режим:
+    `rows` — взять не весь шаблон, а перечисленные строки: блок, два блока
+    или один урок. Всё остальное при этом не меняется, включая режим:
     `append` дописывает выбранное в конец плана, `replace` строит план из
     него одного.
 
-    The lesson content is copied; the files are **not**. What the new plan
-    gets is its own `Attachment` rows pointing at the template's
-    `StoredFile`s — one object in the bucket, however many colleagues take
-    the plan. Removing it from one plan leaves every other one intact.
+    Содержание копируется, а файлы — **нет**. Новый план получает свои
+    `Attachment` на те же `StoredFile`: один объект в бакете, сколько бы
+    коллег план ни взяло, и удаление из одного плана не трогает остальные.
     """
     if not append:
         PlanNode.objects.filter(course_id=course_id).delete()
 
     created = plan_services.apply_import(
-        of_course(course_id), template_as_rows(template, rows), append=append
+        of_course(course_id), plan_as_rows(of_template(template), rows), append=append
     )
 
     files = 0

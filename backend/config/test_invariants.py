@@ -140,10 +140,6 @@ class StatementLivesInOnePlaceTests(SimpleTestCase):
         ("plans", "PlanNode", "objectives"): "цели урока",
         ("plans", "PlanNode", "formative"): "формативное оценивание",
         ("plans", "PlanNode", "homework"): "домашнее задание строкой плана",
-        ("library", "PlanTemplateRow", "body"): "то же, но в шаблоне",
-        ("library", "PlanTemplateRow", "objectives"): "то же, но в шаблоне",
-        ("library", "PlanTemplateRow", "formative"): "то же, но в шаблоне",
-        ("library", "PlanTemplateRow", "homework"): "то же, но в шаблоне",
     }
 
     SUSPICIOUS = {"question", "statement", "problem_text", "condition"}
@@ -421,7 +417,6 @@ class EveryOwnerOfAnAttachmentAnnouncesItselfTests(SimpleTestCase):
     # есть то решение, которое иначе принимают молча
     OWNERS = {
         "plan_row": "материал урока: ведущие курса",
-        "template_row": "строка шаблона: кому открыт шаблон",
         "work": "что здесь задано: ведущий, а класс — по `staff_only`",
         "student_work": "тетрадь ученика: он сам, его семья и ведущий",
         "bookmark_owner": "личный стол: хозяин, и никто больше — чужому 404",

@@ -23,7 +23,7 @@ from schools.testing import (
     make_year,
 )
 
-from .models import PlanTemplate, PlanTemplateRow
+from .models import PlanTemplate
 
 # a small plan: two blocks with lessons inside, plus a lesson before them
 SAMPLE = (
@@ -92,9 +92,12 @@ class LibraryTestCase(SchoolTestMixin, APITestCase):
         return rows
 
     def rows_of(self, template):
+        """План шаблона плоским списком — тем же, каким его отдаёт ответ."""
+        from library.serializers import template_rows_payload
+
         return [
-            (row.is_header, row.title)
-            for row in template.rows.order_by("position", "id")
+            (row["is_header"], row["title"])
+            for row in template_rows_payload(template)
         ]
 
 
@@ -625,7 +628,9 @@ class ImportTests(LibraryTestCase):
         response = self.use(template=alien.pk)
 
         self.assertEqual(response.status_code, 400, response.content)
-        self.assertFalse(PlanNode.objects.exists())
+        # именно у курса: строки самого шаблона — тоже узлы плана, и «ни одной
+        # строки в базе» с некоторых пор означало бы «шаблона тоже нет»
+        self.assertFalse(PlanNode.objects.filter(course=self.course).exists())
 
     def test_a_course_of_another_school_cannot_receive_it(self):
         alien_course = make_course(self.alien_school, name="Чужой курс")
@@ -667,7 +672,7 @@ class TakingPartOfATemplateTests(LibraryTestCase):
         self.template = make_template(
             self.school, self.colleague, subject=self.subject, rows=SAMPLE
         )
-        self.rows = {row.title: row.pk for row in self.template.rows.all()}
+        self.rows = {row.title: row.pk for row in self.template.nodes.all()}
 
     def take(self, titles, **overrides):
         payload = {
@@ -760,7 +765,7 @@ class TakingPartOfATemplateTests(LibraryTestCase):
         other = make_template(
             self.school, self.colleague, subject=self.subject, live=False, rows=SAMPLE
         )
-        alien = other.rows.first().pk
+        alien = other.nodes.first().pk
 
         response = self.client.post(
             reverse("plan-import-from-template"),
@@ -847,10 +852,12 @@ class RowEditingTests(LibraryTestCase):
             self.rows_of(self.template),
             [(True, "Новый блок"), (False, "Первый урок")],
         )
-        self.assertEqual(
-            list(PlanTemplateRow.objects.order_by("position").values_list("position", flat=True)),
-            [0, 1],
-        )
+        # позиции считает `apply_import`, и урок ложится **внутрь** блока:
+        # плоский список на входе, дерево в хранении
+        block = PlanNode.objects.get(template=self.template, is_section=True)
+        lesson = PlanNode.objects.get(template=self.template, is_section=False)
+        self.assertEqual((block.parent_id, block.position), (None, 0))
+        self.assertEqual((lesson.parent_id, lesson.position), (block.pk, 0))
 
     def test_a_colleague_cannot_replace_them(self):
         self.sign_in(self.colleague)

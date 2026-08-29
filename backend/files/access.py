@@ -19,7 +19,6 @@ differently here:
 """
 
 from django.db.models import Q
-from library.models import PlanTemplateRow
 from library.serializers import visible_templates
 from plans.models import PlanNode
 
@@ -95,7 +94,6 @@ def school_attachments(user):
         # назван: у курса своя, у шаблона своя, и обе одной школы
         Q(plan_row__course__school_id=user.school_id)
         | Q(plan_row__template__school_id=user.school_id)
-        | Q(template_row__template__school_id=user.school_id)
         | Q(student_work__work__course__school_id=user.school_id)
         | Q(work__course__school_id=user.school_id)
         # свой стол: чужой не попадает сюда намеренно — см. докстринг
@@ -132,7 +130,6 @@ def readable_attachments(user):
         # строки с полки владелец другой, и правило своё — оба ответа даёт
         # `readable_plan_rows`, одним определением на список и на одну вещь
         Q(plan_row__in=readable_plan_rows(user))
-        | Q(template_row__template__in=visible_templates(user))
         | Q(student_work__work__course__in=Course.objects.writable_by(user))
         | Q(work__course__in=Course.objects.writable_by(user))
         # свой стол читается всегда: он не принадлежит ни курсу, ни школе, и
@@ -212,15 +209,9 @@ def can_read(user, attachment) -> bool:
             Course.objects.writable_by(user).filter(pk=row.work.course_id).exists()
         )
 
-    if attachment.plan_row_id is not None:
-        # у строки плана два владельца, и право на её материалы — это право
-        # на само дерево; спрашивается оно там же, где у списка
-        return readable_plan_rows(user).filter(pk=attachment.plan_row_id).exists()
-
-    template = attachment.template_row.template
-    return template.school_id == user.school_id and (
-        template.is_published or template.author_id == user.pk
-    )
+    # у строки плана два владельца, и право на её материалы — это право на
+    # само дерево; спрашивается оно там же, где у списка
+    return readable_plan_rows(user).filter(pk=attachment.plan_row_id).exists()
 
 
 def can_write(user, attachment) -> bool:
@@ -267,12 +258,9 @@ def can_write(user, attachment) -> bool:
             course_id=attachment.student_work.work.course_id, teacher=user
         ).exists()
 
-    if attachment.plan_row_id is not None:
-        # то же, что у списка «куда можно приложить»: у курса — назначение,
-        # у полки — авторство
-        return writable_plan_rows(user).filter(pk=attachment.plan_row_id).exists()
-
-    return attachment.template_row.template.author_id == user.pk
+    # то же, что у списка «куда можно приложить»: у курса — назначение, у
+    # полки — авторство
+    return writable_plan_rows(user).filter(pk=attachment.plan_row_id).exists()
 
 
 def writable_student_works(user):
@@ -402,14 +390,3 @@ def writable_shelf_folders(user):
     if user is None or not user.is_authenticated:
         return Folder.objects.none()
     return Folder.objects.filter(owner=user)
-
-
-def writable_template_rows(user):
-    if user is None or not user.is_authenticated or user.school_id is None:
-        return PlanTemplateRow.objects.none()
-
-    return PlanTemplateRow.objects.filter(
-        template__author=user,
-        template__school_id=user.school_id,
-        is_header=False,
-    )

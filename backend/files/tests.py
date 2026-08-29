@@ -25,7 +25,6 @@ from django.core.management.base import CommandError
 from django.test import SimpleTestCase, TestCase, override_settings
 from django.utils import timezone
 from django.urls import reverse
-from library.models import PlanTemplateRow
 from plans.owning import of_course
 from library.services import import_into_course, plan_as_rows, write_rows
 from plans import content, history
@@ -109,9 +108,8 @@ class FilesTestCase(SchoolTestMixin, APITestCase):
 
     def attach_via_api(self, row="lesson", **kwargs):
         target = self.lesson if row == "lesson" else row
-        field = "template_row" if hasattr(target, "is_header") else "plan_row"
 
-        payload = {field: target.pk, "file": make_upload(**kwargs)}
+        payload = {"plan_row": target.pk, "file": make_upload(**kwargs)}
         return self.client.post(reverse("attachment-list"), payload, format="multipart")
 
     def stored_keys(self):
@@ -389,7 +387,7 @@ class LifecycleTests(FilesTestCase):
             self.school, self.user, subject=make_subject(self.school),
             rows=((False, "Урок из шаблона"),),
         )
-        row = template.rows.get()
+        row = template.nodes.get()
         make_attachment(row, self.stored)
 
         with self.captureOnCommitCallbacks(execute=True):
@@ -468,7 +466,7 @@ class SharedThroughLibraryTests(FilesTestCase):
         return template
 
     def test_publishing_a_plan_points_the_template_at_the_same_file(self):
-        row = self.template.rows.get()
+        row = self.template.nodes.get()
 
         self.assertEqual(row.body, MARKDOWN)
         self.assertEqual(row.attachments.get().stored_file_id, self.stored.pk)
@@ -531,10 +529,10 @@ class SharedThroughLibraryTests(FilesTestCase):
 
         self.assertEqual(StoredFile.objects.count(), 1)
         self.assertTrue(self.in_store(self.stored.key))
-        self.assertEqual(self.template.rows.get().attachments.count(), 1)
+        self.assertEqual(self.template.nodes.get().attachments.count(), 1)
 
     def test_rewriting_the_rows_keeps_the_files_of_named_rows(self):
-        row = self.template.rows.get()
+        row = self.template.nodes.get()
 
         response = self.client.put(
             f"/api/library/templates/{self.template.pk}/rows/",
@@ -543,7 +541,7 @@ class SharedThroughLibraryTests(FilesTestCase):
         )
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(PlanTemplateRow.objects.get().attachments.count(), 1)
+        self.assertEqual(self.template.nodes.get().attachments.count(), 1)
         self.assertTrue(self.in_store(self.stored.key))
 
 
@@ -601,7 +599,7 @@ class AttachmentAccessTests(FilesTestCase):
         template = make_template(
             self.school, self.colleague, rows=((False, "Урок"),), published=True
         )
-        row = template.rows.get()
+        row = template.nodes.get()
         shared = make_attachment(row, self.stored)
 
         self.assertEqual(self.download(shared).status_code, 302)
@@ -613,7 +611,7 @@ class AttachmentAccessTests(FilesTestCase):
         draft = make_template(
             self.school, self.colleague, rows=((False, "Урок"),), published=False
         )
-        hidden = make_attachment(draft.rows.get(), self.stored)
+        hidden = make_attachment(draft.nodes.get(), self.stored)
 
         self.assertEqual(self.download(hidden).status_code, 403)
 
@@ -1124,12 +1122,11 @@ class InlineImageTests(FilesTestCase):
     def paste(self, row=None, name="pasted.png", content=b"\x89PNG demo"):
         """Вставить картинку так, как это делает поле содержания."""
         target = row or self.lesson
-        field = "template_row" if hasattr(target, "is_header") else "plan_row"
 
         return self.client.post(
             reverse("attachment-list"),
             {
-                field: target.pk,
+                "plan_row": target.pk,
                 "file": make_upload(name=name, content=content, kind="image/png"),
                 "inline": "true",
             },
@@ -1262,9 +1259,9 @@ class InlineImageTests(FilesTestCase):
         self.write(body=body)
 
         template = make_template(self.school, self.user, title="С картинкой")
-        write_rows(template, plan_as_rows(self.course.pk))
+        write_rows(template, plan_as_rows(of_course(self.course)))
 
-        copied = PlanTemplateRow.objects.get(template=template, title=self.lesson.title)
+        copied = PlanNode.objects.get(template=template, title=self.lesson.title)
         self.assertEqual(copied.body, body)
         self.assertTrue(copied.attachments.get().inline)
 
@@ -1366,7 +1363,6 @@ class WorkHandoutTests(FilesTestCase):
         reference = self.work.attachments.get()
 
         self.assertIsNone(reference.plan_row_id)
-        self.assertIsNone(reference.template_row_id)
         self.assertIsNone(reference.student_work_id)
 
     def test_a_colleague_may_not_hang_anything_off_somebody_else_s_work(self):
