@@ -879,7 +879,7 @@ class PlanNodeViewSet(CourseScopedViewSet):
         # Снимок до записи, и это самый ценный из всех: `replace` стирает
         # план целиком, и отменяется он одним нажатием ровно потому, что
         # снимок снят.
-        self.snapshot(course, f"import_{mode}")
+        self.snapshot(of_course(course), f"import_{mode}")
 
         if mode == "sync":
             plan = services.plan_sync(of_course(course), parsed.rows)
@@ -1051,7 +1051,7 @@ class PlanNodeViewSet(CourseScopedViewSet):
             )
         )
 
-    def snapshot(self, course, action, detail=""):
+    def snapshot(self, owner, action, detail=""):
         """
         Снять снимок плана — перед тем, как его изменят.
 
@@ -1060,7 +1060,7 @@ class PlanNodeViewSet(CourseScopedViewSet):
         сторожит `plans/test_history_wiring.py` — потестовый перечень тут
         не годится, новый эндпоинт в него никто не обязан дописывать.
         """
-        return history.take(course, self.request.user, action, detail)
+        return history.take(owner, self.request.user, action, detail)
 
     def perform_update(self, serializer):
         """
@@ -1072,7 +1072,7 @@ class PlanNodeViewSet(CourseScopedViewSet):
         не упомянули.
         """
         node = serializer.instance
-        self.snapshot(node.course, "edit", node.title)
+        self.snapshot(node.owner, "edit", node.title)
         node = serializer.save()
         file_services.prune_inline(node)
 
@@ -1089,7 +1089,7 @@ class PlanNodeViewSet(CourseScopedViewSet):
         записей больше нет, новая строка приземляется сразу за последней —
         и это законно.
         """
-        self.snapshot(serializer.validated_data["course"], "create")
+        self.snapshot(of_course(serializer.validated_data["course"]), "create")
 
         with transaction.atomic():
             node = serializer.save()
@@ -1162,7 +1162,7 @@ class PlanNodeViewSet(CourseScopedViewSet):
 
         parents = {node.parent_id for node in nodes}
         self.snapshot(
-            course,
+            of_course(course),
             "delete_batch" if len(nodes) > 1 else "delete",
             nodes[0].title if len(nodes) == 1 else str(len(nodes)),
         )
@@ -1245,7 +1245,7 @@ class PlanNodeViewSet(CourseScopedViewSet):
         with transaction.atomic():
             # сам откат — тоже изменение плана, и его тоже надо уметь
             # отменить: иначе «вернул не то» становится тупиком
-            self.snapshot(course, "undo", step.detail)
+            self.snapshot(of_course(course), "undo", step.detail)
             result = history.restore(step)
             refuse_if_records_broken(course)
 
@@ -1267,7 +1267,7 @@ class PlanNodeViewSet(CourseScopedViewSet):
             refuse_if_deleting_taught(node)
 
         self.snapshot(
-            node.course,
+            node.owner,
             "dissolve" if node.is_section and keep_children else "delete",
             node.title,
         )
@@ -1287,7 +1287,7 @@ class PlanNodeViewSet(CourseScopedViewSet):
     def move(self, request, pk=None):
         """One step up or down, entering sections and leaving them."""
         node = self.get_object()
-        self.snapshot(node.course, "move", node.title)
+        self.snapshot(node.owner, "move", node.title)
         return perform_move(node, request.data)
 
     @action(detail=True, methods=["post"])
@@ -1307,7 +1307,7 @@ class PlanNodeViewSet(CourseScopedViewSet):
             )
         check_structure(node, parent)
         refuse_if_taught(node)
-        self.snapshot(node.course, "move", node.title)
+        self.snapshot(node.owner, "move", node.title)
 
         with transaction.atomic():
             services.place(node, parent, form.validated_data["position"])
@@ -1329,7 +1329,7 @@ class PlanNodeViewSet(CourseScopedViewSet):
 
         form = SplitSerializer(data=request.data)
         form.is_valid(raise_exception=True)
-        self.snapshot(anchor.course, "split", form.validated_data["title"])
+        self.snapshot(anchor.owner, "split", form.validated_data["title"])
 
         with transaction.atomic():
             section, moved = services.split_at(anchor, form.validated_data["title"])
@@ -1355,7 +1355,7 @@ class SectionMoveView(APIView):
             ),
             pk=pk,
         )
-        history.take(section.course, request.user, "move", section.title)
+        history.take(section.owner, request.user, "move", section.title)
         return perform_move(section, request.data)
 
 

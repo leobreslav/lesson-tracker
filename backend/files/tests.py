@@ -26,6 +26,7 @@ from django.test import SimpleTestCase, TestCase, override_settings
 from django.utils import timezone
 from django.urls import reverse
 from library.models import PlanTemplateRow
+from plans.owning import of_course
 from library.services import import_into_course, plan_as_rows, write_rows
 from plans import content, history
 from plans.models import PlanNode
@@ -1286,7 +1287,7 @@ class InlineImageTests(FilesTestCase):
         picture = self.paste().data
         self.write(body=f"![](file:{picture['file']})")
 
-        snapshot = history.take(self.course, self.user, "edit", self.lesson.title)
+        snapshot = history.take(of_course(self.course), self.user, "edit", self.lesson.title)
         with self.captureOnCommitCallbacks(execute=True):
             self.write(body="")
 

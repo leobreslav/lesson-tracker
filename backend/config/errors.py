@@ -155,6 +155,9 @@ class Codes:
     ANCHOR_OTHER_CLASS = "anchor_other_class"
     ANCHOR_OTHER_LEVEL = "anchor_other_level"
     POSITION_TAKEN = "position_taken"
+    # чьё дерево правим: у плана два владельца, и назван должен быть ровно
+    # один — курс либо шаблон с полки
+    PLAN_OWNER_REQUIRED = "plan_owner_required"
 
     # warnings: not failures, the request goes through
     SLOT_NOT_STUDY_DAY = "slot_not_study_day"

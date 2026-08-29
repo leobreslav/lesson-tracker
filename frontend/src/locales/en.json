@@ -186,6 +186,7 @@
     "anchor_other_class": "That node belongs to another class.",
     "anchor_other_level": "The node to insert after sits on another level.",
     "position_taken": "Another node already occupies this position.",
+    "plan_owner_required": "Say whose plan this is: name a course or a library template.",
     "class_required": "Pick a class first.",
     "file_required": "Choose a CSV file.",
     "file_too_large": "The file is larger than {{limit_mb}} MB.",

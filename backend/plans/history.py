@@ -33,25 +33,48 @@ from django.conf import settings
 from django.db import models, transaction
 
 from .content import CONTENT_FIELDS
+from .owning import exactly_one_owner, owner_of
 
-#: сколько снимков держать на курс ради обычной отмены. Отменяют почти
-#: всегда последние минуты, и двадцати шагов на это с запасом
-KEEP_PER_COURSE = 20
+#: сколько снимков держать на один план ради обычной отмены. Отменяют почти
+#: всегда последние минуты, и двадцати шагов на это с запасом.
+#:
+#: Имя было `KEEP_PER_COURSE`, и оно перестало быть правдой вместе со вторым
+#: владельцем: планов теперь два вида, а граница у них одна.
+KEEP_PER_PLAN = 20
 
 #: сколько дней держать снимок **вмешательства** — правки, сделанной не
 #: ведущим курса. Тут счёт идёт не на минуты: учитель узнаёт о чужой правке,
-#: когда откроет план, а это бывает и через неделю
+#: когда откроет план, а это бывает и через неделю.
+#:
+#: У шаблона вмешательства не бывает вовсе: правит его только автор
+#: (`writable_templates`), значит всякая правка своя, и эта граница до него
+#: просто не доходит.
 KEEP_INTERVENTION_DAYS = 90
 
 
 class PlanSnapshot(models.Model):
-    """Как выглядел план курса непосредственно перед одним действием."""
+    """Как выглядел план непосредственно перед одним действием."""
 
     course = models.ForeignKey(
         "schedule.Course",
         related_name="snapshots",
         on_delete=models.CASCADE,
+        null=True,
+        blank=True,
         verbose_name="course",
+    )
+    #: Второй владелец, тот же, что у самой строки плана (`plans/owning.py`):
+    #: шаблон с полки правят тем же экраном, значит и отменяют тем же журналом.
+    #: Второй журнал рядом с этим был бы второй механикой отмены — у
+    #: расписания она своя по делу (другая единица, другая глубина, свои девять
+    #: операций), а тут предмет один и тот же, дерево уроков.
+    template = models.ForeignKey(
+        "library.PlanTemplate",
+        related_name="snapshots",
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        verbose_name="library template",
     )
     made_at = models.DateTimeField("taken at", auto_now_add=True, db_index=True)
     made_by = models.ForeignKey(
@@ -86,10 +109,25 @@ class PlanSnapshot(models.Model):
         verbose_name = "plan snapshot"
         verbose_name_plural = "plan snapshots"
         ordering = ("-made_at", "-id")
-        indexes = [models.Index(fields=["course", "-made_at"])]
+        indexes = [
+            models.Index(fields=["course", "-made_at"]),
+            models.Index(fields=["template", "-made_at"], name="snapshot_template_idx"),
+        ]
+        constraints = [
+            models.CheckConstraint(
+                condition=exactly_one_owner(),
+                name="plan_snapshot_has_exactly_one_owner",
+            ),
+        ]
+
+    @property
+    def owner(self):
+        """Чей это снимок — курса или шаблона; см. `plans/owning.py`."""
+        return owner_of(self)
 
     def __str__(self):
-        return f"{self.course} — {self.action} @ {self.made_at:%Y-%m-%d %H:%M}"
+        whose = self.course or self.template
+        return f"{whose} — {self.action} @ {self.made_at:%Y-%m-%d %H:%M}"
 
 
 class PlanSnapshotRow(models.Model):
@@ -180,7 +218,7 @@ def lead_of(course_id):
 
 
 @transaction.atomic
-def take(course, user, action: str, detail: str = "") -> PlanSnapshot:
+def take(owner, user, action: str, detail: str = "") -> PlanSnapshot:
     """
     Снять снимок плана — прямо перед тем, как его изменят.
 
@@ -188,19 +226,31 @@ def take(course, user, action: str, detail: str = "") -> PlanSnapshot:
     действие последует, а без этого кнопка отмены не сможет назвать себя
     («Отменить: удаление темы „Векторы“»). Полнота вызовов сторожится
     отдельно — `plans/test_history_wiring.py`.
+
+    `owner` — чей это план (`plans/owning.PlanOwner`): курс или шаблон с
+    полки. Механика у них одна, и это не экономия: предмет один и тот же —
+    дерево уроков, — а вторая механика отмены рядом с первой означала бы, что
+    однажды они разойдутся в том, что считают шагом.
     """
     from files.models import Attachment
     from .models import PlanNode
 
     snapshot = PlanSnapshot.objects.create(
-        course=course,
+        **owner.lookup,
         made_by=user if getattr(user, "is_authenticated", False) else None,
         action=action,
         detail=detail[:200],
-        by_lead=lead_of(course.pk) == getattr(user, "pk", None),
+        # У шаблона правка всегда своя: править его вправе только автор, и
+        # «вмешательство» там не значит ничего. Спрашивать про ведущего
+        # некого — назначений у полки нет вовсе.
+        by_lead=(
+            True
+            if owner.is_template
+            else lead_of(owner.id) == getattr(user, "pk", None)
+        ),
     )
 
-    nodes = list(PlanNode.objects.filter(course=course))
+    nodes = list(PlanNode.objects.filter(**owner.lookup))
     rows = PlanSnapshotRow.objects.bulk_create(
         [
             PlanSnapshotRow(
@@ -214,7 +264,10 @@ def take(course, user, action: str, detail: str = "") -> PlanSnapshot:
     )
 
     by_node = {row.node_id: row for row in rows}
-    attachments = Attachment.objects.filter(plan_row__course=course)
+    # по самим строкам, а не по владельцу: строки уже выбраны, второй вопрос
+    # к базе про то же самое отличался бы от первого только формулировкой — и
+    # разошёлся бы с ним в первый же раз, когда у плана появится третий вид
+    attachments = Attachment.objects.filter(plan_row_id__in=by_node)
     PlanSnapshotFile.objects.bulk_create(
         [
             PlanSnapshotFile(
@@ -230,36 +283,41 @@ def take(course, user, action: str, detail: str = "") -> PlanSnapshot:
         ]
     )
 
-    prune(course)
+    prune(owner)
     return snapshot
 
 
-def prune(course) -> int:
+def prune(owner) -> int:
     """
     Убрать снимки, которые уже никому не нужны.
 
     Границы разные, потому что разные и вопросы. Свою правку отменяют
-    минутами позже — на это хватает последних `KEEP_PER_COURSE` шагов. А про
+    минутами позже — на это хватает последних `KEEP_PER_PLAN` шагов. А про
     чужую учитель узнаёт, когда откроет план, и это бывает через неделю,
     поэтому снимки вмешательства живут `KEEP_INTERVENTION_DAYS` дней.
 
+    Считается это **по владельцу**, а не по всем снимкам разом: у полки и у
+    курса свои двадцать шагов, и правка шаблона не должна вытеснять отмену в
+    курсе. У шаблона вторая граница не срабатывает никогда — снимков
+    вмешательства там не бывает.
+
     Чистится при записи, а не по расписанию: cron ради этого заводить не
-    из-за чего, а «сотый снимок вытесняет первый» — ровно то поведение,
-    которого от стека и ждут.
+    из-за чего, а «двадцать первый снимок вытесняет первый» — ровно то
+    поведение, которого от стека и ждут.
     """
     from datetime import timedelta
 
     from django.utils import timezone
 
     fresh = list(
-        PlanSnapshot.objects.filter(course=course)
+        PlanSnapshot.objects.filter(**owner.lookup)
         .order_by("-made_at", "-id")
-        .values_list("pk", flat=True)[:KEEP_PER_COURSE]
+        .values_list("pk", flat=True)[:KEEP_PER_PLAN]
     )
     edge = timezone.now() - timedelta(days=KEEP_INTERVENTION_DAYS)
 
     doomed = (
-        PlanSnapshot.objects.filter(course=course)
+        PlanSnapshot.objects.filter(**owner.lookup)
         .exclude(pk__in=fresh)
         .exclude(by_lead=False, made_at__gte=edge)
     )
@@ -287,9 +345,9 @@ def restore(snapshot) -> dict:
     from files.models import Attachment
     from .models import PlanNode
 
-    course = snapshot.course
+    owner = snapshot.owner
     wanted = list(snapshot.rows.prefetch_related("files"))
-    alive = {node.pk: node for node in PlanNode.objects.filter(course=course)}
+    alive = {node.pk: node for node in PlanNode.objects.filter(**owner.lookup)}
 
     created, updated = 0, 0
     # темы первыми: на них ссылаются уроки
@@ -300,7 +358,7 @@ def restore(snapshot) -> dict:
         if node is None:
             PlanNode.objects.create(
                 pk=row.node_id,
-                course=course,
+                **owner.lookup,
                 parent_id=row.parent_node_id,
                 **values,
             )

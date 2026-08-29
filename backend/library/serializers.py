@@ -287,3 +287,23 @@ def visible_templates(user):
     return PlanTemplate.objects.filter(school_id=user.school_id).filter(
         Q(is_published=True) | Q(author=user)
     )
+
+
+def writable_templates(user):
+    """
+    Чьи шаблоны этот человек вправе править: свои, и только свои.
+
+    Право тут по авторству, а не по роли, — то же правило, что у
+    `IsAuthorOrReadOnly`, и то же, по которому администратор школы **не**
+    правит чужой план на полке, хотя курсы своей школы правит целиком.
+    Удалять он может: полка школьная, и мусор кто-то должен убирать.
+
+    Определение одно на всех, кто спрашивает: строки плана шаблона
+    (`plans/views.py`), вложения этих строк (`files/access.py`) и сама полка.
+    Разъехавшись, они дали бы редактор, который открывается, но не
+    сохраняет, — или, что хуже, наоборот.
+    """
+    if user is None or not user.is_authenticated or user.school_id is None:
+        return PlanTemplate.objects.none()
+
+    return PlanTemplate.objects.filter(school_id=user.school_id, author=user)

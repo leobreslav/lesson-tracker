@@ -420,7 +420,7 @@ class ImportFromTemplateView(APIView):
         # отменяются пять дописанных уроков.
         rows = data.get("rows")
         plan_history.take(
-            data["course"],
+            of_course(data["course"]),
             request.user,
             "template_part" if rows else f"template_{data['mode']}",
             data["template"].title,

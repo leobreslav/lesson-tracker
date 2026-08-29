@@ -477,6 +477,7 @@ def _history(course, teacher):
     """
     from plans import history
     from plans.models import PlanNode
+    from plans.owning import of_course
 
     if course.snapshots.exists():
         return ""
@@ -491,7 +492,7 @@ def _history(course, teacher):
     if row is None:
         return ""
 
-    history.take(course, teacher, "edit", row.title)
+    history.take(of_course(course), teacher, "edit", row.title)
     row.title = f"{row.title}"
     row.save(update_fields=["title"])
     return "снимок плана"

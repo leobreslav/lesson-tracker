@@ -205,7 +205,7 @@ class InterventionTests(SnapshotTestCase):
 
 class RetentionTests(SnapshotTestCase):
     def test_the_stack_keeps_the_last_steps_and_forgets_the_rest(self):
-        for index in range(history.KEEP_PER_COURSE + 5):
+        for index in range(history.KEEP_PER_PLAN + 5):
             self.client.post(
                 reverse("plannode-list"),
                 {"course": self.course.pk, "title": f"Урок {index}"},
@@ -214,7 +214,7 @@ class RetentionTests(SnapshotTestCase):
 
         self.assertEqual(
             history.PlanSnapshot.objects.filter(course=self.course).count(),
-            history.KEEP_PER_COURSE,
+            history.KEEP_PER_PLAN,
         )
 
     def test_an_intervention_outlives_the_stack(self):
@@ -231,7 +231,7 @@ class RetentionTests(SnapshotTestCase):
         alien = history.PlanSnapshot.objects.filter(by_lead=False).get()
 
         self.client.force_authenticate(self.user)
-        for index in range(history.KEEP_PER_COURSE + 5):
+        for index in range(history.KEEP_PER_PLAN + 5):
             self.client.post(
                 reverse("plannode-list"),
                 {"course": self.course.pk, "title": f"Урок {index}"},
@@ -254,7 +254,7 @@ class RetentionTests(SnapshotTestCase):
         )
 
         self.client.force_authenticate(self.user)
-        for index in range(history.KEEP_PER_COURSE + 1):
+        for index in range(history.KEEP_PER_PLAN + 1):
             self.client.post(
                 reverse("plannode-list"),
                 {"course": self.course.pk, "title": f"Урок {index}"},

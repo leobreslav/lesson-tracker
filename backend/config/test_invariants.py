@@ -538,19 +538,25 @@ class EveryOwnerOfAPlanAnnouncesItselfTests(SimpleTestCase):
         — и тогда «владелец ровно один» перестанет быть правилом именно для
         забытого, а первая же строка с двумя владельцами пройдёт в базу.
         """
+        from plans.history import PlanSnapshot
         from plans.models import PlanNode
         from plans.owning import OWNER_FIELDS
 
-        constraint = next(
-            item
-            for item in PlanNode._meta.constraints
-            if item.name == "plan_node_has_exactly_one_owner"
-        )
+        # Владелец у плана один на две таблицы: сама строка и снимок для
+        # отмены. Спрашиваются обе — забытая вторая означала бы журнал,
+        # который принимает снимок ничей и потом не находит, куда его вернуть.
+        for model, name in (
+            (PlanNode, "plan_node_has_exactly_one_owner"),
+            (PlanSnapshot, "plan_snapshot_has_exactly_one_owner"),
+        ):
+            constraint = next(
+                item for item in model._meta.constraints if item.name == name
+            )
 
-        self.assertEqual(
-            owners_named_in(constraint.condition),
-            set(OWNER_FIELDS),
-            "ограничение «владелец ровно один» знает не тех владельцев, что "
-            "OWNER_FIELDS: строка плана сможет принадлежать двум деревьям "
-            "сразу или ни одному",
-        )
+            self.assertEqual(
+                owners_named_in(constraint.condition),
+                set(OWNER_FIELDS),
+                f"ограничение «владелец ровно один» у {model.__name__} знает "
+                "не тех владельцев, что OWNER_FIELDS: запись сможет "
+                "принадлежать двум деревьям сразу или ни одному",
+            )
