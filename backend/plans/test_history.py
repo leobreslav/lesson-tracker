@@ -462,3 +462,91 @@ class UndoDoesNotDestroyARecordTests(SnapshotTestCase):
 
         self.assertEqual(answer.status_code, 200, answer.content)
         self.assertEqual(self.titles(), ["Первый"])
+
+
+class UndoBringsBackTheBankMarkupTests(SnapshotTestCase):
+    """
+    Разметка задачника переживает отмену — как переживают её вложения.
+
+    `bank.Introduction` держится за строку плана `CASCADE`: удалили строку —
+    пометка «этот урок вводит это понятие» ушла. Отмена возвращала строку с
+    прежним номером, и этого хватало вложениям (снимок держит их сам), но не
+    пометке: её не было ни в снимке, ни где-либо ещё. То есть отмена
+    удаления возвращала урок без половины того, что про него знали.
+
+    Разница между двумя связями решением не была: про вложения подумали, про
+    задачник — нет. Чтобы третьей такой связи не появилось молча, стоит
+    сторож `EveryRelationToAPlanRowSurvivesUndoOrRefusesItTests`.
+    """
+
+    def setUp(self):
+        super().setUp()
+        from bank.models import OBJECT, Introduction, Tag
+        from bank.topics import introduce
+
+        self.Introduction = Introduction
+        self.node = self.lesson("Синус суммы")
+        self.tag = Tag.objects.create(kind=OBJECT, name="синус суммы")
+        introduce(self.course, self.node, self.tag)
+
+    def marks(self):
+        return {
+            (row.tag_id, row.node_id)
+            for row in self.Introduction.objects.filter(course=self.course)
+        }
+
+    def test_a_deleted_lesson_comes_back_with_its_markup(self):
+        self.client.delete(reverse("plannode-detail", args=[self.node.pk]))
+        self.assertEqual(self.marks(), set(), "каскад должен был унести пометку")
+
+        answer = self.undo()
+
+        self.assertEqual(answer.status_code, 200, answer.content)
+        self.assertEqual(self.marks(), {(self.tag.pk, self.node.pk)})
+
+    def test_a_mark_made_after_the_snapshot_goes_away(self):
+        """
+        Состояние восстанавливается целиком, а не дополняется.
+
+        Иначе отмена умела бы возвращать пометки, но не снимать их, и
+        «вернуть как было» означало бы «как было, плюс всё, что успели».
+        """
+        from bank.models import OBJECT, Tag
+        from bank.topics import introduce
+
+        second = self.lesson("Косинус суммы", position=1)
+        # снимок: одна пометка
+        self.client.patch(
+            reverse("plannode-detail", args=[second.pk]),
+            {"title": "Косинус разности"},
+            format="json",
+        )
+        late = Tag.objects.create(kind=OBJECT, name="косинус разности")
+        introduce(self.course, second, late)
+
+        self.undo()
+
+        self.assertEqual(self.marks(), {(self.tag.pk, self.node.pk)})
+
+    def test_a_mark_moved_after_the_snapshot_comes_back_to_its_lesson(self):
+        """
+        Понятие вводится однажды, и отмена возвращает его тому уроку.
+
+        Перевесили пометку на соседний урок, передумали — отмена обязана
+        вернуть её на место, а не завести вторую: `one_lesson_introduces_a_tag`
+        такого не пустит, и восстановление легло бы отказом базы.
+        """
+        from bank.topics import introduce
+
+        second = self.lesson("Косинус суммы", position=1)
+        self.client.patch(
+            reverse("plannode-detail", args=[second.pk]),
+            {"title": "Косинус разности"},
+            format="json",
+        )
+        introduce(self.course, second, self.tag)
+
+        answer = self.undo()
+
+        self.assertEqual(answer.status_code, 200, answer.content)
+        self.assertEqual(self.marks(), {(self.tag.pk, self.node.pk)})

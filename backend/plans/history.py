@@ -205,6 +205,53 @@ class PlanSnapshotFile(models.Model):
         ordering = ("id",)
 
 
+class PlanSnapshotIntroduction(models.Model):
+    """
+    Пометка «этот урок вводит это понятие» в снимке.
+
+    Живёт она в `bank.Introduction` и держится за строку плана `CASCADE`:
+    удалили строку — пометка ушла. Отмена возвращала строку с прежним
+    номером, а пометку возвращать было неоткуда, её больше не было нигде.
+    Вложениям повезло, этой связи нет — и разница между ними была не
+    решением, а невнимательностью.
+
+    `CASCADE` на теге, а не `PROTECT`, как у файла, — и причина ровно
+    обратная той. Файл `PROTECT`ится потому, что объект в бакете должен
+    дожить до отката: удалить его значит вернуть строку с вложением, которое
+    отвечает 404. Тег же удаляют из задачника целиком, и держать его живым
+    ради двадцати снимков значило бы воскрешать понятие, которое из проекта
+    убрали.
+
+    Курс хранится свой, а не берётся у снимка. Совпадают они всегда, но
+    «всегда» тут держится на допущении о чужом приложении, а этот файл на
+    допущениях уже обжигался.
+    """
+
+    row = models.ForeignKey(
+        PlanSnapshotRow,
+        related_name="introductions",
+        on_delete=models.CASCADE,
+        verbose_name="row",
+    )
+    course = models.ForeignKey(
+        "schedule.Course",
+        related_name="snapshot_introductions",
+        on_delete=models.CASCADE,
+        verbose_name="course",
+    )
+    tag = models.ForeignKey(
+        "bank.Tag",
+        related_name="snapshot_introductions",
+        on_delete=models.CASCADE,
+        verbose_name="tag introduced here",
+    )
+
+    class Meta:
+        verbose_name = "plan snapshot introduction"
+        verbose_name_plural = "plan snapshot introductions"
+        ordering = ("id",)
+
+
 ROW_FIELDS = ("position", "is_section", "title", "note", *CONTENT_FIELDS)
 
 
@@ -234,6 +281,7 @@ def take(owner, user, action: str, detail: str = "") -> PlanSnapshot:
     дерево уроков, — а вторая механика отмены рядом с первой означала бы, что
     однажды они разойдутся в том, что считают шагом.
     """
+    from bank.models import Introduction
     from files.models import Attachment
     from .models import PlanNode
 
@@ -282,6 +330,21 @@ def take(owner, user, action: str, detail: str = "") -> PlanSnapshot:
             )
             for item in attachments
             if item.plan_row_id in by_node
+        ]
+    )
+
+    # тем же способом, что и вложения, и по той же причине: пометка задачника
+    # держится за строку каскадом, и удаление строки уносит её насовсем
+    introductions = Introduction.objects.filter(node_id__in=by_node)
+    PlanSnapshotIntroduction.objects.bulk_create(
+        [
+            PlanSnapshotIntroduction(
+                row=by_node[item.node_id],
+                course_id=item.course_id,
+                tag_id=item.tag_id,
+            )
+            for item in introductions
+            if item.node_id in by_node
         ]
     )
 
@@ -391,7 +454,7 @@ def restore(snapshot) -> dict:
     from .models import PlanNode
 
     owner = snapshot.owner
-    wanted = list(snapshot.rows.prefetch_related("files"))
+    wanted = list(snapshot.rows.prefetch_related("files", "introductions"))
     alive = {node.pk: node for node in PlanNode.objects.filter(**owner.lookup)}
 
     created, updated = 0, 0
@@ -430,12 +493,14 @@ def restore(snapshot) -> dict:
     PlanNode.objects.filter(pk__in=doomed).delete()
 
     restored_files = restore_files(wanted)
+    restored_marks = restore_introductions(wanted)
 
     return {
         "created": created,
         "updated": updated,
         "deleted": len(doomed),
         "files": restored_files,
+        "introductions": restored_marks,
     }
 
 
@@ -479,5 +544,63 @@ def restore_files(rows) -> int:
                 position=position,
             )
             made += 1
+
+    return made
+
+
+def restore_introductions(rows) -> int:
+    """
+    Вернуть разметку задачника — ту, что была на момент снимка.
+
+    Состояние восстанавливается целиком, как у вложений: что было отмечено,
+    отмечено снова; что отметили после снимка, снимается. Снимок для этого
+    полон — `take` берёт пометки по всем строкам плана, а пометка курса
+    ничем, кроме строки его же плана, висеть не может.
+
+    Ставится она через `bank.topics.introduce`, а не записью в таблицу. Там
+    записано правило, которое иначе пришлось бы повторить здесь: понятие
+    вводится однажды, и повторная отметка **переносит** её, а не заводит
+    вторую. Копия этого правила разошлась бы с оригиналом молча, а расплата
+    за расхождение — отказ базы по `one_lesson_introduces_a_tag` посреди
+    отмены.
+    """
+    from bank.models import Introduction, Tag
+    from bank.topics import introduce
+    from schedule.models import Course
+
+    from .models import PlanNode
+
+    #: (курс, тег) → на какой строке пометка стояла
+    wanted = {
+        (mark.course_id, mark.tag_id): row.node_id
+        for row in rows
+        for mark in row.introductions.all()
+    }
+
+    # лишнее — пометки на строках этого плана, которых в снимке не было
+    here = [row.node_id for row in rows]
+    extra = [
+        mark.pk
+        for mark in Introduction.objects.filter(node_id__in=here)
+        if (mark.course_id, mark.tag_id) not in wanted
+    ]
+    Introduction.objects.filter(pk__in=extra).delete()
+
+    if not wanted:
+        return 0
+
+    courses = Course.objects.in_bulk({course for course, _ in wanted})
+    tags = Tag.objects.in_bulk({tag for _, tag in wanted})
+    nodes = PlanNode.objects.in_bulk(set(wanted.values()))
+
+    made = 0
+    for (course_id, tag_id), node_id in wanted.items():
+        course, tag, node = courses.get(course_id), tags.get(tag_id), nodes.get(node_id)
+        # тега может уже не быть: его удаляют из задачника целиком, и
+        # воскрешать понятие, которое из проекта убрали, отмена не должна
+        if course is None or tag is None or node is None:
+            continue
+        introduce(course, node, tag)
+        made += 1
 
     return made
