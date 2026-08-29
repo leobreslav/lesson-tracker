@@ -2112,9 +2112,91 @@ class SlotViewSet(SchoolScopedViewSet):
                         "mine": item.made_by_id == request.user.pk,
                     }
                     for item in rows
-                ]
+                ],
+                # Что сделает единственная кнопка. Отмена тут односкоростная,
+                # поэтому состояний ровно два: либо она отменяет последнее
+                # действие, либо — если последним был сам откат — возвращает
+                # его. Считает это сервер: клиент, смотревший в `steps[0]`,
+                # после отмены видел там снимок самой отмены и предлагал
+                # «Отменить: отмену».
+                **self.walk_targets(rows.first(), request),
             }
         )
+
+    def walk_targets(self, newest, request) -> dict:
+        """Что предложить кнопке: отменить последнее или вернуть отменённое."""
+        if newest is None:
+            return {"undo": None, "redo": None}
+
+        named = {
+            "id": newest.pk,
+            "detail": newest.detail,
+            "made_at": newest.made_at,
+            "by_lead": newest.by_lead,
+            "who": person(newest.made_by),
+            "mine": newest.made_by_id == request.user.pk,
+        }
+        if newest.action == "undo":
+            return {
+                "undo": None,
+                "redo": {**named, "action": newest.undone_action or "undo"},
+            }
+        return {"undo": {**named, "action": newest.action}, "redo": None}
+
+    @action(detail=False, methods=["post"], url_path="redo", url_name="redo")
+    def slot_redo(self, request):
+        """
+        Вернуть то, что только что отменили. Шаг тоже ровно один.
+
+        Движение это было и раньше — им служило второе нажатие «Отменить», —
+        но называлось оно отменой, и человек не мог понять, куда попадёт.
+        Теперь у него своё имя, своя ручка и своя надпись.
+
+        **Снимок отмены при этом снимается с журнала, а не дополняется
+        новым.** Иначе каждое переключение туда-обратно клало бы в журнал по
+        снимку, а держится их двадцать на курс: десяток нажатий — и настоящая
+        история вытеснена. Отменённая отмена действием не была, следа от неё
+        оставаться не должно.
+        """
+        course = self.undo_course(write=True)
+
+        step = (
+            history.SlotSnapshot.objects.filter(course=course, action="undo")
+            .order_by("-made_at", "-id")
+            .first()
+            if course is not None
+            else None
+        )
+        newest = (
+            history.SlotSnapshot.objects.filter(course=course)
+            .order_by("-made_at", "-id")
+            .first()
+            if course is not None
+            else None
+        )
+        # возвращать можно только **сразу после** отмены: правка, сделанная
+        # между ними, эту ветку обрывает — как и во всякой отмене
+        if step is None or newest is None or newest.pk != step.pk:
+            api_error(
+                Codes.SLOT_NOTHING_TO_REDO,
+                "There is nothing to bring back: the last step was not an undo.",
+                field="snapshot",
+            )
+
+        with transaction.atomic():
+            touched = list(
+                Course.objects.filter(
+                    pk__in=history.SlotSnapshot.objects.filter(
+                        batch=step.batch
+                    ).values("course")
+                )
+            )
+            result = history.restore_batch(step.batch)
+            history.SlotSnapshot.objects.filter(batch=step.batch).delete()
+            for one in touched:
+                self.guard_order(one)
+
+        return Response(result)
 
     @action(detail=False, methods=["post"], url_path="undo", url_name="undo")
     def slot_undo(self, request):
@@ -2164,7 +2246,13 @@ class SlotViewSet(SchoolScopedViewSet):
                     ).values("course")
                 )
             )
-            self.snapshot_all(touched, "undo", step.detail)
+            batch = self.snapshot_all(touched, "undo", step.detail)
+            # чем был отменённый шаг — чтобы кнопка сказала «Вернуть: перенос
+            # занятия», а не «Отменить: отмену». Соседний по времени снимок
+            # ответил бы на это догадкой; здесь запись
+            history.SlotSnapshot.objects.filter(batch=batch).update(
+                undone_action=step.action
+            )
             result = history.restore_batch(step.batch)
             # Снимок мог не пережить собственную уборку: `take` зовёт
             # `prune`, а тот держит последние двадцать. Восстановить нечего —

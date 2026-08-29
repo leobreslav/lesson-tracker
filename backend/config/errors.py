@@ -115,6 +115,7 @@ class Codes:
     PLAN_UNDO_WOULD_LOSE_RECORD = "plan_undo_would_lose_record"
     ROWS_INVALID = "rows_invalid"
     SLOT_NOTHING_TO_UNDO = "slot_nothing_to_undo"
+    SLOT_NOTHING_TO_REDO = "slot_nothing_to_redo"
     SLOT_UNDO_WOULD_LOSE_WORK = "slot_undo_would_lose_work"
     SLOT_MOVE_BREAKS_ORDER = "slot_move_breaks_order"
     SLOT_MOVE_SERIES_WEEK = "slot_move_series_week"

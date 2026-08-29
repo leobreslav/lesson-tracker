@@ -518,6 +518,19 @@ export const undoSlots = (courseId = null) =>
     body: {},
   })
 
+/**
+ * Вернуть отменённое. Шаг тоже ровно один — глубже тут не ходят.
+ *
+ * Движение это было и раньше: им служило второе нажатие «Отменить». Но
+ * называлось оно отменой, и понять, куда попадёшь, было нельзя — надпись
+ * читалась «Отменить: отмену».
+ */
+export const redoSlots = (courseId = null) =>
+  request(`/api/slots/redo/${courseId ? `?course=${courseId}` : ''}`, {
+    method: 'POST',
+    body: {},
+  })
+
 const csvForm = (file, mode) => {
   const form = new FormData()
   form.append('file', file)

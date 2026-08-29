@@ -307,6 +307,7 @@
     "plan_delete_taught": "«{{title}}» was taught on {{date}} — withdraw the record before deleting the row",
     "plan_nothing_to_undo": "There is nothing to undo: no snapshot of this plan was kept",
     "plan_nothing_to_redo": "There is nothing to bring back: the plan is at the end of its history",
+    "slot_nothing_to_redo": "There is nothing to bring back: the last step was not an undo",
     "plan_undo_would_lose_record": "«{{title}}» was taught on {{date}} — undoing would delete the row and its record with it. Withdraw the record first",
     "plan_bulk_section": "«{{title}}» is a theme — delete it on its own row, where the question about its lessons is asked",
     "rows_invalid": "The paste could not be read: send the table rows.",
@@ -865,6 +866,10 @@
         "close": "closing the debts",
         "undo": "an undo"
       }
+    },
+    "redo": {
+      "label": "Bring back: {{action}}",
+      "what": "Bring back: {{action}} — «{{detail}}»"
     }
   },
   "noSchool": {

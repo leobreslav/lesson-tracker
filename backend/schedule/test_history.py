@@ -480,3 +480,97 @@ class ClosingUndoTests(DebtTestCase):
         self.assertEqual(
             middle.lesson_id, self.second.pk, "откат применился, хотя был отклонён"
         )
+
+
+class TheButtonFlipsToBringBackTests(ScheduleUndoTests):
+    """
+    Отмена в расписании односкоростная, и второе нажатие обязано это сказать.
+
+    Движение «вернуть отменённое» было и раньше — им служило второе нажатие
+    «Отменить», — но называлось оно отменой. Наружу это выходило надписью
+    «Отменить: отмену» и расписанием, которое качалось между двумя
+    состояниями: понять, куда попадёшь, было нельзя.
+
+    Глубже одного шага тут по-прежнему не ходят, и это решение, а не
+    недоделка: расписание правят и отменяют в одну минуту, а путь, которым
+    интерфейс не пользуется, никто не проверяет.
+    """
+
+    def redo(self):
+        return self.client.post(
+            f"{reverse('slot-redo')}?course={self.course.pk}", {}, format="json"
+        )
+
+    def targets(self):
+        return self.client.get(
+            f"{reverse('slot-history')}?course={self.course.pk}"
+        ).json()
+
+    def test_after_an_undo_the_button_offers_to_bring_it_back(self):
+        gone = self.slot.pk
+        self.client.delete(reverse("slot-detail", args=[gone]))
+        self.undo()
+
+        targets = self.targets()
+
+        self.assertIsNone(targets["undo"], "глубже одного шага тут не ходят")
+        self.assertEqual(
+            targets["redo"]["action"],
+            "delete",
+            "«Вернуть» называет отменённое действие, а не саму отмену",
+        )
+
+    def test_bringing_it_back_undoes_the_undo(self):
+        gone = self.slot.pk
+        self.client.delete(reverse("slot-detail", args=[gone]))
+        self.undo()
+        self.assertTrue(Slot.objects.filter(pk=gone).exists())
+
+        answer = self.redo()
+
+        self.assertEqual(answer.status_code, 200, answer.content)
+        self.assertFalse(Slot.objects.filter(pk=gone).exists())
+
+    def test_the_journal_does_not_grow_from_flipping(self):
+        """
+        Переключение туда-обратно не копит снимки.
+
+        Держится их двадцать на курс, и, клади возврат свой снимок, десяток
+        нажатий вытеснил бы всю настоящую историю — то есть человек, игравший
+        кнопкой, остался бы без возможности отменить что-либо вообще.
+        """
+        self.client.delete(reverse("slot-detail", args=[self.slot.pk]))
+        before = history.SlotSnapshot.objects.filter(course=self.course).count()
+
+        for _ in range(4):
+            self.undo()
+            self.redo()
+
+        after = history.SlotSnapshot.objects.filter(course=self.course).count()
+        self.assertEqual(after, before)
+
+    def test_with_no_undo_behind_it_there_is_nothing_to_bring_back(self):
+        self.client.delete(reverse("slot-detail", args=[self.slot.pk]))
+
+        answer = self.redo()
+
+        self.assertEqual(answer.status_code, 400, answer.content)
+        self.assertEqual(answer.json()["code"], "slot_nothing_to_redo")
+
+    def test_an_edit_after_the_undo_cuts_the_branch(self):
+        """Правка между отменой и возвратом обрывает ветку — как везде."""
+        gone = self.slot.pk
+        self.client.delete(reverse("slot-detail", args=[gone]))
+        self.undo()
+        make_slot(self.user, self.course, day=MONDAY + timedelta(days=3), number=2)
+        self.client.delete(
+            reverse(
+                "slot-detail",
+                args=[Slot.objects.filter(course=self.course).exclude(pk=gone).first().pk],
+            )
+        )
+
+        answer = self.redo()
+
+        self.assertEqual(answer.status_code, 400, answer.content)
+        self.assertEqual(answer.json()["code"], "slot_nothing_to_redo")
