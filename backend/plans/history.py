@@ -151,6 +151,10 @@ class PlanSnapshotRow(models.Model):
     parent_node_id = models.PositiveIntegerField(
         "parent node id", null=True, blank=True
     )
+    #: откуда строка пришла — та же память о происхождении, что у самого
+    #: узла. Без неё отмена стирала родство с шаблоном: строка возвращалась,
+    #: а сравнение с полкой после этого отвечало «эти планы не родня».
+    origin_id = models.PositiveIntegerField("origin row id", null=True, blank=True)
     position = models.PositiveIntegerField("position")
     is_section = models.BooleanField("section", default=False)
     title = models.CharField("title", max_length=200)
@@ -252,7 +256,11 @@ class PlanSnapshotIntroduction(models.Model):
         ordering = ("id",)
 
 
-ROW_FIELDS = ("position", "is_section", "title", "note", *CONTENT_FIELDS)
+#: что снимок хранит у строки и что возвращает при откате. Список один на
+#: три места — снятие, сравнение уцелевшего и воскрешение удалённого, — и
+#: поле, забытое здесь, теряется во всех трёх сразу: `origin_id` так и
+#: терялся, потому что появился позже этого списка.
+ROW_FIELDS = ("position", "is_section", "title", "note", "origin_id", *CONTENT_FIELDS)
 
 
 # --- снятие -------------------------------------------------------------------

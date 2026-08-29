@@ -209,3 +209,69 @@ class TheDiffIsAskedBeforeOverwritingTests(OriginTestCase):
         )
 
         self.assertIn(answer.status_code, (400, 403, 404), answer.content)
+
+
+class UndoKeepsTheOriginTests(OriginTestCase):
+    """
+    Отмена не стирает родство с полкой.
+
+    `origin_id` появился позже, чем список полей снимка, и в этот список не
+    попал. Значит снимок его не хранил, а восстановление не выставляло: урок
+    возвращался, а «откуда он родом» — нет, и `diff-from-template` после
+    отмены отвечал «эти планы не родня» — то есть числами вместо построчного
+    сравнения, ровно в том месте, ради которого память о происхождении и
+    заведена.
+
+    Класс ошибки тут важнее самого поля: дописали новое, не учли, как
+    работает отмена. Между появлением `origin_id` и этой находкой прошло
+    меньше десяти дней.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.client.force_authenticate(self.user)
+        self.take_into()
+
+    def undo(self):
+        return self.client.post(
+            f"{reverse('plannode-undo')}?course={self.course.pk}", {}, format="json"
+        )
+
+    def test_a_deleted_row_comes_back_knowing_where_it_came_from(self):
+        mine = PlanNode.objects.get(course=self.course, title="Синус суммы")
+        origin = mine.origin_id
+        self.assertIsNotNone(origin, "строка с полки обязана помнить источник")
+
+        self.client.delete(reverse("plannode-detail", args=[mine.pk]))
+        answer = self.undo()
+
+        self.assertEqual(answer.status_code, 200, answer.content)
+        back = PlanNode.objects.get(pk=mine.pk)
+        self.assertEqual(back.origin_id, origin)
+
+    def test_the_comparison_still_matches_after_an_undo(self):
+        """
+        Проверяется не поле, а то, ради чего оно есть.
+
+        Родство держит построчное сравнение с полкой; равенство `origin_id`
+        само по себе ничего не обещает, если сравнение его не читает.
+        """
+        from . import diff
+
+        mine = PlanNode.objects.get(course=self.course, title="Синус суммы")
+        self.client.delete(reverse("plannode-detail", args=[mine.pk]))
+        self.undo()
+
+        before, after, matched = self.compare(
+            of_template(self.template), of_course(self.course)
+        )
+
+        self.assertTrue(matched, "родство с полкой обязано пережить отмену")
+        states = {
+            change.title: change.state for change in diff.plan_diff(before, after)
+        }
+        self.assertEqual(
+            states["Синус суммы"],
+            "same",
+            "вернувшаяся строка — та же самая, а не новая рядом с удалённой",
+        )
