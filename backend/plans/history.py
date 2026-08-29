@@ -32,6 +32,8 @@
 from django.conf import settings
 from django.db import models, transaction
 
+from config.errors import Codes, api_error
+
 from .content import CONTENT_FIELDS
 from .owning import exactly_one_owner, owner_of
 
@@ -327,6 +329,49 @@ def prune(owner) -> int:
 # --- восстановление -----------------------------------------------------------
 
 
+def refuse_if_undo_loses_record(doomed) -> None:
+    """
+    Отмена не уносит проведённые строки — как их не уносит ничто другое.
+
+    Строку, по которой провели занятие, не удаляют: за ней записан час, и
+    `Slot.lesson` — `SET_NULL`, то есть удаление не отказывает, а **молча**
+    развязывает связь. Четыре двери к этому удалению закрыты давно —
+    одиночное удаление и пакетное (`plan_delete_taught`), импорт в обоих
+    режимах и взятие с полки (`plan_import_taught`), — а эта была открыта:
+    завели строку после снимка, провели по ней урок, нажали отмену, и запись
+    об уроке исчезала, не оставив следа даже в пост-условии. `broken_record`
+    её не ловит: он ищет незакрытый час **среди закрытых**, а развязанный
+    последний час дыры не образует.
+
+    Отказ стоит здесь, а не во вьюхе, ровно затем, чтобы пятой открытой
+    двери не появилось: закрыт сам проход, а не подходы к нему. Так же
+    устроена отмена в расписании (`schedule/history.py`,
+    `slot_undo_would_lose_work`) — предмет разный, а урок один и тот же.
+
+    У шаблона занятий не бывает вовсе, и вопрос впустую стоит один
+    индексированный запрос. Ветка «а если это полка, то не спрашиваем» стоила
+    бы дороже: она держится на допущении, а допущения в этом файле уже
+    ошибались.
+    """
+    if not doomed:
+        return
+
+    from schedule.models import Slot
+
+    taught = (
+        Slot.objects.filter(lesson_id__in=doomed).select_related("lesson").first()
+    )
+    if taught is not None:
+        api_error(
+            Codes.PLAN_UNDO_WOULD_LOSE_RECORD,
+            f"«{taught.lesson.title}» was taught on {taught.date}: undoing "
+            "would delete the row and its record with it.",
+            field="snapshot",
+            title=taught.lesson.title,
+            date=str(taught.date),
+        )
+
+
 @transaction.atomic
 def restore(snapshot) -> dict:
     """
@@ -379,6 +424,7 @@ def restore(snapshot) -> dict:
 
     keep = {row.node_id for row in wanted}
     doomed = [pk for pk in alive if pk not in keep]
+    refuse_if_undo_loses_record(doomed)
     # уроки раньше тем: иначе каскад унесёт чужих детей
     PlanNode.objects.filter(pk__in=doomed, is_section=False).delete()
     PlanNode.objects.filter(pk__in=doomed).delete()

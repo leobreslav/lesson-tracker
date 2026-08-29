@@ -384,3 +384,81 @@ class BulkDeleteKeepsTheQueueTests(SnapshotTestCase):
         for slot, row in zip(self.slots[:2], self.rows[:2]):
             slot.refresh_from_db()
             self.assertEqual(slot.lesson_id, row.pk)
+
+
+class UndoDoesNotDestroyARecordTests(SnapshotTestCase):
+    """
+    Пятая дверь к удалению проведённой строки — и она была открыта.
+
+    Четыре остальные закрыты давно: одиночное удаление и пакетное отвечают
+    `plan_delete_taught`, импорт в обоих режимах и взятие с полки —
+    `plan_import_taught`. Отмена не отвечала ничем: `Slot.lesson` — это
+    `SET_NULL`, поэтому удаление строки не отказывает, а **молча**
+    развязывает связь, и час, который был проведён и записан, остаётся без
+    записи. Пост-условие про очередь этого не ловит: `broken_record` ищет
+    незакрытый час среди закрытых, а развязанный последний час дыры не
+    образует — то есть после потери всё выглядит здоровым.
+
+    Случай узкий: строку завели **после** снимка, по ней провели урок,
+    потом нажали отмену. Узкий он ровно потому, что опасный: учитель
+    отменяет лишнюю строку, а теряет журнальную запись урока.
+    """
+
+    def setUp(self):
+        super().setUp()
+        from datetime import timedelta
+
+        from schedule.models import Slot
+        from schools.testing import make_slot
+
+        self.Slot = Slot
+        # снимок, к которому будет возвращать отмена: в нём есть «Первый»
+        # и нет «Второго»
+        self.first = self.lesson("Первый", position=0)
+        self.client.post(
+            reverse("plannode-list"),
+            {"course": self.course.pk, "title": "Второй", "position": 1},
+            format="json",
+        )
+        self.second = PlanNode.objects.get(course=self.course, title="Второй")
+
+        self.slot = make_slot(
+            self.user, self.course, timezone.now().date() - timedelta(days=1), 1
+        )
+        self.slot.lesson = self.second
+        self.slot.save(update_fields=["lesson"])
+
+    def test_undoing_a_row_that_has_since_been_taught_is_refused(self):
+        answer = self.undo()
+
+        self.assertEqual(answer.status_code, 400, answer.content)
+        self.assertEqual(answer.json()["code"], "plan_undo_would_lose_record")
+
+    def test_the_record_survives_the_refusal(self):
+        """
+        Главное тут не код отказа, а то, что запись осталась на месте.
+
+        `restore` атомарен, значит отказ посреди восстановления обязан
+        откатить и то, что успели воскресить, — иначе план остался бы в
+        состоянии, которого не просил никто.
+        """
+        self.undo()
+
+        self.slot.refresh_from_db()
+        self.assertEqual(self.slot.lesson_id, self.second.pk)
+        self.assertEqual(self.titles(), ["Первый", "Второй"])
+
+    def test_a_row_nobody_taught_still_goes(self):
+        """
+        Отказ узкий, а не «отмена на курсе с занятиями не работает».
+
+        Строка без записи удаляется отменой как раньше: закрыт проход к
+        проведённому уроку, а не отмена вообще.
+        """
+        self.slot.lesson = None
+        self.slot.save(update_fields=["lesson"])
+
+        answer = self.undo()
+
+        self.assertEqual(answer.status_code, 200, answer.content)
+        self.assertEqual(self.titles(), ["Первый"])

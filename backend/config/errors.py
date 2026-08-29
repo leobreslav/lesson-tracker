@@ -111,6 +111,7 @@ class Codes:
     PLAN_DELETE_TAUGHT = "plan_delete_taught"
     PLAN_BULK_SECTION = "plan_bulk_section"
     PLAN_NOTHING_TO_UNDO = "plan_nothing_to_undo"
+    PLAN_UNDO_WOULD_LOSE_RECORD = "plan_undo_would_lose_record"
     ROWS_INVALID = "rows_invalid"
     SLOT_NOTHING_TO_UNDO = "slot_nothing_to_undo"
     SLOT_UNDO_WOULD_LOSE_WORK = "slot_undo_would_lose_work"
