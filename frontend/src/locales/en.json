@@ -551,6 +551,13 @@
     },
     "fileMenu": "File",
     "libraryMenu": "Library",
+    "shelf": {
+      "title": "Plan on the shelf",
+      "draft": "draft, visible to you only",
+      "edit": "Edit",
+      "create": "Write a new plan…",
+      "back": "To the library"
+    },
     "importFile": "Import…",
     "noSlot": "no slot",
     "breakBetween": "{{title}} · {{start}} — {{end}}",

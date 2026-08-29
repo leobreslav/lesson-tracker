@@ -1,5 +1,6 @@
 import { childParam, viewedChild } from './viewedChild'
 import i18n from './i18n'
+import { ownerQuery } from './planOwner'
 
 const TOKEN_KEY = 'authToken'
 
@@ -301,6 +302,17 @@ export const fetchTemplates = (params = {}) =>
 
 export const fetchTemplate = (id) => request(`/api/library/templates/${id}/`)
 
+/**
+ * Завести шаблон с нуля — пустым, без курса.
+ *
+ * Ради этого всё и затевалось: программу пишут и для класса, который в этом
+ * году не ведут, а курса под неё нет и заводить его незачем. Кладётся он
+ * черновиком: «всей школе» — отдельный осознанный шаг, и до первой строки
+ * его задавать не о чем.
+ */
+export const createTemplate = (fields) =>
+  request('/api/library/templates/', { method: 'POST', body: fields })
+
 export const updateTemplate = (id, fields) =>
   request(`/api/library/templates/${id}/`, { method: 'PATCH', body: fields })
 
@@ -389,8 +401,13 @@ export const createSubject = (name) =>
 export const fetchPlanSlots = (classId) =>
   request(`/api/plan/layout/slots/?course=${encodeURIComponent(classId)}`)
 
-export const fetchPlan = (classId) =>
-  request(`/api/plan/?course=${encodeURIComponent(classId)}`)
+/**
+ * Дерево плана — курса или шаблона с полки.
+ *
+ * Адресуется владельцем (`planOwner.js`), а не номером курса: экран у них
+ * один, и всё, что он делает с деревом, одинаково.
+ */
+export const fetchPlan = (owner) => request(`/api/plan/?${ownerQuery(owner)}`)
 
 export const createPlanNode = (fields) =>
   request('/api/plan/', { method: 'POST', body: fields })
@@ -420,8 +437,8 @@ export const deletePlanNode = (id, keepChildren) =>
  * Не десять запросов подряд: половина удалённой пачки хуже неудалённой,
  * потому что непонятно, какая половина. Отказ на любой строке отменяет всё.
  */
-export const deletePlanNodes = (courseId, ids) =>
-  request(`/api/plan/delete/?course=${courseId}`, {
+export const deletePlanNodes = (owner, ids) =>
+  request(`/api/plan/delete/?${ownerQuery(owner)}`, {
     method: 'POST',
     body: { ids },
   })
@@ -432,12 +449,12 @@ export const deletePlanNodes = (courseId, ids) =>
  * Приезжают вместе с деревом, а не по кнопке: кнопка отмены обязана
  * называть, что именно отменит, — значит знать это надо до нажатия.
  */
-export const fetchPlanHistory = (courseId) =>
-  request(`/api/plan/history/?course=${courseId}`)
+export const fetchPlanHistory = (owner) =>
+  request(`/api/plan/history/?${ownerQuery(owner)}`)
 
 /** Вернуть план к снимку; без номера — к последнему. */
-export const undoPlan = (courseId, snapshot = null) =>
-  request(`/api/plan/undo/?course=${courseId}`, {
+export const undoPlan = (owner, snapshot = null) =>
+  request(`/api/plan/undo/?${ownerQuery(owner)}`, {
     method: 'POST',
     body: snapshot ? { snapshot } : {},
   })

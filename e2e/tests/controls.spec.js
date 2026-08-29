@@ -194,9 +194,20 @@ for (const language of ['ru', 'en']) {
      * Заглянуть туда надо тем более: рядов формы там больше, чем на любом
      * другом экране, и живут они теперь на странице, а не в окне.
      */
-    const mine = await (await api(PEOPLE.ivanova)).get('/api/works/')
+    const client = await api(PEOPLE.ivanova)
+    const mine = await client.get('/api/works/')
     const work = mine.body?.[0]
     const pages = work ? [...PAGES, [`/works/${work.id}/edit`, PEOPLE.ivanova]] : PAGES
+
+    /*
+     * План на полке адресуется так же — по id, — и заглянуть туда надо по
+     * той же причине: экран тот же, что у плана курса, но ряд контролов над
+     * таблицей там **короче** (нет ни дат, ни утверждения, ни меню обмена), и
+     * именно укороченные ряды разъезжаются первыми.
+     */
+    const shelf = await client.get('/api/library/templates/?mine=true')
+    const template = shelf.body?.[0]
+    if (template) pages.push([`/library/${template.id}`, PEOPLE.ivanova])
 
     const found = []
     for (const [path, who] of pages) {

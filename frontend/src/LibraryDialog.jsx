@@ -24,6 +24,8 @@ export default function LibraryDialog({
   busy,
   onTake,
   onOpen,
+  onEdit,
+  onCreate,
   onPublish,
   onKeepUpdating,
   onDelete,
@@ -56,6 +58,17 @@ export default function LibraryDialog({
 
   return (
     <Modal className="shelf" onClose={onClose} title={t('plan.importLibrary')}>
+      {/*
+        «Написать новый» стоит **над** списком и виден даже когда полка
+        пуста. Это и есть тот случай, ради которого он заведён: программу
+        для класса, который в этом году не ведут, писать было негде вовсе —
+        плану нужен был курс, а курса под такую программу нет.
+      */}
+      <div className="row">
+        <button type="button" disabled={busy} onClick={onCreate}>
+          {t('plan.shelf.create')}
+        </button>
+      </div>
 
       {!templates.length ? (
         <p className="hint">{t('library.empty.hint')}</p>
@@ -127,6 +140,20 @@ export default function LibraryDialog({
                     >
                       {t('library.look')}
                     </button>
+                    {/* «Править» — у своего, и ведёт оно на тот же экран
+                        плана, каким правят курс. Полка перестала быть только
+                        снимком чужой работы: программу пишут и для класса,
+                        который в этом году не ведут */}
+                    {item.can_edit && (
+                      <button
+                        type="button"
+                        className="link"
+                        disabled={busy}
+                        onClick={() => onEdit(item)}
+                      >
+                        {t('plan.shelf.edit')}
+                      </button>
+                    )}
                     {item.can_edit && (
                       <button
                         type="button"

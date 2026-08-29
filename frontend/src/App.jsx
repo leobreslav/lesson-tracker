@@ -14,6 +14,7 @@ import {
   Route,
   Routes,
   useLocation,
+  useParams,
 } from 'react-router-dom'
 import ErrorBoundary from './ErrorBoundary'
 import Journal from './Journal'
@@ -51,6 +52,18 @@ import {
 } from './api'
 import { useTranslation } from 'react-i18next'
 import i18n, { normalizeLanguage } from './i18n'
+/**
+ * План шаблона — тот же экран, только владелец другой.
+ *
+ * Обёртка нужна ровно затем, чтобы номер из адреса стал пропом: сама
+ * страница про маршруты не знает и знать не должна, а второй экран рядом с
+ * первым разошёлся бы с ним в первой же правке таблицы.
+ */
+function TemplatePlan(props) {
+  const { id } = useParams()
+  return <Plan {...props} template={Number(id)} />
+}
+
 
 export default function App() {
   const [token, setTokenState] = useState(getToken)
@@ -202,6 +215,9 @@ export default function App() {
           {/* роль нужна самой странице: администратору она показывает
               курсы школы отдельной группой селектора */}
           <Route path="/plan" element={guarded(Plan, { user })} />
+          {/* тот же экран на плане с полки: шаблон правят как боевой план,
+              и второго экрана для этого заводить не надо */}
+          <Route path="/library/:id" element={guarded(TemplatePlan, { user })} />
           <Route path="/works" element={guarded(Works)} />
           {/* журнал курса: ученики по строкам, занятия по столбцам. Стоит
               своим адресом, а не вкладкой работ: вопрос у него свой */}

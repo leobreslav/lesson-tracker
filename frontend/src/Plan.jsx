@@ -9,6 +9,7 @@ import {
 import { useTranslation } from 'react-i18next'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import EmptyState from './EmptyState'
+import { ofCourse, ofTemplate, ownerBody } from './planOwner'
 import ImportDialog from './ImportDialog'
 import LibraryDialog, { TemplateView } from './LibraryDialog'
 import PlanCsvHelp from './PlanCsvHelp'
@@ -38,6 +39,7 @@ import {
   splitPlan,
   deleteTemplate,
   fetchSubjects,
+  createTemplate,
   fetchTemplate,
   fetchTemplates,
   importTemplate,
@@ -77,7 +79,22 @@ const LessonPanel = lazyChunk(() => import('./LessonPanel'))
 // xlsx первым: он и по умолчанию
 const FORMATS = ['xlsx', 'csv']
 
-export default function Plan({ user, onLoggedOut }) {
+/**
+ * Учебный план — курса или шаблона с полки.
+ *
+ * `template` — номер шаблона; тогда экран открыт **на полке**, и селектора
+ * курсов на нём нет: программу пишут для класса, который в этом году не
+ * ведут, и курса под неё не существует.
+ *
+ * Экран при этом **тот же**, а не похожий, и это главное решение всей
+ * страницы. Разница между планом курса и планом на полке ровно одна —
+ * календарь: у полки нет ни дат, ни расписания, ни утверждения методистом.
+ * Всё, что от календаря зависит, страница и так рисует по наличию ленты
+ * слотов (`dated`), а у шаблона она пуста по построению — поэтому «вид без
+ * дат» тут не второй режим, а то же самое состояние, что у курса, которому
+ * ещё не составили расписание.
+ */
+export default function Plan({ user, onLoggedOut, template = null }) {
   const { t } = useTranslation()
   const navigate = useNavigate()
   /**
@@ -122,6 +139,22 @@ export default function Plan({ user, onLoggedOut }) {
   const [steps, setSteps] = useState([])
   const [years, setYears] = useState([])
   const [classId, setClassId] = useState(target.course)
+  /** Открыты ли мы на полке: у шаблона нет ни курса, ни календаря. */
+  const onShelf = Boolean(template)
+  /**
+   * Чьё дерево правим — зеркало серверного `plans/owning.py`.
+   *
+   * Источника у него два (адрес шаблона и селектор курсов), а дальше всё
+   * одинаково: страница спрашивает дерево, журнал и правки у владельца, не
+   * зная, какой он. Пока адресом был номер курса, каждый вызов знал ответ на
+   * этот вопрос — и второй владелец означал бы двадцать правок вместо одной.
+   */
+  const owner = useMemo(
+    () => (onShelf ? ofTemplate(template) : classId ? ofCourse(classId) : null),
+    [onShelf, template, classId],
+  )
+  /** Шапка полки: название шаблона вместо селектора курсов. */
+  const [shelfCard, setShelfCard] = useState(null)
   const scrolled = useRef(false)
   const panelOpened = useRef(false)
   const [data, setData] = useState(null) // {nodes, counts}
@@ -278,6 +311,24 @@ export default function Plan({ user, onLoggedOut }) {
   useEffect(() => {
     let cancelled = false
 
+    if (onShelf) {
+      // На полке ни курсов, ни надзора нет вовсе, и спрашивать их значило бы
+      // ждать три запроса ради селектора, которого на этом экране нет.
+      // Пустой список — не заглушка: это и есть ответ «курсов тут не бывает»
+      setClasses([])
+      setYears([])
+      setSupervised([])
+      setSchoolCourses([])
+
+      fetchTemplate(template)
+        .then((card) => !cancelled && setShelfCard(card))
+        .catch((err) => !cancelled && handleError(err))
+
+      return () => {
+        cancelled = true
+      }
+    }
+
     fetchReviews()
       .then((answer) => !cancelled && setSupervised(answer.plans))
       .catch(() => !cancelled && setSupervised([]))
@@ -329,7 +380,7 @@ export default function Plan({ user, onLoggedOut }) {
     return () => {
       cancelled = true
     }
-  }, [handleError, user])
+  }, [handleError, user, onShelf, template])
 
   /*
    * Дерево и журнал приезжают вместе.
@@ -358,8 +409,12 @@ export default function Plan({ user, onLoggedOut }) {
   useEffect(() => {
     // чужой курс под надзором своего плана нам не отдаст — и правильно: у
     // методиста прав на него нет, спрашивать значило бы ловить 404 в консоль.
-    // А вот курс школы администратору отдаст: там право есть
-    if (!mayEdit(classId)) {
+    // А вот курс школы администратору отдаст: там право есть.
+    //
+    // У полки ни ленты, ни эталона нет **вовсе**: она не привязана к
+    // учебному году, и спрашивать про её даты не у чего. Пустая лента тут не
+    // заглушка, а точный ответ — из неё же следует вид таблицы без дат
+    if (onShelf || !mayEdit(classId)) {
       setRibbon([])
       setBaseline(null)
       return undefined
@@ -376,7 +431,7 @@ export default function Plan({ user, onLoggedOut }) {
     return () => {
       cancelled = true
     }
-  }, [classId, mayEdit])
+  }, [classId, mayEdit, onShelf])
 
   /*
    * Escape выходит из режима выбора.
@@ -413,8 +468,9 @@ export default function Plan({ user, onLoggedOut }) {
   }, [classId])
 
   useEffect(() => {
-    // то же, что с лентой: поднадзорный план запрашивать нечем и незачем
-    if (!mayEdit(classId)) {
+    // то же, что с лентой: поднадзорный план запрашивать нечем и незачем.
+    // У полки же право спрашивает сервер, и второй его копии тут не будет
+    if (!owner || (!onShelf && !mayEdit(classId))) {
       setData(null)
       return undefined
     }
@@ -423,14 +479,14 @@ export default function Plan({ user, onLoggedOut }) {
     setData(null)
     setError(null)
 
-    load(classId).catch((err) => {
+    load(owner).catch((err) => {
       if (!cancelled) handleError(err)
     })
 
     return () => {
       cancelled = true
     }
-  }, [classId, mayEdit, load, handleError])
+  }, [owner, onShelf, classId, mayEdit, load, handleError])
 
   /**
    * Any structural edit: do it and re-read the whole tree.
@@ -445,7 +501,7 @@ export default function Plan({ user, onLoggedOut }) {
 
     try {
       const answer = await request()
-      await load(classId)
+      await load(owner)
       return answer
     } catch (err) {
       handleError(err)
@@ -538,7 +594,7 @@ export default function Plan({ user, onLoggedOut }) {
    * обслуживает откат чужой правки: снимок вмешательства живёт дольше
    * обычных, и вернуть надо тот, что снят **перед** ним.
    */
-  const undo = (snapshot = null) => run(() => undoPlan(classId, snapshot))
+  const undo = (snapshot = null) => run(() => undoPlan(owner, snapshot))
 
   const lastStep = steps[0] ?? null
 
@@ -564,7 +620,7 @@ export default function Plan({ user, onLoggedOut }) {
   const removePicked = async () => {
     const ids = dropping ?? []
     setDropping(null)
-    await run(() => deletePlanNodes(classId, ids))
+    await run(() => deletePlanNodes(owner, ids))
     // Режим остаётся включённым: удалили три строки — часто следом идут
     // ещё две, и выходить ради этого, чтобы тут же вернуться, незачем.
     // Выбор при этом сбрасывается: он уже применён.
@@ -625,7 +681,7 @@ export default function Plan({ user, onLoggedOut }) {
     } finally {
       pending.current.delete(nodeId)
       // re-read only once every move has settled
-      if (!pending.current.size) load(classId).catch(handleError)
+      if (!pending.current.size) load(owner).catch(handleError)
     }
   }
 
@@ -972,7 +1028,7 @@ export default function Plan({ user, onLoggedOut }) {
       is_section && after
         ? splitPlan(after, title.trim())
         : createPlanNode({
-            course: classId,
+            ...ownerBody(owner),
             parent,
             after,
             before,
@@ -1017,7 +1073,7 @@ export default function Plan({ user, onLoggedOut }) {
       const result = rows
         ? await importPlanRows(classId, rows, mode)
         : await importPlanFile(classId, file, mode)
-      await load(classId)
+      await load(owner)
       setNotice(
         (mode === 'sync'
           ? t('plan.synced', {
@@ -1181,21 +1237,43 @@ export default function Plan({ user, onLoggedOut }) {
   return (
     <main className="page wide">
       <header className="page-header">
-        <h1>{t('plan.title')}</h1>
-        {/* курс — в строке заголовка: это не фильтр к странице, а то, про
-            что она. Полтора десятка чипов под заголовком занимали две
-            строки ради выбора, который делают раз за заход */}
-        <CoursePicker
-          courses={pickable}
-          value={classId}
-          onChange={pickClass}
-          label={classLabel}
-          groups={groups}
-          /* сужение по учителю и предмету: в этом селекте у любого учителя
-             лежат все курсы школы, а их несколько десятков — «найти план
-             Петровой по геометрии» иначе значит прочитать весь список */
-          narrow="plan"
-        />
+        <h1>{onShelf ? t('plan.shelf.title') : t('plan.title')}</h1>
+        {/*
+          На полке вместо селектора — имя самого шаблона.
+
+          Выбирать тут не из чего: сюда приходят по ссылке на **этот** план,
+          а не «в раздел планов». Селектор со всеми своими шаблонами был бы
+          вторым списком полки — тем самым, который из проекта убрали, когда
+          страницу «Библиотека» заменили окном.
+        */}
+        {onShelf ? (
+          <span className="hint plan-shelf-name">
+            {shelfCard?.title ?? ''}
+            {shelfCard && !shelfCard.is_published && (
+              <> · {t('plan.shelf.draft')}</>
+            )}{' '}
+            {/* дорога назад — на план: полка открывается оттуда окном, и
+                второго её списка в проекте нет намеренно */}
+            <button type="button" className="link" onClick={() => navigate('/plan')}>
+              {t('plan.shelf.back')}
+            </button>
+          </span>
+        ) : (
+          /* курс — в строке заголовка: это не фильтр к странице, а то, про
+             что она. Полтора десятка чипов под заголовком занимали две
+             строки ради выбора, который делают раз за заход */
+          <CoursePicker
+            courses={pickable}
+            value={classId}
+            onChange={pickClass}
+            label={classLabel}
+            groups={groups}
+            /* сужение по учителю и предмету: в этом селекте у любого учителя
+               лежат все курсы школы, а их несколько десятков — «найти план
+               Петровой по геометрии» иначе значит прочитать весь список */
+            narrow="plan"
+          />
+        )}
         {/*
           Всё про утверждение — одной группой в шапке, рядом с тумблером.
 
@@ -1211,7 +1289,7 @@ export default function Plan({ user, onLoggedOut }) {
           в шапке: панель управления в этом виде не показывается вовсе.
           Остальные две половины переехали к нему.
         */}
-        {!supervising && (
+        {!supervising && !onShelf && (
           <div className="plan-approval">
             {/* состояние утверждения: у плана его нет, оно есть у снимка */}
             {baseline && (baseline.approved || baseline.request) && (
@@ -1326,13 +1404,28 @@ export default function Plan({ user, onLoggedOut }) {
              своей работы они не заменяют, и человеку, которому ещё не
              поручили курс, надо сказать именно это. Выбрал чужой — ветка
              сюда и не дойдёт, выше стоит `supervising` */
-      !mineAndWatched.length ? (
+      !onShelf && !mineAndWatched.length ? (
         <EmptyState
           title={t('plan.needClass.title')}
           actions={
-            <button type="button" onClick={() => navigate('/school/courses')}>
-              {t('plan.needClass.action')}
-            </button>
+            <>
+              <button type="button" onClick={() => navigate('/school/courses')}>
+                {t('plan.needClass.action')}
+              </button>
+              {/*
+                Второе действие — ровно для того, кто это читает: курса ему не
+                поручили, а программу он написать может. Плану на полке курс
+                не нужен, и другой двери к нему у человека без курсов нет:
+                полка открывается окном с плана, а плана у него ещё нет.
+              */}
+              <button
+                type="button"
+                className="secondary"
+                onClick={() => setDialog({ type: 'newTemplate' })}
+              >
+                {t('plan.shelf.create')}
+              </button>
+            </>
           }
         >
           {t('plan.needClass.hint')}
@@ -1524,8 +1617,17 @@ export default function Plan({ user, onLoggedOut }) {
                 {t('plan.addRow')}
               </button>
 
-              {/* два меню в одной обёртке: клик мимо закрывает открытое,
-                  каким бы из двух оно ни было */}
+              {/*
+                Два меню в одной обёртке: клик мимо закрывает открытое, каким
+                бы из двух оно ни было.
+
+                На полке их нет, и оба по своей причине. Обмен файлами и
+                импорт ходят курсовыми ручками (`?course=`) — открыть их тут
+                значило бы нарисовать кнопки, которые ответят отказом. А
+                «взять с полки» и «положить на полку», стоя **на** полке,
+                отвечают сами на себя: план уже здесь.
+              */}
+              {!onShelf && (
               <span className="plan-menus" ref={menuRef}>
                 <div className="plan-menu">
                   <button
@@ -1653,6 +1755,7 @@ export default function Plan({ user, onLoggedOut }) {
                   )}
                 </div>
               </span>
+              )}
 
               {/*
                 «Отменить» появляется, только когда есть что отменять, и
@@ -1849,7 +1952,9 @@ export default function Plan({ user, onLoggedOut }) {
               // чей это план: окно открывается и со страницы занятия, где
               // курс назван, и из таблицы, где он выбран чипом, — а в самом
               // окне до сих пор не был назван нигде
-              course: course?.name ?? null,
+              // на полке это имя шаблона: вопрос «чей это план» тот же, и
+              // ответ на него у полки есть — просто не курсом
+              course: onShelf ? (shelfCard?.title ?? null) : (course?.name ?? null),
               taught: Boolean(nodeById.get(opened)?.taught),
               date: layout.byId.get(opened)?.slot?.date ?? null,
             }}
@@ -1859,7 +1964,7 @@ export default function Plan({ user, onLoggedOut }) {
             }}
             // the marks in the table come from the tree, so a save has to be
             // followed by a re-read — the paperclip appears the moment a file does
-            onSaved={() => load(classId).catch(handleError)}
+            onSaved={() => load(owner).catch(handleError)}
           />
         </Suspense>
       )}
@@ -1881,6 +1986,8 @@ export default function Plan({ user, onLoggedOut }) {
           onOpen={(item) =>
             fetchTemplate(item.id).then(setPreview).catch(handleError)
           }
+          onEdit={(item) => navigate(`/library/${item.id}`)}
+          onCreate={() => setDialog({ type: 'newTemplate' })}
           onPublish={publishTemplate}
           onKeepUpdating={keepUpdating}
           onDelete={removeTemplate}
@@ -1926,6 +2033,38 @@ export default function Plan({ user, onLoggedOut }) {
             </button>
           </div>
         </Modal>
+      )}
+
+      {/*
+        Новый план на полке — та же форма, что у «положить на полку», только
+        без курса. Второй формы тут заводить незачем: вопросы одни и те же —
+        название, предмет, параллель, кому видно, — а `PublishDialog` без
+        курса как раз и спрашивает предмет с параллелью сам.
+
+        Кому видно, решает человек, а не мы за него. Соблазн положить пустой
+        план черновиком принудительно был, и он неверен: тумблер в форме
+        спрашивает прямо, и молча ответить за него значит показать одно, а
+        сделать другое.
+      */}
+      {dialog?.type === 'newTemplate' && (
+        <PublishDialog
+          course={null}
+          subjects={subjects}
+          existing={null}
+          fresh
+          busy={busy}
+          onSubmit={(fields) => {
+            setBusy(true)
+            createTemplate(fields)
+              .then((made) => {
+                setDialog(null)
+                navigate(`/library/${made.id}`)
+              })
+              .catch(handleError)
+              .finally(() => setBusy(false))
+          }}
+          onClose={() => setDialog(null)}
+        />
       )}
 
       {dialog?.type === 'publish' && (
@@ -2095,7 +2234,18 @@ export default function Plan({ user, onLoggedOut }) {
  * Refreshing asks nothing: the entry already knows its title and subject,
  * and the only question — «take the current plan?» — is the button itself.
  */
-function PublishDialog({ course, subjects, existing, copy = false, busy, onSubmit, onClose }) {
+function PublishDialog({
+  course,
+  subjects,
+  existing,
+  copy = false,
+  // новый план на полке: та же форма, но она не «сохраняет» готовое, а
+  // заводит пустое — и называться должна тем же словом, каким её позвали
+  fresh = false,
+  busy,
+  onSubmit,
+  onClose,
+}) {
   const { t } = useTranslation()
   const [title, setTitle] = useState(() => {
     const name = course
@@ -2161,7 +2311,15 @@ function PublishDialog({ course, subjects, existing, copy = false, busy, onSubmi
           }
         }}
       >
-        <h3>{t(copy ? 'plan.publishCopy' : 'plan.publish')}</h3>
+        <h3>
+          {t(
+            fresh
+              ? 'plan.shelf.create'
+              : copy
+                ? 'plan.publishCopy'
+                : 'plan.publish',
+          )}
+        </h3>
         {/* копия обещает ровно одно — что останется такой; сказать это надо
             здесь, иначе разница с соседним пунктом меню только в слове */}
         {copy && <p className="hint">{t('plan.publishCopyHint')}</p>}
@@ -2248,7 +2406,13 @@ function PublishDialog({ course, subjects, existing, copy = false, busy, onSubmi
 
         <div className="actions">
           <button type="submit" disabled={busy || !title.trim()}>
-            {t(copy ? 'plan.publishCopy' : 'plan.publish')}
+            {t(
+              fresh
+                ? 'plan.shelf.create'
+                : copy
+                  ? 'plan.publishCopy'
+                  : 'plan.publish',
+            )}
           </button>
           <button type="button" className="secondary" onClick={onClose}>
             {t('common.cancel')}
