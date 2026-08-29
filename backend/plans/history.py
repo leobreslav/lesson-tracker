@@ -465,6 +465,13 @@ def restore(snapshot) -> dict:
     wanted = list(snapshot.rows.prefetch_related("files", "introductions"))
     alive = {node.pk: node for node in PlanNode.objects.filter(**owner.lookup)}
 
+    keep = {row.node_id for row in wanted}
+    doomed = [pk for pk in alive if pk not in keep]
+    # спрашивается до первой записи, а не перед самим удалением: транзакция
+    # откатила бы и воскрешённое, но платить за отказ работой незачем, а
+    # читающий должен видеть запрет раньше, чем правку
+    refuse_if_undo_loses_record(doomed)
+
     created, updated = 0, 0
     # темы первыми: на них ссылаются уроки
     for row in sorted(wanted, key=lambda item: not item.is_section):
@@ -493,9 +500,6 @@ def restore(snapshot) -> dict:
             node.save(update_fields=changed)
             updated += 1
 
-    keep = {row.node_id for row in wanted}
-    doomed = [pk for pk in alive if pk not in keep]
-    refuse_if_undo_loses_record(doomed)
     # уроки раньше тем: иначе каскад унесёт чужих детей
     PlanNode.objects.filter(pk__in=doomed, is_section=False).delete()
     PlanNode.objects.filter(pk__in=doomed).delete()
