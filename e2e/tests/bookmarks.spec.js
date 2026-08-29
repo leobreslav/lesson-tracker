@@ -24,7 +24,10 @@ test('учитель кладёт ссылку и записку, находит
 
   // папка заводится и сразу открывается: её и заводят, когда есть что класть
   await page.getByLabel('Новая папка').fill('Экскурсии')
-  await page.locator('.shelf aside').getByRole('button', { name: 'Добавить' }).click()
+  await page
+    .locator('.shelf-grid aside')
+    .getByRole('button', { name: 'Добавить' })
+    .click()
   await expect(page.locator('.shelf-pick.active')).toContainText('Экскурсии')
 
   // ссылка: вид решает написанное, поэтому рядом появляется поле названия
