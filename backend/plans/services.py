@@ -27,6 +27,7 @@ from django.db.models import Count, Q
 from config.errors import Codes, error_payload
 
 from .content import CONTENT_FIELDS
+from .owning import owner_of
 
 SECTION_INSIDE_SECTION = Codes.SECTION_INSIDE_SECTION
 PARENT_NOT_SECTION = Codes.PARENT_NOT_SECTION
@@ -564,12 +565,17 @@ def current_term(entries: Sequence[LayoutEntry], today, terms: Iterable = ()):
     )
 
 
-def structure_problems(*, course_id, parent, is_section) -> dict:
+def structure_problems(*, owner, parent, is_section) -> dict:
     """
     Tree rule violations as ``{field: (code, message)}``; empty means fine.
 
     One check for everybody: both ``PlanNode.clean`` and the serializers call
     it, so the admin and the API always agree.
+
+    ``owner`` — чьё это дерево (`owning.PlanOwner`). Сравниваются **владельцы
+    целиком**, а не номера курсов: у курса №7 и у шаблона №7 номер один и тот
+    же, и сравнение по числу молча разрешило бы взять в родители тему с чужой
+    полки.
     """
     if parent is None:
         return {}
@@ -582,8 +588,8 @@ def structure_problems(*, course_id, parent, is_section) -> dict:
     if not parent.is_section:
         return {"parent": (PARENT_NOT_SECTION, "A node can only be nested into a section.")}
 
-    if parent.course_id != course_id:
-        return {"parent": (PARENT_OTHER_CLASS, "That section belongs to another course.")}
+    if owner_of(parent) != owner:
+        return {"parent": (PARENT_OTHER_CLASS, "That section belongs to another plan.")}
 
     return {}
 

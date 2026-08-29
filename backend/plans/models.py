@@ -4,6 +4,7 @@ from django.db import models
 
 from . import services
 from .content import CONTENT_FIELDS, LessonContent, content_problems
+from .owning import OWNER_FIELDS, PlanOwner, exactly_one_owner, owner_of
 
 
 class PlanNode(LessonContent):
@@ -36,7 +37,23 @@ class PlanNode(LessonContent):
         # PROTECT, like the slots: deleting a course must not take somebody's
         # plan down with it
         on_delete=models.PROTECT,
+        null=True,
+        blank=True,
         verbose_name="course",
+    )
+    #: Второй владелец: план, написанный не под курс, а на полку.
+    #:
+    #: `CASCADE` против `PROTECT` у курса — разница не в аккуратности, а в
+    #: том, что значит удаление. Курс удаляют, когда он заведён по ошибке, и
+    #: унести с собой чужую программу он не вправе; шаблон **и есть** запись
+    #: на полке, и «удалить шаблон» — это ровно просьба убрать его строки.
+    template = models.ForeignKey(
+        "library.PlanTemplate",
+        related_name="nodes",
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        verbose_name="library template",
     )
     parent = models.ForeignKey(
         "self",
@@ -59,20 +76,61 @@ class PlanNode(LessonContent):
             models.Index(
                 fields=("course", "parent", "position"), name="plan_level_idx"
             ),
+            # тот же запрос, только у другого владельца: уровень дерева
+            # спрашивают на каждом шаге правки
+            models.Index(
+                fields=("template", "parent", "position"),
+                name="plan_template_level_idx",
+            ),
+        ]
+        constraints = [
+            # Ограничением, а не проверкой во вьюхе: узел без владельца
+            # невидим ни на одном экране и не удаляется ничем, кроме рук в
+            # базе, а узел с двумя — это два дерева, спорящих за одну строку.
+            # Проверку обошёл бы любой второй путь к записи, и таких путей
+            # тут четыре: сериализатор, админка, импорт и миграция данных.
+            models.CheckConstraint(
+                condition=exactly_one_owner(),
+                name="plan_node_has_exactly_one_owner",
+            ),
         ]
 
     def __str__(self):
         return self.title
 
+    @property
+    def owner(self) -> PlanOwner:
+        """Чьё это дерево — курса или шаблона; см. `plans/owning.py`."""
+        return owner_of(self)
+
     def clean(self):
         super().clean()
 
-        problems = services.structure_problems(
-            course_id=self.course_id,
-            parent=self.parent,
-            is_section=self.is_section,
-        )
-        messages = {field: message for field, (_, message) in problems.items()}
+        messages = {}
+        named = [
+            name for name in OWNER_FIELDS if getattr(self, f"{name}_id") is not None
+        ]
+
+        if len(named) != 1:
+            # то же, что говорит ограничение базы, только словами и в том
+            # месте, где человек это увидит — в админке и в сериализаторе
+            messages["course"] = (
+                "Name exactly one owner: «course» or «template»."
+            )
+        else:
+            owner = PlanOwner(named[0], getattr(self, f"{named[0]}_id"))
+            problems = services.structure_problems(
+                owner=owner,
+                parent=self.parent,
+                is_section=self.is_section,
+            )
+            messages.update(
+                {field: message for field, (_, message) in problems.items()}
+            )
+
+            if self._position_taken(owner):
+                messages["position"] = "Another node already occupies this position."
+
         messages.update(
             content_problems(
                 is_section=self.is_section,
@@ -80,19 +138,16 @@ class PlanNode(LessonContent):
             )
         )
 
-        if self._position_taken():
-            messages["position"] = "Another node already occupies this position."
-
         if messages:
             raise ValidationError(messages)
 
-    def _position_taken(self) -> bool:
-        if self.position is None or self.course_id is None:
+    def _position_taken(self, owner: PlanOwner) -> bool:
+        if self.position is None:
             return False
 
         return (
             PlanNode.objects.filter(
-                course_id=self.course_id,
+                **owner.lookup,
                 parent_id=self.parent_id,
                 position=self.position,
             )

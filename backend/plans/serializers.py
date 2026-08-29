@@ -6,6 +6,7 @@ from schedule.serializers import teacher_courses
 from . import services
 from .content import CONTENT_EXTRA_KWARGS, CONTENT_FIELDS, content_problems
 from .models import PlanNode
+from .owning import PlanOwner
 
 
 def raise_content_error(*, is_section: bool, values):
@@ -145,7 +146,15 @@ class PlanNodeCreateSerializer(serializers.ModelSerializer):
             "before",
             *CONTENT_FIELDS,
         )
-        extra_kwargs = CONTENT_EXTRA_KWARGS
+        extra_kwargs = {
+            **CONTENT_EXTRA_KWARGS,
+            # Владельцев у модели стало двое, и `course` перестал быть
+            # обязательным полем **таблицы**. Обязательность у ручки от этого
+            # не изменилась, но DRF читает её из модели: без этой строки
+            # запрос без курса проходил бы проверку полей и падал бы уже
+            # внутри — там, где владельца ждут названным.
+            "course": {"required": True, "allow_null": False},
+        }
 
     def get_fields(self):
         fields = super().get_fields()
@@ -161,7 +170,7 @@ class PlanNodeCreateSerializer(serializers.ModelSerializer):
         )
 
         problems = services.structure_problems(
-            course_id=attrs["course"].pk,
+            owner=PlanOwner("course", attrs["course"].pk),
             parent=attrs.get("parent"),
             is_section=attrs.get("is_section", False),
         )
@@ -286,7 +295,7 @@ def check_structure(node, parent):
     """The same tree rules as in the model, applied when moving a node."""
     raise_structure_error(
         services.structure_problems(
-            course_id=node.course_id,
+            owner=node.owner,
             parent=parent,
             is_section=node.is_section,
         )

@@ -26,6 +26,29 @@ from rest_framework.test import APITestCase
 from schools.testing import SchoolTestMixin
 
 
+def owners_named_in(node) -> set:
+    """
+    Имена владельцев, каждый из которых назван в условии ограничения.
+
+    `owned_by` строит ветку «этот назван, остальные пусты», поэтому владелец
+    ветки — единственное поле с `isnull=False`. Пустые части сверять незачем:
+    их проставляет сам `OWNER_FIELDS`, и разойтись с ним они не могут.
+
+    Владельцев в проекте два вида — у вложения и у строки плана, — и обход
+    условия у них один и тот же. Две копии этого обхода разошлись бы в первой
+    же правке, и вторая молча перестала бы что-либо проверять.
+    """
+    found = set()
+    for child in node.children:
+        if hasattr(child, "children"):
+            found |= owners_named_in(child)
+            continue
+        lookup, value = child
+        if lookup.endswith("__isnull") and value is False:
+            found.add(lookup[: -len("__isnull")])
+    return found
+
+
 class NoTestSpendsMoneyTests(SimpleTestCase):
     """
     Ни один тест не платит за чтение сканов.
@@ -405,25 +428,6 @@ class EveryOwnerOfAnAttachmentAnnouncesItselfTests(SimpleTestCase):
         "school_shelf": "полка школы: читают сотрудники, пишет администратор",
     }
 
-    def _owners_named_in(self, node):
-        """
-        Имена владельцев, каждый из которых назван в условии ограничения.
-
-        `owned_by` строит ветку «этот назван, остальные пусты», поэтому
-        владелец ветки — единственное поле с `isnull=False`. Пустые части
-        сверять незачем: их проставляет сам `OWNER_FIELDS`, и разойтись с
-        ним они не могут.
-        """
-        found = set()
-        for child in node.children:
-            if hasattr(child, "children"):
-                found |= self._owners_named_in(child)
-                continue
-            lookup, value = child
-            if lookup.endswith("__isnull") and value is False:
-                found.add(lookup[: -len("__isnull")])
-        return found
-
     def test_every_owner_is_named_with_the_circle_that_reads_it(self):
         from files.models import OWNER_FIELDS
 
@@ -464,9 +468,89 @@ class EveryOwnerOfAnAttachmentAnnouncesItselfTests(SimpleTestCase):
         )
 
         self.assertEqual(
-            self._owners_named_in(constraint.condition),
+            owners_named_in(constraint.condition),
             set(OWNER_FIELDS),
             "ограничение «владелец ровно один» знает не тех владельцев, что "
             "OWNER_FIELDS: допишите ветку `owned_by(...)` — забытая ничего не "
             "запрещает, и вложение сможет лежать в двух местах сразу",
+        )
+
+
+class EveryOwnerOfAPlanAnnouncesItselfTests(SimpleTestCase):
+    """
+    У строки плана ровно один владелец, и новый обязан о себе сказать.
+
+    Владелец отвечает на «чьё это дерево», и из ответа следуют две вещи,
+    которые больше ниоткуда не выводятся: **кто вправе это править** и **есть
+    ли у дерева календарь**. У курса правит назначенный ведущий либо
+    администратор школы, и календарь есть — даты, раскладка, записи занятий,
+    утверждение методистом. У шаблона правит автор, и календаря нет вовсе:
+    план на полке к учебному году намеренно не привязан.
+
+    Добавить третьего владельца и не решить про него ни того, ни другого —
+    правка на одну строку, и выглядит она безобидно. Молчит она по-разному:
+    без решения о праве дерево либо закрыто от всех (`writable_by` его не
+    вернёт), либо открыто лишнему; без решения о календаре экран пойдёт за
+    лентой слотов, которой у этого владельца не бывает, и уронит отказ на
+    пустом месте.
+
+    Забыть ветку в ограничении тут нельзя: условие собирается из
+    `OWNER_FIELDS` само (`plans.owning.exactly_one_owner`) — в отличие от
+    вложения, где ветки перечислены руками. Сторож всё равно сверяет обе
+    стороны: переписанное руками условие вернуло бы ровно ту беду.
+    """
+
+    # владелец → кто правит и что у него с календарём. Строка нужна не для
+    # красоты: она и есть то решение, которое иначе принимают молча
+    OWNERS = {
+        "course": "курс: правит ведущий или администратор школы, календарь есть",
+        "template": "шаблон с полки: правит автор, календаря нет вовсе",
+    }
+
+    def test_every_owner_is_named_with_who_writes_it(self):
+        from plans.owning import OWNER_FIELDS
+
+        unknown = set(OWNER_FIELDS) - set(self.OWNERS)
+        self.assertEqual(
+            unknown,
+            set(),
+            "у строки плана новый владелец: решите, кто его правит "
+            "(`config/access.py`) и есть ли у него календарь, и допишите его "
+            "сюда с этим ответом. Владелец без ответа — это дерево, которое "
+            "либо никому не открыть, либо открыто не тому",
+        )
+
+        gone = set(self.OWNERS) - set(OWNER_FIELDS)
+        self.assertEqual(
+            gone,
+            set(),
+            "владелец исчез из OWNER_FIELDS, а строка про него осталась: "
+            "уберите её, иначе следующий будет искать поле, которого нет",
+        )
+
+    def test_the_constraint_counts_the_same_owners(self):
+        """
+        Ограничение таблицы перечисляет ровно тех же, кого `OWNER_FIELDS`.
+
+        Проверка не про сегодняшний день, а про завтрашний: пока условие
+        собирает `exactly_one_owner`, разойтись нечему. Разойдётся оно в тот
+        день, когда кто-нибудь распишет ветки руками ради одного исключения,
+        — и тогда «владелец ровно один» перестанет быть правилом именно для
+        забытого, а первая же строка с двумя владельцами пройдёт в базу.
+        """
+        from plans.models import PlanNode
+        from plans.owning import OWNER_FIELDS
+
+        constraint = next(
+            item
+            for item in PlanNode._meta.constraints
+            if item.name == "plan_node_has_exactly_one_owner"
+        )
+
+        self.assertEqual(
+            owners_named_in(constraint.condition),
+            set(OWNER_FIELDS),
+            "ограничение «владелец ровно один» знает не тех владельцев, что "
+            "OWNER_FIELDS: строка плана сможет принадлежать двум деревьям "
+            "сразу или ни одному",
         )

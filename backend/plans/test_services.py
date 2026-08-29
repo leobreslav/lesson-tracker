@@ -5,6 +5,10 @@ from dataclasses import dataclass
 from django.test import SimpleTestCase
 
 from . import services
+from .owning import PlanOwner
+
+#: Владелец по умолчанию у всего, что заводит `FakeNode`.
+COURSE = PlanOwner("course", 1)
 
 
 @dataclass
@@ -16,7 +20,8 @@ class FakeNode:
     is_section: bool = False
     parent_id: int | None = None
     title: str = ""
-    course_id: int = 1
+    course_id: int | None = 1
+    template_id: int | None = None
 
 
 def section(pk, position, title=""):
@@ -129,20 +134,20 @@ class CountsTests(SimpleTestCase):
 class StructureTests(SimpleTestCase):
     def test_root_level_is_always_fine(self):
         self.assertEqual(
-            services.structure_problems(course_id=1, parent=None, is_section=True),
+            services.structure_problems(owner=COURSE, parent=None, is_section=True),
             {},
         )
 
     def test_section_inside_section_is_forbidden(self):
         problems = services.structure_problems(
-            course_id=1, parent=section(1, 0), is_section=True
+            owner=COURSE, parent=section(1, 0), is_section=True
         )
 
         self.assertIn("parent", problems)
 
     def test_lesson_cannot_be_nested_into_a_lesson(self):
         problems = services.structure_problems(
-            course_id=1, parent=lesson(1, 0), is_section=False
+            owner=COURSE, parent=lesson(1, 0), is_section=False
         )
 
         self.assertIn("parent", problems)
@@ -152,7 +157,26 @@ class StructureTests(SimpleTestCase):
         alien.course_id = 2
 
         problems = services.structure_problems(
-            course_id=1, parent=alien, is_section=False
+            owner=COURSE, parent=alien, is_section=False
+        )
+
+        self.assertIn("parent", problems)
+
+    def test_a_section_from_the_shelf_is_not_a_parent_for_a_course(self):
+        """
+        Владельцы сравниваются целиком, а не по номеру.
+
+        У курса №1 и у шаблона №1 номер один и тот же, и сравнение по числу
+        разрешило бы взять в родители тему с чужой полки — то есть склеить
+        два дерева в одно, о чём не узнал бы никто: на экране курса такая
+        строка просто не показалась бы.
+        """
+        from_the_shelf = section(1, 0)
+        from_the_shelf.course_id = None
+        from_the_shelf.template_id = 1
+
+        problems = services.structure_problems(
+            owner=COURSE, parent=from_the_shelf, is_section=False
         )
 
         self.assertIn("parent", problems)
@@ -160,7 +184,7 @@ class StructureTests(SimpleTestCase):
     def test_lesson_inside_a_section_is_allowed(self):
         self.assertEqual(
             services.structure_problems(
-                course_id=1, parent=section(1, 0), is_section=False
+                owner=COURSE, parent=section(1, 0), is_section=False
             ),
             {},
         )
