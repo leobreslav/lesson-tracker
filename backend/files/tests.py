@@ -1717,3 +1717,84 @@ class ReadingAFileWithCodeTests(SimpleTestCase):
 
         self.assertIn("Range", RULE["AllowedHeaders"])
         self.assertIn("Content-Range", RULE["ExposeHeaders"])
+
+
+class MaterialsOfAShelfLessonTests(SchoolTestMixin, APITestCase):
+    """
+    К уроку на полке материалы прикладываются так же, как к уроку курса.
+
+    Право при этом другое, и в этом весь смысл проверки. Курс школы чинит
+    администратор; чужой план на полке — ничей, кроме автора, и опубликованный
+    шаблон это не меняет: его **читают** все, а правит один.
+
+    Стоит это здесь, а не рядом с планом, потому что стережёт правило файлов:
+    у строки плана два владельца, и `readable_plan_rows` с
+    `writable_plan_rows` обязаны отвечать про обоих. Забытый владелец не
+    падает — он молча отдаёт «нельзя» там, где можно, и это выглядит как
+    сломанная кнопка «приложить».
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.template = make_template(self.school, self.user, rows=())
+        self.lesson = PlanNode.objects.create(
+            template=self.template, title="Синус суммы", position=0
+        )
+
+    def attach(self, lesson=None):
+        return self.client.post(
+            reverse("attachment-list"),
+            {"plan_row": (lesson or self.lesson).pk, "file": make_upload()},
+            format="multipart",
+        )
+
+    def test_the_author_hangs_a_file_off_a_lesson_on_the_shelf(self):
+        answer = self.attach()
+
+        self.assertEqual(answer.status_code, 201, answer.content)
+        self.assertEqual(self.lesson.attachments.count(), 1)
+
+    def test_a_colleague_may_not_hang_anything_off_it(self):
+        """
+        Опубликованный шаблон читают все, а правит автор.
+
+        Ответ тут — невалидное поле, а не отдельный отказ: строка приезжает
+        телом запроса, и чужая просто отсутствует в списке допустимых. Тот же
+        путь, каким отказывает чужая строка плана курса.
+        """
+        self.sign_in(self.colleague)
+
+        answer = self.attach()
+
+        self.assertEqual(answer.status_code, 400, answer.content)
+        self.assertEqual(self.lesson.attachments.count(), 0)
+
+    def test_a_colleague_sees_the_materials_of_a_published_template(self):
+        """
+        Читать — можно, и это не мелочь: ради чтения полку и завели.
+
+        Черновик сюда не попадает: он отсутствует и в списке шаблонов, и в
+        списке вложений — не спрятан, а именно отсутствует.
+        """
+        make_attachment(self.lesson)
+        self.sign_in(self.colleague)
+
+        listed = self.client.get(reverse("attachment-list"), {"plan_row": self.lesson.pk})
+
+        self.assertEqual(listed.status_code, 200, listed.content)
+        self.assertEqual(len(listed.json()), 1)
+
+    def test_a_draft_keeps_its_materials_to_its_author(self):
+        draft = make_template(
+            self.school, self.user, published=False, live=False, title="Черновик"
+        )
+        lesson = PlanNode.objects.create(
+            template=draft, title="Не для всех", position=0
+        )
+        make_attachment(lesson)
+        self.sign_in(self.colleague)
+
+        listed = self.client.get(reverse("attachment-list"), {"plan_row": lesson.pk})
+
+        self.assertEqual(listed.status_code, 200, listed.content)
+        self.assertEqual(listed.json(), [])

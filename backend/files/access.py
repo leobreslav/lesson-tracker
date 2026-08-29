@@ -91,7 +91,10 @@ def school_attachments(user):
         return family_attachments(user)
 
     return Attachment.objects.filter(
+        # у строки плана два владельца, и школа у неё берётся от того, который
+        # назван: у курса своя, у шаблона своя, и обе одной школы
         Q(plan_row__course__school_id=user.school_id)
+        | Q(plan_row__template__school_id=user.school_id)
         | Q(template_row__template__school_id=user.school_id)
         | Q(student_work__work__course__school_id=user.school_id)
         | Q(work__course__school_id=user.school_id)
@@ -125,8 +128,10 @@ def readable_attachments(user):
 
     return Attachment.objects.filter(
         # вложения строки плана и сканы работ — часть содержания курса,
-        # значит и право на них то же: ведущий или администратор школы
-        Q(plan_row__course__in=Course.objects.writable_by(user))
+        # значит и право на них то же: ведущий или администратор школы. У
+        # строки с полки владелец другой, и правило своё — оба ответа даёт
+        # `readable_plan_rows`, одним определением на список и на одну вещь
+        Q(plan_row__in=readable_plan_rows(user))
         | Q(template_row__template__in=visible_templates(user))
         | Q(student_work__work__course__in=Course.objects.writable_by(user))
         | Q(work__course__in=Course.objects.writable_by(user))
@@ -208,11 +213,9 @@ def can_read(user, attachment) -> bool:
         )
 
     if attachment.plan_row_id is not None:
-        return (
-            Course.objects.writable_by(user)
-            .filter(pk=attachment.plan_row.course_id)
-            .exists()
-        )
+        # у строки плана два владельца, и право на её материалы — это право
+        # на само дерево; спрашивается оно там же, где у списка
+        return readable_plan_rows(user).filter(pk=attachment.plan_row_id).exists()
 
     template = attachment.template_row.template
     return template.school_id == user.school_id and (
@@ -265,9 +268,9 @@ def can_write(user, attachment) -> bool:
         ).exists()
 
     if attachment.plan_row_id is not None:
-        return CourseAssignment.objects.filter(
-            course_id=attachment.plan_row.course_id, teacher=user
-        ).exists()
+        # то же, что у списка «куда можно приложить»: у курса — назначение,
+        # у полки — авторство
+        return writable_plan_rows(user).filter(pk=attachment.plan_row_id).exists()
 
     return attachment.template_row.template.author_id == user.pk
 
@@ -296,17 +299,52 @@ def writable_works(user):
     return Work.objects.filter(course__in=Course.objects.writable_by(user))
 
 
+def readable_plan_rows(user):
+    """
+    Строки плана, чьи вложения этому человеку видны.
+
+    У строки два владельца (`plans/owning.py`), и право на её материалы —
+    это право на само дерево: план курса читает тот, кто вправе его править
+    (ведущий или администратор школы), план с полки — тот, кому он открыт
+    (опубликованный — вся школа, черновик — автор).
+
+    Написано это здесь один раз и зовётся отовсюду: `can_read` спрашивает
+    про одно вложение, список — про все сразу, и разъехавшись, они дали бы
+    файл, который в списке есть, а по ссылке отвечает отказом.
+    """
+    from schedule.models import Course
+
+    if user is None or not user.is_authenticated:
+        return PlanNode.objects.none()
+
+    return PlanNode.objects.filter(
+        Q(course__in=Course.objects.writable_by(user))
+        | Q(template__in=visible_templates(user))
+    )
+
+
 def writable_plan_rows(user):
     """
     Уроки плана, к которым этот человек может приложить файл.
 
     Планы курсов, где он назначен ведущим: план принадлежит курсу, и правит
-    его назначенный — то же правило, что у самих строк.
+    его назначенный — то же правило, что у самих строк. И планы **своих**
+    шаблонов: на полке право по авторству, а не по роли, — администратор
+    школы вправе снять чужой шаблон целиком, но не переписывать его по
+    строке.
+
+    Тем и отличается от `readable_plan_rows`: там опубликованный шаблон
+    читает вся школа, здесь его правит один человек.
     """
+    from library.serializers import writable_templates
+
     if user is None or not user.is_authenticated:
         return PlanNode.objects.none()
+
     return PlanNode.objects.filter(
-        course__assignments__teacher=user, is_section=False
+        Q(course__assignments__teacher=user)
+        | Q(template__in=writable_templates(user)),
+        is_section=False,
     )
 
 
