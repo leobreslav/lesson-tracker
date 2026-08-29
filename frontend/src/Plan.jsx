@@ -49,6 +49,7 @@ import {
   keepUpdatingTemplate,
   publishPlan,
   refreshTemplate,
+  redoPlan,
   undoPlan,
   deletePlanNode,
   deletePlanNodes,
@@ -139,6 +140,18 @@ export default function Plan({ user, onLoggedOut, template = null }) {
   const [schoolCourses, setSchoolCourses] = useState([])
   // журнал состояний плана: чем можно отменить и кто правил последним
   const [steps, setSteps] = useState([])
+  /*
+   * Что сделают кнопки хода — **считает сервер**, а не мы по `steps[0]`.
+   *
+   * Правило непростое: где план стоит на ленте, что уже пройдено, и чем
+   * «Вернуть» называет себя (действием снимка под курсором, а не тем, что
+   * оно восстановит). Второй его расчёт здесь был бы зеркалом, которое
+   * разъедется молча, — а прежняя кнопка ровно этим и жила: брала самый
+   * свежий снимок, и после отмены самым свежим был снимок самой отмены.
+   * Наружу это выходило надписью «Отменить: отмену» и планом, который
+   * качался между двумя состояниями.
+   */
+  const [moves, setMoves] = useState({ undo: null, redo: null })
   const [years, setYears] = useState([])
   const [classId, setClassId] = useState(target.course)
   /** Открыты ли мы на полке: у шаблона нет ни курса, ни календаря. */
@@ -400,6 +413,7 @@ export default function Plan({ user, onLoggedOut, template = null }) {
         .then(([tree, journal]) => {
           setData(tree)
           setSteps(journal.steps)
+          setMoves({ undo: journal.undo ?? null, redo: journal.redo ?? null })
         }),
     [],
   )
@@ -600,7 +614,12 @@ export default function Plan({ user, onLoggedOut, template = null }) {
    */
   const undo = (snapshot = null) => run(() => undoPlan(owner, snapshot))
 
-  const lastStep = steps[0] ?? null
+  /** Вернуть то, что только что отменили, — шаг вперёд по той же ленте. */
+  const redo = () => run(() => redoPlan(owner))
+
+  /** Как называется действие снимка: обеим кнопкам нужно одно и то же. */
+  const nameOf = (step) =>
+    t(`plan.undo.action.${step.action}`, { defaultValue: step.action })
 
   /*
    * Чужая правка, с которой ещё ничего не сделали.
@@ -1799,32 +1818,55 @@ export default function Plan({ user, onLoggedOut, template = null }) {
                 Перенос сделан в разметке, а не `order`: порядок обхода с
                 клавиатуры обязан совпадать с видимым.
               */}
-              {lastStep && (
-                <button
-                  type="button"
-                  className="secondary plan-undo"
-                  disabled={busy}
-                  title={
-                    lastStep.detail
-                      ? t('plan.undo.what', {
-                          action: t(`plan.undo.action.${lastStep.action}`, {
-                            defaultValue: lastStep.action,
-                          }),
-                          detail: lastStep.detail,
-                          who: lastStep.mine
-                            ? t('plan.undo.mine')
-                            : (lastStep.who?.name ?? ''),
-                        })
-                      : undefined
-                  }
-                  onClick={() => undo()}
-                >
-                  {t('plan.undo.label', {
-                    action: t(`plan.undo.action.${lastStep.action}`, {
-                      defaultValue: lastStep.action,
-                    }),
-                  })}
-                </button>
+              {(moves.undo || moves.redo) && (
+                <span className="plan-walk">
+                  {moves.undo && (
+                    <button
+                      type="button"
+                      className="secondary plan-undo"
+                      disabled={busy}
+                      title={
+                        moves.undo.detail
+                          ? t('plan.undo.what', {
+                              action: nameOf(moves.undo),
+                              detail: moves.undo.detail,
+                              who: moves.undo.mine
+                                ? t('plan.undo.mine')
+                                : (moves.undo.who?.name ?? ''),
+                            })
+                          : undefined
+                      }
+                      onClick={() => undo()}
+                    >
+                      {t('plan.undo.label', { action: nameOf(moves.undo) })}
+                    </button>
+                  )}
+
+                  {/*
+                    «Вернуть» появляется, только когда есть куда: ход назад
+                    начат и впереди осталось состояние. Постоянная кнопка,
+                    умеющая только отказать, честнее не нарисованная — то же
+                    правило, по которому у проведённой строки нет ручки.
+                  */}
+                  {moves.redo && (
+                    <button
+                      type="button"
+                      className="secondary plan-redo"
+                      disabled={busy}
+                      title={
+                        moves.redo.detail
+                          ? t('plan.redo.what', {
+                              action: nameOf(moves.redo),
+                              detail: moves.redo.detail,
+                            })
+                          : undefined
+                      }
+                      onClick={() => redo()}
+                    >
+                      {t('plan.redo.label', { action: nameOf(moves.redo) })}
+                    </button>
+                  )}
+                </span>
               )}
             </div>
 

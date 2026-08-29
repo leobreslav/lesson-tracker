@@ -306,6 +306,7 @@
     "slot_move_series_one_off": "A cancelled or extra lesson is a one-off and has no row to move. Move this hour alone instead.",
     "plan_delete_taught": "«{{title}}» was taught on {{date}} — withdraw the record before deleting the row",
     "plan_nothing_to_undo": "There is nothing to undo: no snapshot of this plan was kept",
+    "plan_nothing_to_redo": "There is nothing to bring back: the plan is at the end of its history",
     "plan_undo_would_lose_record": "«{{title}}» was taught on {{date}} — undoing would delete the row and its record with it. Withdraw the record first",
     "plan_bulk_section": "«{{title}}» is a theme — delete it on its own row, where the question about its lessons is asked",
     "rows_invalid": "The paste could not be read: send the table rows.",
@@ -488,6 +489,10 @@
         "template_append": "taking a plan from the library",
         "template_part": "taking a block from the library"
       }
+    },
+    "redo": {
+      "label": "Bring back: {{action}}",
+      "what": "Bring back: {{action}} — «{{detail}}»"
     },
     "intervention": {
       "mark": "Edited by somebody else: {{who}}, {{when}}",
