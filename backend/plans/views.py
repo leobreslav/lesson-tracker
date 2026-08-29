@@ -981,35 +981,39 @@ class PlanNodeViewSet(CourseScopedViewSet):
         # Снимок до записи, и это самый ценный из всех: `replace` стирает
         # план целиком, и отменяется он одним нажатием ровно потому, что
         # снимок снят.
-        self.snapshot(of_course(course), f"import_{mode}")
+        #
+        # Стоит он **внутри** транзакции, и это не перестраховка. Ниже три
+        # отказа — непригодный файл, потерянные проведённые строки,
+        # сломанная очередь записей, — а снимок, снятый снаружи, отказ не
+        # уносит: он свой атомарный блок и коммитится сам по себе. В журнале
+        # тогда остаётся шаг, которого не было, и кнопка отмены предлагает
+        # отменить несостоявшийся импорт.
+        with transaction.atomic():
+            self.snapshot(of_course(course), f"import_{mode}")
 
-        if mode == "sync":
-            plan = services.plan_sync(of_course(course), parsed.rows)
-            if not plan.ok:
-                # весь файл или ничего: применить половину значит оставить
-                # человека разбираться, какую именно
-                self.refuse(plan.errors)
+            if mode == "sync":
+                plan = services.plan_sync(of_course(course), parsed.rows)
+                if not plan.ok:
+                    # весь файл или ничего: применить половину значит оставить
+                    # человека разбираться, какую именно
+                    self.refuse(plan.errors)
 
-            refuse_if_taught_lost(course, plan.delete)
+                refuse_if_taught_lost(course, plan.delete)
 
-            with transaction.atomic():
                 done = services.apply_sync(of_course(course), plan)
                 # файл задаёт и порядок: переставленные строки способны
                 # обогнать записи, и это ловится тем же правилом
                 refuse_if_records_broken(course)
 
-            return Response(
-                {**done, **about, "dates_ignored": parsed.dates_ignored}
-            )
+                return Response(
+                    {**done, **about, "dates_ignored": parsed.dates_ignored}
+                )
 
-        if mode == "replace":
-            # replace сносит план целиком, а с ним и записи о занятиях —
-            # молча и без следа. Это то же удаление проведённой строки, за
-            # которое поодиночке отказывает `plan_delete_taught`
-            refuse_if_taught_lost(course, services.plan_nodes(of_course(course)))
-
-        with transaction.atomic():
             if mode == "replace":
+                # replace сносит план целиком, а с ним и записи о занятиях —
+                # молча и без следа. Это то же удаление проведённой строки, за
+                # которое поодиночке отказывает `plan_delete_taught`
+                refuse_if_taught_lost(course, services.plan_nodes(of_course(course)))
                 PlanNode.objects.filter(course=course).delete()
 
             created = services.apply_import(
@@ -1174,9 +1178,10 @@ class PlanNodeViewSet(CourseScopedViewSet):
         не упомянули.
         """
         node = serializer.instance
-        self.snapshot(node.owner, "edit", node.title)
-        node = serializer.save()
-        file_services.prune_inline(node)
+        with transaction.atomic():
+            self.snapshot(node.owner, "edit", node.title)
+            node = serializer.save()
+            file_services.prune_inline(node)
 
     def perform_create(self, serializer):
         """
@@ -1191,9 +1196,8 @@ class PlanNodeViewSet(CourseScopedViewSet):
         записей больше нет, новая строка приземляется сразу за последней —
         и это законно.
         """
-        self.snapshot(named_owner(serializer.validated_data), "create")
-
         with transaction.atomic():
+            self.snapshot(named_owner(serializer.validated_data), "create")
             node = serializer.save()
             refuse_if_before_taught(node)
 
@@ -1263,13 +1267,13 @@ class PlanNodeViewSet(CourseScopedViewSet):
             refuse_if_deleting_taught(node)
 
         parents = {node.parent_id for node in nodes}
-        self.snapshot(
-            owner,
-            "delete_batch" if len(nodes) > 1 else "delete",
-            nodes[0].title if len(nodes) == 1 else str(len(nodes)),
-        )
 
         with transaction.atomic():
+            self.snapshot(
+                owner,
+                "delete_batch" if len(nodes) > 1 else "delete",
+                nodes[0].title if len(nodes) == 1 else str(len(nodes)),
+            )
             PlanNode.objects.filter(pk__in=[node.pk for node in nodes]).delete()
             for parent_id in parents:
                 services.reindex(owner, parent_id)
@@ -1410,13 +1414,12 @@ class PlanNodeViewSet(CourseScopedViewSet):
         if not (node.is_section and keep_children):
             refuse_if_deleting_taught(node)
 
-        self.snapshot(
-            node.owner,
-            "dissolve" if node.is_section and keep_children else "delete",
-            node.title,
-        )
-
         with transaction.atomic():
+            self.snapshot(
+                node.owner,
+                "dissolve" if node.is_section and keep_children else "delete",
+                node.title,
+            )
             if node.is_section and keep_children:
                 services.dissolve_section(node)
             else:
@@ -1429,10 +1432,19 @@ class PlanNodeViewSet(CourseScopedViewSet):
 
     @action(detail=True, methods=["post"])
     def move(self, request, pk=None):
-        """One step up or down, entering sections and leaving them."""
+        """
+        One step up or down, entering sections and leaving them.
+
+        Транзакция здесь, а не в `perform_move`, потому что проверки шага
+        (разбор направления, «проведённую не двигают», «перед проведённой не
+        встают») живут там же и отказывают **после** снимка. Своя транзакция
+        снимка их отказ не унесла бы — она сама себе блок и коммитится
+        отдельно, — и в журнале оставался бы шаг несостоявшегося переноса.
+        """
         node = self.get_object()
-        self.snapshot(node.owner, "move", node.title)
-        return perform_move(node, request.data)
+        with transaction.atomic():
+            self.snapshot(node.owner, "move", node.title)
+            return perform_move(node, request.data)
 
     @action(detail=True, methods=["post"])
     def move_to(self, request, pk=None):
@@ -1451,9 +1463,9 @@ class PlanNodeViewSet(CourseScopedViewSet):
             )
         check_structure(node, parent)
         refuse_if_taught(node)
-        self.snapshot(node.owner, "move", node.title)
 
         with transaction.atomic():
+            self.snapshot(node.owner, "move", node.title)
             services.place(node, parent, form.validated_data["position"])
             refuse_if_before_taught(node)
 
@@ -1473,9 +1485,9 @@ class PlanNodeViewSet(CourseScopedViewSet):
 
         form = SplitSerializer(data=request.data)
         form.is_valid(raise_exception=True)
-        self.snapshot(anchor.owner, "split", form.validated_data["title"])
 
         with transaction.atomic():
+            self.snapshot(anchor.owner, "split", form.validated_data["title"])
             section, moved = services.split_at(anchor, form.validated_data["title"])
             refuse_if_records_broken(anchor.course)
 
@@ -1504,8 +1516,11 @@ class SectionMoveView(APIView):
             ),
             pk=pk,
         )
-        history.take(section.owner, request.user, "move", section.title)
-        return perform_move(section, request.data)
+        # та же транзакция вокруг снимка, что у шага строки, и по той же
+        # причине: отказы шага стоят после снимка, внутри `perform_move`
+        with transaction.atomic():
+            history.take(section.owner, request.user, "move", section.title)
+            return perform_move(section, request.data)
 
 
 class PlanReviewViewSet(ReadOnlyModelViewSet):

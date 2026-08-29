@@ -95,3 +95,111 @@ class HistoryWiringTests(SimpleTestCase):
             [],
             "список исключений не должен переживать удалённые эндпоинты",
         )
+
+
+class SnapshotsSitInsideTheWriteTransactionTests(SimpleTestCase):
+    """
+    Снимок снимается внутри той же транзакции, что и сама запись.
+
+    Порядок «снимок, потом правка» обязателен: снимок отвечает на «как
+    было». Но у `history.take` свой атомарный блок, и вызванный **снаружи**
+    транзакции записи он коммитится сам по себе — то есть переживает отказ,
+    случившийся ниже. Правка не состоялась, а шаг в журнале появился.
+
+    Бед от этого три. Кнопка отмены предлагает отменить действие, которого
+    не было, и, нажатая, отменяет предыдущее настоящее. Пустые шаги
+    вытесняют настоящие из двадцати, что держит `prune`. И если правку
+    пробовал не ведущий курса, снимок ложится «вмешательством»: живёт
+    девяносто дней и показывается учителю пометкой о чужой правке, которой
+    не было.
+
+    Проверяется текстом, а не поведением, и намеренно. Поведение проверено
+    отдельно (`ARefusedEditLeavesNoStepTests`), но потестовый перечень
+    закрывает те пути, до которых у кого-то дошли руки: отказов у плана
+    больше десятка, и заводить тест на каждое сочетание «путь × отказ»
+    никто не станет. Здесь же вопрос один и на все пути сразу — стоит ли
+    вызов под открытой транзакцией.
+    """
+
+    #: где живут пишущие пути плана
+    SOURCES = ("plans/views.py", "library/views.py")
+
+    #: у этого метода `history.take` в теле — не вызов, а определение
+    HELPER = "snapshot"
+
+    def offenders(self) -> list:
+        """Вызовы снимка, над которыми нет открытого `transaction.atomic()`."""
+        from pathlib import Path
+
+        from django.conf import settings
+
+        found = []
+        for name in self.SOURCES:
+            lines = (
+                (Path(settings.BASE_DIR) / name).read_text(encoding="utf-8").splitlines()
+            )
+            #: отступы открытых блоков транзакции, стопкой
+            blocks, method = [], ""
+
+            for number, line in enumerate(lines, 1):
+                body = line.strip()
+                if not body or body.startswith("#"):
+                    continue
+                indent = len(line) - len(line.lstrip())
+
+                # блок закрылся, как только строка вернулась на его уровень
+                while blocks and indent <= blocks[-1]:
+                    blocks.pop()
+
+                if body.startswith("def "):
+                    method = body[4:].split("(")[0]
+                if body.startswith("with transaction.atomic()"):
+                    blocks.append(indent)
+                    continue
+
+                if method != self.HELPER and any(call in body for call in CALLS):
+                    if not blocks:
+                        found.append(f"{name}:{number}")
+
+        return found
+
+    def test_no_snapshot_is_taken_outside_a_transaction(self):
+        self.assertEqual(
+            self.offenders(),
+            [],
+            "снимок снимается вне транзакции записи: отказ ниже его не "
+            "унесёт, и в журнале останется шаг, которого не было. "
+            "Заведите `with transaction.atomic():` вокруг снимка и правки",
+        )
+
+    def test_the_check_would_notice_a_snapshot_left_outside(self):
+        """
+        Сторож умеет сказать «нет» — проверено на выдуманном исходнике.
+
+        Сторож, у которого не бывает отказа, неотличим от неработающего, а
+        текстовая проверка ошибается молча: достаточно опечатки в имени
+        блока, и она разрешит всё подряд.
+        """
+        source = [
+            "    def destroy(self, request):",
+            "        self.snapshot(node.owner, 'delete', node.title)",
+            "",
+            "        with transaction.atomic():",
+            "            node.delete()",
+        ]
+
+        blocks, caught = [], []
+        for number, line in enumerate(source, 1):
+            body = line.strip()
+            if not body:
+                continue
+            indent = len(line) - len(line.lstrip())
+            while blocks and indent <= blocks[-1]:
+                blocks.pop()
+            if body.startswith("with transaction.atomic()"):
+                blocks.append(indent)
+                continue
+            if any(call in body for call in CALLS) and not blocks:
+                caught.append(number)
+
+        self.assertEqual(caught, [2], "разбор обязан ловить снимок перед блоком")

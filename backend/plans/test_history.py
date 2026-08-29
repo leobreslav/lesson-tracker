@@ -550,3 +550,92 @@ class UndoBringsBackTheBankMarkupTests(SnapshotTestCase):
 
         self.assertEqual(answer.status_code, 200, answer.content)
         self.assertEqual(self.marks(), {(self.tag.pk, self.node.pk)})
+
+
+class ARefusedEditLeavesNoStepTests(SnapshotTestCase):
+    """
+    Отвергнутая правка не оставляет следа в журнале.
+
+    Снимок снимается **до** правки — иначе он отвечал бы на «как стало», а не
+    на «как было», — и у него свой атомарный блок. Пока вызов стоял снаружи
+    транзакции записи, отказ ниже снимок не уносил: правка не состоялась, а
+    шаг в журнале появился.
+
+    Стоит это трёх разных бед, и третья живёт дольше всех. Кнопка отмены
+    предлагает отменить действие, которого не было, — и, нажатая, отменяет
+    предыдущее настоящее. Пустые шаги вытесняют настоящие из двадцати, что
+    держит `prune`. А если отвергнутую правку пробовал не ведущий курса,
+    снимок ложится с `by_lead=False`, живёт девяносто дней и показывается
+    учителю пометкой «в вашем плане поработал администратор» — про правку,
+    которой не было.
+    """
+
+    def steps(self):
+        return history.PlanSnapshot.objects.filter(course=self.course).count()
+
+    def test_a_bad_direction_does_not_grow_the_journal(self):
+        node = self.lesson("Синус суммы")
+        before = self.steps()
+
+        answer = self.client.post(
+            reverse("plannode-move", args=[node.pk]),
+            {"direction": "вбок"},
+            format="json",
+        )
+
+        self.assertEqual(answer.status_code, 400, answer.content)
+        self.assertEqual(self.steps(), before)
+
+    def test_a_refused_delete_does_not_grow_the_journal(self):
+        """Отказ приходит после снимка — значит транзакция обязана его унести."""
+        from datetime import timedelta
+
+        from schools.testing import make_slot
+
+        node = self.lesson("Синус суммы")
+        slot = make_slot(
+            self.user, self.course, timezone.now().date() - timedelta(days=1), 1
+        )
+        slot.lesson = node
+        slot.save(update_fields=["lesson"])
+        before = self.steps()
+
+        answer = self.client.delete(reverse("plannode-detail", args=[node.pk]))
+
+        self.assertEqual(answer.status_code, 400, answer.content)
+        self.assertEqual(self.steps(), before)
+
+    def test_a_refused_batch_delete_does_not_grow_the_journal(self):
+        node = self.lesson("Синус суммы")
+        section = self.lesson("Тригонометрия", position=1, section=True)
+        before = self.steps()
+
+        # тема в пачке не удаляется: у неё спрашивают про уроки отдельно
+        answer = self.client.post(
+            f"{reverse('plannode-delete-many')}?course={self.course.pk}",
+            {"ids": [node.pk, section.pk]},
+            format="json",
+        )
+
+        self.assertEqual(answer.status_code, 400, answer.content)
+        self.assertEqual(self.steps(), before)
+
+    def test_a_successful_edit_still_leaves_its_step(self):
+        """
+        Обратная сторона: транзакция не должна съесть настоящий снимок.
+
+        Проверка нужна ровно потому, что первая мысль при этой правке —
+        «снять снимок после записи»: тогда отказ его действительно не
+        оставит, но и отменять будет нечего.
+        """
+        node = self.lesson("Синус суммы")
+        before = self.steps()
+
+        answer = self.client.patch(
+            reverse("plannode-detail", args=[node.pk]),
+            {"title": "Синус"},
+            format="json",
+        )
+
+        self.assertEqual(answer.status_code, 200, answer.content)
+        self.assertEqual(self.steps(), before + 1)

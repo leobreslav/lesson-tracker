@@ -315,12 +315,13 @@ class PlanTemplateViewSet(SchoolScopedViewSet):
         # ещё старые — состояние, которого никто потом не объяснит, и найти
         # такой шаблон по фильтру нельзя
         # снимок до записи: обновление с курса теперь способно стереть
-        # написанное руками, и ошибка обязана отменяться одной кнопкой
-        plan_history.take(
-            of_template(template), request.user, "template_refresh", course.name
-        )
-
+        # написанное руками, и ошибка обязана отменяться одной кнопкой. Стоит
+        # он внутри той же транзакции — отказ записи обязан унести и снимок,
+        # иначе в журнале остаётся шаг несостоявшегося обновления
         with transaction.atomic():
+            plan_history.take(
+                of_template(template), request.user, "template_refresh", course.name
+            )
             services.write_rows(template, rows)
             if moved:
                 for field, value in moved.items():
@@ -418,10 +419,11 @@ class PlanTemplateViewSet(SchoolScopedViewSet):
             )
             for row in form.validated_data
         ]
-        plan_history.take(
-            of_template(template), request.user, "rows", template.title
-        )
-        services.write_rows(template, rows)
+        with transaction.atomic():
+            plan_history.take(
+                of_template(template), request.user, "rows", template.title
+            )
+            services.write_rows(template, rows)
 
         return Response(
             PlanTemplateDetailSerializer(
@@ -460,19 +462,24 @@ class ImportFromTemplateView(APIView):
         # Взятый блок назван в журнале своим словом: «взятие плана из
         # библиотеки» у кнопки отмены обещало бы не то — план на месте, а
         # отменяются пять дописанных уроков.
+        #
+        # Транзакция вокруг обоих: строка чужого шаблона отклоняется отказом
+        # (`template_row_unknown`), и снимок, снятый до него, пережил бы
+        # отказ — в журнале остался бы шаг взятия, которого не было.
         rows = data.get("rows")
-        plan_history.take(
-            of_course(data["course"]),
-            request.user,
-            "template_part" if rows else f"template_{data['mode']}",
-            data["template"].title,
-        )
+        with transaction.atomic():
+            plan_history.take(
+                of_course(data["course"]),
+                request.user,
+                "template_part" if rows else f"template_{data['mode']}",
+                data["template"].title,
+            )
 
-        result = services.import_into_course(
-            template=data["template"],
-            course_id=data["course"].pk,
-            append=data["mode"] == "append",
-            rows=rows,
-        )
+            result = services.import_into_course(
+                template=data["template"],
+                course_id=data["course"].pk,
+                append=data["mode"] == "append",
+                rows=rows,
+            )
 
         return Response(result)
