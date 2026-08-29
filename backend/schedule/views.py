@@ -206,7 +206,14 @@ class RoomViewSet(SchoolScopedViewSet):
     """
 
     serializer_class = RoomSerializer
-    queryset = Room.objects.annotate(slot_count=Count("slots"))
+    # порядок назван вслух: группировка от `annotate` стирает `ordering` из
+    # `Meta`, и список приезжал как попало — та же ловушка, что была у курсов
+    # в `layout_agenda`. Снаружи это выходит не поломкой, а тестом, который
+    # проходит через раз: «214, Спортзал» и «Спортзал, 214» одинаково законны
+    # для базы, и какой из них случится, решает план запроса
+    queryset = Room.objects.annotate(slot_count=Count("slots")).order_by(
+        *Room._meta.ordering
+    )
 
     def perform_destroy(self, instance):
         """
