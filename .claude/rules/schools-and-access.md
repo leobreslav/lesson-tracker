@@ -25,7 +25,7 @@ paths:
 
 | школьное (правит администратор, читают все в школе) | курса (только ведущий) |
 |---|---|
-| `schools.School` | `plans.PlanNode` + `PlanBaseline` |
+| `schools.School` | `plans.PlanNode` + `PlanBaseline` — но у строки плана **два** владельца, и второй не курс: план на полке (`library.PlanTemplate`) принадлежит автору, см. `plan.md` |
 | `calendars.SchoolYear` + `DayException` + `Term` | `schedule.Slot` |
 | `schedule.Course` — бывший `SchoolClass` | `works.Work` + `Task` + `Submission` |
 | `schedule.Subject` + `GradeLevel` — справочники | |

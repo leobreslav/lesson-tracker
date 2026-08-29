@@ -737,6 +737,7 @@ CI, не выкатывая до зелёного»: проверка та же,
 | администратор видит то, что вправе править | `bank/owning.py` | `AdminSeesWhatHeMayFixTests` |
 | после посева ни одна модель не пуста | `schools/demo_extras.py` | `EveryModelIsSeededTests` |
 | «настроено ли хранилище» отвечает, а не падает | `files/storage.py` | `StorageIsConfiguredAnswersInsteadOfCrashingTests` |
+| **у строки плана ровно один владелец** | `plans/owning.py` | `EveryOwnerOfAPlanAnnouncesItselfTests` |
 | **ни один тест не платит за чтение сканов** | `config/testing.py` | `NoTestSpendsMoneyTests` |
 | **каждая дверь спрашивает, кого контур пускает** | `accounts/door.py` | `EveryDoorAsksWhoIsComingTests` |
 
