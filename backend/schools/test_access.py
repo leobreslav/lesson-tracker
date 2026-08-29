@@ -117,6 +117,11 @@ class MatrixTests(AccessTestCase):
                 {"name": "plannode-delete-many", "param": "course", "method": "post"},
                 ("plannode-plan-history", "course"),
                 {"name": "plannode-undo", "param": "course", "method": "post"},
+                # журнал расписания спрашивается тем же `?course=`, что и
+                # журнал плана, и закрыт так же: чужой курс неотличим от
+                # несуществующего
+                ("slot-history", "course"),
+                {"name": "slot-undo", "param": "course", "method": "post"},
                 {"name": "plannode-import-xlsx", "param": "course", "method": "post"},
                 {"name": "plannode-import-preview", "param": "course", "method": "post"},
                 {"name": "plannode-import-rows", "param": "course", "method": "post"},

@@ -1,5 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+
+import UndoLast from './UndoLast'
+import {
+  ANY,
+  courseMatches,
+  emptyFilters,
+  filterOptions,
+} from './scheduleFilters'
 import { useNavigate } from 'react-router-dom'
 import {
   AddLessonDialog,
@@ -336,9 +344,55 @@ export default function Agenda({ views = null, onLoggedOut }) {
     return visibleClasses.filter((item) => present.has(item.id))
   }, [data, visibleClasses])
 
+  /*
+   * Год обучения — второй фильтр этой страницы, и он не спорит с первым.
+   *
+   * Галочки отвечают на «какие из моих курсов показать», а год — на «какая
+   * параллель»: у учителя их бывает три-четыре, и «покажи только девятые»
+   * это один выбор вместо восьми снятых галочек. Поэтому год **сужает
+   * список галочек**, а не добавляет к ним восьмую.
+   *
+   * Список годов и правило совпадения берутся из общей цепочки
+   * (`scheduleFilters.js`), хотя цепочки как таковой здесь нет: два ответа
+   * на «какой это год у курса» разошлись бы молча.
+   */
+  const [grade, setGrade] = useState(ANY)
+
+  const gradeOptions = useMemo(
+    () => filterOptions(filterClasses, [], emptyFilters()).grades,
+    [filterClasses],
+  )
+
+  const shownClasses = useMemo(
+    () => filterClasses.filter((item) => courseMatches(item, { grade })),
+    [filterClasses, grade],
+  )
+
+  /*
+   * Курсы **чужого** года — по ним прячутся и часы, а не только галочки.
+   *
+   * Множество исключающее, а не включающее, и это не вкус. Включающее
+   * строится по `classes`, а в неделю попадают часы курсов, которых там
+   * может не оказаться, — и такой час исчезал бы с экрана молча. Пропавший
+   * урок это худший вид ошибки: его не находят месяцами. Прячем поэтому
+   * только то, про что **известно**, что год другой; при «любом годе»
+   * множество пустое, и не прячется ничего.
+   */
+  const otherGrade = useMemo(() => {
+    if (!grade) return new Set()
+    return new Set(
+      classes
+        .filter((item) => !courseMatches(item, { grade }))
+        .map((item) => item.id),
+    )
+  }, [classes, grade])
+
   const lessonsOn = useCallback(
-    (date) => (data.lessons[date] || []).filter((item) => !hidden.has(item.course_id)),
-    [data, hidden],
+    (date) =>
+      (data.lessons[date] || []).filter(
+        (item) => !hidden.has(item.course_id) && !otherGrade.has(item.course_id),
+      ),
+    [data, hidden, otherGrade],
   )
 
   // Ряды сетки — школьный день, растянутый до самого позднего занятого
@@ -786,6 +840,14 @@ export default function Agenda({ views = null, onLoggedOut }) {
         {/* «Мои · Вся школа» — тумблер приезжает сверху: страница одна, и
             какой вид сейчас, решает она, а не сетка */}
         {views}
+        {/* отмена стоит в шапке, а не в ряду со стрелками: она про страницу
+            целиком, а не про показанную неделю */}
+        <UndoLast
+          watch={data}
+          busy={busy}
+          onDone={() => load().catch(handleError)}
+          onError={handleError}
+        />
       </header>
 
       <div className="agenda-bar">
@@ -899,8 +961,21 @@ export default function Agenda({ views = null, onLoggedOut }) {
 
       {classes.length > 0 && (
         <div className="class-filter">
+          {gradeOptions.length > 1 && (
+            <label className="checkbox">
+              {t('schoolSchedule.byGrade')}
+              <select value={grade} onChange={(event) => setGrade(event.target.value)}>
+                <option value="">{t('schoolSchedule.allGrades')}</option>
+                {gradeOptions.map((one) => (
+                  <option key={one.id} value={one.id}>
+                    {one.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
           <span className="hint">{t('agenda.show')}</span>
-          {filterClasses.map((item) => (
+          {shownClasses.map((item) => (
             <label key={item.id} className="checkbox">
               <input
                 type="checkbox"

@@ -44,7 +44,7 @@
     "needYear": "create a school year first",
     "needClass": "add a class first",
     "year": "School year",
-      "school": "School",
+    "school": "School",
     "schools": "Schools",
     "works": "Assignments",
     "journal": "Gradebook",
@@ -360,7 +360,9 @@
     "homegroup_in_use": "«{{name}}» still holds {{students}} students: move them out first.",
     "work_kind_name_required": "A kind of work needs a name.",
     "work_kind_name_taken": "The school already has a kind of work with that name.",
-    "work_kind_label_required": "A kind of work needs a short label — it is what the gradebook shows."
+    "work_kind_label_required": "A kind of work needs a short label — it is what the gradebook shows.",
+    "slot_nothing_to_undo": "There is nothing to undo: only the last steps are kept.",
+    "slot_undo_would_lose_work": "Something is recorded on {{date}}, lesson {{number}} — undoing would take it away. Withdraw it and try again."
   },
   "classPicker": {
     "label": "Classes:",
@@ -825,6 +827,23 @@
       "room": "Rooms",
       "homegroup": "Classes",
       "sharedRoom": "shared"
+    },
+    "undo": {
+      "label": "Undo: {{action}}",
+      "what": "Undo: {{action}} — «{{detail}}», by {{who}}",
+      "mine": "you",
+      "action": {
+        "create": "adding a lesson",
+        "edit": "editing a lesson",
+        "delete": "deleting a lesson",
+        "repeat": "a row of lessons",
+        "copy": "copying a period",
+        "move": "moving a lesson",
+        "room": "the room of a row",
+        "sweep": "the bulk sweep",
+        "close": "closing the debts",
+        "undo": "an undo"
+      }
     }
   },
   "noSchool": {
@@ -1032,7 +1051,10 @@
       "addTo": "Add lesson {{number}} to {{column}}",
       "noCourses": "No courses match the filter, so there are no columns to show.",
       "none": "Not set"
-    }
+    },
+    "byGrade": "Year:",
+    "allGrades": "any year",
+    "pickGrade": "Year of study"
   },
   "library": {
     "subject": "Subject:",

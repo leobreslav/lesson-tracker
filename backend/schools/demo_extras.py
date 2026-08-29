@@ -48,6 +48,7 @@ def build(school, courses, people, students, *, log=print):
     methodist = people["petrov@example.com"]
     made.append(_methodist_and_baseline(supervised, methodist, admin))
     made.append(_history(course, teacher))
+    made.append(_slot_history(course, teacher))
     made.append(_scan_page(course, teacher))
     made.append(_spending(school, teacher, course))
     made.append(_bank_variety(school, teacher, admin, course))
@@ -494,6 +495,29 @@ def _history(course, teacher):
     row.title = f"{row.title}"
     row.save(update_fields=["title"])
     return "снимок плана"
+
+
+def _slot_history(course, teacher):
+    """
+    Снимок расписания: как и у плана, достаточно сделать одну правку.
+
+    Нужен он не ради галочки сторожа, а ради самой кнопки: в наборе, где
+    отменять нечего, «Отменить последнее» не видно вовсе — то есть человек,
+    смотрящий демо, о ней не узнает.
+    """
+    from schedule import history as slot_history
+
+    if course.slot_snapshots.exists():
+        return ""
+
+    slot = course.slots.order_by("date", "lesson_number").first()
+    if slot is None:
+        return ""
+
+    slot_history.take(course, teacher, "edit", str(slot.date))
+    slot.reason = slot.reason
+    slot.save(update_fields=["reason"])
+    return "снимок расписания"
 
 
 def _scan_page(course, teacher):

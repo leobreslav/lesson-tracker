@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+
+import UndoLast from './UndoLast'
 import {
   LessonMenu,
   MoveModeMenu,
@@ -568,6 +570,12 @@ export default function SchoolSchedule({
         <h1>{t('schoolSchedule.title')}</h1>
         {/* тумблер вида — тот же, что на своей неделе: страница одна */}
         {views}
+        <UndoLast
+          watch={slots}
+          busy={busy}
+          onDone={load}
+          onError={handleError}
+        />
       </header>
 
       <p className="hint">{t('schoolSchedule.hint')}</p>
@@ -675,11 +683,26 @@ export default function SchoolSchedule({
       </div>
 
       {/*
-        Предмет → учитель → курс: не три условия, а одна цепочка.
-        Правила сужения и доназначения — в `scheduleFilters.js`, здесь
-        только три списка и одно состояние на них.
+        Год обучения → предмет → учитель → курс: не четыре условия, а одна
+        цепочка. Правила сужения и доназначения — в `scheduleFilters.js`,
+        здесь только списки и одно состояние на них.
+
+        Год стоит первым, потому что он самый широкий: предмет ведут в
+        нескольких параллелях, а параллель держит все предметы сразу.
       */}
       <div className="class-filter">
+        <label className="checkbox">
+          {t('schoolSchedule.byGrade')}
+          <select value={filters.grade} onChange={choose('grade')}>
+            <option value="">{t('schoolSchedule.allGrades')}</option>
+            {options.grades.map((grade) => (
+              <option key={grade.id} value={grade.id}>
+                {grade.name}
+              </option>
+            ))}
+          </select>
+        </label>
+
         <label className="checkbox">
           {t('schoolSchedule.bySubject')}
           <select value={filters.subject} onChange={choose('subject')}>
@@ -1094,6 +1117,24 @@ function AddSchoolSlot({
         {/* Два верхних уровня цепочки — списками: предметов и учителей в школе
             десятки, а не сотни, и выбирают из них глазами. Курс ниже — поиском:
             его и ищут по названию */}
+        <label className="field-with-hint">
+          <span>{t('schoolSchedule.pickGrade')}</span>
+          <select
+            value={filters.grade}
+            disabled={busy}
+            onChange={(event) =>
+              narrow(pick(shown, filters, 'grade', event.target.value))
+            }
+          >
+            <option value="">{t('schoolSchedule.allGrades')}</option>
+            {options.grades.map((grade) => (
+              <option key={grade.id} value={grade.id}>
+                {grade.name}
+              </option>
+            ))}
+          </select>
+        </label>
+
         <label className="field-with-hint">
           <span>{t('schoolSchedule.pickSubject')}</span>
           <select

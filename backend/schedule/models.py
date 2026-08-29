@@ -1348,3 +1348,11 @@ class Attendance(models.Model):
 
     def __str__(self):
         return f"{self.student} — {self.get_status_display()}"
+
+
+# Журнал состояний расписания живёт своим модулем — там его объяснение и его
+# сервисы, — но Django ищет модели в `models.py`, поэтому импорт здесь.
+from .history import (  # noqa: E402,F401  (после определений: history знает про них)
+    SlotSnapshot,
+    SlotSnapshotRow,
+)

@@ -442,6 +442,29 @@ export const undoPlan = (courseId, snapshot = null) =>
     body: snapshot ? { snapshot } : {},
   })
 
+/*
+ * То же для расписания — и **без курса**, в отличие от плана.
+ *
+ * План всегда открыт на одном курсе, расписание — нет: за пять минут правят
+ * три курса подряд, и «отменить последнее» значит последнее вообще. Сервер
+ * тогда находит курс сам, по самому свежему снимку среди дозволенных.
+ */
+export const fetchSlotHistory = (courseId = null) =>
+  request(`/api/slots/history/${courseId ? `?course=${courseId}` : ''}`)
+
+/**
+ * Отменить последнее действие с расписанием. Шаг ровно один.
+ *
+ * Номера снимка тут нет намеренно, в отличие от плана: расписание правят и
+ * отменяют в одну минуту, а глубина, которой не пользуется интерфейс, — это
+ * непроверяемый путь ровно там, где ошибка дороже всего.
+ */
+export const undoSlots = (courseId = null) =>
+  request(`/api/slots/undo/${courseId ? `?course=${courseId}` : ''}`, {
+    method: 'POST',
+    body: {},
+  })
+
 const csvForm = (file, mode) => {
   const form = new FormData()
   form.append('file', file)

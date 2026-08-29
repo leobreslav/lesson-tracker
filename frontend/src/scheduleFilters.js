@@ -1,5 +1,5 @@
 /**
- * Сужение расписания школы: предмет → учитель → курс.
+ * Сужение расписания школы: год обучения → предмет → учитель → курс.
  *
  * Фильтров было два, и работали они **пересечением**: выбранный учитель и
  * выбранный курс просто складывались условием. Курсы при этом перечислялись
@@ -26,12 +26,22 @@
 /** «Любой»: пустая строка, потому что это `value` пустого пункта `select`. */
 export const ANY = ''
 
-/** От широкого к узкому — порядок цепочки, и он же порядок разбора. */
-export const LEVELS = ['subject', 'teacher', 'course']
+/**
+ * От широкого к узкому — порядок цепочки, и он же порядок разбора.
+ *
+ * Год обучения стоит **первым**, потому что он самый широкий: предмет ведут
+ * в нескольких параллелях, а параллель держит все предметы сразу. Из этого
+ * же следует, что список годов не сужается ничем — как раньше список
+ * предметов: сузить первый уровень значит отобрать дорогу к другому году,
+ * не сбросив сначала всё остальное.
+ */
+export const LEVELS = ['grade', 'subject', 'teacher', 'course']
 
 const id = (value) => (value === null || value === undefined ? ANY : String(value))
 
 const subjectOf = (course) => id(course?.subject)
+
+const gradeOf = (course) => id(course?.grade)
 
 const teachersOf = (course) => (course?.teachers ?? []).map((teacher) => id(teacher.id))
 
@@ -47,10 +57,30 @@ const soleTeacherOf = (course) => {
   return people.length === 1 ? people[0] : ANY
 }
 
-export const emptyFilters = () => ({ subject: ANY, teacher: ANY, course: ANY })
+export const emptyFilters = () => ({
+  grade: ANY,
+  subject: ANY,
+  teacher: ANY,
+  course: ANY,
+})
+
+/**
+ * Чем выбор называет себя на каждом уровне — для доназначения вверх.
+ *
+ * Тернарником это было («предмет или единственный ведущий»), и с третьим
+ * широким уровнем тернарник пришлось бы вложить в тернарник. Списком видно,
+ * что правило одно на все уровни: у учителя оно только строже — берётся
+ * **единственный** ведущий, потому что курс без ведущего называть нечем.
+ */
+const NAMED_BY = {
+  grade: (course) => gradeOf(course),
+  subject: (course) => subjectOf(course),
+  teacher: (course) => soleTeacherOf(course),
+}
 
 /** Подходит ли курс под выбранное. Пустое значение не спрашивает ни о чём. */
 export function courseMatches(course, filters = {}) {
+  if (filters.grade && gradeOf(course) !== filters.grade) return false
   if (filters.subject && subjectOf(course) !== filters.subject) return false
   if (filters.teacher && !teachersOf(course).includes(filters.teacher)) return false
   if (filters.course && id(course.id) !== filters.course) return false
@@ -65,6 +95,11 @@ export function courseMatches(course, filters = {}) {
  * вопрос заводить незачем.
  */
 export function slotMatches(slot, courseById, filters = {}) {
+  // и год, и предмет спрашиваются у курса: у самого часа их нет, и второго
+  // ответа на этот вопрос заводить незачем
+  if (filters.grade && gradeOf(courseById.get(slot.course)) !== filters.grade) {
+    return false
+  }
   if (filters.subject && subjectOf(courseById.get(slot.course)) !== filters.subject) {
     return false
   }
@@ -81,15 +116,31 @@ export function slotMatches(slot, courseById, filters = {}) {
  * сначала всё остальное.
  */
 export function filterOptions(courses, members, filters = emptyFilters()) {
-  const ofSubject = courses.filter((course) =>
+  const ofGrade = courses.filter((course) =>
+    courseMatches(course, { grade: filters.grade }),
+  )
+  const ofSubject = ofGrade.filter((course) =>
     courseMatches(course, { subject: filters.subject }),
   )
   const ofTeacher = ofSubject.filter((course) =>
     courseMatches(course, { teacher: filters.teacher }),
   )
 
-  const subjects = new Map()
+  const grades = new Map()
   courses.forEach((course) => {
+    if (course.grade != null) {
+      grades.set(gradeOf(course), {
+        id: gradeOf(course),
+        name: course.grade_name ?? '',
+        // порядок — по году обучения, а не по названию: «MYP 4» это девятый
+        // год, и по алфавиту он встал бы между четвёртым и пятым
+        level: course.grade_level ?? 0,
+      })
+    }
+  })
+
+  const subjects = new Map()
+  ofGrade.forEach((course) => {
     if (course.subject != null) {
       subjects.set(subjectOf(course), {
         id: subjectOf(course),
@@ -101,6 +152,7 @@ export function filterOptions(courses, members, filters = emptyFilters()) {
   const leading = new Set(ofSubject.flatMap(teachersOf))
 
   return {
+    grades: [...grades.values()].sort((a, b) => a.level - b.level),
     subjects: [...subjects.values()].sort((a, b) => a.name.localeCompare(b.name)),
     // порядок людей — серверный (имя, фамилия, почта); свой здесь означал бы
     // два разных порядка одного списка на соседних экранах
@@ -139,11 +191,7 @@ export function pick(courses, filters, level, value) {
   const candidates = courses.filter((course) => courseMatches(course, next))
   LEVELS.slice(0, LEVELS.indexOf(level)).forEach((wider) => {
     if (next[wider]) return
-    const named = new Set(
-      candidates.map((course) =>
-        wider === 'subject' ? subjectOf(course) : soleTeacherOf(course),
-      ),
-    )
+    const named = new Set(candidates.map((course) => NAMED_BY[wider](course)))
     // единственное — значит определено; курс без ведущего даёт пустое имя,
     // и подставлять его нельзя: тогда бы фильтр учителя спрятал его же часы
     const [only] = named

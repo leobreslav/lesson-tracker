@@ -31,8 +31,9 @@ from rest_framework.views import APIView
 from files.models import Attachment
 from plans.models import PlanNode
 from plans import services as plan_services
+from plans.serializers import person
 
-from . import services
+from . import history, services
 from .services import sweepable
 from schools import roster, services as school_services
 from schools.models import School
@@ -808,9 +809,36 @@ class SlotViewSet(SchoolScopedViewSet):
             date=str(broken.date),
         )
 
+    def snapshot(self, course, action, detail="", batch=None):
+        """
+        Снять снимок расписания курса — перед тем, как его изменят.
+
+        Зовётся из каждого пишущего пути **до** самой правки: снимок
+        отвечает на вопрос «как было», а не «как стало». Полноту вызовов
+        сторожит `schedule/test_history_wiring.py` — потестовый перечень тут
+        не годится, новый эндпоинт в него никто не обязан дописывать.
+        """
+        return history.take(course, self.request.user, action, detail, batch=batch)
+
+    def snapshot_all(self, courses, action, detail=""):
+        """
+        То же, но для действия, которое идёт по нескольким курсам.
+
+        Снимки кладутся под одной партией и отменяются вместе: вернуть один
+        курс из трёх значит оставить расписание в состоянии, которого не
+        было никогда.
+        """
+        import uuid
+
+        batch = uuid.uuid4()
+        for course in courses:
+            self.snapshot(course, action, detail, batch=batch)
+        return batch
+
     def perform_create(self, serializer):
         self.require_write(serializer.validated_data["course"])
         with transaction.atomic():
+            self.snapshot(serializer.validated_data["course"], "create")
             slot = serializer.save()
             # час, созданный в закрытом прошлом, — та же дыра, что и
             # незакрытый: очередь встанет на нём
@@ -818,6 +846,7 @@ class SlotViewSet(SchoolScopedViewSet):
 
     def perform_update(self, serializer):
         with transaction.atomic():
+            self.snapshot(serializer.instance.course, "edit")
             slot = serializer.save()
             # сюда попадают и правка даты мимо `move`, и возврат отменённого
             # часа: оба способны обогнать записи или открыть дыру
@@ -916,6 +945,7 @@ class SlotViewSet(SchoolScopedViewSet):
                 date=str(instance.date),
             )
 
+        self.snapshot(instance.course, "delete", detail=str(instance.date))
         instance.delete()
 
     def get_queryset(self):
@@ -1088,6 +1118,7 @@ class SlotViewSet(SchoolScopedViewSet):
 
         course = data["course"]
         self.require_write(course)
+        self.snapshot(course, "repeat", detail=str(data["date"]))
         year = course.year
         number = data["lesson_number"]
         # за границы года ряд не выходит: там урока не бывает вовсе
@@ -1190,6 +1221,10 @@ class SlotViewSet(SchoolScopedViewSet):
         study_by_year = {}
 
         with transaction.atomic():
+            # Копирование в школьном виде идёт по всем курсам разом, поэтому
+            # снимки кладутся одной партией — до первой правки, а не по ходу:
+            # снятый в цикле застал бы уже изменённых соседей.
+            self.snapshot_all(courses, "copy", detail=str(data["target_start"]))
             for course in courses:
                 self.require_write(course)
                 year = course.year
@@ -1251,6 +1286,10 @@ class SlotViewSet(SchoolScopedViewSet):
                 "The lesson is already at that date and number.",
                 field="date",
             )
+
+        # снимок один на оба вида переноса: и разовый, и постоянный трогают
+        # расписание того же курса, а `move_series` зовётся отсюда же
+        self.snapshot(slot.course, "move", detail=str(slot.date))
 
         if target["mode"] == SlotMoveSerializer.SERIES:
             return self.move_series(slot, target)
@@ -1471,6 +1510,7 @@ class SlotViewSet(SchoolScopedViewSet):
         form.is_valid(raise_exception=True)
         room = form.validated_data["room"]
 
+        self.snapshot(slot.course, "room", detail=str(slot.date))
         slot.room = room
         slot.save(update_fields=["room"])
 
@@ -1578,6 +1618,14 @@ class SlotViewSet(SchoolScopedViewSet):
             queryset = sweepable(queryset)
             kept = total - queryset.count()
 
+        # Уборка бывает и по одному курсу, и по всем сразу, поэтому курсы
+        # берутся у самой выборки: снимок нужен ровно тем, кого она тронет.
+        # Считается это **до** удаления — после спрашивать было бы не у кого
+        self.snapshot_all(
+            list(Course.objects.filter(pk__in=queryset.values("course"))),
+            "sweep",
+            detail=str(data["start"]),
+        )
         deleted, _ = queryset.delete()
         # сколько уцелело — не мелочь: ряд, из которого убрали половину,
         # иначе выглядит как неудавшееся удаление
@@ -1940,6 +1988,12 @@ class SlotViewSet(SchoolScopedViewSet):
         }
 
         with transaction.atomic():
+            # Закрывают долги пачкой и обычно по одному курсу, но список
+            # присылает клиент, и курсов в нём может оказаться несколько —
+            # снимок берётся у каждого, одной партией и до первой записи
+            self.snapshot_all(
+                {slot.course for slot in mine.values()}, "close", detail=str(len(rows))
+            )
             for row in rows:
                 slot = mine.get(row["slot"])
                 if slot is None:
@@ -1974,6 +2028,151 @@ class SlotViewSet(SchoolScopedViewSet):
                 self.guard_order(course)
 
         return Response({"closed": len(rows)})
+
+    def undo_scope(self):
+        """
+        Чьи шаги человек вправе видеть и отменять.
+
+        У администратора это вся школа — он и правит всю школу; у учителя
+        его курсы. Тот же ответ, что даёт `require_write`, только выборкой:
+        спрашивать право по одному курсу в цикле значило бы завести второе
+        определение того же.
+        """
+        if self.request.user.is_school_admin:
+            return Course.objects.filter(school_id=self.request.user.school_id)
+        return self.my_courses()
+
+    def undo_course(self, write=False):
+        """
+        Курс, про расписание которого спрашивают, — из `?course=`.
+
+        **Без `?course=` вопрос другой**, и это не небрежность вызывающего.
+        Учебный план всегда открыт на одном курсе, а расписание — нет: на
+        «Моём расписании» за пять минут правят три курса подряд, и «отменить
+        последнее» там значит последнее вообще. Тогда курс не спрашивается, а
+        **находится** — по самому свежему снимку среди дозволенных.
+
+        Чужой курс тут неотличим от несуществующего, как везде.
+        """
+        asked = self.request.query_params.get("course")
+
+        if asked:
+            course = get_object_or_404(self.undo_scope(), pk=asked)
+        else:
+            step = (
+                history.SlotSnapshot.objects.filter(course__in=self.undo_scope())
+                .order_by("-made_at", "-id")
+                .select_related("course")
+                .first()
+            )
+            if step is None:
+                return None
+            course = step.course
+
+        if write:
+            self.require_write(course)
+        return course
+
+    @action(detail=False, methods=["get"], url_path="history", url_name="history")
+    def slot_history(self, request):
+        """
+        Чем можно отменить — снимки расписания курса, свежие первыми.
+
+        Отдаётся и то, что нужно кнопке: какое действие последовало за
+        снимком и чего оно коснулось. Безымянная отмена страшнее, чем
+        полезна: по ней не поймёшь, вернёшь ты удалённый час или чужую
+        правку получасовой давности.
+        """
+        course = self.undo_course()
+        rows = (
+            history.SlotSnapshot.objects.filter(course=course)
+            .select_related("made_by")
+            .order_by("-made_at", "-id")
+            if course is not None
+            else history.SlotSnapshot.objects.none()
+        )
+
+        return Response(
+            {
+                "steps": [
+                    {
+                        "id": item.pk,
+                        "action": item.action,
+                        "detail": item.detail,
+                        "made_at": item.made_at,
+                        "by_lead": item.by_lead,
+                        "who": person(item.made_by),
+                        "mine": item.made_by_id == request.user.pk,
+                    }
+                    for item in rows
+                ]
+            }
+        )
+
+    @action(detail=False, methods=["post"], url_path="undo", url_name="undo")
+    def slot_undo(self, request):
+        """
+        Вернуть расписание курса к состоянию перед последним действием.
+
+        **Шаг ровно один, и номер снимка ручка не принимает.** У плана
+        принимает — там отменяют и чужую правку недельной давности, — а тут
+        глубже одного шага не ходят: расписание правят и отменяют в одну
+        минуту. Путь, которым интерфейс не пользуется, всё равно никто не
+        проверяет, а через него как раз и проходит самое опасное:
+        восстановление поверх работы, сделанной после снимка.
+
+        **Отменяется партия целиком, а не один курс.** Копирование в
+        школьном виде и массовая уборка идут по нескольким курсам сразу;
+        вернуть тот, из которого спросили, и оставить соседей значит
+        собрать расписание, которого не было никогда.
+
+        Восстановление проходит ту же проверку очереди, что и любая правка:
+        если за это время час записали, вернуть клетку на место иногда уже
+        нельзя. Отказ приходит обычным кодом и отменяет всё целиком.
+        """
+        course = self.undo_course(write=True)
+
+        step = (
+            history.SlotSnapshot.objects.filter(course=course)
+            .order_by("-made_at", "-id")
+            .first()
+            if course is not None
+            else None
+        )
+        if step is None:
+            api_error(
+                Codes.SLOT_NOTHING_TO_UNDO,
+                "There is nothing to undo: no snapshot of this schedule was kept.",
+                field="snapshot",
+            )
+
+        with transaction.atomic():
+            # сам откат — тоже изменение расписания, и его тоже надо уметь
+            # отменить: иначе «вернул не то» становится тупиком. Снимок
+            # берётся по всем курсам партии, а не по одному спрошенному
+            touched = list(
+                Course.objects.filter(
+                    pk__in=history.SlotSnapshot.objects.filter(
+                        batch=step.batch
+                    ).values("course")
+                )
+            )
+            self.snapshot_all(touched, "undo", step.detail)
+            result = history.restore_batch(step.batch)
+            # Снимок мог не пережить собственную уборку: `take` зовёт
+            # `prune`, а тот держит последние двадцать. Восстановить нечего —
+            # это отказ, а не тихий успех: молчаливый ноль читается как
+            # «отменил», и человек уходит с неотменённым расписанием
+            if not result["courses"]:
+                api_error(
+                    Codes.SLOT_NOTHING_TO_UNDO,
+                    "That snapshot is gone: only the last steps are kept.",
+                    field="snapshot",
+                )
+            for one in touched:
+                self.guard_order(one)
+
+        return Response(result)
 
     @action(detail=False, methods=["get"])
     def summary(self, request):

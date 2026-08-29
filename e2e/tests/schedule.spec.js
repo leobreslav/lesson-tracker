@@ -121,7 +121,11 @@ test('ряд убирается рядом, а не периодом', async ({ 
   await add.getByRole('radio', { name: 'каждую неделю' }).check()
   await add.getByLabel('до', { exact: true }).fill('2026-09-28')
   await add.getByRole('button', { name: 'Добавить', exact: true }).click()
+  // ждём отчёт, а не закрытие окна: `runBulk` закрывает его **до** запроса,
+  // ради отзывчивости, — и «окно скрылось» не значит «ряд заведён». Тот же
+  // капкан, что у копирования периода ниже, и он же был причиной мигания
   await expect(add).toBeHidden()
+  await expect(page.getByText(/Создано уроков/)).toBeVisible()
 
   const teacher = await api(PEOPLE.ivanova)
   const before = await teacher.get('/api/slots/?start=2026-09-01&end=2027-05-31')
@@ -417,7 +421,20 @@ test('«через неделю» копирует в каждую вторую'
 
   const preview = await dialog.locator('.copy-preview').textContent()
   await dialog.getByRole('button', { name: 'Скопировать' }).click()
+
+  /*
+   * Ждём **отчёт**, а не закрытие окна, и это исправление настоящей причины
+   * мигания (в докстринге выше оно и описано).
+   *
+   * `runBulk` закрывает окно **первой** строкой — до запроса, ради
+   * отзывчивости, — поэтому «окно скрылось» никогда не означало
+   * «скопировано». Тест читал базу, пока сервер ещё писал, и выигрывал эту
+   * гонку по случайности: замер показал «рано 0, через полторы секунды 1».
+   * Отчёт же выставляется после ответа и перечитывания периода — то есть
+   * ровно тогда, когда работа сделана.
+   */
   await expect(dialog).toBeHidden()
+  await expect(page.getByText(/Создано уроков/)).toBeVisible()
 
   // чётность считается от источника: заполняется вторая неделя цели
   const week = async (from) =>
@@ -1360,4 +1377,49 @@ test('кабинет ставится на весь ряд, а не по кле�
   expect(travelled.map((slot) => slot.room_name)).toEqual(
     travelled.map(() => 'Лаборатория'),
   )
+})
+
+test('последнее действие отменяется одной кнопкой, и она называет себя', async ({
+  page,
+  signIn,
+}) => {
+  /*
+   * Отмена в расписании устроена как в плане — снимками, — но кнопка тут
+   * одна на весь экран и курса не называет: на «Моём расписании» за пять
+   * минут правят три курса подряд, и «последнее» значит последнее вообще.
+   *
+   * Проверяется дорога целиком: пока отменять нечего, кнопки нет вовсе;
+   * после действия она появляется и говорит, что вернёт; после нажатия
+   * расписание становится прежним.
+   */
+  await signIn(PEOPLE.ivanova)
+  await openWeek(page, MONDAY)
+
+  const undo = page.getByRole('button', { name: /^Отменить:/ })
+  // Кнопка тут уже есть, и это не случайность: демо-набор кладёт один
+  // снимок расписания — иначе человек, смотрящий демо, об отмене не узнает
+  // вовсе, а сторож посева требует, чтобы ни одна модель не была пуста.
+  // Проверяем поэтому не отсутствие кнопки, а то, что она называет **наше**
+  // действие после него.
+  const cell = page.locator(`[data-add="${MONDAY}:6"]`)
+  await expect(cell).toBeVisible()
+
+  await cell.click()
+  const add = page.locator('dialog.modal')
+  await add.getByRole('combobox').first().selectOption({ label: 'Grade 6 Algebra' })
+  await add.getByRole('button', { name: 'Добавить', exact: true }).click()
+  await expect(add).toBeHidden()
+  await expect(page.locator(`[data-lesson="${MONDAY}:6"]`)).toBeVisible()
+
+  // кнопка называет действие: безымянная отмена страшнее, чем полезна
+  await expect(undo).toBeVisible()
+  await expect(undo).toContainText('добавление занятия')
+
+  await undo.click()
+  // клетка снова пустая — то есть свободна под добавление
+  await expect(page.locator(`[data-add="${MONDAY}:6"]`)).toBeVisible()
+  await expect(page.locator(`[data-lesson="${MONDAY}:6"]`)).toHaveCount(0)
+
+  // и сама отмена тоже отменяема: «вернул не то» не тупик
+  await expect(undo).toContainText('отмену')
 })
