@@ -27,7 +27,7 @@ from schedule.models import Course, Slot
 
 from . import approval, diff, history, progress, services, xlsx
 from .models import PlanBaseline, PlanNode
-from .owning import of_course
+from .owning import OWNER_FIELDS, named_owner, of_course, of_template
 from .serializers import (
     MoveSerializer,
     MoveToSerializer,
@@ -449,7 +449,39 @@ class PlanNodeViewSet(CourseScopedViewSet):
     вложенности он бесполезен.
     """
 
-    queryset = PlanNode.objects.select_related("course", "parent")
+    queryset = PlanNode.objects.select_related("course", "template", "parent")
+
+    def my_templates(self):
+        """
+        Шаблоны, которые этому человеку можно править: свои.
+
+        Право тут по авторству, а не по роли, и определение живёт в
+        библиотеке (`library.serializers.writable_templates`) — одно на всех,
+        кто спрашивает: на эту ручку, на вложения строк и на саму полку.
+        Разъехавшись, они дали бы редактор, который открывается, но не
+        сохраняет.
+        """
+        from library.serializers import writable_templates
+
+        return writable_templates(self.request.user)
+
+    def get_queryset(self):
+        """
+        Строки обоих деревьев, в которые этому человеку можно писать.
+
+        Курсовой фильтр предка тут не годится вовсе, и потому он обойдён: он
+        спрашивает `course__in`, а у половины строк курса нет — у них
+        шаблон. Оставь его, и план на полке был бы невидим отовсюду, включая
+        собственную ручку правки.
+
+        Чужое остаётся 404 по обоим владельцам, и это одно правило, а не два
+        похожих: у курса чужое — то, на что тебя не назначили, у шаблона —
+        то, чего ты не писал. «Нет такого» тут честнее «нельзя»: про чужой
+        черновик на полке знать незачем вовсе.
+        """
+        return self.queryset.filter(
+            Q(course__in=self.my_courses()) | Q(template__in=self.my_templates())
+        )
 
     def get_serializer_class(self):
         if self.action == "create":
@@ -484,8 +516,47 @@ class PlanNodeViewSet(CourseScopedViewSet):
 
         return get_object_or_404(self.my_courses(), pk=raw)
 
+    def requested_owner(self, *, write=False):
+        """
+        Чьё дерево спрашивают: `?course=` или `?template=`.
+
+        Тот же вопрос, что у `requested_course`, только шире — и рядом с ним,
+        а не вместо него: половина действий этой ручки про календарь
+        (раскладка, эталон, долги, импорт с датами), и у них курс обязателен
+        по существу, а не по привычке. Заменив один вопрос другим, мы
+        разрешили бы спросить раскладку у полки — и получили бы пустоту
+        вместо отказа.
+
+        **Назван должен быть ровно один владелец.** Ни одного — непонятно,
+        чей план показывать; оба — это два разных дерева в одном запросе, и
+        молчаливый выбор одного из них однажды перепишет не то. Отказ у обоих
+        случаев общий: он и говорит правило целиком, а не половину.
+
+        Чужое — 404, как и у курса, и по обоим владельцам сразу.
+        """
+        params = self.request.query_params
+        named = {
+            field: params[field]
+            for field in OWNER_FIELDS
+            if (params.get(field) or "").isdigit()
+        }
+
+        if len(named) != 1:
+            api_error(
+                Codes.PLAN_OWNER_REQUIRED,
+                "Name exactly one owner: the «course» or the «template» query "
+                "parameter with an id.",
+                field="course",
+            )
+
+        field, raw = next(iter(named.items()))
+        if field == "course":
+            return of_course(get_object_or_404(self.my_courses(), pk=raw))
+
+        return of_template(get_object_or_404(self.my_templates(), pk=raw))
+
     def list(self, request, *args, **kwargs):
-        return Response(tree_payload(of_course(self.requested_course())))
+        return Response(tree_payload(self.requested_owner()))
 
     def layout_entries(self, course):
         """
@@ -1089,7 +1160,7 @@ class PlanNodeViewSet(CourseScopedViewSet):
         записей больше нет, новая строка приземляется сразу за последней —
         и это законно.
         """
-        self.snapshot(of_course(serializer.validated_data["course"]), "create")
+        self.snapshot(named_owner(serializer.validated_data), "create")
 
         with transaction.atomic():
             node = serializer.save()
@@ -1114,7 +1185,7 @@ class PlanNodeViewSet(CourseScopedViewSet):
         флажка у темы нет вовсе, так что это защита от API, а не от
         человека.
         """
-        course = self.requested_course(write=True)
+        owner = self.requested_owner(write=True)
 
         # тело бывает не словарём вовсе (строка, список) — спрашивать у
         # такого `.get` значит отвечать пятисоткой на кривой запрос
@@ -1140,7 +1211,7 @@ class PlanNodeViewSet(CourseScopedViewSet):
             # выбрали и передумали: удалять нечего, но и отказывать не за что
             return Response({"deleted": 0})
 
-        nodes = list(PlanNode.objects.filter(course=course, pk__in=ids))
+        nodes = list(PlanNode.objects.filter(**owner.lookup, pk__in=ids))
         if len(nodes) != len(ids):
             # чужая строка неотличима от несуществующей — как и везде
             raise Http404
@@ -1162,7 +1233,7 @@ class PlanNodeViewSet(CourseScopedViewSet):
 
         parents = {node.parent_id for node in nodes}
         self.snapshot(
-            of_course(course),
+            owner,
             "delete_batch" if len(nodes) > 1 else "delete",
             nodes[0].title if len(nodes) == 1 else str(len(nodes)),
         )
@@ -1170,22 +1241,22 @@ class PlanNodeViewSet(CourseScopedViewSet):
         with transaction.atomic():
             PlanNode.objects.filter(pk__in=[node.pk for node in nodes]).delete()
             for parent_id in parents:
-                services.reindex(of_course(course), parent_id)
+                services.reindex(owner, parent_id)
 
         return Response({"deleted": len(nodes)})
 
     @action(detail=False, methods=["get"], url_path="history")
     def plan_history(self, request):
         """
-        Чем можно отменить — список снимков курса, свежие первыми.
+        Чем можно отменить — список снимков плана, свежие первыми.
 
         Отдаётся и то, что нужно кнопке: какое действие последовало за
         снимком и чего оно коснулось, — иначе «отменить последнее» не
         сможет назвать себя, а безымянная отмена страшнее, чем полезна.
         """
-        course = self.requested_course()
+        owner = self.requested_owner()
         rows = (
-            history.PlanSnapshot.objects.filter(course=course)
+            history.PlanSnapshot.objects.filter(**owner.lookup)
             .select_related("made_by")
             .order_by("-made_at", "-id")
         )
@@ -1226,10 +1297,10 @@ class PlanNodeViewSet(CourseScopedViewSet):
         строку на место иногда уже нельзя. Отказ приходит обычным кодом, а
         не пятисоткой, и отменяет всё восстановление целиком.
         """
-        course = self.requested_course(write=True)
+        owner = self.requested_owner(write=True)
         wanted = request.data.get("snapshot")
 
-        rows = history.PlanSnapshot.objects.filter(course=course)
+        rows = history.PlanSnapshot.objects.filter(**owner.lookup)
         step = (
             rows.filter(pk=wanted).first()
             if wanted
@@ -1245,9 +1316,12 @@ class PlanNodeViewSet(CourseScopedViewSet):
         with transaction.atomic():
             # сам откат — тоже изменение плана, и его тоже надо уметь
             # отменить: иначе «вернул не то» становится тупиком
-            self.snapshot(of_course(course), "undo", step.detail)
+            self.snapshot(owner, "undo", step.detail)
             result = history.restore(step)
-            refuse_if_records_broken(course)
+            if not owner.is_template:
+                # пост-условие про очередь записей: у полки записей нет вовсе,
+                # и спрашивать «не осталось ли дыры» там не у чего
+                refuse_if_records_broken(step.course)
 
         return Response(result)
 
@@ -1346,12 +1420,17 @@ class SectionMoveView(APIView):
     permission_classes = [IsAuthenticated, IsSchoolMember, IsTeacher]
 
     def post(self, request, pk):
-        # право, а не принадлежность: администратор школы чинит её курсы.
-        # Раньше здесь стояло собственное условие по назначению, и оно
-        # разошлось бы с остальным планом при первой же правке прав
+        # право, а не принадлежность: администратор школы чинит её курсы, а
+        # свой шаблон правит его автор. Раньше здесь стояло собственное
+        # условие по назначению, и оно разошлось бы с остальным планом при
+        # первой же правке прав; теперь оно и вовсе одно на обе стороны
+        from library.serializers import writable_templates
+
         section = get_object_or_404(
             PlanNode.objects.filter(
-                course__in=Course.objects.writable_by(request.user), is_section=True
+                Q(course__in=Course.objects.writable_by(request.user))
+                | Q(template__in=writable_templates(request.user)),
+                is_section=True,
             ),
             pk=pk,
         )

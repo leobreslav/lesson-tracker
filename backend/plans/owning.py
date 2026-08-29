@@ -80,6 +80,30 @@ def of_template(template) -> PlanOwner:
     return PlanOwner("template", getattr(template, "pk", template))
 
 
+def named_owner(values) -> PlanOwner | None:
+    """
+    Владелец, названный в полезной нагрузке, или `None`, если назван не один.
+
+    `values` — что угодно, отвечающее на `.get(field)`: проверенные данные
+    сериализатора или тело запроса. Значением бывает и объект, и номер.
+
+    `None` возвращается **в обоих** плохих случаях — и когда не назван никто,
+    и когда названы оба. Это не лень: оба они означают одно и то же — «не
+    сказано, чьё это дерево», — и отвечать на них должен один отказ. Два
+    разных отказа читались бы как два разных правила, а правило тут одно.
+    """
+    named = [
+        (field, values.get(field))
+        for field in OWNER_FIELDS
+        if values.get(field) is not None
+    ]
+    if len(named) != 1:
+        return None
+
+    field, value = named[0]
+    return PlanOwner(field, getattr(value, "pk", value))
+
+
 def owner_of(node) -> PlanOwner:
     """
     Владелец узла — то из полей, которое названо.

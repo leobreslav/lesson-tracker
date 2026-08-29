@@ -6,7 +6,7 @@ from schedule.serializers import teacher_courses
 from . import services
 from .content import CONTENT_EXTRA_KWARGS, CONTENT_FIELDS, content_problems
 from .models import PlanNode
-from .owning import PlanOwner
+from .owning import named_owner
 
 
 def raise_content_error(*, is_section: bool, values):
@@ -27,13 +27,20 @@ def own_nodes(serializer):
     `structure_problems`: так человек читает фразу, а не сухое «object does
     not exist» от PrimaryKeyRelatedField.
     """
+    from django.db.models import Q
+    from library.serializers import writable_templates
     from schedule.models import Course
 
     user = requester(serializer)
     if user is None or not user.is_authenticated:
         return PlanNode.objects.none()
-    # право, а не принадлежность: администратор школы правит её курсы
-    return PlanNode.objects.filter(course__in=Course.objects.writable_by(user))
+    # право, а не принадлежность: администратор школы правит её курсы. У
+    # второго владельца право своё — авторство, — и спрашивается оно там же,
+    # где спрашивает сама полка
+    return PlanNode.objects.filter(
+        Q(course__in=Course.objects.writable_by(user))
+        | Q(template__in=writable_templates(user))
+    )
 
 
 def node_payload(node, number=None, *, taught=()) -> dict:
@@ -147,6 +154,7 @@ class PlanNodeCreateSerializer(serializers.ModelSerializer):
         fields = (
             "id",
             "course",
+            "template",
             "parent",
             "is_section",
             "title",
@@ -155,19 +163,16 @@ class PlanNodeCreateSerializer(serializers.ModelSerializer):
             "before",
             *CONTENT_FIELDS,
         )
-        extra_kwargs = {
-            **CONTENT_EXTRA_KWARGS,
-            # Владельцев у модели стало двое, и `course` перестал быть
-            # обязательным полем **таблицы**. Обязательность у ручки от этого
-            # не изменилась, но DRF читает её из модели: без этой строки
-            # запрос без курса проходил бы проверку полей и падал бы уже
-            # внутри — там, где владельца ждут названным.
-            "course": {"required": True, "allow_null": False},
-        }
+        extra_kwargs = CONTENT_EXTRA_KWARGS
 
     def get_fields(self):
         fields = super().get_fields()
+        from library.serializers import writable_templates
+
         fields["course"].queryset = teacher_courses(self)
+        # право на шаблон — авторство, и спрашивается оно там же, где у самой
+        # полки: чужой черновик отсутствует, а не «запрещён»
+        fields["template"].queryset = writable_templates(requester(self))
         fields["parent"].queryset = own_nodes(self)
         fields["after"].queryset = own_nodes(self)
         fields["before"].queryset = own_nodes(self)
@@ -178,8 +183,20 @@ class PlanNodeCreateSerializer(serializers.ModelSerializer):
             is_section=attrs.get("is_section", False), values=attrs
         )
 
+        # Ровно один владелец, и говорит об этом та же функция, что читает
+        # строку запроса у остальных действий. Обязательность тут своя, не
+        # модельная: у таблицы оба поля пустые по отдельности законны, а вот
+        # запрос, не сказавший, чьё дерево он правит, законным не бывает.
+        owner = named_owner(attrs)
+        if owner is None:
+            api_error(
+                Codes.PLAN_OWNER_REQUIRED,
+                "Name exactly one owner: «course» or «template».",
+                field="course",
+            )
+
         problems = services.structure_problems(
-            owner=PlanOwner("course", attrs["course"].pk),
+            owner=owner,
             parent=attrs.get("parent"),
             is_section=attrs.get("is_section", False),
         )
@@ -189,10 +206,10 @@ class PlanNodeCreateSerializer(serializers.ModelSerializer):
             anchor = attrs.get(side)
             if anchor is None:
                 continue
-            if anchor.course_id != attrs["course"].pk:
+            if anchor.owner != owner:
                 api_error(
                     Codes.ANCHOR_OTHER_CLASS,
-                    "That node belongs to another course.",
+                    "That node belongs to another plan.",
                     field=side,
                 )
             if anchor.parent_id != (

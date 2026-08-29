@@ -120,11 +120,27 @@ class TreeApiTests(PlanTestCase):
 
         self.assertEqual(self.tree().status_code, 401)
 
-    def test_class_parameter_is_required(self):
+    def test_the_owner_of_the_plan_must_be_named(self):
         response = self.client.get(reverse("plannode-list"))
 
         self.assertEqual(response.status_code, 400)
-        self.assertEqual(response.json()["code"], "class_required")
+        self.assertEqual(response.json()["code"], "plan_owner_required")
+
+    def test_naming_two_owners_at_once_is_refused(self):
+        """
+        Два владельца в одном запросе — это два разных дерева.
+
+        Отказ, а не выбор одного из них: молчаливый выбор однажды покажет —
+        а потом и перепишет — не то дерево, и узнать об этом будет неоткуда.
+        Отказ тот же самый, что и на «не назван никто»: правило одно —
+        «скажите, чей это план», — и двух формулировок у него быть не должно.
+        """
+        response = self.client.get(
+            reverse("plannode-list"), {"course": self.course.pk, "template": 1}
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json()["code"], "plan_owner_required")
 
     def test_tree_is_nested_and_numbered(self):
         data = self.tree().json()
