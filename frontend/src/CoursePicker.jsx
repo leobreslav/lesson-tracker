@@ -102,8 +102,17 @@ export default function CoursePicker({
    */
   const byKey = new Map((courses ?? []).map((item) => [String(item.id), item.id]))
 
+  /*
+   * Один вариант — просто имя, но **только если это и есть открытое**.
+   *
+   * Пока в списке лежали одни курсы, разницы не было: единственный курс он же
+   * и выбранный. С заготовками она появилась. У человека, которому ещё не
+   * поручили курс, в списке одна его заготовка, а открыт на `/plan` не он —
+   * и подпись называла бы то, чего на экране нет, вместо двери, которая туда
+   * ведёт. Не совпало — значит выбирать есть из чего, пусть и из одного.
+   */
   const select =
-    shown.length === 1 && !filtering ? (
+    shown.length === 1 && !filtering && String(shown[0].id) === String(value) ? (
       <span className="course-picked">{label(shown[0])}</span>
     ) : (
       <select
