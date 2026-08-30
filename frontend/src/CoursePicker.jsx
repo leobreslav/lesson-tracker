@@ -23,6 +23,12 @@ import { useKept } from './remember'
  * остальные чужие, за которыми он смотрит. Разделены они `optgroup`'ом, а не
  * значком в подписи: значок читается как свойство курса, а тут разные **роли
  * человека**, и группа говорит об этом прямо.
+ *
+ * Группой может оказаться и не курс вовсе: экран учебного плана кладёт сюда
+ * «Мои заготовки» — планы с полки, у которых нет ни курса, ни дат. Селект
+ * от этого не меняется, потому что отвечает он не на «какой курс», а на «чем
+ * сейчас занимаемся», — а id у таких строк приезжает с приставкой, см.
+ * `byKey` ниже.
  */
 export default function CoursePicker({
   courses,
@@ -85,6 +91,17 @@ export default function CoursePicker({
 
   if (!courses?.length) return null
 
+  /*
+   * Значение `<option>` — всегда строка, а id у нас не всегда число.
+   *
+   * Пять экранов зовут этот селект с номерами курсов и получают номер
+   * обратно; шестой (учебный план) кладёт в тот же список ещё и свои
+   * заготовки с полки, и различает их приставкой — `t12`. `Number()` на
+   * выходе превращал бы такой ключ в `NaN`, поэтому наружу уезжает **тот
+   * самый id**, каким он пришёл в списке, а не переваренный.
+   */
+  const byKey = new Map((courses ?? []).map((item) => [String(item.id), item.id]))
+
   const select =
     shown.length === 1 && !filtering ? (
       <span className="course-picked">{label(shown[0])}</span>
@@ -93,7 +110,7 @@ export default function CoursePicker({
         className="course-picker"
         value={value ?? ''}
         aria-label={t('plan.courseLabel')}
-        onChange={(event) => onChange(Number(event.target.value))}
+        onChange={(event) => onChange(byKey.get(event.target.value))}
       >
         {shownGroups.length === 0
           ? shown.map((item) => (

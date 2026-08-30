@@ -1389,3 +1389,53 @@ test('учитель видит чужую правку и возвращает 
   await expect(page.locator('.plan-row', { hasText: 'Дописано завучем' })).toHaveCount(0)
   await expect(page.locator('.plan-intervention')).toHaveCount(0)
 })
+
+test('курс и заготовка выбираются одним селектом, и экран называет, что правит', async ({
+  page,
+  signIn,
+  api,
+}) => {
+  /*
+   * Экран один на две вещи, и раньше он об этом молчал.
+   *
+   * План курса и заготовка с полки правятся одной и той же таблицей, а
+   * значат разное: правка заготовки уходит прямо в библиотеку, правка плана
+   * курса до библиотеки не доходит вовсе. Отличались они молча — по наличию
+   * колонки дат, — и на пустом расписании не отличались никак.
+   *
+   * Дороги назад к заготовке при этом не было: закрыл экран — и возвращайся
+   * через план курса, меню «Библиотека», окно полки и кнопку «Править».
+   */
+  const teacher = await api(PEOPLE.ivanova)
+  const shelf = await teacher.get('/api/library/templates/?mine=true')
+  const draft = shelf.body[0]
+  const courses = await teacher.get('/api/courses/')
+  const course = courses.body.find((item) => item.name === 'Grade 6 Algebra')
+
+  await signIn(PEOPLE.ivanova)
+  await page.goto('/plan')
+  await ready(page)
+
+  const picker = page.locator('select.course-picker')
+  const context = page.locator('.plan-context')
+
+  // на курсе сказано, что правки до библиотеки не доходят
+  await picker.selectOption(String(course.id))
+  await expect(context).toContainText('план этого курса')
+
+  // заготовки лежат в селекте своей группой — по ним и возвращаются
+  await expect(picker.locator('optgroup[label="Мои заготовки"]')).toHaveCount(1)
+  await picker.selectOption(`t${draft.id}`)
+  await expect(page).toHaveURL(new RegExp(`/library/${draft.id}$`))
+  await ready(page)
+
+  // и здесь сказано обратное, теми же двумя предложениями
+  await expect(context).toContainText('прямо в эту заготовку')
+  await expect(picker).toHaveValue(`t${draft.id}`)
+
+  // обратно в курс — тем же селектом, а не через библиотеку
+  await picker.selectOption(String(course.id))
+  await expect(page).toHaveURL(/\/plan$/)
+  await ready(page)
+  await expect(context).toContainText('план этого курса')
+})

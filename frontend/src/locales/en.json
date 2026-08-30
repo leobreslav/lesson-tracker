@@ -553,11 +553,13 @@
     "fileMenu": "File",
     "libraryMenu": "Library",
     "shelf": {
-      "title": "Plan on the shelf",
       "draft": "draft, visible to you only",
       "edit": "Edit",
-      "create": "Write a new plan…",
-      "back": "To the library"
+      "create": "Write a new plan…"
+    },
+    "context": {
+      "course": "Edits go into the plan of this course. Nothing in the library changes because of them.",
+      "template": "Edits go straight into this library entry — there is nothing to save separately. It has no course and no dates."
     },
     "overwrite": {
       "take": "Take the whole plan from the shelf",
@@ -610,7 +612,8 @@
       "mine": "My courses",
       "waiting": "Waiting for a reply",
       "supervised": "Supervised",
-      "school": "Courses of the school"
+      "school": "Courses of the school",
+      "templates": "My drafts on the shelf"
     },
     "recordedHint": "The lesson is taught and recorded",
     "beforeTaught": "There is no room before a lesson already taught",
