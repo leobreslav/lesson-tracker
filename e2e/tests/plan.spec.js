@@ -567,10 +567,6 @@ test('черновик публикуется и снимается с публ�
   await teacher.post('/api/library/templates/from-plan/', {
     course: course.id,
     title: 'Свежий черновик',
-    // Петров уже ведёт «Алгебра 9, черновик», а живой по предмету и
-    // параллели один — второй отклоняется. Значит эта запись по определению
-    // копия, и кладём её так же, как её положил бы человек.
-    is_live: false,
   })
 
   await signIn(PEOPLE.petrov)
@@ -1184,17 +1180,24 @@ test('в библиотеку кладут сразу с ответом «ком
   expect(draft.is_published).toBe(false)
 })
 
-test('копия ложится снимком, а пометку «веду» можно перевесить', async ({
+test('полка принимает две мои записи по одному предмету, и кнопка не меняет имени', async ({
   page,
   signIn,
   api,
 }) => {
   /*
-   * Какой из моих шаблонов обновляют, а какой лежит снимком — **запись**.
+   * Полка — витрина, а не единственная версия плана.
    *
-   * Пометки не было, а кнопка «Обновить» была: клиент искал «мой шаблон с
-   * тем же предметом и параллелью» и брал первый, то есть алфавитно первый.
-   * Стоило положить рядом копию — и обновление уходило неизвестно куда.
+   * Раньше вторая запись по тому же предмету и параллели была невозможна:
+   * шаблон нёс пометку «веду», живой такой был один, и второй отвечал
+   * `template_already_live`. Пометка чинила настоящую беду — кнопка
+   * «Обновить» искала шаблон сама и брала алфавитно первый, — но платила за
+   * это запретом на «сохранил в сентябре, сохранил в мае».
+   *
+   * Заодно она переписывала кнопку: один и тот же пункт меню назывался то
+   * «Сохранить в библиотеку», то «Обновить в библиотеке» — по догадке, есть
+   * ли на полке мой шаблон по этому предмету. Человек читал разные слова в
+   * одном месте, ничего не сделав.
    */
   const teacher = await api(PEOPLE.ivanova)
   const courses = await teacher.get('/api/courses/')
@@ -1209,51 +1212,41 @@ test('копия ложится снимком, а пометку «веду» �
   await page.getByLabel('Курс').selectOption({ label: 'Grade 6 Geometry' })
   await expect(page.locator('.plan-cards')).toBeVisible()
 
-  // пока на полке ничего своего нет, копировать нечего — и пункта нет
-  await page.getByRole('button', { name: 'Библиотека', exact: true }).click()
   const menu = page.locator('.plan-menu .dropdown')
-  await expect(menu.getByRole('button', { name: /^Сохранить копию/ })).toHaveCount(0)
-  await menu.getByRole('button', { name: /^Сохранить в библиотеку/ }).click()
-
   const dialog = page.locator('dialog[open]')
-  await dialog.getByLabel('Название').fill('Геометрия, основная')
-  await dialog.getByRole('button', { name: /Сохранить в библиотеку/ }).click()
-  await expect(dialog).toBeHidden()
 
-  // теперь на полке есть ведомый — и рядом с «Обновить» появилась копия
-  await page.getByRole('button', { name: 'Библиотека', exact: true }).click()
-  await expect(menu.getByRole('button', { name: /^Обновить в библиотеке/ })).toBeVisible()
-  await menu.getByRole('button', { name: /^Сохранить копию/ }).click()
+  const saveAs = async (title) => {
+    await page.getByRole('button', { name: 'Библиотека', exact: true }).click()
+    // пункт ровно один и всегда с этим именем: ни «Обновить в библиотеке»,
+    // ни «Сохранить копию» на полке больше нет
+    await expect(menu.getByRole('button', { name: /^Обновить/ })).toHaveCount(0)
+    await expect(menu.getByRole('button', { name: /^Сохранить копию/ })).toHaveCount(0)
+    await menu.getByRole('button', { name: /^Сохранить в библиотеку/ }).click()
 
-  await dialog.getByLabel('Название').fill('Геометрия, копия')
-  await dialog.getByRole('button', { name: /Сохранить копию/ }).click()
-  await expect(dialog).toBeHidden()
+    await dialog.getByLabel('Название').fill(title)
+    await dialog.getByRole('button', { name: /Сохранить в библиотеку/ }).click()
+    await expect(dialog).toBeHidden()
+  }
 
-  // и это настоящая запись, а не состояние экрана
+  await saveAs('Геометрия, сентябрь')
+  await saveAs('Геометрия, май')
+
+  // и это настоящие записи, а не состояние экрана
   const shelf = await teacher.get('/api/library/templates/')
-  const led = shelf.body.find((item) => item.title === 'Геометрия, основная')
-  const copy = shelf.body.find((item) => item.title === 'Геометрия, копия')
-  expect(led.is_live).toBe(true)
-  expect(copy.is_live).toBe(false)
+  const mine = shelf.body
+    .filter((item) => item.title.startsWith('Геометрия, '))
+    .map((item) => item.title)
+    .sort()
+  expect(mine).toEqual(['Геометрия, май', 'Геометрия, сентябрь'])
 
-  // на полке видно, который из них какой
+  // ни та ни другая ничем не помечена: «который из них ведут» — вопрос,
+  // которого больше нет
   await page.getByRole('button', { name: 'Библиотека', exact: true }).click()
   await menu.getByRole('button', { name: 'Открыть библиотеку' }).click()
   const shelfRow = (title) => dialog.locator('li').filter({ hasText: title })
-  await expect(shelfRow('Геометрия, основная')).toContainText('веду')
-  await expect(shelfRow('Геометрия, копия')).not.toContainText('веду')
-
-  // «вот эта версия удачнее, дальше веду её»
-  await shelfRow('Геометрия, копия')
-    .getByRole('button', { name: 'Вести отсюда' })
-    .click()
-  await expect(shelfRow('Геометрия, копия')).toContainText('веду')
-
-  const after = await teacher.get('/api/library/templates/')
-  const titleOf = (id) => after.body.find((item) => item.id === id)
-  expect(titleOf(copy.id).is_live).toBe(true)
-  // прежний остаётся на полке — его уже могли взять коллеги
-  expect(titleOf(led.id).is_live).toBe(false)
+  await expect(shelfRow('Геометрия, сентябрь')).toBeVisible()
+  await expect(shelfRow('Геометрия, май')).toBeVisible()
+  await expect(dialog.getByRole('button', { name: 'Вести отсюда' })).toHaveCount(0)
 })
 
 test('удаление называет цену: строка по имени, тема — числом и галочкой', async ({

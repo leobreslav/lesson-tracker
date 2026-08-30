@@ -27,7 +27,6 @@ export default function LibraryDialog({
   onEdit,
   onCreate,
   onPublish,
-  onKeepUpdating,
   onDelete,
   onClose,
 }) {
@@ -111,21 +110,13 @@ export default function LibraryDialog({
                     {item.title}
                   </button>
                   <span className="hint">{line(item)}</span>
-                  {/* Метки — одной ячейкой, и это не косметика: каждая из
-                      них прибита к одной клетке сетки, и вторая легла бы
-                      поверх первой. У своего черновика, который я веду, их
-                      как раз две.
-
-                      Какой из моих шаблонов обновляется кнопкой на плане, а
-                      какой лежит снимком, — видно здесь, и это единственное
-                      место, где обе версии стоят рядом. Чужие не помечаем:
-                      их ведёт не читатель, и слово было бы про чужую кухню. */}
+                  {/* Метки — одной ячейкой: каждая прибита к одной клетке
+                      сетки, и вторая легла бы поверх первой. Метка сейчас
+                      осталась одна — «черновик», — но ячейка своя, иначе
+                      соседняя колонка прыгала бы между строками */}
                   <span className="badges">
                     {!item.is_published && (
                       <span className="badge">{t('library.draft')}</span>
-                    )}
-                    {item.mine && item.is_live && (
-                      <span className="badge">{t('library.live')}</span>
                     )}
                   </span>
 
@@ -162,20 +153,6 @@ export default function LibraryDialog({
                         onClick={() => onPublish(item, !item.is_published)}
                       >
                         {t(item.is_published ? 'library.unpublish' : 'library.publish')}
-                      </button>
-                    )}
-                    {/* «Вести отсюда» — у снимка, и только у своего. Без
-                        него ответом на «эта версия удачнее» было бы «снимите
-                        шаблон заново», то есть третья запись на полке ради
-                        переезда одной пометки */}
-                    {item.can_edit && !item.is_live && (
-                      <button
-                        type="button"
-                        className="link"
-                        disabled={busy}
-                        onClick={() => onKeepUpdating(item)}
-                      >
-                        {t('library.keepUpdating')}
                       </button>
                     )}
                     {item.can_delete && (
@@ -279,9 +256,8 @@ function blocksOf(rows) {
  * складывает, а не начинает заново. Взять план целиком по-прежнему можно
  * соседней кнопкой, и она по-прежнему заменяет.
  *
- * Строки правят в плане курса и возвращают кнопкой «Обновить в библиотеке»:
- * шаблон — снимок плана, поэтому страница плана и есть его единственный
- * редактор.
+ * Строки тут только показывают: правят их на экране плана — своего шаблона
+ * прямо в библиотеке, чужого никак.
  */
 export function TemplateView({ template, busy, onUse, onClose }) {
   const { t } = useTranslation()

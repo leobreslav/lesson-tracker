@@ -1123,9 +1123,6 @@ class ActionDoorTests(AccessTestCase):
             actions=(
                 {"name": "plantemplate-update-from-plan", "method": "post"},
                 {"name": "plantemplate-diff-from-plan"},
-                # перевешивание пометки «веду» — такое же авторское действие,
-                # как перезапись строк, и граница у него та же
-                {"name": "plantemplate-keep-updating", "method": "post"},
                 {"name": "plantemplate-rows", "method": "put", "body": {"rows": []}},
             ),
             obj=template,

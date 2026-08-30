@@ -214,8 +214,6 @@
     "grade_required": "Pick a grade: the library is searched by subject and grade.",
     "plan_empty": "There is nothing to publish: the plan of this course is empty.",
     "template_row_unknown": "Some of the chosen rows are not in this plan any more. Open it again and pick them anew.",
-    "template_already_live": "«{{title}}» is already the template you keep up to date for this subject and grade. Update it, or save a copy.",
-    "template_is_a_snapshot": "«{{title}}» is a copy left as it is. Open the library and choose «Keep updating this one» before refreshing it.",
     "subject_name_taken": "This school already has a subject with that name.",
     "subject_in_use": "«{{name}}» is used by {{courses}} courses.",
     "content_on_section": "A theme holds no lesson content — only a lesson does.",
@@ -533,10 +531,6 @@
     "toMyself": "Only me",
     "toEveryoneHint": "Teachers of the school will find it on the shelf and can take it into their own courses. Your course plan is not affected: the shelf holds a snapshot.",
     "toMyselfHint": "A draft: nobody else sees it. You can publish it later, on the shelf.",
-    "refreshTemplate": "Update in the library…",
-    "refreshHint": "«{{title}}» will be overwritten with the current plan of this course. Colleagues who already took a copy keep theirs.",
-    "publishCopy": "Save a copy to the library…",
-    "publishCopyHint": "A copy is left as it is: «Update in the library» will never overwrite it. Change your mind — open the library and choose «Keep updating this one».",
     "published": "«{{title}}» is on the shelf.",
     "synced": "Synced: {{created}} created, {{updated}} updated, {{deleted}} deleted.",
     "csvHelp": {
@@ -567,7 +561,6 @@
     },
     "overwrite": {
       "take": "Take the whole plan from the shelf",
-      "refresh": "Refresh «{{title}}» from this course",
       "caption": "What will change:",
       "unrelated": "These two plans have nothing in common: {{replacing}} rows will go, {{arriving}} will arrive.",
       "confirm": "Replace"
@@ -1100,8 +1093,6 @@
     "grade": "Grade:",
     "onlyMine": "only mine",
     "draft": "draft",
-    "live": "kept up to date",
-    "keepUpdating": "Keep updating this one",
     "line": "{{subject}}, grade {{grade}} · {{author}} · {{lessons}}",
     "use": "Use in a course",
     "once": "The plan is copied into the course. Later changes to the template will not affect your copy.",

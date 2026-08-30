@@ -79,9 +79,6 @@ export default function CourseDeleteDialog({ course, onClose, onDone }) {
       // всей школе: курс уходит, и держать программу в черновике у автора
       // значит спрятать её от тех, кому она и пригодится
       is_published: true,
-      // снимок, а не ведомый: курса, с которого его обновлять, сейчас не
-      // станет, и пометка «веду» обещала бы то, чего больше нет
-      is_live: false,
     })
       .then((template) => setSaved(template.title))
       .catch((err) => setError(err.message))

@@ -45,7 +45,6 @@ EXCUSED = {
         "«отменить отмену»"
     ),
     "PlanTemplateViewSet.from_plan": "заводит новый шаблон, а не правит чужой",
-    "PlanTemplateViewSet.keep_updating": "перевешивает пометку, план не трогает",
     "PlanTemplateViewSet.perform_create": "то же заведение, другой конец DRF",
 }
 

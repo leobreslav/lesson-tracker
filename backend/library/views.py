@@ -132,16 +132,6 @@ class PlanTemplateViewSet(SchoolScopedViewSet):
             is_published=serializer.validated_data.get("is_published", False),
         )
 
-    def live_template(self, subject, grade):
-        """Мой живой шаблон по этому предмету и параллели, если он есть."""
-        return PlanTemplate.objects.filter(
-            school=self.request.user.school,
-            author=self.request.user,
-            subject=subject,
-            grade=grade,
-            is_live=True,
-        ).first()
-
     @action(detail=False, methods=["post"], url_path="from-plan")
     def from_plan(self, request):
         """
@@ -156,27 +146,16 @@ class PlanTemplateViewSet(SchoolScopedViewSet):
         действиями в разных местах, и второе легко забывалось. Черновик
         никуда не делся: это ответ «пока только себе».
 
-        **`is_live` отвечает на другой вопрос — «веду или кладу снимком».**
-        Живой по предмету и параллели один, поэтому второй отклоняется, а не
-        отбирает пометку у прежнего: отобрать её молча значит превратить
-        чужую работу в снимок, о котором никто не просил. Обновить уже
-        лежащий живой — это `update-from-plan`, и кнопка для этого своя.
+        **Новая запись — всегда новая.** Второго вопроса («веду я этот
+        шаблон или он лежит снимком») больше нет: пометки не стало, а вместе
+        с ней и отказа «по этому предмету вы уже ведёте другой». Положить на
+        полку второй план по алгебре за девятый — обычное дело, и мешать
+        этому было незачем. Перезаписать **свою** запись — это
+        `update-from-plan`, и шаблон там называют явно.
         """
         form = FromPlanSerializer(data=request.data, context={"request": request})
         form.is_valid(raise_exception=True)
         data = form.validated_data
-
-        if data["is_live"]:
-            standing = self.live_template(data["subject"], data["grade"])
-            if standing is not None:
-                api_error(
-                    Codes.TEMPLATE_ALREADY_LIVE,
-                    f"«{standing.title}» is already the template you keep up to "
-                    "date for this subject and grade. Refresh it, or save a copy.",
-                    field="is_live",
-                    title=standing.title,
-                    id=standing.pk,
-                )
 
         rows = services.plan_as_rows(of_course(data["course"]))
         if not rows:
@@ -195,7 +174,6 @@ class PlanTemplateViewSet(SchoolScopedViewSet):
                 description=data["description"],
                 author=request.user,
                 is_published=data["is_published"],
-                is_live=data["is_live"],
             )
             services.write_rows(template, rows)
 
@@ -257,20 +235,6 @@ class PlanTemplateViewSet(SchoolScopedViewSet):
         template = self.get_object()
         self.check_object_permissions(request, template)
 
-        # Снимок не переписывают — он затем и снимок, и это единственное, что
-        # он обещает. Обещание должно держаться и тогда, когда id пришёл не с
-        # нашей кнопки: проверка во вьюхе — и есть то место, где оно живёт.
-        # Передумали — сначала перевесьте пометку (`keep-updating`), и тогда
-        # прежний живой станет снимком видимо, а не заодно.
-        if not template.is_live:
-            api_error(
-                Codes.TEMPLATE_IS_A_SNAPSHOT,
-                f"«{template.title}» is a copy left as it was. Make it the one "
-                "you keep up to date before refreshing it.",
-                field="id",
-                title=template.title,
-            )
-
         form = UpdateFromPlanSerializer(data=request.data, context={"request": request})
         form.is_valid(raise_exception=True)
 
@@ -291,26 +255,6 @@ class PlanTemplateViewSet(SchoolScopedViewSet):
         if course.grade and course.grade.level != template.grade:
             moved["grade"] = course.grade.level
 
-        # Переезд предмета или года умеет столкнуть шаблон с **другим** моим
-        # живым: веду алгебру за восьмой и за девятый, обновляю восьмой с
-        # курса, которому администратор поправил параллель, — и живых по
-        # алгебре за девятый становится два. База это поймает ограничением,
-        # но ответит отказом, в котором человеку нет ничего; спрашиваем сами.
-        if moved:
-            standing = self.live_template(
-                moved.get("subject", template.subject),
-                moved.get("grade", template.grade),
-            )
-            if standing is not None and standing.pk != template.pk:
-                api_error(
-                    Codes.TEMPLATE_ALREADY_LIVE,
-                    f"This course moved the template to a subject and grade where "
-                    f"«{standing.title}» is already the one you keep up to date.",
-                    field="course",
-                    title=standing.title,
-                    id=standing.pk,
-                )
-
         # обе записи одной транзакцией: строки уже свежие, а предмет и год
         # ещё старые — состояние, которого никто потом не объяснит, и найти
         # такой шаблон по фильтру нельзя
@@ -327,52 +271,6 @@ class PlanTemplateViewSet(SchoolScopedViewSet):
                 for field, value in moved.items():
                     setattr(template, field, value)
                 template.save(update_fields=list(moved))
-
-        return Response(
-            PlanTemplateDetailSerializer(
-                template, context=self.get_serializer_context()
-            ).data
-        )
-
-    @action(detail=True, methods=["post"], url_path="keep-updating")
-    def keep_updating(self, request, pk=None):
-        """
-        Перевесить пометку: вести дальше **этот** шаблон, а не прежний.
-
-        Живой по предмету и параллели один, поэтому действие ровно одно на
-        две записи: пометка снимается с прежнего и ставится сюда, обе — в
-        транзакции. Двумя запросами это было бы состояние «живых ноль» или
-        «живых два» между ними; второе ограничение и не пустит.
-
-        Зачем оно вообще. Копию кладут снимком, и обычно снимок так и лежит,
-        но бывает наоборот: «вот эта версия удачнее, дальше веду её». Без
-        такого действия ответом было бы «снимите шаблон заново», то есть
-        третья запись на полке ради переезда пометки.
-
-        Прежний живой при этом **становится снимком**, а не исчезает: его
-        уже могли взять коллеги, и он остаётся тем, чем был, — планом,
-        который кто-то положил на полку.
-        """
-        template = self.get_object()
-        self.check_object_permissions(request, template)
-
-        if template.is_live:
-            # не отказ: просили состояние, а оно уже такое
-            return Response(
-                PlanTemplateDetailSerializer(
-                    template, context=self.get_serializer_context()
-                ).data
-            )
-
-        standing = self.live_template(template.subject, template.grade)
-
-        with transaction.atomic():
-            if standing is not None:
-                standing.is_live = False
-                standing.save(update_fields=["is_live"])
-
-            template.is_live = True
-            template.save(update_fields=["is_live"])
 
         return Response(
             PlanTemplateDetailSerializer(

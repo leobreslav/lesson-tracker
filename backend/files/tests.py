@@ -1782,7 +1782,7 @@ class MaterialsOfAShelfLessonTests(SchoolTestMixin, APITestCase):
 
     def test_a_draft_keeps_its_materials_to_its_author(self):
         draft = make_template(
-            self.school, self.user, published=False, live=False, title="Черновик"
+            self.school, self.user, published=False, title="Черновик"
         )
         lesson = PlanNode.objects.create(
             template=draft, title="Не для всех", position=0

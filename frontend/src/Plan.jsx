@@ -40,15 +40,12 @@ import {
   deleteTemplate,
   fetchSubjects,
   createTemplate,
-  fetchRefreshDiff,
   fetchTakeDiff,
   fetchTemplate,
   fetchTemplates,
   importTemplate,
   updateTemplate,
-  keepUpdatingTemplate,
   publishPlan,
-  refreshTemplate,
   redoPlan,
   undoPlan,
   deletePlanNode,
@@ -749,16 +746,6 @@ export default function Plan({ user, onLoggedOut, template = null }) {
   const publishTemplate = (template, published) =>
     run(() => updateTemplate(template.id, { is_published: published })).then(loadShelf)
 
-  /**
-   * Вести дальше этот шаблон, а не прежний.
-   *
-   * Перечитываем полку целиком, а не правим запись в состоянии: действие
-   * трогает **две** записи — пометка снимается с прежнего живого, — и
-   * подправив одну, мы показали бы двух живых там, где их не бывает.
-   */
-  const keepUpdating = (template) =>
-    run(() => keepUpdatingTemplate(template.id)).then(loadShelf)
-
   const removeTemplate = (template) => {
     if (!window.confirm(t('library.deleteConfirm', { title: template.title }))) return
     setPreview(null)
@@ -812,32 +799,6 @@ export default function Plan({ user, onLoggedOut, template = null }) {
       )
       .catch(handleError)
   }
-
-  /**
-   * Мой **живой** шаблон по предмету и параллели этого курса, если он есть.
-   *
-   * Раньше здесь стояло «первый мой с тем же предметом», и слово «первый»
-   * значило «раньше по алфавиту»: полка приезжает отсортированной по
-   * названию. У человека с черновиком и опубликованным по одному предмету
-   * «Обновить» молча уходило не туда.
-   *
-   * Теперь выбирает не порядок списка, а пометка `is_live`, и живой такой
-   * один — это держит ограничение базы, а не договорённость.
-   */
-  const mineOnShelf = useMemo(() => {
-    if (!course?.subject) return null
-    return (
-      templates.find(
-        (item) =>
-          item.mine &&
-          item.is_live &&
-          item.subject === course.subject &&
-          // the shelf stores the year of study, the course points at the
-          // school's name for it — «MYP 4» and 9 are the same year
-          item.grade === course.grade_level,
-      ) ?? null
-    )
-  }, [templates, course])
 
   const toggleSection = (id) =>
     setCollapsed((current) => {
@@ -1765,6 +1726,22 @@ export default function Plan({ user, onLoggedOut, template = null }) {
                       >
                         {t('plan.importLibrary')}
                       </button>
+                      {/*
+                        Пункт один, и надпись у него постоянная.
+
+                        Их было три — «Сохранить», «Обновить в библиотеке» и
+                        «Сохранить копию», — и первые два были одной кнопкой,
+                        переключавшей надпись по догадке: есть ли на полке
+                        «мой шаблон по этому предмету». Человек читал разные
+                        слова в одном и том же месте, не сделав ничего, и
+                        какую именно запись перепишет «Обновить», по кнопке
+                        видно не было.
+
+                        Теперь действие одно и называется одним словом, а
+                        куда именно ляжет копия — новой записью или поверх
+                        одной из моих — спрашивают в самом окне, где рядом
+                        стоит список.
+                      */}
                       <button
                         type="button"
                         disabled={busy}
@@ -1773,27 +1750,8 @@ export default function Plan({ user, onLoggedOut, template = null }) {
                           setDialog({ type: 'publish' })
                         }}
                       >
-                        {t(mineOnShelf ? 'plan.refreshTemplate' : 'plan.publish')}
+                        {t('plan.publish')}
                       </button>
-                      {/*
-                        «Сохранить копию» стоит только рядом с «Обновить», и
-                        это не экономия пункта. Копия — это копия **рядом с
-                        ведомым**: пока на полке ничего своего нет, выбор
-                        «вести или положить снимком» человеку не о чем
-                        задавать, а лишний пункт пришлось бы объяснять.
-                      */}
-                      {mineOnShelf && (
-                        <button
-                          type="button"
-                          disabled={busy}
-                          onClick={() => {
-                            setMenuOpen(null)
-                            setDialog({ type: 'publish', copy: true })
-                          }}
-                        >
-                          {t('plan.publishCopy')}
-                        </button>
-                      )}
                     </div>
                   )}
                 </div>
@@ -2055,7 +2013,6 @@ export default function Plan({ user, onLoggedOut, template = null }) {
           onEdit={(item) => navigate(`/library/${item.id}`)}
           onCreate={() => setDialog({ type: 'newTemplate' })}
           onPublish={publishTemplate}
-          onKeepUpdating={keepUpdating}
           onDelete={removeTemplate}
           onClose={() => setDialog(null)}
         />
@@ -2116,7 +2073,7 @@ export default function Plan({ user, onLoggedOut, template = null }) {
         <PublishDialog
           course={null}
           subjects={subjects}
-          existing={null}
+
           fresh
           busy={busy}
           onSubmit={(fields) => {
@@ -2147,67 +2104,11 @@ export default function Plan({ user, onLoggedOut, template = null }) {
         <PublishDialog
           course={course}
           subjects={subjects}
-          // копия просит ту же форму, что и первое сохранение: у неё своё
-          // название, иначе на полке лягут два «Алгебра 9» без различий
-          existing={dialog.copy ? null : mineOnShelf}
-          copy={Boolean(dialog.copy)}
+
           busy={busy}
           onSubmit={(fields) => {
-            const refreshing = Boolean(mineOnShelf && !dialog.copy)
-
-            /*
-             * Обновление спрашивает, а первое сохранение — нет.
-             *
-             * Раньше «Обновить» переписывало строки молча, и это было
-             * безопасно ровно потому, что шаблон был снимком плана: своей
-             * работы в нём не было. Теперь она там есть — план на полке
-             * пишут руками, — и молчаливая перезапись стирала бы написанное.
-             *
-             * Класть **новый** шаблон при этом не о чем спрашивать: он
-             * пустой, терять нечего.
-             */
-            if (refreshing) {
-              setBusy(true)
-              fetchRefreshDiff(mineOnShelf.id, classId)
-                .then((diff) =>
-                  setOverwrite({
-                    what: t('plan.overwrite.refresh', {
-                      title: mineOnShelf.title,
-                    }),
-                    diff,
-                    apply: () => {
-                      setBusy(true)
-                      return refreshTemplate(mineOnShelf.id, classId)
-                        .then((template) => {
-                          setTemplates((current) => [
-                            ...current.filter((item) => item.id !== template.id),
-                            template,
-                          ])
-                          setNotice(
-                            t('plan.published', { title: template.title }),
-                          )
-                          setOverwrite(null)
-                          setDialog(null)
-                        })
-                        .catch(handleError)
-                        .finally(() => setBusy(false))
-                    },
-                  }),
-                )
-                .catch(handleError)
-                .finally(() => setBusy(false))
-              return
-            }
-
-            const request = publishPlan({
-              course: classId,
-              ...fields,
-              // копия не претендует на ведение: её никто не перезапишет
-              is_live: !dialog.copy,
-            })
-
             setBusy(true)
-            request
+            publishPlan({ course: classId, ...fields })
               .then((template) => {
                 setTemplates((current) => [
                   ...current.filter((item) => item.id !== template.id),
@@ -2348,16 +2249,15 @@ export default function Plan({ user, onLoggedOut, template = null }) {
 
 
 /**
- * Putting this plan on the shelf, or refreshing what is already there.
+ * Putting this plan on the shelf.
  *
- * Refreshing asks nothing: the entry already knows its title and subject,
- * and the only question — «take the current plan?» — is the button itself.
+ * Одна форма на два повода: снять запись с плана курса и завести пустую
+ * заготовку. Вопросы у них одни и те же — название, предмет, параллель,
+ * кому видно, — и различаются они одним словом на кнопке.
  */
 function PublishDialog({
   course,
   subjects,
-  existing,
-  copy = false,
   // новый план на полке: та же форма, но она не «сохраняет» готовое, а
   // заводит пустое — и называться должна тем же словом, каким её позвали
   fresh = false,
@@ -2366,15 +2266,20 @@ function PublishDialog({
   onClose,
 }) {
   const { t } = useTranslation()
+  /*
+   * Название по умолчанию — предмет и параллель курса **с датой**.
+   *
+   * Дата стояла только у «сохранить копию», потому что копия была особым
+   * случаем рядом с ведомым. Особого случая не стало: каждое сохранение
+   * кладёт на полку новую запись, и двух «Алгебра 9» подряд не различить
+   * ничем. Дата — через `dates.js`, то есть по языку интерфейса: своего
+   * формата тут заводить нельзя, он разъедется с остальными в проекте.
+   */
   const [title, setTitle] = useState(() => {
     const name = course
       ? `${course.subject_name ?? ''} ${course.grade_name ?? ''}`.trim()
       : ''
-    // У копии название по умолчанию с датой: два «Алгебра 9» на полке
-    // различить нельзя, а копию кладут именно затем, чтобы к ней вернуться.
-    // Дата — через `dates.js`, то есть по языку интерфейса: своего формата
-    // тут заводить нельзя, он разъедется с остальными датами в проекте
-    return copy && name ? `${name} — ${longDate(today())}` : name
+    return name ? `${name} — ${longDate(today())}` : name
   })
   const [description, setDescription] = useState('')
   const [subject, setSubject] = useState(subjects[0]?.id ?? null)
@@ -2398,22 +2303,6 @@ function PublishDialog({
   const asksSubject = !course?.subject
   const asksGrade = !course?.grade_level
 
-  if (existing) {
-    return (
-      <Modal onClose={onClose} title={t('plan.refreshTemplate')}>
-        <p className="hint">{t('plan.refreshHint', { title: existing.title })}</p>
-        <div className="actions">
-          <button type="button" disabled={busy} onClick={() => onSubmit({})}>
-            {t('plan.refreshTemplate')}
-          </button>
-          <button type="button" className="secondary" onClick={onClose}>
-            {t('common.cancel')}
-          </button>
-        </div>
-      </Modal>
-    )
-  }
-
   return (
     <Modal onClose={onClose}>
       <form
@@ -2430,18 +2319,7 @@ function PublishDialog({
           }
         }}
       >
-        <h3>
-          {t(
-            fresh
-              ? 'plan.shelf.create'
-              : copy
-                ? 'plan.publishCopy'
-                : 'plan.publish',
-          )}
-        </h3>
-        {/* копия обещает ровно одно — что останется такой; сказать это надо
-            здесь, иначе разница с соседним пунктом меню только в слове */}
-        {copy && <p className="hint">{t('plan.publishCopyHint')}</p>}
+        <h3>{t(fresh ? 'plan.shelf.create' : 'plan.publish')}</h3>
 
         <div className="field">
           <label htmlFor="template-title">{t('plan.titleLabel')}</label>
@@ -2525,13 +2403,7 @@ function PublishDialog({
 
         <div className="actions">
           <button type="submit" disabled={busy || !title.trim()}>
-            {t(
-              fresh
-                ? 'plan.shelf.create'
-                : copy
-                  ? 'plan.publishCopy'
-                  : 'plan.publish',
-            )}
+            {t(fresh ? 'plan.shelf.create' : 'plan.publish')}
           </button>
           <button type="button" className="secondary" onClick={onClose}>
             {t('common.cancel')}

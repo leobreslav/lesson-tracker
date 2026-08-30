@@ -99,7 +99,7 @@ class OnlyTheAuthorEditsWhatIsOnTheShelfTests(TemplatePlanTestCase):
         незачем вовсе, и 404 тут честнее 403 — иначе отказ сам сообщает, что
         такой шаблон есть.
         """
-        draft = make_template(self.school, self.user, published=False, live=False,
+        draft = make_template(self.school, self.user, published=False,
                               title="Черновик")
         sign_in(self.client, self.colleague)
 

@@ -321,7 +321,7 @@ def make_subject(school, name="Алгебра"):
 
 
 def make_template(school, author, *, subject=None, grade=9, title="Шаблон",
-                  published=True, live=True, rows=()):
+                  published=True, rows=()):
     """
     A shelf entry. `rows` are (is_header, title) pairs in display order.
 
@@ -329,10 +329,9 @@ def make_template(school, author, *, subject=None, grade=9, title="Шаблон"
     the call site, since «who can see it» is what most of these tests are
     about.
 
-    `live=False` — снимок. Живой шаблон у автора один на предмет и параллель
-    (`one_live_template_per_subject_and_grade`), поэтому **второй шаблон того
-    же автора по тому же предмету обязан быть снимком** — иначе фикстура
-    описывает состояние, которого в базе не бывает.
+    Сколько записей одного автора по одному предмету и параллели лежит на
+    полке — не наше дело: полка это витрина, а не единственная версия. Пока
+    у шаблона была пометка «веду», второй такой в фикстуре ронял индекс.
     """
     from library.models import PlanTemplate
     from plans.models import PlanNode
@@ -344,7 +343,6 @@ def make_template(school, author, *, subject=None, grade=9, title="Шаблон"
         title=title,
         author=author,
         is_published=published,
-        is_live=live,
     )
 
     # план шаблона — обычное дерево плана, и раскладывается плоский список в
