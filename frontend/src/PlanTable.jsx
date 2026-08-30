@@ -999,9 +999,12 @@ export default function PlanTable({
                   </button>
                 )}
                 {!locked(node) && (
+                  /* класс `remove` — не для вида, а чтобы кнопку можно было
+                     назвать по имени: на узком экране из всего ряда остаётся
+                     только она (см. `styles.css`, строка плана на телефоне) */
                   <button
                     type="button"
-                    className="link"
+                    className="link remove"
                     title={t('common.delete')}
                     disabled={busy}
                     onClick={() => removeLesson(node)}
@@ -1148,9 +1151,11 @@ export default function PlanTable({
                         +
                       </button>
                     )}
+                    {/* `remove` — то же, что у урока: на узком экране из ряда
+                        остаётся только крестик */}
                     <button
                       type="button"
-                      className="link"
+                      className="link remove"
                       title={t('plan.deleteSection')}
                       disabled={busy}
                       onClick={() => removeSection(node)}
