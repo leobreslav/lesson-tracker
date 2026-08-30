@@ -861,3 +861,86 @@ class RepeatTests(SlotTestCase):
 
         self.assertEqual(answer.status_code, 400)
         self.assertFalse(Slot.objects.filter(course=self.alien_class).exists())
+
+
+class DeletingACourseTogetherWithItsPlanTests(SlotTestCase):
+    """
+    `?force=true` уносит курс вместе с планом — и только с планом.
+
+    Прежний совет отказа — «сначала очистите курс» — вёл в ловушку: очистить
+    план значит удалить строки по одной, а потом удаление курса уносит
+    **журнал**, и вернуть их становится нечем. Порядок теперь обратный и
+    предлагается в самом диалоге: сохранить план в библиотеку, где он
+    переживёт курс, и удалить вместе с планом.
+
+    Занятия и работы флаг не трогает никогда, и разница не в осторожности.
+    План — это текст, и копия его на полке равноценна оригиналу; за работой
+    стоят ответы учеников, за занятием — запись о том, что урок был. Копии,
+    равноценной им, не бывает.
+    """
+
+    def setUp(self):
+        super().setUp()
+        from schools.testing import make_node
+
+        self.node = make_node(self.user, self.course, "Синус суммы")
+        self.sign_in(self.admin)
+
+    def drop(self, force=False):
+        url = reverse("course-detail", args=[self.course.pk])
+        return self.client.delete(f"{url}?force=true" if force else url)
+
+    def test_without_the_flag_the_plan_still_refuses(self):
+        answer = self.drop()
+
+        self.assertEqual(answer.status_code, 400, answer.content)
+        self.assertEqual(answer.json()["code"], "course_in_use")
+        self.assertEqual(answer.json()["params"]["plan_rows"], 1)
+
+    def test_the_answer_says_the_plan_is_the_only_thing_in_the_way(self):
+        """
+        Клиенту нужно знать, поможет ли флаг: иначе он предложит кнопку,
+        которая ответит тем же отказом.
+        """
+        self.assertTrue(self.drop().json()["params"]["plan_only"])
+
+        self.make_slot(MONDAY, 1)
+
+        self.assertFalse(self.drop().json()["params"]["plan_only"])
+
+    def test_with_the_flag_the_course_goes_and_takes_its_plan(self):
+        from plans.models import PlanNode
+
+        answer = self.drop(force=True)
+
+        self.assertEqual(answer.status_code, 204, answer.content)
+        self.assertFalse(Course.objects.filter(pk=self.course.pk).exists())
+        self.assertFalse(PlanNode.objects.filter(pk=self.node.pk).exists())
+
+    def test_the_flag_does_not_touch_lessons(self):
+        """
+        Занятие держит курс и по флагу: за ним запись о том, что урок был.
+        """
+        self.make_slot(MONDAY, 1)
+
+        answer = self.drop(force=True)
+
+        self.assertEqual(answer.status_code, 400, answer.content)
+        self.assertEqual(answer.json()["params"]["slots"], 1)
+
+    def test_a_refused_force_leaves_the_plan_where_it_was(self):
+        """
+        Главное про порядок внутри транзакции.
+
+        План удаляется первым, курс вторым, и если второе не выходит —
+        откатывается и первое. Иначе флаг оставлял бы курс с пустым планом и
+        отказом на экране, то есть делал ровно ту потерю, от которой
+        защищает: строки ушли, курс на месте, вернуть нечем.
+        """
+        from plans.models import PlanNode
+
+        self.make_slot(MONDAY, 1)
+
+        self.drop(force=True)
+
+        self.assertTrue(PlanNode.objects.filter(pk=self.node.pk).exists())

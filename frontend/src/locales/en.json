@@ -743,9 +743,9 @@
     }
   },
   "classes": {
-    "newNameLabel": "New class name",
+    "newNameLabel": "New course name",
     "rename": "Rename",
-    "delete": "Delete the class {{name}}"
+    "delete": "Delete the course {{name}}"
   },
   "agenda": {
     "title": "Schedule",
@@ -888,7 +888,18 @@
       "hint": "A course is a group and a subject together, «9B Algebra». Teachers pick from this list; their lessons and plans inside a course stay their own.",
       "placeholder": "Course name, for example 9B Algebra",
       "needYear": "Create a school year first",
-      "deleteConfirm": "Delete the course «{{name}}»?",
+      "remove": {
+        "title": "Delete the course «{{name}}»?",
+        "ask": "The course belongs to the school; its timetable, plan and assignments belong to whoever teaches it.",
+        "held": "The course is held by {{plan_rows}} plan rows, {{slots}} lessons and {{works}} assignments.",
+        "askTeacher": "Lessons and assignments cannot be removed from here: an assignment holds the students' answers, a lesson holds the record that it happened. Ask {{who}} to clear the course.",
+        "itsTeacher": "its teacher",
+        "shelfOffer": "The plan can be saved to the library — there it outlives the course and can be taken into a new one next autumn.",
+        "toShelf": "Save the plan to the library",
+        "saved": "The plan is in the library as «{{title}}».",
+        "confirmLoss": "I understand: {{plan_rows}} plan rows go with the course, and there will be no way back",
+        "withPlan": "Delete together with the plan"
+      },
       "pickSubject": "subject…",
       "newSubject": "New subject name",
       "pickGrade": "year group…",

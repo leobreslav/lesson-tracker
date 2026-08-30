@@ -193,8 +193,16 @@ export const createCourse = (fields) =>
 export const renameCourse = (id, name) =>
   request(`/api/courses/${id}/`, { method: 'PATCH', body: { name } })
 
-export const deleteCourse = (id) =>
-  request(`/api/courses/${id}/`, { method: 'DELETE' })
+/**
+ * Удалить курс. `force` уносит вместе с ним его план — и только план.
+ *
+ * Занятия и работы держат курс и по флагу: копия плана на полке равноценна
+ * оригиналу, а копии, равноценной ответам учеников и записи о проведённом
+ * часе, не бывает. Первый отказ называет цену, повтор с флагом подтверждает
+ * — тот же приём, что у отвязки участника школы.
+ */
+export const deleteCourse = (id, force = false) =>
+  request(`/api/courses/${id}/${force ? '?force=true' : ''}`, { method: 'DELETE' })
 
 export const renameMySchool = (name) =>
   request('/api/school/', { method: 'PATCH', body: { name } })

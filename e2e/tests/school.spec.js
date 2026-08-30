@@ -1005,3 +1005,66 @@ test('в неделе школы час переносится перетаск�
   await expect(page.locator(`[data-lesson="${free}"]`)).toHaveCount(1)
   await expect(page.locator(`[data-lesson="${alone[0]}"]`)).toHaveClass(/cancelled/)
 })
+
+test('курс удаляется вместе с планом — но сперва план предлагают сохранить', async ({
+  page,
+  signIn,
+  api,
+}) => {
+  /*
+   * Три вещи держат курс под `PROTECT`: строки плана, занятия и работы. У
+   * первой есть выход, и до этого окна его не было видно: отказ приходил
+   * после нажатия и советовал «сначала очистите курс», а очистка плана с
+   * последующим удалением курса уносит **журнал** — то есть возможность
+   * вернуть строки. Порядок обратный и предлагается прямо здесь.
+   */
+  // первый отказ — часть разговора, а не поломка: окно на него и рассчитано.
+  // Браузер пишет в консоль любой 4xx, поэтому разрешение выдаётся ровно
+  // этому тесту, а не строкой в общем списке исключений
+  expectConsoleError(page, /Failed to load resource.*api\/courses/)
+
+  const admin = await api(PEOPLE.admin)
+  const courses = await admin.get('/api/courses/')
+  const year = (await admin.get('/api/calendar/years/')).body[0]
+  const subjects = await admin.get('/api/school/subjects/')
+  const grades = await admin.get('/api/school/grades/')
+
+  const made = await admin.post('/api/courses/', {
+    year: year.id,
+    name: 'Курс под снос',
+    subject: subjects.body[0].id,
+    grade: grades.body[0].id,
+  })
+  expect(made.status).toBe(201)
+  await admin.post('/api/plan/', { course: made.body.id, title: 'Единственный урок' })
+
+  await signIn(PEOPLE.admin)
+  await openSection(page, '/school/courses')
+
+  const card = page.locator('.course-row', { hasText: 'Курс под снос' })
+  await card.getByRole('button', { name: /Удалить курс/ }).click()
+
+  const dialog = page.locator('dialog[open]')
+  await dialog.getByRole('button', { name: 'Удалить', exact: true }).click()
+
+  // цена названа: сервер отказал, и окно показывает, чем именно держат
+  await expect(dialog).toContainText('строк плана — 1')
+
+  await dialog.getByRole('button', { name: 'Сохранить план в библиотеку' }).click()
+  await expect(dialog).toContainText('План сохранён в библиотеке')
+
+  // положили на полку — терять нечего, и галочка не спрашивается
+  await expect(dialog.locator('.checkbox.danger')).toHaveCount(0)
+
+  await dialog.getByRole('button', { name: 'Удалить вместе с планом' }).click()
+  await expect(dialog).toBeHidden()
+  await expect(page.locator('.course-row', { hasText: 'Курс под снос' })).toHaveCount(0)
+
+  // и план цел — на полке, откуда его возьмут в новый курс
+  const shelf = await admin.get('/api/library/templates/')
+  expect(shelf.body.some((item) => item.title.startsWith('Курс под снос'))).toBe(true)
+
+  // курс действительно исчез, а не спрятался из списка
+  const after = await admin.get('/api/courses/')
+  expect(after.body.length).toBe(courses.body.length)
+})

@@ -715,13 +715,41 @@ class CourseViewSet(SchoolScopedViewSet):
         The slots, the plan rows and the works hold it under PROTECT — an
         administrator must not wipe a colleague's year with one button. The
         answer says how much is in the way and whose it is.
+
+        **`?force=true` уносит вместе с курсом его план — и только его.**
+        Первый отказ называет цену, повтор с флагом подтверждает; тот же
+        приём, что у отвязки участника школы. Заведён он потому, что прежний
+        совет «сначала очистите курс» вёл в ловушку: очистить план значит
+        удалить строки по одной, а потом удаление курса уносит **журнал**, и
+        отменить это становится нечем. Теперь порядок другой и он в диалоге:
+        сохранить план в библиотеку — он там переживёт курс, — и удалить
+        вместе с планом.
+
+        Занятия и работы флаг не трогает никогда. Разница не в осторожности,
+        а в существе: план — это текст, и копия его на полке равноценна
+        оригиналу; за работой стоят ответы учеников и оценки, за занятием —
+        запись о том, что урок был. Копии, равноценной им, не бывает, и
+        удалять их «заодно» нельзя ни по какому флагу.
+
+        Порядок внутри транзакции важен: если после плана курс всё равно не
+        удалится — держат занятия или работы, — откатится и план. Иначе флаг
+        оставлял бы курс с пустым планом и отказом на экране, то есть делал
+        ровно ту потерю, от которой защищает.
         """
+        forced = self.request.query_params.get("force", "").lower() == "true"
+
+        # считаются до попытки: после удаления плана их не спросить, а
+        # называть надо то, что человек видел, когда нажимал
+        slots = instance.slots.count()
+        rows = instance.plan_nodes.count()
+        works = instance.works.count()
+
         try:
-            instance.delete()
+            with transaction.atomic():
+                if forced:
+                    PlanNode.objects.filter(course=instance).delete()
+                instance.delete()
         except ProtectedError:
-            slots = instance.slots.count()
-            rows = instance.plan_nodes.count()
-            works = instance.works.count()
             # кто ведёт — один человек, и всё перечисленное теперь его: план,
             # расписание и работы принадлежат курсу целиком
             teachers = sorted(
@@ -740,6 +768,9 @@ class CourseViewSet(SchoolScopedViewSet):
                 plan_rows=rows,
                 works=works,
                 teachers=teachers,
+                # план флаг уносит, занятия и работы — нет; клиенту это нужно,
+                # чтобы не предлагать кнопку, которая ответит тем же отказом
+                plan_only=bool(rows) and not slots and not works,
             )
 
 

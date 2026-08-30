@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
+import CourseDeleteDialog from './CourseDeleteDialog'
 import EmptyState from './EmptyState'
 import PersonPicker, { describePerson, matchItem } from './PersonPicker'
 import RosterDialog from './RosterDialog'
@@ -9,7 +10,6 @@ import {
   createCourse,
   createMethodist,
   deleteAssignment,
-  deleteCourse,
   deleteMethodist,
   fetchAssignments,
   fetchCourses,
@@ -160,10 +160,15 @@ export default function SchoolCourses() {
     run(() => renameCourse(id, trimmed))
   }
 
-  const remove = (course) => {
-    if (!window.confirm(t('school.courses.deleteConfirm', { name: course.name }))) return
-    run(() => deleteCourse(course.id))
-  }
+  /*
+   * Удаление спрашивает **окном**, а не нативным `confirm`.
+   *
+   * Тот называл одно имя курса, а курс держат три разные вещи — план,
+   * занятия и работы, — и у первой из них есть выход: положить план в
+   * библиотеку, где он переживёт курс. Сказать это в `confirm` нечем, а
+   * отказ приходил уже после нажатия, красной строкой в углу страницы.
+   */
+  const [dropping, setDropping] = useState(null)
 
   /**
    * Поручить курс — обычным назначением.
@@ -448,7 +453,7 @@ export default function SchoolCourses() {
                         className="link"
                         aria-label={t('classes.delete', { name: course.name })}
                         disabled={busy}
-                        onClick={() => remove(course)}
+                        onClick={() => setDropping(course)}
                       >
                         ✕
                       </button>
@@ -640,6 +645,14 @@ export default function SchoolCourses() {
           course={roster}
           onClose={() => setRoster(null)}
           onChanged={() => reload().catch(handleError)}
+        />
+      )}
+
+      {dropping && (
+        <CourseDeleteDialog
+          course={dropping}
+          onClose={() => setDropping(null)}
+          onDone={() => reload().catch(handleError)}
         />
       )}
     </>
