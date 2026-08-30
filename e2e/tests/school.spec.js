@@ -1050,8 +1050,18 @@ test('курс удаляется вместе с планом — но спер
   // цена названа: сервер отказал, и окно показывает, чем именно держат
   await expect(dialog).toContainText('строк плана — 1')
 
+  // имя спрашивается, а не подставляется молча: курс уходит, и найти эту
+  // запись потом можно будет только по названию
+  const name = dialog.getByLabel('Под каким именем сохранить')
+  await expect(name).toHaveValue(/^Курс под снос — /)
+  await name.fill('Программа, которую жалко')
+
   await dialog.getByRole('button', { name: 'Сохранить план в библиотеку' }).click()
-  await expect(dialog).toContainText('План сохранён в библиотеке')
+  await expect(dialog).toContainText('Программа, которую жалко')
+
+  // и сказано прямо, что копия останется: кнопка рядом называется «Удалить
+  // вместе с планом» и без этой строки читается как «удалит и копию»
+  await expect(dialog).toContainText('Копия в библиотеке останется')
 
   // положили на полку — терять нечего, и галочка не спрашивается
   await expect(dialog.locator('.checkbox.danger')).toHaveCount(0)
@@ -1062,7 +1072,7 @@ test('курс удаляется вместе с планом — но спер
 
   // и план цел — на полке, откуда его возьмут в новый курс
   const shelf = await admin.get('/api/library/templates/')
-  expect(shelf.body.some((item) => item.title.startsWith('Курс под снос'))).toBe(true)
+  expect(shelf.body.some((item) => item.title === 'Программа, которую жалко')).toBe(true)
 
   // курс действительно исчез, а не спрятался из списка
   const after = await admin.get('/api/courses/')

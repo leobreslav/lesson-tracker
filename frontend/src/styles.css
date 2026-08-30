@@ -2310,7 +2310,7 @@ button.modal-close:hover {
  */
 .template-list li {
   display: grid;
-  grid-template-columns: minmax(8rem, 1fr) minmax(9rem, 1.2fr) auto;
+  grid-template-columns: minmax(8rem, 1fr) minmax(9rem, 1.2fr) minmax(min-content, 14rem);
   align-items: baseline;
   gap: 0.35rem 0.6rem;
 }
@@ -2341,8 +2341,22 @@ button.modal-close:hover {
   background: #e8f0fe;
 }
 
+/* Действия переносятся, а не распирают строку.
+ *
+ * Их от одного до четырёх — у своего снимка есть ещё и «вести отсюда», — а
+ * колонка под них `auto`, то есть шириной по содержимому. Без переноса самая
+ * длинная строка уводила окно в горизонтальную прокрутку и заодно отбирала
+ * место у названия: у соседей сетка своя, и они вставали иначе. Наружу это
+ * читалось как «развалилась вёрстка второй строки».
+ *
+ * `white-space: nowrap` остаётся и работает теперь на своё: подпись кнопки
+ * не рвётся посреди слова, а переносится кнопка целиком. Прижаты они к
+ * правому краю, иначе вторая линия висела бы под первой не выровненной ни
+ * по чему. */
 .template-list .row-actions {
   display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
   gap: 0.6rem;
   white-space: nowrap;
 }

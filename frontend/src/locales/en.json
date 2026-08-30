@@ -895,8 +895,10 @@
         "askTeacher": "Lessons and assignments cannot be removed from here: an assignment holds the students' answers, a lesson holds the record that it happened. Ask {{who}} to clear the course.",
         "itsTeacher": "its teacher",
         "shelfOffer": "The plan can be saved to the library — there it outlives the course and can be taken into a new one next autumn.",
+        "shelfName": "Save it under this name",
         "toShelf": "Save the plan to the library",
         "saved": "The plan is in the library as «{{title}}».",
+        "copyStays": "The library copy stays where it is: what goes is the course's own plan, not the copy.",
         "confirmLoss": "I understand: {{plan_rows}} plan rows go with the course, and there will be no way back",
         "withPlan": "Delete together with the plan"
       },

@@ -41,6 +41,16 @@ export default function CourseDeleteDialog({ course, onClose, onDone }) {
   //: название шаблона, если план успели положить на полку
   const [saved, setSaved] = useState(null)
   const [understood, setUnderstood] = useState(false)
+  /*
+   * Под каким именем класть на полку — спрашивается, а не подставляется молча.
+   *
+   * Умолчание с датой то же, что у «сохранить копию» на самом плане: два
+   * «9Б Алгебра» на полке не различить. Но имя тут важнее, чем там: курс
+   * уходит, и найти эту запись потом можно будет только по названию — а
+   * «9Б Алгебра — 30 августа» через год не говорит ни о предмете, ни о том,
+   * чем этот план был хорош.
+   */
+  const [title, setTitle] = useState(`${course.name} — ${longDate(today())}`)
 
   const drop = (force = false) => {
     setBusy(true)
@@ -64,9 +74,7 @@ export default function CourseDeleteDialog({ course, onClose, onDone }) {
     setError(null)
     publishPlan({
       course: course.id,
-      // с датой, как у «сохранить копию» на самом плане: два «9Б Алгебра» на
-      // полке не различить, а кладут её именно затем, чтобы потом найти
-      title: `${course.name} — ${longDate(today())}`,
+      title: title.trim(),
       description: '',
       // всей школе: курс уходит, и держать программу в черновике у автора
       // значит спрятать её от тех, кому она и пригодится
@@ -114,13 +122,35 @@ export default function CourseDeleteDialog({ course, onClose, onDone }) {
       )}
 
       {planOnly && !saved && (
-        <p className="hint">{t('school.courses.remove.shelfOffer')}</p>
+        <>
+          <p className="hint">{t('school.courses.remove.shelfOffer')}</p>
+          {/* имя спрашивается, а не подставляется молча: курс уходит, и
+              найти эту запись потом можно будет только по названию */}
+          <label className="field-with-hint">
+            <span>{t('school.courses.remove.shelfName')}</span>
+            <input
+              value={title}
+              disabled={busy}
+              onChange={(event) => setTitle(event.target.value)}
+            />
+          </label>
+        </>
       )}
 
       {saved && (
-        <p className="hint" role="status">
-          {t('school.courses.remove.saved', { title: saved })}
-        </p>
+        <>
+          <p className="hint" role="status">
+            {t('school.courses.remove.saved', { title: saved })}
+          </p>
+          {/*
+            Сказать это прямо пришлось потому, что кнопка рядом называется
+            «Удалить вместе с планом», и стоя под строкой о библиотеке она
+            читается как «удалит и копию». Удаляется план **курса**; копия на
+            полке — отдельная запись, курса она не знает и его не переживает,
+            а живёт сама по себе.
+          */}
+          <p className="hint">{t('school.courses.remove.copyStays')}</p>
+        </>
       )}
 
       {/* Галочка стоит там же, где у сноса темы, и по той же причине: она
@@ -152,7 +182,7 @@ export default function CourseDeleteDialog({ course, onClose, onDone }) {
         )}
 
         {planOnly && !saved && (
-          <button type="button" disabled={busy} onClick={toShelf}>
+          <button type="button" disabled={busy || !title.trim()} onClick={toShelf}>
             {t('school.courses.remove.toShelf')}
           </button>
         )}
