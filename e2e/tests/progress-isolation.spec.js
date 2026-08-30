@@ -170,9 +170,10 @@ test('автор свой черновик видит и помечен метк
 
   const draft = shelf.locator('li', { hasText: 'Алгебра 9, черновик' })
   await expect(draft).toBeVisible()
-  // меток в строке бывает две: «черновик» и «веду». Этот шаблон петров и
-  // ведёт, поэтому спрашиваем про нужную, а не про единственную
+  // метка осталась одна — «черновик». Была вторая, «веду», и она отвечала на
+  // вопрос «какую из моих записей перепишет кнопка»; вопрос снят тем, что
+  // запись теперь называют явно, и метке отвечать стало не на что
   await expect(draft.locator('.badge', { hasText: 'черновик' })).toBeVisible()
-  await expect(draft.locator('.badge', { hasText: 'веду' })).toBeVisible()
+  await expect(draft.locator('.badge')).toHaveCount(1)
 })
 

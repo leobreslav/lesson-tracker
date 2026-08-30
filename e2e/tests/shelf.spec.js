@@ -35,7 +35,13 @@ test('план для класса, который не ведут, пишетс
 
   // адрес — сам план на полке: экран тот же, а владелец другой
   await expect(page).toHaveURL(/\/library\/\d+$/)
-  await expect(page.getByText('Алгебра 11, теоретический')).toBeVisible()
+  // чем занимаемся, называет селект в шапке, а не текст рядом с заголовком:
+  // курсы и заготовки лежат в одном списке, и открытое — это выбранное в нём
+  await expect(
+    page.locator('select.course-picker option:checked'),
+  ).toHaveText('Алгебра 11, теоретический')
+  // и строка контекста говорит, что правки идут прямо в библиотеку
+  await expect(page.locator('.plan-context')).toContainText('прямо в эту заготовку')
 
   await page.getByRole('button', { name: 'Добавить тему или урок' }).click()
   const row = page.locator('.plan-add-form')

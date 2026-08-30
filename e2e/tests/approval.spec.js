@@ -264,8 +264,11 @@ test('ожидающий и просто поднадзорный лежат в 
   signIn,
   api,
 }) => {
-  // Три группы — это три роли человека, а не три свойства курса: свои он
-  // ведёт, присланные должен утвердить, за остальными смотрит.
+  // Группы — это роли человека, а не свойства курса: свои он ведёт,
+  // присланные должен утвердить, за остальными смотрит, остальное в школе
+  // может прочитать. Пятая — не курс вовсе: свои заготовки с полки, у
+  // которых нет ни курса, ни дат; лежат они тут потому, что селект отвечает
+  // не на «какой курс», а на «чем сейчас занимаемся».
   await makeMethodist(api, PEOPLE.petrov, 'Grade 6 Algebra')
   await makeMethodist(api, PEOPLE.petrov, 'Grade 6 Geometry')
 
@@ -279,13 +282,14 @@ test('ожидающий и просто поднадзорный лежат в 
   await ready(page)
 
   const groups = page.getByLabel('Курс').locator('optgroup')
-  await expect(groups).toHaveCount(4)
+  await expect(groups).toHaveCount(5)
   await expect(groups.nth(0)).toHaveAttribute('label', 'Мои курсы')
   await expect(groups.nth(1)).toHaveAttribute('label', 'Ждут ответа')
   await expect(groups.nth(2)).toHaveAttribute('label', 'Под надзором')
   // четвёртая — всё остальное, что есть в школе: живой план читают все её
   // учителя, а не только назначенный методист
   await expect(groups.nth(3)).toHaveAttribute('label', 'Курсы школы')
+  await expect(groups.nth(4)).toHaveAttribute('label', 'Мои заготовки')
 
   // присланный — во второй группе, остальной надзор — в третьей
   await expect(groups.nth(1).locator('option')).toHaveText(['Grade 6 Algebra'])
