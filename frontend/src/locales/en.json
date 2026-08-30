@@ -561,8 +561,17 @@
       "course": "Edits go into the plan of this course. Nothing in the library changes because of them.",
       "template": "Edits go straight into this library entry — there is nothing to save separately. It has no course and no dates."
     },
+    "saveMode": {
+      "label": "Where to save",
+      "new": "As a new entry",
+      "over": "Over one of mine",
+      "which": "Which one to overwrite",
+      "overHint": "Only this entry is overwritten. Colleagues who already took a copy of it keep theirs.",
+      "overAction": "Overwrite…"
+    },
     "overwrite": {
       "take": "Take the whole plan from the shelf",
+      "refresh": "Overwrite «{{title}}» with this course plan",
       "caption": "What will change:",
       "unrelated": "These two plans have nothing in common: {{replacing}} rows will go, {{arriving}} will arrive.",
       "confirm": "Replace"

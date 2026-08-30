@@ -1439,3 +1439,68 @@ test('курс и заготовка выбираются одним селек�
   await ready(page)
   await expect(context).toContainText('план этого курса')
 })
+
+test('сохранение поверх называет запись, показывает разницу и отменяется', async ({
+  page,
+  signIn,
+  api,
+}) => {
+  /*
+   * Какую запись перепишет кнопка — раньше не говорилось нигде.
+   *
+   * Пункт меню сам решал, есть ли на полке «мой шаблон по этому предмету и
+   * параллели», и переписывал себя в «Обновить в библиотеке». Запись при этом
+   * выбиралась пометкой в базе, а не человеком, и перезапись уносит
+   * написанное руками: план на полке пишут и напрямую, а не только снятием
+   * с курса.
+   *
+   * Теперь выбор явный, со списком своих записей, сравнение — до нажатия, а
+   * снимок перед записью делает возврат одной кнопкой.
+   */
+  const teacher = await api(PEOPLE.ivanova)
+  const courses = await teacher.get('/api/courses/')
+  const course = courses.body.find((item) => item.name === 'Grade 6 Algebra')
+
+  await signIn(PEOPLE.ivanova)
+  await openPlan(page, 'Grade 6 Algebra')
+
+  const menu = page.locator('.plan-menu .dropdown')
+  const dialog = page.locator('dialog[open]')
+
+  // сперва кладём свою запись — поверх неё и будем писать
+  await page.getByRole('button', { name: 'Библиотека', exact: true }).click()
+  await menu.getByRole('button', { name: /^Сохранить в библиотеку/ }).click()
+  await dialog.getByLabel('Название').fill('Алгебра 6, моя')
+  await dialog.getByRole('button', { name: /Сохранить в библиотеку/ }).click()
+  await expect(dialog).toBeHidden()
+
+  const before = await teacher.get('/api/library/templates/')
+  const mine = before.body.find((item) => item.title === 'Алгебра 6, моя')
+
+  // дописываем урок и переписываем запись этим планом
+  await teacher.post('/api/plan/', { course: course.id, title: 'Дописанный урок' })
+  await page.reload()
+  await ready(page)
+
+  await page.getByRole('button', { name: 'Библиотека', exact: true }).click()
+  await menu.getByRole('button', { name: /^Сохранить в библиотеку/ }).click()
+  await dialog.getByRole('radio', { name: 'Поверх моей' }).click()
+  // запись называют, а не угадывают
+  await dialog.getByLabel('Какую переписать').selectOption(String(mine.id))
+  await dialog.getByRole('button', { name: /^Переписать/ }).click()
+
+  // сравнение показывается до записи и называет запись по имени
+  const diff = page.locator('dialog[open]', { hasText: 'Что изменится' })
+  await expect(diff).toContainText('Алгебра 6, моя')
+  await diff.getByRole('button', { name: 'Заменить' }).click()
+  await expect(diff).toBeHidden()
+
+  const after = await teacher.get(`/api/library/templates/${mine.id}/`)
+  expect(after.body.rows.map((row) => row.title)).toContain('Дописанный урок')
+
+  // и это отменяется одной кнопкой: снимок снят перед записью
+  await page.goto(`/library/${mine.id}`)
+  await ready(page)
+  await page.locator('.plan-undo').click()
+  await expect(page.locator('.plan-row', { hasText: 'Дописанный урок' })).toHaveCount(0)
+})

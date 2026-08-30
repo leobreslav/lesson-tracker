@@ -40,11 +40,13 @@ import {
   deleteTemplate,
   fetchSubjects,
   createTemplate,
+  fetchRefreshDiff,
   fetchTakeDiff,
   fetchTemplate,
   fetchTemplates,
   importTemplate,
   updateTemplate,
+  refreshTemplate,
   publishPlan,
   redoPlan,
   undoPlan,
@@ -2188,19 +2190,59 @@ export default function Plan({ user, onLoggedOut, template = null }) {
         <PublishDialog
           course={course}
           subjects={subjects}
-
+          mine={templates.filter((item) => item.mine)}
           busy={busy}
           onSubmit={(fields) => {
+            const remember = (template) => {
+              setTemplates((current) => [
+                ...current.filter((item) => item.id !== template.id),
+                template,
+              ])
+              setNotice(t('plan.published', { title: template.title }))
+              setDialog(null)
+            }
+
+            /*
+             * Перезапись спрашивает, а новая запись — нет.
+             *
+             * Разница не в осторожности, а в цене: новая запись ничего не
+             * трогает, а перезапись стирает написанное руками — план на
+             * полке пишут не только снятием с курса. Поэтому сперва
+             * сравнение, и только по нему кнопка.
+             *
+             * Снимок перед записью берёт сервер, внутри той же транзакции
+             * (`update_from_plan`): ошибка обязана отменяться одной кнопкой,
+             * а снимок вне транзакции оставил бы в журнале шаг
+             * несостоявшегося обновления.
+             */
+            if (fields.over) {
+              const target = templates.find((item) => item.id === fields.over)
+              setBusy(true)
+              fetchRefreshDiff(fields.over, classId)
+                .then((diff) =>
+                  setOverwrite({
+                    what: t('plan.overwrite.refresh', { title: target?.title ?? '' }),
+                    diff,
+                    apply: () => {
+                      setBusy(true)
+                      return refreshTemplate(fields.over, classId)
+                        .then((template) => {
+                          remember(template)
+                          setOverwrite(null)
+                        })
+                        .catch(handleError)
+                        .finally(() => setBusy(false))
+                    },
+                  }),
+                )
+                .catch(handleError)
+                .finally(() => setBusy(false))
+              return
+            }
+
             setBusy(true)
             publishPlan({ course: classId, ...fields })
-              .then((template) => {
-                setTemplates((current) => [
-                  ...current.filter((item) => item.id !== template.id),
-                  template,
-                ])
-                setNotice(t('plan.published', { title: template.title }))
-                setDialog(null)
-              })
+              .then(remember)
               .catch(handleError)
               .finally(() => setBusy(false))
           }}
@@ -2338,10 +2380,16 @@ export default function Plan({ user, onLoggedOut, template = null }) {
  * Одна форма на два повода: снять запись с плана курса и завести пустую
  * заготовку. Вопросы у них одни и те же — название, предмет, параллель,
  * кому видно, — и различаются они одним словом на кнопке.
+ *
+ * `mine` — мои записи на полке; когда они есть, форма спрашивает третье:
+ * класть новой записью или **поверх одной из них**. Спрашивает прямо, со
+ * списком: прежде это решала догадка «есть ли мой шаблон по этому предмету»,
+ * и какую именно запись перепишет кнопка, человеку не показывали вовсе.
  */
 function PublishDialog({
   course,
   subjects,
+  mine = [],
   // новый план на полке: та же форма, но она не «сохраняет» готовое, а
   // заводит пустое — и называться должна тем же словом, каким её позвали
   fresh = false,
@@ -2350,6 +2398,14 @@ function PublishDialog({
   onClose,
 }) {
   const { t } = useTranslation()
+  /*
+   * Умолчание — новая запись, и это не осторожность, а правда о полке.
+   *
+   * Полка витрина, а не единственная версия: обычное сохранение кладёт рядом
+   * ещё одну запись и ничего не трогает. Перезапись — действие, уносящее
+   * написанное руками, и по умолчанию его не предлагают.
+   */
+  const [over, setOver] = useState(null)
   /*
    * Название по умолчанию — предмет и параллель курса **с датой**.
    *
@@ -2392,6 +2448,10 @@ function PublishDialog({
       <form
         onSubmit={(event) => {
           event.preventDefault()
+          if (over) {
+            onSubmit({ over })
+            return
+          }
           if (title.trim()) {
             onSubmit({
               title: title.trim(),
@@ -2405,6 +2465,57 @@ function PublishDialog({
       >
         <h3>{t(fresh ? 'plan.shelf.create' : 'plan.publish')}</h3>
 
+        {/*
+          «Новой записью или поверх моей» — вопрос, а не догадка.
+
+          Догадка тут стояла и была невидимой: кнопка в меню сама решала,
+          есть ли на полке «мой шаблон по этому предмету и параллели», и
+          переписывалась в «Обновить в библиотеке». Какую именно запись она
+          перепишет, не говорилось нигде — а перезапись уносит написанное
+          руками.
+
+          Список показывается, только когда своё на полке есть: пока его нет,
+          выбора не существует, и тумблер с одним рабочим положением был бы
+          вопросом ни о чём.
+        */}
+        {!fresh && mine.length > 0 && (
+          <div className="field">
+            <label>{t('plan.saveMode.label')}</label>
+            <Switch
+              label={t('plan.saveMode.label')}
+              value={Boolean(over)}
+              onChange={(replacing) => setOver(replacing ? mine[0].id : null)}
+              options={[
+                { value: false, label: t('plan.saveMode.new') },
+                { value: true, label: t('plan.saveMode.over') },
+              ]}
+            />
+          </div>
+        )}
+
+        {over ? (
+          <>
+            <div className="field">
+              <label htmlFor="template-over">{t('plan.saveMode.which')}</label>
+              <select
+                id="template-over"
+                value={over}
+                onChange={(event) => setOver(Number(event.target.value))}
+              >
+                {mine.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {`${item.title} · ${item.subject_name} · ${item.grade}`}
+                  </option>
+                ))}
+              </select>
+            </div>
+            {/* что уйдёт, показывают сравнением — но сказать, что запись
+                тут одна и та же, надо до него: у коллеги, взявшего копию,
+                не изменится ничего, и это первое, о чём спрашивают */}
+            <p className="hint">{t('plan.saveMode.overHint')}</p>
+          </>
+        ) : (
+        <>
         <div className="field">
           <label htmlFor="template-title">{t('plan.titleLabel')}</label>
           <input
@@ -2484,10 +2595,14 @@ function PublishDialog({
             {published ? t('plan.toEveryoneHint') : t('plan.toMyselfHint')}
           </p>
         </div>
+        </>
+        )}
 
         <div className="actions">
-          <button type="submit" disabled={busy || !title.trim()}>
-            {t(fresh ? 'plan.shelf.create' : 'plan.publish')}
+          <button type="submit" disabled={busy || (!over && !title.trim())}>
+            {over
+              ? t('plan.saveMode.overAction')
+              : t(fresh ? 'plan.shelf.create' : 'plan.publish')}
           </button>
           <button type="button" className="secondary" onClick={onClose}>
             {t('common.cancel')}
