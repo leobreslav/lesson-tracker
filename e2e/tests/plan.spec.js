@@ -613,29 +613,58 @@ test('просмотр шаблона показывает уроки до то�
   await preview.getByRole('button', { name: 'Закрыть окно' }).click()
 
   await expect(page.locator('dialog.modal')).toHaveCount(1)
-  await expect(shelf.locator('.template-list')).toBeVisible()
+  // списков на полке два — мои планы и планы коллег, — поэтому «список
+  // виден» спрашивается у первого, а не у безымянного «того самого»
+  await expect(shelf.locator('.template-list').first()).toBeVisible()
 })
 
-test('поиск сужает полку, «только мои» прячет чужое', async ({
+test('полка разложена на моё и чужое, а сужается предметом и годом', async ({
   page,
   signIn,
 }) => {
+  /*
+   * Галочка «только мои» отвечала не на тот вопрос.
+   *
+   * Спрашивают «где моё», а она отвечала «спрятать ли чужое» — и, ответив,
+   * человек терял из виду вторую половину полки. Теперь списка два, и обе
+   * половины видны сразу.
+   *
+   * Предмет искали текстом вместе с названием, и это промахивалось в обе
+   * стороны: «алгебра» находила и «Алгебра 9», и «Повторение алгебры за 8»,
+   * а год не находился вовсе — в подписи он есть, а в полях, по которым
+   * искали, его не было.
+   */
   await signIn(PEOPLE.petrov)
   await openPlan(page, 'Grade 9 Algebra')
   await planMenu(page, 'Открыть библиотеку')
 
   const shelf = page.locator('dialog.modal')
   const rows = shelf.locator('.template-list li')
-  const total = await rows.count()
-  expect(total).toBeGreaterThan(1)
+  expect(await rows.count()).toBeGreaterThan(1)
 
+  // обе половины полки названы и видны одновременно
+  await expect(shelf.getByRole('heading', { name: 'Мои планы' })).toBeVisible()
+  await expect(shelf.getByRole('heading', { name: 'Планы коллег' })).toBeVisible()
+  await expect(shelf.getByText('Алгебра 6, по учебнику')).toBeVisible()
+
+  // поиск теперь про одно — про название
   await shelf.getByRole('searchbox').fill('геометри')
   await expect(rows).toHaveCount(1)
-
   await shelf.getByRole('searchbox').fill('')
-  await shelf.getByLabel('только мои').check()
-  // у Петрова на полке свой черновик, чужая «Алгебра 6» уходит
-  await expect(shelf.getByText('Алгебра 6, по учебнику')).toHaveCount(0)
+
+  // предмет и год — селектами, и год ищется, чего текстом было нельзя
+  await shelf.getByLabel('Любой предмет').selectOption('Алгебра')
+  await expect(shelf.getByText('Геометрия 9, базовая')).toHaveCount(0)
+  await shelf.getByLabel('Любой год обучения').selectOption('6')
+  await expect(shelf.getByText('Алгебра 9, черновик')).toHaveCount(0)
+  await expect(shelf.getByText('Алгебра 6, по учебнику')).toBeVisible()
+
+  // списки вариантов строятся по всей полке, а не по уже сужённой: иначе
+  // выбранный предмет вычистил бы все года, кроме своих, и вернуться к
+  // «любому» стало бы нечем
+  await expect(
+    shelf.getByLabel('Любой год обучения').locator('option'),
+  ).toHaveCount(3)
 })
 
 test('тему бросают на весь блок, а не в её шапку', async ({ page, signIn }) => {

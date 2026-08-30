@@ -11,10 +11,16 @@ import Modal from './Modal'
  * там же, где план.
  *
  * Вместе со страницей сюда переехало то, чего больше нигде нет: поиск по
- * названию, фильтр «только мои», просмотр содержимого до того, как брать, и
- * управление своими записями — опубликовать черновик, снять с публикации,
- * удалить. Без последнего снятый с плана шаблон навсегда остался бы
- * черновиком: `from-plan` заводит его неопубликованным, и другой кнопки нет.
+ * названию, сужение по предмету и году обучения, просмотр содержимого до
+ * того, как брать, и управление своими записями — опубликовать черновик,
+ * снять с публикации, удалить. Без последнего снятый с плана шаблон навсегда
+ * остался бы черновиком: `from-plan` заводит его неопубликованным, и другой
+ * кнопки нет.
+ *
+ * Список идёт **двумя группами** — мои планы и планы коллег. Галочка «только
+ * мои» была вместо них и отвечала на другой вопрос: «спрятать ли чужое», —
+ * тогда как спрашивают «где моё». Ответив на первый, человек терял из виду
+ * половину полки.
  *
  * Запросов отсюда не уходит ни одного — как и у таблицы плана, всё уезжает
  * наверх колбэками: страница знает про `busy`, ошибки и перечитывание полки.
@@ -32,20 +38,62 @@ export default function LibraryDialog({
 }) {
   const { t } = useTranslation()
   const [query, setQuery] = useState('')
-  const [mine, setMine] = useState(false)
+  const [subject, setSubject] = useState('')
+  const [grade, setGrade] = useState('')
   const [mode, setMode] = useState('replace')
   const [chosen, setChosen] = useState(null)
 
+  /**
+   * Что вообще лежит на полке — по **всему** набору, а не по сужённому.
+   *
+   * Тот же расчёт, что у сужения курсов в `CoursePicker`, и по той же
+   * причине: выбранный предмет вычистил бы из соседнего списка все годы,
+   * кроме своих, и вернуться к «любому» стало бы нечем.
+   */
+  const options = useMemo(() => {
+    const subjects = [
+      ...new Set(templates.map((item) => item.subject_name).filter(Boolean)),
+    ].sort((a, b) => a.localeCompare(b))
+    const grades = [...new Set(templates.map((item) => item.grade))].sort(
+      (a, b) => a - b,
+    )
+    return { subjects, grades }
+  }, [templates])
+
+  /*
+   * Предмет и год — селектами, а не совпадением по тексту.
+   *
+   * Поиск искал сразу по названию и предмету, и это выглядело удобно ровно
+   * до первого промаха: «алгебра» находила и «Алгебра 9», и «Повторение
+   * алгебры за 8», а «6» не находила шестой класс вовсе — год в подписи
+   * стоит, а в полях, по которым искали, его не было. Селект отвечает на
+   * вопрос точно и заодно показывает, что на полке вообще есть.
+   *
+   * Поиск остался, и теперь он про одно — про название.
+   */
   const found = useMemo(() => {
     const needle = query.trim().toLowerCase()
     return templates.filter(
       (item) =>
-        (!mine || item.mine) &&
-        (!needle ||
-          item.title.toLowerCase().includes(needle) ||
-          (item.subject_name ?? '').toLowerCase().includes(needle)),
+        (!subject || item.subject_name === subject) &&
+        (!grade || String(item.grade) === grade) &&
+        (!needle || item.title.toLowerCase().includes(needle)),
     )
-  }, [templates, query, mine])
+  }, [templates, query, subject, grade])
+
+  /*
+   * Мои планы и планы коллег — двумя списками, а не галочкой «только мои».
+   *
+   * Галочка отвечала на вопрос «спрятать ли чужое», а спрашивают другое:
+   * «где моё». Ответом на первый вопрос человек терял из виду вторую
+   * половину полки; ответом на второй — видит обе сразу и знает, какая
+   * какая. То же решение, что у групп в селекторе курсов: там тоже разные
+   * **роли**, а не свойства записи.
+   */
+  const groups = [
+    { key: 'mine', items: found.filter((item) => item.mine) },
+    { key: 'others', items: found.filter((item) => !item.mine) },
+  ].filter((group) => group.items.length)
 
   const line = (item) =>
     t('library.line', {
@@ -82,24 +130,52 @@ export default function LibraryDialog({
               aria-label={t('library.search')}
               onChange={(event) => setQuery(event.target.value)}
             />
-            <label className="checkbox">
-              <input
-                type="checkbox"
-                checked={mine}
-                onChange={(event) => setMine(event.target.checked)}
-              />
-              {t('library.onlyMine')}
-            </label>
+            {options.subjects.length > 1 && (
+              <select
+                className="course-filter"
+                value={subject}
+                aria-label={t('library.anySubject')}
+                onChange={(event) => setSubject(event.target.value)}
+              >
+                <option value="">{t('library.anySubject')}</option>
+                {options.subjects.map((name) => (
+                  <option key={name} value={name}>
+                    {name}
+                  </option>
+                ))}
+              </select>
+            )}
+            {options.grades.length > 1 && (
+              <select
+                className="course-filter"
+                value={grade}
+                aria-label={t('library.anyGrade')}
+                onChange={(event) => setGrade(event.target.value)}
+              >
+                <option value="">{t('library.anyGrade')}</option>
+                {options.grades.map((level) => (
+                  <option key={level} value={String(level)}>
+                    {t('library.gradeOption', { grade: level })}
+                  </option>
+                ))}
+              </select>
+            )}
           </div>
 
           {/* полка показывается целиком: раньше её сужали до предмета
               курса, и найти чужой план по смежному предмету было нельзя,
-              а сказать об этом было нечем — теперь сужает поиск */}
+              а сказать об этом было нечем — теперь сужают селекты */}
           {!found.length ? (
             <p className="hint">{t('library.nothingFound')}</p>
           ) : (
-            <ul className="class-list template-list">
-              {found.map((item) => (
+            groups.map(({ key, items }) => (
+            <section key={key}>
+              {/* заголовок группы всегда, даже когда группа одна: «Мои
+                  планы» над единственным списком говорит, чей он, а
+                  отсутствие заголовка не говорит ничего */}
+              <h4 className="shelf-group">{t(`library.groups.${key}`)}</h4>
+              <ul className="class-list template-list">
+              {items.map((item) => (
                 <li key={item.id} className={item.id === chosen ? 'chosen' : ''}>
                   <button
                     type="button"
@@ -169,7 +245,9 @@ export default function LibraryDialog({
                   </span>
                 </li>
               ))}
-            </ul>
+              </ul>
+            </section>
+            ))
           )}
 
           <div className="row">

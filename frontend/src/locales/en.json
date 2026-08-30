@@ -1103,7 +1103,13 @@
   "library": {
     "subject": "Subject:",
     "grade": "Grade:",
-    "onlyMine": "only mine",
+    "anySubject": "Any subject",
+    "anyGrade": "Any year of study",
+    "gradeOption": "grade {{grade}}",
+    "groups": {
+      "mine": "My plans",
+      "others": "Plans by colleagues"
+    },
     "draft": "draft",
     "line": "{{subject}}, grade {{grade}} · {{author}} · {{lessons}}",
     "use": "Use in a course",
@@ -1114,7 +1120,7 @@
     "empty": {
       "hint": "Nothing has been put on the shelf yet. Publish one of your plans, or write a new one."
     },
-    "search": "Search by title or subject",
+    "search": "Search by title",
     "nothingFound": "Nothing matches.",
     "look": "Look inside",
     "pickHint": "Tick what you need: a block header takes the whole block. The ticked rows are added to the end of your plan.",
