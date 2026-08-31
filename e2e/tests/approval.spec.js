@@ -198,10 +198,15 @@ test('методист без своих курсов видит прислан�
   await page.goto('/plan')
   await ready(page)
 
-  // экрана «заведите курс» тут быть не должно, а присланный план — должен.
-  // Выбор по умолчанию идёт по всему доступному: своих курсов у него нет,
-  // и ждущий подписи встаёт впереди курсов школы, которые он вправе чинить
-  await expect(page.locator('.empty-state')).toHaveCount(0)
+  // Экрана «заведите курс» тут быть не должно: присланный план — его работа,
+  // и она предлагается кнопкой. Сам собой курс больше не открывается вовсе
+  // (страница не выбирает за человека), поэтому проверяется именно то, ради
+  // чего эта ветка заведена: поднадзорный курс человеку **предложен**.
+  await expect(page.getByRole('heading', { name: 'Выберите курс' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Grade 6 Algebra' })).toBeVisible()
+
+  await page.getByRole('button', { name: 'Grade 6 Algebra' }).click()
+
   await expect(page.getByLabel('Курс')).toHaveValue(String(course.id))
   await expect(page.locator('.plan .plan-row').first()).toBeVisible()
   await expect(page.getByRole('button', { name: 'Утвердить' })).toBeVisible()

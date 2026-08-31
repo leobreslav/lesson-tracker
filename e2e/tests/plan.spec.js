@@ -1297,9 +1297,7 @@ test('удаление называет цену: строка по имени, 
   expect(withContent, 'в посеянном плане должен быть урок с содержанием').toBeTruthy()
 
   await signIn(PEOPLE.ivanova)
-  await page.goto('/plan')
-  await ready(page)
-  await expect(page.locator('.plan-cards')).toBeVisible()
+  await openPlan(page, 'Grade 6 Algebra')
 
   // одиночный крестик: строка названа по имени, и цена названа
   const row = page.locator('.plan-row.lesson', { hasText: withContent.title }).first()
@@ -1320,9 +1318,7 @@ test('удаление называет цену: строка по имени, 
 
 test('снос темы с содержанием требует галочки', async ({ page, signIn }) => {
   await signIn(PEOPLE.ivanova)
-  await page.goto('/plan')
-  await ready(page)
-  await expect(page.locator('.plan-cards')).toBeVisible()
+  await openPlan(page, 'Grade 6 Algebra')
 
   // ищем тему, внутри которой есть что терять: у неё появляется галочка
   const sections = page.locator('.plan-section')

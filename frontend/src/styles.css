@@ -2778,6 +2778,68 @@ a.link-button:hover {
   margin-right: 0;
 }
 
+/*
+ * Что открыто: вид объекта, сам выбор и роль — одной группой.
+ *
+ * Группа нужна потому, что все три части читаются как одна строка: «Курс:
+ * 7Б Физика · правите». Порознь они разъезжаются переносом шапки, и роль
+ * оказывается под кнопкой утверждения, то есть относится по виду к ней.
+ *
+ * `margin-right: auto` переезжает сюда с селекта и его фильтров: свободное
+ * место шапки должно уйти **после** всей группы, иначе оно встанет между
+ * видом и именем.
+ */
+.page-header .open-object {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+  margin-right: auto;
+}
+
+.page-header .open-object .course-picker,
+.page-header .open-object .course-picked,
+.page-header .open-object .course-choice {
+  margin-right: 0;
+}
+
+/* вид — подпись к контролу, а не заголовок: тот же серый, что у подсказок */
+.open-kind {
+  font-size: 0.9rem;
+  color: #5f6368;
+}
+
+/*
+ * Роль — плашкой, и плашка тут не украшение.
+ *
+ * Слово «правите» рядом с именем курса, набранное тем же серым, читалось бы
+ * как часть названия. Обводка отделяет утверждение о **человеке** от имени
+ * объекта, к которому оно относится.
+ */
+.open-role {
+  padding: 0.1rem 0.45rem;
+  font-size: 0.8rem;
+  color: #5f6368;
+  background: #f1f3f4;
+  border: 1px solid #dadce0;
+  border-radius: 999px;
+}
+
+/* ждущий подписи — тем же синим, каким о нём говорит строка состояния:
+   один факт не должен быть двух разных цветов на одном экране */
+.open-role.deciding {
+  color: #1967d2;
+  background: #e8f0fe;
+  border-color: #c2d7f8;
+}
+
+/* черновик — тем же охристым, что и остальные «видите только вы» */
+.open-role.draft {
+  color: #b06000;
+  background: #fef7e0;
+  border-color: #f2d9a6;
+}
+
 .page-header .course-filter {
   height: var(--control-height);
   max-width: min(12rem, 40vw);

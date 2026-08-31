@@ -21,6 +21,8 @@ test('план для класса, который не ведут, пишетс
   await signIn(PEOPLE.ivanova)
   await page.goto('/plan')
   await ready(page)
+  // курс выбирают селектом: сама страница за человека больше не выбирает
+  await page.getByLabel('Курс').selectOption({ label: 'Grade 6 Algebra' })
   // тулбар появляется вместе с деревом: кликать по меню раньше значит
   // нажать и тут же потерять его на перерисовке
   await expect(page.locator('.plan-cards')).toBeVisible()
@@ -96,6 +98,7 @@ test('взять план с полки целиком — сначала пок
   await signIn(PEOPLE.ivanova)
   await page.goto('/plan')
   await ready(page)
+  await page.getByLabel('Курс').selectOption({ label: 'Grade 6 Algebra' })
   await expect(page.locator('.plan-cards')).toBeVisible()
 
   await planMenu(page, 'Открыть библиотеку')

@@ -553,13 +553,30 @@
     "fileMenu": "File",
     "libraryMenu": "Library",
     "shelf": {
-      "draft": "draft, visible to you only",
       "edit": "Edit",
       "create": "Write a new plan…"
     },
+    "open": {
+      "course": "Course:",
+      "template": "Template:",
+      "none": "nothing picked"
+    },
+    "role": {
+      "editing": "you edit it",
+      "reading": "read-only",
+      "readingOf": "{{name}} · read-only",
+      "deciding": "waiting for your decision",
+      "draft": "draft, visible to you only",
+      "published": "on the school shelf"
+    },
+    "pick": {
+      "title": "Pick a course",
+      "hint": "A plan is written for a course, so the course comes first. Yours and the ones you supervise are below; the rest of the school and your own templates are in the list at the top."
+    },
     "context": {
       "course": "Edits go into the plan of this course. Nothing in the library changes because of them.",
-      "template": "Edits go straight into this library entry — there is nothing to save separately. It has no course and no dates."
+      "template": "Edits go straight into this library entry — there is nothing to save separately. It has no course and no dates.",
+      "foreign": "Somebody else's plan: you read it, you do not edit it. To take it into your own course, export it and import the file."
     },
     "saveMode": {
       "label": "Where to save",

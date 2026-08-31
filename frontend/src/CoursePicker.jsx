@@ -37,6 +37,7 @@ export default function CoursePicker({
   label = (item) => item.name,
   groups = [],
   narrow = null,
+  placeholder = null,
 }) {
   const { t } = useTranslation()
   /*
@@ -121,6 +122,23 @@ export default function CoursePicker({
         aria-label={t('plan.courseLabel')}
         onChange={(event) => onChange(byKey.get(event.target.value))}
       >
+        {/*
+          «Не выбрано» — состояние, которого у селекта своего нет.
+
+          У `value`, которому нет пары среди `option`, браузер показывает
+          первый вариант — то есть контрол утверждает, что курс выбран, когда
+          он не выбран. Пока страница выбирала за человека, увидеть это было
+          негде; страница выбирать перестала, и пустоту надо называть.
+
+          Вариант `disabled`: вернуться в «ничего не выбрано» руками нельзя —
+          это не выбор, а его отсутствие. Приезжает подписью снаружи, потому
+          что имя пустоты зависит от экрана: у плана это курс или заготовка.
+        */}
+        {placeholder && !value && (
+          <option value="" disabled>
+            {placeholder}
+          </option>
+        )}
         {shownGroups.length === 0
           ? shown.map((item) => (
               <option key={item.id} value={item.id}>
