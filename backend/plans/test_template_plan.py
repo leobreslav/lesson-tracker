@@ -120,6 +120,47 @@ class OnlyTheAuthorEditsWhatIsOnTheShelfTests(TemplatePlanTestCase):
         self.assertIn(response.status_code, (400, 404), response.content)
         self.assertFalse(PlanNode.objects.filter(title="Чужая строка").exists())
 
+    def test_a_colleague_reads_the_tree_of_a_published_template(self):
+        """
+        «Читают все» — теперь про эту ручку, а не только про список полки.
+
+        Абзац выше утверждал это давно, а ручка отвечала 404 всякому, кроме
+        автора: выложенная запись была видна списком в окне библиотеки, но
+        не открывалась. Наружу это выходило пустым экраном по присланной
+        ссылке — то есть полка витрина, на которую нельзя посмотреть.
+
+        Шире доступ от этого не стал ни на строку: читаемое — то же
+        `visible_templates`, по которому полка и показывается, а чужой
+        черновик остаётся отсутствующим (тест выше).
+        """
+        self.add("Тригонометрия", is_section=True)
+        sign_in(self.client, self.colleague)
+
+        answer = self.tree()
+
+        self.assertEqual(answer.status_code, 200, answer.content)
+        self.assertEqual(
+            [row["title"] for row in answer.json()["nodes"]], ["Тригонометрия"]
+        )
+
+    def test_a_colleague_does_not_get_the_undo_journal(self):
+        """
+        Читать — да, отменять — нет, и журнал отмены идёт со второй стороной.
+
+        Он отвечает на «что я могу вернуть», а вернуть читатель не может
+        ничего: список снимков предложил бы ему кнопки, которых у него нет,
+        и заодно показал бы все прошлые состояния чужой записи. Поэтому
+        `plan_history` спрашивает владельца как пишущий, хотя сам не пишет.
+        """
+        self.add("Тригонометрия", is_section=True)
+        sign_in(self.client, self.colleague)
+
+        answer = self.client.get(
+            reverse("plannode-plan-history"), {"template": self.template.pk}
+        )
+
+        self.assertEqual(answer.status_code, 404, answer.content)
+
 
 class UndoWorksOnTheShelfTests(TemplatePlanTestCase):
     def test_a_row_deleted_by_mistake_comes_back(self):
