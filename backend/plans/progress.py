@@ -40,7 +40,7 @@ def own_courses(user) -> list:
     """Свои курсы, в порядке года и названия."""
     return list(
         Course.objects.for_teacher(user)
-        .select_related("year", "subject")
+        .select_related("year", "subject", "grade")
         .prefetch_related("year__terms")
         .order_by("year__start_date", "name")
     )
@@ -56,6 +56,9 @@ def supervised_courses(user) -> list:
     """
     return list(
         approval.supervised(user)
+        # `grade` тут не украшение: строка несёт год обучения, и без него
+        # каждый курс стоил бы отдельного запроса за параллелью
+        .select_related("year", "subject", "grade")
         .prefetch_related("year__terms")
         .order_by("year__start_date", "name")
     )
@@ -119,6 +122,13 @@ def rows_for(courses, today, ahead: int = 2) -> list[dict]:
                 # списке курсов сужают именно по этим двум, а у методиста
                 # школы в списке их несколько десятков
                 "subject": course.subject.name if course.subject else None,
+                # год обучения — ради витрины планов: она сужает все четыре
+                # свои области одними и теми же предметом и параллелью, а
+                # поднадзорный курс приезжает сюда, а не сериализатором
+                # курса. Без него сужение молча врало бы ровно в одной
+                # области из четырёх — то есть выглядело бы как «у коллеги
+                # нет планов по этому году», а не как нехватка поля.
+                "grade_level": course.grade.level if course.grade else None,
                 "teacher": person(teacher) if teacher else None,
                 # метрики считаются только от **утверждённого** эталона:
                 # пока план не приняли, сравнивать не с чем
