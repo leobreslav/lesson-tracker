@@ -199,13 +199,23 @@ test('методист без своих курсов видит прислан�
   await ready(page)
 
   // Экрана «заведите курс» тут быть не должно: присланный план — его работа,
-  // и она предлагается кнопкой. Сам собой курс больше не открывается вовсе
+  // и она предлагается витриной. Сам собой курс больше не открывается вовсе
   // (страница не выбирает за человека), поэтому проверяется именно то, ради
-  // чего эта ветка заведена: поднадзорный курс человеку **предложен**.
-  await expect(page.getByRole('heading', { name: 'Выберите курс' })).toBeVisible()
-  await expect(page.getByRole('button', { name: 'Grade 6 Algebra' })).toBeVisible()
+  // чего эта ветка заведена: поднадзорный курс человеку **предложен**, и
+  // предложен в своей области — «Курсы коллег», а не вперемешку со своими.
+  await expect(page.getByRole('heading', { name: 'Выберите план' })).toBeVisible()
 
-  await page.getByRole('button', { name: 'Grade 6 Algebra' }).click()
+  const colleagues = page.locator('.showcase-area', { hasText: 'Курсы коллег' })
+  const offered = colleagues.getByRole('button', { name: /Grade 6 Algebra/ })
+  await expect(offered).toBeVisible()
+  // и он же назван действием: этот план ждёт подписи именно этого человека
+  await expect(offered.locator('.badge.waiting')).toBeVisible()
+
+  await offered.click()
+
+  // выбор уехал в адрес: с витрины иначе некуда уйти, а «назад» должно
+  // возвращать к выбору, а не к прошлому курсу
+  await expect(page).toHaveURL(new RegExp(`[?&]course=${course.id}\\b`))
 
   await expect(page.getByLabel('Курс')).toHaveValue(String(course.id))
   await expect(page.locator('.plan .plan-row').first()).toBeVisible()
@@ -271,9 +281,11 @@ test('ожидающий и просто поднадзорный лежат в 
 }) => {
   // Группы — это роли человека, а не свойства курса: свои он ведёт,
   // присланные должен утвердить, за остальными смотрит, остальное в школе
-  // может прочитать. Пятая — не курс вовсе: свои заготовки с полки, у
+  // может прочитать. Последние две — не курсы вовсе: заготовки с полки, у
   // которых нет ни курса, ни дат; лежат они тут потому, что селект отвечает
-  // не на «какой курс», а на «чем сейчас занимаемся».
+  // не на «какой курс», а на «чем сейчас занимаемся». Своё и чужое у них
+  // разведено той же чертой, что у курсов, и по той же причине: чужую
+  // запись читают, свою правят.
   await makeMethodist(api, PEOPLE.petrov, 'Grade 6 Algebra')
   await makeMethodist(api, PEOPLE.petrov, 'Grade 6 Geometry')
 
@@ -287,7 +299,7 @@ test('ожидающий и просто поднадзорный лежат в 
   await ready(page)
 
   const groups = page.getByLabel('Курс').locator('optgroup')
-  await expect(groups).toHaveCount(5)
+  await expect(groups).toHaveCount(6)
   await expect(groups.nth(0)).toHaveAttribute('label', 'Мои курсы')
   await expect(groups.nth(1)).toHaveAttribute('label', 'Ждут ответа')
   await expect(groups.nth(2)).toHaveAttribute('label', 'Под надзором')
@@ -295,6 +307,9 @@ test('ожидающий и просто поднадзорный лежат в 
   // учителя, а не только назначенный методист
   await expect(groups.nth(3)).toHaveAttribute('label', 'Курсы школы')
   await expect(groups.nth(4)).toHaveAttribute('label', 'Мои заготовки')
+  // шестая появилась вместе с чтением чужой полки: выложенную коллегой
+  // запись теперь можно открыть, значит ей место и в списке
+  await expect(groups.nth(5)).toHaveAttribute('label', 'Заготовки коллег')
 
   // присланный — во второй группе, остальной надзор — в третьей
   await expect(groups.nth(1).locator('option')).toHaveText(['Grade 6 Algebra'])
@@ -532,18 +547,26 @@ test('чужой план ищется учителем и предметом, �
   page,
   signIn,
 }) => {
-  // Селект, в котором лежит вся школа, — это несколько десятков строк, и
-  // «найти план Петровой по геометрии» в нём значит прочитать весь список.
-  // Сужение стояло тут и раньше, но доставалось одному администратору.
+  // Вся школа — это несколько десятков строк, и «найти план Петровой по
+  // геометрии» в них значит прочитать весь список. Сужение по учителю
+  // стояло у селекта в шапке и переехало на витрину вместе с самим поиском
+  // плана: два места, спрашивающих одно и то же, заставляли бы гадать,
+  // которое главное.
   await signIn(PEOPLE.ivanova)
   await page.goto('/plan')
   await ready(page)
 
   await page.getByLabel('Любой учитель').selectOption({ label: 'Пётр Петров' })
 
-  const options = page.getByLabel('Курс').locator('option')
-  await expect(options.filter({ hasText: 'Grade 9 Algebra' })).toHaveCount(1)
-  // чужие курсы других учителей ушли; свой выбранный остаётся всегда —
-  // это то, про что страница сейчас
-  await expect(options.filter({ hasText: 'Grade 6 Physics' })).toHaveCount(0)
+  const colleagues = page.locator('.showcase-area', { hasText: 'Курсы коллег' })
+  await expect(
+    colleagues.getByRole('button', { name: /Grade 9 Algebra/ }),
+  ).toHaveCount(1)
+  // курсы других учителей ушли из списка
+  await expect(
+    colleagues.getByRole('button', { name: /Grade 6 Physics/ }),
+  ).toHaveCount(0)
+  // и своё сузилось тем же вопросом: у Петрова своих курсов Ивановой нет
+  const mine = page.locator('.showcase-area', { hasText: 'Мои курсы' })
+  await expect(mine.getByRole('button')).toHaveCount(0)
 })

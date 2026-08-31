@@ -15,6 +15,7 @@ import LibraryDialog, { TemplateView } from './LibraryDialog'
 import PlanCsvHelp from './PlanCsvHelp'
 import PlanTable from './PlanTable'
 import PlanDiff, { DiffBody } from './PlanDiff'
+import PlanShowcase from './PlanShowcase'
 import { dragId } from './PlanDnd'
 import Modal from './Modal'
 import { usePlanLayout } from './usePlanLayout'
@@ -25,7 +26,7 @@ import { useDismissable } from './UserMenu'
 import DebtsDialog from './DebtsDialog'
 import Supervision from './Supervision'
 import Switch from './Switch'
-import { lastChoice, rememberChoice } from './remember'
+import { rememberChoice } from './remember'
 import { lazyChunk } from './lazyChunk'
 import {
   afterClick,
@@ -113,7 +114,9 @@ export default function Plan({ user, onLoggedOut, template = null }) {
    */
   const [search, setSearch] = useSearchParams()
   const [target] = useState(() => ({
-    course: Number(search.get('course')) || null,
+    // `course` тут больше не лежит намеренно: он не наводка, а адрес, и
+    // читается живым (`classId`). Замороженная копия отстала бы от него на
+    // первом же переходе внутри страницы.
     row: Number(search.get('row')) || null,
     // свободный час, к которому нужно дописать строку: приходят сюда со
     // страницы занятия, у которого строки не осталось
@@ -152,7 +155,17 @@ export default function Plan({ user, onLoggedOut, template = null }) {
    */
   const [moves, setMoves] = useState({ undo: null, redo: null })
   const [years, setYears] = useState([])
-  const [classId, setClassId] = useState(target.course)
+  /**
+   * Какой курс открыт — спрашивается у адреса, а не хранится рядом с ним.
+   *
+   * Состоянием это было, пока адрес был наводкой: `?course=` читался один
+   * раз при входе и вычищался. С витриной адрес стал ответом на «что
+   * открыто» — `/plan` показывает выбор, `/plan?course=12` показывает план,
+   * — и второе хранилище того же ответа разошлось бы с первым на первой же
+   * кнопке «назад»: адрес вернулся бы к витрине, а состояние осталось на
+   * курсе. Одно место, и расходиться нечему.
+   */
+  const classId = Number(search.get('course')) || null
   /** Открыты ли мы на полке: у шаблона нет ни курса, ни календаря. */
   const onShelf = Boolean(template)
   /**
@@ -169,6 +182,25 @@ export default function Plan({ user, onLoggedOut, template = null }) {
   )
   /** Шапка полки: название шаблона вместо селектора курсов. */
   const [shelfCard, setShelfCard] = useState(null)
+  /**
+   * Что мне можно с этой записью полки: править, читать — или ещё неизвестно.
+   *
+   * Право спрашивается у сервера (`can_edit` в карточке), а не считается
+   * тут: у полки оно простое — автор, — но второй его расчёт на клиенте
+   * разошёлся бы с первым молча, а этим проект уже болел (`mirrors/`).
+   *
+   * Значений **три**, и третье не педантизм. Пока карточка не приехала,
+   * ответа нет, и любой из двух был бы догадкой: сказать «чужая» — мигнуть
+   * автору таблицей без кнопок, сказать «своя» — позвать читателя нажать
+   * на то, что ответит отказом. Хуже обоих третье: угадав, экран потом
+   * переспрашивает дерево, потому что от ответа зависит, брать ли к нему
+   * журнал отмены. Поэтому неизвестность названа, и на ней просто ждут.
+   *
+   * У курса такого состояния нет: там право известно из списка курсов,
+   * который страница и так держит.
+   */
+  const shelfRight = !template ? 'edit' : shelfCard ? (shelfCard.can_edit ? 'edit' : 'read') : null
+  const shelfForeign = shelfRight === 'read'
   /** Окно «переписать план»: что уйдёт, что придёт и чем это подтвердить. */
   const [overwrite, setOverwrite] = useState(null)
   const scrolled = useRef(false)
@@ -280,8 +312,22 @@ export default function Plan({ user, onLoggedOut, template = null }) {
     [onLoggedOut],
   )
 
+  /**
+   * Вычищается всё, кроме `course`: он теперь адрес, а не наводка.
+   *
+   * Прежде вычищалось всё подряд — параметры были одноразовой наводкой на
+   * строку, и после прокрутки им действительно нечего было делать. С тех
+   * пор `/plan` без параметров стал витриной, и `?course=` перестал быть
+   * наводкой: это единственное, что отличает открытый план от выбора
+   * плана. Вычищенный, он уводил бы на витрину при каждой перезагрузке —
+   * то есть терял бы открытое ровно тогда, когда человек вернулся к нему
+   * по своей же ссылке.
+   */
   useEffect(() => {
-    if (search.toString()) setSearch({}, { replace: true })
+    const extra = [...search.keys()].some((key) => key !== 'course')
+    if (!extra) return
+    const kept = search.get('course')
+    setSearch(kept ? { course: kept } : {}, { replace: true })
   }, [search, setSearch])
 
   /**
@@ -404,14 +450,27 @@ export default function Plan({ user, onLoggedOut, template = null }) {
    * их перечитывать нельзя: разъедутся на первой же правке, и кнопка
    * начнёт обещать не то.
    */
+  /**
+   * Дерево и журнал отмены — вместе, но журнал не всегда.
+   *
+   * У чужого плана журнала нет и быть не должно: он отвечает на «что я могу
+   * вернуть», а вернуть читатель ничего не может — сервер и отказывает
+   * (`requested_owner(write=True)`). Спрашивать его всё равно и глотать
+   * отказ мало: `catch` убирает поломку из кода, но не из консоли браузера,
+   * а консоль тут не мелочь — на ней стоит весь дымовой набор.
+   */
   const load = useCallback(
-    (id) =>
-      Promise.all([fetchPlan(id), fetchPlanHistory(id).catch(() => ({ steps: [] }))])
-        .then(([tree, journal]) => {
-          setData(tree)
-          setSteps(journal.steps)
-          setMoves({ undo: journal.undo ?? null, redo: journal.redo ?? null })
-        }),
+    (id, { withHistory = true } = {}) =>
+      Promise.all([
+        fetchPlan(id),
+        withHistory
+          ? fetchPlanHistory(id).catch(() => ({ steps: [] }))
+          : Promise.resolve({ steps: [] }),
+      ]).then(([tree, journal]) => {
+        setData(tree)
+        setSteps(journal.steps)
+        setMoves({ undo: journal.undo ?? null, redo: journal.redo ?? null })
+      }),
     [],
   )
 
@@ -484,8 +543,10 @@ export default function Plan({ user, onLoggedOut, template = null }) {
 
   useEffect(() => {
     // то же, что с лентой: поднадзорный план запрашивать нечем и незачем.
-    // У полки же право спрашивает сервер, и второй его копии тут не будет
-    if (!owner || (!onShelf && !mayEdit(classId))) {
+    // У полки же право спрашивает сервер, и второй его копии тут не будет —
+    // но ответа его надо дождаться: от него зависит, брать ли журнал
+    // отмены, а спросив наугад, пришлось бы спрашивать дерево второй раз
+    if (!owner || (!onShelf && !mayEdit(classId)) || (onShelf && !shelfRight)) {
       setData(null)
       return undefined
     }
@@ -494,14 +555,17 @@ export default function Plan({ user, onLoggedOut, template = null }) {
     setData(null)
     setError(null)
 
-    load(owner).catch((err) => {
+    // журнал отмены — только у того, кто правит. Остальные вызовы `load`
+    // стоят на путях правки (шаг, отмена, сохранение урока), и до чужой
+    // записи не доходят вовсе: панель действий над ней не рисуется
+    load(owner, { withHistory: !shelfForeign }).catch((err) => {
       if (!cancelled) handleError(err)
     })
 
     return () => {
       cancelled = true
     }
-  }, [owner, onShelf, classId, mayEdit, load, handleError])
+  }, [owner, onShelf, classId, mayEdit, load, handleError, shelfRight])
 
   /**
    * Any structural edit: do it and re-read the whole tree.
@@ -915,69 +979,69 @@ export default function Plan({ user, onLoggedOut, template = null }) {
     subjectName: item.subject_name ?? null,
   })
   /*
-   * Открытая заготовка попадает в список всегда, даже чужая.
+   * Заготовки разложены на свои и чужие — как и курсы, и по той же причине.
    *
-   * Адрес `/library/:id` набирают руками и присылают ссылкой, и на чужой
-   * шаблон сервер ответит отказом — но **до** отказа селект успевал показать
-   * первый попавшийся курс: у `value`, которому нет пары среди `option`,
-   * браузер выбирает первый. То есть экран называл не то, что открыл.
+   * Группа была одна, «Мои заготовки», а чужие в селект не попадали вовсе:
+   * открыть их было нельзя, и обещать в списке было нечего. Теперь чужую
+   * заготовку читают так же, как чужой курс, — значит и в списке она стоит
+   * наравне, отдельной группой. Слить их в одну было бы возвратом к галочке
+   * «только мои»: своё и чужое — разные роли, а не разные записи.
+   *
+   * Открытая заготовка попадает в список сама, и отдельной подпорки ей
+   * больше не нужно. Подпорка была: пока в списке стояли только свои,
+   * открытую чужую приходилось добавлять руками — у `value`, которому нет
+   * пары среди `option`, браузер выбирает первый, и экран называл бы не то,
+   * что открыл. Теперь чужие в списке есть все, а чего в нём нет — того и
+   * сервер не отдаст: `visible_templates` не показывает чужие черновики, и
+   * такая ссылка кончается отказом, а не пустым селектом.
    */
-  const myTemplates = templates
-    .filter((item) => item.mine || (onShelf && item.id === template))
-    .map(asTemplate)
+  const myTemplates = templates.filter((item) => item.mine).map(asTemplate)
+  const otherTemplates = templates.filter((item) => !item.mine).map(asTemplate)
 
   const pickable = [
     ...mineAndWatched,
     ...schoolOnly.map(asOwn),
     ...myTemplates,
+    ...otherTemplates,
   ]
 
   const groups =
-    others.length || schoolOnly.length || myTemplates.length
+    others.length || schoolOnly.length || myTemplates.length || otherTemplates.length
       ? [
           { key: 'mine', items: (classes ?? []).map(asOwn) },
           { key: 'waiting', items: otherWaiting.map(asCourse) },
           { key: 'supervised', items: otherWatched.map(asCourse) },
           { key: 'school', items: schoolOnly.map(asOwn) },
           { key: 'templates', items: myTemplates },
+          { key: 'otherTemplates', items: otherTemplates },
         ].filter((group) => group.items.length)
       : []
 
   /**
-   * Открывается прошлый выбор — и только он. Первый вход не выбирает сам.
+   * Курс, которого человеку не видать, уходит из адреса — и открывается
+   * витрина.
    *
-   * Выбирала страница: не нашлось запомненного — брала первый свой курс, а
-   * не нашлось и его, первый присланный. Читалось это как сделанный выбор,
-   * которого человек не делал: заходишь в «Учебный план», а там уже открыт
-   * какой-то курс, чаще всего первый по алфавиту. Хуже всего это ровно у
-   * того, ради кого выбор и был заведён, — у человека с полутора десятками
-   * курсов: он видит чужую работу на месте своей и правит **не тот план**,
-   * пока не заметит имя в селекте. Заметить его нечем: имя стоит в сером
-   * контроле и ничем не отличается от подписи.
+   * Адрес набирают руками, присылают ссылкой и кладут в закладки, а курс с
+   * тех пор мог уехать: сдали нагрузку, сняли надзор, ссылку прислали из
+   * чужой школы. Дальше по нему пошли бы запросы дерева и ленты, и каждый
+   * ответил бы 404 — то есть экран показал бы ошибку там, где на самом деле
+   * надо просто выбрать другой план.
    *
-   * Поэтому выбор теперь бывает только сделанный — сейчас или в прошлый
-   * раз. Стоит это ровно одного клика **однажды**: выбор живёт в
-   * `localStorage` и один на все страницы (`remember.js`), так что пустым
-   * экран бывает у человека, который зашёл сюда впервые, — и тому он
-   * говорит правду: выбирать курс здесь надо.
+   * Проверка `known` та же, что стояла у прежнего восстановления выбора;
+   * изменилось место, куда пишется ответ: раньше состояние, теперь адрес.
    *
-   * Отсюда же второе: сам по себе `classId` больше не приезжает и из
-   * запомненного, если тот **исчез** из доступного (курс сдали, надзор
-   * сняли). Проверка `known` осталась той же.
+   * Ждём `classes !== null`: до первого ответа сервера «не найдено» значит
+   * «ещё не спрашивали», и вычищать по нему адрес значило бы стирать выбор
+   * у каждого, кто открыл ссылку.
    */
   useEffect(() => {
-    if (classes === null) return
+    if (onShelf || classes === null || !classId) return
+    if (pickable.some((item) => item.id === classId)) return
 
-    setClassId((current) => {
-      const known = (id) => Boolean(id) && pickable.some((item) => item.id === id)
-      if (known(current)) return current
-
-      const remembered = lastChoice('course')
-      return known(remembered) ? remembered : null
-    })
+    setSearch({}, { replace: true })
     // намеренно по спискам, а не по их содержимому: пересобирать выбор на
     // каждое перечитывание дерева незачем
-  }, [classes, supervised, schoolCourses])
+  }, [classes, supervised, schoolCourses, classId, onShelf])
 
   const supervisedRow = supervised.find((row) => row.id === classId) ?? null
 
@@ -1016,12 +1080,20 @@ export default function Plan({ user, onLoggedOut, template = null }) {
       ? supervisedRow
       : null
 
-  /** Выбор курса запоминается: он один на все страницы, см. `remember.js`. */
+  /**
+   * Выбор курса — это переход по адресу, и он же запоминается.
+   *
+   * Адрес нужен «Учебному плану»: с витрины иначе некуда уйти, а нажатая
+   * «назад» должна возвращать к выбору, а не к прошлому курсу. Запись в
+   * `localStorage` осталась, но служит уже не этой странице, а соседним:
+   * журнал и работы открываются на том же курсе (`remember.js`), и отнимать
+   * у них это ради витрины было бы платой не с того человека.
+   */
   const pickClass = (id) => {
-    setClassId(id)
     setReviewing(false)
     setComparing(false)
     rememberChoice('course', id)
+    setSearch({ course: String(id) })
   }
 
   /**
@@ -1040,14 +1112,85 @@ export default function Plan({ user, onLoggedOut, template = null }) {
       navigate(`/library/${id.slice(1)}`)
       return
     }
-    pickClass(id)
-    if (onShelf) navigate('/plan')
+    /*
+     * С полки уходим одним переходом, а не двумя.
+     *
+     * `pickClass` ставит параметр текущему адресу, а текущий здесь —
+     * `/library/12`: получилось бы `/library/12?course=7`, и следующий же
+     * переход на `/plan` унёс бы параметр вместе с выбором. Поэтому со
+     * стороны полки адрес собирается целиком.
+     */
+    setReviewing(false)
+    setComparing(false)
+    rememberChoice('course', id)
+    if (onShelf) navigate(`/plan?course=${id}`)
+    else setSearch({ course: String(id) })
   }
 
   const classLabel = (item) => {
     const year = yearById.get(item.year)
     return years.length > 1 && year ? `${item.name} · ${year.name}` : item.name
   }
+
+  /**
+   * Всё, из чего выбирают, — одним списком с двумя признаками.
+   *
+   * Видов плана четыре, и до витрины они лежали в трёх разных местах, по
+   * разным правилам показа. Признаков же всего два — «есть курс» и «мой», —
+   * и четвёрка получается их перемножением. Поэтому здесь один список, а
+   * раскладывает его по областям сама витрина: четыре готовых массива
+   * означали бы четыре места, где легко забыть про сужение или про подпись.
+   *
+   * Названия берутся тем же `classLabel`, что и в селекте: учебный год
+   * приписывается к имени курса только когда лет несколько, и второй ответ
+   * на этот вопрос разошёлся бы с первым на первом же учителе с двумя
+   * годами в списке.
+   */
+  const showcaseItems = [
+    ...(classes ?? []).map((item) => ({
+      kind: 'course',
+      mine: true,
+      id: item.id,
+      name: classLabel(asOwn(item)),
+      subjectName: item.subject_name ?? null,
+      gradeLevel: item.grade_level ?? null,
+      teacher: item.teachers?.[0]?.name ?? null,
+    })),
+    ...others.map((row) => ({
+      kind: 'course',
+      mine: false,
+      id: row.id,
+      name: classLabel(asCourse(row)),
+      subjectName: row.subject ?? null,
+      gradeLevel: row.grade_level ?? null,
+      teacher: row.teacher?.name ?? null,
+      // единственная пометка про действие, а не про свойство: этот план
+      // ждёт моей подписи, и открывают его именно за этим
+      waiting: row.review?.status === 'pending',
+    })),
+    ...schoolOnly.map((item) => ({
+      kind: 'course',
+      mine: false,
+      id: item.id,
+      name: classLabel(asOwn(item)),
+      subjectName: item.subject_name ?? null,
+      gradeLevel: item.grade_level ?? null,
+      teacher: item.teachers?.[0]?.name ?? null,
+    })),
+    ...templates.map((item) => ({
+      kind: 'template',
+      mine: Boolean(item.mine),
+      id: item.id,
+      name: item.title,
+      subjectName: item.subject_name ?? null,
+      gradeLevel: item.grade ?? null,
+      teacher: item.author_name ?? null,
+      // черновик отвечает на вопрос, который у своей записи возникает
+      // всегда: видит ли её кто-нибудь, кроме меня. У чужой такого вопроса
+      // нет — чужой черновик до нас не доезжает вовсе
+      draft: Boolean(item.mine) && !item.is_published,
+    })),
+  ]
 
   /** Значение селекта: у заготовки id с приставкой, у курса — номер. */
   const openValue = onShelf ? `t${template}` : classId
@@ -1069,17 +1212,24 @@ export default function Plan({ user, onLoggedOut, template = null }) {
    *
    * Значком роли делать нельзя — он читался бы как свойство курса, ровно по
    * той же причине, по какой группы разделены `optgroup`'ом, а не пометкой
-   * в подписи. Поэтому роль — **глагол про меня**: правлю, читаю, решаю. У
-   * заготовки роль вырождается в видимость (править её вправе только автор,
-   * а автор тут я — иначе экрана бы не было), и вопрос у неё другой: видит
-   * ли это кто-нибудь, кроме меня.
+   * в подписи. Поэтому роль — **глагол про меня**: правлю, читаю, решаю.
+   *
+   * У **своей** заготовки роль вырождается в видимость: править её вправе
+   * только автор, а автор тут я, и вопрос остаётся один — видит ли это
+   * кто-нибудь, кроме меня. У **чужой** вопрос обычный, тот же, что у
+   * чужого курса: почему я не могу править и чей это план. Поэтому она и
+   * отвечает как чужой курс — «только чтение» с именем автора, — а не
+   * своей видимостью: «на общей полке» у чужой записи было бы правдой,
+   * ничего не объясняющей.
    *
    * `null` — это «ничего не выбрано»: называть нечего.
    */
   const role = onShelf
-    ? shelfCard && !shelfCard.is_published
-      ? 'draft'
-      : 'published'
+    ? shelfForeign
+      ? 'reading'
+      : shelfCard && !shelfCard.is_published
+        ? 'draft'
+        : 'published'
     : !classId
       ? null
       : /* решать — только по поднадзорному, и только пока есть что решать:
@@ -1401,10 +1551,15 @@ export default function Plan({ user, onLoggedOut, template = null }) {
             label={classLabel}
             groups={groups}
             placeholder={t('plan.open.none')}
-            /* сужение по учителю и предмету: в этом селекте у любого учителя
+            /* Сужение по учителю и предмету: в этом селекте у любого учителя
                лежат все курсы школы, а их несколько десятков — «найти план
-               Петровой по геометрии» иначе значит прочитать весь список */
-            narrow="plan"
+               Петровой по геометрии» иначе значит прочитать весь список.
+
+               Пока открыта витрина, сужения тут нет: она спрашивает то же
+               самое своими селектами, и два «Любой предмет» на одном экране
+               заставляют гадать, который из них главный. Открылся план —
+               витрины нет, и вопрос снова один. */
+            narrow={classId || onShelf ? 'plan' : null}
           />
           {role && (
             <span className={`open-role ${role}`}>
@@ -1540,11 +1695,23 @@ export default function Plan({ user, onLoggedOut, template = null }) {
       {!comparing && (classId || onShelf) && (
         <p className="hint plan-context">
           {t(
-            onShelf
-              ? 'plan.context.template'
-              : supervising
-                ? 'plan.context.foreign'
-                : 'plan.context.course',
+            /* Вопрос у чужого один и тот же с обеих сторон — почему я не
+               могу править и как взять это себе, — а вот ответ на вторую
+               половину разный, и текст поэтому разный тоже.
+
+               Чужой курс забирают выгрузкой: у него есть меню файлов. У
+               полки этого меню нет вовсе (обмен файлами ходит курсовыми
+               ручками), и советовать «выгрузите» значило бы показывать на
+               кнопку, которой на этом экране нет. Дверь тут другая и она
+               настоящая: открыть свой план курса и взять запись оттуда,
+               окном «Из библиотеки». */
+            shelfForeign
+              ? 'plan.context.foreignTemplate'
+              : onShelf
+                ? 'plan.context.template'
+                : supervising
+                  ? 'plan.context.foreign'
+                  : 'plan.context.course',
           )}
         </p>
       )}
@@ -1578,73 +1745,70 @@ export default function Plan({ user, onLoggedOut, template = null }) {
         /* страница перерисовывается целиком: ни панели, ни сводки, ни
            таблицы — сравнение показывает и то, чего в плане уже нет */
         <PlanDiff classId={classId} />
-      ) : /* Пусто — это когда **своего** показать нечего: ни своих курсов,
-             ни поднадзорных. Условие смотрело только на свои, и методист
-             без своих упирался в «заведите курс», хотя ждущий подписи план
-             лежал в том же селекте строкой ниже.
-
-             Курсы школы сюда не считаются намеренно: их можно выбрать, но
-             своей работы они не заменяют, и человеку, которому ещё не
-             поручили курс, надо сказать именно это. Выбрал чужой — ветка
-             сюда и не дойдёт, выше стоит `supervising` */
-      !onShelf && !mineAndWatched.length ? (
-        <EmptyState
-          title={t('plan.needClass.title')}
-          actions={
-            <>
-              <button type="button" onClick={() => navigate('/school/courses')}>
-                {t('plan.needClass.action')}
-              </button>
-              {/*
-                Второе действие — ровно для того, кто это читает: курса ему не
-                поручили, а программу он написать может. Плану на полке курс
-                не нужен, и другой двери к нему у человека без курсов нет:
-                полка открывается окном с плана, а плана у него ещё нет.
-              */}
-              <button
-                type="button"
-                className="secondary"
-                onClick={() => setDialog({ type: 'newTemplate' })}
-              >
-                {t('plan.shelf.create')}
-              </button>
-            </>
-          }
-        >
-          {t('plan.needClass.hint')}
-        </EmptyState>
       ) : /*
-             Не выбрано — и это состояние, а не поломка.
+             Ничего не открыто — значит выбирают, и выбор этот сам по себе
+             экран, а не заглушка перед экраном.
 
-             Прежде его не бывало: страница выбирала сама, и первый свой курс
-             открывался молча. Молчание тут дорого стоит — «Учебный план»
-             открывался на чужой по сути работе, и человек с полутора
-             десятками курсов правил не тот план ровно до того мгновения,
-             пока не прочитает имя в селекте.
+             Было тут два пустых состояния подряд. Первое — «вам ещё не
+             поручили курс», второе — «выберите курс» с кнопками своего и
+             поднадзорного. Оба честные, но вместе они отвечали лишь на
+             половину вопроса: курсы школы жили в селекте, полка — в окне
+             «Из библиотеки», а чужие записи с полки не предлагались вовсе.
+             Планов у человека четыре вида, и чтобы найти нужный, надо было
+             помнить, каким из трёх способов он открывается.
 
-             Курсы предлагаются кнопками, а не одной подсказкой «выберите
-             наверху»: выбор — то самое, зачем сюда пришли, и заставлять
-             искать его глазами в строке заголовка незачем. Кнопки — своё и
-             поднадзорное (`mineAndWatched`), то есть работа человека;
-             курсы школы и заготовки остаются в селекте, потому что за ними
-             приходят изредка и знают, за чем именно.
+             Теперь их показывает витрина — четырьмя областями по двум осям
+             (есть ли курс, мой ли план). Устройство и порядок областей — в
+             `PlanShowcase.jsx`.
+
+             Прежнее «заведите курс» осталось, но условие у него другое: не
+             «нет своих курсов», а **не из чего выбирать вовсе**. Пока на
+             витрине есть хоть что-нибудь — пусть чужое, пусть одна чужая
+             заготовка, — сказать «заведите курс» значит спрятать то, что
+             человеку и так доступно. А когда пусто везде, это единственный
+             осмысленный ответ, и дверей у него по-прежнему две: завести
+             курс и написать план без курса.
            */
       !onShelf && !classId ? (
-        <EmptyState
-          title={t('plan.pick.title')}
-          actions={mineAndWatched.map((item) => (
-            <button
-              key={item.id}
-              type="button"
-              className="secondary"
-              onClick={() => pickClass(item.id)}
-            >
-              {classLabel(item)}
-            </button>
-          ))}
-        >
-          {t('plan.pick.hint')}
-        </EmptyState>
+        showcaseItems.length ? (
+          <PlanShowcase
+            items={showcaseItems}
+            busy={busy}
+            onCreate={() => setDialog({ type: 'newTemplate' })}
+            onPick={(item) =>
+              item.kind === 'template'
+                ? navigate(`/library/${item.id}`)
+                : pickClass(item.id)
+            }
+          />
+        ) : (
+          <EmptyState
+            title={t('plan.needClass.title')}
+            actions={
+              <>
+                <button type="button" onClick={() => navigate('/school/courses')}>
+                  {t('plan.needClass.action')}
+                </button>
+                {/*
+                  Второе действие — ровно для того, кто это читает: курса ему
+                  не поручили, а программу он написать может. Плану на полке
+                  курс не нужен, и другой двери к нему у человека без курсов
+                  нет: полка открывается окном с плана, а плана у него ещё
+                  нет.
+                */}
+                <button
+                  type="button"
+                  className="secondary"
+                  onClick={() => setDialog({ type: 'newTemplate' })}
+                >
+                  {t('plan.shelf.create')}
+                </button>
+              </>
+            }
+          >
+            {t('plan.needClass.hint')}
+          </EmptyState>
+        )
       ) : (
         <>
           {data && (
@@ -1803,6 +1967,17 @@ export default function Plan({ user, onLoggedOut, template = null }) {
             появляется, только когда есть что сказать: пустая занимала бы
             высоту ряда молча.
           */}
+          {/*
+            Над чужой заготовкой панели нет вовсе.
+
+            Внутри неё всё до одного — действия над планом: добавить строку,
+            импортировать, отправить на утверждение, положить на полку. У
+            чужой записи каждое ответит отказом, а кнопка, умеющая только
+            отказать, честнее не нарисованная — тем же правилом, по которому
+            на полке нет меню обмена файлами. Что делать вместо этого,
+            сказано строкой контекста над таблицей.
+          */}
+          {!shelfForeign && (
           <section className="panel plan-tools">
             <div className="actions wrap">
               {/*
@@ -2069,6 +2244,7 @@ export default function Plan({ user, onLoggedOut, template = null }) {
               </p>
             )}
           </section>
+          )}
 
           {error && (
             <p className="error" role="alert">
@@ -2100,6 +2276,11 @@ export default function Plan({ user, onLoggedOut, template = null }) {
                 blocks={blocks}
                 dated={dated}
                 busy={busy}
+                /* чужая заготовка — то же, что чужой курс: та же таблица,
+                   только читают. Права тут не считаются, их назвал сервер
+                   (`can_edit`), а таблица давно умеет обходиться без
+                   кнопок — этим же режимом её читает методист */
+                readOnly={shelfForeign}
                 collapsed={collapsed}
                 editing={editing}
                 adding={adding}

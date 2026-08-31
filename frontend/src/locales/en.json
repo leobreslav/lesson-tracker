@@ -569,14 +569,28 @@
       "draft": "draft, visible to you only",
       "published": "on the school shelf"
     },
-    "pick": {
-      "title": "Pick a course",
-      "hint": "A plan is written for a course, so the course comes first. Yours and the ones you supervise are below; the rest of the school and your own templates are in the list at the top."
+    "showcase": {
+      "title": "Pick a plan",
+      "hint": "On the left, plans of courses: they have dates, a schedule and approval by a methodist. On the right, plans on the shelf: a programme with no year and no class. Yours are on top, your colleagues' below.",
+      "line": "{{subject}} · grade {{grade}} · {{who}}",
+      "groups": {
+        "mineCourses": "My courses",
+        "mineTemplates": "My plans on the shelf",
+        "otherCourses": "Courses of colleagues",
+        "otherTemplates": "Plans of colleagues on the shelf"
+      },
+      "none": {
+        "mineCourses": "You have not been given a course yet.",
+        "mineTemplates": "You have not put a plan on the shelf yet.",
+        "otherCourses": "There are no other courses in the school yet.",
+        "otherTemplates": "Colleagues have not put anything on the shelf yet."
+      }
     },
     "context": {
       "course": "Edits go into the plan of this course. Nothing in the library changes because of them.",
       "template": "Edits go straight into this library entry — there is nothing to save separately. It has no course and no dates.",
-      "foreign": "Somebody else's plan: you read it, you do not edit it. To take it into your own course, export it and import the file."
+      "foreign": "Somebody else's plan: you read it, you do not edit it. To take it into your own course, export it and import the file.",
+      "foreignTemplate": "A shelf entry by a colleague: you read it, you do not edit it. To take it into a course of yours, open that course's plan and pick this entry in «From the library»."
     },
     "saveMode": {
       "label": "Where to save",
@@ -639,7 +653,8 @@
       "waiting": "Waiting for a reply",
       "supervised": "Supervised",
       "school": "Courses of the school",
-      "templates": "My drafts on the shelf"
+      "templates": "My drafts on the shelf",
+      "otherTemplates": "Drafts of colleagues"
     },
     "recordedHint": "The lesson is taught and recorded",
     "beforeTaught": "There is no room before a lesson already taught",

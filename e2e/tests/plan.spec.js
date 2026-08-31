@@ -1458,9 +1458,11 @@ test('курс и заготовка выбираются одним селек�
   await expect(context).toContainText('прямо в эту заготовку')
   await expect(picker).toHaveValue(`t${draft.id}`)
 
-  // обратно в курс — тем же селектом, а не через библиотеку
+  // обратно в курс — тем же селектом, а не через библиотеку. Курс теперь
+  // тоже назван адресом: `/plan` без него показывает витрину, и уйти с
+  // полки «просто на /plan» значило бы вернуться к выбору, а не к курсу
   await picker.selectOption(String(course.id))
-  await expect(page).toHaveURL(/\/plan$/)
+  await expect(page).toHaveURL(new RegExp(`/plan\\?course=${course.id}$`))
   await ready(page)
   await expect(context).toContainText('план этого курса')
 })
@@ -1528,4 +1530,66 @@ test('сохранение поверх называет запись, пока�
   await ready(page)
   await page.locator('.plan-undo').click()
   await expect(page.locator('.plan-row', { hasText: 'Дописанный урок' })).toHaveCount(0)
+})
+
+/**
+ * Витрина планов: четыре области, две оси.
+ *
+ * Проверяется не вид, а то, ради чего она заведена: планов у человека
+ * четыре вида, и раньше они лежали в трёх разных местах — кнопками в пустом
+ * состоянии, группой селекта и окном библиотеки. Здесь они названы разом, и
+ * каждый в своей области.
+ */
+test('пустой «Учебный план» раскладывает планы на четыре области', async ({
+  page,
+  signIn,
+}) => {
+  await signIn(PEOPLE.ivanova)
+  await page.goto('/plan')
+  await ready(page)
+
+  // заголовок у каждой области называет **обе** оси разом: на телефоне
+  // колонка одна, сетка схлопывается, и «мои» от «коллег» отличает только он
+  for (const area of [
+    'Мои курсы',
+    'Мои планы на полке',
+    'Курсы коллег',
+    'Планы коллег на полке',
+  ]) {
+    await expect(page.getByRole('heading', { name: area })).toBeVisible()
+  }
+
+  // свой курс стоит именно в своей области, а не вперемешку
+  const mine = page.locator('.showcase-area', { hasText: 'Мои курсы' })
+  await expect(mine.getByRole('button', { name: /Grade 6 Algebra/ })).toBeVisible()
+})
+
+test('выбор с витрины уезжает в адрес, и «назад» возвращает к выбору', async ({
+  page,
+  signIn,
+}) => {
+  /*
+   * Адрес тут не украшение. Витрина показывается на `/plan` всегда, значит
+   * у самого плана обязан быть свой адрес — иначе с витрины некуда уйти, а
+   * перезагрузка открытого плана возвращала бы к выбору.
+   */
+  await signIn(PEOPLE.ivanova)
+  await page.goto('/plan')
+  await ready(page)
+
+  const mine = page.locator('.showcase-area', { hasText: 'Мои курсы' })
+  await mine.getByRole('button', { name: /Grade 6 Algebra/ }).click()
+
+  await expect(page).toHaveURL(/[?&]course=\d+/)
+  await expect(page.locator('.plan-cards')).toBeVisible()
+
+  // перезагрузка не теряет открытое: адрес и есть ответ на «что открыто»
+  await page.reload()
+  await ready(page)
+  await expect(page.locator('.plan-cards')).toBeVisible()
+
+  // а «назад» возвращает к выбору, а не к прошлому курсу
+  await page.goBack()
+  await ready(page)
+  await expect(page.getByRole('heading', { name: 'Выберите план' })).toBeVisible()
 })

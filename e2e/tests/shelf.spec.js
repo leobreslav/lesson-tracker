@@ -110,3 +110,61 @@ test('взять план с полки целиком — сначала пок
   // вопрос вместо тихой перезаписи, и в нём сказано, что именно изменится
   await expect(page.getByRole('button', { name: 'Заменить' })).toBeVisible()
 })
+
+/**
+ * Чужую запись на полке читают, но не правят.
+ *
+ * Четвёртый вид плана, и до витрины его не существовало вовсе: селект
+ * показывал только свои заготовки, а экран полки включал правку всегда —
+ * то есть по прямой ссылке на чужую запись человек получал кнопки, которые
+ * ответили бы отказом сервера.
+ *
+ * Право спрашивается у сервера (`can_edit`), а не считается на клиенте, и
+ * ведёт себя чужая заготовка так же, как чужой курс: та же таблица, только
+ * без кнопок, и строка, объясняющая почему.
+ */
+test('чужую заготовку с полки читают, но не правят', async ({
+  page,
+  signIn,
+  api,
+}) => {
+  const author = await api(PEOPLE.ivanova)
+  const subjects = await author.get('/api/school/subjects/')
+  const subject = subjects.body?.[0]
+  expect(subject, 'в школе обязан быть хотя бы один предмет').toBeTruthy()
+
+  const made = await author.post('/api/library/templates/', {
+    subject: subject.id,
+    grade: 7,
+    title: 'Алгебра 7, у коллеги',
+    is_published: true,
+  })
+  expect(made.status, JSON.stringify(made.body)).toBe(201)
+
+  // читает другой человек той же школы
+  await signIn(PEOPLE.petrov)
+  await page.goto('/plan')
+  await ready(page)
+
+  // запись предложена, и предложена в области чужого — а не среди своего
+  const theirs = page.locator('.showcase-area', { hasText: 'Планы коллег на полке' })
+  await theirs.getByRole('button', { name: /Алгебра 7, у коллеги/ }).click()
+
+  await expect(page).toHaveURL(new RegExp(`/library/${made.body.id}$`))
+
+  // роль названа словом, и вместе с ней — хозяин: спрашивают обычно не
+  // «что нельзя», а «чей это план и к кому идти с вопросом»
+  await expect(page.locator('.open-role')).toContainText('только чтение')
+
+  // правки нет никакой: панель действий над чужой записью не рисуется вовсе
+  await expect(
+    page.getByRole('button', { name: 'Добавить тему или урок' }),
+  ).toHaveCount(0)
+  await expect(page.locator('.plan-tools')).toHaveCount(0)
+
+  // а вместо молчания — строка о том, почему нельзя и как взять себе.
+  // Выгрузку она обещать не должна: меню файлов на полке нет вовсе
+  const context = page.locator('.plan-context')
+  await expect(context).toContainText('читают, но не правят')
+  await expect(context).toContainText('Из библиотеки')
+})

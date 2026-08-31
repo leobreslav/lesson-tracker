@@ -215,6 +215,13 @@ test('keys built at runtime exist for every value they take', () => {
     // строку без объяснения, то есть ровно с той загадкой, ради которой
     // заглушённый вариант и показывается
     ...['not_configured', 'unreachable'].map((why) => `scan.why.${why}`),
+    // витрина планов строит и заголовок области, и её пустое состояние из
+    // имени области (`PlanShowcase.jsx`, `AREAS`). Областей четыре, и они
+    // перемножение двух осей — добавится третья ось, областей станет шесть,
+    // а забытая фраза покажет человеку сам ключ на месте заголовка
+    ...['mineCourses', 'mineTemplates', 'otherCourses', 'otherTemplates'].flatMap(
+      (area) => [`plan.showcase.groups.${area}`, `plan.showcase.none.${area}`],
+    ),
   ]
 
   assert.deepEqual(
