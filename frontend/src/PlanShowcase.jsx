@@ -107,18 +107,6 @@ export default function PlanShowcase({ items, onPick, onCreate, busy = false }) 
       <h3>{t('plan.showcase.title')}</h3>
       <p className="hint">{t('plan.showcase.hint')}</p>
 
-      {/*
-        «Написать новый план…» стоит над витриной и виден всегда — в том
-        числе когда все четыре области пусты. Это ровно тот человек, ради
-        которого дверь и заведена: курса ему не поручили, а программу он
-        писать вправе, и другого входа к плану без курса у него нет.
-      */}
-      <div className="row">
-        <button type="button" disabled={busy} onClick={onCreate}>
-          {t('plan.shelf.create')}
-        </button>
-      </div>
-
       {items.length > 0 && (
         <div className="row">
           <input
@@ -248,6 +236,26 @@ export default function PlanShowcase({ items, onPick, onCreate, busy = false }) 
       {items.length > 0 && found.length === 0 && (
         <p className="hint">{t('library.nothingFound')}</p>
       )}
+
+      {/*
+        «Написать новый план…» — под областями, а не над ними.
+
+        Стояла она сразу под заголовком, и порядок читался скачками: выберите
+        план — напишите новый — а вот чем сузить выбор. Два раза про выбор, и
+        между ними про создание.
+
+        Внизу порядок выпрямляется и сам становится рассказом: вот из чего
+        выбрать, вот чем сузить, а если ничего не подошло — напишите свой.
+
+        Видна она при этом по-прежнему **всегда**, в том числе когда все
+        четыре области пусты: это ровно тот человек, ради которого дверь и
+        заведена — курса ему не поручили, а программу он писать вправе.
+      */}
+      <div className="row showcase-create">
+        <button type="button" disabled={busy} onClick={onCreate}>
+          {t('plan.shelf.create')}
+        </button>
+      </div>
     </section>
   )
 }

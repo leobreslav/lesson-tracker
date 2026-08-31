@@ -50,7 +50,7 @@ test('администратор заводит курс и назначает �
   await openSection(page, '/plan')
   // курс появился на витрине, в своей области — там теперь выбирают план
   await expect(
-    page.locator('.showcase-area', { hasText: 'Мои курсы' })
+    page.locator('.showcase-area', { hasText: 'Мои группы' })
       .getByRole('button', { name: /9А Алгебра/ }),
   ).toHaveCount(1)
 })
@@ -855,7 +855,7 @@ test('администратор чинит чужой план — из той 
 
   // чужой курс лежит в своей области витрины, а не вперемешку со «своими»
   await expect(
-    page.locator('.showcase-area', { hasText: 'Курсы коллег' })
+    page.locator('.showcase-area', { hasText: 'Группы коллег' })
       .getByRole('button', { name: new RegExp(alien.name) }),
   ).toHaveCount(1)
   await page.goto(`/plan?course=${alien.id}`)
