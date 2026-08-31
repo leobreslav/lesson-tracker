@@ -207,3 +207,98 @@ class UndoWorksOnTheShelfTests(TemplatePlanTestCase):
         self.assertTrue(
             all(step["action"] == "create" for step in history.json()["steps"])
         )
+
+
+class TheShelfExchangesFilesLikeACourseTests(TemplatePlanTestCase):
+    """
+    Обмен файлами на полке — тот же, что у курса, и это не удобство.
+
+    План на полке пишут ровно так же, как план курса, и «набрать сорок
+    уроков» одинаково не хочется в обоих. Ручки при этом были курсовые: на
+    полке меню файлов не рисовали вовсе, потому что оно ответило бы отказом.
+    Отказ шёл не от правила, а от того, что владельца никто не обобщил.
+
+    Граница между сторонами при этом не стёрлась, а стала точнее: своё —
+    и читают, и пишут; чужое — только читают. Выгрузка чужого этого не
+    нарушает, а **заканчивает**: показать и не дать взять — не защита, а
+    неудобство, потому что возьмут всё равно, только руками.
+    """
+
+    def export(self, kind="export", template=None):
+        return self.client.get(
+            reverse(f"plannode-{kind}"), {"template": (template or self.template).pk}
+        )
+
+    def test_an_author_takes_their_shelf_plan_as_a_file(self):
+        self.add("Тригонометрия", is_section=True)
+
+        for kind in ("export", "export-xlsx"):
+            with self.subTest(kind=kind):
+                answer = self.export(kind)
+                self.assertEqual(answer.status_code, 200, answer.content)
+                self.assertTrue(answer.content)
+
+    def test_a_colleague_takes_a_published_shelf_plan_as_a_file(self):
+        """
+        Ровно то, ради чего чужую запись вообще открыли: её берут себе.
+
+        Своей кнопки «взять в курс» у чужой заготовки нет — она живёт в окне
+        «Из библиотеки», — а файл работает отовсюду и ложится обратно
+        импортом, потому что формат один на всех.
+        """
+        self.add("Тригонометрия", is_section=True)
+        sign_in(self.client, self.colleague)
+
+        answer = self.export()
+
+        self.assertEqual(answer.status_code, 200, answer.content)
+
+    def test_a_colleague_does_not_export_someone_elses_draft(self):
+        """Чужой черновик отсутствует и для выгрузки — тем же 404."""
+        draft = make_template(self.school, self.user, published=False,
+                              title="Черновик")
+        sign_in(self.client, self.colleague)
+
+        self.assertEqual(self.export(template=draft).status_code, 404)
+
+    def test_an_author_imports_a_file_into_their_shelf_plan(self):
+        """
+        Импорт на полке — тот же, что у курса, включая режимы.
+
+        Проверок про проведённые занятия и очередь записей он тут не зовёт,
+        и это не пропуск: строка на полке не проведена никогда, а записей у
+        неё нет, потому что нет занятий.
+        """
+        self.add("Старое", is_section=True)
+
+        # владелец — в строке запроса, как и у курса: тело тут занято файлом
+        answer = self.client.post(
+            f"{reverse('plannode-import-rows')}?template={self.template.pk}",
+            {
+                "mode": "replace",
+                "rows": [
+                    ["", "Тригонометрия", "Синус суммы"],
+                    ["", "Тригонометрия", "Косинус суммы"],
+                ],
+            },
+            format="json",
+        )
+
+        self.assertEqual(answer.status_code, 200, answer.content)
+        self.assertEqual(
+            [row["title"] for row in self.tree().json()["nodes"]],
+            ["Тригонометрия"],
+        )
+
+    def test_a_colleague_does_not_import_into_a_published_template(self):
+        """Читают все, пишет автор — и у файла это то же правило."""
+        sign_in(self.client, self.colleague)
+
+        answer = self.client.post(
+            f"{reverse('plannode-import-rows')}?template={self.template.pk}",
+            {"mode": "append", "rows": [["", "Тема", "Чужая строка"]]},
+            format="json",
+        )
+
+        self.assertIn(answer.status_code, (400, 404), answer.content)
+        self.assertFalse(PlanNode.objects.filter(title="Чужая строка").exists())

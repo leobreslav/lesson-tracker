@@ -420,33 +420,35 @@ PLAN_FORMATS = {
 }
 
 
-def plan_download(course, extension, *, with_dates=False):
+def plan_download(owner, title, extension, *, dates=None):
     """
-    План файлом «план_<курс>_<дата>.<расширение>».
+    План файлом «план_<название>_<дата>.<расширение>».
 
-    Функция, а не метод вьюсета, потому что просят выгрузку с **двух**
-    экранов: автор — со своей страницы плана (`?course=`), коллега — с
-    экрана чужого плана (по id курса в пути). Формат при этом обязан быть
-    один: файл коллеги, отличающийся от файла автора хоть столбцом, — это
+    Функция, а не метод вьюсета, потому что просят выгрузку с **трёх**
+    экранов: автор — со своей страницы плана, коллега — с экрана чужого
+    курса (по id курса в пути), и обе стороны полки. Формат при этом обязан
+    быть один: файл, отличающийся от файла автора хоть столбцом, — это
     второй формат, который разойдётся с импортом в первую же правку.
 
-    `with_dates` этого не нарушает, и в этом весь замысел. Столбец дат —
-    не второй формат «для чтения», а тот же самый файл с объявленной
-    четвёртой колонкой: импорт такую шапку принимает и колонку отбрасывает,
-    потому что дата в плане не живёт — её даёт расписание. Выгруженное
-    ложится обратно и с датами, и без.
+    Столбец дат этого не нарушает, и в этом весь замысел. Он не второй
+    формат «для чтения», а тот же самый файл с объявленной четвёртой
+    колонкой: импорт такую шапку принимает и колонку отбрасывает, потому
+    что дата в плане не живёт — её даёт расписание. Выгруженное ложится
+    обратно и с датами, и без.
 
-    Права сюда не входят намеренно: кто дошёл до курса, решает вызывающий,
-    и решает он это по-разному — своим `requested_course` у автора,
-    queryset'ом чтения у читателя со стороны.
+    **Даты приходят готовыми, а не считаются здесь**, и это не мелочь:
+    у записи на полке их нет вовсе — она не привязана ни к году, ни к
+    расписанию. Спроси эта функция даты сама, ей пришлось бы знать, какой
+    у неё владелец, — то есть повторить различие, которое и так есть выше.
+
+    Права сюда не входят намеренно: кто дошёл до плана, решает вызывающий,
+    и решает он это по-разному — `requested_owner` у автора, queryset'ом
+    чтения у читателя со стороны.
     """
     build, content_type = PLAN_FORMATS[extension]
-    content = build(
-        services.get_tree(of_course(course)),
-        plan_dates(course) if with_dates else None,
-    )
+    content = build(services.get_tree(owner), dates)
 
-    name = f"план_{course.name}_{timezone.localdate()}.{extension}"
+    name = f"план_{title}_{timezone.localdate()}.{extension}"
     response = HttpResponse(content, content_type=content_type)
     # имя с кириллицей — только через RFC 5987, плюс ascii-запасное
     response["Content-Disposition"] = (
@@ -974,7 +976,7 @@ class PlanNodeViewSet(CourseScopedViewSet):
         """Импорт плана из CSV."""
         # право спрашивается до чтения файла: разбирать присланное у того,
         # кому сюда нельзя, незачем
-        return self.run_import(self.requested_course(write=True), *self.read_upload())
+        return self.run_import(self.requested_owner(write=True), *self.read_upload())
 
     @action(detail=False, methods=["post"], url_path="import-rows",
             url_name="import-rows")
@@ -988,7 +990,7 @@ class PlanNodeViewSet(CourseScopedViewSet):
         только то, откуда взялись ячейки.
         """
         return self.run_import(
-            self.requested_course(write=True), *self.read_pasted()
+            self.requested_owner(write=True), *self.read_pasted()
         )
 
     @action(detail=False, methods=["post"], url_path="import-xlsx",
@@ -996,15 +998,23 @@ class PlanNodeViewSet(CourseScopedViewSet):
     def import_xlsx(self, request):
         """Импорт плана из книги Excel — тем же путём, что и CSV."""
         return self.run_import(
-            self.requested_course(write=True), *self.read_workbook()
+            self.requested_owner(write=True), *self.read_workbook()
         )
 
-    def run_import(self, course, parsed, about):
+    def run_import(self, owner, parsed, about):
         """
         Либо файл заезжает целиком, либо ничего.
 
         Разбор идёт до транзакции: непригодный файл не должен успеть снести
         существующий план в режиме replace.
+
+        **Владелец, а не курс**, и различие ровно там, где речь о календаре:
+        три проверки ниже спрашивают про проведённые занятия и очередь
+        записей, а у записи на полке ни того, ни другого не бывает — строка
+        на полке не проведена никогда (`config/test_invariants.py`), и
+        записей у неё нет, потому что нет занятий. Позвать их всё равно
+        значило бы спросить у полки про её расписание и получить пустоту
+        вместо ответа.
         """
         if not parsed.ok:
             # файл читается строго: непонятная строка отклоняет его целиком,
@@ -1023,21 +1033,23 @@ class PlanNodeViewSet(CourseScopedViewSet):
         # тогда остаётся шаг, которого не было, и кнопка отмены предлагает
         # отменить несостоявшийся импорт.
         with transaction.atomic():
-            self.snapshot(of_course(course), f"import_{mode}")
+            self.snapshot(owner, f"import_{mode}")
 
             if mode == "sync":
-                plan = services.plan_sync(of_course(course), parsed.rows)
+                plan = services.plan_sync(owner, parsed.rows)
                 if not plan.ok:
                     # весь файл или ничего: применить половину значит оставить
                     # человека разбираться, какую именно
                     self.refuse(plan.errors)
 
-                refuse_if_taught_lost(course, plan.delete)
+                if not owner.is_template:
+                    refuse_if_taught_lost(owner.id, plan.delete)
 
-                done = services.apply_sync(of_course(course), plan)
+                done = services.apply_sync(owner, plan)
                 # файл задаёт и порядок: переставленные строки способны
                 # обогнать записи, и это ловится тем же правилом
-                refuse_if_records_broken(course)
+                if not owner.is_template:
+                    refuse_if_records_broken(owner.id)
 
                 return Response(
                     {**done, **about, "dates_ignored": parsed.dates_ignored}
@@ -1047,11 +1059,12 @@ class PlanNodeViewSet(CourseScopedViewSet):
                 # replace сносит план целиком, а с ним и записи о занятиях —
                 # молча и без следа. Это то же удаление проведённой строки, за
                 # которое поодиночке отказывает `plan_delete_taught`
-                refuse_if_taught_lost(course, services.plan_nodes(of_course(course)))
-                PlanNode.objects.filter(course=course).delete()
+                if not owner.is_template:
+                    refuse_if_taught_lost(owner.id, services.plan_nodes(owner))
+                PlanNode.objects.filter(**owner.lookup).delete()
 
             created = services.apply_import(
-                of_course(course), parsed.rows, append=(mode == "append")
+                owner, parsed.rows, append=(mode == "append")
             )
 
         return Response(
@@ -1093,7 +1106,7 @@ class PlanNodeViewSet(CourseScopedViewSet):
         Ничего не пишет и ни от чего не отказывается: даже файл с ошибками
         синхронизации разбирается до конца, чтобы показать их все разом.
         """
-        course = self.requested_course()
+        owner = self.requested_owner()
         mode = self.read_mode(parsed, refusing=False)
 
         errors = list(parsed.errors)
@@ -1111,7 +1124,7 @@ class PlanNodeViewSet(CourseScopedViewSet):
                 )
             ]
         elif mode == "sync":
-            plan = services.plan_sync(of_course(course), parsed.rows)
+            plan = services.plan_sync(owner, parsed.rows)
             errors = plan.errors
             new_sections = sum(1 for row, _, _ in plan.create if row.is_section)
             new_lessons = len(plan.create) - new_sections
@@ -1119,7 +1132,7 @@ class PlanNodeViewSet(CourseScopedViewSet):
         else:
             new_sections, new_lessons = parsed.sections, parsed.lessons
             # append не удаляет ничего, replace — всё, что было
-            doomed = list(services.plan_nodes(of_course(course))) if mode == "replace" else []
+            doomed = list(services.plan_nodes(owner)) if mode == "replace" else []
 
         return Response(
             {
@@ -1146,12 +1159,38 @@ class PlanNodeViewSet(CourseScopedViewSet):
             }
         )
 
+    def download(self, request, extension):
+        """
+        Выгрузка обоих владельцев, одним форматом и одной дорогой.
+
+        Курс и запись полки различаются тут ровно дважды — именем файла и
+        столбцом дат, — и оба различия по существу: у полки нет ни года, ни
+        расписания, значит и дат взять неоткуда. Всё остальное общее, и
+        второй ручки «выгрузить шаблон» рядом с этой не будет: она
+        разошлась бы с импортом в первую же правку формата.
+
+        Читает — тот, кому запись видна (`requested_owner` без `write`):
+        коллега забирает выложенное на полку файлом, и это единственное,
+        что он с ним делает.
+        """
+        owner = self.requested_owner()
+
+        if owner.is_template:
+            template = get_object_or_404(self.readable_templates(), pk=owner.id)
+            return plan_download(owner, template.title, extension)
+
+        course = get_object_or_404(self.my_courses(), pk=owner.id)
+        return plan_download(
+            owner,
+            course.name,
+            extension,
+            dates=plan_dates(course) if wants_dates(request) else None,
+        )
+
     @action(detail=False, methods=["get"], url_path="export", url_name="export")
     def export_csv(self, request):
         """Выгрузка плана в CSV — формат тот же, что понимает импорт."""
-        return plan_download(
-            self.requested_course(), "csv", with_dates=wants_dates(request)
-        )
+        return self.download(request, "csv")
 
     @action(detail=False, methods=["get"], url_path="export-xlsx",
             url_name="export-xlsx")
@@ -1162,9 +1201,7 @@ class PlanNodeViewSet(CourseScopedViewSet):
         Оформление (текстовый формат ячеек, закреплённая шапка, запертый
         столбец id) живёт в `plans/xlsx.py` — здесь только выдача файла.
         """
-        return plan_download(
-            self.requested_course(), "xlsx", with_dates=wants_dates(request)
-        )
+        return self.download(request, "xlsx")
 
     @action(detail=False, methods=["get"])
     def diff(self, request):
@@ -1836,16 +1873,22 @@ class PlanReviewViewSet(ReadOnlyModelViewSet):
         выгруженный коллегой, обязан импортироваться обратно так же, как
         свой. Второй формат «для чтения» разошёлся бы с импортом молча.
         """
-        return plan_download(
-            self.get_object(), "csv", with_dates=wants_dates(request)
-        )
+        return self.download(request, "csv")
 
     @action(detail=True, methods=["get"], url_path="export-xlsx",
             url_name="export-xlsx")
     def export_xlsx(self, request, pk=None):
         """Тот же чужой план книгой Excel — оформление из `plans/xlsx.py`."""
+        return self.download(request, "xlsx")
+
+    def download(self, request, extension):
+        """Чужой курс — тот же файл, что у автора, и та же функция."""
+        course = self.get_object()
         return plan_download(
-            self.get_object(), "xlsx", with_dates=wants_dates(request)
+            of_course(course),
+            course.name,
+            extension,
+            dates=plan_dates(course) if wants_dates(request) else None,
         )
 
     @action(detail=True, methods=["post"])
