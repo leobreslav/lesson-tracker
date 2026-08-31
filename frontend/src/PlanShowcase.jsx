@@ -50,7 +50,13 @@ const AREAS = [
   { key: 'otherTemplates', mine: false, kind: 'template' },
 ]
 
-export default function PlanShowcase({ items, onPick, onCreate, busy = false }) {
+export default function PlanShowcase({
+  items,
+  year = null,
+  onPick,
+  onCreate,
+  busy = false,
+}) {
   const { t } = useTranslation()
   const [query, setQuery] = useState('')
   const [teacher, setTeacher] = useState('')
@@ -174,9 +180,33 @@ export default function PlanShowcase({ items, onPick, onCreate, busy = false }) 
       )}
 
       <div className="showcase-grid">
+        {/*
+          Заголовки колонок — над каждой осью, а не над витриной.
+
+          Ось названа в каждом заголовке области («Мои планы на полке»), и
+          пока областей было четыре, этого хватало. Но названо там **пересечение**
+          двух осей, а сама ось — то, что общего у верхней и нижней области
+          колонки, — не названа нигде: «слева планы курсов, справа с полки»
+          стояло одной строкой наверху, и держать в голове, какая её половина
+          к какой колонке, приходилось при каждом взгляде.
+
+          На узком экране их не видно: колонка там одна, и заголовок колонки
+          называл бы то, чего нет. Различать области в этом случае уже умеют
+          их собственные заголовки — они называют обе оси разом.
+        */}
+        <h4 className="showcase-column">
+          {year
+            ? t('plan.showcase.columns.coursesYear', { year })
+            : t('plan.showcase.columns.courses')}
+        </h4>
+        <h4 className="showcase-column">
+          {t('plan.showcase.columns.library')}
+        </h4>
         {areas.map((area) => (
           <section key={area.key} className="showcase-area">
-            <h4>{t(`plan.showcase.groups.${area.key}`)}</h4>
+            {/* уровнем ниже заголовка колонки: область — часть оси, а не
+                соседка ей */}
+            <h5>{t(`plan.showcase.groups.${area.key}`)}</h5>
             {/*
               Подпись под заголовком, а не вместо него.
 

@@ -109,11 +109,11 @@ test('второй учитель не видит уроков первого, �
   await ready(page)
   // витрина и есть то место, где чужой план ищут: своё сверху, чужое снизу
   await expect(
-    page.locator('.showcase-area', { hasText: 'Мои группы' })
+    page.locator('.showcase-area', { hasText: 'Мои классы' })
       .getByRole('button', { name: /Grade 9 Algebra/ }),
   ).toHaveCount(1)
   await expect(
-    page.locator('.showcase-area', { hasText: 'Группы коллег' })
+    page.locator('.showcase-area', { hasText: 'Классы коллег' })
       .getByRole('button', { name: /Grade 6 Algebra/ }),
   ).toHaveCount(1)
 

@@ -189,3 +189,50 @@ test('чужую заготовку с полки читают, но не пра
   await expect(context).toContainText('читают, но не правят')
   await expect(context).toContainText('выгрузить файлом')
 })
+
+test('свой черновик публикуется со своей же страницы', async ({
+  page,
+  signIn,
+  api,
+}) => {
+  /*
+   * Дыра, которую это закрывает, была не в правилах, а в дверях.
+   *
+   * Опубликовать запись можно было в двух местах: в окне сохранения — то
+   * есть один раз, при создании, — и списком в окне полки. А окно полки
+   * открывается только с плана курса, и до человека без курсов не доходило
+   * вовсе: плана нет, окна нет, черновик опубликовать нечем. Это ровно тот
+   * учитель, ради которого полка и заводилась.
+   */
+  const author = await api(PEOPLE.petrov)
+  const subjects = await author.get('/api/school/subjects/')
+  const made = await author.post('/api/library/templates/', {
+    subject: subjects.body[0].id,
+    grade: 8,
+    title: 'Алгебра 8, черновик со страницы',
+    is_published: false,
+  })
+  expect(made.status, JSON.stringify(made.body)).toBe(201)
+
+  await signIn(PEOPLE.petrov)
+  await page.goto(`/library/${made.body.id}`)
+  await ready(page)
+
+  // пока черновик — плашка предупреждает, что не видит никто
+  await expect(page.locator('.open-role')).toContainText('черновик')
+
+  const tools = page.locator('.plan-tools')
+  await expect(tools.getByRole('radio', { name: 'Только мне' })).toBeChecked()
+  await tools.getByRole('radio', { name: 'Всей школе' }).click()
+
+  // и это настоящая публикация, а не состояние экрана
+  await expect(page.locator('.open-role')).toContainText('правка доступна')
+  await expect.poll(async () => {
+    const shelf = await author.get(`/api/library/templates/${made.body.id}/`)
+    return shelf.body.is_published
+  }).toBe(true)
+
+  // обратный ход тем же тумблером: состояний два, и оба названы
+  await tools.getByRole('radio', { name: 'Только мне' }).click()
+  await expect(page.locator('.open-role')).toContainText('черновик')
+})

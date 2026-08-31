@@ -825,11 +825,21 @@ export default function Plan({ user, onLoggedOut, template = null }) {
   /**
    * Опубликовать черновик или снять с публикации.
    *
-   * Единственное место, где это делается: `from-plan` кладёт шаблон на полку
-   * черновиком, и без этой кнопки он остался бы виден одному автору.
+   * Спрашивают это из двух мест, и оба нужны: списком в окне полки — там
+   * управляют своими записями скопом — и на самой открытой записи, где
+   * вопрос «а видит ли это кто-нибудь» и возникает.
+   *
+   * Карточка полки перечитывается вместе со списком: на странице заготовки
+   * плашка и тумблер читают именно её, и обновлённый один список оставил бы
+   * их показывать прежнее — то есть переключатель щёлкал бы вхолостую.
    */
-  const publishTemplate = (template, published) =>
-    run(() => updateTemplate(template.id, { is_published: published })).then(loadShelf)
+  const publishTemplate = (item, published) =>
+    run(() => updateTemplate(item.id, { is_published: published })).then(() => {
+      loadShelf()
+      if (onShelf && item.id === template) {
+        fetchTemplate(template).then(setShelfCard).catch(() => {})
+      }
+    })
 
   const removeTemplate = (template) => {
     if (!window.confirm(t('library.deleteConfirm', { title: template.title }))) return
@@ -1771,6 +1781,11 @@ export default function Plan({ user, onLoggedOut, template = null }) {
           <PlanShowcase
             items={showcaseItems}
             busy={busy}
+            /* Текущий учебный год — самый свежий: `SchoolYear` приезжает
+               упорядоченным по убыванию начала, и так же его считают «Школа»
+               и школьное расписание. Второго определения «текущего года» в
+               проекте нет и заводить его тут незачем. */
+            year={years[0]?.name ?? null}
             onCreate={() => setDialog({ type: 'newTemplate' })}
             onPick={(item) =>
               item.kind === 'template'
@@ -2185,6 +2200,37 @@ export default function Plan({ user, onLoggedOut, template = null }) {
                 >
                   {t('plan.baseline.submit')}
                 </button>
+              )}
+
+              {/*
+                Кому видно свою запись — здесь же, на её собственной странице.
+
+                Спросить это можно было в двух местах, и оба были не тут: в
+                окне сохранения (то есть один раз, при создании) и списком в
+                окне полки — а оно открывается **только с плана курса**. Кто
+                написал программу без курса, до него не доходил вовсе: плана
+                курса у него нет, значит и окна нет, и свой черновик он не мог
+                опубликовать никаким способом. Это ровно тот учитель, ради
+                которого полка и заводилась.
+
+                Тумблер, а не кнопка, и по той же причине, что у сравнения:
+                состояний два, и оба надо назвать. Кнопка «Опубликовать»
+                говорит про одно из них, а какое сейчас — приходится
+                выводить из её надписи.
+
+                Место — панель действий, рядом с тем, где у курса стоит «На
+                утверждение». Вопрос у них общий: кто ещё это увидит.
+              */}
+              {onShelf && !shelfForeign && shelfCard && (
+                <Switch
+                  label={t('plan.visibility')}
+                  value={Boolean(shelfCard.is_published)}
+                  onChange={(published) => publishTemplate(shelfCard, published)}
+                  options={[
+                    { value: true, label: t('plan.toEveryone') },
+                    { value: false, label: t('plan.toMyself') },
+                  ]}
+                />
               )}
 
               {/*

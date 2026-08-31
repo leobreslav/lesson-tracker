@@ -249,9 +249,9 @@ test('методист без своих курсов видит прислан�
   // (страница не выбирает за человека), поэтому проверяется именно то, ради
   // чего эта ветка заведена: поднадзорный курс человеку **предложен**, и
   // предложен в своей области — «Курсы коллег», а не вперемешку со своими.
-  await expect(page.getByRole('heading', { name: 'Выберите план' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: /Выберите план/ })).toBeVisible()
 
-  const colleagues = page.locator('.showcase-area', { hasText: 'Группы коллег' })
+  const colleagues = page.locator('.showcase-area', { hasText: 'Классы коллег' })
   const offered = colleagues.getByRole('button', { name: /Grade 6 Algebra/ })
   await expect(offered).toBeVisible()
   // и он же назван действием: этот план ждёт подписи именно этого человека
@@ -349,7 +349,7 @@ test('ждущий подписи назван действием, а не сп�
   await page.goto('/plan')
   await ready(page)
 
-  const colleagues = page.locator('.showcase-area', { hasText: 'Группы коллег' })
+  const colleagues = page.locator('.showcase-area', { hasText: 'Классы коллег' })
   const waiting = colleagues.getByRole('button', { name: /Grade 6 Algebra/ })
   const watched = colleagues.getByRole('button', { name: /Grade 6 Geometry/ })
 
@@ -360,7 +360,7 @@ test('ждущий подписи назван действием, а не сп�
   await expect(watched.locator('.badge.waiting')).toHaveCount(0)
 
   // а своё и чужое разделено именно местом — это разные роли
-  const mine = page.locator('.showcase-area', { hasText: 'Мои группы' })
+  const mine = page.locator('.showcase-area', { hasText: 'Мои классы' })
   await expect(mine.getByRole('button', { name: /Grade 6 Algebra/ })).toHaveCount(0)
 })
 
@@ -543,7 +543,7 @@ test('чужой план школы открывается на чтение л
   await ready(page)
 
   // курс Петрова — в области «Курсы коллег», а не вперемешку со своими
-  const colleagues = page.locator('.showcase-area', { hasText: 'Группы коллег' })
+  const colleagues = page.locator('.showcase-area', { hasText: 'Классы коллег' })
   await expect(
     colleagues.getByRole('button', { name: /Grade 9 Algebra/ }),
   ).toHaveCount(1)
@@ -602,7 +602,7 @@ test('чужой план ищется учителем и предметом, �
 
   await page.getByLabel('Любой учитель').selectOption({ label: 'Пётр Петров' })
 
-  const colleagues = page.locator('.showcase-area', { hasText: 'Группы коллег' })
+  const colleagues = page.locator('.showcase-area', { hasText: 'Классы коллег' })
   await expect(
     colleagues.getByRole('button', { name: /Grade 9 Algebra/ }),
   ).toHaveCount(1)
@@ -611,6 +611,6 @@ test('чужой план ищется учителем и предметом, �
     colleagues.getByRole('button', { name: /Grade 6 Physics/ }),
   ).toHaveCount(0)
   // и своё сузилось тем же вопросом: у Петрова своих курсов Ивановой нет
-  const mine = page.locator('.showcase-area', { hasText: 'Мои группы' })
+  const mine = page.locator('.showcase-area', { hasText: 'Мои классы' })
   await expect(mine.getByRole('button')).toHaveCount(0)
 })

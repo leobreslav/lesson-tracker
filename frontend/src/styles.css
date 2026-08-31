@@ -3580,9 +3580,25 @@ button.badge:hover:not(:disabled) {
   margin-top: 1rem;
 }
 
-.showcase-area h4 {
+.showcase-area h5 {
   font-size: 0.95rem;
   color: var(--muted);
+}
+
+/* Заголовок колонки — над осью, и весит больше заголовка области: та часть
+   этой оси, а не соседка ей. */
+.showcase-column {
+  font-size: 1.15rem;
+  color: #202124;
+}
+
+/* На узком экране колонка одна, и заголовок колонки называл бы то, чего
+   нет. Области при этом различимы своими заголовками: они называют обе оси
+   разом. */
+@media (max-width: 46rem) {
+  .showcase-column {
+    display: none;
+  }
 }
 
 .showcase-list {

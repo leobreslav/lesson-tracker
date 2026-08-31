@@ -1457,7 +1457,7 @@ test('экран называет, что открыто, и даёт дорог
   await page.getByRole('button', { name: /К выбору планов/ }).click()
   await ready(page)
   await expect(page).toHaveURL(/\/plan$/)
-  await expect(page.getByRole('heading', { name: 'Выберите план' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: /Выберите план/ })).toBeVisible()
 
   // заготовка лежит в своей области витрины и открывается своим адресом
   await pickPlan(page, draft.title)
@@ -1560,16 +1560,16 @@ test('пустой «Учебный план» раскладывает план
   // заголовок у каждой области называет **обе** оси разом: на телефоне
   // колонка одна, сетка схлопывается, и «мои» от «коллег» отличает только он
   for (const area of [
-    'Мои группы (классы)',
+    'Мои классы',
     'Мои планы на полке',
-    'Группы коллег',
+    'Классы коллег',
     'Планы коллег на полке',
   ]) {
     await expect(page.getByRole('heading', { name: area })).toBeVisible()
   }
 
   // свой курс стоит именно в своей области, а не вперемешку
-  const mine = page.locator('.showcase-area', { hasText: 'Мои группы' })
+  const mine = page.locator('.showcase-area', { hasText: 'Мои классы' })
   await expect(mine.getByRole('button', { name: /Grade 6 Algebra/ })).toBeVisible()
 })
 
@@ -1586,7 +1586,7 @@ test('выбор с витрины уезжает в адрес, и «назад
   await page.goto('/plan')
   await ready(page)
 
-  const mine = page.locator('.showcase-area', { hasText: 'Мои группы' })
+  const mine = page.locator('.showcase-area', { hasText: 'Мои классы' })
   await mine.getByRole('button', { name: /Grade 6 Algebra/ }).click()
 
   await expect(page).toHaveURL(/[?&]course=\d+/)
@@ -1600,5 +1600,5 @@ test('выбор с витрины уезжает в адрес, и «назад
   // а «назад» возвращает к выбору, а не к прошлому курсу
   await page.goBack()
   await ready(page)
-  await expect(page.getByRole('heading', { name: 'Выберите план' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: /Выберите план/ })).toBeVisible()
 })

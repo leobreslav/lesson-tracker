@@ -575,9 +575,14 @@
       "published": "you may edit it"
     },
     "showcase": {
-      "title": "Pick a plan",
-      "hint": "On the left, plans of courses: they have dates, a schedule and approval by a methodist. On the right, plans on the shelf: a programme with no year and no class. Yours are on top, your colleagues' below.",
+      "title": "Pick a plan to view or edit",
+      "hint": "Yours on top, your colleagues' below.",
       "line": "{{subject}} · grade {{grade}} · {{who}}",
+      "columns": {
+        "courses": "Curricula of current classes",
+        "coursesYear": "Curricula of current classes ({{year}})",
+        "library": "Library of curricula"
+      },
       "groups": {
         "mineCourses": "My courses",
         "mineTemplates": "My plans on the shelf",
