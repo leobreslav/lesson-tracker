@@ -1,4 +1,4 @@
-import { PEOPLE, expect, expectConsoleError, ready, test } from './harness.js'
+import { PEOPLE, expect, expectConsoleError, pickPlan, ready, test } from './harness.js'
 
 /**
  * Scenario 1: walk every section and let the console listener judge.
@@ -142,7 +142,7 @@ test('вкладка, пережившая выкатку, чинит себя �
   await signIn(PEOPLE.ivanova)
   await page.goto('/plan')
   await ready(page)
-  await page.getByLabel('Курс').selectOption({ label: 'Grade 6 Algebra' })
+  await pickPlan(page, 'Grade 6 Algebra')
   await expect(page.locator('.plan-cards')).toBeVisible()
 
   // открываем панель урока — её код и лежит в пропавшем куске
@@ -153,8 +153,8 @@ test('вкладка, пережившая выкатку, чинит себя �
   await expect(page.getByText(/страница не отрисовалась|failed to render/i)).toHaveCount(0)
   expect(refused).toBe(1)
 
-  // а со свежим бандлом панель открывается как ни в чём не бывало
-  await page.getByLabel('Курс').selectOption({ label: 'Grade 6 Algebra' })
+  // а со свежим бандлом панель открывается как ни в чём не бывало. Курс
+  // перезагрузка не потеряла — он в адресе, и выбирать заново нечего
   await expect(page.locator('.plan-cards')).toBeVisible()
   await page.locator('.plan-row.lesson .title').first().click()
   await expect(page.locator('dialog.modal')).toBeVisible()
@@ -173,7 +173,7 @@ test('сервер не ответил — так и написано, по-че
   await signIn(PEOPLE.ivanova)
   await page.goto('/plan')
   await ready(page)
-  await page.getByLabel('Курс').selectOption({ label: 'Grade 6 Algebra' })
+  await pickPlan(page, 'Grade 6 Algebra')
   await expect(page.locator('.plan-cards')).toBeVisible()
 
   // роняем сеть под уже открытой страницей

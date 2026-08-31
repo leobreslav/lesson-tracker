@@ -1,4 +1,4 @@
-import { PEOPLE, expect, planMenu, ready, test } from './harness.js'
+import { PEOPLE, expect, pickPlan, planMenu, ready, test } from './harness.js'
 
 /**
  * Scenarios 8 and 9: the layout shifting, and one teacher's work staying
@@ -10,9 +10,9 @@ const MONDAY = '2026-09-07'
 async function openPlan(page, course) {
   await page.goto('/plan')
   await ready(page)
-  // курс выбирают селектом в строке заголовка: чипы не пережили
-  // учителя музыки с полутора десятками курсов
-  await page.getByLabel('Курс').selectOption({ label: course })
+  // план выбирают на витрине: селекта в шапке больше нет, а у открытого
+  // плана на его месте заголовок и дорога назад
+  await pickPlan(page, course)
   await expect(page.locator('.plan-cards')).toBeVisible()
 }
 
@@ -99,19 +99,25 @@ test('второй учитель не видит уроков первого, �
    * предлагается». Оно было правдой ровно до того дня, когда живой план
    * школы стал общим чтением: чужую программу открывают не затем, чтобы её
    * подписать, — смежник сверяет, заменяющий смотрит, на чём остановились.
-   * Селект и есть то место, где чужой план ищут.
+   * Витрина и есть то место, где чужой план ищут, и лежит он в ней отдельно
+   * от своего: это разные роли, а не разные курсы.
    *
    * Изоляция от этого не исчезла, она переехала в правку: читать — да,
    * править — нет.
    */
   await page.goto('/plan')
   await ready(page)
-  const picker = page.getByLabel('Курс')
-  const offered = await picker.locator('option').allTextContents()
-  expect(offered).toContain('Grade 9 Algebra')
-  expect(offered).toContain('Grade 6 Algebra')
+  // витрина и есть то место, где чужой план ищут: своё сверху, чужое снизу
+  await expect(
+    page.locator('.showcase-area', { hasText: 'Мои курсы' })
+      .getByRole('button', { name: /Grade 9 Algebra/ }),
+  ).toHaveCount(1)
+  await expect(
+    page.locator('.showcase-area', { hasText: 'Курсы коллег' })
+      .getByRole('button', { name: /Grade 6 Algebra/ }),
+  ).toHaveCount(1)
 
-  await picker.selectOption({ label: 'Grade 6 Algebra' })
+  await pickPlan(page, 'Grade 6 Algebra')
   await expect(page.locator('.plan .plan-row').first()).toBeVisible()
   // Таблица та же, что у автора, — и только на чтение.
   //
@@ -135,9 +141,9 @@ test('второй учитель не видит уроков первого, �
 async function openShelf(page, course) {
   await page.goto('/plan')
   await ready(page)
-  // курс выбирают селектом в строке заголовка: чипы не пережили
-  // учителя музыки с полутора десятками курсов
-  await page.getByLabel('Курс').selectOption({ label: course })
+  // план выбирают на витрине: селекта в шапке больше нет, а у открытого
+  // плана на его месте заголовок и дорога назад
+  await pickPlan(page, course)
   await expect(page.locator('.plan-cards')).toBeVisible()
   await planMenu(page, 'Открыть библиотеку')
   await expect(page.locator('dialog.modal')).toBeVisible()

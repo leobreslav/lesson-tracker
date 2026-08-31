@@ -220,7 +220,11 @@ test('keys built at runtime exist for every value they take', () => {
     // перемножение двух осей — добавится третья ось, областей станет шесть,
     // а забытая фраза покажет человеку сам ключ на месте заголовка
     ...['mineCourses', 'mineTemplates', 'otherCourses', 'otherTemplates'].flatMap(
-      (area) => [`plan.showcase.groups.${area}`, `plan.showcase.none.${area}`],
+      (area) => [
+        `plan.showcase.groups.${area}`,
+        `plan.showcase.about.${area}`,
+        `plan.showcase.none.${area}`,
+      ],
     ),
   ]
 

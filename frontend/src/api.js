@@ -539,10 +539,14 @@ const csvForm = (file, mode) => {
 /** Куда слать файл: книгу читает openpyxl на сервере, CSV — свой разбор. */
 const isWorkbook = (file) => /\.xlsx$/i.test(file?.name ?? '')
 
-export const importPlanFile = (classId, file, mode) =>
+/*
+ * Владелец, а не курс: план на полке обменивается файлами так же, как план
+ * курса. Ручка одна на обоих (`plans/views.py`), и формат один — файл,
+ * выгруженный с полки, ложится обратно в курс и наоборот.
+ */
+export const importPlanFile = (owner, file, mode) =>
   request(
-    `/api/plan/${isWorkbook(file) ? 'import-xlsx' : 'import'}/` +
-      `?course=${encodeURIComponent(classId)}`,
+    `/api/plan/${isWorkbook(file) ? 'import-xlsx' : 'import'}/?${ownerQuery(owner)}`,
     { method: 'POST', body: csvForm(file, mode) },
   )
 
@@ -552,10 +556,10 @@ export const importPlanFile = (classId, file, mode) =>
  * Asked of the server rather than worked out here: only it knows which
  * lessons have content, and which files nothing else points at.
  */
-export const previewPlanFile = (classId, file, mode) =>
+export const previewPlanFile = (owner, file, mode) =>
   request(
     `/api/plan/${isWorkbook(file) ? 'import-preview-xlsx' : 'import-preview'}/` +
-      `?course=${encodeURIComponent(classId)}`,
+      `?${ownerQuery(owner)}`,
     { method: 'POST', body: csvForm(file, mode) },
   )
 
@@ -565,14 +569,14 @@ export const previewPlanFile = (classId, file, mode) =>
  * Табуляции и кавычки разобрал браузер, сюда едет матрица ячеек — сервер
  * читает её тем же кодом, что ячейки книги.
  */
-export const importPlanRows = (classId, rows, mode) =>
-  request(`/api/plan/import-rows/?course=${encodeURIComponent(classId)}`, {
+export const importPlanRows = (owner, rows, mode) =>
+  request(`/api/plan/import-rows/?${ownerQuery(owner)}`, {
     method: 'POST',
     body: { rows, mode },
   })
 
-export const previewPlanRows = (classId, rows, mode) =>
-  request(`/api/plan/import-preview-rows/?course=${encodeURIComponent(classId)}`, {
+export const previewPlanRows = (owner, rows, mode) =>
+  request(`/api/plan/import-preview-rows/?${ownerQuery(owner)}`, {
     method: 'POST',
     body: { rows, mode },
   })
@@ -590,19 +594,22 @@ export const previewPlanRows = (classId, rows, mode) =>
  * целиком, и вторая копия этого разошлась бы с первой на первой же правке.
  */
 export const downloadPlan = async (
-  classId,
+  target,
   format = 'xlsx',
   { foreign = false, dates = false } = {},
 ) => {
   const token = getToken()
   const path = format === 'xlsx' ? 'export-xlsx' : 'export'
+  // `target` — владелец (курс или запись полки), а у чужого плана номер
+  // курса: там своя ручка, потому что там другое право.
+  //
   // `dates` — вопрос запроса, а не настройки: тот же файл с объявленным
   // четвёртым столбцом, который импорт принимает и отбрасывает
-  const query = new URLSearchParams(foreign ? {} : { course: classId })
-  if (dates) query.set('dates', '1')
-  const suffix = query.toString() ? `?${query}` : ''
+  const parts = [foreign ? '' : ownerQuery(target), dates ? 'dates=1' : '']
+  const query = parts.filter(Boolean).join('&')
+  const suffix = query ? `?${query}` : ''
   const address = foreign
-    ? `/api/plan/reviews/${encodeURIComponent(classId)}/${path}/${suffix}`
+    ? `/api/plan/reviews/${encodeURIComponent(target)}/${path}/${suffix}`
     : `/api/plan/${path}/${suffix}`
   const response = await fetch(address, {
     headers: token ? { Authorization: `Token ${token}` } : {},

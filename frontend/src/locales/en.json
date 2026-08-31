@@ -559,7 +559,7 @@
     "open": {
       "course": "Course:",
       "template": "Template:",
-      "none": "nothing picked"
+      "back": "Pick another plan"
     },
     "role": {
       "editing": "you edit it",
@@ -579,6 +579,12 @@
         "otherCourses": "Courses of colleagues",
         "otherTemplates": "Plans of colleagues on the shelf"
       },
+      "about": {
+        "mineCourses": "Groups you teach and the plans written for them: with dates, a schedule and approval by a methodist. When there is more than one school year, the year is added to the name.",
+        "mineTemplates": "Your plans tied to no group and no school year — a programme on its own. A draft is visible to you alone.",
+        "otherCourses": "Groups your colleagues teach this school year. Their plans open read-only and can be exported.",
+        "otherTemplates": "What colleagues have put on the shared shelf. You read them but do not edit them; to take one, export it as a file or use «From the library» in the plan of a course of yours."
+      },
       "none": {
         "mineCourses": "You have not been given a course yet.",
         "mineTemplates": "You have not put a plan on the shelf yet.",
@@ -590,7 +596,7 @@
       "course": "Edits go into the plan of this course. Nothing in the library changes because of them.",
       "template": "Edits go straight into this library entry — there is nothing to save separately. It has no course and no dates.",
       "foreign": "Somebody else's plan: you read it, you do not edit it. To take it into your own course, export it and import the file.",
-      "foreignTemplate": "A shelf entry by a colleague: you read it, you do not edit it. To take it into a course of yours, open that course's plan and pick this entry in «From the library»."
+      "foreignTemplate": "A shelf entry by a colleague: you read it, you do not edit it. There are two ways to take it: export it as a file, or open the plan of a course of yours and pick this entry in «From the library»."
     },
     "saveMode": {
       "label": "Where to save",

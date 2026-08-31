@@ -1,4 +1,4 @@
-import { PEOPLE, expect, liveCourse, ready, test } from './harness.js'
+import { PEOPLE, expect, liveCourse, pickPlan, ready, test } from './harness.js'
 
 /**
  * Даты прямо в таблице плана.
@@ -14,9 +14,9 @@ const COURSE = 'Grade 6 Algebra'
 const openPlan = async (page, course = COURSE) => {
   await page.goto('/plan')
   await ready(page)
-  // курс выбирают селектом в строке заголовка: чипы не пережили
-  // учителя музыки с полутора десятками курсов
-  await page.getByLabel('Курс').selectOption({ label: course })
+  // план выбирают на витрине: селекта в шапке больше нет, а у открытого
+  // плана на его месте заголовок и дорога назад
+  await pickPlan(page, course)
   await expect(page.locator('.plan-cards')).toBeVisible()
 }
 
@@ -146,7 +146,7 @@ test('в плане видно, какой час записан, а какой 
   await signIn(PEOPLE.ivanova)
   await page.goto('/plan')
   await ready(page)
-  await page.getByLabel('Курс').selectOption(String(course.id))
+  await page.goto(`/plan?course=${course.id}`)
   await expect(page.locator('.plan-cards')).toBeVisible()
 
   // первый час записан фикстурой, второй прошёл и не записан. Значки
@@ -183,7 +183,7 @@ test('значки состояния стоят в столбик перед д
   await signIn(PEOPLE.ivanova)
   await page.goto('/plan')
   await ready(page)
-  await page.getByLabel('Курс').selectOption(String(course.id))
+  await page.goto(`/plan?course=${course.id}`)
   await expect(page.locator('.plan-cards')).toBeVisible()
 
   // и даты, и значки: у обоих один левый край на всю таблицу
@@ -604,7 +604,7 @@ test('урок вне темы стоит на уровне темы, а вло�
   await page.goto('/plan')
   await ready(page)
   // курс без плана: соберём в нём тему, урок внутри и урок вне
-  await page.getByLabel('Курс').selectOption({ label: 'Grade 9 Geometry' })
+  await pickPlan(page, 'Grade 9 Geometry')
   await expect(page.locator('.plan-cards')).toBeVisible()
 
   // кнопка одна на оба вида, вид выбирают тумблером в самой форме
@@ -765,7 +765,7 @@ test('у курса без расписания нет ни дат, ни сво�
   await signIn(PEOPLE.ivanova)
   await page.goto('/plan')
   await ready(page)
-  await page.getByLabel('Курс').selectOption({ label: COURSE })
+  await pickPlan(page, COURSE)
 
   await expect(page.locator('.plan-row.lesson').first()).toBeVisible()
   await expect(page.locator('.plan-date')).toHaveCount(0)
@@ -818,7 +818,7 @@ test('проведённый урок держится за дату и не п�
   await ready(page)
   // выбираем по id, а не по названию: живых годов в базе несколько, и
   // подпись курса несёт ещё и год
-  await page.getByLabel('Курс').selectOption(String(course.id))
+  await page.goto(`/plan?course=${course.id}`)
   await expect(page.locator('.plan-cards')).toBeVisible()
 
   const before = await dateOfLesson(page, anchored.title)
@@ -866,7 +866,7 @@ test('форма, оставшаяся открытой, не лезет выш�
   await signIn(PEOPLE.ivanova)
   await page.goto('/plan')
   await ready(page)
-  await page.getByLabel('Курс').selectOption(String(course.id))
+  await page.goto(`/plan?course=${course.id}`)
   await expect(page.locator('.plan-cards')).toBeVisible()
 
   const before = await dateOfLesson(page, anchored.title)
@@ -916,7 +916,7 @@ test('у проведённой строки органов управления
   await signIn(PEOPLE.ivanova)
   await page.goto('/plan')
   await ready(page)
-  await page.getByLabel('Курс').selectOption(String(course.id))
+  await page.goto(`/plan?course=${course.id}`)
   await expect(page.locator('.plan-cards')).toBeVisible()
 
   const row = (number) =>
@@ -995,7 +995,7 @@ test('пока учёт не начат, плашка говорит, сколь
   await signIn(PEOPLE.ivanova)
   await page.goto('/plan')
   await ready(page)
-  await page.getByLabel('Курс').selectOption(String(course.id))
+  await page.goto(`/plan?course=${course.id}`)
   await expect(page.locator('.plan-cards')).toBeVisible()
 
   const card = page.locator('[data-card="records"]')
@@ -1035,7 +1035,7 @@ test('пока год не начался, плашки учёта нет вов
   await signIn(PEOPLE.ivanova)
   await page.goto('/plan')
   await ready(page)
-  await page.getByLabel('Курс').selectOption(String(course.id))
+  await page.goto(`/plan?course=${course.id}`)
   await expect(page.locator('.plan-cards')).toBeVisible()
 
   // слоты и баланс на месте, а сообщать про учёт нечего
@@ -1069,7 +1069,7 @@ test('числа в плашках стоят столбиком, а подпи�
   await signIn(PEOPLE.ivanova)
   await page.goto('/plan')
   await ready(page)
-  await page.getByLabel('Курс').selectOption(String(course.id))
+  await page.goto(`/plan?course=${course.id}`)
   await expect(page.locator('.plan-cards')).toBeVisible()
 
   const rightEdge = async (card) => {
@@ -1122,7 +1122,7 @@ test('в тему, где всё проведено, урок не встави�
   await signIn(PEOPLE.ivanova)
   await page.goto('/plan')
   await ready(page)
-  await page.getByLabel('Курс').selectOption(String(course.id))
+  await page.goto(`/plan?course=${course.id}`)
   await expect(page.locator('.plan-cards')).toBeVisible()
 
   // «+» в шапке заводит **первый** урок темы, а первый урок тут записан —

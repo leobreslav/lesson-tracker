@@ -1,4 +1,4 @@
-import { PEOPLE, expect, planMenu, ready, test } from './harness.js'
+import { PEOPLE, expect, pickPlan, planMenu, ready, test } from './harness.js'
 
 /**
  * План на полке правится тем же экраном, что и боевой.
@@ -9,9 +9,15 @@ import { PEOPLE, expect, planMenu, ready, test } from './harness.js'
  *
  * Второе, что тут стережётся, — чего на этом экране быть не должно. Полка
  * не привязана к учебному году, значит на ней нет ни дат, ни утверждения
- * методистом, ни меню обмена файлами: те ручки ходят по курсу и ответили бы
- * отказом. Нарисованная кнопка, которая умеет только отказать, честнее не
+ * методистом, ни меню полки: «взять с полки», стоя на полке, отвечает само
+ * на себя. Нарисованная кнопка, которая умеет только отказать, честнее не
  * нарисованной.
+ *
+ * А вот **обмен файлами тут есть**, и это исправление, а не послабление.
+ * Меню не рисовали потому, что ручки импорта и выгрузки были курсовыми;
+ * отказ шёл не от правила, а от того, что владельца никто не обобщил. План
+ * на полке пишут так же, как план курса, и «набрать сорок уроков»
+ * одинаково не хочется в обоих.
  */
 
 test('план для класса, который не ведут, пишется без курса', async ({
@@ -21,8 +27,8 @@ test('план для класса, который не ведут, пишетс
   await signIn(PEOPLE.ivanova)
   await page.goto('/plan')
   await ready(page)
-  // курс выбирают селектом: сама страница за человека больше не выбирает
-  await page.getByLabel('Курс').selectOption({ label: 'Grade 6 Algebra' })
+  // план выбирают на витрине: своё сверху, чужое снизу
+  await pickPlan(page, 'Grade 6 Algebra')
   // тулбар появляется вместе с деревом: кликать по меню раньше значит
   // нажать и тут же потерять его на перерисовке
   await expect(page.locator('.plan-cards')).toBeVisible()
@@ -37,11 +43,9 @@ test('план для класса, который не ведут, пишетс
 
   // адрес — сам план на полке: экран тот же, а владелец другой
   await expect(page).toHaveURL(/\/library\/\d+$/)
-  // чем занимаемся, называет селект в шапке, а не текст рядом с заголовком:
-  // курсы и заготовки лежат в одном списке, и открытое — это выбранное в нём
-  await expect(
-    page.locator('select.course-picker option:checked'),
-  ).toHaveText('Алгебра 11, теоретический')
+  // чем занимаемся, сказано заголовком: вид слева, название крупно
+  await expect(page.locator('.open-kind')).toHaveText('Заготовка:')
+  await expect(page.locator('.open-name')).toHaveText('Алгебра 11, теоретический')
   // и строка контекста говорит, что правки идут прямо в библиотеку
   await expect(page.locator('.plan-context')).toContainText('прямо в эту заготовку')
 
@@ -53,7 +57,7 @@ test('план для класса, который не ведут, пишетс
   await expect(page.locator('.plan-row .title')).toHaveText(['Производная'])
 })
 
-test('у плана на полке нет ни дат, ни утверждения, ни обмена файлами', async ({
+test('у плана на полке нет ни дат, ни утверждения, ни меню полки', async ({
   page,
   signIn,
   api,
@@ -74,15 +78,23 @@ test('у плана на полке нет ни дат, ни утвержден�
   // таблица без дат — то же состояние, что у курса без расписания
   await expect(page.locator('ul.plan')).toHaveClass(/no-dates/)
   await expect(page.locator('.plan-approval')).toHaveCount(0)
-  await expect(page.getByRole('button', { name: 'Файл', exact: true })).toHaveCount(0)
+  // меню полки нет: «взять с полки», стоя на полке, отвечает само на себя
   await expect(
     page.getByRole('button', { name: 'Библиотека', exact: true }),
   ).toHaveCount(0)
 
-  // а вот добавление и отмена — на месте: это и есть «тот же экран»
+  // а вот добавление и обмен файлами — на месте: это и есть «тот же экран»
   await expect(
     page.getByRole('button', { name: 'Добавить тему или урок' }),
   ).toBeVisible()
+
+  await page.getByRole('button', { name: 'Файл', exact: true }).click()
+  const menu = page.locator('.plan-menu .dropdown')
+  await expect(menu.getByRole('button', { name: 'Импорт…' })).toBeVisible()
+  await expect(menu.getByRole('button', { name: /^Экспорт в/ }).first()).toBeVisible()
+  // а вопроса про даты нет: их у полки нет вовсе, и выключенный флажок
+  // обещал бы столбец, которого не будет ни при каком ответе
+  await expect(menu.getByText('с датами')).toHaveCount(0)
 })
 
 test('взять план с полки целиком — сначала показать, что уйдёт', async ({
@@ -98,7 +110,7 @@ test('взять план с полки целиком — сначала пок
   await signIn(PEOPLE.ivanova)
   await page.goto('/plan')
   await ready(page)
-  await page.getByLabel('Курс').selectOption({ label: 'Grade 6 Algebra' })
+  await pickPlan(page, 'Grade 6 Algebra')
   await expect(page.locator('.plan-cards')).toBeVisible()
 
   await planMenu(page, 'Открыть библиотеку')
@@ -156,15 +168,20 @@ test('чужую заготовку с полки читают, но не пра
   // «что нельзя», а «чей это план и к кому идти с вопросом»
   await expect(page.locator('.open-role')).toContainText('только чтение')
 
-  // правки нет никакой: панель действий над чужой записью не рисуется вовсе
+  // правки нет никакой: пишущих кнопок над чужой записью не рисуется
   await expect(
     page.getByRole('button', { name: 'Добавить тему или урок' }),
   ).toHaveCount(0)
-  await expect(page.locator('.plan-tools')).toHaveCount(0)
 
-  // а вместо молчания — строка о том, почему нельзя и как взять себе.
-  // Выгрузку она обещать не должна: меню файлов на полке нет вовсе
+  // а выгрузка есть, и она тут не исключение из правила, а его вторая
+  // половина: показать и не дать взять — не защита, а неудобство
+  await page.getByRole('button', { name: 'Файл', exact: true }).click()
+  const menu = page.locator('.plan-menu .dropdown')
+  await expect(menu.getByRole('button', { name: /^Экспорт в/ }).first()).toBeVisible()
+  await expect(menu.getByRole('button', { name: 'Импорт…' })).toHaveCount(0)
+
+  // а вместо молчания — строка о том, почему нельзя и как взять себе
   const context = page.locator('.plan-context')
   await expect(context).toContainText('читают, но не правят')
-  await expect(context).toContainText('Из библиотеки')
+  await expect(context).toContainText('выгрузить файлом')
 })

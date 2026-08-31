@@ -1,4 +1,4 @@
-import { PEOPLE, expect, ready, test } from './harness.js'
+import { PEOPLE, expect, pickPlan, ready, test } from './harness.js'
 
 /**
  * Утверждение плана методистом.
@@ -11,9 +11,9 @@ import { PEOPLE, expect, ready, test } from './harness.js'
 const openPlan = async (page, course) => {
   await page.goto('/plan')
   await ready(page)
-  // курс выбирают селектом в строке заголовка: чипы не пережили
-  // учителя музыки с полутора десятками курсов
-  await page.getByLabel('Курс').selectOption({ label: course })
+  // план выбирают на витрине: селекта в шапке больше нет, а у открытого
+  // плана на его месте заголовок и дорога назад
+  await pickPlan(page, course)
   await expect(page.locator('.plan-cards')).toBeVisible()
 }
 
@@ -26,7 +26,7 @@ const openPlan = async (page, course) => {
 const openSupervised = async (page, course) => {
   await page.goto('/plan')
   await ready(page)
-  await page.getByLabel('Курс').selectOption({ label: course })
+  await pickPlan(page, course)
   await expect(page.locator('.progress-list')).toBeVisible()
 }
 
@@ -217,7 +217,8 @@ test('методист без своих курсов видит прислан�
   // возвращать к выбору, а не к прошлому курсу
   await expect(page).toHaveURL(new RegExp(`[?&]course=${course.id}\\b`))
 
-  await expect(page.getByLabel('Курс')).toHaveValue(String(course.id))
+  // и открытое названо словами — заголовком, а не серым контролом
+  await expect(page.locator('.open-name')).toHaveText('Grade 6 Algebra')
   await expect(page.locator('.plan .plan-row').first()).toBeVisible()
   await expect(page.getByRole('button', { name: 'Утвердить' })).toBeVisible()
 })
@@ -274,18 +275,22 @@ test('методист видит курс, план которого никто
   ).toHaveCount(0)
 })
 
-test('ожидающий и просто поднадзорный лежат в разных группах селектора', async ({
+test('ждущий подписи назван действием, а не спрятан среди поднадзорных', async ({
   page,
   signIn,
   api,
 }) => {
-  // Группы — это роли человека, а не свойства курса: свои он ведёт,
-  // присланные должен утвердить, за остальными смотрит, остальное в школе
-  // может прочитать. Последние две — не курсы вовсе: заготовки с полки, у
-  // которых нет ни курса, ни дат; лежат они тут потому, что селект отвечает
-  // не на «какой курс», а на «чем сейчас занимаемся». Своё и чужое у них
-  // разведено той же чертой, что у курсов, и по той же причине: чужую
-  // запись читают, свою правят.
+  /*
+   * Раньше это проверялось по группам селектора: «Ждут ответа» и «Под
+   * надзором» стояли отдельными `optgroup`. Селекта на плане больше нет —
+   * выбирают на витрине, — и вопрос переехал вместе с ним, но остался тем
+   * же: из двух чужих курсов один требует решения, и по экрану должно быть
+   * видно, какой.
+   *
+   * Витрина делит планы по двум осям, а «ждёт решения» — не третья ось:
+   * это не свойство курса, а то, что человеку с ним делать. Поэтому оно и
+   * стоит пометкой на самой записи, а не отдельной областью.
+   */
   await makeMethodist(api, PEOPLE.petrov, 'Grade 6 Algebra')
   await makeMethodist(api, PEOPLE.petrov, 'Grade 6 Geometry')
 
@@ -298,22 +303,19 @@ test('ожидающий и просто поднадзорный лежат в 
   await page.goto('/plan')
   await ready(page)
 
-  const groups = page.getByLabel('Курс').locator('optgroup')
-  await expect(groups).toHaveCount(6)
-  await expect(groups.nth(0)).toHaveAttribute('label', 'Мои курсы')
-  await expect(groups.nth(1)).toHaveAttribute('label', 'Ждут ответа')
-  await expect(groups.nth(2)).toHaveAttribute('label', 'Под надзором')
-  // четвёртая — всё остальное, что есть в школе: живой план читают все её
-  // учителя, а не только назначенный методист
-  await expect(groups.nth(3)).toHaveAttribute('label', 'Курсы школы')
-  await expect(groups.nth(4)).toHaveAttribute('label', 'Мои заготовки')
-  // шестая появилась вместе с чтением чужой полки: выложенную коллегой
-  // запись теперь можно открыть, значит ей место и в списке
-  await expect(groups.nth(5)).toHaveAttribute('label', 'Заготовки коллег')
+  const colleagues = page.locator('.showcase-area', { hasText: 'Курсы коллег' })
+  const waiting = colleagues.getByRole('button', { name: /Grade 6 Algebra/ })
+  const watched = colleagues.getByRole('button', { name: /Grade 6 Geometry/ })
 
-  // присланный — во второй группе, остальной надзор — в третьей
-  await expect(groups.nth(1).locator('option')).toHaveText(['Grade 6 Algebra'])
-  await expect(groups.nth(2).locator('option')).toHaveText(['Grade 6 Geometry'])
+  // оба чужих — в одной области: разделяет их не место, а пометка
+  await expect(waiting).toHaveCount(1)
+  await expect(watched).toHaveCount(1)
+  await expect(waiting.locator('.badge.waiting')).toHaveCount(1)
+  await expect(watched.locator('.badge.waiting')).toHaveCount(0)
+
+  // а своё и чужое разделено именно местом — это разные роли
+  const mine = page.locator('.showcase-area', { hasText: 'Мои курсы' })
+  await expect(mine.getByRole('button', { name: /Grade 6 Algebra/ })).toHaveCount(0)
 })
 
 test('свой курс показывает свой план, даже если методист у него ты сам', async ({
@@ -334,14 +336,9 @@ test('свой курс показывает свой план, даже есл�
   await expect(page.locator('ul.plan .plan-row.lesson').first()).toBeVisible()
   await expect(page.locator('.plan-tools')).toBeVisible()
 
-  // и в селекте курс стоит один раз, без группы «Под надзором»: группы тут
-  // есть (чужие курсы школы читает любой учитель), но своей среди них нет
-  const picker = page.getByLabel('Курс')
-  await expect(picker.locator('optgroup[label="Под надзором"]')).toHaveCount(0)
-  await expect(picker.locator('optgroup[label="Мои курсы"]')).toHaveCount(1)
-  await expect(
-    picker.locator('option', { hasText: 'Grade 6 Algebra' }),
-  ).toHaveCount(1)
+  // и открыт он как свой: заголовок называет курс, роль говорит «правите»
+  await expect(page.locator('.open-name')).toHaveText('Grade 6 Algebra')
+  await expect(page.locator('.open-role')).toHaveText('правите')
 
   // отправляем на утверждение — решать можно тут же, по ссылке
   await page.getByRole('button', { name: 'На утверждение' }).click()
@@ -499,15 +496,13 @@ test('чужой план школы открывается на чтение л
   await page.goto('/plan')
   await ready(page)
 
-  // курс Петрова — в группе «Курсы школы», рядом со своими
-  const picker = page.getByLabel('Курс')
+  // курс Петрова — в области «Курсы коллег», а не вперемешку со своими
+  const colleagues = page.locator('.showcase-area', { hasText: 'Курсы коллег' })
   await expect(
-    picker.locator('optgroup[label="Курсы школы"] option', {
-      hasText: 'Grade 9 Algebra',
-    }),
+    colleagues.getByRole('button', { name: /Grade 9 Algebra/ }),
   ).toHaveCount(1)
 
-  await picker.selectOption({ label: 'Grade 9 Algebra' })
+  await pickPlan(page, 'Grade 9 Algebra')
 
   // план виден целиком, вместе с числами и именем ведущего
   await expect(page.locator('.plan .plan-row').first()).toBeVisible()
@@ -537,8 +532,11 @@ test('чужой план школы открывается на чтение л
   await expect(page.getByRole('button', { name: 'Утвердить' })).toHaveCount(0)
   await expect(page.getByRole('button', { name: 'Вернуть' })).toHaveCount(0)
 
-  // а свой открывается как открывался — правкой
-  await picker.selectOption({ label: 'Grade 6 Algebra' })
+  // а свой открывается как открывался — правкой. Дорога к нему теперь через
+  // витрину: у открытого плана селекта нет, есть заголовок и кнопка назад
+  await page.getByRole('button', { name: 'Выбрать другой план' }).click()
+  await ready(page)
+  await pickPlan(page, 'Grade 6 Algebra')
   await expect(page.locator('ul.plan .plan-row.lesson').first()).toBeVisible()
   await expect(page.locator('.plan-tools')).toBeVisible()
 })

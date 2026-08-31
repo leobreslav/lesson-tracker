@@ -21,7 +21,6 @@ import Modal from './Modal'
 import { usePlanLayout } from './usePlanLayout'
 import { longDate, shortDate } from './dates'
 import { today } from './calendarLogic'
-import CoursePicker from './CoursePicker'
 import { useDismissable } from './UserMenu'
 import DebtsDialog from './DebtsDialog'
 import Supervision from './Supervision'
@@ -140,6 +139,8 @@ export default function Plan({ user, onLoggedOut, template = null }) {
   // курсы школы: администратор вправе чинить их содержание, и дойти до них
   // ему надо из того же селектора
   const [schoolCourses, setSchoolCourses] = useState([])
+  /** Приехали ли все три списка: по ним судят, доступен ли курс из адреса. */
+  const [listsReady, setListsReady] = useState(false)
   // журнал состояний плана: чем можно отменить и кто правил последним
   const [steps, setSteps] = useState([])
   /*
@@ -389,11 +390,11 @@ export default function Plan({ user, onLoggedOut, template = null }) {
         .catch((err) => !cancelled && handleError(err))
     }
 
-    fetchReviews()
+    const reviews = fetchReviews()
       .then((answer) => !cancelled && setSupervised(answer.plans))
       .catch(() => !cancelled && setSupervised([]))
 
-    Promise.all([fetchCourses(), fetchSchoolYears()])
+    const courses = Promise.all([fetchCourses(), fetchSchoolYears()])
       .then(([classList, yearList]) => {
         if (cancelled) return
         setClasses(classList)
@@ -429,13 +430,33 @@ export default function Plan({ user, onLoggedOut, template = null }) {
          */
         const current = yearList[0]?.id ?? null
 
-        fetchCourses(current, { scope: 'school' })
+        // возвращаем, а не бросаем в пустоту: готовность списков считается
+        // по этой же цепочке — см. `listsReady` ниже
+        return fetchCourses(current, { scope: 'school' })
           .then((list) => !cancelled && setSchoolCourses(list))
           .catch(() => !cancelled && setSchoolCourses([]))
       })
       .catch((err) => {
         if (!cancelled) handleError(err)
       })
+
+    /*
+     * «Списки приехали» — отдельный ответ, и он нужен ровно одному месту.
+     *
+     * По спискам решается, доступен ли курс из адреса, и незагруженный
+     * список означает там «недоступен»: у администратора курсы школы едут
+     * **вторым** запросом, вложенным в первый, и до его ответа чужой курс в
+     * `pickable` не лежит. Раньше цена ошибки была мала — сбрасывалось
+     * состояние, и выбор возвращался из `localStorage`; теперь сбрасывается
+     * **адрес**, и возвращать его неоткуда: человек, открывший присланную
+     * ссылку, молча оказывался бы на витрине.
+     *
+     * `allSettled`, а не `all`: отказ любого из запросов — это тоже ответ
+     * («такого списка у меня нет»), и ждать после него нечего.
+     */
+    Promise.allSettled([reviews, courses]).then(() => {
+      if (!cancelled) setListsReady(true)
+    })
 
     return () => {
       cancelled = true
@@ -1005,18 +1026,6 @@ export default function Plan({ user, onLoggedOut, template = null }) {
     ...otherTemplates,
   ]
 
-  const groups =
-    others.length || schoolOnly.length || myTemplates.length || otherTemplates.length
-      ? [
-          { key: 'mine', items: (classes ?? []).map(asOwn) },
-          { key: 'waiting', items: otherWaiting.map(asCourse) },
-          { key: 'supervised', items: otherWatched.map(asCourse) },
-          { key: 'school', items: schoolOnly.map(asOwn) },
-          { key: 'templates', items: myTemplates },
-          { key: 'otherTemplates', items: otherTemplates },
-        ].filter((group) => group.items.length)
-      : []
-
   /**
    * Курс, которого человеку не видать, уходит из адреса — и открывается
    * витрина.
@@ -1030,18 +1039,21 @@ export default function Plan({ user, onLoggedOut, template = null }) {
    * Проверка `known` та же, что стояла у прежнего восстановления выбора;
    * изменилось место, куда пишется ответ: раньше состояние, теперь адрес.
    *
-   * Ждём `classes !== null`: до первого ответа сервера «не найдено» значит
-   * «ещё не спрашивали», и вычищать по нему адрес значило бы стирать выбор
-   * у каждого, кто открыл ссылку.
+   * Ждём **все три списка** (`listsReady`), а не только свои курсы. «Не
+   * найдено» до ответа значит «ещё не спрашивали», и одного списка тут мало:
+   * курсы школы едут вторым запросом, вложенным в первый, — у завуча его
+   * собственный курс лежит именно там. Пока проверка смотрела на `classes`,
+   * присланная ссылка на чужой курс молча уводила на витрину, и вернуться
+   * было неоткуда: адрес к тому времени уже вычищен.
    */
   useEffect(() => {
-    if (onShelf || classes === null || !classId) return
+    if (onShelf || !listsReady || !classId) return
     if (pickable.some((item) => item.id === classId)) return
 
     setSearch({}, { replace: true })
     // намеренно по спискам, а не по их содержимому: пересобирать выбор на
     // каждое перечитывание дерева незачем
-  }, [classes, supervised, schoolCourses, classId, onShelf])
+  }, [listsReady, classes, supervised, schoolCourses, classId, onShelf])
 
   const supervisedRow = supervised.find((row) => row.id === classId) ?? null
 
@@ -1094,37 +1106,6 @@ export default function Plan({ user, onLoggedOut, template = null }) {
     setComparing(false)
     rememberChoice('course', id)
     setSearch({ course: String(id) })
-  }
-
-  /**
-   * Выбрали в селекте: курс — остаёмся, заготовка — уезжаем на её адрес.
-   *
-   * Адрес разный намеренно. Заготовка живёт по своей ссылке (`/library/12`),
-   * и это не украшение: ссылку присылают, кладут в закладки и открывают
-   * следующим утром. Курс же выбором не меняет адреса — он один на все
-   * экраны и запоминается, чтобы журнал и работы открылись на том же.
-   *
-   * Обратный переход тоже проходит здесь: стоя на полке и выбрав курс, надо
-   * уйти с `/library/:id`, иначе экран остался бы на шаблоне.
-   */
-  const pickObject = (id) => {
-    if (typeof id === 'string' && id.startsWith('t')) {
-      navigate(`/library/${id.slice(1)}`)
-      return
-    }
-    /*
-     * С полки уходим одним переходом, а не двумя.
-     *
-     * `pickClass` ставит параметр текущему адресу, а текущий здесь —
-     * `/library/12`: получилось бы `/library/12?course=7`, и следующий же
-     * переход на `/plan` унёс бы параметр вместе с выбором. Поэтому со
-     * стороны полки адрес собирается целиком.
-     */
-    setReviewing(false)
-    setComparing(false)
-    rememberChoice('course', id)
-    if (onShelf) navigate(`/plan?course=${id}`)
-    else setSearch({ course: String(id) })
   }
 
   const classLabel = (item) => {
@@ -1195,9 +1176,29 @@ export default function Plan({ user, onLoggedOut, template = null }) {
   /** Значение селекта: у заготовки id с приставкой, у курса — номер. */
   const openValue = onShelf ? `t${template}` : classId
 
-  /** Строка открытого — из того же списка, каким набран селект. */
+  /** Строка открытого — из того же списка, каким набрана витрина. */
   const openItem =
     pickable.find((item) => String(item.id) === String(openValue)) ?? null
+
+  /**
+   * Как называется открытое — и почему у ответа есть запасной путь.
+   *
+   * Обычно имя берётся из списка (`openItem`): там оно уже собрано тем же
+   * `classLabel`, что и на витрине, вместе с учебным годом, когда лет
+   * несколько. Но списки приезжают своими запросами, и до их ответа имени
+   * в них нет — а заголовок нужен сразу, иначе на месте «что открыто»
+   * полсекунды висит пустота, и это выглядит поломкой.
+   *
+   * Поэтому запасной путь — то, что страница знает о самом открытом:
+   * карточка полки или курс из своего списка. Оба беднее (у курса нет
+   * приписки года), но появляются раньше, а разъехаться им негде: как
+   * только список приедет, ответ берётся из него.
+   */
+  const openName = openItem
+    ? classLabel(openItem)
+    : onShelf
+      ? (shelfCard?.title ?? null)
+      : (course?.name ?? null)
 
   /**
    * В какой роли человек пришёл к этому плану — и почему это сказано словом.
@@ -1340,8 +1341,8 @@ export default function Plan({ user, onLoggedOut, template = null }) {
     try {
       // файл или вставка — дальше всё общее: те же режимы, тот же ответ
       const result = rows
-        ? await importPlanRows(classId, rows, mode)
-        : await importPlanFile(classId, file, mode)
+        ? await importPlanRows(owner, rows, mode)
+        : await importPlanFile(owner, file, mode)
       await load(owner)
       setNotice(
         (mode === 'sync'
@@ -1408,7 +1409,9 @@ export default function Plan({ user, onLoggedOut, template = null }) {
   const handleExport = async (chosen) => {
     setError(null)
     try {
-      await downloadPlan(classId, chosen, { dates: exportDates })
+      // владельцем, а не курсом: с полки выгружают тем же файлом. Столбец
+      // дат при этом просят только у курса — у полки дат нет вовсе
+      await downloadPlan(owner, chosen, { dates: !onShelf && exportDates })
     } catch (err) {
       handleError(err)
     }
@@ -1508,70 +1511,58 @@ export default function Plan({ user, onLoggedOut, template = null }) {
       <header className="page-header">
         <h1>{t('plan.title')}</h1>
         {/*
-          Один селектор на оба состояния — и это главная правка маршрута.
+          Открытое названо заголовком, а не селектом.
 
-          На полке селектора не было вовсе: стояло имя шаблона и ссылка «в
-          библиотеку». Читалось это как «вы забрели в другой раздел», а на
-          деле экран тот же самый, и занимаются на нём тем же самым. Хуже
-          того, дороги обратно к заготовке не было: закрыл — и возвращаться
-          через план курса, меню, окно полки и кнопку «Править».
+          Селект тут стоял и отвечал на «чем сейчас занимаемся» — верно, но
+          только пока открыт: закрывшись, он оставлял одно имя в сером
+          контроле, у которого не видно ни вида («7Б Физика» из курсов и
+          «7Б Физика» с полки выглядят одинаково), ни того, выбрано ли
+          что-нибудь вообще. Контрол с одним именем внутри читается подписью.
 
-          Теперь выбор один и отвечает на один вопрос: **чем сейчас
-          занимаемся**. Курс это или заготовка — видно по группе в списке, а
-          что именно правится, говорит строка под заголовком.
+          С появлением витрины он к тому же стал вторым местом, отвечающим
+          на один и тот же вопрос: выбирают теперь там, и там же сужают по
+          учителю и предмету. Два способа выбрать одно и то же заставляют
+          гадать, который главный, — поэтому способ остался один.
 
-          Заголовок при этом перестал меняться: «Учебный план» верно для
+          На его месте — то, чего не было: **что открыто, сказано словами и
+          крупно**. Вид слева («Курс» или «Заготовка»), название, роль
+          справа, и всё это не контрол, а текст: нажимать тут не на что,
+          кроме дороги назад.
+
+          Дорога назад — кнопка, и она ведёт туда же, куда пункт «Учебный
+          план» в баре: на `/plan`, то есть к витрине. Без неё выбранное
+          было бы билетом в один конец — ровно тем, чем была заготовка до
+          селекта.
+
+          Заголовок раздела при этом не меняется: «Учебный план» верно для
           обоих, а «План с полки» вторым названием того же экрана только
-          сбивал — раздел-то не менялся.
+          сбивал.
         */}
-        {/*
-          Выбранное названо: вид объекта до селекта, роль — после.
-
-          Слово «Курс» на этом экране не было написано ни разу: оно жило в
-          `aria-label`, то есть только для скринридера. Видящий человек
-          читал имя в сером контроле — «7Б Физика», — и по нему не понять
-          ни что это курс (а не заготовка с полки, лежащая в том же
-          списке), ни выбрано ли оно вообще: селект с одним именем внутри
-          выглядит подписью.
-
-          Поэтому слева от селекта стоит вид, а справа — роль, и оба
-          показываются **всегда**. Той же симметрией, что у строки под
-          заголовком: пометка на одной стороне читается как
-          предупреждение об особом случае, а названные обе говорят, что
-          случая два и оба обычные.
-        */}
-        <span className="open-object">
-          <span className="open-kind">
-            {t(onShelf ? 'plan.open.template' : 'plan.open.course')}
-          </span>
-          <CoursePicker
-            courses={pickable}
-            value={openValue}
-            onChange={pickObject}
-            label={classLabel}
-            groups={groups}
-            placeholder={t('plan.open.none')}
-            /* Сужение по учителю и предмету: в этом селекте у любого учителя
-               лежат все курсы школы, а их несколько десятков — «найти план
-               Петровой по геометрии» иначе значит прочитать весь список.
-
-               Пока открыта витрина, сужения тут нет: она спрашивает то же
-               самое своими селектами, и два «Любой предмет» на одном экране
-               заставляют гадать, который из них главный. Открылся план —
-               витрины нет, и вопрос снова один. */
-            narrow={classId || onShelf ? 'plan' : null}
-          />
-          {role && (
-            <span className={`open-role ${role}`}>
-              {/* у чужого плана роль называет и хозяина: «только чтение»
-                  говорит, чего нельзя, а спрашивают обычно другое — чей
-                  это план и к кому идти с вопросом */}
-              {role === 'reading' && openItem?.teacher
-                ? t('plan.role.readingOf', { name: openItem.teacher })
-                : t(`plan.role.${role}`)}
+        {openName && (
+          <span className="open-object">
+            <span className="open-kind">
+              {t(onShelf ? 'plan.open.template' : 'plan.open.course')}
             </span>
-          )}
-        </span>
+            <b className="open-name">{openName}</b>
+            {role && (
+              <span className={`open-role ${role}`}>
+                {/* у чужого плана роль называет и хозяина: «только чтение»
+                    говорит, чего нельзя, а спрашивают обычно другое — чей
+                    это план и к кому идти с вопросом */}
+                {role === 'reading' && openItem?.teacher
+                  ? t('plan.role.readingOf', { name: openItem.teacher })
+                  : t(`plan.role.${role}`)}
+              </span>
+            )}
+            <button
+              type="button"
+              className="secondary open-back"
+              onClick={() => navigate('/plan')}
+            >
+              {t('plan.open.back')}
+            </button>
+          </span>
+        )}
         {/*
           Всё про утверждение — одной группой в шапке, рядом с тумблером.
 
@@ -1968,16 +1959,18 @@ export default function Plan({ user, onLoggedOut, template = null }) {
             высоту ряда молча.
           */}
           {/*
-            Над чужой заготовкой панели нет вовсе.
+            Над чужим планом от панели остаётся одно — выгрузка.
 
-            Внутри неё всё до одного — действия над планом: добавить строку,
-            импортировать, отправить на утверждение, положить на полку. У
-            чужой записи каждое ответит отказом, а кнопка, умеющая только
-            отказать, честнее не нарисованная — тем же правилом, по которому
-            на полке нет меню обмена файлами. Что делать вместо этого,
-            сказано строкой контекста над таблицей.
+            Всё остальное внутри неё пишет: добавить строку, импортировать,
+            отправить на утверждение, положить на полку. У чужой записи
+            каждое ответит отказом, а кнопка, умеющая только отказать,
+            честнее не нарисованная.
+
+            Выгрузка — не исключение из этого правила, а его вторая половина.
+            Читателю она и нужна: показать и не дать взять — не защита, а
+            неудобство, потому что возьмут всё равно, только руками и с
+            ошибками. Тем же рассуждением она стоит у чужого курса.
           */}
-          {!shelfForeign && (
           <section className="panel plan-tools">
             <div className="actions wrap">
               {/*
@@ -1999,25 +1992,31 @@ export default function Plan({ user, onLoggedOut, template = null }) {
                 формы там, где форма одна: нажав «Добавить урок», человек уже
                 не мог передумать, не закрыв её и не найдя соседнюю.
               */}
-              <button
-                type="button"
-                disabled={busy}
-                onClick={() => openAdd({ parent: null })}
-              >
-                {t('plan.addRow')}
-              </button>
+              {!shelfForeign && (
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => openAdd({ parent: null })}
+                >
+                  {t('plan.addRow')}
+                </button>
+              )}
 
               {/*
                 Два меню в одной обёртке: клик мимо закрывает открытое, каким
                 бы из двух оно ни было.
 
-                На полке их нет, и оба по своей причине. Обмен файлами и
-                импорт ходят курсовыми ручками (`?course=`) — открыть их тут
-                значило бы нарисовать кнопки, которые ответят отказом. А
-                «взять с полки» и «положить на полку», стоя **на** полке,
-                отвечают сами на себя: план уже здесь.
+                **Обмен файлами на полке теперь есть**, и это не послабление,
+                а исправление. Меню тут не рисовали потому, что ручки импорта
+                и выгрузки были курсовыми и ответили бы отказом; отказ шёл не
+                от правила, а от того, что владельца никто не обобщил. План на
+                полке пишут так же, как план курса, и «набрать сорок уроков»
+                одинаково не хочется в обоих.
+
+                А вот меню полки на полке по-прежнему нет, и причина у него
+                своя, настоящая: «взять с полки» и «положить на полку», стоя
+                **на** полке, отвечают сами на себя — план уже здесь.
               */}
-              {!onShelf && (
               <span className="plan-menus" ref={menuRef}>
                 <div className="plan-menu">
                   <button
@@ -2033,31 +2032,43 @@ export default function Plan({ user, onLoggedOut, template = null }) {
                   </button>
                   {menuOpen === 'file' && (
                     <div className="dropdown">
-                      <button
-                        type="button"
-                        disabled={busy}
-                        onClick={() => {
-                          setMenuOpen(null)
-                          setImporting(true)
-                        }}
-                      >
-                        {t('plan.importFile')}
-                      </button>
-                      <span className="dropdown-sep" />
+                      {/* импорт — половина пишущая, и у чужого плана её нет;
+                          выгрузка ниже остаётся обеим сторонам */}
+                      {!shelfForeign && (
+                        <>
+                          <button
+                            type="button"
+                            disabled={busy}
+                            onClick={() => {
+                              setMenuOpen(null)
+                              setImporting(true)
+                            }}
+                          >
+                            {t('plan.importFile')}
+                          </button>
+                          <span className="dropdown-sep" />
+                        </>
+                      )}
                       {/* «с датами» стоит над форматами, потому что уточняет
                           их оба: вопрос «во что» и вопрос «с датами ли» —
                           про один и тот же файл. Меню при этом не
-                          закрывается: ответив, человек тут же выгружает */}
-                      <label className="checkbox">
-                        <input
-                          type="checkbox"
-                          checked={exportDates}
-                          onChange={(event) =>
-                            setExportDates(event.target.checked)
-                          }
-                        />
-                        {t('plan.exportWithDates')}
-                      </label>
+                          закрывается: ответив, человек тут же выгружает.
+
+                          У полки этого вопроса нет вовсе: дат нет, и
+                          выключенный флажок обещал бы столбец, которого не
+                          будет ни при каком ответе */}
+                      {!onShelf && (
+                        <label className="checkbox">
+                          <input
+                            type="checkbox"
+                            checked={exportDates}
+                            onChange={(event) =>
+                              setExportDates(event.target.checked)
+                            }
+                          />
+                          {t('plan.exportWithDates')}
+                        </label>
+                      )}
                       {/* формат называет пункт меню: у выгрузки он вопрос
                           «во что», а не настройка, которую держат включённой */}
                       {FORMATS.map((name) => (
@@ -2086,6 +2097,7 @@ export default function Plan({ user, onLoggedOut, template = null }) {
                   )}
                 </div>
 
+                {!onShelf && (
                 <div className="plan-menu">
                   <button
                     type="button"
@@ -2141,8 +2153,8 @@ export default function Plan({ user, onLoggedOut, template = null }) {
                     </div>
                   )}
                 </div>
+                )}
               </span>
-              )}
 
               {/*
                 «Отменить» появляется, только когда есть что отменять, и
@@ -2244,7 +2256,6 @@ export default function Plan({ user, onLoggedOut, template = null }) {
               </p>
             )}
           </section>
-          )}
 
           {error && (
             <p className="error" role="alert">
@@ -2387,7 +2398,7 @@ export default function Plan({ user, onLoggedOut, template = null }) {
 
       {importing && (
         <ImportDialog
-          classId={classId}
+          owner={owner}
           busy={busy}
           onSubmit={handleImport}
           onClose={() => setImporting(false)}

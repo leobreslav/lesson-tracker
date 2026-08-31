@@ -1,4 +1,4 @@
-import { PEOPLE, expect, expectConsoleError, ready, test } from './harness.js'
+import { PEOPLE, expect, expectConsoleError, pickPlan, ready, test } from './harness.js'
 
 /**
  * The lesson panel: content, maths and attachments.
@@ -19,9 +19,9 @@ const WITH_LINK = 'Длина окружности'
 async function openPlan(page) {
   await page.goto('/plan')
   await ready(page)
-  // курс выбирают селектом в строке заголовка: чипы не пережили
-  // учителя музыки с полутора десятками курсов
-  await page.getByLabel('Курс').selectOption({ label: COURSE })
+  // план выбирают на витрине: селекта в шапке больше нет, а у открытого
+  // плана на его месте заголовок и дорога назад
+  await pickPlan(page, COURSE)
   await expect(page.locator('.plan-cards')).toBeVisible()
 }
 
@@ -252,9 +252,9 @@ test('Enter в названии сохраняет и закрывает, Ctrl+E
   await expect(
     rowFor(page, 'Признаки делимости на 3 и 9 (повторение)'),
   ).toBeVisible()
+  // перезагрузка курс не теряет: он в адресе плана
   await page.reload()
   await ready(page)
-  await page.getByLabel('Курс').selectOption({ label: COURSE })
   await expect(
     rowFor(page, 'Признаки делимости на 3 и 9 (повторение)'),
   ).toBeVisible()

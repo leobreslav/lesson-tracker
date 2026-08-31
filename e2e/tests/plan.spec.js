@@ -1,4 +1,4 @@
-import { PEOPLE, expect, lessonCount, planMenu, ready, test } from './harness.js'
+import { PEOPLE, expect, lessonCount, pickPlan, planMenu, ready, test } from './harness.js'
 
 /**
  * Scenarios 6 and 7: the plan tree, dragging, and CSV.
@@ -12,9 +12,9 @@ const EMPTY_COURSE = 'Grade 9 Geometry'
 async function openPlan(page, course) {
   await page.goto('/plan')
   await ready(page)
-  // курс выбирают селектом в строке заголовка: чипы не пережили
-  // учителя музыки с полутора десятками курсов
-  await page.getByLabel('Курс').selectOption({ label: course })
+  // план выбирают на витрине: селекта в шапке больше нет, а у открытого
+  // плана на его месте заголовок и дорога назад
+  await pickPlan(page, course)
   await expect(page.locator('.plan-cards')).toBeVisible()
 }
 
@@ -1174,7 +1174,7 @@ test('в библиотеку кладут сразу с ответом «ком
   await signIn(PEOPLE.ivanova)
   await page.goto('/plan')
   await ready(page)
-  await page.getByLabel('Курс').selectOption({ label: 'Grade 6 Geometry' })
+  await pickPlan(page, 'Grade 6 Geometry')
   await expect(page.locator('.plan-cards')).toBeVisible()
 
   await planMenu(page, /в библиотек/)
@@ -1193,9 +1193,10 @@ test('в библиотеку кладут сразу с ответом «ком
 
   // а «только мне» кладёт черновиком — тем же окном, вторым ответом
   await teacher.delete(`/api/library/templates/${made.id}/`)
+  // перезагрузка курс не теряет: он в адресе, и выбирать заново нечего —
+  // ровно то, ради чего у плана этот адрес и появился
   await page.reload()
   await ready(page)
-  await page.getByLabel('Курс').selectOption({ label: 'Grade 6 Geometry' })
   await expect(page.locator('.plan-cards')).toBeVisible()
 
   await planMenu(page, /в библиотек/)
@@ -1238,7 +1239,7 @@ test('полка принимает две мои записи по одному
   await signIn(PEOPLE.ivanova)
   await page.goto('/plan')
   await ready(page)
-  await page.getByLabel('Курс').selectOption({ label: 'Grade 6 Geometry' })
+  await pickPlan(page, 'Grade 6 Geometry')
   await expect(page.locator('.plan-cards')).toBeVisible()
 
   const menu = page.locator('.plan-menu .dropdown')
@@ -1362,7 +1363,7 @@ test('удалённый урок возвращается отменой — в
   await signIn(PEOPLE.ivanova)
   await page.goto('/plan')
   await ready(page)
-  await page.getByLabel('Курс').selectOption(String(course.id))
+  await page.goto(`/plan?course=${course.id}`)
   await expect(page.locator('.plan-cards')).toBeVisible()
 
   const row = page.locator('.plan-row', { hasText: 'Пропадёт и вернётся' })
@@ -1402,7 +1403,7 @@ test('учитель видит чужую правку и возвращает 
   await signIn(PEOPLE.ivanova)
   await page.goto('/plan')
   await ready(page)
-  await page.getByLabel('Курс').selectOption(String(course.id))
+  await page.goto(`/plan?course=${course.id}`)
   await expect(page.locator('.plan-cards')).toBeVisible()
   await expect(page.locator('.plan-row', { hasText: 'Дописано завучем' })).toBeVisible()
 
@@ -1415,7 +1416,7 @@ test('учитель видит чужую правку и возвращает 
   await expect(page.locator('.plan-intervention')).toHaveCount(0)
 })
 
-test('курс и заготовка выбираются одним селектом, и экран называет, что правит', async ({
+test('экран называет, что открыто, и даёт дорогу назад к выбору', async ({
   page,
   signIn,
   api,
@@ -1428,43 +1429,49 @@ test('курс и заготовка выбираются одним селек�
    * курса до библиотеки не доходит вовсе. Отличались они молча — по наличию
    * колонки дат, — и на пустом расписании не отличались никак.
    *
-   * Дороги назад к заготовке при этом не было: закрыл экран — и возвращайся
-   * через план курса, меню «Библиотека», окно полки и кнопку «Править».
+   * Отвечал на это селект в шапке, и отвечал наполовину: закрывшись, он
+   * оставлял одно имя в сером контроле, у которого не видно ни вида, ни
+   * того, выбрано ли что-нибудь. Теперь на его месте заголовок — вид,
+   * название и роль, — а выбирают на витрине.
+   *
+   * Дорога назад проверяется тут же, и она главное: без неё выбранное было
+   * бы билетом в один конец.
    */
   const teacher = await api(PEOPLE.ivanova)
   const shelf = await teacher.get('/api/library/templates/?mine=true')
   const draft = shelf.body[0]
-  const courses = await teacher.get('/api/courses/')
-  const course = courses.body.find((item) => item.name === 'Grade 6 Algebra')
 
   await signIn(PEOPLE.ivanova)
   await page.goto('/plan')
   await ready(page)
 
-  const picker = page.locator('select.course-picker')
   const context = page.locator('.plan-context')
 
   // на курсе сказано, что правки до библиотеки не доходят
-  await picker.selectOption(String(course.id))
+  await pickPlan(page, 'Grade 6 Algebra')
+  await expect(page.locator('.open-kind')).toHaveText('Курс:')
+  await expect(page.locator('.open-name')).toHaveText('Grade 6 Algebra')
   await expect(context).toContainText('план этого курса')
 
-  // заготовки лежат в селекте своей группой — по ним и возвращаются
-  await expect(picker.locator('optgroup[label="Мои заготовки"]')).toHaveCount(1)
-  await picker.selectOption(`t${draft.id}`)
+  // назад к выбору — кнопкой, и она ведёт туда же, куда пункт бара
+  await page.getByRole('button', { name: 'Выбрать другой план' }).click()
+  await ready(page)
+  await expect(page).toHaveURL(/\/plan$/)
+  await expect(page.getByRole('heading', { name: 'Выберите план' })).toBeVisible()
+
+  // заготовка лежит в своей области витрины и открывается своим адресом
+  await pickPlan(page, draft.title)
   await expect(page).toHaveURL(new RegExp(`/library/${draft.id}$`))
   await ready(page)
 
   // и здесь сказано обратное, теми же двумя предложениями
+  await expect(page.locator('.open-kind')).toHaveText('Заготовка:')
   await expect(context).toContainText('прямо в эту заготовку')
-  await expect(picker).toHaveValue(`t${draft.id}`)
 
-  // обратно в курс — тем же селектом, а не через библиотеку. Курс теперь
-  // тоже назван адресом: `/plan` без него показывает витрину, и уйти с
-  // полки «просто на /plan» значило бы вернуться к выбору, а не к курсу
-  await picker.selectOption(String(course.id))
-  await expect(page).toHaveURL(new RegExp(`/plan\\?course=${course.id}$`))
+  // дорога назад та же самая, с обеих сторон
+  await page.getByRole('button', { name: 'Выбрать другой план' }).click()
   await ready(page)
-  await expect(context).toContainText('план этого курса')
+  await expect(page).toHaveURL(/\/plan$/)
 })
 
 test('сохранение поверх называет запись, показывает разницу и отменяется', async ({

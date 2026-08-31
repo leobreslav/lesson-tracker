@@ -48,9 +48,11 @@ test('администратор заводит курс и назначает �
   // где с ними работают
   await signIn(PEOPLE.ivanova)
   await openSection(page, '/plan')
-  // курс появился в селекте заголовка — там теперь выбирают курс
-  await expect(page.getByLabel('Курс').locator('option', { hasText: '9А Алгебра' }))
-    .toHaveCount(1)
+  // курс появился на витрине, в своей области — там теперь выбирают план
+  await expect(
+    page.locator('.showcase-area', { hasText: 'Мои курсы' })
+      .getByRole('button', { name: /9А Алгебра/ }),
+  ).toHaveCount(1)
 })
 
 test('длинное название курса сохраняется целиком и не рвёт карточку', async ({
@@ -831,7 +833,7 @@ test('карточка учителя не обещает того, чего н�
   await expect(invited.locator('.tag', { hasText: 'Свободный курс' })).toBeVisible()
 })
 
-test('администратор чинит чужой план — из того же селектора', async ({
+test('администратор чинит чужой план — из той же витрины', async ({
   page,
   signIn,
   api,
@@ -851,10 +853,13 @@ test('администратор чинит чужой план — из тог�
   await page.goto('/plan')
   await ready(page)
 
-  // чужой курс лежит в своей группе, а не вперемешку со «своими»
-  const picker = page.getByLabel('Курс')
-  await expect(picker.locator('optgroup[label="Курсы школы"]')).toHaveCount(1)
-  await picker.selectOption(String(alien.id))
+  // чужой курс лежит в своей области витрины, а не вперемешку со «своими»
+  await expect(
+    page.locator('.showcase-area', { hasText: 'Курсы коллег' })
+      .getByRole('button', { name: new RegExp(alien.name) }),
+  ).toHaveCount(1)
+  await page.goto(`/plan?course=${alien.id}`)
+  await ready(page)
   await expect(page.locator('.plan-cards')).toBeVisible()
 
   // и правка проходит: строка появляется в чужом плане

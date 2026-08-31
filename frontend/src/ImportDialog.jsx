@@ -30,7 +30,7 @@ const filled = (rows) => rows.filter((row) => row.some((cell) => cell.trim()))
  * диалог и устроен так: replace уносит тела уроков и вложения вместе со
  * строками, а файл, потерявший последнюю ссылку, исчезает навсегда.
  */
-export default function ImportDialog({ classId, busy, onSubmit, onClose }) {
+export default function ImportDialog({ owner, busy, onSubmit, onClose }) {
   const { t } = useTranslation()
   const [source, setSource] = useState('file')
   const [rows, setRows] = useState([])
@@ -90,8 +90,8 @@ export default function ImportDialog({ classId, busy, onSubmit, onClose }) {
 
     const ask = () =>
       (source === 'file'
-        ? previewPlanFile(classId, file, mode)
-        : previewPlanRows(classId, pasted, mode)
+        ? previewPlanFile(owner, file, mode)
+        : previewPlanRows(owner, pasted, mode)
       )
         .then((result) => current && setCost(result))
         .catch((err) => {
@@ -114,7 +114,7 @@ export default function ImportDialog({ classId, busy, onSubmit, onClose }) {
     }
     // сама матрица в зависимостях лишняя: её содержимое меняется на каждую
     // букву, а строка из неё — то, что действительно уедет на сервер
-  }, [classId, source, file, parsed, mode, JSON.stringify(pasted)])
+  }, [owner, source, file, parsed, mode, JSON.stringify(pasted)])
 
   /*
    * Синхронизировать не с чем — переключаемся сами.

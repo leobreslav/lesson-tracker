@@ -189,6 +189,19 @@ export default function PlanShowcase({ items, onPick, onCreate, busy = false }) 
         {areas.map((area) => (
           <section key={area.key} className="showcase-area">
             <h4>{t(`plan.showcase.groups.${area.key}`)}</h4>
+            {/*
+              Подпись под заголовком, а не вместо него.
+
+              Заголовок называет область двумя словами и годится, чтобы найти
+              её глазами; он не говорит, чем эти планы отличаются друг от
+              друга. А отличаются они по существу: у плана курса есть даты,
+              расписание и утверждение, у записи на полке нет ни года, ни
+              класса. Пока это было сказано одной общей строкой наверху,
+              приходилось держать в голове, какая половина к какой области.
+            */}
+            <p className="hint showcase-about">
+              {t(`plan.showcase.about.${area.key}`)}
+            </p>
             {area.items.length === 0 ? (
               <p className="hint">{t(`plan.showcase.none.${area.key}`)}</p>
             ) : (
