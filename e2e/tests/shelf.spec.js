@@ -43,9 +43,13 @@ test('план для класса, который не ведут, пишетс
 
   // адрес — сам план на полке: экран тот же, а владелец другой
   await expect(page).toHaveURL(/\/library\/\d+$/)
-  // чем занимаемся, сказано заголовком: вид слева, название крупно
-  await expect(page.locator('.open-kind')).toHaveText('Заготовка:')
-  await expect(page.locator('.open-name')).toHaveText('Алгебра 11, теоретический')
+  // заголовок говорит, что это не курс вовсе, а под ним — имя плана
+  await expect(
+    page.getByRole('heading', { name: 'Учебный план с полки (без курса)' }),
+  ).toBeVisible()
+  await expect(page.locator('.open-name')).toHaveText(
+    'название: Алгебра 11, теоретический',
+  )
   // и строка контекста говорит, что правки идут прямо в библиотеку
   await expect(page.locator('.plan-context')).toContainText('прямо в эту заготовку')
 

@@ -557,17 +557,22 @@
       "create": "Write a new plan…"
     },
     "open": {
-      "course": "Course:",
-      "template": "Template:",
-      "back": "Pick another plan"
+      "back": "← Back to plan selection"
+    },
+    "head": {
+      "fromLibrary": "Curriculum from the library (no course)",
+      "forCourse": "for course: {{name}}",
+      "year": "academic year: {{year}}",
+      "teacher": "teacher: {{name}}",
+      "plan": "name: {{name}}",
+      "author": "author: {{name}}"
     },
     "role": {
       "editing": "you edit it",
       "reading": "read-only",
-      "readingOf": "{{name}} · read-only",
-      "deciding": "waiting for your decision",
+            "deciding": "waiting for your decision",
       "draft": "draft, visible to you only",
-      "published": "on the school shelf"
+      "published": "you may edit it"
     },
     "showcase": {
       "title": "Pick a plan",
@@ -634,6 +639,8 @@
     "freeSummary_other": "{{count}} free lessons, {{start}} — {{end}}",
     "baseline": {
       "submit": "Submit for approval",
+      "approver": "Approves the plan: {{names}}",
+      "noApprover": "No methodist for this course yet — there is nobody to approve the plan.",
       "hint": "A snapshot goes to the methodist of the course; «My courses» on the main page then counts the drift from what was approved.",
       "sent": "Sent to {{name}}.",
       "pending": "On approval with {{name}}.",

@@ -1449,12 +1449,12 @@ test('экран называет, что открыто, и даёт дорог
 
   // на курсе сказано, что правки до библиотеки не доходят
   await pickPlan(page, 'Grade 6 Algebra')
-  await expect(page.locator('.open-kind')).toHaveText('Курс:')
-  await expect(page.locator('.open-name')).toHaveText('Grade 6 Algebra')
+  await expect(page.getByRole('heading', { name: 'Учебный план' })).toBeVisible()
+  await expect(page.locator('.open-name')).toHaveText('курс: Grade 6 Algebra')
   await expect(context).toContainText('план этого курса')
 
   // назад к выбору — кнопкой, и она ведёт туда же, куда пункт бара
-  await page.getByRole('button', { name: 'Выбрать другой план' }).click()
+  await page.getByRole('button', { name: /К выбору планов/ }).click()
   await ready(page)
   await expect(page).toHaveURL(/\/plan$/)
   await expect(page.getByRole('heading', { name: 'Выберите план' })).toBeVisible()
@@ -1465,11 +1465,13 @@ test('экран называет, что открыто, и даёт дорог
   await ready(page)
 
   // и здесь сказано обратное, теми же двумя предложениями
-  await expect(page.locator('.open-kind')).toHaveText('Заготовка:')
+  await expect(
+    page.getByRole('heading', { name: 'Учебный план с полки (без курса)' }),
+  ).toBeVisible()
   await expect(context).toContainText('прямо в эту заготовку')
 
   // дорога назад та же самая, с обеих сторон
-  await page.getByRole('button', { name: 'Выбрать другой план' }).click()
+  await page.getByRole('button', { name: /К выбору планов/ }).click()
   await ready(page)
   await expect(page).toHaveURL(/\/plan$/)
 })
@@ -1558,16 +1560,16 @@ test('пустой «Учебный план» раскладывает план
   // заголовок у каждой области называет **обе** оси разом: на телефоне
   // колонка одна, сетка схлопывается, и «мои» от «коллег» отличает только он
   for (const area of [
-    'Мои курсы',
+    'Мои группы (классы)',
     'Мои планы на полке',
-    'Курсы коллег',
+    'Группы коллег',
     'Планы коллег на полке',
   ]) {
     await expect(page.getByRole('heading', { name: area })).toBeVisible()
   }
 
   // свой курс стоит именно в своей области, а не вперемешку
-  const mine = page.locator('.showcase-area', { hasText: 'Мои курсы' })
+  const mine = page.locator('.showcase-area', { hasText: 'Мои группы' })
   await expect(mine.getByRole('button', { name: /Grade 6 Algebra/ })).toBeVisible()
 })
 
@@ -1584,7 +1586,7 @@ test('выбор с витрины уезжает в адрес, и «назад
   await page.goto('/plan')
   await ready(page)
 
-  const mine = page.locator('.showcase-area', { hasText: 'Мои курсы' })
+  const mine = page.locator('.showcase-area', { hasText: 'Мои группы' })
   await mine.getByRole('button', { name: /Grade 6 Algebra/ }).click()
 
   await expect(page).toHaveURL(/[?&]course=\d+/)

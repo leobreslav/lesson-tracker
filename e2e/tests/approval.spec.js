@@ -57,7 +57,7 @@ test('учитель отправляет план, методист утвер�
   await openPlan(page, 'Grade 6 Algebra')
   await page.getByRole('button', { name: 'На утверждение' }).click()
   await expect(page.getByText(/Отправлено/)).toBeVisible()
-  await expect(page.locator('.hint.approval')).toContainText('На утверждении')
+  await expect(page.locator('.plan-approval-state .approval')).toContainText('На утверждении')
 
   // методист видит запрос и присланный план
   await signIn(PEOPLE.petrov)
@@ -71,13 +71,14 @@ test('учитель отправляет план, методист утвер�
 
   // состояние утверждения методист читает теми же словами, что и автор:
   // плашкой «эталон не утверждён» это было сказано иначе, и два вида
-  // одного факта разошлись бы молча
+  // одного факта разошлись бы молча. Место у строки при этом своё — экран
+  // надзора, а не панель плана: панели у читателя нет
   await expect(page.locator('.hint.approval')).toContainText('Утверждён')
 
   // и учитель видит ровно ту же строку
   await signIn(PEOPLE.ivanova)
   await openPlan(page, 'Grade 6 Algebra')
-  await expect(page.locator('.hint.approval')).toContainText('Утверждён')
+  await expect(page.locator('.plan-approval-state .approval')).toContainText('Утверждён')
 })
 
 test('методист возвращает план с замечанием', async ({ page, signIn, api }) => {
@@ -101,7 +102,7 @@ test('методист возвращает план с замечанием', a
 
   await signIn(PEOPLE.ivanova)
   await openPlan(page, 'Grade 6 Algebra')
-  await expect(page.locator('.hint.approval')).toContainText('Мало часов на повторение')
+  await expect(page.locator('.plan-approval-state .approval')).toContainText('Мало часов на повторение')
 })
 
 test('правка после отправки запрос не отзывает, методист видит новое', async ({
@@ -114,7 +115,7 @@ test('правка после отправки запрос не отзывае�
   await signIn(PEOPLE.ivanova)
   await openPlan(page, 'Grade 6 Algebra')
   await page.getByRole('button', { name: 'На утверждение' }).click()
-  await expect(page.locator('.hint.approval')).toContainText('На утверждении')
+  await expect(page.locator('.plan-approval-state .approval')).toContainText('На утверждении')
 
   await page.getByRole('button', { name: 'Добавить тему или урок' }).click()
   const form = page.locator('.plan-add-form')
@@ -125,7 +126,7 @@ test('правка после отправки запрос не отзывае�
   // запрос на месте, и методист открывает текущую версию плана
   await page.reload()
   await ready(page)
-  await expect(page.locator('.hint.approval')).toContainText('На утверждении')
+  await expect(page.locator('.plan-approval-state .approval')).toContainText('На утверждении')
 
   await signIn(PEOPLE.petrov)
   await openSupervised(page, 'Grade 6 Algebra')
@@ -144,15 +145,22 @@ test('без методиста у курса отправка объясняе�
   await expect(page.getByText(/некому утверждать|Nobody approves/)).toBeVisible()
 })
 
-test('утверждение целиком живёт в шапке, рядом с тумблером вида', async ({
+test('отправка и её состояние — в панели действий, вид — в шапке', async ({
   page,
   signIn,
   api,
 }) => {
-  // Разговор один — отправить, узнать, чем разошлось, — а стоял он в трёх
-  // местах: кнопка под «⋯», состояние подвальной строкой панели, сравнение
-  // тумблером в шапке. Чтобы отправить план, надо было вспомнить про
-  // многоточие, а узнать, дошёл ли он, — посмотреть в другой конец панели.
+  /*
+   * Разговор один — отправить и узнать, что вышло, — и стоял он когда-то в
+   * трёх разных концах экрана. Сведён он был в шапку, и это чинило
+   * разорванность, но не место: шапка отвечает на «что открыто», а кнопка,
+   * отправляющая план другому человеку, — действие, и стояла она рядом с
+   * выходом из плана.
+   *
+   * Теперь действие и его состояние стоят там же, где остальные действия
+   * над планом, а в шапке остался вид: сравнение — не действие, а другая
+   * страница, и панели в ней не показывается вовсе.
+   */
   const { course } = await makeMethodist(api, PEOPLE.ivanova, 'Grade 6 Algebra')
 
   const teacher = await api(PEOPLE.ivanova)
@@ -162,12 +170,16 @@ test('утверждение целиком живёт в шапке, рядом
   await signIn(PEOPLE.ivanova)
   await openPlan(page, 'Grade 6 Algebra')
 
-  const head = page.locator('.page-header .plan-approval')
-  await expect(head.locator('.hint.approval')).toContainText('Утверждён')
-  await expect(head.getByRole('button', { name: 'На утверждение' })).toBeVisible()
-  await expect(head.getByRole('radio', { name: 'Сравнение' })).toBeVisible()
+  const tools = page.locator('.plan-tools')
+  await expect(tools.getByRole('button', { name: 'На утверждение' })).toBeVisible()
+  await expect(tools.locator('.plan-approval-state')).toContainText('Утверждён')
 
-  // и ни в одном меню отправки больше нет: одно действие — одно место
+  // в шапке от утверждения остался только вид
+  const head = page.locator('.page-header')
+  await expect(head.getByRole('radio', { name: 'Сравнение' })).toBeVisible()
+  await expect(head.getByRole('button', { name: 'На утверждение' })).toHaveCount(0)
+
+  // и ни в одном меню отправки нет: одно действие — одно место
   for (const menu of ['Файл', 'Библиотека']) {
     await page.getByRole('button', { name: menu, exact: true }).click()
     await expect(
@@ -176,6 +188,40 @@ test('утверждение целиком живёт в шапке, рядом
         .getByRole('button', { name: 'На утверждение' }),
     ).toHaveCount(0)
   }
+})
+
+test('шапка называет курс, год и ведущего, а у полки — автора', async ({
+  page,
+  signIn,
+  api,
+}) => {
+  /*
+   * Одной строкой «Курс: 7Б Физика» это было, и строка отвечала на половину
+   * вопроса: у плана курса есть ещё учебный год и ведущий, и оба нужны как
+   * раз тогда, когда планов много — «Grade 6 Algebra» бывает и
+   * прошлогодней, и чужой.
+   */
+  await signIn(PEOPLE.ivanova)
+  await openPlan(page, 'Grade 6 Algebra')
+
+  await expect(page.getByRole('heading', { name: 'Учебный план' })).toBeVisible()
+  const about = page.locator('.plan-about')
+  await expect(about).toContainText('курс: Grade 6 Algebra')
+  await expect(about).toContainText('учебный год:')
+  await expect(about).toContainText('учитель: Мария Иванова')
+
+  // у заготовки заголовок свой: она не про курс вовсе, и сказать это
+  // подписью под общим заголовком мало — по ссылке читают заголовок
+  const client = await api(PEOPLE.ivanova)
+  const shelf = await client.get('/api/library/templates/?mine=true')
+  await page.goto(`/library/${shelf.body[0].id}`)
+  await ready(page)
+
+  await expect(
+    page.getByRole('heading', { name: 'Учебный план с полки (без курса)' }),
+  ).toBeVisible()
+  await expect(page.locator('.plan-about')).toContainText('автор: Мария Иванова')
+  await expect(page.locator('.plan-about')).not.toContainText('учебный год:')
 })
 
 test('методист без своих курсов видит присланный план', async ({
@@ -205,7 +251,7 @@ test('методист без своих курсов видит прислан�
   // предложен в своей области — «Курсы коллег», а не вперемешку со своими.
   await expect(page.getByRole('heading', { name: 'Выберите план' })).toBeVisible()
 
-  const colleagues = page.locator('.showcase-area', { hasText: 'Курсы коллег' })
+  const colleagues = page.locator('.showcase-area', { hasText: 'Группы коллег' })
   const offered = colleagues.getByRole('button', { name: /Grade 6 Algebra/ })
   await expect(offered).toBeVisible()
   // и он же назван действием: этот план ждёт подписи именно этого человека
@@ -218,7 +264,7 @@ test('методист без своих курсов видит прислан�
   await expect(page).toHaveURL(new RegExp(`[?&]course=${course.id}\\b`))
 
   // и открытое названо словами — заголовком, а не серым контролом
-  await expect(page.locator('.open-name')).toHaveText('Grade 6 Algebra')
+  await expect(page.locator('.open-name')).toHaveText('курс: Grade 6 Algebra')
   await expect(page.locator('.plan .plan-row').first()).toBeVisible()
   await expect(page.getByRole('button', { name: 'Утвердить' })).toBeVisible()
 })
@@ -303,7 +349,7 @@ test('ждущий подписи назван действием, а не сп�
   await page.goto('/plan')
   await ready(page)
 
-  const colleagues = page.locator('.showcase-area', { hasText: 'Курсы коллег' })
+  const colleagues = page.locator('.showcase-area', { hasText: 'Группы коллег' })
   const waiting = colleagues.getByRole('button', { name: /Grade 6 Algebra/ })
   const watched = colleagues.getByRole('button', { name: /Grade 6 Geometry/ })
 
@@ -314,7 +360,7 @@ test('ждущий подписи назван действием, а не сп�
   await expect(watched.locator('.badge.waiting')).toHaveCount(0)
 
   // а своё и чужое разделено именно местом — это разные роли
-  const mine = page.locator('.showcase-area', { hasText: 'Мои курсы' })
+  const mine = page.locator('.showcase-area', { hasText: 'Мои группы' })
   await expect(mine.getByRole('button', { name: /Grade 6 Algebra/ })).toHaveCount(0)
 })
 
@@ -337,13 +383,13 @@ test('свой курс показывает свой план, даже есл�
   await expect(page.locator('.plan-tools')).toBeVisible()
 
   // и открыт он как свой: заголовок называет курс, роль говорит «правите»
-  await expect(page.locator('.open-name')).toHaveText('Grade 6 Algebra')
+  await expect(page.locator('.open-name')).toHaveText('курс: Grade 6 Algebra')
   await expect(page.locator('.open-role')).toHaveText('правите')
 
   // отправляем на утверждение — решать можно тут же, по ссылке
   await page.getByRole('button', { name: 'На утверждение' }).click()
-  await expect(page.locator('.hint.approval.pending')).toContainText('На утверждении')
-  await expect(page.locator('.hint.approval.self')).toContainText(
+  await expect(page.locator('.plan-approval-state .approval.pending')).toContainText('На утверждении')
+  await expect(page.locator('.plan-approval-state .approval.self')).toContainText(
     'Методист этого курса — вы.',
   )
 
@@ -355,8 +401,8 @@ test('свой курс показывает свой план, даже есл�
   // Сперва — что решать больше нечего: список надзора перечитывается
   // фоном, и это единственное утверждение здесь, которое умеет подождать
   await expect(page.locator('ul.plan .plan-row.lesson').first()).toBeVisible()
-  await expect(page.locator('.hint.approval.self')).toHaveCount(0)
-  await expect(page.locator('.hint.approval.approved')).toContainText('Утверждён')
+  await expect(page.locator('.plan-approval-state .approval.self')).toHaveCount(0)
+  await expect(page.locator('.plan-approval-state .approval.approved')).toContainText('Утверждён')
 })
 
 test('сравнение с эталоном показывает строки, а не только числа', async ({
@@ -497,7 +543,7 @@ test('чужой план школы открывается на чтение л
   await ready(page)
 
   // курс Петрова — в области «Курсы коллег», а не вперемешку со своими
-  const colleagues = page.locator('.showcase-area', { hasText: 'Курсы коллег' })
+  const colleagues = page.locator('.showcase-area', { hasText: 'Группы коллег' })
   await expect(
     colleagues.getByRole('button', { name: /Grade 9 Algebra/ }),
   ).toHaveCount(1)
@@ -534,7 +580,7 @@ test('чужой план школы открывается на чтение л
 
   // а свой открывается как открывался — правкой. Дорога к нему теперь через
   // витрину: у открытого плана селекта нет, есть заголовок и кнопка назад
-  await page.getByRole('button', { name: 'Выбрать другой план' }).click()
+  await page.getByRole('button', { name: /К выбору планов/ }).click()
   await ready(page)
   await pickPlan(page, 'Grade 6 Algebra')
   await expect(page.locator('ul.plan .plan-row.lesson').first()).toBeVisible()
@@ -556,7 +602,7 @@ test('чужой план ищется учителем и предметом, �
 
   await page.getByLabel('Любой учитель').selectOption({ label: 'Пётр Петров' })
 
-  const colleagues = page.locator('.showcase-area', { hasText: 'Курсы коллег' })
+  const colleagues = page.locator('.showcase-area', { hasText: 'Группы коллег' })
   await expect(
     colleagues.getByRole('button', { name: /Grade 9 Algebra/ }),
   ).toHaveCount(1)
@@ -565,6 +611,6 @@ test('чужой план ищется учителем и предметом, �
     colleagues.getByRole('button', { name: /Grade 6 Physics/ }),
   ).toHaveCount(0)
   // и своё сузилось тем же вопросом: у Петрова своих курсов Ивановой нет
-  const mine = page.locator('.showcase-area', { hasText: 'Мои курсы' })
+  const mine = page.locator('.showcase-area', { hasText: 'Мои группы' })
   await expect(mine.getByRole('button')).toHaveCount(0)
 })
