@@ -713,8 +713,10 @@ test('пока связь не записана, план со страницы 
   await page.getByRole('link', { name: 'Открыть в учебном плане' }).click()
   await ready(page)
 
-  // адрес вычищен: оставленный, он возил бы сюда при каждом «назад»
-  await expect(page).toHaveURL(/\/plan$/)
+  // Наводка на строку вычищена — оставленная, она возила бы сюда при каждом
+  // «назад», — а курс остался: он не наводка, а адрес открытого плана.
+  // Вычищенный, он уводил бы на витрину при каждой перезагрузке.
+  await expect(page).toHaveURL(/\/plan\?course=\d+$/)
   const row = page.locator('.plan-row.spotlight')
   await expect(row).toHaveCount(1)
   await expect(row).toContainText(title)
