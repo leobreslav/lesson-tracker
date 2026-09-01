@@ -1571,6 +1571,53 @@ test('пустой «Учебный план» раскладывает план
   // свой курс стоит именно в своей области, а не вперемешку
   const mine = page.locator('.showcase-area', { hasText: 'Мои классы' })
   await expect(mine.getByRole('button', { name: /Grade 6 Algebra/ })).toBeVisible()
+
+  /*
+   * Крест из двух черт стоит в зазорах, а не поверх областей.
+   *
+   * Обе половины опираются на устройство сетки, и обе разъехались бы с ней
+   * **молча**. Вертикаль нарисована слоем на `left: 50%`, и верно это ровно
+   * потому, что колонки равны (`1fr 1fr`): смена пропорции увела бы её на
+   * содержимое левой колонки, ничего не сломав. Горизонталь занимает обе
+   * колонки вместе с зазором, и четвёртый ярус у области (тот самый, что уже
+   * ломал `subgrid`) увёл бы её в чужую дорожку.
+   *
+   * Меряется поэтому не цвет и не толщина, а положение: между колонками и
+   * между полосами. Ни одна проверка выше этого не видит — заголовки стоят
+   * на местах и с разъехавшимся крестом.
+   */
+  const cross = await page.evaluate(() => {
+    const grid = document.querySelector('.showcase-grid')
+    const edge = (el) => el.getBoundingClientRect()
+    const areas = [...grid.querySelectorAll('.showcase-area')]
+    const at = (title) =>
+      edge(areas.find((el) => el.querySelector('h5').textContent === title))
+    const line = getComputedStyle(grid, '::before')
+    return {
+      gridLeft: edge(grid).left,
+      // `left` у слоя считается от края сетки, а сдвиг на половину ширины
+      // делает `transform`: центр черты — это сам `left`
+      vertical: edge(grid).left + parseFloat(line.left),
+      leftColumnRight: at('Мои классы').right,
+      rightColumnLeft: at('Мои планы на полке').left,
+      mineBottom: at('Мои планы на полке').bottom,
+      othersTop: at('Классы коллег').top,
+      divider: edge(grid.querySelector('.showcase-divider')),
+      gridRight: edge(grid).right,
+    }
+  })
+
+  // вертикаль — строго в зазоре между колонками, а не при одной из них
+  expect(cross.vertical).toBeGreaterThan(cross.leftColumnRight)
+  expect(cross.vertical).toBeLessThan(cross.rightColumnLeft)
+
+  // горизонталь — во всю ширину сетки, иначе крест разорвёт посередине
+  expect(Math.round(cross.divider.left)).toBe(Math.round(cross.gridLeft))
+  expect(Math.round(cross.divider.right)).toBe(Math.round(cross.gridRight))
+
+  // и между полосами, а не внутри одной из них
+  expect(cross.divider.top).toBeGreaterThan(cross.mineBottom)
+  expect(cross.divider.bottom).toBeLessThan(cross.othersTop)
 })
 
 test('выбор с витрины уезжает в адрес, и «назад» возвращает к выбору', async ({
