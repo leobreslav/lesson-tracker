@@ -1573,51 +1573,77 @@ test('пустой «Учебный план» раскладывает план
   await expect(mine.getByRole('button', { name: /Grade 6 Algebra/ })).toBeVisible()
 
   /*
-   * Крест из двух черт стоит в зазорах, а не поверх областей.
+   * Крест: одна вертикаль между колонками и **две** горизонтали, по одной
+   * на колонку.
    *
-   * Обе половины опираются на устройство сетки, и обе разъехались бы с ней
-   * **молча**. Вертикаль нарисована слоем на `left: 50%`, и верно это ровно
-   * потому, что колонки равны (`1fr 1fr`): смена пропорции увела бы её на
-   * содержимое левой колонки, ничего не сломав. Горизонталь занимает обе
-   * колонки вместе с зазором, и четвёртый ярус у области (тот самый, что уже
-   * ломал `subgrid`) увёл бы её в чужую дорожку.
+   * Обе опоры разъехались бы с сеткой молча. Вертикаль нарисована слоем на
+   * `left: 50%`, и верно это ровно потому, что колонки равны (`1fr 1fr`):
+   * смена пропорции увела бы её на содержимое левой колонки, ничего при этом
+   * не сломав. Горизонтали держатся на том, что третий ярус области не
+   * растянут по своей дорожке (`align-self: start`): растянутый, он кончался
+   * бы у обеих колонок на одной высоте, и две черты слиплись бы в одну
+   * строку — то есть вернулись бы к тому, от чего уходили, и выглядело бы
+   * это по-прежнему аккуратно.
    *
-   * Меряется поэтому не цвет и не толщина, а положение: между колонками и
-   * между полосами. Ни одна проверка выше этого не видит — заголовки стоят
-   * на местах и с разъехавшимся крестом.
+   * Меряется поэтому не цвет и не толщина, а положение: черта в своей
+   * колонке и ниже её содержимого. Ни одна проверка выше этого не видит —
+   * заголовки стоят на местах и с разъехавшимся крестом.
    */
   const cross = await page.evaluate(() => {
     const grid = document.querySelector('.showcase-grid')
-    const edge = (el) => el.getBoundingClientRect()
+    const edge = (el) => {
+      const r = el.getBoundingClientRect()
+      return { left: r.left, right: r.right, top: r.top, bottom: r.bottom }
+    }
     const areas = [...grid.querySelectorAll('.showcase-area')]
-    const at = (title) =>
-      edge(areas.find((el) => el.querySelector('h5').textContent === title))
-    const line = getComputedStyle(grid, '::before')
+    const area = (title) =>
+      areas.find((el) => el.querySelector('h5').textContent === title)
+    const dividerIn = (title) =>
+      edge(area(title).querySelector('.showcase-divider'))
+    const lastItemIn = (title) =>
+      edge([...area(title).querySelectorAll('.showcase-item')].pop())
     return {
       gridLeft: edge(grid).left,
-      // `left` у слоя считается от края сетки, а сдвиг на половину ширины
+      // `left` у слоя считается от края сетки, а сдвиг на половину толщины
       // делает `transform`: центр черты — это сам `left`
-      vertical: edge(grid).left + parseFloat(line.left),
-      leftColumnRight: at('Мои классы').right,
-      rightColumnLeft: at('Мои планы на полке').left,
-      mineBottom: at('Мои планы на полке').bottom,
-      othersTop: at('Классы коллег').top,
-      divider: edge(grid.querySelector('.showcase-divider')),
-      gridRight: edge(grid).right,
+      vertical: edge(grid).left + parseFloat(getComputedStyle(grid, '::before').left),
+      left: { box: edge(area('Мои классы')), line: dividerIn('Мои классы') },
+      right: {
+        box: edge(area('Мои планы на полке')),
+        line: dividerIn('Мои планы на полке'),
+      },
+      leftLastItem: lastItemIn('Мои классы'),
+      rightCreate: edge(area('Мои планы на полке').querySelector('.showcase-create')),
+      othersTop: edge(area('Классы коллег')).top,
     }
   })
 
   // вертикаль — строго в зазоре между колонками, а не при одной из них
-  expect(cross.vertical).toBeGreaterThan(cross.leftColumnRight)
-  expect(cross.vertical).toBeLessThan(cross.rightColumnLeft)
+  expect(cross.vertical).toBeGreaterThan(cross.left.box.right)
+  expect(cross.vertical).toBeLessThan(cross.right.box.left)
 
-  // горизонталь — во всю ширину сетки, иначе крест разорвёт посередине
-  expect(Math.round(cross.divider.left)).toBe(Math.round(cross.gridLeft))
-  expect(Math.round(cross.divider.right)).toBe(Math.round(cross.gridRight))
+  // каждая горизонталь — внутри своей колонки, а не во всю ширину витрины
+  for (const side of [cross.left, cross.right]) {
+    expect(Math.round(side.line.left)).toBe(Math.round(side.box.left))
+    expect(Math.round(side.line.right)).toBe(Math.round(side.box.right))
+    // и выше чужой полосы: черта делит своё и чужое, а не залезает на них
+    expect(side.line.bottom).toBeLessThan(cross.othersTop)
+  }
 
-  // и между полосами, а не внутри одной из них
-  expect(cross.divider.top).toBeGreaterThan(cross.mineBottom)
-  expect(cross.divider.bottom).toBeLessThan(cross.othersTop)
+  // ...и ниже содержимого именно своей колонки: слева последняя запись,
+  // справа кнопка «написать новый», которая стоит ниже записей
+  expect(cross.left.line.top).toBeGreaterThan(cross.leftLastItem.bottom)
+  expect(cross.right.line.top).toBeGreaterThan(cross.rightCreate.bottom)
+
+  /*
+   * Черты стоят на **разной** высоте, и это не придирка к пикселям.
+   *
+   * Ровно за этим их и разводили: колонки наполнены по-разному, и общая
+   * черта у той, что короче, висела бы под пустотой. Совпади они снова —
+   * значит `align-self: start` потерялся, и внешне всё выглядит нормально.
+   * Правая ниже левой: под записями там стоит ещё и кнопка.
+   */
+  expect(cross.right.line.top).toBeGreaterThan(cross.left.line.top)
 })
 
 test('выбор с витрины уезжает в адрес, и «назад» возвращает к выбору', async ({

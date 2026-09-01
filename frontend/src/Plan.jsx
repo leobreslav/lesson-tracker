@@ -1787,6 +1787,10 @@ export default function Plan({ user, onLoggedOut, template = null }) {
                проекте нет и заводить его тут незачем. */
             year={years[0]?.name ?? null}
             onCreate={() => setDialog({ type: 'newTemplate' })}
+            /* Тот же обработчик, что у окна полки и у страницы заготовки:
+               он перечитывает и список, и карточку, а второй ответ на
+               «опубликовать» разошёлся бы с первым в первой же правке. */
+            onPublish={publishTemplate}
             onPick={(item) =>
               item.kind === 'template'
                 ? navigate(`/library/${item.id}`)

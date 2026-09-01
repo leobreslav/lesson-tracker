@@ -236,3 +236,64 @@ test('свой черновик публикуется со своей же ст
   await tools.getByRole('radio', { name: 'Только мне' }).click()
   await expect(page.locator('.open-role')).toContainText('черновик')
 })
+
+test('видимость своей записи переключается прямо на витрине', async ({
+  page,
+  signIn,
+  api,
+}) => {
+  /*
+   * Та же дыра, что и выше, но с другого конца — со списка, а не с записи.
+   *
+   * Со страницы заготовки публикация работает, и её проверяет тест рядом. Но
+   * попасть на страницу надо: с витрины это открыть запись, найти панель
+   * действий, щёлкнуть тумблер и вернуться назад — четыре шага ради одного
+   * слова, причём повторить их надо для каждой записи. А главное, до
+   * открытия витрина об этом **молчала**: пометка была только у черновика,
+   * и «видит вся школа» выглядело так же, как «я не знаю, что с этой
+   * записью», — пустым местом.
+   *
+   * Поэтому обе стороны названы и обе нажимаются. Проверяется здесь не
+   * плашка, а то, что нажатие доехало до сервера: состояние экрана,
+   * совпавшее с намерением, — самый частый способ ошибиться в этом месте.
+   */
+  const author = await api(PEOPLE.petrov)
+  const subjects = await author.get('/api/school/subjects/')
+  const made = await author.post('/api/library/templates/', {
+    subject: subjects.body[0].id,
+    grade: 8,
+    title: 'Алгебра 8, черновик с витрины',
+    is_published: false,
+  })
+  expect(made.status, JSON.stringify(made.body)).toBe(201)
+
+  await signIn(PEOPLE.petrov)
+  await page.goto('/plan')
+  await ready(page)
+
+  const line = page
+    .locator('.showcase-line', { hasText: 'Алгебра 8, черновик с витрины' })
+  await expect(line.getByRole('button', { name: 'только для меня' })).toBeVisible()
+
+  await line.getByRole('button', { name: 'только для меня' }).click()
+
+  // плашка называет новое состояние...
+  await expect(line.getByRole('button', { name: 'опубликован' })).toBeVisible()
+  // ...и это настоящая публикация, а не состояние экрана
+  await expect.poll(async () => {
+    const shelf = await author.get(`/api/library/templates/${made.body.id}/`)
+    return shelf.body.is_published
+  }).toBe(true)
+
+  // повторное нажатие возвращает обратно: плашка — состояние, а не действие
+  await line.getByRole('button', { name: 'опубликован' }).click()
+  await expect(line.getByRole('button', { name: 'только для меня' })).toBeVisible()
+
+  /*
+   * У чужой записи плашки нет вовсе, и это не оформление: чужой черновик до
+   * нас не доезжает, а опубликованное чужое мы не вправе спрятать. Кнопка,
+   * которая на чужом ответит отказом сервера, хуже отсутствующей.
+   */
+  const theirs = page.locator('.showcase-area', { hasText: 'Планы коллег на полке' })
+  await expect(theirs.locator('.showcase-visibility')).toHaveCount(0)
+})

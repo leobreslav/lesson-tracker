@@ -570,7 +570,7 @@
     "role": {
       "editing": "you edit it",
       "reading": "read-only",
-            "deciding": "waiting for your decision",
+      "deciding": "waiting for your decision",
       "draft": "draft, visible to you only",
       "published": "you may edit it"
     },
@@ -600,6 +600,12 @@
         "mineTemplates": "You have not put a plan on the shelf yet.",
         "otherCourses": "There are no other courses in the school yet.",
         "otherTemplates": "Colleagues have not put anything on the shelf yet."
+      },
+      "visibility": {
+        "draft": "only for me",
+        "published": "published",
+        "publishHint": "Only you see this plan. Click to publish it to the school.",
+        "hideHint": "The whole school sees this plan. Click to return it to drafts."
       }
     },
     "context": {
