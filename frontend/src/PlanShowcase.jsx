@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import VisibilityBadge from './VisibilityBadge'
 
 /**
  * Витрина планов: четыре области, две оси, один вопрос.
@@ -292,28 +293,11 @@ export default function PlanShowcase({
                       опубликованное чужое мы не вправе спрятать.
                     */}
                     {area.key === 'mineTemplates' && onPublish && (
-                      <button
-                        type="button"
-                        className={`badge showcase-visibility${
-                          item.draft ? ' draft' : ''
-                        }`}
-                        disabled={busy}
-                        /* Ключи literalами, а не тернарником внутри `t()`:
-                           сторож словарей (`locales.test.js`) читает только
-                           форму `t('ключ')`, и спрятанный в тернарник ключ
-                           перестал бы проверяться — опечатка в нём доехала бы
-                           до человека сырым `plan.showcase.…` на экране. */
-                        title={
-                          item.draft
-                            ? t('plan.showcase.visibility.publishHint')
-                            : t('plan.showcase.visibility.hideHint')
-                        }
-                        onClick={() => onPublish(item, Boolean(item.draft))}
-                      >
-                        {item.draft
-                          ? t('plan.showcase.visibility.draft')
-                          : t('plan.showcase.visibility.published')}
-                      </button>
+                      <VisibilityBadge
+                        published={!item.draft}
+                        busy={busy}
+                        onChange={(next) => onPublish(item, next)}
+                      />
                     )}
                   </li>
                 ))}

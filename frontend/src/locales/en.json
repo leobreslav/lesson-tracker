@@ -561,18 +561,16 @@
     },
     "head": {
       "fromLibrary": "Curriculum from the library (no course)",
-      "forCourse": "for course: {{name}}",
-      "year": "academic year: {{year}}",
-      "teacher": "teacher: {{name}}",
-      "plan": "name: {{name}}",
-      "author": "author: {{name}}"
+      "forCourse": "For course: {{name}}",
+      "year": "Academic year: {{year}}",
+      "teacher": "Teacher: {{name}}",
+      "plan": "Name: {{name}}",
+      "author": "Author: {{name}}"
     },
     "role": {
       "editing": "you edit it",
       "reading": "read-only",
-      "deciding": "waiting for your decision",
-      "draft": "draft, visible to you only",
-      "published": "you may edit it"
+      "deciding": "waiting for your decision"
     },
     "showcase": {
       "title": "Pick a plan to view or edit",
@@ -600,12 +598,6 @@
         "mineTemplates": "You have not put a plan on the shelf yet.",
         "otherCourses": "There are no other courses in the school yet.",
         "otherTemplates": "Colleagues have not put anything on the shelf yet."
-      },
-      "visibility": {
-        "draft": "only for me",
-        "published": "published",
-        "publishHint": "Only you see this plan. Click to publish it to the school.",
-        "hideHint": "The whole school sees this plan. Click to return it to drafts."
       }
     },
     "context": {
@@ -1166,12 +1158,9 @@
       "mine": "My plans",
       "others": "Plans by colleagues"
     },
-    "draft": "draft",
     "line": "{{subject}}, grade {{grade}} · {{author}} · {{lessons}}",
     "use": "Use in a course",
     "once": "The plan is copied into the course. Later changes to the template will not affect your copy.",
-    "publish": "Publish",
-    "unpublish": "Return to drafts",
     "deleteConfirm": "Delete «{{title}}» from the library?",
     "empty": {
       "hint": "Nothing has been put on the shelf yet. Publish one of your plans, or write a new one."
@@ -1181,7 +1170,13 @@
     "look": "Look inside",
     "pickHint": "Tick what you need: a block header takes the whole block. The ticked rows are added to the end of your plan.",
     "takePicked": "Take the ticked · {{count}}",
-    "partHint": "Need only a block or a single lesson? Open «Look inside» and tick what you want."
+    "partHint": "Need only a block or a single lesson? Open «Look inside» and tick what you want.",
+    "visibility": {
+      "draft": "only for me",
+      "published": "published",
+      "publishHint": "Only you see this plan. Click to publish it to the school.",
+      "hideHint": "The whole school sees this plan. Click to return it to drafts."
+    }
   },
   "lesson": {
     "fields": {

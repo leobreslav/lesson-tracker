@@ -494,7 +494,7 @@ test('импорт из библиотеки наполняет пустой п�
 
   // полка теперь список с поиском: шаблон выбирается нажатием на название
   const dialog = page.locator('dialog.modal')
-  await dialog.locator('.template-list .name').first().click()
+  await dialog.locator('.template-list .showcase-item').first().click()
   await dialog.getByRole('button', { name: 'Импортировать в курс' }).click()
 
   await expect(dialog).toBeHidden()
@@ -575,15 +575,23 @@ test('черновик публикуется и снимается с публ�
 
   const shelf = page.locator('dialog.modal')
   const row = shelf.locator('li', { hasText: 'Свежий черновик' })
-  // именно метка черновика: рядом с ней у ведомого шаблона стоит вторая
-  const draftBadge = row.locator('.badge', { hasText: 'черновик' })
-  await expect(draftBadge).toBeVisible()
 
-  await row.getByRole('button', { name: 'Опубликовать' }).click()
-  await expect(draftBadge).toHaveCount(0)
+  /*
+   * Состояние и переключатель — **одна** плашка, а не метка рядом со
+   * ссылкой. Так это и было: неподвижное «черновик» слева, ссылка
+   * «Опубликовать» справа, — то есть на один вопрос отвечали два разных
+   * места строки, и опубликованное не отвечало вовсе.
+   *
+   * Плашка при этом общая с витриной (`VisibilityBadge`), поэтому проверять
+   * её словами здесь достаточно: разъехаться со второй копией ей негде.
+   */
+  await expect(row.getByRole('button', { name: 'только для меня' })).toBeVisible()
 
-  await row.getByRole('button', { name: 'Вернуть в черновики' }).click()
-  await expect(draftBadge).toBeVisible()
+  await row.getByRole('button', { name: 'только для меня' }).click()
+  await expect(row.getByRole('button', { name: 'опубликован' })).toBeVisible()
+
+  await row.getByRole('button', { name: 'опубликован' }).click()
+  await expect(row.getByRole('button', { name: 'только для меня' })).toBeVisible()
 })
 
 test('просмотр шаблона показывает уроки до того, как его взяли', async ({
@@ -1450,7 +1458,7 @@ test('экран называет, что открыто, и даёт дорог
   // на курсе сказано, что правки до библиотеки не доходят
   await pickPlan(page, 'Grade 6 Algebra')
   await expect(page.getByRole('heading', { name: 'Учебный план' })).toBeVisible()
-  await expect(page.locator('.open-name')).toHaveText('курс: Grade 6 Algebra')
+  await expect(page.locator('.open-name')).toHaveText('Курс: Grade 6 Algebra')
   await expect(context).toContainText('план этого курса')
 
   // назад к выбору — кнопкой, и она ведёт туда же, куда пункт бара
@@ -1614,6 +1622,9 @@ test('пустой «Учебный план» раскладывает план
       },
       leftLastItem: lastItemIn('Мои классы'),
       rightCreate: edge(area('Мои планы на полке').querySelector('.showcase-create')),
+      rightCreateButton: edge(
+        area('Мои планы на полке').querySelector('.showcase-create button'),
+      ),
       othersTop: edge(area('Классы коллег')).top,
     }
   })
@@ -1634,6 +1645,22 @@ test('пустой «Учебный план» раскладывает план
   // справа кнопка «написать новый», которая стоит ниже записей
   expect(cross.left.line.top).toBeGreaterThan(cross.leftLastItem.bottom)
   expect(cross.right.line.top).toBeGreaterThan(cross.rightCreate.bottom)
+
+  /*
+   * Кнопка «написать новый» — во всю ширину своей колонки.
+   *
+   * Кнопка в ряду по умолчанию шириной со свою подпись, и под списком
+   * записей такая читается как ещё одна запись, только с рамкой.
+   * Растянутая, она читается действием над колонкой. Держится это на одном
+   * `flex: 1`, написанном в блоке «СТРОКА ФОРМЫ», — то есть там, куда
+   * следующая правка рядов придёт в первую очередь.
+   */
+  expect(Math.round(cross.rightCreateButton.left)).toBe(
+    Math.round(cross.right.box.left),
+  )
+  expect(Math.round(cross.rightCreateButton.right)).toBe(
+    Math.round(cross.right.box.right),
+  )
 
   /*
    * Черты стоят на **разной** высоте, и это не придирка к пикселям.

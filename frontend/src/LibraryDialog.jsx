@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import Modal from './Modal'
+import VisibilityBadge from './VisibilityBadge'
 
 /**
  * Полка планов — окном, а не разделом.
@@ -174,30 +175,57 @@ export default function LibraryDialog({
                   планы» над единственным списком говорит, чей он, а
                   отсутствие заголовка не говорит ничего */}
               <h4 className="shelf-group">{t(`library.groups.${key}`)}</h4>
-              <ul className="class-list template-list">
+              {/*
+                Строка полки — **та же**, что на витрине выбора планов, вплоть
+                до классов: название синим, подпись под ним второй линией,
+                плашка видимости справа.
+
+                Раньше здесь была своя сетка в три колонки, и вид у одного и
+                того же — записи на полке — выходил разным в зависимости от
+                того, откуда на неё смотрят. Витрина и это окно отвечают на
+                один вопрос («какой план взять»), и отвечать они должны
+                одинаково; вёрстка, расходящаяся между двумя ответами, читается
+                как два разных раздела.
+
+                Отличается окно только тем, чего на витрине нет вовсе: выбором
+                (по строке здесь не переходят, а отмечают, что брать) и тремя
+                действиями над записью. Действия стоят справа, за плашкой, и
+                остаются ссылками — идиома вторичного действия в этом проекте.
+              */}
+              <ul className="showcase-list template-list">
               {items.map((item) => (
-                <li key={item.id} className={item.id === chosen ? 'chosen' : ''}>
+                <li key={item.id} className="showcase-line">
+                  {/*
+                    Нажатие по строке выбирает запись, а не открывает её:
+                    окно заведено, чтобы взять план в курс, и «взять» — это
+                    кнопка внизу. Отмеченное названо `aria-pressed`, и по
+                    нему же рисуется подсветка: второй класс на том же
+                    состоянии разъехался бы с ним при первой правке.
+                  */}
                   <button
                     type="button"
-                    className="link name"
+                    className="showcase-item"
                     aria-pressed={item.id === chosen}
                     onClick={() => setChosen(item.id)}
                   >
-                    {item.title}
+                    <b>{item.title}</b>
+                    <span className="hint">{line(item)}</span>
                   </button>
-                  <span className="hint">{line(item)}</span>
-                  {/* Метки — одной ячейкой: каждая прибита к одной клетке
-                      сетки, и вторая легла бы поверх первой. Метка сейчас
-                      осталась одна — «черновик», — но ячейка своя, иначе
-                      соседняя колонка прыгала бы между строками */}
-                  <span className="badges">
-                    {!item.is_published && (
-                      <span className="badge">{t('library.draft')}</span>
-                    )}
-                  </span>
 
-                  {/* действия одной ячейкой: их от одного до трёх, и в
-                      отдельных колонках сетка разъезжалась бы построчно */}
+                  {/* Видимость — плашкой, общей с витриной. Ссылкой
+                      «Опубликовать» это было здесь же, и рядом с ней стояла
+                      неподвижная плашка «черновик»: состояние и его
+                      переключатель жили в двух разных местах строки. */}
+                  {item.can_edit && (
+                    <VisibilityBadge
+                      published={item.is_published}
+                      busy={busy}
+                      onChange={(next) => onPublish(item, next)}
+                    />
+                  )}
+
+                  {/* действия одной ячейкой: их от одного до трёх, и порознь
+                      они разъезжались бы построчно */}
                   <span className="row-actions">
                     <button
                       type="button"
@@ -219,16 +247,6 @@ export default function LibraryDialog({
                         onClick={() => onEdit(item)}
                       >
                         {t('plan.shelf.edit')}
-                      </button>
-                    )}
-                    {item.can_edit && (
-                      <button
-                        type="button"
-                        className="link"
-                        disabled={busy}
-                        onClick={() => onPublish(item, !item.is_published)}
-                      >
-                        {t(item.is_published ? 'library.unpublish' : 'library.publish')}
                       </button>
                     )}
                     {item.can_delete && (

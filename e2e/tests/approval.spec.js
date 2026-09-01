@@ -206,9 +206,9 @@ test('шапка называет курс, год и ведущего, а у п
 
   await expect(page.getByRole('heading', { name: 'Учебный план' })).toBeVisible()
   const about = page.locator('.plan-about')
-  await expect(about).toContainText('курс: Grade 6 Algebra')
-  await expect(about).toContainText('учебный год:')
-  await expect(about).toContainText('учитель: Мария Иванова')
+  await expect(about).toContainText('Курс: Grade 6 Algebra')
+  await expect(about).toContainText('Учебный год:')
+  await expect(about).toContainText('Учитель: Мария Иванова')
 
   // у заготовки заголовок свой: она не про курс вовсе, и сказать это
   // подписью под общим заголовком мало — по ссылке читают заголовок
@@ -220,8 +220,8 @@ test('шапка называет курс, год и ведущего, а у п
   await expect(
     page.getByRole('heading', { name: 'Учебный план с полки (без курса)' }),
   ).toBeVisible()
-  await expect(page.locator('.plan-about')).toContainText('автор: Мария Иванова')
-  await expect(page.locator('.plan-about')).not.toContainText('учебный год:')
+  await expect(page.locator('.plan-about')).toContainText('Автор: Мария Иванова')
+  await expect(page.locator('.plan-about')).not.toContainText('Учебный год:')
 })
 
 test('методист без своих курсов видит присланный план', async ({
@@ -264,7 +264,7 @@ test('методист без своих курсов видит прислан�
   await expect(page).toHaveURL(new RegExp(`[?&]course=${course.id}\\b`))
 
   // и открытое названо словами — заголовком, а не серым контролом
-  await expect(page.locator('.open-name')).toHaveText('курс: Grade 6 Algebra')
+  await expect(page.locator('.open-name')).toHaveText('Курс: Grade 6 Algebra')
   await expect(page.locator('.plan .plan-row').first()).toBeVisible()
   await expect(page.getByRole('button', { name: 'Утвердить' })).toBeVisible()
 })
@@ -383,7 +383,7 @@ test('свой курс показывает свой план, даже есл�
   await expect(page.locator('.plan-tools')).toBeVisible()
 
   // и открыт он как свой: заголовок называет курс, роль говорит «правите»
-  await expect(page.locator('.open-name')).toHaveText('курс: Grade 6 Algebra')
+  await expect(page.locator('.open-name')).toHaveText('Курс: Grade 6 Algebra')
   await expect(page.locator('.open-role')).toHaveText('правите')
 
   // отправляем на утверждение — решать можно тут же, по ссылке

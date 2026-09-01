@@ -48,7 +48,7 @@ test('план для класса, который не ведут, пишетс
     page.getByRole('heading', { name: 'Учебный план с полки (без курса)' }),
   ).toBeVisible()
   await expect(page.locator('.open-name')).toHaveText(
-    'название: Алгебра 11, теоретический',
+    'Название: Алгебра 11, теоретический',
   )
   // и строка контекста говорит, что правки идут прямо в библиотеку
   await expect(page.locator('.plan-context')).toContainText('прямо в эту заготовку')
@@ -119,7 +119,7 @@ test('взять план с полки целиком — сначала пок
 
   await planMenu(page, 'Открыть библиотеку')
   const shelf = page.locator('.modal')
-  await shelf.locator('.template-list .name').first().click()
+  await shelf.locator('.template-list .showcase-item').first().click()
   await shelf.getByRole('radio', { name: 'заменить план' }).click()
   await shelf.getByRole('button', { name: 'Импортировать в курс' }).click()
 
@@ -218,23 +218,53 @@ test('свой черновик публикуется со своей же ст
   await page.goto(`/library/${made.body.id}`)
   await ready(page)
 
-  // пока черновик — плашка предупреждает, что не видит никто
-  await expect(page.locator('.open-role')).toContainText('черновик')
+  /*
+   * В шапке — плашка видимости, и она же переключатель. Ролью это место
+   * было раньше, и роль отвечала на два разных вопроса: «черновик, видите
+   * только вы» — про видимость, сменявшее его «правка доступна» — про право
+   * правки. Переключал при этом третий орган, тумблер в панели действий.
+   *
+   * Плашка тут ровно та же, что в списках витрины и окна полки
+   * (`VisibilityBadge`), и это главное: список — то место, откуда сюда
+   * приходят.
+   */
+  const badge = page.locator('.plan-heading .showcase-visibility')
+  const pill = page.locator('.plan-tools .showcase-visibility')
+  await expect(badge).toHaveText('только для меня')
 
-  const tools = page.locator('.plan-tools')
-  await expect(tools.getByRole('radio', { name: 'Только мне' })).toBeChecked()
-  await tools.getByRole('radio', { name: 'Всей школе' }).click()
+  /*
+   * Показов у состояния два, и это дубль намеренный: плашка в шапке видна не
+   * читая панель, а переключают видимость там, где ищут действия.
+   *
+   * Тумблера при этом не осталось — раньше в этих двух местах стояли два
+   * **разных** органа, и один из них про видимость даже не говорил.
+   */
+  await expect(pill).toHaveText('только для меня')
+  await expect(
+    page.locator('.plan-tools').getByRole('radio', { name: 'Всей школе' }),
+  ).toHaveCount(0)
+
+  await badge.click()
 
   // и это настоящая публикация, а не состояние экрана
-  await expect(page.locator('.open-role')).toContainText('правка доступна')
+  await expect(badge).toHaveText('опубликован')
   await expect.poll(async () => {
     const shelf = await author.get(`/api/library/templates/${made.body.id}/`)
     return shelf.body.is_published
   }).toBe(true)
 
-  // обратный ход тем же тумблером: состояний два, и оба названы
-  await tools.getByRole('radio', { name: 'Только мне' }).click()
-  await expect(page.locator('.open-role')).toContainText('черновик')
+  /*
+   * Второй показ идёт за первым. Рассинхрон тут разъезжается **молча**:
+   * оба читают `shelfCard`, и стоит одному из путей перечитать не то, как
+   * экран начнёт показывать два разных ответа на один вопрос — а виноватым
+   * будет выглядеть сервер.
+   */
+  await expect(pill).toHaveText('опубликован')
+
+  // обратный ход — и с другой стороны: орган один, показан дважды
+  await pill.click()
+  await expect(pill).toHaveText('только для меня')
+  await expect(badge).toHaveText('только для меня')
 })
 
 test('видимость своей записи переключается прямо на витрине', async ({
@@ -275,10 +305,35 @@ test('видимость своей записи переключается пр
     .locator('.showcase-line', { hasText: 'Алгебра 8, черновик с витрины' })
   await expect(line.getByRole('button', { name: 'только для меня' })).toBeVisible()
 
+  /*
+   * Переключение не перечитывает экран, и это ловится счётом запросов.
+   *
+   * Шло оно через общий `run`, а тот поднимает общий `busy` и перечитывает
+   * дерево плана; следом перечитывались список полки и карточка. Наружу это
+   * выходило морганием: у каждой карточки витрины `disabled={busy}`, и от
+   * нажатия на одну плашку вздрагивали **все** разом — со стороны «экран
+   * перезагрузился», хотя перерисоваться должна была одна плашка.
+   *
+   * Проверять моргание напрямую нечем — оно длится кадр. Зато его причина
+   * видна точно: лишние чтения. Поэтому условие «ни одного GET» — оно же и
+   * поймает возврат к `run`, если переключение однажды перепишут обратно.
+   */
+  const calls = []
+  const listen = (request) => {
+    const { pathname } = new URL(request.url())
+    if (pathname.startsWith('/api/')) calls.push(`${request.method()} ${pathname}`)
+  }
+  page.on('request', listen)
+
   await line.getByRole('button', { name: 'только для меня' }).click()
 
   // плашка называет новое состояние...
   await expect(line.getByRole('button', { name: 'опубликован' })).toBeVisible()
+
+  page.off('request', listen)
+  expect(calls, `запросы за переключение: ${calls.join(', ')}`).toEqual([
+    `PATCH /api/library/templates/${made.body.id}/`,
+  ])
   // ...и это настоящая публикация, а не состояние экрана
   await expect.poll(async () => {
     const shelf = await author.get(`/api/library/templates/${made.body.id}/`)
