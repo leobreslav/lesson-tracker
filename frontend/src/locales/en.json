@@ -38,7 +38,7 @@
   "nav": {
     "menu": "Sections menu",
     "schedule": "Schedule",
-    "plan": "Curriculum map",
+    "plan": "Curricula",
     "profile": "Profile",
     "logout": "Sign out",
     "needYear": "create a school year first",
@@ -452,7 +452,7 @@
   "plan": {
     "drag": "Drag",
     "dropHere": "Drop a lesson here",
-    "title": "Curriculum map",
+    "title": "Curriculum",
     "titleLabel": "Title",
     "noteLabel": "Note",
     "notePlaceholder": "a note to yourself about this lesson",

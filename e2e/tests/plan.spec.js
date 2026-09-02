@@ -1601,7 +1601,13 @@ test('пустой «Учебный план» раскладывает план
     const grid = document.querySelector('.showcase-grid')
     const edge = (el) => {
       const r = el.getBoundingClientRect()
-      return { left: r.left, right: r.right, top: r.top, bottom: r.bottom }
+      return {
+        left: r.left,
+        right: r.right,
+        top: r.top,
+        bottom: r.bottom,
+        height: r.height,
+      }
     }
     const areas = [...grid.querySelectorAll('.showcase-area')]
     const area = (title) =>
@@ -1621,6 +1627,14 @@ test('пустой «Учебный план» раскладывает план
         line: dividerIn('Мои планы на полке'),
       },
       leftLastItem: lastItemIn('Мои классы'),
+      rightCards: [
+        ...area('Мои планы на полке').querySelectorAll('.showcase-line'),
+      ].map(edge),
+      rightBadge: edge(
+        [...area('Мои планы на полке').querySelectorAll('.showcase-line')]
+          .at(-1)
+          .querySelector('.showcase-visibility'),
+      ),
       rightCreate: edge(area('Мои планы на полке').querySelector('.showcase-create')),
       rightCreateButton: edge(
         area('Мои планы на полке').querySelector('.showcase-create button'),
@@ -1661,6 +1675,62 @@ test('пустой «Учебный план» раскладывает план
   expect(Math.round(cross.rightCreateButton.right)).toBe(
     Math.round(cross.right.box.right),
   )
+
+  /*
+   * И занимает она **слот карточки** — по высоте и по шагу.
+   *
+   * Колонка считается карточками: высота плюс зазор списка. Кнопка с
+   * отступом в 1rem не попадала ни в один ряд, и правая колонка переставала
+   * совпадать с левой построчно.
+   *
+   * Меряется при этом **ряд**, а не кнопка: слот карточный, а сама кнопка
+   * обычного роста и стоит в нём по центру — кнопка-плита в 64 пикселя
+   * читалась бы не кнопкой. Обе величины названы в `:root`
+   * (`--showcase-row`, `--showcase-gap`) и разъехаться могут только вместе с
+   * этой проверкой.
+   */
+  expect(Math.round(cross.rightCreate.height)).toBe(
+    Math.round(cross.rightCards.at(-1).height),
+  )
+  const pitch = cross.rightCards[1].top - cross.rightCards[0].top
+  expect(Math.round(cross.rightCreate.top - cross.rightCards.at(-1).top)).toBe(
+    Math.round(pitch),
+  )
+
+  // а кнопка в этом слоте — обычного роста, и стоит в нём по центру
+  expect(cross.rightCreateButton.height).toBeLessThan(cross.rightCreate.height)
+  const above = cross.rightCreateButton.top - cross.rightCreate.top
+  const below = cross.rightCreate.bottom - cross.rightCreateButton.bottom
+  expect(Math.round(above)).toBe(Math.round(below))
+
+  /*
+   * Плашка видимости лежит **внутри** карточки, а не сбоку от неё.
+   *
+   * Карточкой была кнопка перехода, а плашка стояла снаружи, справа. Видно
+   * это становилось при наведении: подсветка кончалась левее плашки, и
+   * строка читалась как карточка с чем-то приклеенным сбоку. Разметкой
+   * внутрь её не положить — строка целиком кнопка, а кнопка в кнопке
+   * невалидна, — поэтому карточку рисует `li`, и проверяется тут именно
+   * вложенность коробок.
+   */
+  const badge = cross.rightBadge
+  const card = cross.rightCards.at(-1)
+  expect(badge.left).toBeGreaterThan(card.left)
+  expect(badge.right).toBeLessThan(card.right)
+  expect(badge.top).toBeGreaterThanOrEqual(card.top)
+  expect(badge.bottom).toBeLessThanOrEqual(card.bottom)
+
+  /*
+   * И подсвечивается карточка целиком: наведение красит строку, а не одну
+   * кнопку перехода. Это ровно то, чем беда обнаружилась, — поэтому и
+   * проверяется наведением, а не вёрсткой.
+   */
+  const line = page
+    .locator('.showcase-area', { hasText: 'Мои планы на полке' })
+    .locator('.showcase-line')
+    .first()
+  await line.hover()
+  await expect(line).not.toHaveCSS('background-color', 'rgba(0, 0, 0, 0)')
 
   /*
    * Черты стоят на **разной** высоте, и это не придирка к пикселям.

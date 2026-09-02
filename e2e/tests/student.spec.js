@@ -25,7 +25,7 @@ test('ученик видит свои курсы и ни одного учит�
 
   // в баре только имя и выход: разделов учителя нет ни одного
   await expect(page.locator('.nav-link')).toHaveCount(0)
-  for (const section of ['Учебный план', 'Расписание', 'Классы', 'Школа']) {
+  for (const section of ['Учебные планы', 'Расписание', 'Классы', 'Школа']) {
     await expect(page.getByRole('link', { name: section })).toHaveCount(0)
   }
 })
