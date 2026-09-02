@@ -35,3 +35,6 @@ blank/decode_src.png
 # про проект; общие настройки лежат рядом в settings.json и едут в git
 .claude/settings.local.json
 
+
+# снимки от ./scripts/peek.sh — взгляд на экран, а не работа
+.peek/

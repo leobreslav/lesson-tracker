@@ -42,6 +42,7 @@
       "Bash(docker compose restart:*)",
       "Bash(./e2e.sh:*)",
       "Bash(./scripts/dev-up.sh:*)",
+      "Bash(./scripts/peek.sh:*)",
       "Bash(bash scripts/dev-env.sh)",
       "Bash(git status:*)",
       "Bash(git diff:*)",
