@@ -128,6 +128,12 @@ const { chromium } = require("playwright-core")
     const value = await page.evaluate(`(() => (${process.env.PEEK_EVAL}))()`)
     console.log(JSON.stringify(value, null, 1))
   }
+  // Выражение и снимок вместе значат «нажми и покажи», а между нажатием и
+  // перерисовкой React стоит такт. Без паузы снимок ловит экран **до**
+  // действия — и врёт тем убедительнее, чем правдоподобнее выглядит.
+  if (process.env.PEEK_EVAL && process.env.PEEK_SHOT) {
+    await page.waitForTimeout(400)
+  }
   if (process.env.PEEK_SHOT) {
     await page.screenshot({ path: "/peek/" + process.env.PEEK_SHOT, fullPage: true })
     console.log("снимок: .peek/" + process.env.PEEK_SHOT)
