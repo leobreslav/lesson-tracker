@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useState } from 'react'
-import { useTranslation } from 'react-i18next'
-import { useNavigate } from 'react-router-dom'
+import { Trans, useTranslation } from 'react-i18next'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import EmptyState from './EmptyState'
-import CoursePicker from './CoursePicker'
+import CourseShowcase from './CourseShowcase'
 import Markdown from './Markdown'
 import ScanWizard from './ScanWizard'
 import TaskList from './TaskList'
@@ -17,7 +17,7 @@ import {
   fetchWorks,
   updateWork,
 } from './api'
-import { lastChoice, rememberChoice } from './remember'
+import { rememberChoice } from './remember'
 
 /**
  * Работы курса: контрольные, проверочные, домашние.
@@ -33,8 +33,8 @@ import { lastChoice, rememberChoice } from './remember'
 export default function Works({ onLoggedOut }) {
   const { t } = useTranslation()
   const navigate = useNavigate()
+  const [search, setSearch] = useSearchParams()
   const [courses, setCourses] = useState(null)
-  const [courseId, setCourseId] = useState(null)
   const [works, setWorks] = useState(null)
   const [expanded, setExpanded] = useState(null)
   const [tasks, setTasks] = useState([])
@@ -51,27 +51,48 @@ export default function Works({ onLoggedOut }) {
     [onLoggedOut],
   )
 
+  /**
+   * Курс за человека здесь **не выбирается**, и это решение, а не пропуск.
+   *
+   * Выбирался: сперва прошлый выбор (ключ общий с планом и журналом), а если
+   * его нет — первый курс списка, то есть первый по алфавиту. Оба
+   * подставляли ответ на вопрос, которого человек не задавал, и оба одинаково
+   * опасны на этом экране: работы заводят, правят и **проверяют**, а
+   * проверенное уходит ученикам. Экран, открывшийся на чужом курсе, выглядит
+   * ровно как открывшийся на своём — тот же список, та же кнопка «Добавить».
+   *
+   * Прошлый выбор при этом остаётся **записанным** (`rememberChoice` ниже):
+   * ключ общий, и план с журналом им пользуются по-прежнему. Разница ровно в
+   * том, что этот экран его не читает: подсказать соседям, чем занимались, —
+   * не то же самое, что решить за человека, что он открыл.
+   */
   useEffect(() => {
-    fetchCourses()
-      .then((list) => {
-        setCourses(list)
-        // прошлый выбор раньше первого по алфавиту: ключ общий со страницей
-        // плана — работают обычно в одном курсе
-        setCourseId((current) => {
-          const remembered = lastChoice('course')
-          const known = (id) => list.some((item) => item.id === id)
-          if (current && known(current)) return current
-          if (known(remembered)) return remembered
-          return list[0]?.id ?? null
-        })
-      })
-      .catch(handleError)
+    fetchCourses().then(setCourses).catch(handleError)
   }, [handleError])
 
+  /**
+   * Выбранный курс живёт **в адресе**, а не в состоянии компонента.
+   *
+   * Ровно та же причина, что у плана: витрина показывается при каждом заходе,
+   * значит у открытого должен быть свой адрес — иначе перезагрузка отправляет
+   * к выбору, «назад» браузером выходит из раздела целиком, а ссылкой «вот
+   * эти работы» поделиться нечем.
+   *
+   * Сверяется со списком: адрес приходит снаружи и может звать курс, которого
+   * у человека нет — чужой, удалённый, из вчерашней ссылки. Тогда открывается
+   * витрина, а не пустой список от несуществующего курса.
+   */
+  const wanted = search.get('course')
+  const courseId =
+    (courses ?? []).find((one) => String(one.id) === wanted)?.id ?? null
+
   const pickCourse = (id) => {
-    setCourseId(id)
-    rememberChoice('course', id)
+    setSearch(id ? { course: String(id) } : {})
+    if (id) rememberChoice('course', id)
   }
+
+  /** Имя выбранного курса — им подписан список работ. */
+  const courseName = (courses ?? []).find((one) => one.id === courseId)?.name ?? ''
 
   const reload = useCallback(
     () => (courseId ? fetchWorks(courseId).then(setWorks) : Promise.resolve()),
@@ -153,9 +174,59 @@ export default function Works({ onLoggedOut }) {
   // имя, и терять его оттого, что курсов пока нет, незачем
   return (
     <main className="page wide">
+      {/*
+        Дорога назад — первой строкой и у самого левого края, как у плана.
+
+        Это не действие над работами, а выход из курса: то же, что «назад» в
+        браузере, только внутри раздела. Такие ставят первыми и слева — там их
+        ищут глазами, не читая строку до конца. Ведёт она на `/works` без
+        курса, то есть к витрине, куда попадаешь и пунктом бара.
+      */}
+      {courseId && (
+        <button
+          type="button"
+          className="link screen-back"
+          onClick={() => pickCourse(null)}
+        >
+          {t('works.open.back')}
+        </button>
+      )}
+      {/*
+        Заголовок называет **курс**, а не раздел.
+
+        «Работы» отвечало на вопрос «где я», и отвечало верно ровно до того,
+        как курс перестали подставлять: теперь на этот адрес приходят дважды —
+        к витрине и в выбранный курс, — и заголовок у обоих был одинаковый.
+        Открытый курс должен быть виден с первого взгляда, потому что заводят,
+        правят и проверяют долго, а выбирали его один раз в начале.
+
+        Заголовок панели ниже после этого убран: он говорил то же самое
+        («Работы курса Grade 6 Algebra») вторым заголовком под первым.
+      */}
       <header className="page-header">
-        <h1>{t('nav.works')}</h1>
-        <CoursePicker courses={courses} value={courseId} onChange={pickCourse} />
+        <h1>
+          {courseId ? (
+            /*
+              Имя курса выделено, а не набрано заодно с заголовком.
+              «Работы курса Grade 6 Algebra» — предложение, в котором важна
+              последняя треть: раздел человек и так знает, а курс он выбрал
+              минуту назад и проверяет себя взглядом.
+
+              `Trans`, а не склейка строк: правило проекта требует подстановок
+              параметрами, потому что порядок слов у языков разный — русское
+              «Работы курса X» и английское «Assignments for X» совпали
+              случайно, а третий язык совпадать не обязан. Оборачиваемый кусок
+              назван тегом прямо во фразе, и переводчик волен его подвинуть.
+            */
+            <Trans
+              i18nKey="works.forCourse"
+              values={{ name: courseName }}
+              components={{ course: <span className="course-name" /> }}
+            />
+          ) : (
+            t('nav.works')
+          )}
+        </h1>
       </header>
 
       {!courses.length ? (
@@ -169,6 +240,14 @@ export default function Works({ onLoggedOut }) {
         >
           {t('works.needCourse.hint')}
         </EmptyState>
+      ) : !courseId ? (
+        /*
+          Курс выбирают витриной, а не селектом, — тем же приёмом, что и план.
+          Селект отвечал на «чем сейчас занимаемся» верно, но только пока
+          открыт; закрытый, он оставляет одно имя в сером контроле, а пустой
+          читается как недогрузившийся заголовок, а не как вопрос.
+        */
+        <CourseShowcase courses={courses} onPick={pickCourse} busy={busy} />
       ) : (
         <>
 
@@ -179,8 +258,12 @@ export default function Works({ onLoggedOut }) {
       )}
 
       <section className="panel">
-        <div className="panel-head spread">
-          <h3>{t('works.title')}</h3>
+        {/* «Новая работа» — на карточке и в правом верхнем углу.
+            В шапке страницы она стояла рядом с названием курса и читалась
+            действием над курсом, а заводят работу **в списке**, который тут
+            же под ней. Слева на карточке она читалась бы первым, что тут
+            делают, — тогда как список сперва смотрят. */}
+        <div className="row end">
           <button type="button" disabled={busy} onClick={() => setEditing({ work: null })}>
             {t('works.add')}
           </button>

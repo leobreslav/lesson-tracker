@@ -1579,7 +1579,7 @@ export default function Plan({ user, onLoggedOut, template = null }) {
       {openName && (
         <button
           type="button"
-          className="link plan-back"
+          className="link screen-back"
           onClick={() => navigate('/plan')}
         >
           {t('plan.open.back')}

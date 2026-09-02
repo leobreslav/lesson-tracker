@@ -1,4 +1,4 @@
-import { PEOPLE, expect, ready, test } from './harness.js'
+import { expect, PEOPLE, pickCourse, ready, test } from './harness.js'
 
 /**
  * Работа, собранная из банка.
@@ -94,6 +94,7 @@ test('условие ячейки — то же самое условие: пр�
   await signIn(PEOPLE.ivanova)
   await page.goto('/works')
   await ready(page)
+  await pickCourse(page)
   // правят задачи на странице работы: в списке они только показаны
   await page
     .locator('.course-row', { hasText: 'Первая' })
@@ -118,6 +119,7 @@ test('условие ячейки — то же самое условие: пр�
   // списком: он для того и разворачивается, чтобы глянуть, не уходя
   await page.goto('/works')
   await ready(page)
+  await pickCourse(page)
   await page.getByRole('button', { name: 'Вторая' }).first().click()
   await expect(page.locator('.task-list')).toContainText('Поправленное условие')
 })
@@ -141,6 +143,7 @@ test('пустая ячейка заполняется потом — готов
   await signIn(PEOPLE.ivanova)
   await page.goto('/works')
   await ready(page)
+  await pickCourse(page)
   await page
     .locator('.course-row', { hasText: 'Пустые ячейки' })
     .getByRole('button', { name: 'Править' })

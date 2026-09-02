@@ -1320,7 +1320,6 @@
     "duplicates_other": "{{count}} repeats collapsed."
   },
   "works": {
-    "title": "Assignments in this course",
     "none": "No assignments in this course yet.",
     "add": "New assignment",
     "edit": "Assignment settings",
@@ -1417,7 +1416,16 @@
     "attachHiddenOff": "Files attached now are seen by the class — students and parents. Question papers, the blank, a worked solution after the lesson.",
     "saveBeforeFiles": "Name the work and set its dates first — files hang off a saved work.",
     "homework": "Set for home",
-    "homeworkHint": "Where the work is shown in the lesson, not what kind it is: a test set for home is still a test."
+    "homeworkHint": "Where the work is shown in the lesson, not what kind it is: a test set for home is still a test.",
+    "pickCourse": {
+      "title": "Pick a course",
+      "line": "{{subject}} · grade {{grade}}",
+      "hint": "Assignments belong to a course: pick one to see its list. The screen does not pick for you — marking sent to the wrong course reaches the wrong pupils."
+    },
+    "forCourse": "Assignments for <course>{{name}}</course>",
+    "open": {
+      "back": "← Back to course selection"
+    }
   },
   "grading": {
     "title": "Grading",

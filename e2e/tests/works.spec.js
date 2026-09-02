@@ -1,4 +1,4 @@
-import { PEOPLE, expect, ready, test } from './harness.js'
+import { expect, PEOPLE, pickCourse, ready, test } from './harness.js'
 
 /**
  * Работы глазами учителя: список, окно времени, задачи с эталонами.
@@ -12,9 +12,9 @@ import { PEOPLE, expect, ready, test } from './harness.js'
 const openWorks = async (page, course = 'Grade 6 Algebra') => {
   await page.goto('/works')
   await ready(page)
-  // курс выбирают селектом в строке заголовка: чипы не пережили
-  // учителя музыки с полутора десятками курсов
-  await page.getByLabel('Курс').selectOption({ label: course })
+  // курс выбирают селектом в строке заголовка: чипы не пережили учителя
+  // музыки с полутора десятками курсов, а сам экран за человека не выбирает
+  await pickCourse(page, course)
 
   return page.locator('.work-list')
 }
@@ -33,6 +33,73 @@ const openWorkPage = async (page, list, title) => {
     .click()
   await ready(page)
 }
+
+test('курс выбирают витриной, и с работ есть дорога назад', async ({
+  page,
+  signIn,
+}) => {
+  /*
+   * Курс за человека экран не подставляет, и выбирают его витриной — тем же
+   * приёмом, что и план.
+   *
+   * Подставлялся: сперва прошлый выбор (ключ общий с планом и журналом), а
+   * если его нет — первый курс списка, то есть первый по алфавиту. Опаснее
+   * это здесь, чем на соседних экранах: работы заводят, правят и
+   * **проверяют**, а проверенное уходит ученикам. Экран, открывшийся на чужом
+   * курсе, выглядит ровно как открывшийся на своём.
+   */
+  await signIn(PEOPLE.ivanova)
+  await page.goto('/works')
+  await ready(page)
+
+  await expect(page.locator('.work-list')).toHaveCount(0)
+  await expect(page.getByRole('heading', { name: 'Выберите курс' })).toBeVisible()
+  // селекта на экране нет вовсе: витрина и есть выбор
+  await expect(page.locator('.course-picker')).toHaveCount(0)
+
+  await pickCourse(page)
+  await expect(page.locator('.work-list')).toBeVisible()
+
+  /*
+   * Выбранное уезжает **в адрес**, и это не украшение: витрина показывается
+   * при каждом заходе, значит у открытого должен быть свой адрес — иначе
+   * перезагрузка отправляет к выбору, а ссылкой «вот эти работы» поделиться
+   * нечем. Тот же довод, что у плана.
+   */
+  await expect(page).toHaveURL(/[?&]course=\d+/)
+
+  /*
+   * Заголовок называет **курс**, а не раздел: на этот адрес приходят дважды —
+   * к витрине и в выбранный курс, — и «Работы» у обоих читалось одинаково.
+   */
+  await expect(
+    page.getByRole('heading', { name: 'Работы курса Grade 6 Algebra' }),
+  ).toBeVisible()
+
+  // перезагрузка не теряет открытое: адрес и есть ответ на «что открыто»
+  await page.reload()
+  await ready(page)
+  await expect(page.locator('.work-list')).toBeVisible()
+
+  /*
+   * А дорога назад возвращает к витрине. Без неё выбор был бы билетом в один
+   * конец: сменить курс можно было бы только пунктом бара, то есть выйдя из
+   * раздела и зайдя обратно.
+   */
+  await page.getByRole('button', { name: 'К выбору курсов' }).click()
+  await expect(page.locator('.work-list')).toHaveCount(0)
+  await expect(page.getByRole('heading', { name: 'Выберите курс' })).toBeVisible()
+
+  /*
+   * И прошлый выбор экран по-прежнему не читает: ключ общий с планом и
+   * журналом, те им пользуются, а этот — нет. Проверяется свежим заходом:
+   * выбор только что сделан и записан, и если бы экран его читал, список
+   * открылся бы сам.
+   */
+  await page.goto('/works')
+  await ready(page)
+  await expect(page.locator('.work-list')).toHaveCount(0)
+})
 
 test('в списке — имя и два действия, состояние видно в проверке', async ({
   page,

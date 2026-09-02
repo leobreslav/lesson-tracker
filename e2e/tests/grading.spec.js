@@ -1,4 +1,4 @@
-import { PEOPLE, expect, ready, test } from './harness.js'
+import { expect, PEOPLE, pickCourse, ready, test } from './harness.js'
 
 /**
  * Система оценивания и разговор о задаче.
@@ -67,7 +67,7 @@ test('учитель выбирает систему сам, а запрещён
   await signIn(PEOPLE.ivanova)
   await page.goto('/works')
   await ready(page)
-  await page.getByLabel('Курс').selectOption({ label: 'Grade 6 Algebra' })
+  await pickCourse(page)
   const row = page.locator('.work-list .course-row', { hasText: work.title })
   await row.getByRole('button', { name: 'Править' }).click()
   await ready(page)

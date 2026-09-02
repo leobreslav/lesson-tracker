@@ -1,4 +1,4 @@
-import { PEOPLE, expect, expectConsoleError, ready, test } from './harness.js'
+import { expect, expectConsoleError, PEOPLE, pickCourse, ready, test } from './harness.js'
 
 /**
  * Разбор пачки бумажных работ.
@@ -46,7 +46,7 @@ async function paperWork(teacher, { title = 'Контрольная на бум�
 const openScan = async (page, title = 'Контрольная на бумаге') => {
   await page.goto('/works')
   await ready(page)
-  await page.getByLabel('Курс').selectOption({ label: 'Grade 6 Algebra' })
+  await pickCourse(page)
   // в строке две кнопки с этим именем — раскрывающая и само имя; берём строку
   const row = page.locator('.work-list .course-row', { hasText: title })
   await row.locator('.name').click()
@@ -66,7 +66,7 @@ test('кнопка сканов есть и у онлайновой работы
   await signIn(PEOPLE.ivanova)
   await page.goto('/works')
   await ready(page)
-  await page.getByLabel('Курс').selectOption({ label: 'Grade 6 Algebra' })
+  await pickCourse(page)
 
   // раскрываем первую работу набора — она онлайновая
   const first = page.locator('.work-list .course-row').first()

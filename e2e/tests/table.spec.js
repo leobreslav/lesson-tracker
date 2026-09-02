@@ -1,4 +1,4 @@
-import { PEOPLE, expect, ready, test } from './harness.js'
+import { expect, PEOPLE, pickCourse, ready, test } from './harness.js'
 
 /**
  * Сводная таблица и проверка.
@@ -11,6 +11,7 @@ import { PEOPLE, expect, ready, test } from './harness.js'
 const openTable = async (page, title) => {
   await page.goto('/works')
   await ready(page)
+  await pickCourse(page)
   const work = page.locator('.work-list .course-row', { hasText: title })
   await work.locator('.toggle').click()
   await work.getByRole('button', { name: 'Проверка' }).click()
