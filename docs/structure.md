@@ -84,12 +84,14 @@
 │   │   ├── models.py         # School + Invitation
 │   │   ├── services.py       # приём приглашения по верифицированному email
 │   │   ├── roster.py         # список класса вставкой: разбор, решения, запись
+│   │   ├── managebac.py      # выгрузка ManageBac по курсу: ученики с родителями, Student ID как ключ
 │   │   ├── views.py          # /api/school/, members, invitations
 │   │   ├── management/       # seed_demo: данные для разработки
 │   │   ├── rich_demo.py      # --rich: школа в рабочем размере, живой год
 │   │   ├── testing.py        # общие фикстуры: школа и роли
 │   │   ├── test_access.py    # матрица прав по всем моделям
 │   │   ├── test_roster.py    # разбор вставки и пять исходов
+│   │   ├── test_managebac.py # разбор выгрузки ManageBac, сопоставление по номеру, родители
 │   │   └── tests.py          # приглашения и вход
 │   ├── calendars/            # учебный год и разметка календаря
 │   │   ├── services.py       # расчёт учебных дней, чистые функции без ORM
@@ -183,6 +185,12 @@
 │   │   ├── models.py         # Folder: владелец — человек, а не школа
 │   │   ├── views.py          # свои папки и только свои; 404 на чужую
 │   │   └── tests.py          # чужого стола нет даже у директора
+│   ├── families/             # семья: кто чей родитель
+│   │   ├── models.py         # Guardianship: строка на пару, мама и папа — две строки; link()
+│   │   ├── viewing.py        # чьими глазами смотрят ученические экраны: subject_of, ?child=
+│   │   ├── serializers.py    # родство глазами школы: связать по адресу, заведя родителя
+│   │   ├── views.py          # дети родителя, его собеседники; GuardianshipViewSet под /api/school/
+│   │   └── tests.py          # родитель — не учитель; связи; школа связывает по адресу
 │   ├── talks/                # переписка: разговор двух людей, повод необязателен
 │   │   ├── models.py         # Talk: пара по номеру + ребёнок как повод
 │   │   ├── access.py         # кому можно писать: коллеге, своим учителям, никому
@@ -220,9 +228,11 @@
 │       ├── adapter.py        # SocialAccountAdapter: верифицированный email и список допущенных
 │       ├── door.py           # кого этот контур пускает: LOGIN_ALLOWED_EMAILS, одно место на обе двери
 │       ├── e2e.py            # дев-дверь браузерных тестов: за флагом и за списком допущенных
+│       ├── codes.py          # третья дверь: код из письма для тех, у кого нет Google-аккаунта
+│       ├── test_codes.py     # чего дверь по коду не делает: не заводит, не выдаёт адрес, спрашивает список
 │       ├── signals.py        # добор имени из Google, если поля пустые
 │       ├── serializers.py    # GoogleLoginSerializer, UserSerializer
-│       ├── views.py          # GoogleLoginView, MeView
+│       ├── views.py          # GoogleLoginView, LoginCode*View, MeView
 │       ├── urls.py
 │       └── tests.py          # тесты входа через Google (подпись подменяется mock'ом)
 └── frontend/

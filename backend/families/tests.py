@@ -20,8 +20,12 @@ from schools.testing import (
     sign_in,
 )
 
+from django.contrib.auth import get_user_model
+
 from .models import Guardianship, link
 from . import conversations, viewing
+
+User = get_user_model()
 
 
 class ParentIsNotATeacherTests(SchoolTestMixin, APITestCase):
@@ -196,3 +200,83 @@ class WhoseScreenTests(SchoolTestMixin, APITestCase):
 
         self.assertEqual(answer.status_code, status.HTTP_403_FORBIDDEN)
         self.assertEqual(answer.json()["code"], "students_only")
+
+
+class SchoolLinksTests(SchoolTestMixin, APITestCase):
+    """
+    Администратор связывает родителя с ребёнком по адресу — и заводит его,
+    если такого ещё нет. Тем же путём, что импорт: приглашение как билет,
+    учётка сразу, вход — когда человек придёт.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.child = make_user(self.school, "kid@example.com", student=True)
+        sign_in(self.client, self.admin)
+
+    def post(self, **body):
+        return self.client.post(
+            reverse("guardianship-list"), {"child": self.child.pk, **body}, format="json"
+        )
+
+    def test_an_unknown_address_becomes_a_parent_account_and_a_link(self):
+        answer = self.post(email="Mum@Example.com", relation="мама")
+
+        self.assertEqual(answer.status_code, 201, answer.content)
+        row = Guardianship.objects.get(child=self.child)
+        self.assertEqual(row.parent.email, "mum@example.com")
+        self.assertTrue(row.parent.is_parent)
+        self.assertEqual(row.parent.school_id, self.school.pk)
+        self.assertIsNone(row.parent.last_login)
+        self.assertEqual(row.relation, "мама")
+        self.assertEqual(answer.json()["parent"]["arrived"], False)
+
+    def test_a_known_parent_is_linked_and_not_duplicated(self):
+        mum = make_user(self.school, "mum@example.com", parent=True)
+
+        self.post(email="mum@example.com")
+        self.post(email="mum@example.com")
+
+        self.assertEqual(Guardianship.objects.filter(parent=mum, child=self.child).count(), 1)
+
+    def test_a_teachers_address_is_refused(self):
+        answer = self.post(email=self.user.email)
+
+        self.assertEqual(answer.status_code, 400)
+        self.assertEqual(answer.json()["code"], "email_other_kind")
+
+    def test_the_childs_own_address_is_refused(self):
+        answer = self.post(email="kid@example.com")
+
+        self.assertEqual(answer.json()["code"], "roster_parent_is_student")
+
+    def test_a_student_of_another_school_is_not_a_child_here(self):
+        stranger = make_user(self.alien_school, "far@example.com", student=True)
+
+        answer = self.client.post(
+            reverse("guardianship-list"),
+            {"child": stranger.pk, "email": "mum@example.com"},
+            format="json",
+        )
+
+        self.assertEqual(answer.status_code, 400)
+
+    def test_the_students_list_shows_their_parents(self):
+        mum = make_user(self.school, "mum@example.com", parent=True)
+        Guardianship.objects.create(parent=mum, child=self.child, relation="мама")
+
+        answer = self.client.get(reverse("member-list"), {"kind": "student"}).json()
+
+        [student] = [person for person in answer if person["id"] == self.child.pk]
+        [parent] = student["parents"]
+        self.assertEqual((parent["email"], parent["relation"], parent["arrived"]), ("mum@example.com", "мама", True))
+
+    def test_unlinking_deletes_the_row_and_keeps_the_people(self):
+        mum = make_user(self.school, "mum@example.com", parent=True)
+        row = Guardianship.objects.create(parent=mum, child=self.child)
+
+        answer = self.client.delete(reverse("guardianship-detail", args=[row.pk]))
+
+        self.assertEqual(answer.status_code, 204)
+        self.assertFalse(Guardianship.objects.exists())
+        self.assertTrue(User.objects.filter(pk=mum.pk).exists())

@@ -55,7 +55,15 @@ def pending_for(email: str):
     )
 
 
-def provision(school, email: str, *, kind: str, name: str = "", is_admin: bool = False):
+def provision(
+    school,
+    email: str,
+    *,
+    kind: str,
+    name: str = "",
+    last_name: str = "",
+    is_admin: bool = False,
+):
     """
     Завести человека, которого ещё не было.
 
@@ -78,14 +86,30 @@ def provision(school, email: str, *, kind: str, name: str = "", is_admin: bool =
     Имя из ввода кладётся ярлыком в `first_name` целиком, а не разбирается
     на имя и фамилию: порядок этой пары не определён ни в русском списке,
     ни в английском. При первом входе Google его перезаписывает — см.
-    `accept`.
+    `accept`. Источник, который хранит фамилию отдельно (выгрузка
+    ManageBac), передаёт её `last_name`, и тогда ярлык лежит в двух полях.
     """
+    address = email.strip().lower()
+
+    # Учётка уже есть, но ни в какой школе: человек вошёл через Google
+    # раньше, чем его вписали. Заводить вторую нельзя — адрес уникален, —
+    # а ждать следующего входа незачем: `accept` сделал бы то же самое,
+    # только позже. Имя не трогаем, оно его собственное.
+    stray = User.objects.filter(email__iexact=address, school__isnull=True).first()
+    if stray is not None:
+        stray.school = school
+        stray.kind = kind
+        stray.is_school_admin = is_admin
+        stray.save(update_fields=["school", "kind", "is_school_admin"])
+        return stray
+
     user = User(
-        email=email.strip().lower(),
+        email=address,
         school=school,
         kind=kind,
         is_school_admin=is_admin,
         first_name=(name or "")[:150],
+        last_name=(last_name or "")[:150],
     )
     user.set_unusable_password()
     user.save()
@@ -211,9 +235,8 @@ def member_problem(person, kind: str, school=None):
     if person.kind != kind:
         return (
             Codes.EMAIL_OTHER_KIND,
-            f"«{person.email}» is already used by a "
-            f"{'student' if person.is_student else 'teacher'}; one address is "
-            "one kind of account.",
+            f"«{person.email}» is already used by a {person.kind}; one address "
+            "is one kind of account.",
         )
 
     if school is None or person.school_id != school.pk:

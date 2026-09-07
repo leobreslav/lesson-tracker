@@ -35,6 +35,14 @@ from django.urls import URLPattern, URLResolver, get_resolver
 # user is known to belong anywhere, so it must not touch school data.
 EXEMPT = {
     "GoogleLoginView": "signing in: there is no user yet",
+    "LoginCodeRequestView": (
+        "вторая дверь, код из письма: пользователя ещё нет, и ответ одинаков "
+        "для любого адреса — кто в школе, форма входа не рассказывает"
+    ),
+    "LoginCodeVerifyView": (
+        "та же дверь, вторая ступень: код против хэша, токен только "
+        "существующей учётке, список допущенных спрашивается в accounts.codes"
+    ),
     "LogoutView": "signing out: only deletes the caller's own token",
     "APIRootView": (
         "DRF's router index: lists the endpoint URLs of a router and no data. "

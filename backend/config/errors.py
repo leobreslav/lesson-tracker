@@ -70,6 +70,20 @@ class Codes:
     ROSTER_TOO_MANY_COLUMNS = "roster_too_many_columns"
     ROSTER_TOO_MANY_ROWS = "roster_too_many_rows"
 
+    # выгрузка ManageBac по курсу: ученики с родителями
+    ROSTER_HEADER_MISSING = "roster_header_missing"
+    ROSTER_PARENT_NO_EMAIL = "roster_parent_no_email"
+    ROSTER_PARENT_BAD_EMAIL = "roster_parent_bad_email"
+    ROSTER_PARENT_IS_STUDENT = "roster_parent_is_student"
+    ROSTER_ID_CONFLICT = "roster_id_conflict"
+
+    # вход по коду из письма
+    EMAIL_LOGIN_UNAVAILABLE = "email_login_unavailable"
+    EMAIL_NOT_SENT = "email_not_sent"
+    LOGIN_CODE_INVALID = "login_code_invalid"
+    LOGIN_CODE_EXPIRED = "login_code_expired"
+    LOGIN_CODE_THROTTLED = "login_code_throttled"
+
     # school year
     YEAR_DATES_REVERSED = "year_dates_reversed"
     YEAR_NAME_TAKEN = "year_name_taken"

@@ -148,6 +148,19 @@ class User(AbstractUser):
         verbose_name="school",
     )
     is_school_admin = models.BooleanField("school administrator", default=False)
+    # Номер человека в системе, откуда его привезли, — Student ID из выгрузки
+    # ManageBac. Не персональные данные, а ключ сопоставления: без него
+    # ученик, которому в источнике сменили почту, приезжает вторым человеком,
+    # а первый — с его работами и входом — снимается с курса как «нет в файле».
+    # Пишет его только импорт; у родителей он пуст, пока источник не отдаёт
+    # их номера (в выгрузке по курсу их нет).
+    external_id = models.CharField(
+        "external id",
+        max_length=64,
+        blank=True,
+        default="",
+        help_text="Student ID in the source system (ManageBac). Filled by imports only.",
+    )
     # Пересылка сообщений разработчику — настройка **человека**, а не
     # приложения: суперпользователей может быть несколько, и хотеть письмо
     # на каждое обращение может не каждый. Адрес не спрашивается — он у
@@ -165,6 +178,18 @@ class User(AbstractUser):
     REQUIRED_FIELDS = []
 
     objects = UserManager()
+
+    class Meta(AbstractUser.Meta):
+        constraints = [
+            # Один номер — один человек в школе. Условие оставляет пустоту
+            # свободной: номер есть только у привезённых, и «нет номера» не
+            # должно спорить само с собой на второй же учётке.
+            models.UniqueConstraint(
+                fields=("school", "external_id"),
+                condition=models.Q(external_id__gt="", school__isnull=False),
+                name="one_external_id_per_school",
+            ),
+        ]
 
     @property
     def is_student(self) -> bool:
@@ -194,3 +219,45 @@ class User(AbstractUser):
 
     def __str__(self):
         return self.email
+
+
+class LoginCode(models.Model):
+    """
+    Код из письма — вторая дверь, для тех, у кого нет Google-аккаунта.
+
+    Родителей заводит импорт по адресу, который школа записала в ManageBac, и
+    у части из них Google-аккаунта на этом адресе нет. Пароль был бы
+    хранением и восстановлением ради людей, заходящих раз в неделю; ссылка в
+    письме открывается не там, где нажали «войти». Код вводится там же, где
+    его запросили, и подтверждает владение адресом той же силой, что Google:
+    письмо дошло, код введён.
+
+    Хранится **хэш**, а не код: таблица с кодами в открытом виде — это
+    список входов для любого, кто её прочитает. Живёт код десять минут и
+    пять попыток, новый запрос гасит прежний. Строка не удаляется после
+    входа — она след того, что дверью пользовались, и материал для частоты
+    запросов.
+    """
+
+    LIFETIME_MINUTES = 10
+    MAX_ATTEMPTS = 5
+
+    user = models.ForeignKey(
+        "accounts.User",
+        related_name="login_codes",
+        on_delete=models.CASCADE,
+        verbose_name="user",
+    )
+    code_hash = models.CharField("code hash", max_length=64)
+    created_at = models.DateTimeField(auto_now_add=True)
+    expires_at = models.DateTimeField("expires at")
+    attempts = models.PositiveSmallIntegerField("attempts", default=0)
+    used_at = models.DateTimeField("used at", null=True, blank=True)
+
+    class Meta:
+        verbose_name = "login code"
+        verbose_name_plural = "login codes"
+        ordering = ("-created_at", "-id")
+
+    def __str__(self):
+        return f"code for {self.user} ({'used' if self.used_at else 'open'})"

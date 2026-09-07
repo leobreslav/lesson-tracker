@@ -4,16 +4,110 @@ import { Link } from 'react-router-dom'
 import EmptyState from './EmptyState'
 import {
   addHomegroupStudent,
+  addParent,
   detachMember,
   fetchHomegroupStudents,
   fetchHomegroups,
   fetchMembers,
   removeHomegroupStudent,
+  removeParent,
 } from './api'
 import { useSchoolSection } from './School'
 
 const fullName = (person) =>
   [person.first_name, person.last_name].filter(Boolean).join(' ') || person.email
+
+/**
+ * Родители ученика — там же, где на него смотрят.
+ *
+ * Заводит их обычно импорт из ManageBac, но одного родителя надо уметь
+ * добавить руками — того, кого в файле не было. Ввод — адрес: у
+ * администратора список школы, а не наши номера; родителя, которого ещё
+ * нет, сервер заведёт тем же движением. Снятие связи — крестик: «бывшее
+ * родство» не состояние, о котором кто-то спросит.
+ */
+function Parents({ student, busy, run }) {
+  const { t } = useTranslation()
+  const [adding, setAdding] = useState(false)
+  const [email, setEmail] = useState('')
+
+  const submit = (event) => {
+    event.preventDefault()
+    if (!email.trim()) return
+    run(() =>
+      addParent(student.id, email.trim()).then(() => {
+        setEmail('')
+        setAdding(false)
+      }),
+    )
+  }
+
+  return (
+    <div className="row parents">
+      <span className="hint">{t('school.students.parents')}</span>
+      {student.parents.length === 0 && !adding && (
+        <span className="hint">{t('school.students.noParents')}</span>
+      )}
+      {student.parents.map((parent) => (
+        <span className="tag parent" key={parent.link} title={parent.email}>
+          {parent.name}
+          {parent.relation ? ` · ${parent.relation}` : ''}
+          {parent.arrived ? null : (
+            <span className="tag pending" title={t('school.people.waitingHint')}>
+              {t('school.people.waiting')}
+            </span>
+          )}
+          <button
+            type="button"
+            className="link"
+            disabled={busy}
+            aria-label={t('school.students.unlink', { name: parent.name })}
+            onClick={() => run(() => removeParent(parent.link))}
+          >
+            ✕
+          </button>
+        </span>
+      ))}
+      {adding ? (
+        <form className="row inline-form" onSubmit={submit}>
+          <input
+            type="email"
+            value={email}
+            required
+            autoFocus
+            disabled={busy}
+            placeholder={t('school.students.parentEmail')}
+            aria-label={t('school.students.parentEmail')}
+            onChange={(event) => setEmail(event.target.value)}
+          />
+          <button type="submit" disabled={busy || !email.trim()}>
+            {t('common.add')}
+          </button>
+          <button
+            type="button"
+            className="secondary"
+            disabled={busy}
+            onClick={() => {
+              setAdding(false)
+              setEmail('')
+            }}
+          >
+            {t('common.cancel')}
+          </button>
+        </form>
+      ) : (
+        <button
+          type="button"
+          className="link"
+          disabled={busy}
+          onClick={() => setAdding(true)}
+        >
+          {t('school.students.addParent')}
+        </button>
+      )}
+    </div>
+  )
+}
 
 /**
  * Ученики школы — все, а не по курсу.
@@ -210,6 +304,8 @@ export default function SchoolStudents() {
                   ))
                 )}
               </div>
+
+              <Parents student={student} busy={busy} run={run} />
             </li>
           ))}
         </ul>

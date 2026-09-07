@@ -1103,6 +1103,16 @@ h1 {
   font-size: 1.4rem;
 }
 
+/* вторая дверь под кнопкой Google: ссылка, раскрывающаяся в форму. Поля в
+   ней — столбиком, как в любой форме карточки входа */
+.code-login {
+  margin: 1.25rem 0 0;
+}
+
+.code-login .field:last-of-type {
+  margin-bottom: 0.75rem;
+}
+
 /* --- форма --- */
 
 .field {
@@ -2599,6 +2609,18 @@ h4.shelf-group:first-of-type {
   gap: 0.3rem;
 }
 
+/* родители ученика — той же строкой, что курсы: плашка на человека, метка
+   ожидания внутри плашки, крестик снятия связи — тоже */
+.people-list .row.parents {
+  gap: 0.3rem;
+  align-items: center;
+}
+
+.people-list .row.parents .tag.pending {
+  margin-left: 0.3rem;
+  font-size: 0.75rem;
+}
+
 .people-list .name {
   font-weight: 600;
 }
@@ -2795,7 +2817,10 @@ button.link:hover:not(:disabled) {
  * обжигаются — `className="link"` на ссылке не значит **ничего**, потому
  * что правило одно и то же зовётся `button.link`.
  */
-a.link-button {
+/* и подпись с файловым полем внутри (`label.link-button`): выбор файла —
+   тоже кнопка ряда, а голый `<input type="file">` рисует браузер по-своему */
+a.link-button,
+label.link-button {
   display: inline-flex;
   align-items: center;
   min-height: 1.75rem;
@@ -2809,8 +2834,13 @@ a.link-button {
   border-radius: 4px;
 }
 
-a.link-button:hover {
+a.link-button:hover,
+label.link-button:hover {
   background: #f1f5fd;
+}
+
+label.link-button {
+  cursor: pointer;
 }
 
 /*

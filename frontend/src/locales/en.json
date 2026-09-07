@@ -55,7 +55,16 @@
   },
   "auth": {
     "prompt": "Sign in to continue.",
-    "missingClientId": "VITE_GOOGLE_CLIENT_ID is not set in frontend/.env"
+    "missingClientId": "VITE_GOOGLE_CLIENT_ID is not set in frontend/.env",
+    "code": {
+      "open": "No Google account? Sign in with a code sent by email",
+      "email": "Email address the school has for you",
+      "send": "Send a code",
+      "sent": "If we know this address, a six-digit code is on its way. It is valid for ten minutes.",
+      "code": "Code from the email",
+      "signIn": "Sign in",
+      "again": "Send another"
+    }
   },
   "parent": {
     "study": "Study",
@@ -264,13 +273,23 @@
     "bell_beyond_day": "There is no lesson {{number}} in the school day.",
     "slot_number_beyond_day": "The school day holds {{lessons_per_day}} lessons — lesson {{number}} is outside it.",
     "students_only": "This section is for students.",
-    "email_other_kind": "«{{email}}» is already used by an account of the other kind: one address is either a teacher or a student.",
+    "email_other_kind": "«{{email}}» is already used by an account of another kind: one address is a teacher, a student or a parent, never two of them.",
     "roster_empty": "There is not a single address in what was pasted.",
     "roster_no_email": "Line {{line}}: no email address.",
     "roster_bad_email": "Line {{line}}: «{{email}}» is not an email address.",
     "roster_two_emails": "Line {{line}}: two addresses in one line.",
     "roster_too_many_columns": "Line {{line}}: {{columns}} columns — a name and an address are expected.",
     "roster_too_many_rows": "Not more than {{limit}} lines at a time.",
+    "roster_header_missing": "The header row with «E-mail Address» was not found — a ManageBac class export is expected.",
+    "roster_parent_no_email": "Line {{line}}: parent «{{name}}» has no email address and is skipped.",
+    "roster_parent_bad_email": "Line {{line}}: «{{email}}» is not an email address; the parent is skipped.",
+    "roster_parent_is_student": "The parent's address «{{email}}» is the student's own.",
+    "roster_id_conflict": "Student ID and address point at two different accounts — check the file.",
+    "email_login_unavailable": "Signing in by an emailed code is not set up on this server — use Google.",
+    "email_not_sent": "The code could not be emailed. Try again in a minute.",
+    "login_code_invalid": "The code does not match this address.",
+    "login_code_expired": "The code has expired — request a new one.",
+    "login_code_throttled": "Too many attempts — wait a few minutes.",
     "year_shrink_cuts_slots": "The new boundaries leave {{slots}} lessons outside the year. They are not deleted, but they stop being part of it.",
     "work_not_open": "This work has not opened yet.",
     "work_closed": "The work is closed: answers are no longer accepted.",
@@ -1067,7 +1086,12 @@
       "detach": "Detach from the school",
       "detachKeeps": "Nothing is deleted: the person is taken off every course, and what they have done stays.",
       "homegroup": "Class",
-      "noHomegroup": "none"
+      "noHomegroup": "none",
+      "parents": "Parents:",
+      "noParents": "none recorded",
+      "addParent": "+ parent",
+      "parentEmail": "Parent's email address",
+      "unlink": "Unlink {{name}}"
     },
     "rooms": {
       "title": "Rooms",
@@ -1317,7 +1341,23 @@
     "blocked_one": "{{count}} address is taken.",
     "blocked_other": "{{count}} addresses are taken.",
     "duplicates_one": "{{count}} repeat collapsed.",
-    "duplicates_other": "{{count}} repeats collapsed."
+    "duplicates_other": "{{count}} repeats collapsed.",
+    "file": {
+      "title": "ManageBac export",
+      "hint": "The class export from ManageBac (Students.xlsx): students are enrolled, their parents get accounts and are linked to them. Whoever is already in the school is simply added to the course. Only names and addresses are read.",
+      "choose": "Choose a file",
+      "removeMissing": "take off the course whoever is not in the file",
+      "group": "Group in the file: «{{name}}».",
+      "parents": "Parents — add: {{added}} · link: {{link}} · already linked: {{linked}}.",
+      "renamed_one": "{{count}} address changed.",
+      "renamed_other": "{{count}} addresses changed.",
+      "willRemove_one": "Will take off the course {{count}} person not in the file: {{names}}.",
+      "willRemove_other": "Will take off the course {{count}} people not in the file: {{names}}.",
+      "wouldRemove_one": "Not in the file but staying on the course: {{names}}.",
+      "wouldRemove_other": "Not in the file but staying on the course: {{names}}.",
+      "parentSkipped": "Parent of {{name}} skipped:",
+      "apply": "Apply"
+    }
   },
   "works": {
     "none": "No assignments in this course yet.",

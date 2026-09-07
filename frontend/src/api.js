@@ -1332,6 +1332,61 @@ export const enrolRoster = (course, text) =>
   })
 
 /**
+ * Выгрузка ManageBac по курсу: ученики вместе с родителями.
+ *
+ * Файл едет multipart, галочка «снять тех, кого нет в файле» — строкой рядом
+ * с ним. Предпросмотр и применение отвечают одной формой, как у вставки.
+ */
+const rosterFileForm = (file, removeMissing) => {
+  const form = new FormData()
+  form.append('file', file)
+  form.append('remove_missing', removeMissing ? 'true' : 'false')
+  return form
+}
+
+export const previewRosterFile = (course, file, removeMissing) =>
+  request(`/api/school/students/upload/preview/?course=${course}`, {
+    method: 'POST',
+    body: rosterFileForm(file, removeMissing),
+  })
+
+export const uploadRosterFile = (course, file, removeMissing) =>
+  request(`/api/school/students/upload/?course=${course}`, {
+    method: 'POST',
+    body: rosterFileForm(file, removeMissing),
+  })
+
+/** Родство глазами школы: связать по адресу (заведя родителя) и снять. */
+export const addParent = (child, email, relation = '') =>
+  request('/api/school/guardianships/', {
+    method: 'POST',
+    body: { child, email, relation },
+  })
+
+export const removeParent = (link) =>
+  request(`/api/school/guardianships/${link}/`, { method: 'DELETE' })
+
+/**
+ * Вход по коду из письма — для тех, у кого нет Google-аккаунта.
+ *
+ * Запрос отвечает одинаково для любого адреса; проверка отдаёт токен той же
+ * формы, что Google, и дальше клиент не различает, откуда тот пришёл.
+ */
+export const requestLoginCode = (email) =>
+  request('/api/auth/code/request/', {
+    method: 'POST',
+    body: { email },
+    auth: false,
+  })
+
+export const verifyLoginCode = (email, code) =>
+  request('/api/auth/code/verify/', {
+    method: 'POST',
+    body: { email, code },
+    auth: false,
+  })
+
+/**
  * Topics across every class for a period: slot_id → the plan lesson.
  *
  * `scope: 'school'` asks for every course of the school the caller may edit —

@@ -38,6 +38,7 @@ from .testing import (
     make_template,
     make_task,
     make_term,
+    make_user,
     make_work,
     make_year,
 )
@@ -175,6 +176,27 @@ class MatrixTests(AccessTestCase):
             patch={"title": "Другое название"},
         )
 
+    def test_guardianship(self):
+        """
+        Родство заводит и снимает школа, поэтому и матрица у него школьная.
+
+        Ввод — адрес, а не номер родителя: родителя, которого ещё нет, надо
+        уметь завести тем же движением. Ребёнок берётся только из своей
+        школы, и чужой неотличим от несуществующего.
+        """
+        from families.models import Guardianship
+
+        mum = make_user(self.school, "mum@example.com", parent=True)
+        row = Guardianship.objects.create(parent=mum, child=self.student)
+
+        self.assertSchoolObjectRules(
+            list_url="guardianship-list",
+            detail_url="guardianship-detail",
+            obj=row,
+            create={"child": self.student.pk, "email": "dad@example.com"},
+            patch={"relation": "мама"},
+        )
+
     def test_course_student(self):
         student_row = enrol_student(self.student, self.course, by=self.admin)
 
@@ -200,6 +222,21 @@ class MatrixTests(AccessTestCase):
                     "param": "course",
                     "method": "post",
                     "body": {"text": "someone@example.com"},
+                },
+                # выгрузка ManageBac: без файла оба ответят отказом, но курс
+                # спрашивается раньше файла — чужой курс не должен отличаться
+                # от несуществующего
+                {
+                    "name": "coursestudent-upload-preview",
+                    "param": "course",
+                    "method": "post",
+                    "body": {},
+                },
+                {
+                    "name": "coursestudent-upload",
+                    "param": "course",
+                    "method": "post",
+                    "body": {},
                 },
             ),
         )

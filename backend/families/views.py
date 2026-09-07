@@ -9,14 +9,41 @@
 собеседник не меняет природы разговора.
 """
 
-from config.access import IsParent, IsSchoolMember
+from config.access import IsParent, IsSchoolMember, SchoolScopedViewSet
 from django.shortcuts import get_object_or_404
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from . import conversations
+from .models import Guardianship
+from .serializers import GuardianshipSerializer
 from .viewing import children_of
+
+
+class GuardianshipViewSet(SchoolScopedViewSet):
+    """
+    Родство глазами школы: администратор связывает и снимает, все читают.
+
+    Стоит под `/api/school/`, а не под `/api/family/`: спрашивает тут не
+    родитель про своих детей, а школа про свои пары. Школа у пары — школа
+    ребёнка; родитель в той же, это проверяет `link`.
+
+    Снятие **удаляет** строку, в отличие от зачисления: «бывшее родство» —
+    не состояние, о котором кто-то спросит (см. модель).
+    """
+
+    serializer_class = GuardianshipSerializer
+    queryset = Guardianship.objects.select_related("parent", "child")
+    school_path = "child__school"
+    http_method_names = ["get", "post", "patch", "delete", "head", "options"]
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        child = self.request.query_params.get("child")
+        if child:
+            queryset = queryset.filter(child_id=child) if child.isdigit() else queryset.none()
+        return queryset
 
 
 class ChildrenView(APIView):

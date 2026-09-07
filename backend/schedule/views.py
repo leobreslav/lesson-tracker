@@ -35,7 +35,7 @@ from plans.serializers import person
 
 from . import history, services
 from .services import sweepable
-from schools import roster, services as school_services
+from schools import managebac, roster, services as school_services
 from schools.models import School
 
 from .models import (
@@ -531,6 +531,77 @@ class CourseStudentViewSet(SchoolScopedViewSet):
         roster.apply_roster(decisions, course, by=request.user)
 
         return Response(roster.payload(parsed, decisions))
+
+    # --- выгрузка ManageBac по курсу: ученики с родителями ----------------------
+
+    def uploaded_workbook(self):
+        """Байты присланного файла или коротко объяснённый отказ."""
+        upload = self.request.FILES.get("file")
+        if upload is None:
+            api_error(Codes.FILE_REQUIRED, "A file is required.", field="file")
+        if upload.size > managebac.MAX_UPLOAD_BYTES:
+            limit = managebac.MAX_UPLOAD_BYTES // 1024 // 1024
+            api_error(
+                Codes.FILE_TOO_LARGE,
+                f"The file is larger than {limit} MB.",
+                field="file",
+                limit_mb=limit,
+            )
+        return managebac.parse_workbook(upload.read(), filename=upload.name or "")
+
+    def remove_missing_requested(self) -> bool:
+        """
+        Снимать ли с курса тех, кого в файле нет.
+
+        Файл — полный состав группы на момент выгрузки, поэтому по умолчанию
+        да; «false» говорит тот, кто выгрузил не всё.
+        """
+        raw = self.request.data.get("remove_missing", "true")
+        return str(raw).lower() not in ("false", "0", "")
+
+    @action(detail=False, methods=["post"], url_path="upload/preview")
+    def upload_preview(self, request):
+        """
+        Что сделает файл — не делая ничего. Ошибки и предупреждения в теле.
+        """
+        course = self.requested_course()
+        parsed = self.uploaded_workbook()
+        plan = managebac.plan_import(parsed, course)
+
+        answer = managebac.payload(parsed, plan)
+        answer["remove_missing"] = self.remove_missing_requested()
+        return Response(answer)
+
+    @action(detail=False, methods=["post"], url_path="upload")
+    def upload(self, request):
+        """
+        Применить файл — одной транзакцией: ученики, родители, связи, снятие.
+
+        Отказ целиком — за ошибками разбора, как у вставки. Предупреждения
+        (родитель без адреса) применению не мешают: про них сказано заранее,
+        и ребёнок из-за них без курса не остаётся.
+        """
+        course = self.requested_course()
+        parsed = self.uploaded_workbook()
+
+        if parsed.errors:
+            first = parsed.errors[0]
+            api_error(first["code"], first["detail"], field="file", **first["params"])
+
+        if not parsed.pupils:
+            api_error(
+                Codes.ROSTER_EMPTY,
+                "There is not a single student in the file.",
+                field="file",
+            )
+
+        remove_missing = self.remove_missing_requested()
+        plan = managebac.plan_import(parsed, course)
+        managebac.apply_import(plan, course, by=request.user, remove_missing=remove_missing)
+
+        answer = managebac.payload(parsed, plan)
+        answer["remove_missing"] = remove_missing
+        return Response(answer)
 
 
 class StudentCoursesView(APIView):
