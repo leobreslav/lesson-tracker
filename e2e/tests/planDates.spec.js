@@ -559,12 +559,16 @@ test('в правой зоне нет ни одной даты', async ({ page, 
   await signIn(PEOPLE.ivanova)
   await openPlan(page)
 
-  // дата — только в своей колонке; в строке главы её нет вовсе
+  // дата — только в своей колонке; в строке главы её нет вовсе.
+  // Ищутся сами тексты из колонки дат, а не маска вроде `dd/dd`: дата
+  // пишется словами, и маска молчала бы про «9 April» в названии
   const strays = await page.evaluate(() => {
-    const dateLike = /\d{2}[./]\d{2}/
+    const dates = [...document.querySelectorAll('.plan-date')]
+      .map((cell) => cell.textContent.trim())
+      .filter(Boolean)
     return [...document.querySelectorAll('.plan-title-cell, .row-actions')]
       .map((cell) => cell.textContent.trim())
-      .filter((text) => dateLike.test(text))
+      .filter((text) => dates.some((date) => text.includes(date)))
   })
 
   expect(strays).toEqual([])

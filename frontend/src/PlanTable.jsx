@@ -18,7 +18,7 @@ import {
 } from '@dnd-kit/sortable'
 import { EmptyDropZone, SortableRow, dragId, emptyZoneId } from './PlanDnd'
 import { Link } from 'react-router-dom'
-import { dayMonth, shortDate, shortWeekday, weekdayWithDate } from './dates'
+import { dayMonth, dayWithMonth, longWeekday, shortDate, weekdayWithDate } from './dates'
 import { resolveDropTarget } from './planLogic'
 import { today } from './calendarLogic'
 import { useDismissable } from './UserMenu'
@@ -846,11 +846,17 @@ export default function PlanTable({
    * ведёт туда именно дата: она и есть то место строки, где речь заходит о
    * конкретном дне. У чужого плана вести некуда — страница занятия
    * принадлежит тому, кто его ведёт, — и дата остаётся датой.
+   *
+   * Пишется словами — «9 April, Monday», а не «04/09 Mon»: колонка одна на
+   * сорок строк, и читают её как календарь, а не как таблицу чисел. День
+   * недели вместе с запятой лежит в `em`: на телефоне он гасится целиком,
+   * и число остаётся без хвоста.
    */
   const dateText = (slot) => {
     const text = (
       <>
-        {dayMonth(slot.date)} <em>{shortWeekday(slot.date)}</em>
+        {dayWithMonth(slot.date)}
+        <em>, {longWeekday(slot.date)}</em>
       </>
     )
 

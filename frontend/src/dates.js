@@ -58,6 +58,24 @@ export const weekdayWithFullDate = (iso) =>
 /** "Mon" — a column heading in the schedule grid. */
 export const shortWeekday = (iso) => format(iso, { weekday: 'short' })
 
+/** "Monday" — spelled out, for a row that has room for it. */
+export const longWeekday = (iso) => format(iso, { weekday: 'long' })
+
+/**
+ * "9 April" — the day first, whatever the language would do on its own.
+ *
+ * The plan table reads this in a column of forty rows, and the eye scans
+ * the numbers: they must line up under each other, which they do not when
+ * one language writes "April 9" and another "9 апреля". So the parts come
+ * from Intl — the month is still declined by it ("апреля", not «апрель») —
+ * and only their order is ours.
+ */
+export function dayWithMonth(iso) {
+  const parts = formatter({ day: 'numeric', month: 'long' }).formatToParts(parseDate(iso))
+  const part = (type) => parts.find((p) => p.type === type)?.value ?? ''
+  return `${part('day')} ${part('month')}`
+}
+
 /** "October 2026" — a month heading. */
 export const monthTitle = (iso) => format(iso, { month: 'long', year: 'numeric' })
 
