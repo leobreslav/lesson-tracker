@@ -5,6 +5,7 @@ import ScanWizard from './ScanWizard'
 import Switch from './Switch'
 import TaskList from './TaskList'
 import WorkContent from './WorkContent'
+import WorkFiles from './WorkFiles'
 import WorkSettingsDialog from './WorkSettingsDialog'
 import { fetchTasks, fetchWork, fetchWorkImpact, updateWork } from './api'
 
@@ -106,6 +107,28 @@ export default function WorkEdit() {
     }
   }
 
+  /**
+   * Задать работу классу.
+   *
+   * Ответ сервера кладём в состояние целиком, как это делает переименование:
+   * состояние работы считает он (`state` — свойство сериализатора), и
+   * вычислять «теперь, наверное, planned» на клиенте значило бы завести
+   * второй ответ на вопрос, у которого часы другие.
+   */
+  const release = async () => {
+    if (busy) return
+
+    setBusy(true)
+    setError(null)
+    try {
+      setWork(await updateWork(id, { is_released: true }))
+    } catch (failure) {
+      setError(failure.message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
   const rename = async (event) => {
     event.preventDefault()
     if (busy || !renaming.trim()) return
@@ -174,6 +197,30 @@ export default function WorkEdit() {
         </div>
 
         <div className="row">
+          {/*
+            «Задать» — здесь же, а не только в списке работ.
+
+            Сюда попадают сразу после заведения: работа создаётся пустой, и
+            наполняют её на этой странице. Уходить за выдачей обратно в
+            список значило бы ровно то, на что уже жаловались про сканы —
+            одна работа, а мест, откуда с ней работают, два.
+
+            Первой в ряду и заметной, как в списке: у черновика это
+            единственное, чего от него ждут, а «Сканы» с «Настройками» —
+            вторичные действия над работой, которая уже идёт. Пропадает
+            вместе с выдачей; состояние после этого называет строка под
+            заголовком, где оно и стояло всегда.
+          */}
+          {work.state === 'draft' && (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => release()}
+            >
+              {t('works.release')}
+            </button>
+          )}
+
           {/* Сканы — там же, где и всё, что делают с работой целиком. Кнопка
               жила только в списке работ, и это значило вот что: учитель,
               открывший работу, чтобы завести под бланк пятнадцать ячеек,
@@ -231,8 +278,15 @@ export default function WorkEdit() {
             initialFiles={work.files ?? []}
             busy={busy}
             preview={preview}
-            rows={14}
+            /* Поле было в четырнадцать строк — почти в экран, и пустое
+               оно читалось как «сюда обязательно много писать». Пишут же
+               сюда чаще одну-две строки, а Markdown-поле растёт под текст
+               само. Пять — втрое меньше и всё ещё явно многострочное. */
+            rows={5}
             withTitle={false}
+            /* файлы уехали под задачи: между текстом и ними встала вторая
+               половина работы — см. карточку ниже */
+            withFiles={false}
           />
 
           <div className="actions">
@@ -244,10 +298,39 @@ export default function WorkEdit() {
             </span>
           </div>
         </form>
+
+        {/*
+          Задачи — на той же карточке, что и текст над ними.
+
+          Карточками они были разными, и разделяла их полоса воздуха — то
+          есть страница утверждала, что это два разных предмета. Предмет
+          один: содержание работы. Текст объясняет, что делать, задачи —
+          из чего это состоит, и пишут их в один заход, переключаясь между
+          тем и другим.
+
+          Файлы при этом остались своей карточкой ниже: они не содержание, а
+          то, что к нему приложено.
+        */}
+        <div className="work-tasks">
+          <TaskList workId={work.id} tasks={tasks} onChanged={loadTasks} />
+        </div>
       </section>
 
+      {/*
+        Файлы — последней карточкой, под задачами.
+
+        Порядок на странице идёт по тому, из чего работа состоит: сперва
+        текст над задачами, потом сами задачи, потом то, что к работе
+        приложено. Стояли файлы между текстом и задачами — то есть между
+        двумя половинами одного, — и задачи оказывались ниже зоны
+        перетаскивания, которую в них никто не искал.
+      */}
       <section className="panel">
-        <TaskList workId={work.id} tasks={tasks} onChanged={loadTasks} />
+        <WorkFiles
+          ensureWork={async () => work.id}
+          initialFiles={work.files ?? []}
+          busy={busy}
+        />
       </section>
 
       {scanning && (

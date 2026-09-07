@@ -66,6 +66,11 @@ test('сюжет разворачивается по ячейкам, а шапк
     problems: [stem],
   })
 
+  // собранная из задачника работа тоже заводится невыданной: «собрать» — это
+  // про то, из чего она состоит, а не про то, что класс её уже видит. Здесь
+  // смотрит ученик, поэтому выдаём явно
+  await teacher.patch(`/api/works/${work.body.id}/`, { is_released: true })
+
   await signIn(PEOPLE.ivanova)
   await page.goto('/works')
   await ready(page)

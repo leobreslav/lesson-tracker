@@ -17,6 +17,9 @@ async function onlineWork(teacher, title = 'Работа с системой') {
   const work = await teacher.post('/api/works/', {
     course: course.id,
     title,
+    // выдана: этим помощником пользуются и тесты про ученика, а невыданной
+    // работы ему не существует независимо от окна
+    is_released: true,
     opens_at: new Date(Date.now() - day).toISOString(),
     closes_at: new Date(Date.now() + day).toISOString(),
   })

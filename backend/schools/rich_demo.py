@@ -865,6 +865,7 @@ def make_works(courses, people, students) -> int:
                 course=course,
                 created_by=teacher,
                 title=f"{title}",
+                is_released=True,
                 opens_at=now + timedelta(days=opens),
                 closes_at=now + timedelta(days=closes),
                 attempts=2,
@@ -968,6 +969,7 @@ def paper_work(course, teacher, group, now, *, salt) -> int:
         course=course,
         created_by=teacher,
         title="Контрольная на бумаге",
+        is_released=True,
         opens_at=now - timedelta(days=35),
         closes_at=now - timedelta(days=34),
     )

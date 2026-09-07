@@ -205,3 +205,57 @@ class TheTeacherOpensAndClosesTests(SchoolTestMixin, APITestCase):
         self.task.refresh_from_db()
 
         self.assertTrue(self.task.problem_id)
+
+
+class AWorkIsNotGivenOutUntilTheTeacherSaysSoTests(AnsweringTestCase):
+    """
+    Пока работу не выдали, ученику её не существует — независимо от часов.
+
+    Прятало работу раньше **только окно**, и в модели стояло «черновика нет,
+    вместо него работает именно это». Наполовину это верно: спрятать окно
+    умеет. Но оно же и **показывает** работу, когда время придёт, — а время
+    проставляется по умолчанию при заведении, то есть до того, как учитель
+    дописал задачи. Выдача отвечает на другой вопрос: показывать ли вообще.
+
+    Проверяются обе стороны. Невыданная не видна и не принимает ответ даже с
+    открытым окном; выданная тем же окном видна сразу — то есть прячет её
+    именно выдача, а не что-то ещё, что могло сойтись случайно.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.work.is_released = False
+        self.work.save(update_fields=["is_released"])
+
+    def test_a_draft_is_invisible_even_with_an_open_window(self):
+        self.assertEqual(self.work.state(), "draft")
+
+        listed = self.client.get(reverse("student-works")).json()["works"]
+        self.assertNotIn(self.work.title, [one["title"] for one in listed])
+
+        # и по прямому адресу тоже: интерфейс мог и не показать, а API не
+        # полагается на то, что чего-то не нарисовали
+        self.assertEqual(
+            self.client.get(reverse("student-work", args=[self.work.pk])).status_code,
+            404,
+        )
+
+    def test_a_draft_takes_no_answers(self):
+        """
+        Отказ приходит **404**, а не «работа не открыта», и это верно.
+
+        Ячейку ищут среди видимых ученику работ, а невыданной среди них нет
+        вовсе — то есть до проверки окна дело не доходит. Ответ «такой задачи
+        нет» тут честнее объяснения «ещё рано»: рассказывать про существование
+        работы, которой ученик не видит, незачем.
+        """
+        self.assertEqual(self.answer(self.online).status_code, 404)
+
+    def test_releasing_shows_it_at_once(self):
+        self.work.is_released = True
+        self.work.save(update_fields=["is_released"])
+
+        self.assertEqual(self.work.state(), "open")
+        listed = self.client.get(reverse("student-works")).json()["works"]
+        self.assertIn(self.work.title, [one["title"] for one in listed])
+        self.assertEqual(self.answer(self.online).status_code, 201)

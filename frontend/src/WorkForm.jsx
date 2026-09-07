@@ -73,20 +73,7 @@ export default function WorkForm({
     setForm((current) => ({ ...current, [field]: value }))
   }
 
-  const fields = () => ({
-    course: courseId,
-    slot: form.slot ?? null,
-    title: form.title.trim(),
-    description: form.description,
-    opens_at: fromLocalInput(form.opens_at),
-    closes_at: fromLocalInput(form.closes_at),
-    attempts: form.limited ? Number(form.attempts) : null,
-    show_result: form.show_result,
-    is_homework: form.is_homework ?? false,
-    is_summative: form.is_summative ?? false,
-    kind: form.kind ?? null,
-    grading_system: form.grading_system ?? null,
-  })
+  const fields = () => fieldsOf(form, courseId)
 
   const submit = (event) => {
     event.preventDefault()
@@ -145,6 +132,38 @@ export default function WorkForm({
     </form>
   )
 }
+
+/**
+ * Поля работы в том виде, в каком их ждёт сервер.
+ *
+ * Вынесено из компонента, потому что заводить работу умеет не только форма:
+ * окно «новая работа» на экране работ спрашивает одно название и создаёт
+ * пустую. Умолчания у новой работы одни на оба пути, и второе место, знающее
+ * их, разошлось бы с первым **в датах** — то есть там, где ошибка видна не
+ * сразу, а когда работа не открылась.
+ */
+const fieldsOf = (form, courseId) => ({
+  course: courseId,
+  slot: form.slot ?? null,
+  title: form.title.trim(),
+  description: form.description,
+  opens_at: fromLocalInput(form.opens_at),
+  closes_at: fromLocalInput(form.closes_at),
+  attempts: form.limited ? Number(form.attempts) : null,
+  show_result: form.show_result,
+  is_homework: form.is_homework ?? false,
+  is_summative: form.is_summative ?? false,
+  kind: form.kind ?? null,
+  grading_system: form.grading_system ?? null,
+})
+
+/**
+ * Пустая работа с одним названием — то, что уходит на сервер из окна
+ * заведения. Выданной она при этом не становится: `is_released` по умолчанию
+ * `false`, и класс её не увидит, пока учитель не нажмёт «Выдать».
+ */
+export const blankWork = ({ course, title }) =>
+  fieldsOf({ ...initial(null), title }, course)
 
 /** Новая работа открывается завтра на неделю: правится, но решать не надо. */
 function initial(work) {

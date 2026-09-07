@@ -6,8 +6,9 @@ import CourseShowcase from './CourseShowcase'
 import Markdown from './Markdown'
 import ScanWizard from './ScanWizard'
 import TaskList from './TaskList'
-import WorkDialog from './WorkDialog'
+import WorkNameDialog from './WorkNameDialog'
 import { iconFor } from './fileKind'
+import { blankWork } from './WorkForm'
 import {
   createWork,
   openAttachment,
@@ -38,7 +39,7 @@ export default function Works({ onLoggedOut }) {
   const [works, setWorks] = useState(null)
   const [expanded, setExpanded] = useState(null)
   const [tasks, setTasks] = useState([])
-  const [editing, setEditing] = useState(null)
+  const [naming, setNaming] = useState(false)
   const [scanning, setScanning] = useState(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
@@ -128,32 +129,26 @@ export default function Works({ onLoggedOut }) {
     }
   }
 
-  const saveWork = (fields) =>
-    run(() =>
-      (editing.work ? updateWork(editing.work.id, fields) : createWork(fields)).then(
-        () => setEditing(null),
-      ),
-    )
-
   /**
-   * Работа, к которой уже можно что-то приложить.
+   * Завести работу: одно название, дальше — её страница.
    *
-   * Файл ложится на строку в базе, а задание пишут в окне создания, где
-   * строки ещё нет. Поэтому первый файл (или первая вставленная картинка)
-   * заводит работу с тем, что набрано, и окно продолжает править её же —
-   * «Сохранить» после этого уже правка, а не создание.
+   * Остальные поля берут умолчания (`blankWork`), и выданной работа не
+   * становится: класс её не увидит, пока не нажмут «Выдать». Наполняют её на
+   * странице правки, туда и уводим — иначе человек, закрыв окно, остался бы
+   * на списке с пустой строкой и вопросом «а где задачи».
    *
-   * `run` здесь не годится: он гасит форму на время запроса, а запрос идёт
-   * посреди загрузки файла — и человек смотрел бы на выключенное окно,
-   * гадая, что происходит. Ошибку показывает то место, откуда позвали.
+   * Мимо `run`: тот перечитывает список, а мы с него уходим — перечитывать
+   * незачем, да и показывать нечего.
    */
-  const ensureWork = async (fields) => {
-    if (editing.work) return editing.work
-
-    const created = await createWork(fields)
-    setEditing({ work: created })
-    reload().catch(handleError)
-    return created
+  const createNamed = (title) => {
+    setBusy(true)
+    setError(null)
+    createWork(blankWork({ course: courseId, title }))
+      .then((work) => navigate(`/works/${work.id}/edit`))
+      .catch((err) => {
+        setBusy(false)
+        handleError(err)
+      })
   }
 
   const removeWork = (work) => {
@@ -264,7 +259,7 @@ export default function Works({ onLoggedOut }) {
             же под ней. Слева на карточке она читалась бы первым, что тут
             делают, — тогда как список сперва смотрят. */}
         <div className="row end">
-          <button type="button" disabled={busy} onClick={() => setEditing({ work: null })}>
+          <button type="button" disabled={busy} onClick={() => setNaming(true)}>
             {t('works.add')}
           </button>
         </div>
@@ -310,6 +305,21 @@ export default function Works({ onLoggedOut }) {
                       {work.title}
                     </button>
 
+                    {/*
+                      Черновик виден в списке, а выданная работа — нет.
+
+                      Пометка тут про **действие**, а не про свойство записи:
+                      «не выдана» значит «класс её не видит, и это на вас».
+                      Выданная ничего не ждёт, и плашка у неё была бы шумом в
+                      каждой строке — тот же довод, по которому в строке нет
+                      ни окна времени, ни числа задач.
+                    */}
+                    {work.state === 'draft' && (
+                      <span className="badge state-draft">
+                        {t('works.state.draft')}
+                      </span>
+                    )}
+
                     {/* в шапке только имя и то, что с работой делают:
                         окно, попытки и число задач — разговор о настройках,
                         и живут они там, где их правят */}
@@ -329,6 +339,33 @@ export default function Works({ onLoggedOut }) {
                         Здесь же три разных дела: правка настроек, разбор
                         пачки сканов и переход на страницу проверки. */}
                     <div className="work-actions">
+                      {/*
+                        «Выдать» — первой в ряду и только у черновика.
+
+                        Работа заводится невыданной: заводят её пустой и
+                        дописывают задачи, а окно времени к этому моменту уже
+                        проставлено по умолчанию — то есть окно, оставленное
+                        сторожить, показало бы класу недописанное.
+
+                        Кнопка стоит первой, потому что у черновика это
+                        единственное, чего от него ждут: остальные три —
+                        правка, сканы и проверка — про работу, которая уже
+                        идёт. Пропадает она вместе с выдачей: отзывать
+                        выданное отдельной кнопкой мы пока не умеем, и
+                        нарисованная «Отозвать» в каждой строке была бы
+                        предложением сделать то, за чем не приходят.
+                      */}
+                      {work.state === 'draft' && (
+                        <button
+                          type="button"
+                          className="compact"
+                          disabled={busy}
+                          onClick={() => run(() => updateWork(work.id, { is_released: true }))}
+                        >
+                          {t('works.release')}
+                        </button>
+                      )}
+
                       {/* Правка — страница, а не окно: у работы, которую уже
                           ведут, полей много (задание с картинками, файлы,
                           окно времени, попытки, оценивание), и в окне поверх
@@ -472,14 +509,11 @@ export default function Works({ onLoggedOut }) {
         />
       )}
 
-      {editing && (
-        <WorkDialog
-          work={editing.work}
-          courseId={courseId}
+      {naming && (
+        <WorkNameDialog
           busy={busy}
-          onSubmit={saveWork}
-          onEnsure={ensureWork}
-          onClose={() => setEditing(null)}
+          onCreate={createNamed}
+          onClose={() => setNaming(false)}
         />
       )}
 

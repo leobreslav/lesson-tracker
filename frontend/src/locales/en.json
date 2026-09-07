@@ -1343,6 +1343,7 @@
     "delete": "Delete «{{name}}»?",
     "deleteWithTasks": "Delete «{{name}}» with its {{count}} questions? The answers of the students go with it.",
     "state": {
+      "draft": "draft",
       "planned": "planned",
       "open": "open",
       "closed": "closed"
@@ -1352,7 +1353,7 @@
       "hint": "An assignment belongs to a course, and courses are created by the school administrator."
     },
     "task": {
-      "title": "Questions",
+      "title": "Tasks",
       "add": "Add a question",
       "edit": "Question",
       "none": "No questions yet — an assignment without them shows the students an empty page.",
@@ -1393,7 +1394,7 @@
       "addBlank_other": "Add {{count}} blank ones"
     },
     "answers": "Answers",
-    "description": "Notes for the students",
+    "description": "Text above Tasks",
     "noDescription": "Nothing written here yet.",
     "descriptionHint": "What the students see above the questions — and what you see there too.",
     "descriptionHintMore": "Questions are optional: write the whole assignment here, and the students send their work back as photos or files attached to the work itself. Paste a screenshot straight into the text with Ctrl+V; anything else — a pdf with the questions, a sheet to print — goes below as a file.",
@@ -1425,7 +1426,10 @@
     "forCourse": "Assignments for <course>{{name}}</course>",
     "open": {
       "back": "← Back to course selection"
-    }
+    },
+    "addHint": "Everything else is set on the work’s own page — it opens right after. The class will not see the work until you give it out.",
+    "addAction": "Create",
+    "release": "Assign"
   },
   "grading": {
     "title": "Grading",

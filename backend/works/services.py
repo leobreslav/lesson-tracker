@@ -19,6 +19,7 @@ from files.models import Attachment
 from . import photos, statements, track
 from .models import (
     CLOSED,
+    DRAFT,
     GradingSystem,
     OPEN,
     PLANNED,
@@ -46,8 +47,14 @@ def visible_works(student, *, now=None):
     он решал, никуда не делась, и читать её он продолжает. А вот отвечать —
     нет, это отдельный вопрос (`may_answer`).
 
-    Ненаступившее окно прячет работу целиком: «черновика» нет, и вместо него
-    работает именно это.
+    Прячут работу **две** вещи, и обе обязательны. Невыданная не видна
+    независимо от часов: её ещё пишут. Ненаступившее окно не видно, потому что
+    решать рано.
+
+    Первое условие появилось позже второго, и до него черновика не было вовсе:
+    считалось, что окно справляется само. Оно и справлялось — ровно до
+    момента, который выставился по умолчанию, а дальше показывало ученикам
+    работу, которую учитель ещё не дописал.
     """
     from schedule.models import Course
 
@@ -55,7 +62,7 @@ def visible_works(student, *, now=None):
     courses = Course.objects.for_student(student, active_only=False)
 
     return (
-        Work.objects.filter(course__in=courses, opens_at__lte=now)
+        Work.objects.filter(course__in=courses, is_released=True, opens_at__lte=now)
         .select_related("course", "course__subject", "course__grade")
         .order_by("-opens_at", "-id")
     )
@@ -79,10 +86,13 @@ def visible_works_for(people, *, now=None):
 def may_answer(work, student, *, now=None) -> None:
     """Молчит или отказывает: окно, зачисление и попытки — три причины."""
     state = work.state(now)
-    if state == PLANNED:
+    if state in (DRAFT, PLANNED):
         # до открытия работы для ученика не существует вовсе, и сюда он
         # попасть не должен — но API не полагается на то, что интерфейс
-        # чего-то не показал
+        # чего-то не показал. Невыданная отвечает тем же кодом, что и
+        # неоткрывшаяся: разницу между «ещё пишут» и «ещё рано» ученику знать
+        # незачем, а различать их он всё равно не сможет — не видит ни ту, ни
+        # другую
         api_error(Codes.WORK_NOT_OPEN, "This work has not opened yet.")
     if state == CLOSED:
         api_error(

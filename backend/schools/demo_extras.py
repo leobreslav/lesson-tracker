@@ -141,6 +141,7 @@ def _grading(school, courses, teacher):
             course=courses["Grade 6 Algebra"],
             created_by=teacher,
             title="Работа на бумаге",
+            is_released=True,
             opens_at=timezone.now() - timedelta(days=2),
             closes_at=timezone.now() + timedelta(days=5),
         )
@@ -167,6 +168,7 @@ def _grading(school, courses, teacher):
         title="Исследование по критериям",
         defaults={
             "created_by": teacher,
+            "is_released": True,
             "opens_at": timezone.now() - timedelta(days=3),
             "closes_at": timezone.now() + timedelta(days=10),
             "is_summative": True,

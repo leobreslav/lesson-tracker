@@ -537,6 +537,8 @@ class Command(BaseCommand):
             created_by=teacher,
             title="Проверочная: формулы сложения",
             defaults={
+                # выдана: ученик её видит и отвечает — посев для того и есть
+                "is_released": True,
                 "opens_at": now - timedelta(hours=2),
                 "closes_at": now + timedelta(days=3),
                 "attempts": 2,
@@ -551,6 +553,7 @@ class Command(BaseCommand):
             created_by=teacher,
             title="Контрольная: тригонометрия",
             defaults={
+                "is_released": True,
                 "opens_at": now - timedelta(days=9),
                 "closes_at": now - timedelta(days=8),
                 "attempts": 1,
@@ -573,7 +576,10 @@ class Command(BaseCommand):
             created_by=teacher,
             title="Домашняя работа на каникулы",
             defaults={
-                # окно в будущем и есть «черновик»: ученику её пока нет
+                # выдана, но окно ещё не наступило: ученик знает, что будет,
+                # и не может отвечать. Это **не** черновик — черновик теперь
+                # отдельное состояние, до выдачи
+                "is_released": True,
                 "opens_at": now + timedelta(days=5),
                 "closes_at": now + timedelta(days=12),
                 "show_result": False,

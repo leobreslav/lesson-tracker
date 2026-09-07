@@ -233,6 +233,7 @@ class WorkSerializer(serializers.ModelSerializer):
             "course_name",
             "created_by",
             "title",
+            "is_released",
             "description",
             "opens_at",
             "closes_at",

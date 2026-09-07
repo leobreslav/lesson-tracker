@@ -12,8 +12,8 @@ import { expect, PEOPLE, pickCourse, ready, test } from './harness.js'
 const openWorks = async (page, course = 'Grade 6 Algebra') => {
   await page.goto('/works')
   await ready(page)
-  // курс выбирают селектом в строке заголовка: чипы не пережили учителя
-  // музыки с полутора десятками курсов, а сам экран за человека не выбирает
+  // курс выбирают витриной: экран за человека не выбирает, а селект отвечал
+  // на «чем сейчас занимаемся» только пока открыт
   await pickCourse(page, course)
 
   return page.locator('.work-list')
@@ -158,19 +158,33 @@ test('задачи видны с формулами и эталонами, по�
   await expect(rows.nth(2)).toContainText('Упростите')
 })
 
-test('новая работа заводится с окном времени и получает задачу', async ({
+test('новая работа спрашивает имя, открывается пустой и выдаётся отдельно', async ({
   page,
   signIn,
 }) => {
+  /*
+   * Окно заведения спрашивало имя **и две даты**, формой той же, что правка,
+   * только поверх списка. Довод был разумный: не уводить со списка ради трёх
+   * полей. Но работу заводят, чтобы наполнить, — задание, задачи, эталоны
+   * живут на странице правки, — и после «Сохранить» человек всё равно уходил
+   * туда, только сперва заполнив три поля в щёлке.
+   *
+   * Теперь окно спрашивает одно: как назвать. Остальное берут умолчания, и
+   * сразу открывается страница правки.
+   */
   await signIn(PEOPLE.ivanova)
-  const list = await openWorks(page, 'Grade 6 Geometry')
+  await openWorks(page, 'Grade 6 Geometry')
 
   await page.getByRole('button', { name: 'Новая работа' }).click()
   const dialog = page.locator('dialog.modal')
   await dialog.getByLabel('Название').fill('Проверочная по углам')
-  await dialog.getByRole('button', { name: 'Сохранить' }).click()
+  // дат в окне нет вовсе: их спрашивали, а отвечали умолчанием
+  await expect(dialog.getByLabel('Открыть')).toHaveCount(0)
+  await dialog.getByRole('button', { name: 'Создать' }).click()
 
-  await openWorkPage(page, list, 'Проверочная по углам')
+  // и мы сразу на её странице, а не обратно в списке с пустой строкой
+  await expect(page).toHaveURL(/\/works\/\d+\/edit$/)
+  await ready(page)
 
   await page.getByRole('button', { name: 'Добавить задачу' }).click()
   const task = page.locator('dialog.modal')
@@ -186,12 +200,35 @@ test('новая работа заводится с окном времени и
   await page.getByRole('button', { name: 'Ответы', exact: true }).click()
   await expect(page.locator('.task-list')).toContainText('180')
 
-  // окно в будущем и есть «черновик»: работа запланирована, а не открыта
+  /*
+   * «Задать» есть и здесь, а не только в списке.
+   *
+   * Сюда попадают сразу после заведения и здесь же работу наполняют — уходить
+   * за выдачей обратно в список значило бы, что мест, откуда работают с одной
+   * работой, снова два. Состояние при этом считает сервер: после нажатия оно
+   * становится `planned`, потому что окно по умолчанию в будущем.
+   */
+  await expect(page.locator('.page-header')).toContainText('не выдана')
+  await page.locator('.page-header').getByRole('button', { name: 'Задать' }).click()
+  await expect(page.locator('.page-header')).toContainText('запланирована')
+  await expect(
+    page.locator('.page-header').getByRole('button', { name: 'Задать' }),
+  ).toHaveCount(0)
+
+  /*
+   * ВЫДАЧА. Заведённая работа классу не видна, и прячет её не окно времени, а
+   * отдельное состояние. Раньше прятало окно — и оно же показывало работу,
+   * когда наступал момент, проставленный по умолчанию: то есть недописанное
+   * уезжало ученикам само, без единого нажатия.
+   */
   const again = await openWorks(page, 'Grade 6 Geometry')
-  await again
-    .locator('.course-row', { hasText: 'Проверочная по углам' })
-    .getByRole('button', { name: 'Проверка' })
-    .click()
+  const row = again.locator('.course-row', { hasText: 'Проверочная по углам' })
+
+  // задали со страницы — в списке ни пометки, ни кнопки: ждать больше нечего
+  await expect(row.locator('.badge.state-draft')).toHaveCount(0)
+  await expect(row.getByRole('button', { name: 'Задать' })).toHaveCount(0)
+
+  await row.getByRole('button', { name: 'Проверка' }).click()
   await expect(page.locator('.page-header')).toContainText('запланирована')
 })
 
@@ -211,14 +248,23 @@ test('задание видно над задачами, а пустая яче�
   await signIn(PEOPLE.ivanova)
   const list = await openWorks(page, 'Grade 6 Geometry')
 
+  // окно спрашивает одно название, а задание пишут там же, где всё
+  // остальное, — на странице работы, куда оно и уводит сразу после создания
   await page.getByRole('button', { name: 'Новая работа' }).click()
   const dialog = page.locator('dialog.modal')
   await dialog.getByLabel('Название').fill('Работа без задач')
-  await dialog
-    .getByLabel('Пояснения к работе')
-    .fill('Решите номера 12–18 из учебника, сдайте фотографией.')
-  await dialog.getByRole('button', { name: 'Сохранить' }).click()
+  await dialog.getByRole('button', { name: 'Создать' }).click()
+  await ready(page)
 
+  await page
+    .getByLabel('Текст над задачами')
+    .fill('Решите номера 12–18 из учебника, сдайте фотографией.')
+  await page.getByRole('button', { name: 'Сохранить' }).click()
+  await ready(page)
+
+  await page.goto('/works')
+  await ready(page)
+  await pickCourse(page, 'Grade 6 Geometry')
   const work = list.locator('.course-row', { hasText: 'Работа без задач' })
   await work.locator('.toggle').click()
   // задание — над списком задач, у учителя, а не только у ученика
@@ -262,7 +308,7 @@ test('правка работы, в которой уже отвечали, на
   // сохранять нечего — тронули, и кнопка ожила
   const save = page.getByRole('button', { name: 'Сохранить' })
   await expect(save).toBeDisabled()
-  await page.getByLabel('Пояснения к работе').fill('Решить номера 1–5.')
+  await page.getByLabel('Текст над задачами').fill('Решить номера 1–5.')
   await expect(save).toBeEnabled()
 
   // переименование — своей формой в заголовке, и применяется сразу:
@@ -473,6 +519,9 @@ test('скан бумажной работы достаётся только с�
   const work = await teacher.post('/api/works/', {
     course: course.id,
     title: 'Контрольная на бумаге',
+    // выдана: половина теста — про то, что видит **ученик**, а невыданной
+    // работы ему не существует независимо от окна
+    is_released: true,
     opens_at: new Date(Date.now() - 3600e3).toISOString(),
     closes_at: new Date(Date.now() + 3600e3).toISOString(),
   })
