@@ -681,6 +681,10 @@ class EveryModelIsSeededTests(TestCase):
     EMPTY_ON_PURPOSE = {
         "accounts.UserGroups": "служебная таблица связи Django",
         "accounts.UserUserPermissions": "то же самое про права",
+        "accounts.LoginCode": (
+            "код входа появляется, когда дверью пользуются; экрана у него нет, "
+            "и посеянный код ничего не показал бы"
+        ),
     }
 
     @staticmethod

@@ -115,7 +115,7 @@ class Invitation(models.Model):
         max_length=8,
         choices=Kind,
         default=Kind.TEACHER,
-        help_text="Кем человек войдёт: учителем или учеником.",
+        help_text="Кем человек войдёт: учителем, учеником или родителем.",
     )
     is_school_admin = models.BooleanField("grants the admin role", default=False)
     created_by = models.ForeignKey(
@@ -136,11 +136,13 @@ class Invitation(models.Model):
             models.UniqueConstraint(
                 fields=("school", "email"), name="unique_invitation_per_school"
             ),
-            # ученик не бывает администратором школы: роль про общие объекты
-            # школы, а он в них не заходит вовсе
+            # ни ученик, ни родитель не бывают администраторами школы: роль про
+            # общие объекты школы, а они в них не заходят вовсе
             models.CheckConstraint(
-                condition=~models.Q(kind="student", is_school_admin=True),
-                name="student_invitation_grants_no_role",
+                condition=~models.Q(
+                    kind__in=("student", "parent"), is_school_admin=True
+                ),
+                name="family_invitation_grants_no_role",
             ),
         ]
 

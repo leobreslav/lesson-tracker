@@ -2,6 +2,7 @@ from django.urls import include, path
 from rest_framework.routers import DefaultRouter
 # назначения, методисты и состав — модели расписания, но принадлежат школе,
 # поэтому отвечают под /api/school/ рядом с курсами и людьми
+from families.views import GuardianshipViewSet
 from schedule.views import (
     BellsView,
     CourseAssignmentViewSet,
@@ -24,6 +25,8 @@ router.register("grades", GradeLevelViewSet, basename="gradelevel")
 router.register("assignments", CourseAssignmentViewSet, basename="courseassignment")
 router.register("methodists", CourseMethodistViewSet, basename="coursemethodist")
 router.register("students", CourseStudentViewSet, basename="coursestudent")
+# родство — модель семьи, но заводит и снимает его школа, поэтому здесь
+router.register("guardianships", GuardianshipViewSet, basename="guardianship")
 router.register("members", MemberViewSet, basename="member")
 router.register("invitations", InvitationViewSet, basename="invitation")
 

@@ -6,10 +6,188 @@ import {
   enrolStudent,
   fetchStudents,
   previewRoster,
+  previewRosterFile,
   removeStudent,
+  uploadRosterFile,
 } from './api'
 
 const PROBLEM_LIMIT = 5
+
+const problemText = (t, problem) =>
+  t(`errors.${problem.code}`, { ...problem.params, defaultValue: problem.detail })
+
+/**
+ * Выгрузка ManageBac по курсу: ученики вместе с родителями.
+ *
+ * Отдельная секция под вставкой, а не второй режим той же: у файла другой
+ * ответ — родители, снятие не вошедших в файл, — и складывать его в одну
+ * строку с «зачислим · вернём · заведём» значило бы прятать половину.
+ *
+ * Разбирает файл сервер; здесь только выбор файла, галочка и показ того,
+ * что он ответил. Предпросмотр ничего не пишет и ни от чего не отказывается:
+ * ошибки и предупреждения приезжают списками в теле.
+ */
+function FileSection({ course, busy, run, onApplied }) {
+  const { t } = useTranslation()
+  const [file, setFile] = useState(null)
+  const [removeMissing, setRemoveMissing] = useState(true)
+  const [preview, setPreview] = useState(null)
+
+  const check = () =>
+    run(() => previewRosterFile(course.id, file, removeMissing).then(setPreview))
+
+  const submit = () =>
+    run(() =>
+      uploadRosterFile(course.id, file, removeMissing).then(() => {
+        setFile(null)
+        setPreview(null)
+        onApplied()
+      }),
+    )
+
+  const errors = preview?.errors ?? []
+  const warnings = preview?.warnings ?? []
+  const nothingToDo =
+    preview &&
+    !preview.enrol &&
+    !preview.restore &&
+    !preview.new &&
+    !preview.parents.new &&
+    !preview.parents.link &&
+    !(removeMissing && preview.leaving)
+
+  return (
+    <section className="panel roster-file">
+      <span className="hint">{t('roster.file.title')}</span>
+      <p className="hint">{t('roster.file.hint')}</p>
+
+      <div className="row">
+        <label className="link-button file-pick">
+          {file ? file.name : t('roster.file.choose')}
+          <input
+            type="file"
+            accept=".xlsx"
+            hidden
+            disabled={busy}
+            aria-label={t('roster.file.choose')}
+            onChange={(event) => {
+              setFile(event.target.files[0] ?? null)
+              setPreview(null)
+              event.target.value = ''
+            }}
+          />
+        </label>
+        <label className="checkbox">
+          <input
+            type="checkbox"
+            checked={removeMissing}
+            disabled={busy}
+            onChange={(event) => {
+              setRemoveMissing(event.target.checked)
+              setPreview(null)
+            }}
+          />
+          {t('roster.file.removeMissing')}
+        </label>
+      </div>
+
+      {errors.length > 0 && (
+        <ul className="csv-warnings">
+          <li className="error">{t('roster.refused')}</li>
+          {errors.slice(0, PROBLEM_LIMIT).map((problem, index) => (
+            <li key={`${problem.code}-${index}`} className="error">
+              {problemText(t, problem)}
+            </li>
+          ))}
+          {errors.length > PROBLEM_LIMIT && (
+            <li className="hint">
+              {t('csv.moreProblems', { count: errors.length - PROBLEM_LIMIT })}
+            </li>
+          )}
+        </ul>
+      )}
+
+      {preview && errors.length === 0 && (
+        <>
+          <p className="hint" data-roster-file-preview>
+            {preview.group && `${t('roster.file.group', { name: preview.group })} `}
+            {t('roster.willDo', {
+              enrol: preview.enrol,
+              restore: preview.restore,
+              added: preview.new,
+              already: preview.already,
+            })}
+            {` ${t('roster.file.parents', {
+              added: preview.parents.new,
+              link: preview.parents.link,
+              linked: preview.parents.linked,
+            })}`}
+            {preview.renamed > 0 && ` ${t('roster.file.renamed', { count: preview.renamed })}`}
+            {preview.blocked > 0 && ` ${t('roster.blocked', { count: preview.blocked })}`}
+            {preview.duplicates > 0 &&
+              ` ${t('roster.duplicates', { count: preview.duplicates })}`}
+          </p>
+
+          {/* снятие — то, что файл делает поверх зачисления, и называть его
+              надо поимённо: «снимем троих» без имён это вопрос, а не ответ */}
+          {preview.leaving > 0 && (
+            <p className={removeMissing ? 'hint' : 'hint muted'}>
+              {t(removeMissing ? 'roster.file.willRemove' : 'roster.file.wouldRemove', {
+                count: preview.leaving,
+                names: preview.leaving_people.map((person) => person.name).join(', '),
+              })}
+            </p>
+          )}
+
+          {(preview.blocked > 0 || preview.parents.blocked > 0 || warnings.length > 0) && (
+            <ul className="csv-warnings">
+              {preview.people
+                .filter((person) => person.action === 'blocked')
+                .map((person) => (
+                  <li key={person.email} className="error">
+                    {t(`errors.${person.code}`, { email: person.email, defaultValue: person.detail })}
+                  </li>
+                ))}
+              {preview.people.flatMap((person) =>
+                person.parents
+                  .filter((adult) => adult.action === 'blocked')
+                  .map((adult) => (
+                    <li key={`${person.email}-${adult.email}`} className="hint">
+                      {t('roster.file.parentSkipped', { name: person.name || person.email })}{' '}
+                      {t(`errors.${adult.code}`, { email: adult.email, defaultValue: adult.detail })}
+                    </li>
+                  )),
+              )}
+              {warnings.map((problem, index) => (
+                <li key={`${problem.code}-${index}`} className="hint">
+                  {problemText(t, problem)}
+                </li>
+              ))}
+            </ul>
+          )}
+        </>
+      )}
+
+      <div className="row">
+        <button
+          type="button"
+          className="secondary"
+          disabled={busy || !file}
+          onClick={check}
+        >
+          {t('roster.check')}
+        </button>
+        <button
+          type="button"
+          disabled={busy || !preview || errors.length > 0 || nothingToDo}
+          onClick={submit}
+        >
+          {t('roster.file.apply')}
+        </button>
+      </div>
+    </section>
+  )
+}
 
 /**
  * Состав курса: кто в нём есть и вставка списка целиком.
@@ -239,6 +417,8 @@ export default function RosterDialog({ course, onClose, onChanged }) {
           </button>
         </div>
       </section>
+
+      <FileSection course={course} busy={busy} run={run} onApplied={reload} />
     </Modal>
   )
 }

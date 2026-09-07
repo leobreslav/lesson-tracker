@@ -77,17 +77,38 @@ class MemberSerializer(serializers.ModelSerializer):
     # люди стоят наравне со всеми — отличает их только эта пометка. Своего
     # поля не нужно, `last_login` пуст ровно до первого входа
     arrived = serializers.SerializerMethodField()
+    # родители ученика — там же, где на него смотрят; у остальных пусто
+    parents = serializers.SerializerMethodField()
 
     class Meta:
         model = User
         fields = (
             "id", "email", "first_name", "last_name", "kind",
-            "is_school_admin", "courses", "arrived",
+            "is_school_admin", "courses", "arrived", "parents",
         )
         read_only_fields = ("id", "email", "first_name", "last_name", "kind")
 
     def get_arrived(self, person) -> bool:
         return person.last_login is not None
+
+    def get_parents(self, person) -> list:
+        if not person.is_student:
+            return []
+        return [
+            {
+                "link": row.pk,
+                "id": row.parent_id,
+                "name": (
+                    " ".join(filter(None, (row.parent.first_name, row.parent.last_name)))
+                    or row.parent.email
+                ),
+                "email": row.parent.email,
+                "relation": row.relation,
+                "arrived": row.parent.last_login is not None,
+            }
+            # `.all()`: предвыборка вьюсета, а не запрос на человека
+            for row in person.parent_links.all()
+        ]
 
     def get_courses(self, person) -> list:
         """
@@ -124,10 +145,10 @@ class MemberSerializer(serializers.ModelSerializer):
     def validate_is_school_admin(self, value):
         # роль администратора — про общие объекты школы, а ученик в них не
         # заходит вовсе; запрет тот же, что у приглашения
-        if self.instance is not None and self.instance.is_student:
+        if self.instance is not None and not self.instance.is_teacher:
             api_error(
                 Codes.NOT_A_STUDENT,
-                "A student cannot be an administrator of the school.",
+                "Only a teacher can be an administrator of the school.",
                 field="is_school_admin",
             )
 
@@ -205,10 +226,10 @@ class InvitationSerializer(serializers.ModelSerializer):
         # пригласил
         services.check_address(email, kind)
 
-        if kind == Kind.STUDENT and attrs.get("is_school_admin"):
+        if kind != Kind.TEACHER and attrs.get("is_school_admin"):
             api_error(
                 Codes.NOT_A_STUDENT,
-                "A student invitation cannot grant the administrator role.",
+                "Only a teacher invitation can grant the administrator role.",
                 field="is_school_admin",
             )
 

@@ -260,7 +260,9 @@ class MemberViewSet(
                 kind=kind if kind in User.Kind.values else User.Kind.TEACHER
             )
 
-        return people.prefetch_related("course_assignments__course", "enrolments__course")
+        return people.prefetch_related(
+            "course_assignments__course", "enrolments__course", "parent_links__parent"
+        )
 
     def perform_destroy(self, instance):
         """
