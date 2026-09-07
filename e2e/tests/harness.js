@@ -151,8 +151,9 @@ export const lessonCount = (page, card = 'lessons') =>
 /**
  * Курс на живом годе с одним записанным занятием.
  *
- * Записать можно только прошедший час, а год посеянных данных начинается
- * первого сентября — прошедших часов в нём нет ни одного, и раньше эти
+ * Записать можно только прошедший час, а год посеянных данных зашит —
+ * 2026/2027 — и «сегодня» по нему идёт: до сентября прошедших часов в нём
+ * не было ни одного, после мая не останется ни одного будущего. Раньше эти
  * тесты обходили правило тем, что сервер принимал любую дату. Теперь не
  * принимает: очередь записи строгая, и будущее в неё не входит.
  *
@@ -170,6 +171,17 @@ export const lessonCount = (page, card = 'lessons') =>
  * показывает одну неделю, поэтому тест, который смотрит на два таких часа,
  * обязан перейти к каждому — иначе он проходит по понедельникам и падает по
  * вторникам, а выглядит это как случайная поломка.
+ *
+ * **Номер часа спрашивается, а не назначается** — тем же правилом, что у
+ * посева для его дополнительных часов. Первым уроком он стоял, пока
+ * посеянный год лежал в будущем; с первого сентября у Ивановой по
+ * понедельникам, средам и четвергам первым уроком идут посеянные занятия,
+ * и живой час на том же номере давал в сетке **две** клетки `дата:номер` —
+ * Playwright на такой селектор отказывает. Падало это не каждый день, а по
+ * календарю: в воскресенье позавчера была пятница, где первый урок свободен.
+ * Берётся номер, свободный у неё во все три дня, поэтому `lesson_number` у
+ * возвращённых часов один и тот же — и тест обязан брать его оттуда, а не
+ * писать единицу.
  */
 export async function liveCourse(api, { record = true } = {}) {
   const admin = await api(PEOPLE.admin)
@@ -180,6 +192,12 @@ export async function liveCourse(api, { record = true } = {}) {
     at.setDate(at.getDate() + shift)
     return at.toISOString().slice(0, 10)
   }
+
+  const busy = await teacher.get(`/api/slots/?start=${day(-2)}&end=${day(0)}`)
+  expect(busy.status, JSON.stringify(busy.body)).toBe(200)
+  const taken = new Set(busy.body.map((slot) => slot.lesson_number))
+  let number = 1
+  while (taken.has(number)) number += 1
 
   const year = await admin.post('/api/calendar/years/', {
     name: `живой ${Date.now()}`,
@@ -213,7 +231,7 @@ export async function liveCourse(api, { record = true } = {}) {
     const slot = await teacher.post('/api/slots/', {
       course: course.body.id,
       date: day(shift),
-      lesson_number: 1,
+      lesson_number: number,
     })
     expect(slot.status, JSON.stringify(slot.body)).toBe(201)
     slots.push(slot.body)

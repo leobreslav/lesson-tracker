@@ -14,6 +14,29 @@ const openSection = async (page, path) => {
   await ready(page)
 }
 
+/** Первая полная неделя посеянного года — та, что написана в `schedule.spec.js`. */
+const MONDAY = '2026-09-07'
+
+/**
+ * Школьное расписание на неделе этого понедельника.
+ *
+ * Поля выбора даты в этой панели нет, и к нужной неделе листали стрелкой
+ * «→»: посеянный год зашит на 2026/2027, а «сегодня» было до его начала.
+ * Теперь год идёт, и с каждой неделей нужная уезжает дальше **назад** —
+ * стрелка вперёд не нашла бы её никогда, а к маю это тридцать восемь
+ * нажатий в другую сторону. Якорь недели панель держит в `sessionStorage`
+ * (`useKept`, `remember.js`), и тест кладёт его туда же, куда положил бы
+ * сам экран, — до загрузки страницы, иначе она успеет открыться на сегодня.
+ */
+const openSchoolWeek = async (page, monday = MONDAY) => {
+  await page.addInitScript(
+    ([date]) => sessionStorage.setItem('kept.school.schedule.week', JSON.stringify(date)),
+    [monday],
+  )
+  await openSection(page, '/school/schedule')
+  await expect(page.locator(`[data-day-head="${monday}"]`)).toBeVisible()
+}
+
 test('администратор заводит курс и назначает на него учителя', async ({
   page,
   signIn,
@@ -234,13 +257,7 @@ test('кабинет заводится в справочнике и виден 
     rooms.getByRole('button', { name: 'Кабинет 404', exact: true }),
   ).toBeVisible()
 
-  await openSection(page, '/school/schedule')
-  const monday = page.locator('[data-day-head="2026-09-07"]')
-  for (let step = 0; step < 8 && !(await monday.count()); step += 1) {
-    await page.getByRole('button', { name: '→' }).click()
-    await page.waitForTimeout(250)
-  }
-  await expect(monday).toBeVisible()
+  await openSchoolWeek(page)
 
   // Восьмой час, а не девятый: у демо-школы день восьмиурочный, и девятого
   // ряда в сетке больше нет вовсе — рядов ровно столько, сколько уроков в
@@ -457,15 +474,8 @@ test('в школьном расписании урок ставится в об
   const courses = await admin.get('/api/courses/?scope=school')
 
   await signIn(PEOPLE.admin)
-  await openSection(page, '/school/schedule')
-
-  // листаем в учебный год: «сегодня» в демо-данных до его начала, а поля
-  // выбора даты в этой панели нет
-  const monday = page.locator('[data-day-head="2026-09-07"]')
-  for (let step = 0; step < 8 && !(await monday.count()); step += 1) {
-    await page.getByRole('button', { name: '→' }).click()
-    await page.waitForTimeout(250)
-  }
+  await openSchoolWeek(page)
+  const monday = page.locator(`[data-day-head="${MONDAY}"]`)
 
   // понедельник — учебный день, и сетка обязана это знать: признак приходит
   // из того же ответа календаря, что и на странице «Учебный год»
@@ -496,15 +506,7 @@ test('день школы разворачивает часы по столбц�
   const courses = await admin.get('/api/courses/?scope=school')
 
   await signIn(PEOPLE.admin)
-  await openSection(page, '/school/schedule')
-
-  // листаем в учебный год: «сегодня» в демо-данных до его начала
-  const monday = page.locator('[data-day-head="2026-09-07"]')
-  for (let step = 0; step < 8 && !(await monday.count()); step += 1) {
-    await page.getByRole('button', { name: '→' }).click()
-    await page.waitForTimeout(250)
-  }
-  await expect(monday).toBeVisible()
+  await openSchoolWeek(page)
 
   // размах — тумблер, и он же адрес: ссылкой «вот этот день» делятся так же,
   // как ссылкой на школьный вид
@@ -664,14 +666,7 @@ test('урок ставится рядом на каждую неделю, а н
   // решение, а не тридцать четыре. Раньше путь был один: нарисуй неделю и
   // скопируй её на период, задевая всё, что в ней уже стоит.
   await signIn(PEOPLE.admin)
-  await openSection(page, '/school/schedule')
-
-  const monday = page.locator('[data-day-head="2026-09-07"]')
-  for (let step = 0; step < 8 && !(await monday.count()); step += 1) {
-    await page.getByRole('button', { name: '→' }).click()
-    await page.waitForTimeout(250)
-  }
-  await expect(monday).toBeVisible()
+  await openSchoolWeek(page)
 
   await page.locator('[data-add="2026-09-07:7"]').click()
   const dialog = page.locator('dialog.modal')
@@ -722,14 +717,7 @@ test('администратор отменяет час прямо в школ�
   // именно он: занятие сорвалось, а сказать об этом было нечем. Меню
   // теперь одно на оба расписания.
   await signIn(PEOPLE.admin)
-  await openSection(page, '/school/schedule')
-
-  const monday = page.locator('[data-day-head="2026-09-07"]')
-  for (let step = 0; step < 8 && !(await monday.count()); step += 1) {
-    await page.getByRole('button', { name: '→' }).click()
-    await page.waitForTimeout(250)
-  }
-  await expect(monday).toBeVisible()
+  await openSchoolWeek(page)
 
   const lesson = page.locator('[data-lesson="2026-09-07:1"]').first()
   await lesson.click({ button: 'right' })

@@ -206,17 +206,17 @@ test('в сетке расписания у долга красная точка
   await ready(page)
   await page.getByLabel('Перейти к дате').fill(slots[1].date)
 
-  const debt = page.locator(`[data-lesson="${slots[1].date}:1"]`)
-  await expect(debt).toHaveClass(/debt/)
+  // номер часа живого курса — тот, что выбрала фикстура, а не единица: с
+  // начала посеянного года первый урок у Ивановой занят посеянным
+  const cell = (slot) => page.locator(`[data-lesson="${slot.date}:${slot.lesson_number}"]`)
+  await expect(cell(slots[1])).toHaveClass(/debt/)
 
   // К записанному часу надо **перейти**: часы живого курса стоят на подряд
   // идущих днях, а сетка показывает одну неделю — во вторник позавчерашний
   // час лежит уже в прошлой. Пока обе клетки искали на одном экране, тест
   // падал по вторникам и средам, а по понедельникам проходил
   await page.getByLabel('Перейти к дате').fill(slots[0].date)
-  await expect(page.locator(`[data-lesson="${slots[0].date}:1"]`)).not.toHaveClass(
-    /debt/,
-  )
+  await expect(cell(slots[0])).not.toHaveClass(/debt/)
 })
 
 test('дата в плане ведёт в занятие этого дня', async ({ page, signIn }) => {
