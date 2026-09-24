@@ -13,6 +13,7 @@ from rest_framework.test import APITestCase
 from schools.testing import (
     SchoolTestMixin,
     assign,
+    before_the_year,
     make_course,
     make_slot,
     make_work,
@@ -179,6 +180,7 @@ class WindowTests(SchoolTestMixin, APITestCase):
             text="Задача", school=self.school, owner=self.user, created_by=self.user
         )
 
+    @before_the_year()
     def test_a_work_set_at_a_future_lesson_opens_on_that_day(self):
         from datetime import timedelta
 

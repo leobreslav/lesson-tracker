@@ -10,7 +10,7 @@ from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 from django.utils import timezone
 from schedule.models import Course, Slot
-from schools.testing import assign, make_course
+from schools.testing import assign, before_the_year, make_course
 
 from . import services
 from .models import PlanNode
@@ -834,6 +834,7 @@ class ProgressTests(LayoutApiTestCase):
         self.assertIn(self.course.name, names)
         self.assertIn("9А", names)
 
+    @before_the_year()
     def test_where_i_am_is_the_next_lesson(self):
         self.fill_slots(9)
 
@@ -846,6 +847,7 @@ class ProgressTests(LayoutApiTestCase):
         self.assertEqual(row["current"]["section_title"], "Тригонометрия")
         self.assertEqual(row["done"], 0)
 
+    @before_the_year()
     def test_the_next_lessons_come_with_dates(self):
         """Два, а не пять: экран отвечает «что готовить», а не «что дальше»."""
         self.fill_slots(9)

@@ -13,7 +13,9 @@ a fixture that can express it would be testing a state the product cannot
 reach.
 """
 
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
+from datetime import timezone as dt_timezone
+from unittest import mock
 
 from django.contrib.auth import get_user_model
 from django.core.files.uploadedfile import SimpleUploadedFile
@@ -29,6 +31,24 @@ YEAR_START = date(2026, 9, 1)
 YEAR_END = date(2027, 5, 31)
 # the first full Monday inside it: the usual starting point for a week
 MONDAY = date(2026, 9, 7)
+
+# A week before the year: the moment a test stands at when it needs the year
+# not to have started yet.
+BEFORE_THE_YEAR = datetime(2026, 8, 25, 9, 0, tzinfo=dt_timezone.utc)
+
+
+def before_the_year():
+    """
+    Stop the clock a week before the seeded year, for a test that says so.
+
+    Years here are fixed dates, and a test that assumes «the year is still
+    ahead» is right only until the calendar gets there. Three of them did on
+    1 September 2026 and turned the nightly run red without a line of code
+    changing. The clock is patched where every caller reads it —
+    `django.utils.timezone.now`, which `localdate` calls too — so the test
+    states its moment instead of borrowing today's.
+    """
+    return mock.patch("django.utils.timezone.now", new=lambda: BEFORE_THE_YEAR)
 
 
 def last_workday(day=None):
