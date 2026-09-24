@@ -633,6 +633,50 @@ export const downloadPlan = async (
   URL.revokeObjectURL(url)
 }
 
+/**
+ * Бланк с подписями задач: пятнадцать строк туда, PDF обратно.
+ *
+ * Не через `request`: тот читает ответ как JSON, а здесь в удачном ответе
+ * файл. Отказ же — обычный, с кодом (`blank_label_too_long` называет
+ * подпись), и разбирается тем же `humanMessage`, чтобы окно показало фразу
+ * словаря, а не «ошибка 400».
+ */
+export const downloadBlank = async (labels, name = 'blank.pdf') => {
+  const token = getToken()
+  let response
+  try {
+    response = await fetch('/api/works/blank/', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Token ${token}` } : {}),
+      },
+      body: JSON.stringify({ labels }),
+    })
+  } catch {
+    throw new ApiError(i18n.t('errors.offline'), 0, 'offline', null)
+  }
+
+  if (!response.ok) {
+    const data = await response.json().catch(() => null)
+    throw new ApiError(
+      humanMessage(data),
+      response.status,
+      data?.code ?? null,
+      data?.params ?? null,
+    )
+  }
+
+  const url = URL.createObjectURL(await response.blob())
+  const link = document.createElement('a')
+  link.href = url
+  link.download = name
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+  URL.revokeObjectURL(url)
+}
+
 // --- one lesson: content and attachments ---
 
 /** The whole of one lesson, content included — the tree only carries flags. */

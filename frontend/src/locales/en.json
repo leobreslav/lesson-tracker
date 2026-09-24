@@ -363,6 +363,8 @@
     "work_kind_name_required": "A kind of work needs a name.",
     "work_kind_name_taken": "The school already has a kind of work with that name.",
     "work_kind_label_required": "A kind of work needs a short label — it is what the gradebook shows.",
+    "blank_labels_invalid": "The blank has {{count}} cells for questions — the labels did not fit into them.",
+    "blank_label_too_long": "«{{label}}» does not fit into cell {{cell}}. Shorten it or add a space so it can wrap.",
     "slot_nothing_to_undo": "There is nothing to undo: only the last steps are kept.",
     "slot_undo_would_lose_work": "Something is recorded on {{date}}, lesson {{number}} — undoing would take it away. Withdraw it and try again."
   },
@@ -1660,6 +1662,15 @@
     "recordAfterHint": "Records go in order: mark the previous lesson first",
     "needsRow": "The plan has no row left for this hour, and a lesson is recorded as a plan row. Add one, and there will be something to mark.",
     "addRow": "add it to the plan"
+  },
+  "blank": {
+    "title": "Blank with question labels",
+    "hint": "Labels are printed in the band above each cell. An empty cell stays blank for a handwritten label. The labels only go to print — the questions of the work keep their names.",
+    "forWork": "Blank for this work",
+    "withLabels": "Label the questions on the blank",
+    "download": "Download PDF",
+    "extra_one": "The work has {{count}} more question than the blank has cells — it is not on the blank.",
+    "extra_other": "The work has {{count}} more questions than the blank has cells — they are not on the blank."
   },
   "scan": {
     "open": "Scans",

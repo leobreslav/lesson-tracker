@@ -3,6 +3,7 @@
 from django.urls import include, path
 from rest_framework.routers import DefaultRouter
 
+from .blank_views import BlankView
 from .grading_views import GradingSystemsView, GradingSystemView
 from .kind_views import WorkKindsView, WorkKindView
 from .photo_views import (
@@ -27,6 +28,8 @@ router.register("", WorkViewSet, basename="work")
 
 urlpatterns = [
     path("thread/", TaskThreadView.as_view(), name="task-thread"),
+    # бланк с подписями — до роутера, как и всё прочее с именем вместо номера
+    path("blank/", BlankView.as_view(), name="work-blank"),
     # журнал до роутера — по тому же доводу, что справочник и просмотрщик:
     # иначе «journal» уедет в работу с таким номером
     path("journal/", CourseJournalView.as_view(), name="course-journal"),

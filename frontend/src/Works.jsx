@@ -4,6 +4,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import EmptyState from './EmptyState'
 import CourseShowcase from './CourseShowcase'
 import Markdown from './Markdown'
+import BlankDialog from './BlankDialog'
 import ScanWizard from './ScanWizard'
 import TaskList from './TaskList'
 import WorkNameDialog from './WorkNameDialog'
@@ -41,6 +42,7 @@ export default function Works({ onLoggedOut }) {
   const [tasks, setTasks] = useState([])
   const [naming, setNaming] = useState(false)
   const [scanning, setScanning] = useState(null)
+  const [blank, setBlank] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
 
@@ -272,7 +274,12 @@ export default function Works({ onLoggedOut }) {
           <a href="/blank.pdf" target="_blank" rel="noreferrer">
             {t('scan.printBlank')}
           </a>{' '}
-          {t('scan.printBlankHint')}
+          {t('scan.printBlankHint')}{' '}
+          {/* Подписать бланк можно и без работы: контрольную ещё не завели,
+              а печатать пачку надо сегодня */}
+          <button type="button" className="link" onClick={() => setBlank(true)}>
+            {t('blank.withLabels')}
+          </button>
         </p>
         {works === null ? (
           <p>{t('common.loading')}</p>
@@ -489,6 +496,8 @@ export default function Works({ onLoggedOut }) {
       </section>
         </>
       )}
+
+      {blank && <BlankDialog onClose={() => setBlank(false)} />}
 
       {scanning && (
         <ScanWizard

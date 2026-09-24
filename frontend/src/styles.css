@@ -5441,6 +5441,32 @@ button.compact,
   border-top: 1px solid #e0e0e0;
 }
 
+/* Окно бланка с подписями: пятнадцать клеток рядами по пять, номер клетки
+   над полем — тем же номером, что стоит в углу клетки на бумаге. */
+.blank-labels {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 0.5rem;
+}
+
+.blank-label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  font-size: 0.8rem;
+  color: #5f6368;
+
+  & input {
+    width: 100%;
+    box-sizing: border-box;
+    color: #202124;
+  }
+
+  & input[aria-invalid='true'] {
+    border-color: #d93025;
+  }
+}
+
 .badge.state-draft {
   background: #fef7e0;
   color: #b06000;

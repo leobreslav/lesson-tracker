@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useNavigate, useParams } from 'react-router-dom'
+import BlankDialog from './BlankDialog'
 import ScanWizard from './ScanWizard'
 import Switch from './Switch'
 import TaskList from './TaskList'
@@ -63,6 +64,7 @@ export default function WorkEdit() {
   const [preview, setPreview] = useState(false)
   const [settings, setSettings] = useState(false)
   const [scanning, setScanning] = useState(false)
+  const [blank, setBlank] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
 
@@ -230,6 +232,13 @@ export default function WorkEdit() {
             {t('scan.open')}
           </button>
 
+          {/* Бланк этой работы — рядом со сканами: одно идёт до контрольной,
+              другое после, и оба про бумагу. Подписи берутся из имён задач,
+              поэтому клетка на листе и вопрос в таблице называются одинаково */}
+          <button type="button" className="secondary" onClick={() => setBlank(true)}>
+            {t('blank.forWork')}
+          </button>
+
           {/* Настройки — кнопкой, и стоит она у заголовка, а не над заданием:
               рядом с текстом она читалась бы как что-то, что с этим текстом
               делают */}
@@ -344,6 +353,18 @@ export default function WorkEdit() {
             loadTasks()
           }}
           onDone={() => loadTasks()}
+        />
+      )}
+
+      {blank && (
+        <BlankDialog
+          /* Своё имя, а не `name`: безымянный вопрос зовётся номером, а номер
+             на бумаге и так стоит в углу клетки — крупная «3» под мелкой «3»
+             это шум, а не подпись */
+          initial={tasks.map((task) => task.label ?? '')}
+          extra={Math.max(0, tasks.length - 15)}
+          fileName={`${work.title}.pdf`}
+          onClose={() => setBlank(false)}
         />
       )}
 

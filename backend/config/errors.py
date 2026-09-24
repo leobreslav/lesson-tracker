@@ -289,6 +289,10 @@ class Codes:
     WORK_KIND_NAME_TAKEN = "work_kind_name_taken"
     WORK_KIND_LABEL_REQUIRED = "work_kind_label_required"
 
+    # бланк с подписями задач
+    BLANK_LABELS_INVALID = "blank_labels_invalid"
+    BLANK_LABEL_TOO_LONG = "blank_label_too_long"
+
     # sign-in
     TOKEN_REQUIRED = "token_required"
     TOKEN_INVALID = "token_invalid"
