@@ -52,7 +52,7 @@ test('вставка списка считает пятерых по-разно�
       'petrov@example.com', // учитель — адрес занят
     ].join('\n'),
   )
-  await dialog.getByRole('button', { name: 'Проверить' }).click()
+  await dialog.locator('.roster-paste').getByRole('button', { name: 'Проверить' }).click()
 
   const summary = dialog.locator('[data-roster-preview]')
   await expect(summary).toContainText('Зачислим: 0')
@@ -80,7 +80,7 @@ test('строка, которую не прочитать, отменяет в�
   await dialog
     .getByLabel('Вставить список')
     .fill('Петров Иван\nnovikov@example.com')
-  await dialog.getByRole('button', { name: 'Проверить' }).click()
+  await dialog.locator('.roster-paste').getByRole('button', { name: 'Проверить' }).click()
 
   await expect(dialog).toContainText('Строка 1: нет адреса почты')
   await expect(dialog.getByRole('button', { name: 'Зачислить' })).toBeDisabled()
