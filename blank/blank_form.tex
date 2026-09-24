@@ -29,15 +29,19 @@
 \setlength{\parindent}{0pt}
 
 % ---- реперы ----------------------------------------------------------------
-% Шесть меток, все одинаковые (4мм), по три в каждом поле листа: на 8, 27 и
-% 39мм от верха плюс угловые внизу страницы. Вертикали две — 8 и 202мм.
+% Шесть меток, все одинаковые (4мм), по три в каждом поле листа: на 8, 21 и
+% 45мм от верха плюс угловые внизу страницы. Вертикали две — 8 и 202мм.
+%
+% СРЕДНЯЯ ПАРА НЕ ПОСЕРЕДИНЕ НАМЕРЕННО. Какую из трёх полос (8–45, 8–21,
+% 21–45) нашёл поиск, он узнаёт по пропорции, а у двух половин поровну она
+% одна и та же. Высоты 37, 13 и 24мм дают пропорции, которые не путаются.
 %
 % Зачем именно так:
 %
 % ВЫПРЯМЛЯЕТСЯ ШАПКА, А НЕ ЛИСТ. PDF приходит и из телефонных фотографий, а
 % лист в руке не плоский: одна гомография на весь лист размазывает ошибку по
 % странице — включая ту полосу в 19мм, которую мы единственную и читаем.
-% Метки на 8, 27 и 39мм обнимают шапку, и на такой области лист плоский почти
+% Метки на 8, 21 и 45мм обнимают шапку, и на такой области лист плоский почти
 % всегда.
 %
 % ИХ ШЕСТЬ, А НЕ ЧЕТЫРЕ, потому что рвётся угол. Скрепку ставят в левый
@@ -55,13 +59,13 @@
 % бледную печать. Метки — приближение и проверка «лист целиком в кадре».
 \newcommand{\fiducials}{%
 \begin{tikzpicture}[remember picture,overlay]
- % шапка: вертикали 8 и 202мм, высоты 8, 27, 39мм
+ % шапка: вертикали 8 и 202мм, высоты 8, 21, 45мм
  \fill[black] ([shift={( 6mm, -6mm)}]current page.north west) rectangle ++( 4mm,-4mm);
  \fill[black] ([shift={(-6mm, -6mm)}]current page.north east) rectangle ++(-4mm,-4mm);
- \fill[black] ([shift={( 6mm,-25mm)}]current page.north west) rectangle ++( 4mm,-4mm);
- \fill[black] ([shift={(-6mm,-25mm)}]current page.north east) rectangle ++(-4mm,-4mm);
- \fill[black] ([shift={( 6mm,-37mm)}]current page.north west) rectangle ++( 4mm,-4mm);
- \fill[black] ([shift={(-6mm,-37mm)}]current page.north east) rectangle ++(-4mm,-4mm);
+ \fill[black] ([shift={( 6mm,-19mm)}]current page.north west) rectangle ++( 4mm,-4mm);
+ \fill[black] ([shift={(-6mm,-19mm)}]current page.north east) rectangle ++(-4mm,-4mm);
+ \fill[black] ([shift={( 6mm,-43mm)}]current page.north west) rectangle ++( 4mm,-4mm);
+ \fill[black] ([shift={(-6mm,-43mm)}]current page.north east) rectangle ++(-4mm,-4mm);
  % низ листа: «лист целиком попал в кадр»
  \fill[black] ([shift={( 6mm, 6mm)}]current page.south west) rectangle ++( 4mm, 4mm);
  \fill[black] ([shift={(-6mm, 6mm)}]current page.south east) rectangle ++(-4mm, 4mm);
@@ -80,16 +84,26 @@
 % каждая непропечатавшаяся линия дороже, чем раньше. 0.4pt — это 0.14 мм: на
 % бледном тонере и на сжатом скане такая линия пропадает. 0.6pt переживает и
 % то и другое, а чернил стоит столько же.
+%
+% ПОЛОСА ПОДПИСИ ВЫСОТОЙ С КЛЕТКУ. Задачи в работе редко зовутся 1…15 подряд:
+% «1a, 1b, 2a, 3, 5b». Какая клетка какой задаче принадлежит, система знает и
+% так — клетка связана с вопросом местом, — а учителю с ручкой это надо видеть
+% на бумаге. Прежняя полоса была в 5мм с напечатанным Q1: вписать туда «2c»
+% рукой было нельзя, и подписи уезжали под таблицу как придётся. Теперь полоса
+% 11.5мм, как сама клетка, и пустая: подпись вписывают или допечатывают.
+% Номер позиции остался мелко в углу — по нему клетку называют, когда имени нет.
+%
+% Чтение полосу не видит: плитка клетки режется ниже неё (`cellRect`).
 \newcommand{\markgrid}{%
 \hspace*{0.5mm}%
 \begin{tikzpicture}[x=1mm,y=1mm,line width=0.6pt]
- \def\w{11.5625}\def\hh{16.5}\def\lab{5}
+ \def\w{11.5625}\def\hh{23}\def\lab{11.5}
  \foreach \q in {1,...,15}{%
    \pgfmathsetmacro\xx{(\q-1)*\w}%
    \fill[black!7] (\xx,\hh-\lab) rectangle (\xx+\w,\hh);
    \draw (\xx,0) rectangle (\xx+\w,\hh);
    \draw (\xx,\hh-\lab) -- (\xx+\w,\hh-\lab);
-   \node[font=\scriptsize\bfseries,text depth=0pt,inner sep=0pt] at (\xx+\w/2,\hh-\lab/2) {Q\q};
+   \node[font=\fontsize{5}{6}\selectfont,anchor=north west,inner sep=0.6mm] at (\xx,\hh) {\q};
  }
  \pgfmathsetmacro\sx{15*\w}
  \fill[black!7] (\sx,\hh-\lab) rectangle (\sx+\w,\hh);
@@ -100,28 +114,29 @@
 \end{tikzpicture}}
 
 % ---- фон: тетрадная сетка 5x5 мм -------------------------------------------
-% Сетка ровно из целых клеток: 37 x 47 по 5 мм (185 x 235 мм), привязана к
-% началу области (12.5мм / 45мм) — на всех краях полноценные клетки.
+% Сетка ровно из целых клеток: 37 x 45 по 5 мм (185 x 225 мм), привязана к
+% началу области (12.5мм / 50мм) — на всех краях полноценные клетки. Строку
+% клеток поле отдало полосе подписи над сеткой баллов.
 % Рамка вокруг неё жирная и почти чёрная: она и отделяет поле записи от полей
 % листа, и служит третьим ориентиром, если фотография обрезала угол.
 \newcommand{\notebookgrid}{%
 \begin{tikzpicture}[remember picture,overlay]
- \coordinate (gtl) at ([shift={(12.5mm,-45mm)}]current page.north west);
+ \coordinate (gtl) at ([shift={(12.5mm,-50mm)}]current page.north west);
  \begin{scope}[shift={(gtl)}]
-   \clip (0,0) rectangle (185mm,-230mm);
-   \draw[step=5mm,black!40,line width=0.3pt] (0,0) grid (185mm,-230mm);
+   \clip (0,0) rectangle (185mm,-225mm);
+   \draw[step=5mm,black!40,line width=0.3pt] (0,0) grid (185mm,-225mm);
  \end{scope}
  % Белые подложки под коды: тетрадные линии не должны лезть в модули, а «тихая
  % зона» обязана быть пустой. Четыре модуля с каждой стороны — это то, что
  % требует стандарт, а не запас на глаз: 16.8 + 3.2*2 = 23.2мм.
  \begin{scope}[shift={(gtl)}]
-   \fill[white] (161.8mm,-206.8mm) rectangle (185mm,-230mm);
-   \fill[white] (0mm,-206.8mm) rectangle (23.2mm,-230mm);
+   \fill[white] (161.8mm,-201.8mm) rectangle (185mm,-225mm);
+   \fill[white] (0mm,-201.8mm) rectangle (23.2mm,-225mm);
  \end{scope}
  % рамка рисуется вне clip и последней: иначе её внешняя половина срезалась бы,
  % а подложка съела бы угол
  \begin{scope}[shift={(gtl)}]
-   \draw[black!85,line width=0.9pt] (0,0) rectangle (185mm,-230mm);
+   \draw[black!85,line width=0.9pt] (0,0) rectangle (185mm,-225mm);
  \end{scope}
 \end{tikzpicture}%
 % Два кода, в обоих нижних углах поля записи.

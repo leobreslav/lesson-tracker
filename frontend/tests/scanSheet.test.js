@@ -17,7 +17,7 @@ import {
   shrink,
   toGray,
 } from '../src/scanSheet.js'
-import { CORNERS, FIELD, GRID, HEADER, PAGE, STRIP, STRIP_WIDTH } from '../src/blankGeometry.js'
+import { CORNERS, FIELD, GRID, HEADER, HEADER_MARKS, PAGE, STRIP, STRIP_WIDTH } from '../src/blankGeometry.js'
 
 /**
  * Рисуем лист так, как он выглядит на фотографии: тёмный фон, светлый
@@ -84,11 +84,11 @@ function drawSheet({
     }
 
   // На бумаге меток восемь, а не четыре: кроме углов листа напечатаны ещё две
-  // пары, обнимающие шапку (`blank/blank_form.tex`, 25 и 37 мм от верха).
+  // пары, обнимающие шапку (`HEADER_MARKS`, без верхней — она уже в углах).
   // Фикстура их не рисовала, то есть ни один тест не видел настоящий лист —
   // а лишние тёмные квадраты это ровно то, из чего поиск строит четвёрки.
   if (headerMarks)
-    for (const y of [27, 39]) {
+    for (const y of HEADER_MARKS.slice(1)) {
       square(8 + markShift, y, 4)
       square(202 + markShift, y, 4)
     }
@@ -487,14 +487,14 @@ test('кроп берёт именно шапку, а не середину ли
   // под сеткой. Промах кропа вверх срезал бы верх букв в строке имени, а
   // выглядело бы это как испортившееся чтение почерка.
   assert.equal(STRIP.y, 0)
-  assert.equal(STRIP.height, 38)
+  assert.equal(STRIP.height, HEADER.y + HEADER.height)
 
   // А **ищут** шапку по другой области — той, что обнята метками. Расширение
   // кропа вверх однажды утащило за собой и поиск: счёт стал считаться там,
   // где гомография продолжена наружу, и две страницы живой пачки перестали
   // опознаваться как наш бланк. Области разные, и это должно остаться так.
-  assert.equal(HEADER.y, 8)
-  assert.equal(HEADER.height, 30)
+  assert.equal(HEADER.y, HEADER_MARKS[0])
+  assert.equal(HEADER.y + HEADER.height, HEADER_MARKS[2])
   assert.ok(STRIP.y < HEADER.y, 'кроп обязан начинаться выше области поиска')
 })
 

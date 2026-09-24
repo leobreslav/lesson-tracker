@@ -28,7 +28,7 @@
 // из тестов ровно там, где код станет разделителем блоков.
 import jsQR from 'jsqr'
 
-import { CODE_PREFIX, GRID, HEADER, PAGE, QR, STRIP, STRIP_WIDTH, cellRect, headerCorners, nameRow, sheetCorners, stripHeight } from './blankGeometry.js'
+import { CODE_PREFIX, GRID, HEADER, HEADER_MARKS, PAGE, QR, STRIP, STRIP_WIDTH, cellRect, headerCorners, nameRow, sheetCorners, stripHeight } from './blankGeometry.js'
 
 /** Оттенки серого одной плоскостью: дальше всё считается по ней. */
 export function toGray(image) {
@@ -276,7 +276,7 @@ export function quads(marks, frame) {
  * Полосы, которые метки бланка образуют **вокруг шапки**.
  *
  * Меток на бумаге восемь: четыре по углам листа и ещё две пары по бокам, на
- * 27 и 39 мм. Вторые напечатаны ровно затем, чтобы обнять шапку, — так и
+ * 21 и 45 мм. Вторые напечатаны ровно затем, чтобы обнять шапку, — так и
  * сказано в `blank/README.md`, — но `extractHeader` брал только углы листа, и
  * четыре метки из восьми не участвовали ни в чём.
  *
@@ -294,9 +294,9 @@ export function quads(marks, frame) {
  * что и всё остальное.
  */
 const BANDS = [
-  { top: 8, bottom: 39 },
-  { top: 8, bottom: 27 },
-  { top: 27, bottom: 39 },
+  { top: HEADER_MARKS[0], bottom: HEADER_MARKS[2] },
+  { top: HEADER_MARKS[0], bottom: HEADER_MARKS[1] },
+  { top: HEADER_MARKS[1], bottom: HEADER_MARKS[2] },
 ]
 
 const BAND_LEFT = 8
