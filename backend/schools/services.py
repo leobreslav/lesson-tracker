@@ -24,7 +24,7 @@
 выписываем**: это было бы наше утверждение о проверке, которой не было.
 """
 
-from accounts.models import Kind
+from accounts.models import Kind, Language
 from config.errors import Codes, api_error
 from django.contrib.auth import get_user_model
 from django.db import transaction
@@ -63,6 +63,7 @@ def provision(
     name: str = "",
     last_name: str = "",
     is_admin: bool = False,
+    language: str = "",
 ):
     """
     Завести человека, которого ещё не было.
@@ -111,6 +112,11 @@ def provision(
         first_name=(name or "")[:150],
         last_name=(last_name or "")[:150],
     )
+    # язык — того, кто завёл: письмо с кодом входа уходит до первого входа,
+    # и родитель русской школы должен получить его по-русски, а не на
+    # умолчании модели
+    if language in Language.values:
+        user.language = language
     user.set_unusable_password()
     user.save()
     return user

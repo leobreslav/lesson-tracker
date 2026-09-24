@@ -216,6 +216,7 @@ def parse_rows(rows: list[list[str]]) -> Parsed:
 
     result.group = group_name(rows, header_line)
     seen: set[str] = set()
+    numbers: dict[str, str] = {}
 
     for offset, row in enumerate(rows[header_line:], start=header_line + 1):
         if not any(cell(row, column) for column in range(len(row))):
@@ -241,8 +242,45 @@ def parse_rows(rows: list[list[str]]) -> Parsed:
             continue
         seen.add(pupil.email)
 
+        # один номер на два адреса в одном файле — ошибка источника, и
+        # применять её нельзя: второй человек упёрся бы в уникальность номера
+        # уже в базе, посреди транзакции
+        if pupil.external_id:
+            other = numbers.get(pupil.external_id)
+            if other is not None:
+                result.errors.append(
+                    problem(
+                        Codes.ROSTER_ID_CONFLICT,
+                        f"Line {offset}: Student ID {pupil.external_id} is also "
+                        f"the number of «{other}» above.",
+                        line=offset,
+                    )
+                )
+                continue
+            numbers[pupil.external_id] = pupil.email
+
         pupil.parents = read_parents(offset, row, parents, pupil, result.warnings)
         result.pupils.append(pupil)
+
+    # адрес родителя, совпадающий с адресом **другого** ученика файла, — та же
+    # беда, что совпадение со своим: один адрес, один вид. Проверяется после
+    # всех строк, потому что этот ученик может стоять ниже
+    for pupil in result.pupils:
+        kept = []
+        for adult in pupil.parents:
+            if adult.email in seen:
+                result.warnings.append(
+                    problem(
+                        Codes.ROSTER_PARENT_IS_STUDENT,
+                        f"Line {pupil.line}: the parent's address «{adult.email}» "
+                        "belongs to a student in this file; the parent is skipped.",
+                        line=pupil.line,
+                        email=adult.email,
+                    )
+                )
+                continue
+            kept.append(adult)
+        pupil.parents = kept
 
     return result
 
@@ -331,6 +369,8 @@ def read_parents(line, row, slots: dict, pupil: Pupil, warnings: list[dict]):
             )
             continue
 
+        # свой адрес ловится здесь, чужой ученический — после всех строк в
+        # `parse_rows`: тот ученик может стоять ниже
         if adult.email == pupil.email:
             warnings.append(
                 problem(
@@ -721,7 +761,14 @@ def welcome(email: str, kind: str, *, first: str, last: str, school, by):
         email=email,
         defaults={"kind": kind, "name": label, "created_by": by},
     )
-    return services.provision(school, email, kind=kind, name=first, last_name=last)
+    return services.provision(
+        school,
+        email,
+        kind=kind,
+        name=first,
+        last_name=last,
+        language=getattr(by, "language", ""),
+    )
 
 
 def refresh(user, email: str, first: str, last: str, external_id: str = ""):

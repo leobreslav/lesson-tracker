@@ -148,6 +148,28 @@ class ParseTests(APITestCase):
         self.assertEqual(parsed.warnings[0]["code"], "roster_parent_is_student")
         self.assertEqual(parsed.pupils[0].parents, [])
 
+    def test_a_parent_with_another_students_address_from_the_file_is_skipped(self):
+        """Тот ученик может стоять ниже, поэтому проверка идёт после всех строк."""
+        parsed = self.parse(
+            pupil_row(1, "А", "Б", "ab@example.com", ("Г", "В", "vg@example.com")),
+            pupil_row(2, "В", "Г", "vg@example.com"),
+        )
+
+        self.assertEqual(parsed.errors, [])
+        self.assertEqual(parsed.warnings[0]["code"], "roster_parent_is_student")
+        self.assertEqual(parsed.pupils[0].parents, [])
+        self.assertEqual(len(parsed.pupils), 2)
+
+    def test_one_student_id_on_two_addresses_is_refused(self):
+        parsed = self.parse(
+            pupil_row(412, "А", "Б", "ab@example.com"),
+            pupil_row(412, "В", "Г", "vg@example.com"),
+        )
+
+        self.assertEqual(parsed.errors[0]["code"], "roster_id_conflict")
+        self.assertEqual(parsed.errors[0]["params"]["line"], 7)
+        self.assertEqual(len(parsed.pupils), 1)
+
     def test_the_same_parent_in_two_slots_is_one_parent(self):
         parsed = self.parse(pupil_row(1, "А", "Б", "ab@example.com", MUM, MUM))
 
@@ -363,6 +385,16 @@ class UploadTests(UploadTestCase):
         )
         free.refresh_from_db()
         self.assertEqual(free.external_id, "413")
+
+    def test_new_people_speak_the_language_of_whoever_imported_them(self):
+        """Письмо с кодом входа уходит до первого входа — на языке школы."""
+        self.admin.language = "ru"
+        self.admin.save()
+
+        self.upload(pupil_row(1, "А", "Б", "kid@example.com", MUM))
+
+        self.assertEqual(User.objects.get(email="kid@example.com").language, "ru")
+        self.assertEqual(User.objects.get(email="mum@example.com").language, "ru")
 
     def test_a_second_upload_of_the_same_file_changes_nothing(self):
         row = pupil_row(1, "Пётр", "Иванов", "new@example.com", MUM, DAD)

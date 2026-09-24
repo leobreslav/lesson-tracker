@@ -93,7 +93,9 @@ class GuardianshipSerializer(serializers.ModelSerializer):
                 email=email,
                 defaults={"kind": Kind.PARENT, "created_by": request.user},
             )
-            parent = school_services.provision(school, email, kind=Kind.PARENT)
+            parent = school_services.provision(
+                school, email, kind=Kind.PARENT, language=request.user.language
+            )
 
         row = link(parent, child, relation=validated.get("relation", ""))
         if validated.get("relation") and row.relation != validated["relation"]:
