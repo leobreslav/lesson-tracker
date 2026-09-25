@@ -167,6 +167,31 @@ export default function Works({ onLoggedOut }) {
     return <p>{error ? <span className="error">{error}</span> : t('common.loading')}</p>
   }
 
+  /*
+    Бланк живёт у списка работ, а не в мастере разбора. Печатают его раз в год
+    пачкой и **до** контрольной; мастер открывают после, со стопкой исписанных
+    листов в руках, и ссылка «распечатать» там отвечала на вопрос, решённый
+    неделю назад.
+
+    Курсу он при этом не принадлежит — бланк единый на все, — поэтому строка
+    стоит и на витрине, где курс ещё не выбран, и в выбранном курсе: пачку на
+    год печатают, не заходя ни в один. Одна строка на оба места, чтобы текст и
+    поведение не разошлись.
+  */
+  const blankLine = (
+    <p className="hint">
+      <a href="/blank.pdf" target="_blank" rel="noreferrer">
+        {t('scan.printBlank')}
+      </a>{' '}
+      {t('scan.printBlankHint')}{' '}
+      {/* Подписать бланк можно и без работы: контрольную ещё не завели,
+          а печатать пачку надо сегодня */}
+      <button type="button" className="link" onClick={() => setBlank(true)}>
+        {t('blank.withLabels')}
+      </button>
+    </p>
+  )
+
   // пустое состояние — внутри страницы, а не вместо неё: у раздела есть
   // имя, и терять его оттого, что курсов пока нет, незачем
   return (
@@ -244,7 +269,10 @@ export default function Works({ onLoggedOut }) {
           открыт; закрытый, он оставляет одно имя в сером контроле, а пустой
           читается как недогрузившийся заголовок, а не как вопрос.
         */
-        <CourseShowcase courses={courses} onPick={pickCourse} busy={busy} />
+        <>
+          {blankLine}
+          <CourseShowcase courses={courses} onPick={pickCourse} busy={busy} />
+        </>
       ) : (
         <>
 
@@ -265,22 +293,7 @@ export default function Works({ onLoggedOut }) {
             {t('works.add')}
           </button>
         </div>
-        {/* Бланк живёт здесь, а не в мастере разбора. Печатают его раз в год
-            пачкой и **до** контрольной; мастер открывают после, со стопкой
-            исписанных листов в руках, и ссылка «распечатать» там отвечала на
-            вопрос, решённый неделю назад. Работе он при этом не принадлежит —
-            бланк единый на все, — поэтому и стоит у списка, а не в строке */}
-        <p className="hint">
-          <a href="/blank.pdf" target="_blank" rel="noreferrer">
-            {t('scan.printBlank')}
-          </a>{' '}
-          {t('scan.printBlankHint')}{' '}
-          {/* Подписать бланк можно и без работы: контрольную ещё не завели,
-              а печатать пачку надо сегодня */}
-          <button type="button" className="link" onClick={() => setBlank(true)}>
-            {t('blank.withLabels')}
-          </button>
-        </p>
+        {blankLine}
         {works === null ? (
           <p>{t('common.loading')}</p>
         ) : works.length === 0 ? (
