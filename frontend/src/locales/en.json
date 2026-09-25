@@ -1402,6 +1402,7 @@
       "label": "Number",
       "labelHint": "What this question is called in this work: «1a», «324 from Galitsky». Leave it empty and it is called by its place in the list.",
       "question": "The question",
+      "questionHint": "Markdown with formulas. Paste a drawing straight into the text with Ctrl+V.",
       "preview": "Preview",
       "write": "Write",
       "viewMode": "Edit or preview",

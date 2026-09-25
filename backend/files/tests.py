@@ -20,6 +20,7 @@ from datetime import date, timedelta
 from io import BytesIO, StringIO
 from unittest import mock
 
+from bank.models import Problem
 from botocore.exceptions import EndpointConnectionError
 from django.core.management import call_command
 from django.core.management.base import CommandError
@@ -1908,3 +1909,213 @@ class PullFilesTests(SimpleTestCase):
 
         with self.assertRaisesMessage(CommandError, "lesson-tracker.pull.env"):
             self.run_pull(r2, env=empty)
+
+
+class StatementPictureTests(FilesTestCase):
+    """
+    Чертёж в условии задачи: седьмой владелец ссылки.
+
+    Владелец — само условие (`bank.Problem`), а не работа, где его спросили,
+    и не ячейка: условие живёт в одном месте и стоит в нескольких работах,
+    а у ячейки текста нет вовсе. Картинка, приложенная к работе, показалась
+    бы в одной из них и пропала в остальных — пустым абзацем, без ошибки.
+
+    Круг читателей идёт за текстом: кто читает условие — по книге или по
+    своей работе, — тот видит и чертёж; класс — через открытую работу.
+    """
+
+    def setUp(self):
+        super().setUp()
+        from schools.services import enrol
+        from schools.testing import make_task, make_work
+
+        self.work = make_work(self.user, self.course, title="Самостоятельная")
+        self.task = make_task(self.work, question="Найдите угол", answers=("30",))
+        self.problem = self.task.problem
+        enrol(self.student, self.course, by=self.user)
+
+    def paste(self, problem=None, name="drawing.png", **extra):
+        return self.client.post(
+            reverse("attachment-list"),
+            {
+                "problem": (problem or self.problem).pk,
+                "file": make_upload(name=name, kind="image/png"),
+                "inline": "true",
+                **extra,
+            },
+            format="multipart",
+        )
+
+    def save_question(self, text, **fields):
+        return self.client.patch(
+            reverse("task-detail", args=[self.task.pk]),
+            {"question": text, **fields},
+            format="json",
+        )
+
+    def test_a_teacher_pastes_a_drawing_into_the_statement(self):
+        answer = self.paste()
+
+        self.assertEqual(answer.status_code, 201, answer.data)
+        row = Attachment.objects.get(pk=answer.data["id"])
+        self.assertEqual(row.problem_id, self.problem.pk)
+        self.assertTrue(row.inline)
+        self.assertIsNone(row.work_id)
+
+    def test_a_statement_has_no_list_of_materials(self):
+        """Не в тексте — значит нигде: такое вложение нечем ни увидеть, ни убрать."""
+        answer = self.client.post(
+            reverse("attachment-list"),
+            {"problem": self.problem.pk, "file": make_upload(name="drawing.png", kind="image/png")},
+            format="multipart",
+        )
+        self.assertEqual(answer.status_code, 400)
+        self.assertEqual(answer.data["code"], "attachment_kind_mismatch")
+
+    def test_the_class_sees_the_drawing_through_the_open_work(self):
+        picture = self.paste().data
+
+        self.sign_in(self.student)
+        answer = self.client.get(reverse("content-image", args=[picture["file"]]))
+        self.assertEqual(answer.status_code, 200)
+
+    def test_a_student_of_another_course_does_not(self):
+        picture = self.paste().data
+        stranger = make_user(self.school, "other@example.com", student=True)
+
+        self.sign_in(stranger)
+        answer = self.client.get(reverse("content-image", args=[picture["file"]]))
+        self.assertEqual(answer.status_code, 404)
+
+    def test_a_colleague_without_that_cell_may_not_paste_into_my_statement(self):
+        """Личное условие, не стоящее ни в одной работе коллеги, ему не владелец."""
+        self.sign_in(self.colleague)
+        answer = self.paste()
+        self.assertEqual(answer.status_code, 400)
+        self.assertIn("problem", answer.data)
+
+    def test_the_teacher_of_the_work_pastes_into_a_shared_statement_through_the_cell(self):
+        """
+        Чужое условие в своей ячейке: картинка вешается на него **до**
+        «Сохранить», когда копии ещё нет. Сохранение делает копию, и чертёж
+        уезжает с ней, а с оригинала снимается — текст оригинала его не
+        называет.
+        """
+        from works.models import Task
+
+        shared = Problem.objects.create(
+            text="Общее условие", school=self.school, owner=None, created_by=self.user
+        )
+        cell = Task.objects.create(work=self.work, position=1, problem=shared)
+        self.task = cell
+
+        picture = self.paste(problem=shared).data
+        self.assertEqual(Attachment.objects.filter(problem=shared).count(), 1)
+
+        saved = self.save_question(f"Общее условие\n\n![](file:{picture['file']})")
+        self.assertEqual(saved.status_code, 200, saved.data)
+
+        cell.refresh_from_db()
+        self.assertNotEqual(cell.problem_id, shared.pk)
+        self.assertEqual(cell.problem.copied_from_id, shared.pk)
+        self.assertEqual(
+            list(cell.problem.attachments.values_list("stored_file_id", flat=True)),
+            [picture["file"]],
+        )
+        self.assertEqual(Attachment.objects.filter(problem=shared).count(), 0)
+        # файл жив: на него смотрит копия
+        self.assertTrue(StoredFile.objects.filter(pk=picture["file"]).exists())
+
+    def test_a_copy_of_my_own_statement_takes_the_drawing_along(self):
+        picture = self.paste().data
+        text = f"Найдите угол\n\n![](file:{picture['file']})"
+
+        saved = self.save_question(text, mode="copy")
+        self.assertEqual(saved.status_code, 200, saved.data)
+
+        self.task.refresh_from_db()
+        copy = self.task.problem
+        self.assertEqual(copy.copied_from_id, self.problem.pk)
+        self.assertEqual(copy.attachments.filter(inline=True).count(), 1)
+        self.assertEqual(self.problem.attachments.count(), 0)
+
+    def test_the_drawing_lives_while_the_text_names_it(self):
+        picture = self.paste().data
+        self.save_question(f"Угол\n\n![](file:{picture['file']})")
+        self.assertEqual(self.problem.attachments.count(), 1)
+
+        with self.captureOnCommitCallbacks(execute=True):
+            self.save_question("Угол без чертежа")
+
+        self.assertEqual(self.problem.attachments.count(), 0)
+        self.assertFalse(StoredFile.objects.filter(pk=picture["file"]).exists())
+
+    def test_editing_in_the_book_tidies_the_same_way(self):
+        picture = self.paste().data
+        self.save_question(f"Угол\n\n![](file:{picture['file']})")
+
+        answer = self.client.patch(
+            reverse("bank-problem", args=[self.problem.pk]),
+            {"text": "Угол"},
+            format="json",
+        )
+        self.assertEqual(answer.status_code, 200, answer.data)
+        self.assertEqual(self.problem.attachments.count(), 0)
+
+    def test_an_empty_cell_gets_a_statement_to_hang_the_drawing_on(self):
+        """
+        Владелец нужен в момент вставки, а условия у пустой ячейки нет:
+        окно спрашивает его отдельной дверью, с тем, что уже набрано.
+        """
+        from works.models import Task
+
+        cell = Task.objects.create(work=self.work, position=1)
+
+        answer = self.client.post(
+            reverse("task-statement", args=[cell.pk]), {"question": "Дан "}, format="json"
+        )
+        self.assertEqual(answer.status_code, 200, answer.data)
+
+        cell.refresh_from_db()
+        self.assertEqual(cell.problem_id, answer.data["problem"])
+        self.assertEqual(cell.problem.text, "Дан ")
+        self.assertEqual(cell.problem.owner_id, self.user.pk)
+
+        again = self.client.post(
+            reverse("task-statement", args=[cell.pk]), {"question": "другое"}, format="json"
+        )
+        self.assertEqual(again.data["problem"], cell.problem_id)
+
+    def test_the_drawing_of_a_hidden_stem_stays_hidden_from_the_student(self):
+        """Шапка сюжета спрятана — спрятана и её картинка: иначе прятать нечего."""
+        from works.models import Task
+
+        stem = Problem.objects.create(
+            text="Дан треугольник", school=self.school, owner=self.user, created_by=self.user
+        )
+        part = Problem.objects.create(
+            text="Найдите площадь", school=self.school, owner=self.user,
+            created_by=self.user, parent=stem,
+        )
+        cell = Task.objects.create(work=self.work, position=1, problem=part, show_stem=False)
+        picture = self.paste(problem=stem).data
+
+        self.sign_in(self.student)
+        answer = self.client.get(reverse("content-image", args=[picture["file"]]))
+        self.assertEqual(answer.status_code, 404)
+
+        cell.show_stem = True
+        cell.save(update_fields=["show_stem"])
+        answer = self.client.get(reverse("content-image", args=[picture["file"]]))
+        self.assertEqual(answer.status_code, 200)
+
+    def test_deleting_the_statement_takes_the_drawing_with_it(self):
+        picture = self.paste().data
+        self.task.problem = None
+        self.task.save(update_fields=["problem"])
+
+        with self.captureOnCommitCallbacks(execute=True):
+            self.problem.delete()
+
+        self.assertFalse(Attachment.objects.filter(pk=picture["id"]).exists())
+        self.assertFalse(StoredFile.objects.filter(pk=picture["file"]).exists())

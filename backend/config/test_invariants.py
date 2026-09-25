@@ -424,6 +424,11 @@ class EveryOwnerOfAnAttachmentAnnouncesItselfTests(SimpleTestCase):
         "student_work": "тетрадь ученика: он сам, его семья и ведущий",
         "bookmark_owner": "личный стол: хозяин, и никто больше — чужому 404",
         "school_shelf": "полка школы: читают сотрудники, пишет администратор",
+        "problem": (
+            "чертёж в условии: читает тот, кто читает условие — по книге или "
+            "по своей работе, класс — по открытой работе; вешает автор или "
+            "ведущий работы, где оно стоит в ячейке"
+        ),
     }
 
     def test_every_owner_is_named_with_the_circle_that_reads_it(self):

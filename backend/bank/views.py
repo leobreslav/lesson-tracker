@@ -268,6 +268,11 @@ class ProblemView(BankView):
             if field in request.data:
                 setattr(problem, field, request.data[field])
         problem.save()
+        # картинка живёт, пока на неё ссылается текст, — и правка в книге
+        # такая же правка текста, как в окне задачи
+        from works import statements
+
+        statements.tidy(problem)
         return Response(services.problem_payload(problem, user=request.user))
 
 

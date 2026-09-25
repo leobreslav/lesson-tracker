@@ -61,12 +61,19 @@ def family_attachments(user):
     from works.services import visible_works_for
 
     people = watched_students(user)
+    works = visible_works_for(people)
     return Attachment.objects.filter(
         Q(student_work__student__in=people)
         # `staff_only` снимает у вложения работы одну вещь — класс. Приложенная
         # к работе отсканированная пачка это работы всех учеников разом, и
         # видеть её вправе только тот, кто её и принёс
-        | Q(work__in=visible_works_for(people), staff_only=False)
+        | Q(work__in=works, staff_only=False)
+        # чертёж в условии: часть вопроса, который ученику задали. Виден
+        # ровно там же, где сам вопрос, — в открытой ему работе, — и шапка
+        # сюжета вместе с ним, только если её показали (`Task.show_stem`):
+        # спрятанная шапка прячет и свою картинку
+        | Q(problem__asked_in__work__in=works)
+        | Q(problem__parts__asked_in__work__in=works, problem__parts__asked_in__show_stem=True)
     )
 
 
@@ -102,7 +109,34 @@ def school_attachments(user):
         # ней должен быть «не ваше» (403 у не-администратора), а не «нет
         # такого»
         | Q(school_shelf_id=user.school_id)
+        # условие своей школы: чужое личное отвечает «не ваше», как и чужой
+        # урок. Системный каталог школы не имеет, и его картинок здесь нет
+        | Q(problem__school_id=user.school_id)
     )
+
+
+def readable_problems(user):
+    """
+    Условия, чьи картинки этому человеку видны.
+
+    Два пути к условию, и оба дают право на его чертёж: **книга** — то, что
+    видно на полке банка (`Problem.objects.visible_to`), — и **своя работа**:
+    условие, стоящее в ячейке работы курса, который человек ведёт, он
+    читает на странице работы, даже если в банке оно чужое личное. Второе
+    не расширяет ничего: текст этого условия ему уже показан, и картинка в
+    тексте — часть текста.
+
+    Шапка сюжета идёт вместе с пунктом: учителю она показана всегда.
+    """
+    from bank.models import Problem
+    from schedule.models import Course
+
+    mine = Course.objects.writable_by(user)
+    return Problem.objects.filter(
+        Q(pk__in=Problem.objects.visible_to(user))
+        | Q(asked_in__work__course__in=mine)
+        | Q(parts__asked_in__work__course__in=mine)
+    ).distinct()
 
 
 def readable_attachments(user):
@@ -138,6 +172,8 @@ def readable_attachments(user):
         # полку школы читают все её сотрудники: она для того и заведена,
         # чтобы регламент лежал в одном месте, а не в почте у каждого
         | Q(school_shelf_id=user.school_id)
+        # чертёж условия читает тот, кто читает само условие
+        | Q(problem__in=readable_problems(user))
     )
 
 
@@ -209,6 +245,14 @@ def can_read(user, attachment) -> bool:
             Course.objects.writable_by(user).filter(pk=row.work.course_id).exists()
         )
 
+    if attachment.problem_id is not None:
+        # чертёж условия: одно определение на список и на одну вещь, для
+        # семьи и для сотрудника, — иначе картинка нашлась бы по адресу и
+        # пропала бы в списке, или наоборот
+        if getattr(user, "is_family", False):
+            return family_attachments(user).filter(pk=attachment.pk).exists()
+        return readable_problems(user).filter(pk=attachment.problem_id).exists()
+
     # у строки плана два владельца, и право на её материалы — это право на
     # само дерево; спрашивается оно там же, где у списка
     return readable_plan_rows(user).filter(pk=attachment.plan_row_id).exists()
@@ -258,9 +302,44 @@ def can_write(user, attachment) -> bool:
             course_id=attachment.student_work.work.course_id, teacher=user
         ).exists()
 
+    if attachment.problem_id is not None:
+        # то же, что у двери «куда можно приложить»: своё условие и условие
+        # в ячейке своей работы
+        return writable_problems(user).filter(pk=attachment.problem_id).exists()
+
     # то же, что у списка «куда можно приложить»: у курса — назначение, у
     # полки — авторство
     return writable_plan_rows(user).filter(pk=attachment.plan_row_id).exists()
+
+
+def writable_problems(user):
+    """
+    Условия, в текст которых этот человек может вставить картинку.
+
+    Свои — те, что он вправе править в банке (`Problem.objects.writable_by`).
+    И **условия в ячейках своих работ**, включая чужие и общие, — и это не
+    расширение права на чужой текст, а следствие того, как правится
+    условие в окне задачи. Картинка вставляется **до** «Сохранить», когда
+    ещё не решено, править условие везде или сделать копию, а чужое условие
+    правится только копией (`works/statements.py`). Вставке нужен владелец
+    сейчас, и единственный, кто есть, — условие в ячейке.
+
+    Чужому условию от этого ничего не делается: картинку показывает только
+    текст, а текст чужого условия этот человек не меняет. Копия унесёт
+    картинку с собой, и уборка снимет её с оригинала (`statements.say`).
+    """
+    from bank.models import Problem
+    from schedule.models import Course
+
+    if user is None or not user.is_authenticated:
+        return Problem.objects.none()
+    if not getattr(user, "is_teacher", False):
+        return Problem.objects.none()
+
+    return Problem.objects.filter(
+        Q(pk__in=Problem.objects.writable_by(user))
+        | Q(asked_in__work__course__in=Course.objects.writable_by(user))
+    ).distinct()
 
 
 def writable_student_works(user):

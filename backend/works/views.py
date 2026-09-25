@@ -743,6 +743,21 @@ class TaskViewSet(CourseScopedViewSet):
         )
 
     @action(detail=True, methods=["post"])
+    def statement(self, request, pk=None):
+        """
+        Условие, к которому окно задачи приложит картинку, — до «Сохранить».
+
+        `{"question": "…"}` — что уже набрано; если условия у ячейки нет, оно
+        заводится с этим текстом (`statements.claim`). Ответ — `{"problem":
+        id}`, владелец для `/api/attachments/`.
+        """
+        task = self.get_object()
+        problem = statements.claim(
+            task, text=request.data.get("question"), user=request.user
+        )
+        return Response({"problem": problem.pk})
+
+    @action(detail=True, methods=["post"])
     def move(self, request, pk=None):
         """`{"direction": "up"|"down"}`; `{"moved": false}` — край, не ошибка."""
         task = self.get_object()

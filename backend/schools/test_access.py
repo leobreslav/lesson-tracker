@@ -334,6 +334,9 @@ class MatrixTests(AccessTestCase):
                 # «накатить условие на ячейку»: чужую ячейку так же не тронуть,
                 # как и любую другую её правку
                 {"name": "task-take", "method": "post", "body": {"problem": None}},
+                # «дать ячейке условие под картинку»: заводит условие, то
+                # есть правит ячейку, — и чужую так же нельзя
+                {"name": "task-statement", "method": "post", "body": {"question": ""}},
             ),
         )
 

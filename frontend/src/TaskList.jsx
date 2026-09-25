@@ -55,13 +55,27 @@ export default function TaskList({ workId, tasks, readOnly = false, onChanged })
     }
   }
 
-  const saveTask = (fields) =>
+  // `existing` — задача глазами окна, а не `editingTask.task`: окно, открытое
+  // на «добавить», могло уже завести её первой вставленной картинкой
+  const saveTask = (fields, existing) =>
     run(() =>
-      (editingTask.task
-        ? updateTask(editingTask.task.id, fields)
+      (existing
+        ? updateTask(existing.id, fields)
         : createTask({ ...fields, work: workId })
       ).then(() => setEditingTask(null)),
     )
+
+  /**
+   * Завести задачу до «Сохранить»: первой картинке нужен владелец.
+   *
+   * Тем же запросом, что и кнопка, — список тут же обновляется, а окно
+   * остаётся открытым и правит уже заведённое.
+   */
+  const ensureTask = async (fields) => {
+    const made = await createTask({ ...fields, work: workId })
+    await onChanged()
+    return made
+  }
 
   const recheck = (task) => run(() => recheckTask(task.id).then(() => setEditingTask(null)))
 
@@ -306,6 +320,7 @@ export default function TaskList({ workId, tasks, readOnly = false, onChanged })
         <TaskDialog
           task={editingTask.task}
           busy={busy}
+          ensureTask={ensureTask}
           onSubmit={saveTask}
           onRecheck={recheck}
           onClose={() => setEditingTask(null)}

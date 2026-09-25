@@ -50,6 +50,7 @@ OWNER_FIELDS = (
     "work",
     "bookmark_owner",
     "school_shelf",
+    "problem",
 )
 
 
@@ -118,11 +119,12 @@ class Attachment(models.Model):
     заводить ради него отдельную таблицу значило бы делить надвое один
     список, который человек видит и правит как один.
 
-    Мест пять, и ровно одно у каждой ссылки: строка учебного плана — курса
+    Мест несколько (список — `OWNER_FIELDS`, числа в прозе устаревали уже
+    дважды), и ровно одно у каждой ссылки: строка учебного плана — курса
     или шаблона с полки, это одна и та же строка, — работа, **работа
-    конкретного ученика**, личный стол сотрудника и общая полка школы. Все
-    пять `CASCADE`: уходит владелец — уходят его ссылки, а сигнал потом
-    решает, нужен ли ещё файл за ними.
+    конкретного ученика**, личный стол сотрудника, общая полка школы и
+    условие задачи. Все `CASCADE`: уходит владелец — уходят его ссылки, а
+    сигнал потом решает, нужен ли ещё файл за ними.
 
     Четвёртый не про школу и не про курс вовсе: это то, что человек сложил себе
     сам, и читает это он один. Заведён он был вместе с экраном закладок, и
@@ -226,6 +228,29 @@ class Attachment(models.Model):
         blank=True,
         on_delete=models.CASCADE,
         verbose_name="shelf of the school",
+    )
+    # Седьмой владелец: условие задачи — картинка, вставленная **в его
+    # текст**. Чертёж к задаче, снимок условия из книги.
+    #
+    # Владелец — условие, а не работа, где его спросили, и не ячейка, и это
+    # прямое следствие правила «условие живёт только в `bank.Problem`»
+    # (`works/statements.py`). Одно условие стоит в нескольких работах и
+    # лежит в книге; картинка, приложенная к работе, показывалась бы в одной
+    # из них и пропадала в остальных — молча, пустым абзацем. Ячейка же
+    # своего текста не имеет, и вешать на неё картинку значило бы завести
+    # ей текст с чёрного хода.
+    #
+    # Только `inline`: у условия нет списка материалов, есть текст. Круг
+    # читателей отсюда же, из текста: кто видит условие — в книге или в
+    # своей работе, — тот видит и его чертёж; ученик — через открытую ему
+    # работу, как и пояснения к заданию.
+    problem = models.ForeignKey(
+        "bank.Problem",
+        related_name="attachments",
+        null=True,
+        blank=True,
+        on_delete=models.CASCADE,
+        verbose_name="statement of a question",
     )
     # Где на этом столе: в папке или на виду.
     #
@@ -362,8 +387,16 @@ class Attachment(models.Model):
                     | owned_by("work")
                     | owned_by("bookmark_owner")
                     | owned_by("school_shelf")
+                    | owned_by("problem")
                 ),
                 name="attachment_has_exactly_one_owner",
+            ),
+            # у условия нет списка материалов — только текст, и картинка в
+            # нём. Вложение условия, не стоящее в тексте, никто бы не увидел
+            # и никто не смог бы убрать
+            models.CheckConstraint(
+                condition=Q(problem__isnull=True) | Q(inline=True),
+                name="attachment_of_a_statement_stands_in_its_text",
             ),
             models.CheckConstraint(
                 condition=(
@@ -416,6 +449,11 @@ class Attachment(models.Model):
             ),
             # полку школы спрашивает **каждый** сотрудник на том же экране, и
             # спрашивает при каждом заходе
+            # уборка после правки условия спрашивает «какие картинки у него
+            # есть» на каждое сохранение
+            models.Index(
+                fields=("problem", "position"), name="attachment_problem_idx"
+            ),
             models.Index(
                 fields=("school_shelf", "position"), name="attachment_school_shelf_idx"
             ),
@@ -439,8 +477,14 @@ class Attachment(models.Model):
         if sum(1 for owner in owners if owner is not None) != 1:
             problems["plan_row"] = (
                 "An attachment belongs to a plan lesson, a work, a student's "
-                "work, a personal shelf or the school's shelf — to exactly "
-                "one of them."
+                "work, a personal shelf, the school's shelf or the statement "
+                "of a question — to exactly one of them."
+            )
+
+        if self.problem_id is not None and not self.inline:
+            problems["inline"] = (
+                "A statement has no list of materials: a picture attached to "
+                "it must stand in its text."
             )
 
         if self.task_id is not None and self.student_work_id is None:

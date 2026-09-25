@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import Markdown from './Markdown'
+import MarkdownField from './MarkdownField'
 import Modal from './Modal'
 import Switch from './Switch'
-import { fetchTaskImpact } from './api'
+import { claimStatement, fetchTaskImpact } from './api'
 
 /**
  * Ячейка работы: условие и список допустимых ответов.
@@ -27,12 +28,27 @@ import { fetchTaskImpact } from './api'
  * Условие — Markdown с формулами, как содержание урока, и рядом
  * предпросмотр: `$$…$$` в наборе выглядит одинаково, а на экране — нет.
  *
+ * **И с картинками — тем же полем (`MarkdownField`), что содержание урока и
+ * пояснения к работе.** Чертёж к задаче вставляется по Ctrl+V; владелец у
+ * картинки — само условие, а не работа: то же условие стоит в других
+ * работах и в банке, и картинка обязана ехать вместе с ним.
+ *
+ * Владелец нужен **в момент вставки**, а у новой задачи и у пустой ячейки
+ * условия ещё нет. Поэтому первая картинка заводит то, чего не хватает:
+ * саму задачу (`ensureTask`, тем же путём, что «Сохранить») и условие в
+ * ней (`claimStatement`) — как первая картинка в пояснениях заводит
+ * работу. Окно после этого правит уже заведённую задачу, а заголовок не
+ * меняется: человек по-прежнему добавляет задачу, а не правит её.
+ *
  * У задачи, по которой уже отвечали, окно называет цену правки и предлагает
  * **перепроверить** — это про неверный эталон: полкласса проверено
  * неправильно, и вердикты надо снять, не трогая ответы.
  */
-export default function TaskDialog({ task, busy, onSubmit, onRecheck, onClose }) {
+export default function TaskDialog({ task, busy, ensureTask, onSubmit, onRecheck, onClose }) {
   const { t } = useTranslation()
+  // задача, которую окно правит. Открытое на «добавить» окно её не имеет,
+  // пока первая картинка не потребует владельца
+  const [current, setCurrent] = useState(task)
   const [question, setQuestion] = useState(task?.question ?? '')
   // как вопрос зовётся в этой работе; пусто — зовётся номером по порядку
   const [label, setLabel] = useState(task?.label ?? '')
@@ -45,17 +61,36 @@ export default function TaskDialog({ task, busy, onSubmit, onRecheck, onClose })
   const [withStem, setWithStem] = useState(task?.shown?.with_stem ?? true)
 
   useEffect(() => {
-    if (!task) return undefined
+    if (!current) return undefined
 
-    let current = true
-    fetchTaskImpact(task.id)
-      .then((result) => current && setImpact(result))
-      .catch(() => current && setImpact(null))
+    let alive = true
+    fetchTaskImpact(current.id)
+      .then((result) => alive && setImpact(result))
+      .catch(() => alive && setImpact(null))
 
     return () => {
-      current = false
+      alive = false
     }
-  }, [task])
+  }, [current])
+
+  const cleanAnswers = () => answers.filter((answer) => answer.trim())
+
+  /**
+   * Куда приложить картинку: условие этой ячейки.
+   *
+   * Чужое или общее условие отдаётся как есть: картинка вешается на него, а
+   * «Сохранить» сделает копию и унесёт её с собой — что с картинкой делать,
+   * решает сервер тем же правилом, что с текстом.
+   */
+  const ensureOwner = async () => {
+    let cell = current
+    if (!cell) {
+      cell = await ensureTask({ question, label: label.trim(), answers: cleanAnswers() })
+      setCurrent(cell)
+    }
+    const { problem } = await claimStatement(cell.id, question)
+    return { problem }
+  }
 
   const setAnswer = (index, value) =>
     setAnswers((current) => {
@@ -71,13 +106,16 @@ export default function TaskDialog({ task, busy, onSubmit, onRecheck, onClose })
     event.preventDefault()
     if (busy) return
 
-    onSubmit({
-      question,
-      label: label.trim(),
-      answers: answers.filter((answer) => answer.trim()),
-      ...(mode ? { mode } : {}),
-      ...(task?.shown?.stem || task?.shown?.is_part ? { show_stem: withStem } : {}),
-    })
+    onSubmit(
+      {
+        question,
+        label: label.trim(),
+        answers: cleanAnswers(),
+        ...(mode ? { mode } : {}),
+        ...(current?.shown?.stem || current?.shown?.is_part ? { show_stem: withStem } : {}),
+      },
+      current,
+    )
   }
 
   return (
@@ -126,7 +164,7 @@ export default function TaskDialog({ task, busy, onSubmit, onRecheck, onClose })
           <input
             value={label}
             maxLength={16}
-            placeholder={task ? String(task.position + 1) : ''}
+            placeholder={current ? String(current.position + 1) : ''}
             onChange={(event) => setLabel(event.target.value)}
           />
         </label>
@@ -162,16 +200,20 @@ export default function TaskDialog({ task, busy, onSubmit, onRecheck, onClose })
             <Markdown text={question} />
           </div>
         ) : (
-          <textarea
-            autoFocus
-            rows={5}
-            value={question}
-            aria-label={t('works.task.question')}
-            onChange={(event) => setQuestion(event.target.value)}
-          />
+          <>
+            <MarkdownField
+              value={question}
+              onChange={setQuestion}
+              rows={5}
+              label={t('works.task.question')}
+              ensureOwner={ensureOwner}
+              disabled={busy}
+            />
+            <p className="hint">{t('works.task.questionHint')}</p>
+          </>
         )}
 
-        {(task?.shown?.stem || task?.shown?.is_part) && (
+        {(current?.shown?.stem || current?.shown?.is_part) && (
           <label className="checkbox">
             <input
               type="checkbox"
@@ -217,7 +259,7 @@ export default function TaskDialog({ task, busy, onSubmit, onRecheck, onClose })
               type="button"
               className="secondary"
               disabled={busy}
-              onClick={() => onRecheck(task)}
+              onClick={() => onRecheck(current)}
             >
               {t('works.task.recheck', { count: impact.checked })}
             </button>

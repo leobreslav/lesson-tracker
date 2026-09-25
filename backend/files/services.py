@@ -210,7 +210,7 @@ def store_upload(*, upload, school, user) -> tuple[StoredFile, bool]:
 # --- copying references ------------------------------------------------------
 
 
-def copy_attachments(sources, *, plan_row) -> int:
+def copy_attachments(sources, **owner) -> int:
     """
     Point a new row at the same files as an old one.
 
@@ -223,10 +223,14 @@ def copy_attachments(sources, *, plan_row) -> int:
     в текст, при переносе шаблона обязана остаться картинкой в тексте. Иначе
     копия показала бы её строкой в списке материалов — при том, что в тексте
     она по-прежнему нарисована.
+
+    Новый владелец называется ключом (`plan_row=node`, `problem=copy`):
+    копируют не только строки плана — копия условия уносит свой чертёж с
+    собой ровно этим же путём.
     """
     copies = [
         Attachment(
-            plan_row=plan_row,
+            **owner,
             kind=source.kind,
             stored_file_id=source.stored_file_id,
             url=source.url,
@@ -241,9 +245,14 @@ def copy_attachments(sources, *, plan_row) -> int:
     return len(copies)
 
 
-def prune_inline(row) -> int:
+def prune_inline(row, *, used: set[int] | None = None) -> int:
     """
     Убрать картинки, на которые содержание больше не ссылается.
+
+    `used` — файлы, названные текстом; без него читаются четыре поля строки
+    плана. У условия задачи текст один, и его называет вызывающий
+    (`works/statements.py`): спрашивать у условия поля урока значило бы
+    получить пустоту и снести все его картинки разом.
 
     У материала и у картинки в тексте разные часы, и это записано прямо
     здесь. Материал — отдельная строка на сервере: его заводят и убирают
@@ -261,7 +270,8 @@ def prune_inline(row) -> int:
     снимок, а снимок держит объект в бакете своей ссылкой (`PROTECT`).
     Отмена вернёт и текст, и картинку.
     """
-    used = content.images_in(row)
+    if used is None:
+        used = content.images_in(row)
     doomed = list(
         row.attachments.filter(inline=True).exclude(stored_file_id__in=used)
     )

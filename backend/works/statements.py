@@ -23,6 +23,8 @@
 from bank.models import Problem
 from config.errors import Codes, api_error
 from django.db import transaction
+from files import services as file_services
+from plans.content import image_files
 
 EVERYWHERE = "everywhere"
 COPY = "copy"
@@ -120,7 +122,8 @@ def say(task, *, text=None, answers=None, user, mode=None):
     if not text and not answers:
         # Ничего не сказано: пустая ячейка остаётся пустой, а условия с пустым
         # текстом мы не заводим — оно ничем не отличалось бы от «ещё не
-        # придумали» и засоряло бы поиск.
+        # придумали» и засоряло бы поиск. (Единственное исключение — `claim`,
+        # и там сказано почему.)
         return task.problem
 
     if task.problem_id is None:
@@ -151,7 +154,36 @@ def say(task, *, text=None, answers=None, user, mode=None):
     problem.text = text
     problem.answers = answers
     problem.save(update_fields=["text", "answers"])
+    tidy(problem)
     return problem
+
+
+def claim(task, *, text, user):
+    """
+    Дать ячейке условие, к которому можно приложить картинку, — **до**
+    «Сохранить».
+
+    Картинка вставляется в текст, пока окно открыто, и ей нужен владелец
+    сейчас: вложение — строка в базе, а условия у пустой ячейки ещё нет. Тот
+    же приём, что у работы, которую заводит первая вставленная картинка
+    (`WorkDialog`), — и та же цена: закрытое крестиком окно оставляет
+    условие в ячейке. Заводится оно с тем, что уже набрано, поэтому обычно
+    не пустое; пустым оно бывает, когда картинка и есть всё условие, — и
+    это единственный случай, когда условие с пустым текстом законно:
+    следом за ним придёт текст с картинкой.
+
+    Условие, которое в ячейке уже стоит, отдаётся как есть — своё, чужое,
+    общее: картинка вешается на него, а что с ней будет дальше, решает
+    `say` — копия унесёт её, уборка снимет с оригинала.
+    """
+    if task.problem_id is not None:
+        return task.problem
+    return _write(task, _make(task, text or "", [], user))
+
+
+def tidy(problem) -> int:
+    """Снять с условия картинки, которых больше нет в его тексте."""
+    return file_services.prune_inline(problem, used=image_files(problem.text))
 
 
 def _make(task, text, answers, user):
@@ -172,15 +204,29 @@ def _make(task, text, answers, user):
 
 
 def _fork(task, problem, text, answers, user):
-    """Своя копия с пометкой, от чего произошла: прошлое остаётся как было."""
-    return Problem.objects.create(
-        school=task.work.course.school,
-        owner=user,
-        created_by=user,
-        text=text,
-        answers=answers,
-        copied_from=problem,
-    )
+    """
+    Своя копия с пометкой, от чего произошла: прошлое остаётся как было.
+
+    Картинки, которые называет новый текст, едут с копией — как при переносе
+    строки плана с полки: та же байты, своя ссылка. А с оригинала снимается
+    то, чего в его тексте нет: картинка, вставленная в окне до того, как
+    выбрали «копию», приложилась к нему и без уборки осталась бы висеть.
+    """
+    with transaction.atomic():
+        copy = Problem.objects.create(
+            school=task.work.course.school,
+            owner=user,
+            created_by=user,
+            text=text,
+            answers=answers,
+            copied_from=problem,
+        )
+        file_services.copy_attachments(
+            problem.attachments.filter(inline=True, stored_file_id__in=image_files(text)),
+            problem=copy,
+        )
+        tidy(problem)
+    return copy
 
 
 def _write(task, problem):

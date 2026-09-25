@@ -695,6 +695,9 @@ export const uploadAttachment = ({
   bookmarkFolder,
   // общая полка школы: кладёт администратор, видят все сотрудники
   schoolShelf,
+  // условие задачи: чертёж в его тексте. Владелец — условие, а не работа,
+  // где его спросили: то же условие стоит и в других работах, и в банке
+  problem,
   file,
   title,
   // приписка своими словами: «зачем это мне». Едет с загрузкой, потому что
@@ -713,6 +716,7 @@ export const uploadAttachment = ({
   if (bookmarkOwner) form.append('bookmark_owner', bookmarkOwner)
   if (bookmarkFolder) form.append('bookmark_folder', bookmarkFolder)
   if (schoolShelf) form.append('school_shelf', schoolShelf)
+  if (problem) form.append('problem', problem)
   form.append('file', file)
   if (title) form.append('title', title)
   if (note) form.append('note', note)
@@ -1159,6 +1163,15 @@ export const moveTask = (id, direction) =>
   request(`/api/works/tasks/${id}/move/`, { method: 'POST', body: { direction } })
 
 export const fetchTaskImpact = (id) => request(`/api/works/tasks/${id}/impact/`)
+
+/**
+ * Условие, к которому окно задачи приложит картинку, — до «Сохранить».
+ *
+ * У пустой ячейки условия нет, а вложению нужен владелец сейчас: сервер
+ * заводит условие с тем, что уже набрано, и отдаёт его номер.
+ */
+export const claimStatement = (id, question) =>
+  request(`/api/works/tasks/${id}/statement/`, { method: 'POST', body: { question } })
 
 /** Снять вердикты со всех отправок задачи — «перепроверить». */
 export const recheckTask = (id) =>

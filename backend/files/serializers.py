@@ -192,6 +192,11 @@ class AttachmentCreateSerializer(serializers.Serializer):
     school_shelf = serializers.PrimaryKeyRelatedField(
         queryset=Attachment.objects.none(), required=False, allow_null=True
     )
+    # Условие задачи: картинка в его тексте, и только она. Выборка —
+    # свои условия и условия в ячейках своих работ (`writable_problems`).
+    problem = serializers.PrimaryKeyRelatedField(
+        queryset=Attachment.objects.none(), required=False, allow_null=True
+    )
     # Не владелец, а адрес внутри стола: пусто — «положить на виду».
     bookmark_folder = serializers.PrimaryKeyRelatedField(
         queryset=Attachment.objects.none(), required=False, allow_null=True
@@ -215,6 +220,7 @@ class AttachmentCreateSerializer(serializers.Serializer):
     def get_fields(self):
         from .access import (
             writable_plan_rows,
+            writable_problems,
             writable_school_shelves,
             writable_shelf_folders,
             writable_shelf_owners,
@@ -230,6 +236,7 @@ class AttachmentCreateSerializer(serializers.Serializer):
         fields["bookmark_owner"].queryset = writable_shelf_owners(user)
         fields["bookmark_folder"].queryset = writable_shelf_folders(user)
         fields["school_shelf"].queryset = writable_school_shelves(user)
+        fields["problem"].queryset = writable_problems(user)
         return fields
 
     def validate(self, attrs):
@@ -249,8 +256,18 @@ class AttachmentCreateSerializer(serializers.Serializer):
             api_error(
                 Codes.ATTACHMENT_OWNER_REQUIRED,
                 "Name exactly one owner: «plan_row», «work», «student_work», "
-                "«bookmark_owner» or «school_shelf».",
+                "«bookmark_owner», «school_shelf» or «problem».",
                 field="plan_row",
+            )
+
+        if owners["problem"] is not None and not attrs.get("inline"):
+            # у условия нет списка материалов, есть текст; вложение, не
+            # стоящее в тексте, никто бы не увидел и никто не смог бы убрать
+            api_error(
+                Codes.ATTACHMENT_KIND_MISMATCH,
+                "A statement has no list of materials: a picture attached to "
+                "it must stand in its text.",
+                field="problem",
             )
 
         if attrs.get("staff_only") and owners["work"] is None:
