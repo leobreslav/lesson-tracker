@@ -170,7 +170,7 @@ Versioning у R2 нет — резерв это второй бакет; под�
 поправили — сначала заберите оттуда, потом меняйте локально:
 
 ```bash
-scp leobreslav@194.67.111.40:~/lesson-tracker/.env.prod \
+scp leobreslav@159.65.114.122:~/lesson-tracker/.env.prod \
     ~/secrets/lesson-tracker.env.prod
 ```
 
@@ -182,7 +182,7 @@ scp leobreslav@194.67.111.40:~/lesson-tracker/.env.prod \
 одноразовая.
 
 ```bash
-ssh leobreslav@194.67.111.40 "cd ~/lesson-tracker && docker compose \
+ssh leobreslav@159.65.114.122 "cd ~/lesson-tracker && docker compose \
   --env-file .env.prod -f docker-compose.prod.yml -f docker-compose.ssl.yml \
   logs --tail 50 backend"
 ```

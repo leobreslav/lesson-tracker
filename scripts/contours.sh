@@ -22,7 +22,7 @@ contour() {
     case "${1:-}" in
         prod)
             CONTOUR="prod"
-            SERVER="${DEPLOY_SERVER:-leobreslav@194.67.111.40}"
+            SERVER="${DEPLOY_SERVER:-leobreslav@159.65.114.122}"
             REMOTE_DIR="${DEPLOY_DIR:-lesson-tracker}"
             SITE="${DEPLOY_SITE:-https://lbreslav.com/}"
             ENV_SOURCE="${DEPLOY_ENV_FILE:-$HOME/secrets/lesson-tracker.env.prod}"

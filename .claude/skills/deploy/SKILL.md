@@ -77,7 +77,7 @@ Ssh-ключ есть только на ноутбуке, но выкатка к
 Устройство и грабли — в `.claude/rules/deploy.md`, «Боевую базу на стенд
 возят руками».
 
-Адреса: прод `leobreslav@194.67.111.40:~/lesson-tracker` (база `lessons`),
+Адреса: прод `leobreslav@159.65.114.122:~/lesson-tracker` (база `lessons`),
 стенд `leobreslav@194.67.119.42:~/apps/lesson-tracker` (база
 `lessons_staging`). Ниже `C` — это
 `docker compose --env-file .env.prod -f docker-compose.prod.yml`.

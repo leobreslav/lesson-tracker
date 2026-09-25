@@ -1,8 +1,10 @@
 # Деплой на сервер
 
-Сервер: `194.67.111.40`, Ubuntu 24.04, пользователь `leobreslav`, вход по
-SSH-ключу. Домен `lbreslav.com` резолвится на этот IP. Docker установлен,
-в ufw открыты 22/80/443.
+Сервер: `159.65.114.122`, дроплет DigitalOcean (Ubuntu 24.04, своп 1 GB),
+пользователь `leobreslav`, вход по SSH-ключу. Домен `lbreslav.com` и `www`
+резолвятся на этот IP (зона у reg.ru). Docker установлен, в ufw открыты
+22/80/443. С 25 сентября 2026; прежний сервер `194.67.111.40` — переезд
+описан в [docs/migrate-prod.md](docs/migrate-prod.md).
 
 Дальше предполагается, что репозиторий лежит в `/home/leobreslav/lesson-tracker`.
 Если выберете другой путь — поправьте его в `scripts/reload-nginx.sh`
@@ -16,7 +18,7 @@ SSH-ключу. Домен `lbreslav.com` резолвится на этот IP.
 ## 1. Клонирование репозитория
 
 ```bash
-ssh leobreslav@194.67.111.40
+ssh leobreslav@159.65.114.122
 
 # ключ для доступа к приватному репозиторию, если он ещё не заведён
 ssh-keygen -t ed25519 -C "lesson-tracker-server"
@@ -167,7 +169,7 @@ R2_BACKUP_SECRET_ACCESS_KEY=<оттуда же>
 
 ```bash
 # 1. забрать серверную версию к себе
-scp leobreslav@194.67.111.40:~/lesson-tracker/.env.prod \
+scp leobreslav@159.65.114.122:~/lesson-tracker/.env.prod \
     ~/secrets/lesson-tracker.env.prod
 
 # 2. посмотреть, что там отличается от того, что было
@@ -618,7 +620,7 @@ docker compose --env-file .env.prod -f docker-compose.prod.yml exec backend \
 некуда — они были тестовыми, — поэтому **база сносится**:
 
 ```bash
-ssh leobreslav@194.67.111.40
+ssh leobreslav@159.65.114.122
 cd ~/lesson-tracker
 docker compose --env-file .env.prod -f docker-compose.prod.yml -f docker-compose.ssl.yml down
 docker volume rm lesson-tracker-prod_pgdata
@@ -678,7 +680,7 @@ prod-autodeploy.sh` в crontab, раз в пять минут. Пока ветк
 ### Руками на сервере
 
 ```bash
-ssh leobreslav@194.67.111.40
+ssh leobreslav@159.65.114.122
 cd ~/lesson-tracker
 ./deploy.sh
 ```

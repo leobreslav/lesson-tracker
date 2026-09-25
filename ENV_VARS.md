@@ -201,7 +201,7 @@ HSTS оставлен нулём сознательно: включается л
 
 | переменная | что делает | умолчание |
 |---|---|---|
-| `DEPLOY_SERVER` | куда ходить по ssh | `leobreslav@194.67.111.40` |
+| `DEPLOY_SERVER` | куда ходить по ssh | `leobreslav@159.65.114.122` |
 | `STAGING_SITE` | что дёрнуть после выкатки стенда | `https://staging.lbreslav.com/` |
 | `DEPLOY_DIR` | каталог проекта на сервере | `~/lesson-tracker` |
 | `DEPLOY_SITE` | что дёрнуть для проверки после выкатки | `https://lbreslav.com/` |
