@@ -32,7 +32,7 @@ E2E_TEST_LOGIN = env.bool("E2E_TEST_LOGIN", default=False)
 
 # Кого этот контур пускает внутрь. Пусто — всех, кого пустил Google: так
 # живёт прод, где допуск даёт приглашение школы. Список адресов закрывает
-# контур, у которого своей публики нет, — стенд. Разбор в accounts/door.py.
+# контур, у которого своей публики нет. Разбор в accounts/door.py.
 LOGIN_ALLOWED_EMAILS = env.list("LOGIN_ALLOWED_EMAILS", default=[])
 ALLOWED_HOSTS = env.list("ALLOWED_HOSTS", default=["localhost", "127.0.0.1"])
 

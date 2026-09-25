@@ -139,17 +139,17 @@ else
 fi
 rm -rf "$t"
 
-# --- контур назвался стендом: отказ ------------------------------------------
+# --- контур назвался не продом: отказ ----------------------------------------
 t="$(make_fixture)"
-echo "COMPOSE_PROJECT_NAME=lesson-tracker-staging" > "$t/work/.env.prod"
+echo "COMPOSE_PROJECT_NAME=lesson-tracker-other" > "$t/work/.env.prod"
 git -C "$t/work" commit --quiet --allow-empty -m two
 git -C "$t/work" push --quiet origin HEAD:refs/heads/production
 git -C "$t/work" reset --hard --quiet HEAD~1
 code="$(run_in "$t")"
 if [ "$code" != "0" ] && ! deployed "$t" && logged "$t" "не похож на прод"; then
-    report ok "контур назвался стендом — отказ"
+    report ok "контур назвался не продом — отказ"
 else
-    report FAIL "контур назвался стендом — отказ" "код $code"
+    report FAIL "контур назвался не продом — отказ" "код $code"
 fi
 rm -rf "$t"
 

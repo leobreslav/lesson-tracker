@@ -48,7 +48,7 @@
 │   └── why-these-rules.md    # замеры и разборы, из которых вышли правила
 ├── .github/workflows/        # проверка на GitHub: те же наборы теми же командами
 ├── scripts/
-│   ├── contours.sh           # адреса прода и стенда: единственное место в репозитории
+│   ├── contours.sh           # адрес прода: единственное место в репозитории
 │   ├── sync-env.sh           # возит env-файл контура с ноутбука на его сервер
 │   ├── guard-anthropic-spend.py  # хук: запрос в Anthropic — вопрос человеку
 │   ├── test-guard-anthropic-spend.py  # сторож у сторожа, гоняется в CI
@@ -61,13 +61,9 @@
 │   ├── backup-db.sh          # ежедневный pg_dump: на диск и в R2, 7 дней
 │   ├── backup-files.sh       # ежедневная копия бакета вложений в резервный
 │   ├── check-orphaned-files.sh  # еженедельная сверка бакета с базой, молча
-│   ├── staging-seed.sh       # пересев стенда: окно DEBUG под ловушкой
-│   ├── check-secrets.sh     # сверка ключей по контурам отпечатками, без значений
-│   ├── staging-autodeploy.sh # опрос origin/main из crontab стенда
-│   ├── staging-seed-watch.sh # опрос ветки staging-seed: пересев по просьбе
-│   ├── test-staging-seed-watch.sh # сторож его: просьба исполняется один раз
-│   ├── ship.sh               # унести ветку на стенд и прод и попросить пересев: git + gh, без ssh
-│   ├── test-ship.sh          # сторож ship.sh: отказы и просьбы о пересеве
+│   ├── check-secrets.sh      # сверка ключей по четырём местам отпечатками, без значений
+│   ├── ship.sh               # влить ветку в main (полный CI) и двинуть production: git + gh, без ssh
+│   ├── test-ship.sh          # сторож ship.sh: отказы и движение веток
 │   ├── check-login-door.sh   # замок: не выкатывать открытую дев-дверь без списка допущенных
 │   ├── test-check-login-door.sh # сторож замка: обе стороны, формы «да», кавычки, CRLF
 │   ├── prod-autodeploy.sh    # опрос ветки production из crontab прода

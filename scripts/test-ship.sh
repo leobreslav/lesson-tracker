@@ -59,28 +59,6 @@ case "$1 $2" in
 esac
 path="$2"
 
-# Просьба о пересеве — это созданный коммит и ветка, указанная на него.
-# Заглушка выдаёт предсказуемые sha по счётчику и записывает первую строку
-# сообщения: именно она и есть смысл просьбы.
-case "$path" in
-  */git/commits)
-      msg="$(printf '%s\n' "$@" | sed -n 's/^message=//p' | head -1)"
-      parent="$(printf '%s\n' "$@" | sed -n 's/^parents\[\]=//p' | head -1)"
-      n=$(( $(cat "$GH_STATE/counter" 2>/dev/null || echo 0) + 1 ))
-      echo "$n" > "$GH_STATE/counter"
-      printf 'сообщение=%s родитель=%s\n' "$msg" "${parent:-нет}" >> "$GH_STATE/commits"
-      printf 'c%039d\n' "$n"
-      exit 0 ;;
-  */git/commits/*)
-      echo treesha; exit 0 ;;                      # дерево у коммита одно
-  */git/refs)
-      ref="$(printf '%s\n' "$@" | sed -n 's/^ref=//p')"
-      sha="$(printf '%s\n' "$@" | sed -n 's/^sha=//p')"
-      echo "${ref##*/} $sha" >> "$GH_STATE/patches"
-      echo "$sha" > "$GH_STATE/ref-${ref##*/}"
-      echo '{}'; exit 0 ;;
-esac
-
 # gh api repos/test/repo/git/refs/heads/<branch> [--jq …] [-X PATCH -f sha=…]
 branch="${path##*/}"
 file="$GH_STATE/ref-$branch"
@@ -198,54 +176,6 @@ if [ "$code" != 0 ] && ! patched "$t" main; then
 else report FAIL "main ушёл вперёд мимо ветки — отказ, перезаписи нет" "код $code; $(cat "$t/out" | tail -3)"; fi
 rm -rf "$t"
 
-# --- --reseed без аргументов: просьба заведена, аргументы оставлены стенду ---
-t="$(make_fixture)"
-code="$(run_in "$t" --reseed)"
-if [ "$code" = 0 ] && patched "$t" staging-seed &&
-   grep -q 'сообщение=seed: родитель=нет' "$t/commits" && ! patched "$t" main; then
-    report ok "--reseed без аргументов — просьба «seed:», main не трогается"
-else
-    report FAIL "--reseed без аргументов — просьба «seed:», main не трогается" \
-        "код $code; $(cat "$t/commits" 2>/dev/null)"
-fi
-rm -rf "$t"
-
-# --- --reseed с аргументами: они уезжают в сообщение -------------------------
-# Всё после флага уходит в seed_demo целиком, чтобы список его флагов не
-# пришлось держать вторым экземпляром здесь.
-t="$(make_fixture)"
-code="$(run_in "$t" --reseed --flush --rich)"
-if [ "$code" = 0 ] && grep -q 'сообщение=seed: --flush --rich' "$t/commits"; then
-    report ok "--reseed с аргументами — они в первой строке просьбы"
-else
-    report FAIL "--reseed с аргументами — они в первой строке просьбы" \
-        "код $code; $(cat "$t/commits" 2>/dev/null)"
-fi
-rm -rf "$t"
-
-# --- вторая просьба встаёт поверх первой -------------------------------------
-# Ветка просьб — история пересевов, и родитель делает её читаемой.
-t="$(make_fixture)"
-run_in "$t" --reseed >/dev/null
-code="$(run_in "$t" --reseed --minimal)"
-if [ "$code" = 0 ] && [ "$(grep -c . "$t/commits")" = 2 ] &&
-   grep -q 'сообщение=seed: --minimal родитель=c0*1$' "$t/commits"; then
-    report ok "вторая просьба — потомок первой"
-else
-    report FAIL "вторая просьба — потомок первой" "код $code; $(cat "$t/commits" 2>/dev/null)"
-fi
-rm -rf "$t"
-
-# --- пересев не трогает прод -------------------------------------------------
-t="$(make_fixture)"
-run_in "$t" --reseed --flush >/dev/null
-if ! patched "$t" production && ! patched "$t" main; then
-    report ok "--reseed не двигает ни main, ни production"
-else
-    report FAIL "--reseed не двигает ни main, ни production" "$(cat "$t/patches" 2>/dev/null)"
-fi
-rm -rf "$t"
-
 # --- ВТОРАЯ ДОРОГА: gh не годится --------------------------------------------
 #
 # Проверок тут столько же, сколько у первой, и это не перестраховка. Дорог две,
@@ -330,35 +260,6 @@ if [ "$code" != 0 ] && by_git "$t" && [ "$(at "$t" main)" = "$was" ]; then
 else
     report FAIL "без gh: main ушёл вперёд мимо ветки — отказ, перезаписи нет" \
         "код $code; $(tail -3 "$t/out")"
-fi
-rm -rf "$t"
-
-# --- без gh просьба о пересеве — настоящий коммит ----------------------------
-t="$(make_fixture)"; hide_gh "$t"
-code="$(run_bare "$t" --reseed --flush --rich)"
-first="$(git -C "$t/origin" log -1 --format=%s staging-seed 2>/dev/null || true)"
-tree_ok=0
-[ "$(git -C "$t/origin" rev-parse 'staging-seed^{tree}' 2>/dev/null)" = \
-  "$(git -C "$t/origin" rev-parse 'main^{tree}' 2>/dev/null)" ] && tree_ok=1
-if [ "$code" = 0 ] && by_git "$t" && [ "$first" = "seed: --flush --rich" ] && [ "$tree_ok" = 1 ]; then
-    report ok "без gh: просьба о пересеве — коммит с деревом main и аргументами в шапке"
-else
-    report FAIL "без gh: просьба о пересеве — коммит с деревом main и аргументами в шапке" \
-        "код $code; «$first»; дерево совпало: $tree_ok; $(tail -3 "$t/out")"
-fi
-rm -rf "$t"
-
-# --- без gh вторая просьба встаёт поверх первой ------------------------------
-t="$(make_fixture)"; hide_gh "$t"
-run_bare "$t" --reseed >/dev/null
-first="$(at "$t" staging-seed)"
-code="$(run_bare "$t" --reseed --minimal)"
-second="$(at "$t" staging-seed)"
-if [ "$code" = 0 ] && by_git "$t" && [ "$second" != "$first" ] &&
-   [ "$(git -C "$t/origin" rev-parse 'staging-seed^' 2>/dev/null)" = "$first" ]; then
-    report ok "без gh: вторая просьба — потомок первой"
-else
-    report FAIL "без gh: вторая просьба — потомок первой" "код $code; $(tail -3 "$t/out")"
 fi
 rm -rf "$t"
 

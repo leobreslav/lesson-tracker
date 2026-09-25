@@ -1,20 +1,18 @@
 #!/usr/bin/env bash
 #
-# Унести готовую работу на контуры — из любого места, включая облачную сессию
-# и телефон. Ни ssh, ни ключей: всё через git и gh.
+# Унести готовую работу в main и на прод — из любого места, включая облачную
+# сессию и телефон. Ни ssh, ни ключей: всё через git и gh.
 #
-#   ./scripts/ship.sh                 # влить ветку в main (=> стенд)
+#   ./scripts/ship.sh                 # влить ветку в main (=> полный прогон CI)
 #   ./scripts/ship.sh --prod          # влить и выкатить на прод
 #   ./scripts/ship.sh --prod-only     # main уже в порядке, двинуть только прод
 #   ./scripts/ship.sh --prod --yes    # без вопроса, для скриптов
-#   ./scripts/ship.sh --reseed        # пересеять стенд (аргументы — с контура)
-#   ./scripts/ship.sh --reseed --flush --rich   # и с этими аргументами
 #
 # ЗАЧЕМ ОТДЕЛЬНЫЙ СКРИПТ. Раньше «унести» умел только push-deploy.sh, а он
 # ходит на сервер по ssh — то есть работает ровно на одной машине, где лежит
 # ключ. Облачная сессия, чужой ноутбук и телефон не могли ничего. Здесь ssh не
-# нужен вовсе: скрипт двигает ветки на GitHub, а контуры подтягивают их сами
-# (стенд — origin/main каждые 3 минуты, прод — origin/production каждые 5).
+# нужен вовсе: скрипт двигает ветки на GitHub, а прод подтягивает
+# origin/production сам, раз в 5 минут.
 #
 # ДВЕ ДОРОГИ, И gh НЕ ОБЯЗАТЕЛЕН. Ветку двигает либо `gh` серверной операцией,
 # либо обычный `git push` — что найдётся, в этом порядке.
@@ -34,13 +32,6 @@
 # перед PATCH, у git — сам сервер, потому что пуш без `--force`. Совпадение
 # намеренное: правило одно, и разойтись дорогам тут негде.
 #
-# ПЕРЕСЕВ УСТРОЕН ТАК ЖЕ, и по той же причине: он умел работать ровно на той
-# машине, где лежит ssh-ключ. Просьба — коммит на ветке `staging-seed`, дерево
-# от main, смысл в первой строке сообщения («seed: --flush --rich»). Стенд
-# смотрит на эту ветку раз в три минуты (scripts/staging-seed-watch.sh) и сам
-# зовёт staging-seed.sh. Коммит, а не передвинутая ветка, — чтобы «пересей ещё
-# раз» отличалось от «уже сеяли», когда main с тех пор не двигался.
-#
 # ЧЕГО ЭТОТ ПУТЬ НЕ УМЕЕТ — возить .env.prod: файл лежит вне git. Меняли набор
 # переменных — нужен ноутбук (./scripts/sync-env.sh prod), и только потом сюда.
 #
@@ -56,7 +47,6 @@ cd "$REPO_DIR"
 
 MAIN="main"
 PROD="production"
-SEED="staging-seed"
 
 log()  { printf '\n\033[1m==> %s\033[0m\n' "$*"; }
 info() { printf '    %s\n' "$*"; }
@@ -69,9 +59,7 @@ usage() { sed -n '3,/^$/p' "$0" | sed 's/^# \{0,1\}//'; }
 
 DO_LAND=1
 DO_PROD=0
-DO_SEED=0
 ASSUME_YES=0
-SEED_ARGS=""
 
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -79,10 +67,6 @@ while [ $# -gt 0 ]; do
         --prod-only) DO_PROD=1; DO_LAND=0 ;;
         --yes|-y)    ASSUME_YES=1 ;;
         -h|--help)   usage; exit 0 ;;
-        # Всё после --reseed уезжает в seed_demo, а не разбирается здесь:
-        # иначе список его флагов пришлось бы держать в двух местах, и они
-        # разъехались бы в первый же новый флаг посева.
-        --reseed)    DO_SEED=1; DO_LAND=0; shift; SEED_ARGS="$*"; break ;;
         *)           fail "неизвестный аргумент: $1" ;;
     esac
     shift
@@ -109,10 +93,10 @@ fi
 # Вершина ветки на GitHub — или пустая строка, если ветки там нет.
 #
 # Пустая строка получается не сама собой, и это стоило падения на первом же
-# запуске `--reseed`. При ошибке `gh` печатает **тело ответа** в stdout, минуя
-# `--jq`, — то есть на несуществующую ветку возвращает не «ничего» и не «null»,
-# а json с «Not Found» длиной в сто тридцать символов. Дальше он уезжал в
-# параметр `parents`, и GitHub отвечал 422 про сорок символов.
+# запуске. При ошибке `gh` печатает **тело ответа** в stdout, минуя `--jq`, —
+# то есть на несуществующую ветку возвращает не «ничего» и не «null», а json с
+# «Not Found» длиной в сто тридцать символов. Дальше он уезжал в следующий
+# запрос как sha, и GitHub отвечал 422 про сорок символов.
 #
 # Поэтому ответ проверяется на форму, а не на код возврата: sha — это сорок
 # знаков из [0-9a-f], всё остальное значит «ветки нет».
@@ -160,74 +144,6 @@ move_ref() {
     return 0
 }
 
-# Просит стенд пересеяться. Дерево берётся у main, родителем встаёт прошлая
-# просьба — значит ветка читается как история пересевов, а каждая новая
-# просьба заведомо отличается от предыдущей.
-seed_request() {
-    local args="$1" main_sha tree parent message body sha
-
-    main_sha="$(ref_sha "$MAIN")"
-    [ -n "$main_sha" ] || fail "не вижу ветки $MAIN на GitHub"
-    parent="$(ref_sha "$SEED")"                       # пусто — просьба первая
-
-    if [ "$VIA" = gh ]; then
-        tree="$(gh api "repos/$SLUG/git/commits/$main_sha" --jq .tree.sha)"
-    else
-        # Коммит собирается локально, `commit-tree`. Объекты для этого нужны
-        # на руках — и дерево main, и прошлая просьба, — поэтому сначала их
-        # приносим. Тянем **ветки**, а не sha: выборку по sha сервер разрешает
-        # не всегда, а ветка приносит ровно тот же коммит.
-        git fetch --quiet origin "$MAIN"
-        [ -z "$parent" ] || git fetch --quiet origin "$SEED"
-        # Разъехалось между `ls-remote` и `fetch` — падаем громко, а не
-        # собираем просьбу от чужого дерева.
-        tree="$(git rev-parse "$main_sha^{tree}")" ||
-            fail "$MAIN сдвинулся, пока я смотрел — повторите"
-    fi
-
-    message="seed:${args:+ $args}"
-    # Кто и когда — не для скрипта, а для того, кто через неделю откроет
-    # ветку на github.com и спросит, откуда взялся пересев в среду ночью.
-    body="$(printf 'Попросил: %s\nОткуда: %s\nКогда: %s' \
-        "$(git config user.email || echo неизвестно)" \
-        "$(hostname)" "$(date '+%F %T %Z')")"
-
-    if [ "$VIA" = gh ]; then
-        if [ -n "$parent" ]; then
-            sha="$(gh api "repos/$SLUG/git/commits" -f message="$message
-
-$body" -f tree="$tree" -f "parents[]=$parent" --jq .sha)"
-            gh api "repos/$SLUG/git/refs/heads/$SEED" -X PATCH -f sha="$sha" >/dev/null
-        else
-            sha="$(gh api "repos/$SLUG/git/commits" -f message="$message
-
-$body" -f tree="$tree" --jq .sha)"
-            gh api "repos/$SLUG/git/refs" -f ref="refs/heads/$SEED" -f sha="$sha" >/dev/null
-        fi
-    else
-        # Имя и почта нужны `commit-tree`, а в свежем клоне их может не быть
-        # вовсе — и тогда он падает с «unable to auto-detect email address».
-        # Подставляем свои, но только если человек своих не назвал: у него они
-        # осмысленные, а в журнале пересевов автор и есть ответ на «кто просил».
-        export GIT_AUTHOR_NAME="${GIT_AUTHOR_NAME:-$(git config user.name || echo ship.sh)}"
-        export GIT_AUTHOR_EMAIL="${GIT_AUTHOR_EMAIL:-$(git config user.email || echo ship@local)}"
-        export GIT_COMMITTER_NAME="$GIT_AUTHOR_NAME"
-        export GIT_COMMITTER_EMAIL="$GIT_AUTHOR_EMAIL"
-
-        if [ -n "$parent" ]; then
-            sha="$(printf '%s\n\n%s\n' "$message" "$body" |
-                   git commit-tree "$tree" -p "$parent")"
-        else
-            sha="$(printf '%s\n\n%s\n' "$message" "$body" | git commit-tree "$tree")"
-        fi
-        # Просьба — потомок прошлой просьбы, значит это перемотка; первая
-        # просьба заводит ветку. Оба случая — обычный пуш без `--force`.
-        git push --quiet origin "$sha:refs/heads/$SEED"
-    fi
-
-    info "просьба ${sha:0:8}: $message"
-}
-
 git fetch --quiet origin
 
 # --- влить ветку в main ------------------------------------------------------
@@ -261,7 +177,7 @@ $(git status --short)"
 
     log "Вливаю «$BRANCH» в $MAIN"
     move_ref "$MAIN" "$LOCAL" || true
-    info "стенд подтянет сам, до 3 минут"
+    info "на main пойдёт полный прогон CI; прод ждёт его зелёного и --prod"
 fi
 
 # --- двинуть прод ------------------------------------------------------------
@@ -291,19 +207,6 @@ if [ "$DO_PROD" -eq 1 ]; then
     printf '\n'
     info "Набор переменных менялся? .env.prod этим путём НЕ едет —"
     info "нужен ноутбук: ./scripts/sync-env.sh prod"
-fi
-
-# --- попросить стенд пересеяться --------------------------------------------
-if [ "$DO_SEED" -eq 1 ]; then
-    log "Прошу стенд пересеять базу"
-    if [ -n "$SEED_ARGS" ]; then
-        info "аргументы: $SEED_ARGS"
-    else
-        info "аргументы: те, что записаны на самом стенде (STAGING_SEED_ARGS)"
-    fi
-    seed_request "$SEED_ARGS"
-    info "стенд заметит и посеет, до 3 минут"
-    info "данные стенда при этом сносятся — на то он и стенд"
 fi
 
 printf '\n'

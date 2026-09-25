@@ -13,11 +13,16 @@
 # это не сразу и не там, где сломано.
 #
 # Поэтому переезд теперь стоит одной строки здесь. Переменные окружения
-# (DEPLOY_SERVER, STAGING_SERVER и прочие) сохранены: ими удобно ткнуть
-# скриптом в чужую машину разово, не трогая файл.
+# (DEPLOY_SERVER и прочие) сохранены: ими удобно ткнуть скриптом в чужую
+# машину разово, не трогая файл, — так и шёл переезд на новый сервер, пока
+# эта строка ещё смотрела на старый.
+#
+# Контур сейчас один — прод; стенд упразднён. Функция осталась с аргументом,
+# чтобы вызовы читались как раньше и второй контур, если появится, стоил
+# одной ветки case.
 
-# Заполняет переменные окружения контура. Единственный аргумент — prod или
-# staging; неизвестное имя это отказ, а не «наверное, прод».
+# Заполняет переменные окружения контура. Единственный аргумент — prod;
+# неизвестное имя это отказ, а не «наверное, прод».
 contour() {
     case "${1:-}" in
         prod)
@@ -28,16 +33,8 @@ contour() {
             ENV_SOURCE="${DEPLOY_ENV_FILE:-$HOME/secrets/lesson-tracker.env.prod}"
             PROJECT_NAME="lesson-tracker-prod"
             ;;
-        staging)
-            CONTOUR="staging"
-            SERVER="${STAGING_SERVER:-leobreslav@194.67.119.42}"
-            REMOTE_DIR="${STAGING_DIR:-apps/lesson-tracker}"
-            SITE="${STAGING_SITE:-https://staging.lbreslav.com/}"
-            ENV_SOURCE="${STAGING_ENV_FILE:-$HOME/secrets/lesson-tracker.env.staging}"
-            PROJECT_NAME="lesson-tracker-staging"
-            ;;
         *)
-            printf 'Ошибка: неизвестный контур «%s». Есть prod и staging.\n' \
+            printf 'Ошибка: неизвестный контур «%s». Есть только prod.\n' \
                 "${1:-}" >&2
             return 1
             ;;
