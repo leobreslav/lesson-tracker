@@ -179,17 +179,24 @@ export default function Works({ onLoggedOut }) {
     поведение не разошлись.
   */
   const blankLine = (
-    <p className="hint">
-      <a href="/blank.pdf" target="_blank" rel="noreferrer">
-        {t('scan.printBlank')}
-      </a>{' '}
-      {t('scan.printBlankHint')}{' '}
-      {/* Подписать бланк можно и без работы: контрольную ещё не завели,
-          а печатать пачку надо сегодня */}
-      <button type="button" className="link" onClick={() => setBlank(true)}>
-        {t('blank.withLabels')}
-      </button>
-    </p>
+    <>
+      <p className="hint">
+        <a href="/blank.pdf" target="_blank" rel="noreferrer">
+          {t('scan.printBlank')}
+        </a>{' '}
+        {t('scan.printBlankHint')}
+      </p>
+      {/* Подписи — кнопкой, а не ссылкой в конце подсказки. Ссылкой она
+          читалась продолжением серого текста, и её не находили: человек
+          видел бланк без подписей и искал, где их добавить. Подписать бланк
+          можно и без работы: контрольную ещё не завели, а печатать пачку
+          надо сегодня */}
+      <p>
+        <button type="button" className="secondary" onClick={() => setBlank(true)}>
+          {t('blank.withLabels')}
+        </button>
+      </p>
+    </>
   )
 
   // пустое состояние — внутри страницы, а не вместо неё: у раздела есть

@@ -1707,7 +1707,7 @@
     "title": "Blank with question labels",
     "hint": "Labels are printed in the band above each cell. An empty cell stays blank for a handwritten label. The labels only go to print — the questions of the work keep their names.",
     "forWork": "Blank for this work",
-    "withLabels": "Label the questions on the blank",
+    "withLabels": "Add question labels before downloading…",
     "download": "Download PDF",
     "extra_one": "The work has {{count}} more question than the blank has cells — it is not on the blank.",
     "extra_other": "The work has {{count}} more questions than the blank has cells — they are not on the blank."
