@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link, useLocation } from 'react-router-dom'
-import { fetchTestPeople, loginAsTestUser, logout } from './api'
+import { fetchDevPeople, loginAsDevUser, logout } from './api'
 import {
   forgetIfHome,
   forgetOrigin,
@@ -22,7 +22,7 @@ import { LANGUAGES } from './i18n'
  * Профиль в списке есть только у того, у кого он есть: `profileTo` пустой —
  * пункт не рисуется.
  *
- * Последним пунктом — «войти как», и только на стенде разработки. Гугл-
+ * Последним пунктом — «войти как», и только в разработке. Гугл-
  * аккаунтов на четырнадцать учеников не напасёшься, а плюс-адреса не
  * годятся вовсе: под алиасом в Google не войти. Список приезжает из
  * дев-двери, которой в проде нет: там запрос отвечает 404, и пункт не
@@ -143,9 +143,9 @@ export default function UserMenu({ user, profileTo = null, onLoggedOut, onLangua
 
 
 /**
- * «Войти как» — переключатель аккаунтов на стенде разработки.
+ * «Войти как» — переключатель аккаунтов в разработке.
  *
- * Берёт токен той же дверью, которой пользуются браузерные тесты, кладёт
+ * Берёт токен дверью разработки (`/api/dev/login/`), кладёт
  * его туда же, откуда его читает `App.jsx`, и перезагружает страницу: вид
  * пользователя решается на входе, и половинчатая смена личности без
  * перезагрузки означала бы учительскую оболочку вокруг ученика.
@@ -163,10 +163,10 @@ function SwitchUser({ user }) {
     // переключатель пропадёт там, где он как раз и нужен
     forgetIfHome(user)
 
-    fetchTestPeople(homeToken())
+    fetchDevPeople(homeToken())
       .then((result) => !cancelled && setPeople(result.people))
       .catch(() => {
-        // двери нет — значит это не стенд разработки, и пункта тоже нет
+        // двери нет — значит это не разработка, и пункта тоже нет
       })
 
     return () => {
@@ -196,7 +196,7 @@ function SwitchUser({ user }) {
 
     // домашним токеном, а не текущим: на закрытом контуре дверь спрашивает,
     // кто стучится, а стучится тут уже подменённый
-    const { key } = await loginAsTestUser(email, homeToken())
+    const { key } = await loginAsDevUser(email, homeToken())
     localStorage.setItem('authToken', key)
     window.location.assign('/')
   }
@@ -207,7 +207,7 @@ function SwitchUser({ user }) {
       localStorage.setItem('authToken', home.token)
     } else if (home?.email) {
       // токен могли и не сохранить (приватный режим) — тогда та же дверь
-      const { key } = await loginAsTestUser(home.email, homeToken())
+      const { key } = await loginAsDevUser(home.email, homeToken())
       localStorage.setItem('authToken', key)
     }
     forgetOrigin()

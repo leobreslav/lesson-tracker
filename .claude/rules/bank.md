@@ -20,11 +20,6 @@ paths:
   - "frontend/src/AnalogueDialog.jsx"
   - "frontend/tests/basket.test.js"
   - "frontend/tests/expressionTree.test.js"
-  - "e2e/tests/bank.spec.js"
-  - "e2e/tests/bigbank.spec.js"
-  - "e2e/tests/parts.spec.js"
-  - "e2e/tests/assemble.spec.js"
-  - "e2e/tests/proposals.spec.js"
 ---
 
 ## Задачник

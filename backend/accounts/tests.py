@@ -234,9 +234,9 @@ class MeTests(APITestCase):
         self.assertFalse(Token.objects.filter(user=self.user).exists())
 
 
-class E2EDoorTests(APITestCase):
+class DevDoorIsShutByDefaultTests(APITestCase):
     """
-    The browser-test door must be shut unless the environment opens it.
+    The development door must be shut unless the environment opens it.
 
     Checked as a routing fact rather than a permission one: with the flag
     off the path is not registered at all, so `reverse` cannot even name it.
@@ -245,20 +245,18 @@ class E2EDoorTests(APITestCase):
     def test_the_routes_do_not_exist_by_default(self):
         from django.urls import NoReverseMatch, reverse
 
-        self.assertFalse(settings.E2E_TEST_LOGIN, "флаг не должен быть включён")
+        self.assertFalse(settings.DEV_LOGIN, "флаг не должен быть включён")
 
-        for name in ("e2e-login", "e2e-people", "e2e-reset"):
+        for name in ("dev-login", "dev-people"):
             with self.subTest(name), self.assertRaises(NoReverseMatch):
                 reverse(name)
 
     def test_the_paths_answer_404(self):
-        for path in ("/api/test/login/", "/api/test/reset/"):
-            with self.subTest(path):
-                self.assertEqual(self.client.post(path).status_code, 404)
+        self.assertEqual(self.client.post("/api/dev/login/").status_code, 404)
 
         # список людей закрыт так же: он говорит, кто есть в базе, и в
         # чужих руках это готовый перечень адресов школы
-        self.assertEqual(self.client.get("/api/test/people/").status_code, 404)
+        self.assertEqual(self.client.get("/api/dev/people/").status_code, 404)
 
     def test_the_view_refuses_even_if_wired_by_hand(self):
         """
@@ -267,12 +265,12 @@ class E2EDoorTests(APITestCase):
         DRF turns the Http404 into a response rather than letting it fly, so
         the status is what there is to look at.
         """
-        from accounts.e2e import TestLoginView, TestPeopleView
+        from accounts.dev_door import DevLoginView, DevPeopleView
 
         request = APIRequestFactory().post("/", {"email": "teacher@example.com"})
 
-        response = TestLoginView.as_view()(request)
-        listing = TestPeopleView.as_view()(APIRequestFactory().get("/"))
+        response = DevLoginView.as_view()(request)
+        listing = DevPeopleView.as_view()(APIRequestFactory().get("/"))
 
         self.assertEqual(response.status_code, 404)
         self.assertEqual(listing.status_code, 404)
@@ -288,9 +286,10 @@ class AllowedAddressesTests(APITestCase):
     пустая проверка.
 
     Дверей две, и вторая опаснее первой. `/api/auth/google/` хотя бы требует
-    настоящего аккаунта Google; `/api/test/login/` выдаёт токен **кому угодно
-    по адресу** — она для браузерных тестов и живёт за флагом. Пока стенд был
-    закрыт паролем nginx, снаружи её было не достать; пароля больше нет.
+    настоящего аккаунта Google; `/api/dev/login/` выдаёт токен **кому угодно
+    по адресу** — она для «Войти как» в разработке и живёт за флагом. Пока
+    упразднённый стенд был закрыт паролем nginx, снаружи её было не достать;
+    пароля больше нет.
     Правило, написанное только у первой двери, оставило бы вторую открытой, и
     выглядело бы это как «контур закрыт», пока кто-нибудь не наберёт второй
     адрес.
@@ -332,7 +331,7 @@ class AllowedAddressesTests(APITestCase):
         )
 
 
-@override_settings(E2E_TEST_LOGIN=True, LOGIN_ALLOWED_EMAILS=["me@example.com"])
+@override_settings(DEV_LOGIN=True, LOGIN_ALLOWED_EMAILS=["me@example.com"])
 class DevDoorAsksWhoIsKnockingTests(APITestCase):
     """
     Дев-дверь на контуре со списком требует токен допущенного.
@@ -353,9 +352,9 @@ class DevDoorAsksWhoIsKnockingTests(APITestCase):
         return view.as_view()(request)
 
     def test_without_a_token_the_door_refuses(self):
-        from accounts.e2e import TestLoginView
+        from accounts.dev_door import DevLoginView
 
-        response = self.knock(TestLoginView)
+        response = self.knock(DevLoginView)
 
         self.assertEqual(response.status_code, 403)
         self.assertEqual(response.data["code"], "not_allowed_here")
@@ -368,33 +367,25 @@ class DevDoorAsksWhoIsKnockingTests(APITestCase):
         **домашним** токеном (`devSwitch.homeToken`). Спроси он текущий —
         подмена работала бы ровно один раз.
         """
-        from accounts.e2e import TestLoginView
+        from accounts.dev_door import DevLoginView
 
         key = Token.objects.create(user=self.somebody).key
 
-        self.assertEqual(self.knock(TestLoginView, token=key).status_code, 403)
+        self.assertEqual(self.knock(DevLoginView, token=key).status_code, 403)
 
     def test_the_owner_of_the_contour_walks_in(self):
-        from accounts.e2e import TestLoginView
+        from accounts.dev_door import DevLoginView
 
         key = Token.objects.create(user=self.owner).key
-        response = self.knock(TestLoginView, token=key)
+        response = self.knock(DevLoginView, token=key)
 
         self.assertEqual(response.status_code, 200, response.data)
 
     def test_the_list_of_people_is_closed_too(self):
         """Список людей — это перечень адресов школы, и он не для всех."""
-        from accounts.e2e import TestPeopleView
+        from accounts.dev_door import DevPeopleView
 
-        response = TestPeopleView.as_view()(self.factory.get("/"))
-
-        self.assertEqual(response.status_code, 403)
-
-    def test_the_reset_is_closed_too(self):
-        """А эта дверь сносит базу целиком."""
-        from accounts.e2e import TestResetView
-
-        response = TestResetView.as_view()(self.factory.post("/"))
+        response = DevPeopleView.as_view()(self.factory.get("/"))
 
         self.assertEqual(response.status_code, 403)
 
@@ -406,9 +397,9 @@ class DevDoorAsksWhoIsKnockingTests(APITestCase):
         вьюхи. Здесь ответить должен наш отказ: человеку надо понять, что его
         не пускает список, а не что «что-то с авторизацией».
         """
-        from accounts.e2e import TestLoginView
+        from accounts.dev_door import DevLoginView
 
-        response = self.knock(TestLoginView, token="0" * 40)
+        response = self.knock(DevLoginView, token="0" * 40)
 
         self.assertEqual(response.status_code, 403)
         self.assertEqual(response.data["code"], "not_allowed_here")
@@ -416,27 +407,27 @@ class DevDoorAsksWhoIsKnockingTests(APITestCase):
     @override_settings(LOGIN_ALLOWED_EMAILS=[])
     def test_a_stale_token_does_not_shut_an_open_door(self):
         """
-        Пересеяли стенд — в браузере остался токен от прошлой базы.
+        Пересеяли базу — в браузере остался токен от прошлой.
 
         Дверь на таком контуре открыта и токена не спрашивает вовсе; ответь
         она 401, и переключатель аккаунтов пропал бы после каждого пересева.
         """
-        from accounts.e2e import TestPeopleView
+        from accounts.dev_door import DevPeopleView
 
         request = self.factory.get("/", HTTP_AUTHORIZATION="Token " + "f" * 40)
 
-        self.assertEqual(TestPeopleView.as_view()(request).status_code, 200)
+        self.assertEqual(DevPeopleView.as_view()(request).status_code, 200)
 
     @override_settings(LOGIN_ALLOWED_EMAILS=[])
     def test_without_a_list_the_door_stays_as_it_was(self):
         """
-        Контур браузерных тестов: списка нет, и дверь открыта, как была.
+        Машина разработчика: списка нет, и дверь открыта, как была.
 
-        Без этого набор `e2e` перестал бы входить вовсе — он стучится сюда до
-        того, как у него появился хоть какой-нибудь токен.
+        Без этого «Войти как» после пересева не работало бы вовсе — в дверь
+        стучатся до того, как появился хоть какой-нибудь годный токен.
         """
-        from accounts.e2e import TestPeopleView
+        from accounts.dev_door import DevPeopleView
 
-        response = TestPeopleView.as_view()(self.factory.get("/"))
+        response = DevPeopleView.as_view()(self.factory.get("/"))
 
         self.assertEqual(response.status_code, 200)

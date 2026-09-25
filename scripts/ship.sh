@@ -3,7 +3,7 @@
 # Унести готовую работу в main и на прод — из любого места, включая облачную
 # сессию и телефон. Ни ssh, ни ключей: всё через git и gh.
 #
-#   ./scripts/ship.sh                 # влить ветку в main (=> полный прогон CI)
+#   ./scripts/ship.sh                 # влить ветку в main (=> CI: python и node)
 #   ./scripts/ship.sh --prod          # влить и выкатить на прод
 #   ./scripts/ship.sh --prod-only     # main уже в порядке, двинуть только прод
 #   ./scripts/ship.sh --prod --yes    # без вопроса, для скриптов
@@ -177,7 +177,7 @@ $(git status --short)"
 
     log "Вливаю «$BRANCH» в $MAIN"
     move_ref "$MAIN" "$LOCAL" || true
-    info "на main пойдёт полный прогон CI; прод ждёт его зелёного и --prod"
+    info "на main пойдёт CI (python и node); прод ждёт их зелёного и --prod"
 fi
 
 # --- двинуть прод ------------------------------------------------------------

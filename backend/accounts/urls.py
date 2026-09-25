@@ -2,7 +2,7 @@ from dj_rest_auth.views import LogoutView
 from django.conf import settings
 from django.urls import path
 
-from .e2e import TestLoginView, TestPeopleView, TestResetView
+from .dev_door import DevLoginView, DevPeopleView
 from .views import GoogleLoginView, LoginCodeRequestView, LoginCodeVerifyView, MeView
 
 urlpatterns = [
@@ -14,11 +14,10 @@ urlpatterns = [
     path("me/", MeView.as_view(), name="me"),
 ]
 
-if settings.E2E_TEST_LOGIN:
+if settings.DEV_LOGIN:
     # not merely permission-checked — absent from the routing table, so the
     # path answers 404 like any other misspelling
     urlpatterns += [
-        path("test/login/", TestLoginView.as_view(), name="e2e-login"),
-        path("test/people/", TestPeopleView.as_view(), name="e2e-people"),
-        path("test/reset/", TestResetView.as_view(), name="e2e-reset"),
+        path("dev/login/", DevLoginView.as_view(), name="dev-login"),
+        path("dev/people/", DevPeopleView.as_view(), name="dev-people"),
     ]

@@ -26,9 +26,9 @@ environ.Env.read_env(BASE_DIR / ".env")
 SECRET_KEY = env("SECRET_KEY", default="dev-insecure-key-change-me")
 DEBUG = env("DEBUG")
 
-# A door for browser tests: a token by email, and a database reset. Never on
-# in production — see accounts/e2e.py for why it is closed three times over.
-E2E_TEST_LOGIN = env.bool("E2E_TEST_LOGIN", default=False)
+# A door for development: a token by email, behind «Войти как» in the user
+# menu. Never on in production — see accounts/dev_door.py for how it is closed.
+DEV_LOGIN = env.bool("DEV_LOGIN", default=False)
 
 # Кого этот контур пускает внутрь. Пусто — всех, кого пустил Google: так
 # живёт прод, где допуск даёт приглашение школы. Список адресов закрывает

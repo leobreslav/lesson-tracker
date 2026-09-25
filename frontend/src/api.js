@@ -47,7 +47,7 @@ async function request(path, { method = 'GET', body, auth = true, as } = {}) {
   if (body && !isForm) headers['Content-Type'] = 'application/json'
 
   // `as` — запрос от имени не того, кем мы сейчас ходим. Нужен ровно
-  // переключателю «войти как» на стенде: подменившись учеником, вернуться
+  // переключателю «войти как» в разработке: подменившись учеником, вернуться
   // и переключиться дальше он должен **своим** токеном, а текущий уже
   // ученический. Обычные вызовы про это не знают и берут токен из хранилища.
   const token = as ?? getToken()
@@ -1562,14 +1562,14 @@ export const deleteSlots = ({ classId, start, end, onlyRegular, weekday, number 
 
 // --- дев-дверь: вход кем угодно без Google ---
 //
-// Живёт за флагом `E2E_TEST_LOGIN`, и при выключенном флаге маршрутов нет
+// Живёт за флагом `DEV_LOGIN`, и при выключенном флаге маршрутов нет
 // вовсе — поэтому «есть ли дверь» проверяется запросом, а не переменной
 // сборки: в проде он честно отвечает 404, и переключателя не будет.
 
-export const fetchTestPeople = (as) => request('/api/test/people/', { as })
+export const fetchDevPeople = (as) => request('/api/dev/people/', { as })
 
-export const loginAsTestUser = (email, as) =>
-  request('/api/test/login/', { method: 'POST', body: { email }, as })
+export const loginAsDevUser = (email, as) =>
+  request('/api/dev/login/', { method: 'POST', body: { email }, as })
 
 /**
  * Поиск задач: слова и грани идут одним запросом, потому что сужают один и тот

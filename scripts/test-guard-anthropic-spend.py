@@ -58,7 +58,7 @@ QUIET = [
     ("поиск по коду", "grep -rn 'read_header' backend/"),
     ("обычный прогон тестов", "docker compose exec -T backend python manage.py test"),
     ("чтение исходника", "sed -n '1,20p' backend/vision/client.py"),
-    ("браузерные тесты", "./e2e.sh --smoke"),
+    ("узловые тесты", "docker compose exec -T frontend npm test"),
     ("состояние гита", "git status"),
     # Ради этого различение и заведено: код виден целиком, вызова в нём нет,
     # а сторож спрашивал — то есть про то, где тратить нечего.

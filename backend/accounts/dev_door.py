@@ -1,37 +1,37 @@
 """
-A way into the application for browser tests, and nothing else.
+A way into the application for development, and nothing else.
 
-Signing in through Google cannot be driven from a headless browser, so the
-e2e stack needs a door of its own. It is a door that must not exist anywhere
-near production, so it is closed three times over:
+Signing in through Google needs a real Google account per person, and a
+seeded school has fourteen students and a staff room of teachers. So local
+development and cloud sessions have a door of their own: «Войти как» in the
+user menu asks it for a token by email. It is a door that must not exist
+anywhere near production, so it is closed twice over:
 
-* `E2E_TEST_LOGIN` is false unless the environment says otherwise, and the
-  URLs are not even added to the routing table when it is off — a request to
+* `DEV_LOGIN` is false unless the environment says otherwise, and the URLs
+  are not even added to the routing table when it is off — a request to
   them gets an ordinary 404, with no hint that such a path was ever a thing;
 * the views check the flag again at call time, so importing them by hand
-  cannot help either;
-* the reset endpoint runs `seed_demo`, which refuses to work with DEBUG off.
+  cannot help either.
 
 The production `.env.prod` never sets the flag, and `.env.prod.example` says
 so out loud.
 
-Четвёртый замок — для контура, где дверь открыта, но публика чужая.
+Третий замок — для контура, где дверь открыта, но публика чужая.
 
-Стенд держит флаг включённым нарочно: своих гугл-аккаунтов на четырнадцать
-учеников не напасёшься, и «войти как» в меню ходит именно сюда. Пока стенд
-был закрыт паролем nginx, этого хватало; пароля больше нет, а дверь,
-выдающая токен **кому угодно по адресу**, без пароля равна открытому входу
-учителем — и тремя замками выше она не закрывается ни одним: флаг включён,
-маршруты есть, `seed_demo` про вход не спрашивают вовсе.
+Дверь выдаёт токен **кому угодно по адресу**, без Google и без пароля. На
+своей машине это ровно то, что нужно; на машине, открытой наружу, это
+открытый вход учителем — и двумя замками выше она не закрывается ни одним:
+флаг включён, маршруты есть. Так было на упразднённом стенде, пока его не
+закрыли списком.
 
 Поэтому: **есть список допущенных — дверь требует токен допущенного**
-(`accounts/door.py`). Пустой список ничего не меняет, и это важно для
-браузерных тестов: у их контура списка нет, они входят как входили.
+(`accounts/door.py`). Пустой список ничего не меняет, и так живёт машина
+разработчика: она наружу не смотрит. Выкатить пару «дверь включена, список
+пуст» не даёт `scripts/check-login-door.sh`.
 """
 
 from config.errors import Codes, api_denied
 from django.conf import settings
-from django.core.management import call_command
 from django.http import Http404
 from rest_framework.authentication import TokenAuthentication
 from rest_framework.exceptions import AuthenticationFailed
@@ -45,7 +45,7 @@ from .models import User
 
 
 def enabled() -> bool:
-    return bool(getattr(settings, "E2E_TEST_LOGIN", False))
+    return bool(getattr(settings, "DEV_LOGIN", False))
 
 
 class TokenIfItIsAnyGood(TokenAuthentication):
@@ -54,7 +54,7 @@ class TokenIfItIsAnyGood(TokenAuthentication):
 
     Штатная `TokenAuthentication` на неизвестном токене отвечает 401 и до
     вьюхи не пускает вовсе. Для этой двери это была бы поломка на ровном
-    месте: после пересева стенда в браузере остаётся токен от снесённой базы,
+    месте: после пересева базы в браузере остаётся токен от снесённой базы,
     и дверь, которой токен не нужен вообще (списка допущенных нет), ответила
     бы отказом — а выглядело бы это как «переключатель аккаунтов пропал».
 
@@ -70,12 +70,12 @@ class TokenIfItIsAnyGood(TokenAuthentication):
             return None
 
 
-class E2EView(APIView):
-    """Open to anyone — but only when the flag is on, and it never is."""
+class DevDoorView(APIView):
+    """Open to anyone — but only when the flag is on, and it never is in production."""
 
-    # Токен читается, но не требуется: на контуре без списка допущенных дверь
-    # открыта, и браузерные тесты входят ею, ещё не имея никакого токена.
-    # Список нужен ровно затем, чтобы было **кого** спросить, когда он есть.
+    # Токен читается, но не требуется: на машине без списка допущенных дверь
+    # открыта, и в неё входят, ещё не имея никакого токена. Список нужен
+    # ровно затем, чтобы было **кого** спросить, когда он есть.
     authentication_classes = [TokenIfItIsAnyGood]
     permission_classes = [AllowAny]
 
@@ -89,7 +89,7 @@ class E2EView(APIView):
         ):
             # 403 с кодом, а не 404: дверь тут есть, и человек, у которого
             # токен уже подменён на ученический, должен понимать, почему
-            # переключатель перестал работать, — а не думать, что стенд слёг
+            # переключатель перестал работать, — а не думать, что сайт слёг
             api_denied(
                 Codes.NOT_ALLOWED_HERE,
                 "This door answers only to the addresses this installation admits.",
@@ -98,11 +98,11 @@ class E2EView(APIView):
         return super().initial(request, *args, **kwargs)
 
 
-class TestLoginView(E2EView):
+class DevLoginView(DevDoorView):
     """
     A token for an existing account, by email.
 
-    Deliberately does not create anybody: the tests run against `seed_demo`
+    Deliberately does not create anybody: the door works against `seed_demo`
     data, and an endpoint that could invent users would be a second way to
     get into a school.
     """
@@ -125,15 +125,14 @@ class TestLoginView(E2EView):
         )
 
 
-class TestPeopleView(E2EView):
+class DevPeopleView(DevDoorView):
     """
     Кто есть в базе — чтобы можно было войти кем угодно в один клик.
 
     Своих гугл-аккаунтов на четырнадцать учеников не напасёшься, а
     плюс-адреса тут не работают вовсе: под алиасом в Google не войти, и
     id_token всё равно придёт с канонического адреса. Поэтому список людей
-    отдаётся сюда, а переключатель в меню меняет токен в браузере — тем же
-    путём, каким входят браузерные тесты.
+    отдаётся сюда, а переключатель в меню меняет токен в браузере.
 
     Живёт за тем же флагом, что и вход: без него маршрут не существует.
     """
@@ -163,18 +162,3 @@ class TestPeopleView(E2EView):
                 ]
             }
         )
-
-
-class TestResetView(E2EView):
-    """
-    Put the database back to the seeded state.
-
-    Each test starts from here, so one test cannot leave the next one a
-    surprise. `seed_demo --flush` is the same command a developer runs by
-    hand, which keeps the fixtures the tests see and the fixtures a person
-    sees identical.
-    """
-
-    def post(self, request):
-        call_command("seed_demo", flush=True, verbosity=0)
-        return Response({"reset": True})

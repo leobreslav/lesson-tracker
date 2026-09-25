@@ -21,7 +21,7 @@
 #   R2_*        пусто → вложения не грузятся, seed_demo пропускает файлы с
 #               предупреждением, а тесты и так ходят в память (config/testing.py);
 #   GOOGLE_*    пусто → вход через Google не работает; входят дверью
-#               E2E_TEST_LOGIN («войти как» в меню пользователя);
+#               DEV_LOGIN («войти как» в меню пользователя);
 #   ANTHROPIC_  пусто → чтение сканов честно отказывает кодом ai_key_missing,
 #               и это состояние покрыто тестом.
 #
@@ -64,7 +64,7 @@ R2_ENDPOINT_URL=
 
 # Дверь для разработки: вход любым посеянным аккаунтом без Google. В
 # .env.prod этой строки нет и быть не должно.
-E2E_TEST_LOGIN=true
+DEV_LOGIN=true
 
 ANTHROPIC_API_KEY=
 
@@ -89,7 +89,7 @@ if [ ! -f frontend/.env ]; then
     # переменную, а кнопка Google всё равно не отрисуется без client_id.
     cat > frontend/.env <<'ENV'
 # Создан scripts/dev-env.sh. Пусто — кнопки Google нет; входят дверью
-# E2E_TEST_LOGIN («войти как» в меню пользователя).
+# DEV_LOGIN («войти как» в меню пользователя).
 VITE_GOOGLE_CLIENT_ID=
 ENV
     chmod 600 frontend/.env

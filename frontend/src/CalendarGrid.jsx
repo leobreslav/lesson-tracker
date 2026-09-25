@@ -102,7 +102,7 @@ export default function CalendarGrid({
                 <button
                   type="button"
                   key={day.date}
-                  // браузерные тесты целятся по дате: по тексту числа
+                  // клетка узнаётся по дате: по тексту числа
                   // попасть в нужный месяц нельзя
                   data-date={day.date}
                   className={

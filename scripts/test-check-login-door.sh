@@ -74,54 +74,54 @@ passes "прод: дев-двери нет вовсе" \
     'DEBUG=False' 'DOMAIN=example.com'
 
 passes "дев-дверь выключена явно" \
-    'E2E_TEST_LOGIN=false' 'DEBUG=False'
+    'DEV_LOGIN=false' 'DEBUG=False'
 
 passes "дев-дверь со списком" \
-    'E2E_TEST_LOGIN=true' 'LOGIN_ALLOWED_EMAILS=me@example.com'
+    'DEV_LOGIN=true' 'LOGIN_ALLOWED_EMAILS=me@example.com'
 
 passes "список из нескольких адресов" \
-    'E2E_TEST_LOGIN=true' 'LOGIN_ALLOWED_EMAILS=me@example.com,you@example.com'
+    'DEV_LOGIN=true' 'LOGIN_ALLOWED_EMAILS=me@example.com,you@example.com'
 
 passes "список в кавычках — это тоже список" \
-    'E2E_TEST_LOGIN=true' 'LOGIN_ALLOWED_EMAILS="me@example.com"'
+    'DEV_LOGIN=true' 'LOGIN_ALLOWED_EMAILS="me@example.com"'
 
 # Пустое значение флага — это «выключено», а не «непонятно». Так же его
 # прочтёт и Django, и разойтись эти два чтения не должны: разошедшись, они
 # дали бы контур, который замок пропустил, а дверь на нём открыта.
 passes "пустое значение флага — дверь закрыта" \
-    'E2E_TEST_LOGIN=' 'LOGIN_ALLOWED_EMAILS='
+    'DEV_LOGIN=' 'LOGIN_ALLOWED_EMAILS='
 
 # --- отказывает -------------------------------------------------------------
 
 refuses "дверь открыта, списка нет" \
-    'E2E_TEST_LOGIN=true' 'DEBUG=False'
+    'DEV_LOGIN=true' 'DEBUG=False'
 
 refuses "список есть строкой, но пустой" \
-    'E2E_TEST_LOGIN=true' 'LOGIN_ALLOWED_EMAILS='
+    'DEV_LOGIN=true' 'LOGIN_ALLOWED_EMAILS='
 
 refuses "список из одних пробелов" \
-    'E2E_TEST_LOGIN=true' 'LOGIN_ALLOWED_EMAILS=   '
+    'DEV_LOGIN=true' 'LOGIN_ALLOWED_EMAILS=   '
 
 refuses "список в пустых кавычках" \
-    'E2E_TEST_LOGIN=true' 'LOGIN_ALLOWED_EMAILS=""'
+    'DEV_LOGIN=true' 'LOGIN_ALLOWED_EMAILS=""'
 
 refuses "«да» единицей" \
-    'E2E_TEST_LOGIN=1'
+    'DEV_LOGIN=1'
 
 refuses "«да» с большой буквы" \
-    'E2E_TEST_LOGIN=True'
+    'DEV_LOGIN=True'
 
 refuses "«да» словом yes" \
-    'E2E_TEST_LOGIN=yes'
+    'DEV_LOGIN=yes'
 
 refuses "«да» в кавычках" \
-    'E2E_TEST_LOGIN="true"'
+    'DEV_LOGIN="true"'
 
 # Редактор с виндовыми концами строк: значение выглядит заданным, а хвостовой
 # \r делает его чужим для любого сравнения. В этом проекте на такой файл уже
 # наступали — см. «Особенности окружения» в CLAUDE.md.
 crlf="$WORK/crlf.env"
-printf 'E2E_TEST_LOGIN=true\r\nDEBUG=False\r\n' > "$crlf"
+printf 'DEV_LOGIN=true\r\nDEBUG=False\r\n' > "$crlf"
 if out="$(bash "$GUARD" "$crlf" 2>&1)"; then
     report fail "виндовые концы строк не прячут открытую дверь" "пропустил"
 else
