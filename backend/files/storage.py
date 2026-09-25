@@ -356,6 +356,45 @@ def put_object(client, bucket: str, key: str, body: bytes) -> None:
         client.put_object(Bucket=bucket, Key=key, Body=body)
 
 
+def pull_client(access_key: str, secret_key: str):
+    """
+    A client holding the read-only token of `pull_files`.
+
+    Its keys come from the laptop's `~/secrets/lesson-tracker.pull.env`, not
+    from settings: the application never needs them, and a setting would put
+    them in every process that reads the environment.
+    """
+    return boto3.client(
+        "s3",
+        endpoint_url=settings.R2_ENDPOINT_URL,
+        aws_access_key_id=access_key,
+        aws_secret_access_key=secret_key,
+        region_name="auto",
+        config=settings.R2_CLIENT_CONFIG,
+    )
+
+
+def app_client():
+    """The client of the application's own token, and the bucket it writes."""
+    store = backend()
+    return store.bucket.meta.client, store.bucket.name
+
+
+def carry_object(source_client, target_client, key: str, *, source: str, target: str) -> None:
+    """
+    Copy one object between buckets through this process, not inside R2.
+
+    `copy_object` needs one token that reads the source and writes the
+    target. For `pull_files` that token does not exist on purpose: the source
+    is production, and a key on the laptop that can write there is the thing
+    the whole arrangement avoids. So the bytes are read with one token and
+    written with another; attachments are at most 20 MB, one at a time.
+    """
+    with as_unavailable():
+        body = source_client.get_object(Bucket=source, Key=key)["Body"].read()
+        target_client.put_object(Bucket=target, Key=key, Body=body)
+
+
 def delete_object(client, bucket: str, key: str) -> None:
     """
     Remove one object from a bucket.

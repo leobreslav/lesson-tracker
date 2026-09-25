@@ -14,6 +14,7 @@ by accident, which is the right way round.
 """
 
 import logging
+import os
 from contextlib import contextmanager
 from datetime import date, timedelta
 from io import BytesIO, StringIO
@@ -773,6 +774,7 @@ class FakeR2:
         # {bucket: {key: (size, etag)}}
         self.buckets = {name: dict(items) for name, items in buckets.items()}
         self.copies = []
+        self.puts = []
         self.deleted = []
         self.failing = set()
 
@@ -800,7 +802,14 @@ class FakeR2:
         ]
 
     def put_object(self, Bucket, Key, Body):  # noqa: N803
+        if Key in self.failing:
+            raise EndpointConnectionError(endpoint_url="https://r2.example")
+        self.puts.append(Key)
         self.buckets[Bucket][Key] = (len(Body), "put")
+
+    def get_object(self, Bucket, Key):  # noqa: N803
+        size, _ = self.buckets[Bucket][Key]
+        return {"Body": BytesIO(b"x" * size)}
 
     def delete_object(self, Bucket, Key):  # noqa: N803
         self.deleted.append(Key)
@@ -1795,3 +1804,107 @@ class MaterialsOfAShelfLessonTests(SchoolTestMixin, APITestCase):
 
         self.assertEqual(listed.status_code, 200, listed.content)
         self.assertEqual(listed.json(), [])
+
+
+PULL_ENV = {
+    "PULL_R2_BUCKET": "prod-backup",
+    "PULL_R2_ACCESS_KEY_ID": "read-only-key",
+    "PULL_R2_SECRET_ACCESS_KEY": "read-only-secret",
+}
+
+
+@override_settings(DEBUG=True, R2_ENDPOINT_URL="https://r2.example")
+class PullFilesTests(SimpleTestCase):
+    """
+    Production's attachments come to the laptop — and nothing goes back.
+
+    The source is read with a read-only token and the dev bucket is written
+    with the application's own; the tests pin the walk (what is carried, what
+    is left alone) and, above all, the refusals: a copy aimed anywhere but a
+    dev bucket, or run where DEBUG is off, must not start at all.
+    """
+
+    def run_pull(self, r2, *, target="lesson-tracker-dev", env=PULL_ENV, **options):
+        out = StringIO()
+        with (
+            mock.patch.dict(os.environ, env, clear=False),
+            mock.patch.object(storage, "configured", return_value=True),
+            mock.patch.object(storage, "pull_client", return_value=r2),
+            mock.patch.object(storage, "app_client", return_value=(r2, target)),
+        ):
+            call_command("pull_files", stdout=out, stderr=out, **options)
+        return out.getvalue()
+
+    def test_it_carries_what_the_dev_bucket_does_not_have(self):
+        r2 = FakeR2(
+            **{
+                "prod-backup": {"files/1/a/one.pdf": (10, "aaa"), "files/1/b/two.pdf": (20, "bbb")},
+                "lesson-tracker-dev": {"files/1/a/one.pdf": (10, "aaa")},
+            }
+        )
+
+        output = self.run_pull(r2)
+
+        self.assertEqual(r2.puts, ["files/1/b/two.pdf"])
+        self.assertEqual(r2.copies, [], "серверное копирование требует ключа на запись в источник")
+        self.assertIn("скопировано: 1, пропущено (уже есть): 1", output)
+
+    def test_it_never_deletes_what_only_the_dev_bucket_has(self):
+        r2 = FakeR2(**{"prod-backup": {}, "lesson-tracker-dev": {"files/9/z/seeded.pdf": (5, "zzz")}})
+
+        self.run_pull(r2)
+
+        self.assertEqual(r2.deleted, [])
+        self.assertIn("files/9/z/seeded.pdf", r2.buckets["lesson-tracker-dev"])
+
+    def test_a_dry_run_carries_nothing(self):
+        r2 = FakeR2(**{"prod-backup": {"files/1/a/one.pdf": (10, "aaa")}, "lesson-tracker-dev": {}})
+
+        output = self.run_pull(r2, dry_run=True)
+
+        self.assertEqual(r2.puts, [])
+        self.assertIn("скопировался бы files/1/a/one.pdf", output)
+
+    def test_one_failing_object_does_not_cost_the_rest(self):
+        r2 = FakeR2(
+            **{
+                "prod-backup": {"files/1/a/one.pdf": (10, "aaa"), "files/1/b/two.pdf": (20, "bbb")},
+                "lesson-tracker-dev": {},
+            }
+        )
+        r2.failing.add("files/1/a/one.pdf")
+
+        with self.assertRaisesMessage(CommandError, "не удалось скопировать объектов: 1"):
+            self.run_pull(r2)
+
+        self.assertEqual(r2.puts, ["files/1/b/two.pdf"])
+
+    @override_settings(DEBUG=False)
+    def test_it_refuses_where_debug_is_off(self):
+        r2 = FakeR2(**{"prod-backup": {"files/1/a/one.pdf": (10, "aaa")}, "lesson-tracker-dev": {}})
+
+        with self.assertRaisesMessage(CommandError, "DEBUG=True"):
+            self.run_pull(r2)
+
+        self.assertEqual(r2.puts, [])
+
+    def test_it_refuses_a_target_that_is_not_a_dev_bucket(self):
+        r2 = FakeR2(**{"prod-backup": {"files/1/a/one.pdf": (10, "aaa")}, "lesson-tracker": {}})
+
+        with self.assertRaisesMessage(CommandError, "не похож на dev-бакет"):
+            self.run_pull(r2, target="lesson-tracker")
+
+        self.assertEqual(r2.puts, [])
+
+    def test_it_refuses_when_source_and_target_are_one_bucket(self):
+        r2 = FakeR2(**{"x-dev": {"files/1/a/one.pdf": (10, "aaa")}})
+
+        with self.assertRaisesMessage(CommandError, "один и тот же бакет"):
+            self.run_pull(r2, target="x-dev", env={**PULL_ENV, "PULL_R2_BUCKET": "x-dev"})
+
+    def test_without_the_source_keys_it_says_where_they_live(self):
+        r2 = FakeR2(**{"prod-backup": {}, "lesson-tracker-dev": {}})
+        empty = {name: "" for name in PULL_ENV}
+
+        with self.assertRaisesMessage(CommandError, "lesson-tracker.pull.env"):
+            self.run_pull(r2, env=empty)
