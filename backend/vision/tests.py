@@ -1325,15 +1325,49 @@ class WhatCountsAsOutOfReachTests(SimpleTestCase):
         """
         import httpx
 
+        from config.errors import ApiError
+
         anthropic, request = self.sdk()
-        with self.assertRaises(anthropic.AuthenticationError):
-            self.call(
-                anthropic.AuthenticationError(
-                    "bad key",
-                    response=httpx.Response(401, request=request),
-                    body=None,
+        with self.assertLogs("vision.client", level="ERROR"):
+            with self.assertRaises(ApiError) as caught:
+                self.call(
+                    anthropic.AuthenticationError(
+                        "bad key",
+                        response=httpx.Response(401, request=request),
+                        body=None,
+                    )
                 )
-            )
+
+        self.assertEqual(caught.exception.detail["code"], "ai_key_rejected")
+        self.assertEqual(caught.exception.status_code, 503)
+
+    def test_a_refusal_carries_the_reason_the_service_gave(self):
+        """
+        Пустой баланс приходит как 400 со словами самого сервиса, и слова эти
+        — единственное, по чему хозяин ключа поймёт, что чинить. Голая
+        пятисотая на их месте стоила разбора журнала прода, в котором
+        вдобавок не оказалось ни строки о причине.
+        """
+        import httpx
+
+        from config.errors import ApiError
+
+        anthropic, request = self.sdk()
+        said = "Your credit balance is too low to access the Anthropic API."
+        with self.assertLogs("vision.client", level="ERROR"):
+            with self.assertRaises(ApiError) as caught:
+                self.call(
+                    anthropic.BadRequestError(
+                        "refused",
+                        response=httpx.Response(400, request=request),
+                        body={"error": {"type": "invalid_request_error", "message": said}},
+                    )
+                )
+
+        payload = caught.exception.detail
+        self.assertEqual(payload["code"], "ai_refused")
+        self.assertEqual(payload["params"]["status"], 400)
+        self.assertEqual(payload["params"]["reason"], said)
 
 
 class ModelOutOfReachTests(PretendsThereIsAKey, SchoolTestMixin, APITestCase):

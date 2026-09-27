@@ -390,3 +390,37 @@ CSRF_COOKIE_SECURE = env.bool("CSRF_COOKIE_SECURE", default=False)
 # 0 = HSTS выключен; включать только когда HTTPS уже работает стабильно
 SECURE_HSTS_SECONDS = env.int("SECURE_HSTS_SECONDS", default=0)
 SECURE_HSTS_INCLUDE_SUBDOMAINS = env.bool("SECURE_HSTS_INCLUDE_SUBDOMAINS", default=False)
+
+
+# Журнал
+
+# При DEBUG=False умолчания Django шлют трассировку пятисотой только письмом
+# администраторам, а в вывод контейнера не пишут ничего. Стоило это разбора
+# отказа чтения сканов на проде: в `docker compose logs` стояли четыре строки
+# «500» от gunicorn и ни слова о причине.
+#
+# Фильтр `require_debug_false` — чтобы в разработке трассировка не печаталась
+# дважды: там её уже пишет собственный обработчик Django.
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "filters": {
+        "require_debug_false": {"()": "django.utils.log.RequireDebugFalse"},
+    },
+    "formatters": {
+        "plain": {"format": "%(asctime)s %(levelname)s %(name)s: %(message)s"},
+    },
+    "handlers": {
+        "console": {"class": "logging.StreamHandler", "formatter": "plain"},
+        "console_when_live": {
+            "class": "logging.StreamHandler",
+            "formatter": "plain",
+            "filters": ["require_debug_false"],
+        },
+    },
+    "loggers": {
+        "django.request": {"handlers": ["console_when_live"], "level": "ERROR"},
+        # Отказы платных читателей: код ошибки человеку, причина — сюда.
+        "vision": {"handlers": ["console"], "level": "INFO", "propagate": False},
+    },
+}

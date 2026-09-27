@@ -338,6 +338,8 @@
     "ai_budget_exceeded": "The school has spent its monthly limit for reading scans.",
     "ai_unavailable": "Reading scans is unavailable right now.",
     "ai_unreachable": "This server cannot reach the language model, and no other reader is set up. Nothing can read the pile right now.",
+    "ai_key_rejected": "The language model does not accept the API key this service is set up with. The key has to be replaced in the server settings; trying again will not help.",
+    "ai_refused": "The language model refused the request ({{status}}): {{reason}}",
     "scan_reader_silent": "The only reader available did not answer. Try this page again.",
     "ai_limit_negative": "The limit is a whole number of cents, zero or more.",
     "scan_page_unknown": "That page is not part of this batch.",

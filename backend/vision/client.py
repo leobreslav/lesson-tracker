@@ -13,12 +13,15 @@
 from __future__ import annotations
 
 import base64
+import logging
 
 from django.conf import settings
 
-from config.errors import Codes, api_error
+from config.errors import ApiError, Codes, api_error, error_payload
 
 from . import prices
+
+logger = logging.getLogger(__name__)
 
 # Сколько клеток в сетке бланка. Пятнадцать заданий и сумма за страницу.
 CELLS = 16
@@ -381,6 +384,44 @@ def _ask(**kwargs):
         return _client().messages.create(**kwargs)
     except (anthropic.APIConnectionError, anthropic.PermissionDeniedError) as gone:
         raise ModelUnreachable(str(gone)) from gone
+    except anthropic.AuthenticationError as refused:
+        # Громко, но словами: голая пятисотая говорила учителю «запрос не
+        # удался», а журнал прода молчал вовсе. В «не достучаться» это не
+        # попадает намеренно — см. докстринг `ModelUnreachable`.
+        logger.error("Anthropic rejected the API key: %s", refused)
+        raise ApiError(
+            error_payload(
+                Codes.AI_KEY_REJECTED,
+                "Reading scans is set up with an API key the language model "
+                "does not accept.",
+            ),
+            status_code=503,
+        ) from refused
+    except anthropic.APIStatusError as refused:
+        # Всё остальное, на что сервер ответил отказом: пустой баланс (400),
+        # предел запросов (429), сбой у них (5xx) — уже после повторов SDK.
+        # Причину называет сам сервис, и она полезнее любой нашей догадки.
+        logger.error(
+            "Anthropic refused the request (%s): %s", refused.status_code, refused
+        )
+        raise ApiError(
+            error_payload(
+                Codes.AI_REFUSED,
+                "The language model refused the request.",
+                status=refused.status_code,
+                reason=_reason(refused),
+            ),
+            status_code=503,
+        ) from refused
+
+
+def _reason(refused) -> str:
+    """Что сервис сказал сам, одной строкой и без хвоста в килобайт."""
+    body = getattr(refused, "body", None)
+    said = ""
+    if isinstance(body, dict):
+        said = (body.get("error") or {}).get("message") or ""
+    return (said or getattr(refused, "message", "") or str(refused))[:300]
 
 
 def read_header(
