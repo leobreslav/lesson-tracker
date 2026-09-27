@@ -1602,6 +1602,12 @@
     },
     "clearMark": "clear"
   },
+  "time": {
+    "date": "{{label}}: date",
+    "time": "{{label}}: time, 24-hour",
+    "placeholder": "hh:mm",
+    "wrong": "This is not a time. Use the 24-hour form, for example 14:30."
+  },
   "table": {
     "results": "Results",
     "waiting_one": "{{count}} answer waiting",

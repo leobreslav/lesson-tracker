@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import DateTimeField from './DateTimeField'
 import Hint from './Hint'
 import { fetchCourseSlots, fetchGradingSystems, fetchWorkKinds } from './api'
 import { shortDate } from './dates'
@@ -84,22 +85,27 @@ export default function WorkSettings({ form, setForm, courseId = null, busy = fa
   return (
     <>
     <div className="row">
-      <label className="field-with-hint">
+      {/* Не `label`, а подпись над группой: полей под ней два, дата и время,
+          а `label` подписывает одно — нажатие по подписи уводило бы фокус в
+          дату, хотя править пришли время. Каждое поле названо читалке само */}
+      <div className="field-with-hint">
         {t('works.opensAt')}
-        <input
-          type="datetime-local"
+        <DateTimeField
+          label={t('works.opensAt')}
           value={form.opens_at}
-          onChange={change('opens_at')}
+          disabled={busy}
+          onChange={(value) => setForm((current) => ({ ...current, opens_at: value }))}
         />
-      </label>
-      <label className="field-with-hint">
+      </div>
+      <div className="field-with-hint">
         {t('works.closesAt')}
-        <input
-          type="datetime-local"
+        <DateTimeField
+          label={t('works.closesAt')}
           value={form.closes_at}
-          onChange={change('closes_at')}
+          disabled={busy}
+          onChange={(value) => setForm((current) => ({ ...current, closes_at: value }))}
         />
-      </label>
+      </div>
     </div>
     {/* Окно решает не «видно ли работу», а «принимаются ли решения», и
         это две разные вещи. Строка обещала первое — «ученик видит работу

@@ -116,9 +116,16 @@ function addIsoDays(iso, count) {
  *
  * У работ время значимо: «открыта до 23:59 воскресенья» и «до 09:00
  * понедельника» — разные обещания, и одной датой их не различить.
+ *
+ * Часы — всегда от 0 до 23, на каком бы языке ни шёл интерфейс: английский
+ * без этого печатал «9:05 PM» рядом с полем, где то же время набирают как
+ * «21:05». Школьное время 24-часовое независимо от языка — как и первый
+ * день недели.
  */
 export const dateTime = (iso) =>
-  formatter({ dateStyle: 'short', timeStyle: 'short' }).format(new Date(iso))
+  formatter({ dateStyle: 'short', timeStyle: 'short', hourCycle: 'h23' }).format(
+    new Date(iso),
+  )
 
 /**
  * ISO → значение для `<input type="datetime-local">` и обратно.

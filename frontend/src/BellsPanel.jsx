@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import Hint from './Hint'
+import TimeField from './TimeField'
 import { MAX_LESSON_NUMBER } from './scheduleLogic'
 import { fetchSchoolDay, saveSchoolDay } from './api'
 
@@ -136,20 +137,23 @@ export default function BellsPanel() {
         {rows.map((row) => (
           <li key={row.number} className="row middle">
             <span className="bell-number">{row.number}</span>
-            <input
-              type="time"
+            {/* Время набирают, а не выбирают браузерным полем: то рисует
+                AM/PM по языку системы, а звонок в 14:30 — это 14:30.
+                Стирать можно: строка без времени — законное состояние */}
+            <TimeField
+              allowEmpty
               value={row.starts_at}
               disabled={busy}
               aria-label={t('bells.startsAt', { number: row.number })}
-              onChange={(event) => set(row.number, 'starts_at', event.target.value)}
+              onChange={(value) => set(row.number, 'starts_at', value)}
             />
             <span className="hint">—</span>
-            <input
-              type="time"
+            <TimeField
+              allowEmpty
               value={row.ends_at}
               disabled={busy}
               aria-label={t('bells.endsAt', { number: row.number })}
-              onChange={(event) => set(row.number, 'ends_at', event.target.value)}
+              onChange={(value) => set(row.number, 'ends_at', value)}
             />
           </li>
         ))}

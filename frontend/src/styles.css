@@ -500,6 +500,47 @@ body {
   width: 100%;
 }
 
+/*
+ * Дата и время одним полем (`DateTimeField.jsx`): дата тянется, время —
+ * постоянной ширины на пять знаков «23:59».
+ *
+ * Селекторы через `.field-with-hint`, а не голым классом: поля здесь лежат
+ * на ступень глубже, чем у обычного поля с подписью, и правило выше
+ * (`> :is(input, select)`) до них не дотягивается — без этого набранное
+ * выходило бы серым, как подпись. А правила окна (`.modal-body input`)
+ * весят столько же, сколько голый класс, и стоят ниже по файлу.
+ */
+.field-with-hint .date-time {
+  display: flex;
+  gap: 0.4rem;
+  align-items: center;
+}
+
+.field-with-hint .date-time > input {
+  box-sizing: border-box;
+  min-width: 0;
+  height: var(--control-height);
+  color: #222;
+}
+
+.field-with-hint .date-time > input[type='date'] {
+  flex: 1 1 9rem;
+  width: auto;
+}
+
+.field-with-hint .date-time > .time-24 {
+  flex: 0 0 5rem;
+  width: 5rem;
+  text-align: center;
+  /* цифры одной ширины: «11:11» и «00:00» не должны двигать двоеточие */
+  font-variant-numeric: tabular-nums;
+}
+
+.field-with-hint .date-time > input[aria-invalid='true'] {
+  border-color: #b3261e;
+  outline-color: #b3261e;
+}
+
 /* --- верхний бар --- */
 
 .topbar {
@@ -9348,6 +9389,22 @@ button.dropzone:hover:not(:disabled) {
   min-width: 1.5rem;
   font-weight: 600;
   text-align: right;
+}
+
+/* Поле времени в ряду звонков — постоянной ширины, на пять знаков «23:59».
+   Общее правило ряда растягивает поле ввода на всю свободную ширину, и
+   время вставало бы двумя полосами в полкарточки; вес тут набран путём от
+   списка, потому что правило ряда весит больше голого класса */
+.bell-list .row > input.time-24 {
+  flex: 0 0 5rem;
+  width: 5rem;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.bell-list .row > input.time-24[aria-invalid='true'] {
+  border-color: #b3261e;
+  outline-color: #b3261e;
 }
 
 /* --- ФОТОГРАФИИ РАБОТЫ И ПРОСМОТРЩИК ---------------------------------------
