@@ -251,6 +251,53 @@ class ScanApplyTests(SchoolTestMixin, APITestCase):
         self.assertEqual(table["batches"][0]["title"], services.batch_name(self.work))
         self.assertEqual(len(state["batches"]), 1)
 
+    def test_the_pile_stands_in_the_table_and_not_among_the_work_s_files(self):
+        """
+        Пачка — не материал задания, и место ей в таблице результатов.
+
+        Стояла она в обоих местах, и в файлах работы читалась как то, что к
+        работе приложил учитель для класса, рядом с условиями и бланком.
+        """
+        self.read(0, "Fil", "Burmov", {0: 3})
+        self.apply()
+
+        work = self.client.get(reverse("work-detail", args=[self.work.pk])).json()
+        table = self.client.get(reverse("work-table", args=[self.work.pk])).json()
+
+        self.assertEqual(work["files"], [])
+        self.assertEqual(len(table["batches"]), 1)
+
+    def test_a_file_hidden_from_the_class_is_not_a_pile(self):
+        """
+        Скрытое от класса и пачка — разные вещи.
+
+        Пачкой считалось всё скрытое, и ответы к контрольной, приложенные к
+        той же работе, показывались в таблице результатов «пачкой целиком».
+        Первое про круг читателей, второе про то, что это за файл.
+        """
+        from files.services import store_upload
+
+        stored, _ = store_upload(
+            upload=SimpleUploadedFile(
+                "answers.pdf", b"%PDF-1.4 answers", content_type="application/pdf"
+            ),
+            school=self.school,
+            user=self.user,
+        )
+        Attachment.objects.create(
+            work=self.work,
+            kind="file",
+            stored_file=stored,
+            staff_only=True,
+            title="answers.pdf",
+        )
+
+        work = self.client.get(reverse("work-detail", args=[self.work.pk])).json()
+        table = self.client.get(reverse("work-table", args=[self.work.pk])).json()
+
+        self.assertEqual([item["title"] for item in work["files"]], ["answers.pdf"])
+        self.assertEqual(table["batches"], [])
+
     def test_the_pile_is_named_after_the_work_and_not_by_the_scanner(self):
         """
         Сканер зовёт файл `scan.pdf`, и через месяц таких в загрузках десять.

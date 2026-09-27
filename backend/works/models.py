@@ -215,6 +215,20 @@ class Work(models.Model):
             "отвечает окно времени."
         ),
     )
+    # Стоит ли работа столбцом в журнале курса. Решает тот, кто ведёт курс:
+    # разминка на пять минут и черновой срез в журнале только шумят, а
+    # удалять ради этого работу или снимать с неё оценки незачем.
+    #
+    # Умолчание — «стоит»: до появления поля в журнал попадала каждая работа,
+    # и та, что заведена раньше, пропасть из него не должна.
+    in_journal = models.BooleanField(
+        "stands in the gradebook",
+        default=True,
+        help_text=(
+            "Столбец работы в журнале курса. Место ему даёт занятие, к "
+            "которому работа привязана; без занятия он встаёт в конец."
+        ),
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -821,17 +835,23 @@ class GradingSystem(models.Model):
     * `points` — сумма баллов за вопросы, полосы в процентах;
     * `levels` — уровни по критериям (MYP): каждый 0–8, отметка получается из
       суммы уровней по опубликованным границам;
-    * `passfail` — две полосы;
+    * `passfail` — две полосы, «сдал» и «не сдал», порог в процентах. В
+      интерфейсе вид зовётся бинарным; имя в базе прежнее, потому что
+      переименование значения стоило бы миграции данных ради слова;
+    * `percent` — процент набранного от максимума, без полос вовсе: отметкой
+      служит само число, «87%»;
     * работа **без системы** — законное состояние: баллы есть, отметки нет.
     """
 
     POINTS = "points"
     LEVELS = "levels"
     PASSFAIL = "passfail"
+    PERCENT = "percent"
     KINDS = [
         (POINTS, "sum of question marks, bands in percent"),
         (LEVELS, "levels per criterion, bands on the sum"),
-        (PASSFAIL, "pass or fail"),
+        (PASSFAIL, "passed or not passed, the line in percent"),
+        (PERCENT, "percent of the maximum, no bands"),
     ]
 
     school = models.ForeignKey(

@@ -155,6 +155,7 @@ const fieldsOf = (form, courseId) => ({
   is_summative: form.is_summative ?? false,
   kind: form.kind ?? null,
   grading_system: form.grading_system ?? null,
+  in_journal: form.in_journal ?? true,
 })
 
 /**
@@ -180,6 +181,7 @@ function initial(work) {
       grading_system: work.grading_system ?? null,
       description: work.description ?? '',
       slot: work.slot ?? null,
+      in_journal: work.in_journal ?? true,
       is_homework: work.is_homework ?? false,
     }
   }

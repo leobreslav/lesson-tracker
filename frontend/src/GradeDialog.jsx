@@ -68,6 +68,8 @@ export default function GradeDialog({
   student,
   criteria,
   tasks = [],
+  // система оценивания работы: имя, вид и полосы; `null` — системы нет
+  grading = null,
   busy,
   onSubmit,
   onChanged,
@@ -294,25 +296,51 @@ export default function GradeDialog({
             работы и объясняла устройство полос, то есть отвечала на вопрос,
             которого никто не задаёт; полосы задаёт школа в своём
             справочнике. */}
-        {student.grade && (
-          <div className="final-grade">
-            <label className="field-with-hint">
-              {t('grading.finalGrade')}
-              <input
-                value={final}
-                maxLength={40}
-                placeholder={student.grade.derived ?? ''}
-                disabled={busy}
-                onChange={(event) => setFinal(event.target.value)}
-              />
-            </label>
-            <p className="hint">
-              {student.grade.derived
-                ? t('grading.derived', { label: student.grade.derived })
+        {/* Поле стоит **всегда**. Показывалось оно, только когда итог уже
+            был — выведенный системой или поставленный раньше, — и у работы,
+            где выводить не из чего, поставить его было негде: бинарная
+            «сдал / не сдал» без единого балла так и оставалась без отметки.
+            Правило «итог ставит учитель» не может зависеть от того, успела
+            ли система что-нибудь посчитать. */}
+        <div className="final-grade">
+          <label className="field-with-hint">
+            {t('grading.finalGrade')}
+            <input
+              value={final}
+              maxLength={40}
+              placeholder={student.grade?.derived ?? ''}
+              disabled={busy}
+              onChange={(event) => setFinal(event.target.value)}
+            />
+          </label>
+          {/* Полосы системы — кнопками рядом с полем: у бинарной их две, и
+              нажать быстрее, чем набрать. Поле при этом остаётся: «н/а» в
+              полосы не входит, а запрещать его дороже, чем разрешить.
+              Повторное нажатие на выбранную снимает её */}
+          {(grading?.bands ?? []).length > 0 && (
+            <div className="row band-picks">
+              {grading.bands.map((band) => (
+                <button
+                  key={band}
+                  type="button"
+                  className={final === band ? 'compact' : 'secondary compact'}
+                  aria-pressed={final === band}
+                  disabled={busy}
+                  onClick={() => setFinal(final === band ? '' : band)}
+                >
+                  {band}
+                </button>
+              ))}
+            </div>
+          )}
+          <p className="hint">
+            {student.grade?.derived
+              ? t('grading.derived', { label: student.grade.derived })
+              : grading
+                ? t('grading.nothingToDerive', { name: grading.name })
                 : t('grading.noDerived')}
-            </p>
-          </div>
-        )}
+          </p>
+        </div>
 
         <label className="field-with-hint">
           {t('grading.comment')}

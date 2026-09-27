@@ -84,7 +84,8 @@ def works_of(course, term, slot_ids):
     четверти, либо не показывалась ни в одной.
     """
     works = (
-        Work.objects.filter(course=course)
+        # только те, которым учитель оставил место в журнале
+        Work.objects.filter(course=course, in_journal=True)
         # вид берётся тем же запросом: столбцов до семидесяти, и запрос на
         # значок был бы тем самым запросом на клетку, только в шапке
         .select_related("grading_system", "kind")

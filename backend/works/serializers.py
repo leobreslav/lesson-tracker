@@ -204,7 +204,11 @@ def files_of(work, *, staff: bool = True) -> list:
     rows = [
         item
         for item in work.attachments.all()
-        if not item.inline and (staff or not item.staff_only)
+        if not item.inline
+        and (staff or not item.staff_only)
+        # Пачка сканов — не материал задания: она стоит в таблице
+        # результатов, рядом с нарезанными из неё работами (`scan_batches`)
+        and not item.is_batch
     ]
     return AttachmentSerializer(rows, many=True).data
 
@@ -245,6 +249,7 @@ class WorkSerializer(serializers.ModelSerializer):
             "grading_system",
             "grade",
             "slot",
+            "in_journal",
             "state",
             "tasks_count",
             "files",

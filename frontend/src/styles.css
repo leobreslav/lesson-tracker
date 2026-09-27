@@ -9479,6 +9479,41 @@ button.dropzone:hover:not(:disabled) {
   line-height: 1;
 }
 
+/* «Скачать» под плиткой: строкой во всю её ширину и мелко — это второе
+   действие над снимком, первое — открыть его нажатием по самой плитке */
+.photo-strip .photo .download {
+  display: block;
+  width: 100%;
+  padding: 0.1rem 0;
+  font-size: 0.75rem;
+  text-align: center;
+}
+
+/* Клетка столбца PDF в таблице результатов: скачать, разметить, открыть
+   работу ученика. В ряд и без переноса — иначе строка таблицы растёт в
+   высоту у тех, у кого файл есть, и ряды перестают быть одного роста */
+.work-table .paper-actions {
+  display: inline-flex;
+  gap: 0.35rem;
+  align-items: center;
+  white-space: nowrap;
+}
+
+/* Отметка за работу рядом с суммой баллов. Выведенная системой набрана
+   наклонно и приглушённо, поставленная учителем — прямо: тот же язык, что
+   в журнале */
+.work-table .grade-label {
+  margin-left: 0.4rem;
+  font-weight: 600;
+  color: #222;
+}
+
+.work-table .grade-label.derived {
+  font-style: italic;
+  font-weight: 400;
+  color: var(--muted);
+}
+
 /* «Этот снимок уже смотрели»: без пометки проверенная тетрадь неотличима от
    непроверенной, и открывать пришлось бы каждую. */
 .photo-strip .marked {

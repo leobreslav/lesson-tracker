@@ -414,6 +414,9 @@ export default function WorkEdit() {
           onSaved={(saved) => {
             setWork(saved)
             setSettings(false)
+            // система оценивания живёт в настройках, а отметки по ней — в
+            // таблице ниже: сменили одно, перечитываем другое
+            setTableStamp((stamp) => stamp + 1)
           }}
           onClose={() => setSettings(false)}
         />

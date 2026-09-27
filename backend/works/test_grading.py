@@ -53,6 +53,40 @@ class BandTests(SchoolTestMixin, APITestCase):
         self.assertEqual(services.grade_for(self.myp, earned=15, top=32)["label"], "4")
         self.assertEqual(services.grade_for(self.myp, earned=3, top=32)["label"], "1")
 
+    def test_passed_or_not_is_a_line_in_percent(self):
+        """
+        Бинарная система меряет порог процентом, а не суммой баллов.
+
+        Мерила она суммой: «сдал от 50» сравнивалось с сырыми баллами, и на
+        работе с максимумом в двадцать сдать её было нельзя вовсе — набрать
+        пятьдесят не из чего. Ошибка молчаливая: отметка не пропадала, а
+        выходила «не сдал» у всего класса.
+        """
+        binary = self.school.grading_systems.get(name="Сдал / не сдал")
+
+        self.assertEqual(
+            services.grade_for(binary, earned=12, top=20)["label"], "сдал"
+        )
+        self.assertEqual(
+            services.grade_for(binary, earned=9, top=20)["label"], "не сдал"
+        )
+
+    def test_percent_is_the_share_of_the_maximum_and_needs_no_bands(self):
+        """
+        Процентная система полос не имеет: отметкой служит само число.
+
+        Поэтому «полос нет — сказать нечего», верное для остальных видов,
+        здесь не действует: у неё их нет по построению.
+        """
+        percent = self.school.grading_systems.get(name="Проценты")
+
+        self.assertEqual(percent.bands.count(), 0)
+        self.assertEqual(services.grade_for(percent, earned=13, top=15)["label"], "87%")
+        self.assertEqual(services.grade_for(percent, earned=0, top=15)["label"], "0%")
+        self.assertEqual(
+            services.grade_for(percent, earned=15, top=15)["label"], "100%"
+        )
+
     def test_no_system_means_no_grade(self):
         """Работа без системы законна: баллы есть, отметки нет."""
         self.assertIsNone(services.grade_for(None, earned=5, top=10))
@@ -85,7 +119,7 @@ class TypicalTests(SchoolTestMixin, APITestCase):
         added = grading.add_typical(self.school, "ru")
 
         self.assertEqual(added, 0)
-        self.assertEqual(self.school.grading_systems.count(), 3)
+        self.assertEqual(self.school.grading_systems.count(), 4)
 
     def test_edited_bands_are_not_reset(self):
         """«Обновить до типовых» — худшее прочтение этой кнопки."""

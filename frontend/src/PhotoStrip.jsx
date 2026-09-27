@@ -115,6 +115,24 @@ export default function PhotoStrip({
                   </i>
                 )}
               </button>
+              {/* Скачать — под плиткой. Нажатие по самой плитке открывает
+                  просмотрщик, а он файла наружу не отдаёт: работу можно было
+                  разметить и нельзя было унести. Приложенный адрес не
+                  скачивается — за ним не наш файл */}
+              {photo.kind !== 'link' && (
+                <button
+                  type="button"
+                  className="link download"
+                  title={t('paper.download', { name: photo.title })}
+                  onClick={() =>
+                    openAttachment(photo.id).catch((problem) =>
+                      setError(problem.message),
+                    )
+                  }
+                >
+                  {t('paper.downloadShort')}
+                </button>
+              )}
               {onRemove && removable(photo) && (
                 <button
                   type="button"

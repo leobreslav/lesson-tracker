@@ -32,6 +32,7 @@ export default function WorkSettingsDialog({ work, onSaved, onClose }) {
     kind: work.kind ?? null,
     grading_system: work.grading_system ?? null,
     slot: work.slot ?? null,
+    in_journal: work.in_journal ?? true,
   }))
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
@@ -53,6 +54,7 @@ export default function WorkSettingsDialog({ work, onSaved, onClose }) {
         kind: form.kind ?? null,
         grading_system: form.grading_system ?? null,
         slot: form.slot ?? null,
+        in_journal: form.in_journal,
       })
       onSaved(saved)
     } catch (failure) {

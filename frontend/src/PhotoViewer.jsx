@@ -7,6 +7,7 @@ import { addressOf } from './PhotoThumb'
 import {
   drawOnPhoto,
   fetchPhotoMarkup,
+  openAttachment,
   pinPhotoNote,
   turnPhoto,
   undoOnPhoto,
@@ -489,6 +490,22 @@ export default function PhotoViewer({ photos, current, onClose, onChanged }) {
       )}
 
       <div className="photo-tools">
+        {/* Скачать — первой в ряду: просмотрщик рисует страницу сам и наружу
+            файл не отдаёт, так что без кнопки открытую работу можно было
+            только разметить. Скачивается **исходник**: пометки живут мазками
+            поверх него, а не в файле */}
+        {photo && (
+          <button
+            type="button"
+            className="compact"
+            title={t('paper.download', { name: photo.title })}
+            onClick={() =>
+              openAttachment(photo.id).catch((problem) => setError(problem.message))
+            }
+          >
+            {t('paper.downloadShort')}
+          </button>
+        )}
         <button type="button" className="compact" onClick={() => rotate('ccw')}>
           ↺
         </button>

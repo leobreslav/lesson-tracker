@@ -142,12 +142,36 @@ export default function WorkSettings({ form, setForm, courseId = null, busy = fa
             <option value="">{t('works.noSlot')}</option>
             {slots.map((one) => (
               <option key={one.id} value={one.id}>
+                {/* Тема урока — рядом с датой. По одной дате занятие не
+                    узнать: «14.10 · урок 3» ничего не говорит тому, кто
+                    привязывает работу через месяц, а «Сумма углов
+                    треугольника» говорит сразу. Час без темы — законное
+                    состояние (план кончился раньше расписания), и тогда
+                    остаётся одна дата */}
                 {shortDate(one.date)} · {t('works.slotNumber', { number: one.lesson_number })}
+                {one.lesson_title ? ` · ${one.lesson_title}` : ''}
               </option>
             ))}
           </select>
         </label>
         <p className="hint">{t('works.slotHint')}</p>
+
+        {/* Место в журнале — решение учителя на каждой работе: разминка и
+            черновой срез там только шумят. Стоит галочка сразу под
+            занятием, потому что отвечают они на один вопрос — где оценки
+            за эту работу окажутся в журнале */}
+        <label className="checkbox">
+          <input
+            type="checkbox"
+            checked={form.in_journal ?? true}
+            disabled={busy}
+            onChange={change('in_journal')}
+          />
+          {t('works.inJournal')}
+        </label>
+        <p className="hint">
+          {t(form.slot ? 'works.inJournalHint' : 'works.inJournalNoSlot')}
+        </p>
       </>
     )}
 

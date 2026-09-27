@@ -194,15 +194,15 @@ class StudentViewTests(PaperTestCase):
 
     def test_the_scanned_pile_is_the_teacher_s_and_nobody_else_s(self):
         """
-        Пачка — вложение работы, спрятанное от класса, и ничего сверх того.
+        Пачку видит учитель — в таблице результатов, — а класс не видит нигде.
 
-        Своим случаем она была ровно до тех пор, пока `staff_only` значил
-        «отсканированная стопка». Теперь это настройка любого вложения работы,
-        и пачка просто одно из них: учителю видна и убирается, классу не
-        существует.
+        Стояла она у учителя и в материалах работы, рядом с условиями и
+        бланком; оттуда её убрали: пачка не то, что приложено к заданию, а
+        то, из чего нарезаны работы учеников. Прячут её от класса по-прежнему
+        два замка разом — `staff_only` и отсев пачек в `files_of`.
 
         Место опасное тем, что оно одно на обе стороны: `files_of` собирает
-        материалы и учителю, и ученику. Забудь тут флаг — и стопка со всем
+        материалы и учителю, и ученику. Забудь тут условие — и стопка со всем
         классом уедет ученику молча, при живом `staff_only` во всех остальных
         дверях.
         """
@@ -212,10 +212,13 @@ class StudentViewTests(PaperTestCase):
             self.work, data=b"%PDF-1.4 pile", name="pile.pdf", by=self.user
         )
 
-        mine = self.client.get(reverse("work-detail", args=[self.work.pk])).json()
-        listed = {item["id"]: item for item in mine["files"]}
-        self.assertIn(pile.pk, listed, "учитель не видит того, что сам спрятал")
-        self.assertTrue(listed[pile.pk]["staff_only"])
+        table = self.client.get(reverse("work-table", args=[self.work.pk])).json()
+        self.assertEqual(
+            [batch["id"] for batch in table["batches"]],
+            [pile.pk],
+            "учитель не видит пачку там, где ей теперь место",
+        )
+        self.assertTrue(pile.staff_only)
 
         self.sign_in(self.student)
         body = self.client.get(reverse("student-work", args=[self.work.pk])).json()

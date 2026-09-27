@@ -135,6 +135,45 @@ class JournalTests(SchoolTestMixin, APITestCase):
             [mark["label"] for mark in body["students"][0]["cells"][-1]["marks"]], ["4"]
         )
 
+    def test_a_work_taken_out_of_the_gradebook_leaves_no_column(self):
+        """
+        Место в журнале — решение учителя на каждой работе.
+
+        Разминка и черновой срез в журнале только шумят, а удалять ради этого
+        работу или снимать с неё отметки незачем: они остаются на странице
+        работы. Проверяются обе дороги в журнал — по занятию и без него, —
+        потому что отсев стоит до развилки, и забыть его на одной из двух
+        было бы легко.
+        """
+        tied = self.graded(slot=self.first, title="Разминка")
+        loose = self.graded(
+            slot=None,
+            title="Черновой срез",
+            opens=timezone.make_aware(
+                timezone.datetime(MONDAY.year, MONDAY.month, MONDAY.day, 9, 0)
+            ),
+        )
+        for work in (tied, loose):
+            work.in_journal = False
+            work.save(update_fields=["in_journal"])
+
+        body = self.journal()
+
+        shown = [head["id"] for column in body["columns"] for head in column["works"]]
+        self.assertEqual(shown, [])
+        # столбцы занятий на месте: они про посещаемость, а не про работу
+        self.assertEqual(
+            [column["slot"] for column in body["columns"]],
+            [self.first.pk, self.second.pk],
+        )
+        self.assertTrue(StudentWork.objects.filter(work=tied).exists())
+
+    def test_a_new_work_stands_in_the_gradebook_unless_told_otherwise(self):
+        """До появления опции в журнал попадала каждая работа, и умолчание то же."""
+        work = self.graded(slot=self.first)
+
+        self.assertTrue(work.in_journal)
+
     def test_attendance_stands_in_the_same_cell(self):
         """
         Посещаемость — про то же занятие, что и оценка, и место у них одно.

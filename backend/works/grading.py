@@ -50,12 +50,18 @@ def typical(language: str = "en") -> list[dict]:
             ],
         },
         {
-            "name": "Зачёт" if russian else "Pass or fail",
+            "name": "Сдал / не сдал" if russian else "Passed / not passed",
             "kind": GradingSystem.PASSFAIL,
             "bands": [
-                ("зачёт" if russian else "pass", 50),
-                ("незачёт" if russian else "fail", 0),
+                ("сдал" if russian else "passed", 50),
+                ("не сдал" if russian else "not passed", 0),
             ],
+        },
+        # Полос нет: отметкой служит сам процент набранного от максимума
+        {
+            "name": "Проценты" if russian else "Percent",
+            "kind": GradingSystem.PERCENT,
+            "bands": [],
         },
     ]
 

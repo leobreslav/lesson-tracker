@@ -1474,7 +1474,10 @@
     },
     "addHint": "Everything else is set on the work’s own page — it opens right after. The class will not see the work until you give it out.",
     "addAction": "Create",
-    "release": "Assign"
+    "release": "Assign",
+    "inJournal": "Show in the gradebook",
+    "inJournalHint": "The work stands as a column in the course gradebook, under the lesson chosen above.",
+    "inJournalNoSlot": "The work stands in the course gradebook. No lesson is chosen, so its column goes to the end, without a date — choose a lesson above to put it in its place."
   },
   "grading": {
     "title": "Grading",
@@ -1525,12 +1528,14 @@
     "kind": {
       "points": "sum of marks, bands in percent",
       "levels": "levels per criterion, bands on the sum",
-      "passfail": "pass or fail"
+      "passfail": "binary: passed or not passed, the line in percent",
+      "percent": "percent of the maximum"
     },
     "questionScores": "Marks per question. «No mark» clears it.",
     "finalGrade": "Final grade",
     "derived": "The system works out {{label}} from the marks. Leave the field empty to keep it.",
-    "noDerived": "No system is set for this work, so the final grade is yours to write."
+    "noDerived": "No system is set for this work, so the final grade is yours to write.",
+    "nothingToDerive": "«{{name}}» has nothing to work the grade out from yet, so it is yours to set."
   },
   "paper": {
     "scans": "Scanned work",
@@ -1539,7 +1544,12 @@
     "column": "PDF",
     "batch": "The whole pile",
     "batchOnlyYou": "— the scan as it came, and only you can see it",
-    "onPaper": "This work was written on paper. Your marked copy appears here once the teacher uploads it."
+    "onPaper": "This work was written on paper. Your marked copy appears here once the teacher uploads it.",
+    "download": "Download «{{name}}»",
+    "downloadFirst": "Download «{{name}}». Files here: {{total}} — the rest are in the student's work",
+    "downloadShort": "Download",
+    "annotate": "Open and mark up",
+    "openAll": "The student's work: files, marks and comment"
   },
   "split": {
     "action": "split a scan",

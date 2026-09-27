@@ -4,6 +4,7 @@ import CellDialog from './CellDialog'
 import ColumnDialog from './ColumnDialog'
 import GradeDialog from './GradeDialog'
 import Modal from './Modal'
+import PhotoViewer from './PhotoViewer'
 import ScaleDialog from './ScaleDialog'
 import SplitDialog from './SplitDialog'
 import TaskBrief from './TaskBrief'
@@ -52,6 +53,7 @@ export default function WorkTable({ workId: id, refreshKey = 0 }) {
   const [cell, setCell] = useState(null) // {student, task}
   const [column, setColumn] = useState(null) // {task}
   const [grading, setGrading] = useState(null) // {student}
+  const [viewing, setViewing] = useState(null) // {student, photo}
   const [scaling, setScaling] = useState(false)
   const [question, setQuestion] = useState(null) // условие задачи с листа
   const [splitting, setSplitting] = useState(false)
@@ -122,9 +124,19 @@ export default function WorkTable({ workId: id, refreshKey = 0 }) {
    * оказывалась невидимой. Спрашиваем прямо: есть ли ответы, есть ли
    * приложенные работы, стоит ли шкала.
    */
-  const hasPapers = table.students.some((row) => row.papers?.length)
   const hasAnswers = table.tasks.some((task) => task.answered > 0)
-  const showRow = scale.graded || hasPapers
+  /*
+   * Столбцов про работу ученика два, и они порознь: PDF и отметка.
+   *
+   * Одним столбцом они были — «отметка, а если её нет, то значок файла», —
+   * и стоило поставить отметку, как файл из таблицы пропадал: место занято.
+   * Вопросы же разные («где бумага» и «что поставили»), и ответ на первый
+   * не перестаёт быть нужным оттого, что появился ответ на второй.
+   *
+   * PDF стоит **всегда**, и у работы без единого файла тоже: пустая клетка в
+   * нём — это дверь, через которую файл прикладывают.
+   */
+  const graded = scale.graded
   /* У бумажной работы задач нет по определению, а вопросы есть — они и есть
      критерии шкалы. Столбцы по ним отвечают на то, ради чего таблицу и
      открывают: кто что решил и с чем не справился класс. */
@@ -190,10 +202,9 @@ export default function WorkTable({ workId: id, refreshKey = 0 }) {
 
       {/* таблица нужна и без задач: у бумажной работы в ней сканы и
           оценки, а задач нет по определению */}
-      {table.tasks.length === 0 && !showRow ? (
-        <p className="hint">{t('works.task.none')}</p>
-      ) : (
-        <section className="panel table-scroll">
+      {/* Таблица стоит всегда, и у работы без задач тоже: в ней столбец PDF,
+          а он нужен любой работе — исследование без вопросов сдают файлом */}
+      <section className="panel table-scroll">
           <table className="work-table">
             <thead>
               <tr>
@@ -251,16 +262,18 @@ export default function WorkTable({ workId: id, refreshKey = 0 }) {
                     <span className="head-max">{`(${task.maximum})`}</span>
                   </th>
                 ))}
-                {showRow && (
+                <th className="mark paper">
+                  <span className="head-name">{t('paper.column')}</span>
+                  <span className="head-max">{' '}</span>
+                </th>
+                {graded && (
                   <th className="mark">
                     {/* Вторая строка пустая, но она **есть**: подписи столбцов
                         стоят на одной линии только тогда, когда строк у всех
                         поровну. Без неё «Работа» опускалась к низу клетки, а
                         соседний «Итог» держался строкой выше — и выглядело
                         это как разные уровни и разный цвет. */}
-                    <span className="head-name">
-                      {t(scale.graded ? 'grading.mark' : 'paper.column')}
-                    </span>
+                    <span className="head-name">{t('grading.mark')}</span>
                     <span className="head-max">{'\u00A0'}</span>
                   </th>
                 )}
@@ -329,7 +342,15 @@ export default function WorkTable({ workId: id, refreshKey = 0 }) {
                           </button>
                         </td>
                   ))}
-                  {showRow && (
+                  <td className="mark paper">
+                    <PaperCell
+                      papers={student.papers ?? []}
+                      busy={busy}
+                      onView={(photo) => setViewing({ student: student.id, photo })}
+                      onAdd={() => setGrading({ student })}
+                    />
+                  </td>
+                  {graded && (
                     <td className="mark">
                       <button
                         type="button"
@@ -337,8 +358,7 @@ export default function WorkTable({ workId: id, refreshKey = 0 }) {
                         disabled={busy}
                         onClick={() => setGrading({ student })}
                       >
-                        {showMarks(student.marks, criteria) ||
-                          (student.papers?.length ? '📄' : '—')}
+                        {showMarks(student.marks, criteria) || '—'}
                       </button>
                     </td>
                   )}
@@ -350,6 +370,21 @@ export default function WorkTable({ workId: id, refreshKey = 0 }) {
                             0,
                           ) || ''
                         : `${student.correct}/${table.tasks.length}`}
+                      {/* Отметка за работу — рядом с суммой, из которой она
+                          выведена: «14» и «70%» или «сдал» отвечают на один
+                          вопрос с двух сторон. Считает её сервер
+                          (`final_grade`), здесь только показ; поставленная
+                          рукой набрана прямо, выведенная — наклонно, как в
+                          журнале */}
+                      {student.grade && (
+                        <span
+                          className={
+                            student.grade.by_teacher ? 'grade-label' : 'grade-label derived'
+                          }
+                        >
+                          {student.grade.label}
+                        </span>
+                      )}
                     </td>
                   )}
                 </tr>
@@ -367,7 +402,7 @@ export default function WorkTable({ workId: id, refreshKey = 0 }) {
               * прямо в строке, потому что «PDF работы» рядом виден ученику, и
               * разницу человек обязан видеть без догадок.
               */}
-            {showRow && (table.batches ?? []).length > 0 && (
+            {(table.batches ?? []).length > 0 && (
               <tfoot>
                 {table.batches.map((batch) => (
                   <tr key={batch.id} className="batch-row">
@@ -376,17 +411,21 @@ export default function WorkTable({ workId: id, refreshKey = 0 }) {
                       <span className="hint"> {t('paper.batchOnlyYou')}</span>
                     </th>
                     {table.tasks.length > 0 && <td colSpan={table.tasks.length} />}
-                    <td className="mark">
+                    <td className="mark paper">
                       <button
                         type="button"
                         className="link"
-                        title={batch.title}
+                        title={t('paper.download', { name: batch.title })}
+                        aria-label={t('paper.download', { name: batch.title })}
                         disabled={busy}
-                        onClick={() => openAttachment(batch.id)}
+                        onClick={() =>
+                          openAttachment(batch.id).catch((err) => setError(err.message))
+                        }
                       >
-                        📄
+                        ⬇
                       </button>
                     </td>
+                    {graded && <td className="mark" />}
                     {table.tasks.length > 0 && <td className="total" />}
                   </tr>
                 ))}
@@ -394,7 +433,6 @@ export default function WorkTable({ workId: id, refreshKey = 0 }) {
             )}
           </table>
         </section>
-      )}
 
       {question && (
         <Modal
@@ -484,6 +522,19 @@ export default function WorkTable({ workId: id, refreshKey = 0 }) {
         />
       )}
 
+      {viewing && (
+        <PhotoViewer
+          /* строка берётся из свежей таблицы: пометки пишутся сразу, и
+             просмотрщик после перечитывания должен показывать их же */
+          photos={(
+            table.students.find((row) => row.id === viewing.student)?.papers ?? []
+          ).filter((paper) => paper.viewable ?? paper.image)}
+          current={viewing.photo}
+          onChanged={refresh}
+          onClose={() => setViewing(null)}
+        />
+      )}
+
       {grading && (
         <GradeDialog
           work={table.work.id}
@@ -495,6 +546,7 @@ export default function WorkTable({ workId: id, refreshKey = 0 }) {
           }
           criteria={criteria}
           tasks={table.tasks}
+          grading={table.work.grading}
           busy={busy}
           onSubmit={(body) => run(() => gradeStudent(table.work.id, body))}
           onChanged={refresh}
@@ -502,6 +554,90 @@ export default function WorkTable({ workId: id, refreshKey = 0 }) {
         />
       )}
     </>
+  )
+}
+
+/**
+ * Клетка столбца PDF: скачать и открыть для пометок — двумя кнопками.
+ *
+ * Кнопка была одна и открывала окно работы ученика, откуда файл можно было
+ * только разметить: просмотрщик рисует страницу сам и наружу её не отдаёт.
+ * А скачивают работу не реже, чем размечают, — распечатать, переслать
+ * родителю, положить в портфолио, — и делать это приходилось в обход.
+ *
+ * Действия два, и кнопки две: одна кнопка с выбором внутри стоила бы
+ * лишнего нажатия на каждой из тридцати строк.
+ *
+ * Файлов у ученика бывает несколько (два захода сканирования, снимки с
+ * телефона). Скачивается тогда первый, а в подсказке названо, сколько их
+ * всего; остальные — в окне работы ученика, куда ведёт «+».
+ */
+function PaperCell({ papers, busy, onView, onAdd }) {
+  const { t } = useTranslation()
+  const [failed, setFailed] = useState(null)
+
+  const files = papers.filter((paper) => paper.kind !== 'link')
+  const seen = papers.filter((paper) => paper.viewable ?? paper.image)
+
+  if (!papers.length) {
+    return (
+      <button
+        type="button"
+        className="link"
+        title={t('paper.addScan')}
+        aria-label={t('paper.addScan')}
+        disabled={busy}
+        onClick={onAdd}
+      >
+        +
+      </button>
+    )
+  }
+
+  return (
+    <span className="paper-actions">
+      {files.length > 0 && (
+        <button
+          type="button"
+          className="link"
+          title={
+            failed ??
+            (files.length > 1
+              ? t('paper.downloadFirst', { name: files[0].title, count: files.length })
+              : t('paper.download', { name: files[0].title }))
+          }
+          aria-label={t('paper.download', { name: files[0].title })}
+          disabled={busy}
+          onClick={() =>
+            openAttachment(files[0].id).catch((err) => setFailed(err.message))
+          }
+        >
+          ⬇
+        </button>
+      )}
+      {seen.length > 0 && (
+        <button
+          type="button"
+          className="link"
+          title={t('paper.annotate')}
+          aria-label={t('paper.annotate')}
+          disabled={busy}
+          onClick={() => onView(seen[0].id)}
+        >
+          ✎
+        </button>
+      )}
+      <button
+        type="button"
+        className="link"
+        title={t('paper.openAll')}
+        aria-label={t('paper.openAll')}
+        disabled={busy}
+        onClick={onAdd}
+      >
+        +
+      </button>
+    </span>
   )
 }
 

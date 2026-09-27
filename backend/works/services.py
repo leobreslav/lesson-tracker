@@ -624,6 +624,18 @@ def build_table(work) -> dict:
             "title": work.title,
             "state": work.state(),
             "course_name": work.course.name,
+            # По чему работу оценивают: окну ученика нужны полосы, чтобы
+            # итог можно было выбрать, а не только набрать. Пусто — законно:
+            # у работы без системы итог свободный
+            "grading": (
+                {
+                    "name": work.grading_system.name,
+                    "kind": work.grading_system.kind,
+                    "bands": [band.label for band in work.grading_system.bands.all()],
+                }
+                if work.grading_system_id
+                else None
+            ),
         },
         "tasks": columns,
         "criteria": [
@@ -660,12 +672,26 @@ def grade_for(system, *, earned: int, top: int) -> dict | None:
     if system is None or not top:
         return None
 
+    # У уровней порог стоит в самой сумме, у всех остальных — в процентах.
+    #
+    # Сказано было наоборот: «в процентах только у баллов», и бинарная
+    # система сравнивала порог «сдал от 50» с сырой суммой. На работе с
+    # максимумом в двадцать баллов сдать её было нельзя вовсе.
+    value = earned if system.kind == GradingSystem.LEVELS else round(earned / top * 100)
+
+    # Процентная система полос не имеет: отметкой служит само число
+    if system.kind == GradingSystem.PERCENT:
+        return {
+            "label": f"{value}%",
+            "system": system.name,
+            "kind": system.kind,
+            "value": value,
+        }
+
     bands = list(system.bands.all())
     if not bands:
         return None
 
-    # у баллов порог в процентах, у уровней — в самой сумме
-    value = round(earned / top * 100) if system.kind == GradingSystem.POINTS else earned
     for band in bands:  # отсортированы по убыванию порога
         if value >= band.threshold:
             return {
@@ -1343,7 +1369,7 @@ def attach_batch(work, *, data: bytes, name: str, by=None):
         user=by,
     )
     twin = Attachment.objects.filter(
-        work=work, stored_file=stored, staff_only=True
+        work=work, stored_file=stored, is_batch=True
     ).first()
     title = (name or stored.original_name)[:200]
     if twin is not None:
@@ -1359,6 +1385,7 @@ def attach_batch(work, *, data: bytes, name: str, by=None):
         kind="file",
         stored_file=stored,
         staff_only=True,
+        is_batch=True,
         # Имя своё, а не хранимого файла: те же байты могли лечь в хранилище
         # раньше под именем сканера, и оно приехало бы сюда вместо нашего.
         title=title,
@@ -1374,6 +1401,9 @@ def scan_batches(work) -> list:
     доносят отдельным файлом. Выбрасывать прежнюю ради новой значило бы решать
     за учителя, какая из них настоящая, — а это как раз то, ради чего он их и
     открывает.
+
+    Пачку называет признак `is_batch`, а не «скрыто от класса»: скрытыми
+    бывают и ответы к контрольной, и в таблице результатов им делать нечего.
     """
     from files.models import Attachment
 
@@ -1383,7 +1413,7 @@ def scan_batches(work) -> list:
             "title": row.title,
             "size": row.stored_file.size if row.stored_file_id else None,
         }
-        for row in Attachment.objects.filter(work=work, staff_only=True)
+        for row in Attachment.objects.filter(work=work, is_batch=True)
         .select_related("stored_file")
         .order_by("-id")
     ]
