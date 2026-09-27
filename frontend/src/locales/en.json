@@ -1367,7 +1367,6 @@
     "none": "No assignments in this course yet.",
     "add": "New assignment",
     "edit": "Assignment settings",
-    "editAction": "Edit",
     "settings": "Settings",
     "workTitle": "Title",
     "content": "Assignment content",
@@ -1469,6 +1468,7 @@
       "hint": "Assignments belong to a course: pick one to see its list. The screen does not pick for you — marking sent to the wrong course reaches the wrong pupils."
     },
     "forCourse": "Assignments for <course>{{name}}</course>",
+    "backToList": "← Back to the assignments for {{name}}",
     "open": {
       "back": "← Back to course selection"
     },
@@ -1603,14 +1603,13 @@
     "clearMark": "clear"
   },
   "table": {
+    "results": "Results",
     "waiting_one": "{{count}} answer waiting",
     "waiting_other": "{{count}} answers waiting",
-    "open": "Check",
     "student": "Student",
     "total": "Total",
     "removed": "(no longer in the course)",
     "empty": "no answer",
-    "questions": "The questions",
     "checking": "Checking the question",
     "noAnswers": "Nobody has answered this question yet.",
     "newAnswer": "The student has sent a new answer while you were reading.",

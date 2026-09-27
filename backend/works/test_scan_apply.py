@@ -248,8 +248,32 @@ class ScanApplyTests(SchoolTestMixin, APITestCase):
         ).json()
 
         self.assertEqual(len(table["batches"]), 1)
-        self.assertEqual(table["batches"][0]["title"], "scan.pdf")
+        self.assertEqual(table["batches"][0]["title"], services.batch_name(self.work))
         self.assertEqual(len(state["batches"]), 1)
+
+    def test_the_pile_is_named_after_the_work_and_not_by_the_scanner(self):
+        """
+        Сканер зовёт файл `scan.pdf`, и через месяц таких в загрузках десять.
+        Имя собирается из того, что о пачке знаем мы: работа, её дата, курс.
+
+        Дата — работы, а не загрузки: привязана к занятию — день занятия,
+        иначе день открытия окна. И знаки, которых не терпит файловая
+        система, в имя не попадают: оно уедет на диск при скачивании.
+        """
+        from django.utils import timezone
+
+        self.work.title = 'Углы: "сумма" / разность'
+        self.work.save(update_fields=["title"])
+        self.read(0, "Fil", "Burmov", {0: 3})
+        self.apply()
+
+        pile = Attachment.objects.get(work=self.work, staff_only=True)
+        day = timezone.localdate(self.work.opens_at).isoformat()
+
+        self.assertEqual(
+            pile.title, f"Углы сумма разность, {day}, {self.course.name}.pdf"
+        )
+        self.assertEqual(pile.stored_file.original_name, pile.title)
 
     def test_a_pile_too_big_to_keep_does_not_undo_the_marks(self):
         """

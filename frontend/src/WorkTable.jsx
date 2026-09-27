@@ -1,10 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { useParams } from 'react-router-dom'
 import CellDialog from './CellDialog'
 import ColumnDialog from './ColumnDialog'
 import GradeDialog from './GradeDialog'
-import Markdown from './Markdown'
 import Modal from './Modal'
 import ScaleDialog from './ScaleDialog'
 import SplitDialog from './SplitDialog'
@@ -30,9 +28,24 @@ import { POLL_MS } from './polling'
  * Проверяют чаще столбцом, чем строкой: открыть задачу и пройти ответы
  * подряд — глаз настроен на один эталон. Поэтому по заголовку столбца
  * открывается режим проверки, а по ячейке — только её история.
+ *
+ * **Это блок страницы работы, а не страница.** Своей страницей таблица была
+ * — `/works/:id`, кнопка «Проверка» в списке, — и у работы выходило два
+ * адреса: на одном её правят, на другом смотрят, как справились. Ходить
+ * между ними приходилось через список. Теперь работа открывается одной
+ * страницей, и таблица стоит на ней внизу, сама.
+ *
+ * Отсюда три отличия от страницы: работу называет проп, а не адрес;
+ * заголовка с именем работы нет — он стоит на странице; и возвращается
+ * фрагмент, а не `<main>`, чтобы шаг между блоками задавала страница, как
+ * всем своим карточкам. Списка условий под таблицей тоже нет: задачи стоят
+ * на той же странице выше.
+ *
+ * `refreshKey` — способ сказать «перечитай сейчас»: задачи правят тут же,
+ * над таблицей, и ждать три секунды опроса, чтобы увидеть новый столбец,
+ * незачем.
  */
-export default function WorkTable() {
-  const { id } = useParams()
+export default function WorkTable({ workId: id, refreshKey = 0 }) {
   const { t } = useTranslation()
   const [table, setTable] = useState(null)
   const [error, setError] = useState(null)
@@ -59,7 +72,7 @@ export default function WorkTable() {
 
   useEffect(() => {
     load().catch((err) => setError(err.message))
-  }, [load])
+  }, [load, refreshKey])
 
   useEffect(() => {
     const timer = setInterval(
@@ -70,11 +83,7 @@ export default function WorkTable() {
   }, [load])
 
   if (table === null) {
-    return (
-      <main className="page wide">
-        <p>{error ? <span className="error">{error}</span> : t('common.loading')}</p>
-      </main>
-    )
+    return <p>{error ? <span className="error">{error}</span> : t('common.loading')}</p>
   }
 
   const refresh = () => load().catch((err) => setError(err.message))
@@ -131,13 +140,8 @@ export default function WorkTable() {
   const statsOf = (id) => marks?.columns.find((column) => column.id === id)
 
   return (
-    <main className="page wide">
-      <header className="page-header">
-        <h1>{table.work.title}</h1>
-        <p className="hint">
-          {table.work.course_name} · {t(`works.state.${table.work.state}`)}
-        </p>
-      </header>
+    <>
+      <h2 className="section-title">{t('table.results')}</h2>
 
       {error && (
         <p className="error" role="alert">
@@ -392,21 +396,6 @@ export default function WorkTable() {
         </section>
       )}
 
-      <details className="panel">
-        <summary>{t('table.questions')}</summary>
-        <ol className="task-list">
-          {table.tasks.map((task) => (
-            <li key={task.id}>
-              {/* имя то же, что в шапке столбца: по нему их и сличают */}
-              <span className="task-number">{task.name}.</span>
-              <div className="task-question">
-                <Markdown text={task.question} />
-              </div>
-            </li>
-          ))}
-        </ol>
-      </details>
-
       {question && (
         <Modal
           onClose={() => setQuestion(null)}
@@ -512,7 +501,7 @@ export default function WorkTable() {
           onClose={() => setGrading(null)}
         />
       )}
-    </main>
+    </>
   )
 }
 

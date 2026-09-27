@@ -38,7 +38,6 @@ import SchoolReference from './SchoolReference'
 import SchoolStudents from './SchoolStudents'
 import Works from './Works'
 import WorkEdit from './WorkEdit'
-import WorkTable from './WorkTable'
 import SchoolTeachers from './SchoolTeachers'
 import StartHere, { hasSteps } from './StartHere'
 import Feedback from './Feedback'
@@ -62,6 +61,17 @@ import i18n, { normalizeLanguage } from './i18n'
 function TemplatePlan(props) {
   const { id } = useParams()
   return <Plan {...props} template={Number(id)} />
+}
+
+/**
+ * Прежний адрес правки работы: ведёт на её единственную страницу.
+ *
+ * `replace`, а не обычный переход: иначе «назад» браузером возвращал бы на
+ * этот адрес, а тот тут же отправлял бы вперёд — кнопка не работала бы вовсе.
+ */
+function WorkEditMoved() {
+  const { id } = useParams()
+  return <Navigate to={`/works/${id}`} replace />
 }
 
 
@@ -222,11 +232,13 @@ export default function App() {
           {/* журнал курса: ученики по строкам, занятия по столбцам. Стоит
               своим адресом, а не вкладкой работ: вопрос у него свой */}
           <Route path="/journal" element={guarded(Journal)} />
-          <Route path="/works/:id" element={guarded(WorkTable)} />
-          {/* два адреса у одной работы, и названы они по тому, что на них
-              делают: `/works/:id` — как справились, `/works/:id/edit` — из
-              чего работа состоит. Правка стояла окном и в него не влезала */}
-          <Route path="/works/:id/edit" element={guarded(WorkEdit)} />
+          {/* У работы один адрес. Их было два — `/works/:id` с таблицей
+              результатов и `/works/:id/edit` с содержанием, — и ходить между
+              ними приходилось через список. Теперь таблица стоит внизу
+              страницы работы, а прежний адрес правки ведёт сюда же: он
+              остался в закладках и в истории браузера */}
+          <Route path="/works/:id" element={guarded(WorkEdit)} />
+          <Route path="/works/:id/edit" element={<WorkEditMoved />} />
           {/* переписка: один экран на учителя, ученика и родителя —
               собеседник природы разговора не меняет */}
           <Route path="/talks" element={guarded(Messenger)} />

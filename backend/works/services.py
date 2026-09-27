@@ -1283,6 +1283,32 @@ def attach_pages(work, student_id, *, data: bytes, numbers, by=None):
     )
 
 
+def batch_name(work) -> str:
+    """
+    Имя пачки сканов: работа, её дата и курс.
+
+    Сканер называет файл по-своему — `scan0042.pdf`, `Документ 17.pdf`, — и
+    под этим именем пачка ложилась к работе. Через месяц в папке загрузок
+    таких файлов десять, и какой из них от какой контрольной, по имени не
+    сказать. Имя поэтому собирается из того, что о пачке известно нам, а не
+    сканеру.
+
+    **Дата — работы, а не загрузки.** День занятия, на котором её задали, а
+    если она к занятию не привязана — день, когда открылось окно. Сканируют
+    стопку когда придётся, и день сканирования о работе не говорит ничего.
+
+    Знаки, которых не терпят файловые системы, заменяются пробелом: имя
+    уедет на диск учителя при скачивании.
+    """
+    import re
+
+    day = work.slot.date if work.slot_id else timezone.localdate(work.opens_at)
+    said = f"{work.title}, {day.isoformat()}, {work.course.name}"
+    said = re.sub(r'[\\/:*?"<>|\x00-\x1f]+', " ", said)
+    said = re.sub(r"\s+", " ", said).strip(" .")
+    return f"{said[:196] or 'scan'}.pdf"
+
+
 def attach_batch(work, *, data: bytes, name: str, by=None):
     """
     Приложить к работе саму отсканированную пачку — целиком, как она пришла.
@@ -1319,7 +1345,13 @@ def attach_batch(work, *, data: bytes, name: str, by=None):
     twin = Attachment.objects.filter(
         work=work, stored_file=stored, staff_only=True
     ).first()
+    title = (name or stored.original_name)[:200]
     if twin is not None:
+        # Та же стопка, принесённая второй раз: ссылка прежняя, а имя —
+        # нынешнее. Работу могли переименовать между заходами.
+        if twin.title != title:
+            twin.title = title
+            twin.save(update_fields=["title"])
         return twin
 
     return Attachment.objects.create(
@@ -1327,7 +1359,9 @@ def attach_batch(work, *, data: bytes, name: str, by=None):
         kind="file",
         stored_file=stored,
         staff_only=True,
-        title=stored.original_name,
+        # Имя своё, а не хранимого файла: те же байты могли лечь в хранилище
+        # раньше под именем сканера, и оно приехало бы сюда вместо нашего.
+        title=title,
         position=file_services.next_position(work=work),
     )
 
@@ -1863,7 +1897,7 @@ def scan_spend(work) -> dict:
     }
 
 
-def scan_apply(work, *, data: bytes, name: str = "", by=None) -> dict:
+def scan_apply(work, *, data: bytes, by=None) -> dict:
     """
     Применить разобранную пачку: страницы ученикам, баллы в оценки.
 
@@ -1962,7 +1996,7 @@ def scan_apply(work, *, data: bytes, name: str = "", by=None) -> dict:
         from files.services import UploadRefused
 
         try:
-            batch = attach_batch(work, data=data, name=name, by=by)
+            batch = attach_batch(work, data=data, name=batch_name(work), by=by)
         except UploadRefused as refused:
             batch, refusal = None, refused.code
         else:

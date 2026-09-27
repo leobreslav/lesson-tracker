@@ -1,21 +1,16 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Trans, useTranslation } from 'react-i18next'
-import { useNavigate, useSearchParams } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import EmptyState from './EmptyState'
 import CourseShowcase from './CourseShowcase'
-import Markdown from './Markdown'
 import BlankDialog from './BlankDialog'
 import ScanWizard from './ScanWizard'
-import TaskList from './TaskList'
 import WorkNameDialog from './WorkNameDialog'
-import { iconFor } from './fileKind'
 import { blankWork } from './WorkForm'
 import {
   createWork,
-  openAttachment,
   deleteWork,
   fetchCourses,
-  fetchTasks,
   fetchWorks,
   updateWork,
 } from './api'
@@ -24,9 +19,10 @@ import { rememberChoice } from './remember'
 /**
  * Работы курса: контрольные, проверочные, домашние.
  *
- * Список строками, раскрывается одна — тот же приём, что у курсов в разделе
- * «Школа», и по той же причине: у работы внутри задачи с многострочными
- * условиями, и восемь развёрнутых работ читались бы как одна простыня.
+ * Список строками, и строка — это ссылка на страницу работы. Раскрывалась
+ * она на месте, и помещалась в раскрытой половина работы; за остальным
+ * уходили на две разные страницы. Теперь страница у работы одна, и список
+ * только ведёт на неё.
  *
  * Состояние работы приходит с сервера. «Открыта ли» — вопрос о времени, и
  * считать его в браузере значило бы получить работу, которая на экране уже
@@ -38,8 +34,6 @@ export default function Works({ onLoggedOut }) {
   const [search, setSearch] = useSearchParams()
   const [courses, setCourses] = useState(null)
   const [works, setWorks] = useState(null)
-  const [expanded, setExpanded] = useState(null)
-  const [tasks, setTasks] = useState([])
   const [naming, setNaming] = useState(false)
   const [scanning, setScanning] = useState(null)
   const [blank, setBlank] = useState(false)
@@ -104,18 +98,8 @@ export default function Works({ onLoggedOut }) {
 
   useEffect(() => {
     setWorks(null)
-    setExpanded(null)
     reload().catch(handleError)
   }, [reload, handleError])
-
-  const reloadTasks = useCallback(
-    (workId) => (workId ? fetchTasks(workId).then(setTasks) : Promise.resolve(setTasks([]))),
-    [],
-  )
-
-  useEffect(() => {
-    reloadTasks(expanded).catch(handleError)
-  }, [expanded, reloadTasks, handleError])
 
   const run = async (request) => {
     setBusy(true)
@@ -123,7 +107,6 @@ export default function Works({ onLoggedOut }) {
     try {
       await request()
       await reload()
-      await reloadTasks(expanded)
     } catch (err) {
       handleError(err)
     } finally {
@@ -136,7 +119,7 @@ export default function Works({ onLoggedOut }) {
    *
    * Остальные поля берут умолчания (`blankWork`), и выданной работа не
    * становится: класс её не увидит, пока не нажмут «Выдать». Наполняют её на
-   * странице правки, туда и уводим — иначе человек, закрыв окно, остался бы
+   * её странице, туда и уводим — иначе человек, закрыв окно, остался бы
    * на списке с пустой строкой и вопросом «а где задачи».
    *
    * Мимо `run`: тот перечитывает список, а мы с него уходим — перечитывать
@@ -146,7 +129,7 @@ export default function Works({ onLoggedOut }) {
     setBusy(true)
     setError(null)
     createWork(blankWork({ course: courseId, title }))
-      .then((work) => navigate(`/works/${work.id}/edit`))
+      .then((work) => navigate(`/works/${work.id}`))
       .catch((err) => {
         setBusy(false)
         handleError(err)
@@ -307,30 +290,28 @@ export default function Works({ onLoggedOut }) {
           <p className="hint">{t('works.none')}</p>
         ) : (
           <ul className="course-list work-list">
-            {works.map((work) => {
-              const open = expanded === work.id
-
-              return (
-                <li key={work.id} className={open ? 'course-row open' : 'course-row'}>
+            {works.map((work) => (
+                <li key={work.id} className="course-row">
                   <div className="course-head">
-                    <button
-                      type="button"
-                      className="link toggle"
-                      aria-expanded={open}
-                      aria-label={t(open ? 'plan.collapse' : 'plan.expand')}
-                      onClick={() => setExpanded(open ? null : work.id)}
-                    >
-                      {open ? '▾' : '▸'}
-                    </button>
+                    {/*
+                      Название ведёт на страницу работы, а не раскрывает
+                      строку.
 
-                    <button
-                      type="button"
-                      className="link name"
-                      disabled={busy}
-                      onClick={() => setExpanded(open ? null : work.id)}
-                    >
+                      Раскрывалась она, и довод был: заглянуть «что там
+                      внутри», не уходя со списка. Но внутри помещалась только
+                      половина работы — задание и задачи на чтение, — а за
+                      второй половиной, правкой и результатами, всё равно
+                      уходили, двумя разными кнопками на две разные страницы.
+                      Строка списка отвечала на «что это за работа» трижды, и
+                      каждый раз не целиком.
+
+                      Ссылка, а не кнопка с переходом: работу открывают и в
+                      соседней вкладке, а средняя кнопка мыши по кнопке не
+                      делает ничего.
+                    */}
+                    <Link className="name" to={`/works/${work.id}`}>
                       {work.title}
-                    </button>
+                    </Link>
 
                     {/*
                       Черновик виден в списке, а выданная работа — нет.
@@ -350,21 +331,14 @@ export default function Works({ onLoggedOut }) {
                     {/* в шапке только имя и то, что с работой делают:
                         окно, попытки и число задач — разговор о настройках,
                         и живут они там, где их правят */}
-                    {/* Три действия — одной группой, а не тремя соседями
-                        сетки. Порознь они стояли на своих колонках, и зазор
-                        между ними был общим зазором строки: тем же, каким
-                        отделены стрелка и название. Для текста это в самый
-                        раз, а для трёх одинаковых рамок подряд мало —
-                        читались они одной полосой с надрезами. Здесь зазор
-                        свой и назван от самих кнопок: не меньше их
-                        собственных полей, иначе просвет между кнопками уже
-                        просвета внутри кнопки, и глаз склеивает их обратно.
+                    {/* Действия — одной группой со своим зазором: общий
+                        зазор строки отделяет текст от текста, а одинаковым
+                        рамкам подряд его мало, они читаются одной полосой с
+                        надрезами.
 
-                        Не единой панелькой с общей рамкой: общая рамка с
-                        чертой внутри в этом приложении уже значит другое —
-                        один вопрос и выбор из ответов (`.source-switch`).
-                        Здесь же три разных дела: правка настроек, разбор
-                        пачки сканов и переход на страницу проверки. */}
+                        Остались здесь только **действия**: выдать и разобрать
+                        сканы. «Править» и «Проверка» были переходами, и оба
+                        вели бы теперь туда же, куда название. */}
                     <div className="work-actions">
                       {/*
                         «Выдать» — первой в ряду и только у черновика.
@@ -375,9 +349,8 @@ export default function Works({ onLoggedOut }) {
                         сторожить, показало бы класу недописанное.
 
                         Кнопка стоит первой, потому что у черновика это
-                        единственное, чего от него ждут: остальные три —
-                        правка, сканы и проверка — про работу, которая уже
-                        идёт. Пропадает она вместе с выдачей: отзывать
+                        единственное, чего от него ждут: сканы — про работу,
+                        которая уже идёт. Пропадает она вместе с выдачей: отзывать
                         выданное отдельной кнопкой мы пока не умеем, и
                         нарисованная «Отозвать» в каждой строке была бы
                         предложением сделать то, за чем не приходят.
@@ -392,27 +365,6 @@ export default function Works({ onLoggedOut }) {
                           {t('works.release')}
                         </button>
                       )}
-
-                      {/* Правка — страница, а не окно: у работы, которую уже
-                          ведут, полей много (задание с картинками, файлы,
-                          окно времени, попытки, оценивание), и в окне поверх
-                          списка они читались в щёлку. Окно осталось
-                          заведению — там три поля, и список из виду терять
-                          не хочется.
-
-                          Кнопка одна. Их было две — «Настройки» здесь и
-                          «Править задание» под текстом задания, — и
-                          отвечали они на один вопрос: как поправить работу.
-                          Задание среди её полей самое заметное, так что
-                          отдельного входа ему больше не нужно */}
-                      <button
-                        type="button"
-                        className="secondary compact"
-                        disabled={busy}
-                        onClick={() => navigate(`/works/${work.id}/edit`)}
-                      >
-                        {t('works.editAction')}
-                      </button>
 
                       {/* Сканы у любой работы. Прежде кнопка была только у
                           бумажной, и это запирало обычный случай: класс писал
@@ -429,17 +381,6 @@ export default function Works({ onLoggedOut }) {
                       >
                         {t('scan.open')}
                       </button>
-
-                      {/* проверка — своя страница: таблица на тридцать человек
-                          в раскрытой строке не помещается */}
-                      <button
-                        type="button"
-                        className="secondary compact"
-                        disabled={busy}
-                        onClick={() => navigate(`/works/${work.id}`)}
-                      >
-                        {t('table.open')}
-                      </button>
                     </div>
 
                     <button
@@ -452,65 +393,8 @@ export default function Works({ onLoggedOut }) {
                       ✕
                     </button>
                   </div>
-
-                  {open && (
-                    <div className="course-body">
-                      {/* Задание — над задачами, и видит его тут учитель, а
-                          не только ученик.
-
-                          Прежде текст задания жил ровно в одном месте: в окне
-                          настроек, куда заходят, чтобы что-то поправить.
-                          Поэтому написанное в нём было не видно ниоткуда, и
-                          работа, ведённая без задач (условие текстом, решения
-                          фотографиями), выглядела на этом экране пустой —
-                          «задач пока нет» и ничего больше. Показывать ученику
-                          то, чего не видит учитель, нельзя: они говорят об
-                          одном и том же задании и должны видеть одно и то же */}
-                      {work.description && (
-                        <div className="work-brief">
-                          <Markdown text={work.description} />
-                        </div>
-                      )}
-
-                      {(work.files ?? []).length > 0 && (
-                        <ul className="attachments work-files">
-                          {work.files.map((item) => (
-                            <li key={item.id} className="attachment">
-                              <span className="attachment-icon" aria-hidden="true">
-                                {iconFor(item)}
-                              </span>
-                              <button
-                                type="button"
-                                className="link title"
-                                title={t('lesson.download')}
-                                onClick={() =>
-                                  openAttachment(item.id).catch(handleError)
-                                }
-                              >
-                                {item.title}
-                              </button>
-                            </li>
-                          ))}
-                        </ul>
-                      )}
-
-                      {/* Задачи — тем же списком, что на странице работы,
-                          но **на чтение**: заглянуть «что там внутри», не
-                          уходя со списка. Правки здесь нет намеренно — два
-                          места для одного действия это ровно то, на что
-                          жаловались, когда работу правили и кнопкой в
-                          строке, и кнопкой под заданием */}
-                      <TaskList
-                        workId={work.id}
-                        tasks={tasks}
-                        readOnly
-                        onChanged={() => reloadTasks(expanded)}
-                      />
-                    </div>
-                  )}
                 </li>
-              )
-            })}
+            ))}
           </ul>
         )}
       </section>

@@ -439,10 +439,8 @@ class WorkViewSet(CourseScopedViewSet):
             services.scan_apply(
                 work,
                 data=upload.read(),
-                # имя файла едет вместе с байтами: пачка остаётся у работы, и
-                # узнаётся она человеком по тому имени, под которым он её и
-                # сканировал
-                name=upload.name,
+                # имя загруженного файла сюда не едет: пачку называет работа
+                # (`services.batch_name`), а не сканер
                 by=request.user,
             )
         )

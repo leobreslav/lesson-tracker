@@ -8,6 +8,7 @@ import TaskList from './TaskList'
 import WorkContent from './WorkContent'
 import WorkFiles from './WorkFiles'
 import WorkSettingsDialog from './WorkSettingsDialog'
+import WorkTable from './WorkTable'
 import { fetchTasks, fetchWork, fetchWorkImpact, updateWork } from './api'
 
 /**
@@ -59,6 +60,7 @@ export default function WorkEdit() {
   const [work, setWork] = useState(null)
   const [impact, setImpact] = useState(null)
   const [tasks, setTasks] = useState([])
+  const [tableStamp, setTableStamp] = useState(0)
   const [form, setForm] = useState(null)
   const [renaming, setRenaming] = useState(null)
   const [preview, setPreview] = useState(false)
@@ -79,7 +81,16 @@ export default function WorkEdit() {
     [id],
   )
 
-  const loadTasks = useCallback(() => fetchTasks(id).then(setTasks), [id])
+  // Задачи правят над таблицей результатов, и столбцы у неё — те же задачи:
+  // перечитали одно — перечитываем и другое, не дожидаясь опроса
+  const loadTasks = useCallback(
+    () =>
+      fetchTasks(id).then((answer) => {
+        setTasks(answer)
+        setTableStamp((stamp) => stamp + 1)
+      }),
+    [id],
+  )
 
   useEffect(() => {
     load().catch((failure) => setError(failure.message))
@@ -157,6 +168,23 @@ export default function WorkEdit() {
 
   return (
     <main className="page wide">
+      {/*
+        Дорога назад — к работам **этого курса**, а не в раздел.
+
+        Правило «на страницах нет кнопок перехода, они дублировали бы бар»
+        тут не нарушено: пункт бара ведёт на витрину курсов, а сюда пришли из
+        списка работ одного курса, и вернуться надо в него же. Это то же, что
+        «назад» у самого списка, ступенью глубже, — и стоит так же: первой
+        строкой, у левого края.
+      */}
+      <button
+        type="button"
+        className="link screen-back"
+        onClick={() => navigate(`/works?course=${work.course}`)}
+      >
+        {t('works.backToList', { name: work.course_name })}
+      </button>
+
       <header className="page-header">
         <div className="lesson-title-head">
           {/* Переименование — кликом по названию, как на странице занятия и
@@ -341,6 +369,18 @@ export default function WorkEdit() {
           busy={busy}
         />
       </section>
+
+      {/*
+        Результаты — последними и сами, без кнопки.
+
+        Жили они на своей странице за кнопкой «Проверка», и у работы было
+        два адреса. Порядок на странице от этого не меняется: сперва то, из
+        чего работа состоит, потом то, как с ней справились. Вопрос у
+        пришедшего проверять один — «где таблица», и ответ на него теперь
+        «внизу этой же страницы», а не «вернитесь в список и нажмите другую
+        кнопку».
+      */}
+      <WorkTable workId={work.id} refreshKey={tableStamp} />
 
       {scanning && (
         <ScanWizard
