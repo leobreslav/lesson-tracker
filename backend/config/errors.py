@@ -57,6 +57,10 @@ class Codes:
     GRADE_PRESET_INVALID = "grade_preset_invalid"
     MEMBER_IN_USE = "member_in_use"
     ASSIGNMENT_IN_USE = "assignment_in_use"
+    # Ученика удаляют из курса без следа, а след есть: работы, ответы,
+    # отметки. В отличие от соседних отказов, подтверждение тут **удаляет**
+    # названное, а не сохраняет — и фраза обязана сказать это прямо.
+    ENROLMENT_HAS_TRACES = "enrolment_has_traces"
     NOT_ASSIGNED = "not_assigned"
     INVITATION_EXISTS = "invitation_exists"
     ALREADY_MEMBER = "already_member"

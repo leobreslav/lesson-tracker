@@ -463,6 +463,116 @@ class ScanApplyTests(SchoolTestMixin, APITestCase):
         self.assertEqual(response.json()["code"], "file_too_large")
         self.assertTrue(ScanPage.objects.filter(work=self.work).exists())
 
+    def drop(self, index, dropped=True):
+        return self.client.post(
+            reverse("work-scan-page", args=[self.work.pk]),
+            {"index": index, "dropped": dropped},
+            format="json",
+        )
+
+    def test_a_page_taken_out_of_the_pile_stops_cutting_it(self):
+        """
+        Убранная страница границей не служит.
+
+        Пустой оборот шапки не несёт и потому читается листом условий, а
+        ряды условий **режут пачку на работы**. На живой пачке из
+        восьмидесяти листов одиннадцать таких разрезали её на двадцать два
+        пакета при двадцати учениках. Убранная, она в раскладку не входит
+        вовсе, и страницы по обе стороны от неё — одна работа.
+        """
+        self.read(0, "Fil", "Burmov", {0: 3})
+        services.mark_headerless(self.work, index=1)
+        self.read(2, "", "", {1: 1})
+        services.mark_headerless(self.work, index=3)
+        self.read(4, "Peter", "Tibora", {0: 2})
+
+        before = self.client.get(
+            reverse("work-scan-state", args=[self.work.pk])
+        ).json()
+        self.assertGreater(len(before["packets"]), 2, "пустой оборот пачку не резал")
+
+        state = self.drop(1).json()
+
+        mine = next(p for p in state["packets"] if p["student"] == self.student.pk)
+        self.assertEqual(mine["pages"], [0, 2])
+        self.assertEqual(mine["conditions"], [])
+        self.assertEqual(len(state["packets"]), 2)
+
+    def test_a_page_taken_out_asks_for_no_owner_and_goes_to_nobody(self):
+        """
+        Своё состояние, а не «ничья».
+
+        «Ничья» держит шаг разбора запертым и зовёт назначить хозяина, а
+        назначать пустому обороту некого. И в работу ученика она не едет:
+        режет браузер по тому, что отвечает раскладка, и страница, которой в
+        ответе нет, в его PDF не попадёт.
+        """
+        self.read(0, "Fil", "Burmov", {0: 3})
+        self.read(1, "", "unreadable scrawl", {})
+
+        state = self.drop(1).json()
+        page = next(p for p in state["pages"] if p["index"] == 1)
+
+        self.assertTrue(page["dropped"])
+        self.assertIsNone(page["student"])
+        self.assertEqual(page["trouble"], [])
+        self.assertEqual(state["doubts"], [])
+        self.assertEqual(
+            [p["pages"] for p in state["packets"] if p["student"]], [[0]]
+        )
+
+    def test_a_page_taken_out_comes_back_the_same_way(self):
+        """Строка остаётся: прочитанное стоило денег, и вернуть страницу можно."""
+        self.read(0, "Fil", "Burmov", {0: 3})
+        self.drop(0)
+
+        state = self.drop(0, dropped=False).json()
+
+        page = next(p for p in state["pages"] if p["index"] == 0)
+        self.assertFalse(page["dropped"])
+        self.assertEqual(page["student"], self.student.pk)
+        self.assertEqual(page["cells"][0], 3)
+
+    def test_naming_an_owner_brings_the_page_back(self):
+        """
+        Убранная страница с хозяином — противоречие, и верно последнее слово.
+
+        Оставь мы её убранной, назначенная страница молча не попала бы
+        ученику в работу: на экране хозяин стоит, а в PDF листа нет.
+        """
+        self.read(0, "", "", {0: 3})
+        self.drop(0)
+
+        state = self.client.post(
+            reverse("work-scan-page", args=[self.work.pk]),
+            {"index": 0, "student": self.student.pk},
+            format="json",
+        ).json()
+
+        page = next(p for p in state["pages"] if p["index"] == 0)
+        self.assertFalse(page["dropped"])
+        self.assertEqual(page["student"], self.student.pk)
+
+    def test_a_pile_with_a_page_taken_out_is_written_without_it(self):
+        """
+        Запись идёт по той же раскладке, что и экран.
+
+        Отсей убранное только экран, и завершение ждало бы работу от
+        ученика, которому досталась одна убранная страница, — а мастер её не
+        прислал бы, потому что на экране такого ученика нет.
+        """
+        self.read(0, "Fil", "Burmov", {0: 3})
+        self.read(1, "Peter", "Tibora", {0: 2})
+        self.drop(1)
+
+        response = self.apply()
+
+        self.assertEqual(response.status_code, 200, response.content)
+        self.assertEqual(response.json()["students"], 1)
+        self.assertFalse(
+            StudentWork.objects.filter(work=self.work, student=self.second).exists()
+        )
+
     def test_the_rows_are_gone_once_it_is_applied(self):
         """Работа сделана: дальше про неё отвечают вложения и оценки."""
         self.read(0, "Fil", "Burmov", {0: 3})

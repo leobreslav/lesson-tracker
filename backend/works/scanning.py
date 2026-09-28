@@ -185,6 +185,10 @@ class Page:
     cells: list = field(default_factory=lambda: [None] * CELLS)
     student_id: int | None = None
     decided_by_human: bool = False
+    # Убрана из пачки человеком. Раскладка таких страниц не видит: отсеивает
+    # их тот, кто её зовёт (`services.in_the_pile`), а сама она остаётся
+    # чистой функцией над тем, что ей дали.
+    dropped: bool = False
     # Что увидел на той же полоске второй читатель и в чём он не сошёлся с
     # первым (`differs`). Пустой словарь — второго читателя не было.
     second: dict = field(default_factory=dict)

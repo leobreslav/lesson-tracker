@@ -472,6 +472,38 @@ class CourseStudentViewSet(SchoolScopedViewSet):
     def perform_destroy(self, instance):
         school_services.remove_from_course(instance)
 
+    def destroy(self, request, *args, **kwargs):
+        """
+        Снять с курса — или, по `?hard=true`, удалить без следа.
+
+        Обычный `DELETE` снимает, и это то, чего от него ждут почти всегда.
+        Удаление — другое действие под тем же адресом: исправление ошибки, а
+        не уход ученика. Оно уносит всё, что человек оставил в курсе, и
+        потому спрашивает дважды — тем же приёмом, что отвязка от школы и
+        удаление курса: первый отказ называет, сколько чего уйдёт, повтор с
+        `force=true` подтверждает.
+
+        Ученик, ничего в курсе не оставивший, удаляется сразу: называть
+        нечего, и вопрос про ноль работ был бы ритуалом.
+        """
+        flag = lambda name: request.query_params.get(name, "").lower() == "true"  # noqa: E731
+        if not flag("hard"):
+            return super().destroy(request, *args, **kwargs)
+
+        row = self.get_object()
+        traces = school_services.course_traces(row)
+        if any(traces.values()) and not flag("force"):
+            api_error(
+                Codes.ENROLMENT_HAS_TRACES,
+                f"{row.student.email} has left things in this course. Deleting "
+                "takes them all away for good; repeat with force=true to confirm.",
+                email=row.student.email,
+                **traces,
+            )
+
+        school_services.purge_from_course(row)
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
     # --- список класса, вставленный целиком ------------------------------------
 
     def requested_course(self):

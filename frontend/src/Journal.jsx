@@ -5,6 +5,7 @@ import { useNavigate } from 'react-router-dom'
 import CoursePicker from './CoursePicker'
 import EmptyState from './EmptyState'
 import JournalTable from './JournalTable'
+import RemovedToggle, { useShowRemoved, visibleStudents } from './RemovedToggle'
 import WorkDialog from './WorkDialog'
 import {
   createWork,
@@ -49,6 +50,7 @@ export default function Journal({ onLoggedOut }) {
   const [adding, setAdding] = useState(null)
   const [draft, setDraft] = useState(null)
   const [busy, setBusy] = useState(false)
+  const [showRemoved, setShowRemoved] = useShowRemoved()
   const [version, setVersion] = useState(0)
 
   const handleError = useCallback(
@@ -213,8 +215,24 @@ export default function Journal({ onLoggedOut }) {
             ) : journal.students.length === 0 ? (
               <p className="hint">{t('journal.noStudents')}</p>
             ) : (
+              <>
+              {/* Снятые с курса — по требованию, тем же переключателем и с
+                  тем же выбором, что в таблице результатов работы: вопрос
+                  «кого я считаю классом» у двух экранов общий.
+
+                  Скрытые уходят из того, что отдано таблице, а не из
+                  журнала: правка оценки ищет ученика по номеру во всём
+                  ответе сервера, и ей всё равно, видна ли его строка */}
+              <RemovedToggle
+                students={journal.students}
+                shown={showRemoved}
+                onChange={setShowRemoved}
+              />
               <JournalTable
-                journal={journal}
+                journal={{
+                  ...journal,
+                  students: visibleStudents(journal.students, showRemoved),
+                }}
                 onAddWork={(column) => {
                   setDraft(null)
                   setAdding(column)
@@ -222,6 +240,7 @@ export default function Journal({ onLoggedOut }) {
                 onSetGrade={setGrade}
                 onSetAttendance={setAttendance}
               />
+              </>
             )}
           </section>
         </>

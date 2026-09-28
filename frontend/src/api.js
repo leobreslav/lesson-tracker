@@ -1428,6 +1428,20 @@ export const enrolStudent = (course, student) =>
 export const removeStudent = (id) =>
   request(`/api/school/students/${id}/`, { method: 'DELETE' })
 
+/**
+ * Удалить ученика из курса без следа — не снять, а именно удалить.
+ *
+ * Уходит всё, что он в курсе оставил: работы с оценками и файлами, ответы,
+ * разговоры по задачам, отметки в журнале. Необратимо, поэтому спрашивается
+ * дважды: без `force` сервер отказывает кодом `enrolment_has_traces` и
+ * называет, сколько чего уйдёт; с ним — удаляет. Ученик, ничего не
+ * оставивший, удаляется с первого раза.
+ */
+export const purgeStudent = (id, { force = false } = {}) =>
+  request(`/api/school/students/${id}/?hard=true${force ? '&force=true' : ''}`, {
+    method: 'DELETE',
+  })
+
 /** Что сделает вставка списка — не делая ничего. */
 export const previewRoster = (course, text) =>
   request(`/api/school/students/preview/?course=${course}`, {

@@ -5,6 +5,7 @@ import ColumnDialog from './ColumnDialog'
 import GradeDialog from './GradeDialog'
 import Modal from './Modal'
 import PhotoViewer from './PhotoViewer'
+import RemovedToggle, { useShowRemoved, visibleStudents } from './RemovedToggle'
 import ScaleDialog from './ScaleDialog'
 import SplitDialog from './SplitDialog'
 import TaskBrief from './TaskBrief'
@@ -58,6 +59,7 @@ export default function WorkTable({ workId: id, refreshKey = 0 }) {
   const [grading, setGrading] = useState(null) // {student}
   const [viewing, setViewing] = useState(null) // {student, photo}
   const [joining, setJoining] = useState(null) // {done, total} — сборка общего PDF
+  const [showRemoved, setShowRemoved] = useShowRemoved()
   const [scaling, setScaling] = useState(false)
   const [question, setQuestion] = useState(null) // условие задачи с листа
   const [splitting, setSplitting] = useState(false)
@@ -145,7 +147,12 @@ export default function WorkTable({ workId: id, refreshKey = 0 }) {
   // Работы учеников файлами PDF, в порядке таблицы: из них собирается «все
   // работы одним файлом». Снимки с телефона сюда не идут — это картинки, а
   // не страницы, и в общий PDF они легли бы чужим форматом
-  const allPapers = table.students.flatMap((student) =>
+  // Строки, которые на экране: снятых с курса показывают по требованию.
+  // Окна при этом ищут ученика по всей таблице, а не по показанному —
+  // открытое окно не должно терять своего ученика оттого, что строку скрыли
+  const students = visibleStudents(table.students, showRemoved)
+
+  const allPapers = students.flatMap((student) =>
     (student.papers ?? []).filter((paper) => paper.pdf && paper.kind !== 'link'),
   )
 
@@ -228,8 +235,14 @@ export default function WorkTable({ workId: id, refreshKey = 0 }) {
         </button>
       </p>
 
-      {/* таблица нужна и без задач: у бумажной работы в ней сканы и
-          оценки, а задач нет по определению */}
+      {/* Снятые с курса — по требованию: прямо над таблицей, строки которой
+          переключатель и убирает. Нет снятых — нет и переключателя */}
+      <RemovedToggle
+        students={table.students}
+        shown={showRemoved}
+        onChange={setShowRemoved}
+      />
+
       {/* Таблица стоит всегда, и у работы без задач тоже: в ней столбец PDF,
           а он нужен любой работе — исследование без вопросов сдают файлом */}
       <section className="panel table-scroll">
@@ -327,7 +340,7 @@ export default function WorkTable({ workId: id, refreshKey = 0 }) {
               </tr>
             </thead>
             <tbody>
-              {table.students.map((student) => (
+              {students.map((student) => (
                 <tr key={student.id} className={student.active ? '' : 'past'}>
                   <th className="who">
                     {student.name}

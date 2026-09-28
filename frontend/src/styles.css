@@ -8587,7 +8587,14 @@ button.dropzone:hover:not(:disabled) {
 
 /* Поле без своей рамки и во всю клетку: рамку рисует клетка, и вторая внутри
    первой ломала бы ряд на квадратики заново. */
-.scan-box input {
+/*
+ * Селектор с родителем, и это про вес, а не про порядок. Клетка — текстовое
+ * поле (ради стрелок: у числового браузер не отдаёт положение курсора), а
+ * страница разбора даёт вид **всем** своим текстовым полям правилом
+ * `.scan-page input[type='text']` — оно тяжелее голого `.scan-box input` и
+ * навесило бы на каждую из шестнадцати клеток рамку и поля по полрема.
+ */
+.scan-cells .scan-box input {
   width: 100%;
   min-width: 0;
   box-sizing: border-box;
@@ -8598,6 +8605,9 @@ button.dropzone:hover:not(:disabled) {
   text-align: center;
   background: transparent;
   font-size: 0.95rem;
+  /* цифры одной ширины: балл не должен плясать в клетке от того, единица
+     в ней или восьмёрка */
+  font-variant-numeric: tabular-nums;
 }
 
 /* стрелки числового поля съедают всю ширину клетки — в ряду из шестнадцати
@@ -8612,7 +8622,7 @@ button.dropzone:hover:not(:disabled) {
   appearance: textfield;
 }
 
-.scan-box input:focus {
+.scan-cells .scan-box input:focus {
   outline: 2px solid #1a73e8;
   outline-offset: -2px;
 }
@@ -8768,6 +8778,16 @@ button.dropzone:hover:not(:disabled) {
 .scan-film-page.conditions {
   color: #666;
   border-style: dashed;
+}
+
+/* Убранная из пачки: зачёркнута и приглушена. Не пунктир — пунктиром стоят
+   листы условий, а они в пачке остаются и едут ученикам; спутать одно с
+   другим значило бы не понять, попадёт ли лист в чью-то работу */
+.scan-film-page.dropped {
+  color: #9aa0a6;
+  border-color: #e0e0e0;
+  background: #f5f5f5;
+  text-decoration: line-through;
 }
 
 .scan-film-page.here {

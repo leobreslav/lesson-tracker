@@ -18,6 +18,7 @@ import {
   saveQuestions,
   sendScanPiece,
 } from './api'
+import { digits, neighbour } from './cellKeys'
 import { PageOutside, openSource, pagesOf, pieces } from './scanPieces'
 
 /**
@@ -278,6 +279,19 @@ export default function ScanWizard({ work, onClose, onDone }) {
   const fix = async (index, cells) =>
     run(async () => setState(await editScanPage(work.id, { index, cells })))
 
+  /* Убрать страницу из пачки или вернуть её. Пустой оборот, титульный лист
+     сканера, чужой листок: хозяина такой странице не назначишь, а «ничья»
+     она держала бы шаг запертым. Хуже того, без шапки она читается листом
+     условий и режет пачку на работы. */
+  const drop = async (index, dropped) =>
+    run(async () => {
+      const answer = await editScanPage(work.id, { index, dropped })
+      // убранной хозяин не нужен: сказанное о ней раньше больше не держим,
+      // иначе следующий снимок чтения вернул бы его поверх
+      decided.current.delete(index)
+      setState(withDecisions(answer))
+    })
+
   /*
    * Записать разобранное можно только вместе с самим PDF.
    *
@@ -311,6 +325,9 @@ export default function ScanWizard({ work, onClose, onDone }) {
    */
   const finish = async (chosen = file) => {
     if (!chosen) return
+    // Файл, указанный на этом шаге, запоминается: оборвись запись, вторая
+    // попытка не должна снова спрашивать то, что человек только что показал
+    if (chosen !== file) setFile(chosen)
     return run(async () => {
       setSending({ phase: 'opening', done: 0, total: 0, name: '' })
       try {
@@ -471,6 +488,7 @@ export default function ScanWizard({ work, onClose, onDone }) {
           onFlip={flip}
           canFlip={Boolean(file)}
           hasFile={Boolean(file)}
+          onDrop={drop}
           onFix={fix}
           onNext={() => setStage('check')}
           onBack={() => setStage('file')}
@@ -1028,6 +1046,7 @@ function PagesStep({
   // строки дело не доходит. Сборка такого не ловит, а путь без файла никто
   // не проходил руками
   hasFile = false,
+  onDrop,
   onDecide,
   onFlip,
   onFix,
@@ -1152,6 +1171,9 @@ function PagesStep({
    */
   const [draft, setDraft] = useState(null)
 
+  // поля ряда по номеру клетки: стрелка у края уводит фокус в соседнее
+  const boxes = useRef([])
+
   const cellValue = (position) =>
     draft && draft.index === here?.index && draft.position === position
       ? draft.value
@@ -1203,7 +1225,11 @@ function PagesStep({
       <ol className="scan-film">
         {sheets.map((page, position) => {
           const its = rowOf(page.index)
-          const mark = its?.headerless
+          // убранная — первой: у неё нет ни хозяина, ни сомнений, и любой
+          // другой знак в ленте говорил бы о ней то, чего нет
+          const mark = its?.dropped
+            ? 'dropped'
+            : its?.headerless
             ? 'conditions'
             : (its?.trouble ?? []).includes('no_owner')
               ? 'stuck'
@@ -1284,10 +1310,19 @@ function PagesStep({
                 <span>
                   {position === GRID.cells - 1 ? t('scan.pageSum') : `Q${position + 1}`}
                 </span>
+                {/* Текстовое поле с цифровой клавиатурой, а не числовое.
+                    Причина в стрелках: у числового поля браузер не отдаёт
+                    положение курсора, и понять, упёрся ли он в край, нечем.
+                    Заодно ушли стрелочки-счётчики, которые в клетке шириной
+                    в два знака занимали половину места */}
                 <input
-                  type="number"
-                  min="0"
-                  max="999"
+                  ref={(node) => {
+                    boxes.current[position] = node
+                  }}
+                  type="text"
+                  inputMode="numeric"
+                  autoComplete="off"
+                  maxLength={2}
                   value={cellValue(position)}
                   aria-label={
                     position < state.questions
@@ -1298,12 +1333,35 @@ function PagesStep({
                     setDraft({
                       index: here.index,
                       position,
-                      value: event.target.value,
+                      value: digits(event.target.value),
                     })
                   }
                   onBlur={() => commitCell(position)}
                   onKeyDown={(event) => {
-                    if (event.key === 'Enter') event.currentTarget.blur()
+                    if (event.key === 'Enter') {
+                      event.currentTarget.blur()
+                      return
+                    }
+                    /* Стрелка у края текста уводит в соседнюю клетку: ряд
+                       заполняют подряд, и рука при этом на клавиатуре.
+                       Уход снимает фокус, а снятый фокус записывает балл —
+                       отдельной записи стрелке не нужно */
+                    const field = event.currentTarget
+                    const to = neighbour({
+                      key: event.key,
+                      start: field.selectionStart,
+                      end: field.selectionEnd,
+                      length: field.value.length,
+                      position,
+                      count: GRID.cells,
+                    })
+                    if (to === null) return
+                    event.preventDefault()
+                    const next = boxes.current[to]
+                    next?.focus()
+                    // содержимое выделено: набранная цифра заменит прежнюю,
+                    // а не припишется к ней
+                    next?.select()
                   }}
                 />
               </label>
@@ -1443,7 +1501,29 @@ function PagesStep({
             * показывал здесь имя последнего ученика пачки — того, кому лист
             * положили последним, — и человек шёл исправлять правильное.
             */}
-          {row?.common_conditions ? (
+          {row?.dropped ? (
+            /* Убранная страница — своё состояние, и говорит о нём экран
+               словами: ни хозяина, ни кандидатов, ни списка класса. Контрол,
+               оставшийся на месте, обещал бы, что назначить её ещё можно, —
+               а назначение и так вернуло бы её в пачку, то есть сделало бы
+               не то, что на нём написано. Кнопка одна: вернуть. */
+            <>
+              <p>
+                <b>{t('scan.dropped')}</b>
+              </p>
+              <p className="hint">{t('scan.droppedHint')}</p>
+              <div className="row">
+                <button
+                  type="button"
+                  className="secondary compact"
+                  disabled={busy}
+                  onClick={() => onDrop(here.index, false)}
+                >
+                  {t('scan.undrop')}
+                </button>
+              </div>
+            </>
+          ) : row?.common_conditions ? (
             <>
               <p>
                 <b>{t('scan.commonConditions')}</b>
@@ -1460,7 +1540,7 @@ function PagesStep({
           {/* тройка лучших — по этой странице, а не по пакету: у пакета
               кандидатов может не быть вовсе, и тогда экран предлагал первых
               по списку класса, то есть заведомо не тех */}
-          {(row?.candidates ?? []).length > 0 && (
+          {!row?.dropped && (row?.candidates ?? []).length > 0 && (
             <div className="row">
               {/* трое, не больше: кнопок ровно столько, сколько можно окинуть
                   взглядом, а «а всё-таки» отвечает список ниже */}
@@ -1480,22 +1560,41 @@ function PagesStep({
 
           {/* ...а список всех — на случай, когда прочиталось не то вовсе.
               Тройка отвечает на «кто из похожих», список — на «а всё-таки» */}
-          <div className="row middle">
-            <select
-              value={row?.student ?? ''}
-              disabled={busy}
-              onChange={(event) =>
-                onDecide(here.index, event.target.value ? Number(event.target.value) : null)
-              }
-            >
-              <option value="">{t('scan.nobody')}</option>
-              {students.map((one) => (
-                <option key={one.id} value={one.id}>
-                  {one.name}
-                </option>
-              ))}
-            </select>
-          </div>
+          {!row?.dropped && (
+            <div className="row middle">
+              <select
+                value={row?.student ?? ''}
+                disabled={busy}
+                onChange={(event) =>
+                  onDecide(here.index, event.target.value ? Number(event.target.value) : null)
+                }
+              >
+                <option value="">{t('scan.nobody')}</option>
+                {students.map((one) => (
+                  <option key={one.id} value={one.id}>
+                    {one.name}
+                  </option>
+                ))}
+              </select>
+              {/* Убрать из пачки — рядом с выбором хозяина: это третий ответ
+                  на тот же вопрос «чья страница». Хозяин есть, хозяина нет,
+                  страницы в пачке нет. Кнопкой-ссылкой, а не в полный рост:
+                  действие редкое, и стоять наравне с кандидатами ему незачем.
+                  Страница, до которой чтение не дошло, строки на сервере не
+                  имеет — убирать пока нечего */}
+              {row && (
+                <button
+                  type="button"
+                  className="link"
+                  disabled={busy}
+                  title={t('scan.dropHint')}
+                  onClick={() => onDrop(here.index, true)}
+                >
+                  {t('scan.drop')}
+                </button>
+              )}
+            </div>
+          )}
 
           {/* Листание стоит здесь, под выбором хозяина, и это про руку, а не
               про красоту. Работа на этом шаге одна и повторяется тридцать
@@ -1660,6 +1759,7 @@ function SpendLine({ spend }) {
 function CheckStep({ state, pages, busy, sending, hasFile, onFix, onBack, onApply }) {
   const { t } = useTranslation()
   const [open, setOpen] = useState(null)
+  const picker = useRef(null)
   const questions = Array.from({ length: state.questions }, (_, i) => i + 1)
   // клетка и вопрос связаны местом, а не именем: третья клетка листа — это
   // третий вопрос, как бы учитель его ни назвал. Поэтому имена лежат
@@ -1814,16 +1914,36 @@ function CheckStep({ state, pages, busy, sending, hasFile, onFix, onBack, onAppl
             {t('scan.apply')}
           </button>
         ) : (
-          <label className="button-like">
+          /* Настоящая кнопка, а не надпись. Стояла тут подпись скрытого поля
+             с классом, под который в стилях не было ни строки, — то есть
+             главное действие шага выглядело обычным текстом слева от «Шаг
+             назад». Нажималось оно и так, но догадаться об этом было нельзя:
+             человек с готовой к записи пачкой искал кнопку и не находил.
+
+             Приём тот же, что у остальных мест выбора файла: поле скрыто,
+             открывает его обычная кнопка. */
+          <>
             <input
+              ref={picker}
               type="file"
               accept="application/pdf"
               hidden
-              disabled={busy}
-              onChange={(event) => onApply(event.target.files[0])}
+              onChange={(event) => {
+                const chosen = event.target.files?.[0]
+                // тот же файл, выбранный второй раз, иначе не даёт события —
+                // а второй раз тут обычное дело: запись оборвалась, нажали снова
+                event.target.value = ''
+                if (chosen) onApply(chosen)
+              }}
             />
-            {t('scan.applyNeedsFile')}
-          </label>
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => picker.current?.click()}
+            >
+              {t('scan.applyNeedsFile')}
+            </button>
+          </>
         )}
         <button type="button" className="secondary" disabled={busy} onClick={onBack}>
           {t('scan.back')}

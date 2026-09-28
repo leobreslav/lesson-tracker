@@ -7,6 +7,7 @@ import {
   fetchStudents,
   previewRoster,
   previewRosterFile,
+  purgeStudent,
   removeStudent,
   uploadRosterFile,
 } from './api'
@@ -244,6 +245,41 @@ export default function RosterDialog({ course, onClose, onChanged }) {
     }
   }
 
+  /**
+   * Удалить ученика из курса без следа.
+   *
+   * Спрашивается всегда, и вопрос называет цену. Сколько чего уйдёт, знает
+   * только сервер, поэтому первый запрос идёт без подтверждения: ученик, не
+   * оставивший ничего, удаляется им же, а оставивший получает отказ с
+   * числами — и они встают в вопрос. Считать то же самое в браузере значило
+   * бы назвать одно, а удалить другое.
+   *
+   * Вопрос задаётся и тогда, когда удалять, кроме строки, нечего: действие
+   * необратимо, а стоит ссылка рядом с «Вернуть».
+   */
+  const purge = async (row) => {
+    if (!window.confirm(t('roster.purgeAsk', { name: row.student_name }))) return
+
+    setBusy(true)
+    setError(null)
+    try {
+      try {
+        await purgeStudent(row.id)
+      } catch (err) {
+        if (err.code !== 'enrolment_has_traces') throw err
+        // цена названа словами самого отказа: фраза словаря с числами
+        if (!window.confirm(`${err.message}\n\n${t('roster.purgeConfirm')}`)) return
+        await purgeStudent(row.id, { force: true })
+      }
+      await reload()
+      onChanged()
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
   // предпросмотр ничего не пишет и ни от чего не отказывается: ошибки
   // приезжают списком в теле, и показываем мы их, а не код ответа
   const check = () =>
@@ -325,6 +361,20 @@ export default function RosterDialog({ course, onClose, onChanged }) {
                       }
                     >
                       {t('roster.restore')}
+                    </button>
+                    {/* Удалить без следа — только у снятого, и ссылкой, а не
+                        кнопкой в рост соседней. Это исправление ошибки, а не
+                        обычное действие: сперва человека снимают, и лишь
+                        потом, если его тут не должно было быть вовсе,
+                        удаляют. Два шага до необратимого — не неудобство, а
+                        то, ради чего они два */}
+                    <button
+                      type="button"
+                      className="link"
+                      disabled={busy}
+                      onClick={() => purge(row)}
+                    >
+                      {t('roster.purge')}
                     </button>
                   </li>
                 ))}

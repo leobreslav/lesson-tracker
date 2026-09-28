@@ -224,6 +224,97 @@ def remove_from_course(row) -> None:
         row.save(update_fields=["removed_at"])
 
 
+def _traces(row) -> dict:
+    """
+    Всё, что ученик оставил в этом курсе, выборками — по одной на вид следа.
+
+    Одно место и для счёта, и для удаления: посчитай их порознь, и однажды
+    человеку назвали бы одно, а удалили другое.
+    """
+    from schedule.models import Attendance
+    from works.models import ScanAlias, StudentWork, Submission, Thread
+
+    student, course = row.student_id, row.course_id
+    return {
+        # работа ученика: оценки, комментарий учителя, сканы и его фотографии
+        "works": StudentWork.objects.filter(student_id=student, work__course_id=course),
+        # онлайн-ответы, попытка за попыткой
+        "answers": Submission.objects.filter(
+            student_id=student, task__work__course_id=course
+        ),
+        # разговоры с учителем по задачам
+        "threads": Thread.objects.filter(
+            student_id=student, task__work__course_id=course
+        ),
+        # отметки в журнале занятий
+        "attendance": Attendance.objects.filter(
+            student_id=student, slot__course_id=course
+        ),
+        # как читался его почерк: память разбора сканов
+        "aliases": ScanAlias.objects.filter(student_id=student, course_id=course),
+    }
+
+
+# Что называется человеку перед удалением. Память почерка в счёт не входит:
+# это наше служебное, и спрашивать о ней учителя незачем — но удаляется она
+# вместе со всем, потому что в ней записано имя.
+TRACES_SHOWN = ("works", "answers", "threads", "attendance")
+
+
+def course_traces(row) -> dict:
+    """Сколько чего ученик оставил в курсе — числами, чтобы назвать цену."""
+    found = _traces(row)
+    return {name: found[name].count() for name in TRACES_SHOWN}
+
+
+def purge_from_course(row) -> dict:
+    """
+    Удалить ученика из курса так, будто его в нём не было.
+
+    Это **не** снятие с курса, и путать их нельзя. Снятие (`remove_from_course`)
+    — обычное действие: человек перестал учиться, строка остаётся, сделанное
+    им читается и им самим, и учителем. Удаление — исправление ошибки: в курс
+    записали не того, выгрузка принесла чужой список, ученика завели дважды.
+    После него не остаётся ни строки, ни следа, по которому видно, что он тут
+    был.
+
+    Поэтому уходит всё, что на эту пару «курс и ученик» указывает: работы с
+    оценками и файлами, онлайн-ответы, разговоры по задачам, отметки в
+    журнале, память почерка. Оставь мы хоть что-то, след остался бы в базе, а
+    условие было именно в том, чтобы его не было. Страницы неразобранной
+    пачки при этом не удаляются — они чужие, страницы работы, — а теряют
+    хозяина и возвращаются человеку вопросом.
+
+    **Учётка не трогается.** Ученик остаётся в школе и в остальных своих
+    курсах: удаляется его след в одном курсе, а не он сам.
+
+    Одной транзакцией: половина удалённого — худший исход, ученик уже не в
+    курсе, а его оценки ещё в журнале.
+
+    Необратимо. Снимок расписания, снятый до удаления, помнит отметки
+    посещаемости и при отмене вернул бы их на воскрешённые занятия; здесь это
+    не чинится, и сказано затем, чтобы не удивляться.
+    """
+    from django.db import transaction
+    from works.models import ScanPage
+
+    with transaction.atomic():
+        found = _traces(row)
+        gone = {name: found[name].count() for name in TRACES_SHOWN}
+
+        ScanPage.objects.filter(
+            student_id=row.student_id, work__course_id=row.course_id
+        ).update(student=None, decided_by_human=False)
+
+        # порядок не важен для базы — связи каскадные, — но важен для чтения:
+        # сперва то, что висит на работах, потом сами работы, потом строка
+        for name in ("answers", "threads", "aliases", "attendance", "works"):
+            found[name].delete()
+        row.delete()
+
+    return gone
+
+
 # --- кому можно писать приглашение ----------------------------------------------
 
 

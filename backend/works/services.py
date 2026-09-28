@@ -558,20 +558,31 @@ def build_table(work) -> dict:
                 shots.get(enrolment.student_id, {}).get("tasks", {}).get(task.pk, [])
             )
             cells.append(cell)
+
+            # «решил» — это полный балл. Частичный не был доступен вовсе, пока
+            # вердикт был галочкой, и складывать его с полным нельзя: колонка
+            # отвечает на «кто справился», а не «кто что-то написал»
+            value = cell["mark"]
+
+            # Итог ученика считается по **баллу**, откуда бы он ни взялся.
+            # Считался он только там, где есть онлайн-ответ, и у бумажной
+            # работы — ответов нет, баллы пришли со скана — выходило «0 из 5»
+            # у всего класса при выставленных галочках в каждой клетке.
+            if value is not None and value >= task.maximum:
+                correct += 1
+
             if not history:
                 continue
 
             answered += 1
             per_task[task.pk]["answered"] += 1
 
-            # «решил» — это полный балл. Частичный не был доступен вовсе, пока
-            # вердикт был галочкой, и складывать его с полным нельзя: колонка
-            # отвечает на «кто справился», а не «кто что-то написал»
-            value = cell["mark"]
+            # А сводка по столбцу — про онлайн-ответы: сколько прислано и
+            # сколько из присланного ждёт проверки. Бумажной клетке ждать
+            # нечего, и в эту сводку она не входит
             if value is None:
                 per_task[task.pk]["unchecked"] += 1
             elif value >= task.maximum:
-                correct += 1
                 per_task[task.pk]["correct"] += 1
             else:
                 per_task[task.pk]["wrong"] += 1
@@ -1492,10 +1503,23 @@ def scan_pages(work) -> list:
             ours=row.ours,
             student_id=row.student_id,
             decided_by_human=row.decided_by_human,
+            dropped=row.dropped,
             second=row.second or {},
         )
         for row in work.scan_pages.all()
     ]
+
+
+def in_the_pile(pages: list) -> list:
+    """
+    Страницы, которые раскладываются: все, кроме убранных человеком.
+
+    Одна дверь на всех, кто зовёт раскладку, — экран разбора, приём работы
+    ученика и завершение. Отсей убранное только экран, и страница, которой на
+    нём нет, уехала бы ученику в PDF: режет браузер по тому, что отвечает
+    завершение, а не по тому, что показано.
+    """
+    return [page for page in pages if not page.dropped]
 
 
 def max_mark_of(work) -> int | None:
@@ -1577,7 +1601,9 @@ def scan_state(work) -> dict:
 
     pages = scan_pages(work)
     roster = scan_roster(work)
-    packets = scanning.arrange(pages, roster)
+    # раскладываются не все: убранное человеком в пачку не входит. На экран
+    # при этом едут все страницы — убранную надо видеть, чтобы вернуть
+    packets = scanning.arrange(in_the_pile(pages), roster)
     limit = max_mark_of(work)
     names = question_names(work)
     questions = len(names) or scanning.QUESTIONS
@@ -1629,17 +1655,23 @@ def scan_state(work) -> dict:
                 # тут нечего.
                 "common_conditions": common,
                 "decided_by_human": page.decided_by_human,
+                # Убрана из пачки: ни хозяина, ни сомнений у неё нет и быть
+                # не может — в раскладку она не входила. Своё состояние, а не
+                # «ничья»: «ничья» держит шаг запертым и зовёт назначить
+                "dropped": page.dropped,
                 # Тройка лучших — по самой странице. От пакета кандидаты
                 # приходили пустыми всякий раз, когда пакет решился или был
                 # собран постранично, и экран показывал вместо них первых по
                 # списку класса — то есть заведомо не тех.
-                "candidates": scanning.top_candidates(page, roster),
+                "candidates": []
+                if page.dropped
+                else scanning.top_candidates(page, roster),
                 # Второе чтение едет на экран целиком: человек решает спор,
                 # глядя на обе версии и на бумагу, а не на наш вывод о том,
                 # кто из читателей прав. Мы этого и не знаем.
                 "second": page.second,
                 "trouble": []
-                if page.headerless
+                if page.headerless or page.dropped
                 else scanning.troubles(page, owner, limit, questions),
             }
         )
@@ -1718,6 +1750,9 @@ def scan_state(work) -> dict:
     # решает человек.
     last_owner = None
     for row in rows:
+        # убранной странице хозяин не нужен, и подсказывать его незачем
+        if row["dropped"]:
+            continue
         unnamed = not (row["first_name"].strip() or row["surname"].strip())
         if unnamed:
             # У безымянной страницы кандидаты пакета — набор случайных фамилий
@@ -1917,7 +1952,7 @@ def scan_packets(work) -> tuple[list, list]:
 
     packets = [
         packet
-        for packet in scanning.arrange(pages, scan_roster(work))
+        for packet in scanning.arrange(in_the_pile(pages), scan_roster(work))
         if packet.student_id is not None
     ]
     if not packets:
@@ -2092,24 +2127,37 @@ def mark_headerless(work, *, index: int, ours: bool = False):
     return row
 
 
-def edit_scan_page(work, *, index: int, student=UNSET, cells=None):
+def edit_scan_page(work, *, index: int, student=UNSET, cells=None, dropped=None):
     """
-    Правка страницы человеком: чья она и что в клетках.
+    Правка страницы человеком: чья она, что в клетках и в пачке ли она вовсе.
 
     Владельца и клетки правят порознь, поэтому «не прислали» и «прислали
     пусто» — разные вещи: первое значит «не трогай», второе — «сними
     владельца». Отобрать страницу у не того ученика надо уметь, и отдельного
     действия под это заводить незачем; различает их сентинел, потому что
     `None` тут занят настоящим значением.
+
+    **Назвать хозяина или вписать балл значит вернуть страницу в пачку.**
+    Убранная страница с хозяином — противоречие: человек сказал о ней два
+    разных слова, и верно последнее. Оставь мы её убранной, назначенная
+    страница молча не попала бы ученику в работу.
     """
     from .scanning import CELLS
 
     row, _ = ScanPage.objects.get_or_create(work=work, index=index)
     fields = []
+    if dropped is not None:
+        row.dropped = bool(dropped)
+        fields.append("dropped")
     if student is not UNSET:
         row.student_id = student
         row.decided_by_human = True
         fields += ["student", "decided_by_human"]
+    named = student is not UNSET and student is not None
+    scored = cells is not None and any(value is not None for value in cells)
+    if row.dropped and dropped is None and (named or scored):
+        row.dropped = False
+        fields.append("dropped")
     if cells is not None:
         row.cells = (list(cells) + [None] * CELLS)[:CELLS]
         fields.append("cells")
