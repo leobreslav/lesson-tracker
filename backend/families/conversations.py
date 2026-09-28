@@ -8,6 +8,7 @@
 семья вправе написать.
 """
 
+from accounts.ordering import by_surname
 from schedule.models import CourseAssignment, CourseStudent
 
 
@@ -32,7 +33,7 @@ def teachers_for(child):
     for row in (
         CourseAssignment.objects.filter(course_id__in=courses)
         .select_related("teacher")
-        .order_by("teacher__last_name", "teacher__email")
+        .order_by(*by_surname("teacher"))
     ):
         if row.teacher_id in seen:
             continue

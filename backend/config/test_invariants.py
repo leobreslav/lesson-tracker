@@ -699,3 +699,85 @@ class EveryRelationToAPlanRowSurvivesUndoOrRefusesItTests(SimpleTestCase):
             "решение без объяснения через полгода нельзя ни починить, ни "
             "выбросить: напишите, почему отмена поступает с этой связью так",
         )
+
+
+class PeopleAreListedBySurnameTests(SchoolTestMixin, APITestCase):
+    """
+    Люди в списке идут по фамилии, потом по имени, потом по адресу.
+
+    Правило одно на все списки, и разошлось оно уже однажды: журнал и
+    посещаемость шли по фамилии, а таблица результатов работы и список людей
+    школы — по имени. Один и тот же класс выглядел по-разному на соседних
+    экранах, и учитель, сверяющий таблицу с бумажным журналом, искал каждого
+    заново: школьные списки ведутся по фамилии.
+
+    Сквозным оно стоит здесь потому, что не принадлежит ни одному приложению:
+    людей перечисляют и работы, и расписание, и школа, и переписка.
+    """
+
+    # Где порядок людей назван своими словами, а не общим правилом, — и
+    # почему там так. Пусто, и лучше бы так и осталось.
+    KNOWN = {}
+
+    def test_no_list_of_people_writes_its_own_order(self):
+        """
+        Порядок людей берут у `accounts.ordering.by_surname`, а не пишут на месте.
+
+        Ловится не «неправильный порядок», а **свой**: написанный на месте
+        верно, он расходится с общим при первой же правке правила — и так же
+        молча, как разошёлся в первый раз.
+        """
+        import re
+
+        own = []
+        for path in sorted(Path(settings.BASE_DIR).rglob("*.py")):
+            where = path.relative_to(settings.BASE_DIR).as_posix()
+            if "/migrations/" in where or "test" in path.name or where in self.KNOWN:
+                continue
+            if where == "accounts/ordering.py":
+                continue
+            for number, line in enumerate(
+                path.read_text(encoding="utf-8").splitlines(), start=1
+            ):
+                if re.search(r"order_by\([^)]*(first_name|last_name)", line):
+                    own.append(f"{where}:{number}")
+
+        self.assertEqual(
+            own,
+            [],
+            "порядок людей написан на месте: возьмите "
+            "`accounts.ordering.by_surname`, иначе этот список однажды "
+            "разойдётся с соседними",
+        )
+
+    def test_the_surname_leads_and_the_first_name_breaks_the_tie(self):
+        """
+        Однофамильцев разводит имя, а не адрес почты.
+
+        Брат и сестра в одном классе — не редкость, и без второй ступени их
+        порядок решал бы адрес, то есть случай.
+        """
+        from accounts.models import User
+        from accounts.ordering import by_surname
+
+        people = {
+            "zoe@example.com": ("Zoe", "Adams"),
+            "adam@example.com": ("Adam", "Young"),
+            "b@example.com": ("Mia", "Hughes"),
+            "a@example.com": ("Noah", "Hughes"),
+        }
+        for email, (first, last) in people.items():
+            User.objects.create_user(
+                email=email, school=self.school, first_name=first, last_name=last
+            )
+
+        listed = list(
+            User.objects.filter(email__in=people)
+            .order_by(*by_surname())
+            .values_list("first_name", "last_name")
+        )
+
+        self.assertEqual(
+            listed,
+            [("Zoe", "Adams"), ("Mia", "Hughes"), ("Noah", "Hughes"), ("Adam", "Young")],
+        )

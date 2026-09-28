@@ -22,6 +22,7 @@
 Разговор двух людей это не содержимое курса: чинить в нём нечего.
 """
 
+from accounts.ordering import by_surname
 from config.errors import Codes, api_denied
 from django.db.models import Q
 
@@ -48,7 +49,7 @@ def partners(user) -> list:
         return list(
             User.objects.filter(school_id=user.school_id, kind=User.Kind.TEACHER)
             .exclude(pk=user.pk)
-            .order_by("last_name", "first_name", "email")
+            .order_by(*by_surname())
         )
 
     return _teachers_of(user)

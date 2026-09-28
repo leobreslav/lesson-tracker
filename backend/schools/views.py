@@ -7,6 +7,7 @@ from config.access import (
 )
 from collections import Counter
 
+from accounts.ordering import by_surname
 from config.errors import Codes, api_error
 from django.contrib.auth import get_user_model
 from django.db import transaction
@@ -250,7 +251,7 @@ class MemberViewSet(
         """
         people = User.objects.filter(
             school_id=self.request.user.school_id
-        ).order_by("first_name", "last_name", "email")
+        ).order_by(*by_surname())
 
         # сужает только список: человек, найденный по id, — участник этой
         # школы, и вид его известен из него самого

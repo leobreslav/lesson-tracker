@@ -66,30 +66,79 @@ def typical(language: str = "en") -> list[dict]:
     ]
 
 
+# Виды, которые есть у каждой школы сразу, без кнопки «типовые».
+#
+# Правило «новая школа не получает ничего» писалось про системы, в которых
+# есть что угадывать: пятибалльная или семибалльная, какие пороги, MYP или
+# нет. В этих двух угадывать нечего — процент от максимума один на весь мир,
+# а «сдал / не сдал» — две полосы с порогом в половину. Пустой же список
+# стоил того, что учитель, открыв настройки работы, не видел ни одной системы
+# и не знал, что их надо сперва завести в другом разделе.
+UNIVERSAL = (GradingSystem.PASSFAIL, GradingSystem.PERCENT)
+
+
+def _create(school, item) -> None:
+    system = GradingSystem.objects.create(
+        school=school, name=item["name"], kind=item["kind"]
+    )
+    for position, (label, threshold) in enumerate(item["bands"]):
+        GradeBand.objects.create(
+            system=system,
+            position=position,
+            label=label,
+            threshold=threshold,
+        )
+
+
+def add_universal(school, language: str = "en") -> int:
+    """
+    Завести школе бинарную и процентную системы, если таких видов у неё нет.
+
+    Сверка идёт **по виду**, а не по имени: школа могла переименовать
+    «Percent» в «Проценты», и вторая процентная система рядом с первой была
+    бы выбором из двух одинаковых.
+
+    Зовётся при создании школы (`works/signals.py`) и миграцией для уже
+    существующих — то есть один раз на школу. Удалённая администратором
+    система поэтому сама не возвращается: его рычаг сильнее нашего умолчания.
+    """
+    added = 0
+    with transaction.atomic():
+        kinds = set(school.grading_systems.values_list("kind", flat=True))
+        names = set(school.grading_systems.values_list("name", flat=True))
+        for item in typical(language):
+            if item["kind"] not in UNIVERSAL or item["kind"] in kinds:
+                continue
+            if item["name"] in names:
+                continue
+            _create(school, item)
+            added += 1
+
+    return added
+
+
 def add_typical(school, language: str = "en") -> int:
     """
     Завести недостающие типовые системы. Нажать дважды не страшно.
 
     Существующие не трогаются вовсе: школа могла поправить пороги под себя, и
     «обновить до типовых» было бы худшим из возможных прочтений кнопки.
+
+    Универсальные виды сверяются по виду, остальные по имени: бинарная и
+    процентная у школы уже есть с рождения, и названы они могли быть на
+    другом языке — кнопка не должна заводить «Проценты» рядом с «Percent».
     """
     added = 0
     with transaction.atomic():
         taken = set(school.grading_systems.values_list("name", flat=True))
+        kinds = set(school.grading_systems.values_list("kind", flat=True))
         for item in typical(language):
             if item["name"] in taken:
                 continue
+            if item["kind"] in UNIVERSAL and item["kind"] in kinds:
+                continue
 
-            system = GradingSystem.objects.create(
-                school=school, name=item["name"], kind=item["kind"]
-            )
-            for position, (label, threshold) in enumerate(item["bands"]):
-                GradeBand.objects.create(
-                    system=system,
-                    position=position,
-                    label=label,
-                    threshold=threshold,
-                )
+            _create(school, item)
             added += 1
 
     return added

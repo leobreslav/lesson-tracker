@@ -1,6 +1,7 @@
 from collections import defaultdict
 from datetime import timedelta
 
+from accounts.ordering import by_surname
 from calendars import services as calendar_services
 from calendars.models import SchoolYear
 from config.access import (
@@ -1980,7 +1981,7 @@ class SlotViewSet(SchoolScopedViewSet):
         enrolled = (
             CourseStudent.objects.filter(course=slot.course)
             .select_related("student")
-            .order_by("student__last_name", "student__email")
+            .order_by(*by_surname("student"))
         )
 
         return Response(

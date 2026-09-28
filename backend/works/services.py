@@ -13,6 +13,7 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from django.db.models import Count, Max, Q
 from django.utils import timezone
 
+from accounts.ordering import by_surname
 from bank.models import Problem
 from files.models import Attachment
 
@@ -503,7 +504,7 @@ def build_table(work) -> dict:
     rows = list(
         CourseStudent.objects.filter(course_id=work.course_id)
         .select_related("student")
-        .order_by("student__first_name", "student__last_name", "student__email")
+        .order_by(*by_surname("student"))
     )
     tasks = list(work.tasks.all())
     criteria = list(work.criteria.all())
@@ -1463,7 +1464,11 @@ def scan_roster(work) -> list:
     """Действующий состав курса глазами разбора."""
     from .scanning import Person
 
-    rows = work.course.students.filter(removed_at__isnull=True).select_related("student")
+    rows = (
+        work.course.students.filter(removed_at__isnull=True)
+        .select_related("student")
+        .order_by(*by_surname("student"))
+    )
     return [
         Person(id=row.student_id, first=row.student.first_name, last=row.student.last_name)
         for row in rows

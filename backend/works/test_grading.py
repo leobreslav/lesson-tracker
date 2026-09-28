@@ -62,13 +62,15 @@ class BandTests(SchoolTestMixin, APITestCase):
         пятьдесят не из чего. Ошибка молчаливая: отметка не пропадала, а
         выходила «не сдал» у всего класса.
         """
-        binary = self.school.grading_systems.get(name="Сдал / не сдал")
+        # по виду, а не по имени: бинарная у школы с рождения, и названа она
+        # на языке по умолчанию, а не на том, которым нажимали «типовые»
+        binary = self.school.grading_systems.get(kind=GradingSystem.PASSFAIL)
 
         self.assertEqual(
-            services.grade_for(binary, earned=12, top=20)["label"], "сдал"
+            services.grade_for(binary, earned=12, top=20)["label"], "passed"
         )
         self.assertEqual(
-            services.grade_for(binary, earned=9, top=20)["label"], "не сдал"
+            services.grade_for(binary, earned=9, top=20)["label"], "not passed"
         )
 
     def test_percent_is_the_share_of_the_maximum_and_needs_no_bands(self):
@@ -78,7 +80,7 @@ class BandTests(SchoolTestMixin, APITestCase):
         Поэтому «полос нет — сказать нечего», верное для остальных видов,
         здесь не действует: у неё их нет по построению.
         """
-        percent = self.school.grading_systems.get(name="Проценты")
+        percent = self.school.grading_systems.get(kind=GradingSystem.PERCENT)
 
         self.assertEqual(percent.bands.count(), 0)
         self.assertEqual(services.grade_for(percent, earned=13, top=15)["label"], "87%")
@@ -110,9 +112,48 @@ class BandTests(SchoolTestMixin, APITestCase):
 
 
 class TypicalTests(SchoolTestMixin, APITestCase):
-    def test_a_new_school_gets_nothing_by_itself(self):
-        """Угаданный набор хуже пустого списка: школа удаляла бы ненужное."""
-        self.assertEqual(self.school.grading_systems.count(), 0)
+    def test_a_new_school_gets_only_what_needs_no_guessing(self):
+        """
+        С рождения у школы две системы: бинарная и процентная.
+
+        Было «ничего», и довод верен для систем, где есть что угадывать:
+        пятибалльная или семибалльная, какие пороги, MYP или нет — угаданное
+        школа удаляла бы. В этих двух угадывать нечего. А пустой список
+        стоил того, что учитель не видел в настройках работы ни одной системы
+        и не знал, что их надо сперва завести в другом разделе.
+        """
+        self.assertEqual(
+            sorted(self.school.grading_systems.values_list("kind", flat=True)),
+            [GradingSystem.PASSFAIL, GradingSystem.PERCENT],
+        )
+
+    def test_the_button_does_not_double_what_the_school_was_born_with(self):
+        """
+        Кнопка «типовые» сверяет универсальные виды по виду, а не по имени.
+
+        Школа родилась с «Percent», администратор нажимает кнопку по-русски —
+        и «Проценты» рядом с «Percent» были бы выбором из двух одинаковых.
+        """
+        grading.add_typical(self.school, "ru")
+
+        kinds = list(self.school.grading_systems.values_list("kind", flat=True))
+        self.assertEqual(kinds.count(GradingSystem.PERCENT), 1)
+        self.assertEqual(kinds.count(GradingSystem.PASSFAIL), 1)
+
+    def test_a_system_the_administrator_removed_stays_removed(self):
+        """
+        Универсальные системы заводятся один раз на школу, при её создании.
+
+        Рычаг администратора сильнее нашего умолчания: убрал он процентную —
+        значит в этой школе так не оценивают, и возвращать её при каждом
+        заходе в справочник значило бы спорить с ним.
+        """
+        self.school.grading_systems.filter(kind=GradingSystem.PERCENT).delete()
+
+        self.client.force_authenticate(self.admin)
+        listed = self.client.get(reverse("grading-systems")).json()["systems"]
+
+        self.assertNotIn(GradingSystem.PERCENT, [item["kind"] for item in listed])
 
     def test_pressing_twice_is_harmless(self):
         grading.add_typical(self.school, "ru")

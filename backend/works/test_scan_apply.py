@@ -251,6 +251,26 @@ class ScanApplyTests(SchoolTestMixin, APITestCase):
         self.assertEqual(table["batches"][0]["title"], services.batch_name(self.work))
         self.assertEqual(len(state["batches"]), 1)
 
+    def test_the_table_lists_the_class_by_surname(self):
+        """
+        Таблица результатов идёт по фамилии, как бумажный журнал.
+
+        Шла по имени, и один и тот же класс выглядел по-разному на соседних
+        экранах: журнал курса по фамилии, таблица работы по имени. Имена
+        выбраны так, чтобы два порядка расходились: по имени первым встал бы
+        Adam, по фамилии — Adams.
+        """
+        self.student.first_name, self.student.last_name = "Zed", "Adams"
+        self.student.save()
+        self.second.first_name, self.second.last_name = "Adam", "Zimmer"
+        self.second.save()
+
+        table = self.client.get(reverse("work-table", args=[self.work.pk])).json()
+
+        self.assertEqual(
+            [row["name"] for row in table["students"]], ["Zed Adams", "Adam Zimmer"]
+        )
+
     def test_the_pile_stands_in_the_table_and_not_among_the_work_s_files(self):
         """
         Пачка — не материал задания, и место ей в таблице результатов.

@@ -693,6 +693,7 @@ no attribute '_meta'`, в которой ни слова про имя моде�
 | **снимок плана снимается внутри транзакции записи** | `plans/views.py` | `SnapshotsSitInsideTheWriteTransactionTests` |
 | **ни один тест не платит за чтение сканов** | `config/testing.py` | `NoTestSpendsMoneyTests` |
 | **каждая дверь спрашивает, кого контур пускает** | `accounts/door.py` | `EveryDoorAsksWhoIsComingTests` |
+| **люди в списке идут по фамилии, потом по имени** | `accounts/ordering.py` | `PeopleAreListedBySurnameTests` |
 
 Последние четыре появились после того, как условие успело пожить в трёх
 местах разом и это стоило дня работы. `config/test_invariants.py` — реестр

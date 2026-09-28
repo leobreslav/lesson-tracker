@@ -13,6 +13,7 @@ from config.access import (
     IsStudent,
     IsTeacher,
 )
+from accounts.ordering import by_surname
 from config.errors import Codes, api_error
 from families.viewing import subject_of
 from django.db.models import Count
@@ -561,9 +562,7 @@ class CourseJournalView(APIView):
         # и строка без них означала бы, что четверти у человека не было. Кто
         # ещё в курсе, помечается — как в сводной таблице работы.
         enrolments = list(
-            course.students.select_related("student").order_by(
-                "student__last_name", "student__email"
-            )
+            course.students.select_related("student").order_by(*by_surname("student"))
         )
         roster = [row.student for row in enrolments]
         active = {row.student_id for row in enrolments if row.removed_at is None}
