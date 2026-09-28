@@ -1006,7 +1006,17 @@ class SlotViewSet(SchoolScopedViewSet):
             context["room_clashes"] = self.room_clashes
             context["student_clashes"] = self.student_clashes
             context["course_homegroups"] = self.course_homegroups
+            if self.request.query_params.get("topics"):
+                context["suggested_topics"] = self.suggested_topics
         return context
+
+    def suggested_topics(self, course):
+        """Что раскладка предлагает часам курса — один расчёт на курс за ответ."""
+        if not hasattr(self, "_suggested_topics"):
+            self._suggested_topics = {}
+        if course.pk not in self._suggested_topics:
+            self._suggested_topics[course.pk] = services.suggested_topics(course)
+        return self._suggested_topics[course.pk]
 
     def course_homegroups(self):
         """Классы каждого курса — выведенные из учеников, одним запросом."""

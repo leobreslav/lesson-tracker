@@ -944,3 +944,44 @@ class DeletingACourseTogetherWithItsPlanTests(SlotTestCase):
         self.drop(force=True)
 
         self.assertTrue(PlanNode.objects.filter(pk=self.node.pk).exists())
+
+
+class SlotTopicTests(SlotTestCase):
+    """
+    Тема часа в списке: записанная, а без записи — предложенная раскладкой.
+
+    Окно настроек работы выбирает, к какому занятию её привязать, и по одной
+    дате занятие не узнать. Записанная связь есть у немногих часов, поэтому
+    `lesson_title` показывал одни даты; тема раскладки закрывает остальные.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.first = make_node(self.user, self.course, "Сумма углов", position=0)
+        self.second = make_node(self.user, self.course, "Внешний угол", position=1)
+        self.monday = self.make_slot(MONDAY, 1)
+        self.tuesday = self.make_slot(MONDAY + days(1), 1)
+
+    def topics(self, **extra):
+        response = self.client.get(
+            reverse("slot-list"), {"course": self.course.pk, **extra}
+        )
+        return {item["id"]: item["topic_title"] for item in response.json()}
+
+    def test_the_layout_names_the_topic_of_an_unrecorded_hour(self):
+        self.assertEqual(
+            self.topics(topics=1),
+            {self.monday.pk: "Сумма углов", self.tuesday.pk: "Внешний угол"},
+        )
+
+    def test_a_recorded_lesson_beats_the_layout(self):
+        self.monday.lesson = self.second
+        self.monday.save()
+
+        self.assertEqual(self.topics(topics=1)[self.monday.pk], "Внешний угол")
+
+    def test_without_asking_the_layout_is_not_computed(self):
+        """Расписание берёт этот список на каждое листание — год ему не нужен."""
+        self.assertEqual(
+            self.topics(), {self.monday.pk: None, self.tuesday.pk: None}
+        )

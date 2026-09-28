@@ -525,6 +525,11 @@ class SlotSerializer(serializers.ModelSerializer):
     teacher = serializers.SerializerMethodField()
     teacher_name = serializers.SerializerMethodField()
     lesson_title = serializers.CharField(source="lesson.title", read_only=True)
+    # тема часа: записанная связь, а без неё — то, что предлагает раскладка.
+    # `lesson_title` отвечает только на первое, и у часа, который ещё не
+    # отметили, он пуст — то есть почти у всех. Считается по просьбе
+    # (`?topics=1`), см. `get_topic_title`
+    topic_title = serializers.SerializerMethodField()
     room_name = serializers.CharField(source="room.name", read_only=True)
     # классы курса — выведенные из его учеников, а не записанные полем:
     # см. `Slot.homegroups_by_course`. Нужны дневному виду «по классам»
@@ -546,6 +551,7 @@ class SlotSerializer(serializers.ModelSerializer):
             "teacher_name",
             "lesson",
             "lesson_title",
+            "topic_title",
             "taught_by",
             "date",
             "lesson_number",
@@ -569,6 +575,28 @@ class SlotSerializer(serializers.ModelSerializer):
                 message="This course already has a lesson with that number that day.",
             ),
         ]
+
+    def get_topic_title(self, obj):
+        """
+        Какая тема у этого часа: записанная, а если записи нет — предложенная.
+
+        Записанное сильнее: это то, что прошли, а раскладка — то, что
+        собирались. Предложенное считает та же `suggested_topics`, что и
+        страница занятия; второй расчёт разошёлся бы с ней молча.
+
+        Раскладка идёт по всему году курса, поэтому считается она только по
+        просьбе: расписание берёт этот же список на каждое листание недели, а
+        тема ему не нужна. Без просьбы поле отвечает одной записанной темой.
+        """
+        if obj.lesson_id is not None:
+            return obj.lesson.title
+
+        suggested = self.context.get("suggested_topics")
+        if suggested is None:
+            return None
+
+        node = suggested(obj.course).get(obj.pk)
+        return node.title if node is not None else None
 
     def get_debt(self, obj):
         """

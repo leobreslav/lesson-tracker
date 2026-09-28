@@ -1740,10 +1740,12 @@ export const addFromBank = (work, problems) =>
  * строкой, и `start=undefined` сервер разберёт как «дату не поняли», то есть
  * вернёт не тот список, о котором просили.
  */
-export const fetchCourseSlots = (course, { start, end } = {}) => {
+export const fetchCourseSlots = (course, { start, end, topics } = {}) => {
   const query = new URLSearchParams({ course })
   if (start) query.set('start', start)
   if (end) query.set('end', end)
+  // тема часа по раскладке — расчёт по всему году, поэтому только по просьбе
+  if (topics) query.set('topics', '1')
 
   return request(`/api/slots/?${query}`)
 }

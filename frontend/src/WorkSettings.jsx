@@ -68,7 +68,7 @@ export default function WorkSettings({ form, setForm, courseId = null, busy = fa
     if (!courseId) return undefined
 
     let alive = true
-    fetchCourseSlots(courseId)
+    fetchCourseSlots(courseId, { topics: true })
       .then((list) => alive && setSlots(list.filter((one) => !one.is_cancelled)))
       .catch(() => {})
     return () => {
@@ -147,9 +147,13 @@ export default function WorkSettings({ form, setForm, courseId = null, busy = fa
                     привязывает работу через месяц, а «Сумма углов
                     треугольника» говорит сразу. Час без темы — законное
                     состояние (план кончился раньше расписания), и тогда
-                    остаётся одна дата */}
+                    остаётся одна дата.
+
+                    Тема — `topic_title`, а не `lesson_title`: второе знает
+                    только записанную связь, а её у большинства часов нет, и
+                    список показывал одни даты. Первое берёт и раскладку */}
                 {shortDate(one.date)} · {t('works.slotNumber', { number: one.lesson_number })}
-                {one.lesson_title ? ` · ${one.lesson_title}` : ''}
+                {one.topic_title ? ` · ${one.topic_title}` : ''}
               </option>
             ))}
           </select>
