@@ -17,7 +17,9 @@ import {
   readScanQuestions,
   resetScan,
   saveQuestions,
+  sendScanPiece,
 } from './api'
+import { PageOutside, openSource, pagesOf, pieces } from './scanPieces'
 
 /**
  * Разбор пачки бумажных работ: от PDF до оценок.
@@ -51,6 +53,8 @@ export default function ScanWizard({ work, onClose, onDone }) {
   const [done, setDone] = useState(0)
   const [total, setTotal] = useState(0)
   const [busy, setBusy] = useState(false)
+  // где сейчас запись: открывается файл, уезжает чья-то работа, пишутся оценки
+  const [sending, setSending] = useState(null)
   const [error, setError] = useState(null)
   const [readQuestions, setReadQuestions] = useState(false)
   /* Звать ли поверх первого читателя Mathpix.
@@ -275,25 +279,68 @@ export default function ScanWizard({ work, onClose, onDone }) {
    * его заново не придётся и платить тоже: у каждой страницы есть отпечаток, и
    * сервер отдаёт прочитанное, не спрашивая модель.
    */
+  /*
+   * Запись идёт по ученику, а не одним файлом, и видно это на экране.
+   *
+   * Одним запросом она и шла: весь PDF уезжал на сервер, тот резал его и
+   * раздавал. На живой пачке в тридцать четыре мегабайта запрос упёрся в
+   * предел тела запроса и вернулся отказом без единого слова о причине, а
+   * пачка класса в трёхстах точках весит и двести. Поэтому режет браузер —
+   * страницы он и так открыл, раскладку знает от сервера, — и на сервер едут
+   * работы по несколько мегабайт.
+   *
+   * Шагов три, и про каждый сказано, пока он идёт: файл открывается, работы
+   * уезжают по одной, оценки пишутся. Молчащая кнопка на полминуты читается
+   * как поломка — на это и пожаловались.
+   *
+   * Оборвалось на середине — нажимают ещё раз. Уже доехавшие работы сервер
+   * узнаёт по содержимому и второй раз не заводит: кусок собирается теми же
+   * байтами, сколько бы раз его ни резали (`scanPieces.cut`).
+   */
   const finish = async (chosen = file) => {
     if (!chosen) return
     return run(async () => {
-      const result = await applyScan(work.id, chosen)
-      onDone?.(result)
+      setSending({ phase: 'opening', done: 0, total: 0, name: '' })
+      try {
+        const source = await openSource(await chosen.arrayBuffer())
+        // раскладка берётся свежей: человек мог поправить хозяина страницы
+        // секунду назад, а режем мы по тому, что записано
+        const fresh = await fetchScanState(work.id)
+        const owned = fresh.packets.filter((packet) => packet.student)
+        const nameOf = Object.fromEntries(
+          fresh.students.map((student) => [student.id, student.name]),
+        )
 
-      /* Пачку не удалось сохранить — а применение прошло.
-         Закрыть окно молча тут нельзя: снаружи это выглядит как обычный
-         успех, и человек узнает о пропаже только тогда, когда придёт
-         перезапускать разбор и не найдёт файла. Оценки и работы при этом на
-         месте, поэтому это сообщение, а не отказ. */
-      if (result.batch_refused) {
-        setError(t('scan.batchRefused'))
-        setStage('file')
-        setState(await fetchScanState(work.id).catch(() => null))
-        return
+        let done = 0
+        for (const packet of owned) {
+          setSending({
+            phase: 'sending',
+            done,
+            total: owned.length,
+            name: nameOf[packet.student] ?? '',
+          })
+          for (const part of await pieces(source, pagesOf(packet))) {
+            await sendScanPiece(work.id, { student: packet.student, bytes: part })
+          }
+          done += 1
+        }
+
+        setSending({ phase: 'writing', done, total: owned.length, name: '' })
+        const result = await applyScan(work.id)
+        onDone?.(result)
+        onClose()
+      } catch (problem) {
+        // выбран не тот файл, что читали: страниц в нём меньше. Причина
+        // своя, и слова свои — общий отказ отправил бы искать её в сети
+        if (problem instanceof PageOutside) {
+          throw new Error(
+            t('scan.wrongFile', { page: problem.index + 1, pages: problem.pages }),
+          )
+        }
+        throw problem
+      } finally {
+        setSending(null)
       }
-
-      onClose()
     })
   }
 
@@ -422,6 +469,7 @@ export default function ScanWizard({ work, onClose, onDone }) {
           state={state}
           pages={byIndex}
           busy={busy}
+          sending={sending}
           onFix={fix}
           onBack={() => setStage('pages')}
           hasFile={Boolean(file)}
@@ -1587,7 +1635,7 @@ function SpendLine({ spend }) {
  * заставлять смотреть на тридцать уверенных строк значит превращать проверку
  * в ритуал. Но возможность посмотреть есть, и цифры правятся на месте.
  */
-function CheckStep({ state, pages, busy, hasFile, onFix, onBack, onApply }) {
+function CheckStep({ state, pages, busy, sending, hasFile, onFix, onBack, onApply }) {
   const { t } = useTranslation()
   const [open, setOpen] = useState(null)
   const questions = Array.from({ length: state.questions }, (_, i) => i + 1)
@@ -1708,6 +1756,29 @@ function CheckStep({ state, pages, busy, hasFile, onFix, onBack, onApply }) {
               </label>
             ))}
           </div>
+        </div>
+      )}
+
+      {/* Ход записи — над кнопками, там, куда человек только что нажал.
+          Полоса настоящая: считает учеников, чьи работы уже уехали. Пока
+          файл открывается и пока пишутся оценки, считать нечего, и полоса
+          идёт без числа — но слова говорят, что именно происходит */}
+      {sending && (
+        <div className="scan-progress" role="status" aria-live="polite">
+          <p className="hint">
+            {sending.phase === 'sending'
+              ? t('scan.sendingPiece', {
+                  done: sending.done + 1,
+                  total: sending.total,
+                  name: sending.name,
+                })
+              : t(sending.phase === 'opening' ? 'scan.openingFile' : 'scan.writingMarks')}
+          </p>
+          {sending.phase === 'sending' ? (
+            <progress value={sending.done} max={sending.total || 1} />
+          ) : (
+            <progress />
+          )}
         </div>
       )}
 

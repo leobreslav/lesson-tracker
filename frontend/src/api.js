@@ -80,6 +80,17 @@ async function request(path, { method = 'GET', body, auth = true, as } = {}) {
 
   const data = await response.json().catch(() => null)
 
+  /*
+   * «Запрос слишком большой» отвечает не приложение, а nginx перед ним — и
+   * отвечает страницей HTML, в которой нет ни кода, ни фразы. До человека
+   * доезжало «запрос не удался» без единого слова о причине; так и было с
+   * пачкой сканов в тридцать четыре мегабайта. Причина тут одна, и назвать её
+   * можно, не читая тела ответа.
+   */
+  if (response.status === 413 && !data?.code) {
+    throw new ApiError(i18n.t('errors.too_large'), 413, 'too_large', null)
+  }
+
   if (!response.ok) {
     throw new ApiError(
       humanMessage(data),
@@ -677,6 +688,23 @@ export const downloadBlank = async (labels, name = 'blank.pdf') => {
   URL.revokeObjectURL(url)
 }
 
+/**
+ * Отдать человеку файл, собранный в браузере.
+ *
+ * Так уезжают «все работы одним PDF»: на сервере такого файла нет, его
+ * складывает браузер из работ учеников в момент просьбы.
+ */
+export const saveBytes = (bytes, name, type = 'application/pdf') => {
+  const url = URL.createObjectURL(new Blob([bytes], { type }))
+  const link = document.createElement('a')
+  link.href = url
+  link.download = name
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+  URL.revokeObjectURL(url)
+}
+
 // --- one lesson: content and attachments ---
 
 /** The whole of one lesson, content included — the tree only carries flags. */
@@ -1069,10 +1097,35 @@ export const readScanQuestions = (work, blob) => {
   return request(`/api/works/${work}/scan/questions/`, { method: 'POST', body: form })
 }
 
-export const applyScan = (work, file) => {
+/**
+ * Работа одного ученика, нарезанная из пачки в браузере.
+ *
+ * Пачка целиком на сервер не едет: скан класса весит от тридцати до двухсот
+ * мегабайт, а кусок одного ученика — несколько. Зовётся по разу на кусок;
+ * оценок не пишет, их пишет `applyScan`.
+ */
+export const sendScanPiece = (work, { student, bytes }) => {
   const form = new FormData()
-  form.append('file', file)
-  return request(`/api/works/${work}/scan/apply/`, { method: 'POST', body: form })
+  form.append('student', student)
+  form.append('file', new Blob([bytes], { type: 'application/pdf' }), 'piece.pdf')
+  return request(`/api/works/${work}/scan/piece/`, { method: 'POST', body: form })
+}
+
+/** Завершить разбор: оценки всему классу разом. Файла тут нет — работы уже уехали. */
+export const applyScan = (work) =>
+  request(`/api/works/${work}/scan/apply/`, { method: 'POST' })
+
+/**
+ * Байты приложенного файла — чтобы собрать из нескольких один.
+ *
+ * Ходит запрос **не** через `request`, как и `fetchScanBatch`: адрес чужой
+ * (бакет), подпись в самой ссылке, а наш токен там не нужен и вреден.
+ */
+export const fetchFileBytes = async (id) => {
+  const url = await photoUrl(id)
+  const answer = await fetch(url)
+  if (!answer.ok) throw new ApiError(i18n.t('errors.downloadFailed'), answer.status)
+  return new Uint8Array(await answer.arrayBuffer())
 }
 
 /**

@@ -167,6 +167,9 @@
   },
   "errors": {
     "offline": "The server did not answer. Check the connection and try again — nothing has been lost.",
+    "too_large": "The file is too large for the server to take in one request.",
+    "scan_piece_unexpected": "The pile has no pages for that student, so there is nothing to attach.",
+    "scan_pieces_missing": "Works that have not arrived yet: {{count}}. Press the button again — what has arrived will not be sent twice.",
     "unknown": "The request failed",
     "downloadFailed": "The plan could not be downloaded",
     "year_dates_reversed": "The end of the year is earlier than its start.",
@@ -1542,6 +1545,9 @@
     "addScan": "Add a scan",
     "dropScan": "Drop a scan here, or click to choose",
     "column": "PDF",
+    "allWorks": "All works in one PDF",
+    "allWorksHint": "— put together from the students' works when you ask; nothing is kept",
+    "joining": "— fetching {{done}} of {{total}}…",
     "batch": "The whole pile",
     "batchOnlyYou": "— the scan as it came, and only you can see it",
     "onPaper": "This work was written on paper. Your marked copy appears here once the teacher uploads it.",
@@ -1755,6 +1761,10 @@
     "conflict": "the same question twice: {{list}}",
     "apply": "Write it all down",
     "applyNeedsFile": "Point at the PDF and write it all down",
+    "openingFile": "Opening the file…",
+    "sendingPiece": "Sending the work of student {{done}} of {{total}}: {{name}}",
+    "writingMarks": "Writing the marks down…",
+    "wrongFile": "This is not the file that was read: page {{page}} is needed, and the file has {{pages}}. Choose the PDF the pile was read from.",
     "trouble": {
       "no_owner": "no owner",
       "no_name": "no name written",
@@ -1790,7 +1800,7 @@
       "afterStrip": "Only the header is read — the strip with the name and the mark cells. Solutions and rough work never leave your machine.",
       "afterSplit": "The pile sorts itself out by student, and anything doubtful is put to you: that step cannot be skipped.",
       "afterMarks": "The marks in the cells become grades, and the pages land in each student's own work.",
-      "afterSource": "The whole pile stays with the work, next to the per-student pieces in the PDF column. Only you can see it, and the wizard can start from it again without you hunting for the file on disk."
+      "afterSource": "The whole pile is not sent to the server and is not kept: your browser cuts it up by student and sends the works one at a time. All the works can be put together into one PDF with the button in the results table. Keep your own copy of the scan — a run can only be started again from it."
     },
     "questionsSet_one": "{{count}} question",
     "questionsSet_other": "{{count}} questions",
@@ -1825,7 +1835,6 @@
     "noPreviewNoFile": "The pages are drawn from the PDF, and this browser no longer has it. Point at the same file to see them — nothing will be read or paid for twice.",
     "headerless": "No header found here: most likely a question paper.",
     "nobodyYet": "Nobody yet",
-    "batchRefused": "The run was recorded: the students have their work and their marks. The pile itself could not be kept, though — there was no room for it: either the file is over the limit or the school has used up its storage. Nothing here can start a new run from it, so keep your own copy of the scan.",
     "commonConditions": "The questions, handed out once",
     "commonConditionsHint": "This sheet comes before the first piece of work and carries no header, so it is the question paper — handed out once for everybody. A run like this marks no boundaries (there is nothing for it to divide) and is not worth reading for marks, but it does go into every student's PDF, at the front: otherwise they open their answers without the questions. If it is somebody's work after all, name the owner below and the sheet stops being shared.",
     "commonConditionsLine_one": "{{count}} question sheet lies once at the top of the pile (page {{pages}}) — it goes to the front of every student's work.",

@@ -723,9 +723,10 @@ class ScanQuestionsSerializer(serializers.Serializer):
         return upload
 
 
-class ScanApplySerializer(serializers.Serializer):
-    """Тот же файл ещё раз — чтобы было что резать."""
+class ScanPieceSerializer(serializers.Serializer):
+    """Работа одного ученика: чья и сам файл."""
 
+    student = serializers.IntegerField(min_value=1)
     file = serializers.FileField()
 
     def validate_file(self, upload):

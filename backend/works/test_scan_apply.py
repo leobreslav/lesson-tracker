@@ -1,9 +1,12 @@
 """
 Применение разобранной пачки: страницы ученикам, клетки в оценки.
 
-Проверяется то, что нельзя увидеть по частям: применение либо случилось
-целиком, либо не случилось вовсе. Половина применённой пачки — это часть
-класса с работами и оценками, а часть без, и какая именно, снаружи не видно.
+Шагов два, и гарантии у них разные. Работы учеников приезжают **по одной**
+(`scan/piece/`), потому что пачка целиком до сервера не доезжает: скан класса
+весит от тридцати до двухсот мегабайт. Оценки пишет завершение
+(`scan/apply/`) — **одной транзакцией на весь класс** и только когда доехали
+все работы. Не бывает класса, где половине оценки выставлены, а половине нет;
+бывает разбор, оборвавшийся на середине отправки, и его продолжают с обрыва.
 """
 
 from datetime import timedelta
@@ -18,6 +21,7 @@ from vision.models import AiSpend
 from schools.testing import (
     SchoolTestMixin,
     make_course,
+    make_pile,
     make_user,
     make_work,
     make_year,
@@ -72,12 +76,34 @@ class ScanApplyTests(SchoolTestMixin, APITestCase):
             data={"first_name": first, "surname": surname, "values": cells},
         )
 
-    def apply(self, pages=2):
+    def send(self, student, pages=1):
+        """Работа одного ученика — так, как её присылает мастер."""
         return self.client.post(
-            reverse("work-scan-apply", args=[self.work.pk]),
-            {"file": SimpleUploadedFile("scan.pdf", book(pages))},
+            reverse("work-scan-piece", args=[self.work.pk]),
+            {
+                "student": getattr(student, "pk", student),
+                "file": SimpleUploadedFile("piece.pdf", book(pages)),
+            },
             format="multipart",
         )
+
+    def finish(self):
+        return self.client.post(reverse("work-scan-apply", args=[self.work.pk]))
+
+    def apply(self):
+        """
+        То, что делает мастер: каждому, кому пачка что-то назначила, — его
+        работа, потом завершение. Сколько страниц в куске, сказано раскладкой:
+        решения вместе с условиями.
+        """
+        state = self.client.get(reverse("work-scan-state", args=[self.work.pk])).json()
+        for packet in state.get("packets", []):
+            if packet["student"]:
+                self.send(
+                    packet["student"],
+                    pages=len(packet["pages"]) + len(packet["conditions"]),
+                )
+        return self.finish()
 
     def test_a_scan_that_would_change_a_standing_mark_says_so_first(self):
         """
@@ -170,52 +196,126 @@ class ScanApplyTests(SchoolTestMixin, APITestCase):
         services.mark_headerless(self.work, index=2)
         self.read(3, "Peter", "Tibora", {0: 2})
 
-        response = self.apply(pages=4)
+        response = self.apply()
 
         self.assertEqual(response.status_code, 200)
         mine = StudentWork.objects.get(work=self.work, student=self.student)
         paper = Attachment.objects.get(student_work=mine)
-        from io import BytesIO
+        # Режет теперь браузер, и сколько страниц положить, он узнаёт из
+        # раскладки: решения пакета вместе с его условиями. Помощник `apply`
+        # читает ровно её, так что два листа в файле — это её слова
+        self.assertEqual(pages_of(paper), 2)
 
-        from files import storage
-        from pypdf import PdfReader
-
-        with storage.backend().open(paper.stored_file.key) as fp:
-            self.assertEqual(len(PdfReader(BytesIO(fp.read())).pages), 2)
-
-    def test_the_pile_itself_stays_with_the_work(self):
+    def test_the_pile_is_not_kept_anywhere(self):
         """
-        Исходник сохраняется — и это отмена прежнего решения, а не недосмотр.
+        Пачка целиком не хранится — ни у работы, ни где-либо ещё.
 
-        Не хранили его затем, чтобы в системе не лежало одного файла со всеми
-        работами класса. Риск снят правом (`staff_only`), а взамен получены два
-        случая, каждый из которых был тупиком: вкладку закрыли на середине
-        разбора, и страницы рисовать не из чего; разобралось не так, а скана на
-        диске уже нет.
+        Хранили её, и на живой пачке это упёрлось сразу в два предела: скан
+        класса весит от тридцати до двухсот мегабайт, а сервер принимает
+        запрос в двадцать пять и хранит файл в двадцать. Да и лежала она
+        дважды: каждая её страница уже есть в работе какого-то ученика.
         """
         self.read(0, "Fil", "Burmov", {0: 3})
 
         response = self.apply()
 
         self.assertEqual(response.status_code, 200)
-        pile = Attachment.objects.get(work=self.work, staff_only=True)
-        self.assertEqual(response.json()["batch"], pile.pk)
-        self.assertEqual(pages_of(pile), 2, "приложена вся пачка, а не кусок")
+        self.assertFalse(Attachment.objects.filter(work=self.work).exists())
+        self.assertNotIn("batch", response.json())
 
-    def test_the_same_pile_applied_twice_is_one_reference(self):
+    def test_a_work_that_has_not_arrived_stops_the_finish(self):
         """
-        Повторный разбор той же пачки — обычное дело, а два скана — нет.
+        Завершить разбор, пока чья-то работа не доехала, нельзя.
 
-        Байты дедуплицируются сами, а вот вторая ссылка на них сказала бы, что
-        стопку сканировали дважды, и выбирать между двумя одинаковыми строками
-        пришлось бы человеку.
+        Завершение удаляет прочитанное о пачке. Оборвись связь на втором
+        ученике, и после завершения он остался бы с оценкой без бумаги, а
+        дослать её было бы уже не по чему: раскладки больше нет.
         """
         self.read(0, "Fil", "Burmov", {0: 3})
-        self.apply()
-        self.read(0, "Fil", "Burmov", {0: 3})
-        self.apply()
+        self.read(1, "Peter", "Tibora", {0: 2})
+        self.send(self.student)
 
-        self.assertEqual(Attachment.objects.filter(work=self.work).count(), 1)
+        response = self.finish()
+
+        self.assertEqual(response.json()["code"], "scan_pieces_missing")
+        self.assertEqual(response.json()["params"]["students"], [self.second.pk])
+        self.assertTrue(ScanPage.objects.filter(work=self.work).exists())
+        self.assertFalse(Mark.objects.filter(student_work__work=self.work).exists())
+
+    def test_the_finish_goes_through_once_everybody_has_arrived(self):
+        """Дослали недостающее — и тот же запрос проходит: мастер продолжает с обрыва."""
+        self.read(0, "Fil", "Burmov", {0: 3})
+        self.read(1, "Peter", "Tibora", {0: 2})
+        self.send(self.student)
+        self.finish()
+
+        self.send(self.second)
+        response = self.finish()
+
+        self.assertEqual(response.status_code, 200, response.content)
+        self.assertEqual(response.json()["students"], 2)
+        self.assertEqual(Mark.objects.filter(student_work__work=self.work).count(), 2)
+
+    def test_a_piece_writes_no_marks_by_itself(self):
+        """
+        Оценки пишет завершение, всем разом, а не приём файла.
+
+        Файл без оценки — состояние видимое и поправимое. Оценки у половины
+        класса — нет: снаружи не видно, какой половине они выставлены.
+        """
+        self.read(0, "Fil", "Burmov", {0: 3})
+
+        response = self.send(self.student)
+
+        self.assertEqual(response.status_code, 200, response.content)
+        self.assertFalse(Mark.objects.filter(student_work__work=self.work).exists())
+
+    def test_a_piece_for_somebody_the_pile_gave_nothing_is_refused(self):
+        """
+        Чей кусок, решает раскладка на сервере, а не присланное браузером.
+
+        Иначе опечатка в номере ученика положила бы чужую работу человеку,
+        которого в этой пачке не было вовсе.
+        """
+        self.read(0, "Fil", "Burmov", {0: 3})
+
+        response = self.send(self.second)
+
+        self.assertEqual(response.json()["code"], "scan_piece_unexpected")
+        self.assertFalse(
+            Attachment.objects.filter(student_work__work=self.work).exists()
+        )
+
+    def test_a_piece_that_is_not_a_pdf_is_refused(self):
+        self.read(0, "Fil", "Burmov", {0: 3})
+
+        response = self.client.post(
+            reverse("work-scan-piece", args=[self.work.pk]),
+            {
+                "student": self.student.pk,
+                "file": SimpleUploadedFile("piece.pdf", b"not a pdf at all"),
+            },
+            format="multipart",
+        )
+
+        self.assertEqual(response.json()["code"], "file_not_pdf")
+
+    def test_a_work_sent_in_two_files_keeps_both(self):
+        """
+        Кусок тяжелее предела браузер делит пополам, и приезжают оба.
+
+        Поэтому дверь принимает файл, а не «работу ученика целиком»: у
+        ученика с двадцатью листами в шестистах точках файлов выйдет два.
+        """
+        self.read(0, "Fil", "Burmov", {0: 3})
+        self.send(self.student, pages=1)
+        self.send(self.student, pages=2)
+
+        response = self.finish()
+
+        self.assertEqual(response.status_code, 200, response.content)
+        mine = StudentWork.objects.get(work=self.work, student=self.student)
+        self.assertEqual(Attachment.objects.filter(student_work=mine).count(), 2)
 
     def test_a_repeated_run_does_not_double_the_student_s_file(self):
         """
@@ -232,15 +332,14 @@ class ScanApplyTests(SchoolTestMixin, APITestCase):
         mine = StudentWork.objects.get(work=self.work, student=self.student)
         self.assertEqual(Attachment.objects.filter(student_work=mine).count(), 1)
 
-    def test_the_pile_reaches_the_table_and_the_wizard(self):
+    def test_a_pile_kept_before_still_reaches_the_table_and_the_wizard(self):
         """
-        Столбец PDF отвечает на «где бумага», и пачка — часть этого ответа.
+        Пачки, приложенные до того, как их перестали хранить, остаются.
 
-        Мастеру она нужна затем же: шаг выбора файла был единственным местом,
-        где требовалось найти скан на диске.
+        Лежат они в базах школ, и удалять чужие файлы ради новой идеи
+        незачем: таблица их показывает, мастер умеет с них начать.
         """
-        self.read(0, "Fil", "Burmov", {0: 3})
-        self.apply()
+        make_pile(self.work, self.user)
 
         table = self.client.get(reverse("work-table", args=[self.work.pk])).json()
         state = self.client.get(
@@ -248,7 +347,6 @@ class ScanApplyTests(SchoolTestMixin, APITestCase):
         ).json()
 
         self.assertEqual(len(table["batches"]), 1)
-        self.assertEqual(table["batches"][0]["title"], services.batch_name(self.work))
         self.assertEqual(len(state["batches"]), 1)
 
     def test_the_table_lists_the_class_by_surname(self):
@@ -278,8 +376,7 @@ class ScanApplyTests(SchoolTestMixin, APITestCase):
         Стояла она в обоих местах, и в файлах работы читалась как то, что к
         работе приложил учитель для класса, рядом с условиями и бланком.
         """
-        self.read(0, "Fil", "Burmov", {0: 3})
-        self.apply()
+        make_pile(self.work, self.user)
 
         work = self.client.get(reverse("work-detail", args=[self.work.pk])).json()
         table = self.client.get(reverse("work-table", args=[self.work.pk])).json()
@@ -318,38 +415,36 @@ class ScanApplyTests(SchoolTestMixin, APITestCase):
         self.assertEqual([item["title"] for item in work["files"]], ["answers.pdf"])
         self.assertEqual(table["batches"], [])
 
-    def test_the_pile_is_named_after_the_work_and_not_by_the_scanner(self):
+    def test_the_file_of_all_works_is_named_after_the_work(self):
         """
-        Сканер зовёт файл `scan.pdf`, и через месяц таких в загрузках десять.
-        Имя собирается из того, что о пачке знаем мы: работа, её дата, курс.
+        «Все работы одним файлом» собирает браузер, а имя файлу даём мы.
 
-        Дата — работы, а не загрузки: привязана к занятию — день занятия,
-        иначе день открытия окна. И знаки, которых не терпит файловая
-        система, в имя не попадают: оно уедет на диск при скачивании.
+        Сканер зовёт файл `scan.pdf`, и через месяц таких в загрузках десять.
+        Имя собирается из того, что знаем мы: работа, её дата, курс. Дата —
+        работы, а не скачивания: привязана к занятию — день занятия, иначе
+        день открытия окна. И знаки, которых не терпит файловая система, в
+        имя не попадают: оно уедет на диск.
         """
         from django.utils import timezone
 
         self.work.title = 'Углы: "сумма" / разность'
         self.work.save(update_fields=["title"])
-        self.read(0, "Fil", "Burmov", {0: 3})
-        self.apply()
 
-        pile = Attachment.objects.get(work=self.work, staff_only=True)
+        table = self.client.get(reverse("work-table", args=[self.work.pk])).json()
         day = timezone.localdate(self.work.opens_at).isoformat()
 
         self.assertEqual(
-            pile.title, f"Углы сумма разность, {day}, {self.course.name}.pdf"
+            table["work"]["pile_name"],
+            f"Углы сумма разность, {day}, {self.course.name}.pdf",
         )
-        self.assertEqual(pile.stored_file.original_name, pile.title)
 
-    def test_a_pile_too_big_to_keep_does_not_undo_the_marks(self):
+    def test_a_piece_the_store_refuses_says_why(self):
         """
-        Отказ хранилища отменяет пачку, а не разбор.
+        Отказ хранилища доезжает до человека кодом, а не пятисотой.
 
-        Весит она столько же, сколько все куски вместе, и упереться в предел
-        файла может только она. Уронить из-за неё применение значило бы отдать
-        оценки заложником нашего же удобства — при том что удобство наше, а
-        оценки учительские.
+        Упереться кусок может в предел файла или в квоту школы, и чинятся
+        эти два по-разному: первое делит кусок пополам сам мастер, второе
+        решает администратор.
         """
         from unittest.mock import patch
 
@@ -357,20 +452,16 @@ class ScanApplyTests(SchoolTestMixin, APITestCase):
 
         self.read(0, "Fil", "Burmov", {0: 3})
 
-        # отказывает именно пачка: куски меньше её и проходят, поэтому предел
-        # файла подменять нельзя — он завалил бы и их, то есть другой случай
         with patch.object(
             services,
-            "attach_batch",
-            side_effect=UploadRefused("file_too_large", "too big"),
+            "attach_piece",
+            side_effect=UploadRefused("file_too_large", "too big", limit_mb=20),
         ):
-            response = self.apply()
+            response = self.send(self.student)
 
-        self.assertEqual(response.status_code, 200)
-        self.assertIsNone(response.json()["batch"])
-        self.assertEqual(response.json()["batch_refused"], "file_too_large")
-        mine = StudentWork.objects.get(work=self.work, student=self.student)
-        self.assertTrue(Mark.objects.filter(student_work=mine).exists())
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json()["code"], "file_too_large")
+        self.assertTrue(ScanPage.objects.filter(work=self.work).exists())
 
     def test_the_rows_are_gone_once_it_is_applied(self):
         """Работа сделана: дальше про неё отвечают вложения и оценки."""
@@ -379,17 +470,6 @@ class ScanApplyTests(SchoolTestMixin, APITestCase):
         self.apply()
 
         self.assertFalse(ScanPage.objects.filter(work=self.work).exists())
-
-    def test_a_page_outside_the_file_stops_everything(self):
-        """Прочитали больше страниц, чем прислали, — не применяем ничего."""
-        self.read(0, "Fil", "Burmov", {0: 3})
-        self.read(5, "Peter", "Tibora", {0: 1})
-
-        response = self.apply(pages=2)
-
-        self.assertEqual(response.json()["code"], "split_out_of_range")
-        self.assertFalse(Attachment.objects.filter(student_work__work=self.work).exists())
-        self.assertTrue(ScanPage.objects.filter(work=self.work).exists())
 
     def test_nothing_read_is_refused(self):
         response = self.apply()
@@ -1028,18 +1108,23 @@ class ConditionsAtTheTopBelongToEverybodyTests(SchoolTestMixin, APITestCase):
         self.assertEqual(services.scan_state(self.work)["conditions"], 1)
 
     def test_the_shared_sheet_opens_every_student_s_file(self):
-        """И уезжает оно в начало работы: условия читают до решения, не после."""
-        response = self.client.post(
-            reverse("work-scan-apply", args=[self.work.pk]),
-            {"file": SimpleUploadedFile("scan.pdf", book(3))},
-            format="multipart",
-        )
-        self.assertEqual(response.status_code, 200)
+        """
+        И уезжает оно в работу каждого: раскладка называет его в каждом пакете.
+
+        Режет работы браузер, и что в какую положить, он узнаёт отсюда. Лист,
+        не названный в пакете, не попал бы ученику вовсе — он открыл бы свои
+        ответы без вопросов. В начало работы лист встаёт сам: страницы куска
+        идут по номерам, а общий ряд лежит в пачке первым.
+        """
+        state = services.scan_state(self.work)
+        packets = {packet["student"]: packet for packet in state["packets"]}
 
         for person in (self.student, self.second):
-            row = StudentWork.objects.get(work=self.work, student=person)
-            paper = Attachment.objects.get(student_work=row)
-            self.assertEqual(pages_of(paper), 2, f"условий нет у {person.last_name}")
+            self.assertEqual(
+                packets[person.pk]["conditions"],
+                [0],
+                f"условий нет у {person.last_name}",
+            )
 
     def test_a_human_naming_the_owner_takes_the_sheet_out_of_the_shared_run(self):
         """

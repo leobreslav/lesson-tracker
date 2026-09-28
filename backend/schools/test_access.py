@@ -309,6 +309,7 @@ class MatrixTests(AccessTestCase):
                 "work-scan-state",
                 {"name": "work-scan-read", "method": "post", "body": {"index": 0}},
                 {"name": "work-scan-page", "method": "post", "body": {"index": 0}},
+                {"name": "work-scan-piece", "method": "post", "body": {}},
                 {"name": "work-scan-apply", "method": "post", "body": {}},
                 {"name": "work-scan-questions", "method": "post", "body": {}},
                 # сборка из банка: дописать задачи в чужую работу нельзя

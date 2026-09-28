@@ -1438,11 +1438,9 @@ class WorkHandoutTests(FilesTestCase):
         это показ всем сразу. Разницу держит `staff_only`, а не оформление
         экрана: экран показывает то, что ему отдали.
         """
-        from works.services import attach_batch
+        from schools.testing import make_pile
 
-        pile = attach_batch(
-            self.work, data=b"%PDF-1.4 pile", name="pile.pdf", by=self.user
-        )
+        pile = make_pile(self.work, self.user)
         handout = self.attach().data
         self.sign_in(self.student)
 
@@ -1463,11 +1461,9 @@ class WorkHandoutTests(FilesTestCase):
         любого вложения работы, и такой фильтр отнял бы у учителя и право
         убрать спрятанное, и право передумать.
         """
-        from works.services import attach_batch
+        from schools.testing import make_pile
 
-        pile = attach_batch(
-            self.work, data=b"%PDF-1.4 pile", name="pile.pdf", by=self.user
-        )
+        pile = make_pile(self.work, self.user)
 
         listed = self.client.get(reverse("attachment-list"), {"work": self.work.pk})
 
@@ -1546,11 +1542,9 @@ class WorkHandoutTests(FilesTestCase):
         """
         Иначе она была бы файлом, который занимает квоту и не убирается.
         """
-        from works.services import attach_batch
+        from schools.testing import make_pile
 
-        pile = attach_batch(
-            self.work, data=b"%PDF-1.4 pile", name="pile.pdf", by=self.user
-        )
+        pile = make_pile(self.work, self.user)
 
         answer = self.client.delete(reverse("attachment-detail", args=[pile.pk]))
 

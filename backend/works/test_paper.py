@@ -206,11 +206,9 @@ class StudentViewTests(PaperTestCase):
         классом уедет ученику молча, при живом `staff_only` во всех остальных
         дверях.
         """
-        from . import services
+        from schools.testing import make_pile
 
-        pile = services.attach_batch(
-            self.work, data=b"%PDF-1.4 pile", name="pile.pdf", by=self.user
-        )
+        pile = make_pile(self.work, self.user)
 
         table = self.client.get(reverse("work-table", args=[self.work.pk])).json()
         self.assertEqual(

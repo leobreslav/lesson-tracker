@@ -9499,6 +9499,15 @@ button.dropzone:hover:not(:disabled) {
   white-space: nowrap;
 }
 
+/* Полоса сборки «всех работ одним файлом» — под подписью строки, во всю
+   ширину столбца имени: строка в подвале таблицы одна, и расти ей некуда */
+.work-table .batch-row progress {
+  display: block;
+  width: 100%;
+  height: 0.5rem;
+  margin-top: 0.2rem;
+}
+
 /* Кнопки в клетке — без собственных полей: три кнопки-ссылки с обычными
    полями занимали вдвое больше, чем три знака */
 .work-table .paper-actions > button,

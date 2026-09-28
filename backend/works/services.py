@@ -625,6 +625,9 @@ def build_table(work) -> dict:
             "title": work.title,
             "state": work.state(),
             "course_name": work.course.name,
+            # Как назвать файл «все работы одним PDF»: его собирает браузер,
+            # а имя знаем мы — работа, её дата и курс
+            "pile_name": batch_name(work),
             # По чему работу оценивают: окну ученика нужны полосы, чтобы
             # итог можно было выбрать, а не только набрать. Пусто — законно:
             # у работы без системы итог свободный
@@ -1270,10 +1273,24 @@ def attach_pages(work, student_id, *, data: bytes, numbers, by=None):
     файл каждого ученика проходит обычную загрузку (дедупликация, квота,
     проверка типа), а не свою дорогу в бакет. Своя однажды разойдётся с общей.
     """
+    from . import splitting
+
+    return attach_piece(
+        work, student_id, data=splitting.cut_pages(data, numbers), by=by
+    )
+
+
+def attach_piece(work, student_id, *, data: bytes, by=None):
+    """
+    Приложить ученику готовый PDF его работы.
+
+    Кто резал — неважно: ручная разметка режет на сервере (`attach_pages`),
+    разбор пачки по именам — в браузере, потому что пачка целиком до сервера
+    не доезжает. Дальше дорога одна, и это главное: файл проходит обычную
+    загрузку — дедупликацию, квоту, проверку размера, — а не свою.
+    """
     from files import services as file_services
     from files.models import Attachment
-
-    from . import splitting
 
     row, _ = StudentWork.objects.get_or_create(work=work, student_id=student_id)
     surname = (
@@ -1285,7 +1302,7 @@ def attach_pages(work, student_id, *, data: bytes, numbers, by=None):
     stored, _ = file_services.store_upload(
         upload=SimpleUploadedFile(
             f"{surname}.pdf",
-            splitting.cut_pages(data, numbers),
+            data,
             content_type="application/pdf",
         ),
         school=work.course.school,
@@ -1336,72 +1353,20 @@ def batch_name(work) -> str:
     return f"{said[:196] or 'scan'}.pdf"
 
 
-def attach_batch(work, *, data: bytes, name: str, by=None):
-    """
-    Приложить к работе саму отсканированную пачку — целиком, как она пришла.
-
-    Не хранить исходник было решением, а не забывчивостью: в системе он один
-    файл со всеми работами класса, самый опасный из всего, что тут лежит.
-    Решение отменено осознанно, и вот чем платим и что за это получаем.
-
-    **Платим местом и риском.** Пачка весит столько же, сколько все нарезанные
-    из неё работы вместе, то есть удваивает вложения этой работы, а лежит в ней
-    класс целиком с отметками. Риск снят не обещанием, а правом: `staff_only`
-    убирает её из всего, что видит семья, — см. `files.access`.
-
-    **Получаем два случая, каждый из которых до сих пор был тупиком.** Первый:
-    разбор идёт двумя заходами, и вернувшийся к прочитанной пачке человек
-    держал в руках только пометки — страницы рисует браузер из файла, а файла у
-    новой вкладки нет («укажите тот же PDF»). Второй: разобрали неверно, и
-    перерезать значило найти на диске тот самый скан — через неделю его там
-    может не быть вовсе.
-
-    Один и тот же файл дважды не заводится: повторное применение той же пачки —
-    обычное дело, а вторая ссылка на те же байты сказала бы, что сканов два.
-    """
-    from files import services as file_services
-    from files.models import Attachment
-
-    stored, _ = file_services.store_upload(
-        upload=SimpleUploadedFile(
-            (name or "scan.pdf")[:200], data, content_type="application/pdf"
-        ),
-        school=work.course.school,
-        user=by,
-    )
-    twin = Attachment.objects.filter(
-        work=work, stored_file=stored, is_batch=True
-    ).first()
-    title = (name or stored.original_name)[:200]
-    if twin is not None:
-        # Та же стопка, принесённая второй раз: ссылка прежняя, а имя —
-        # нынешнее. Работу могли переименовать между заходами.
-        if twin.title != title:
-            twin.title = title
-            twin.save(update_fields=["title"])
-        return twin
-
-    return Attachment.objects.create(
-        work=work,
-        kind="file",
-        stored_file=stored,
-        staff_only=True,
-        is_batch=True,
-        # Имя своё, а не хранимого файла: те же байты могли лечь в хранилище
-        # раньше под именем сканера, и оно приехало бы сюда вместо нашего.
-        title=title,
-        position=file_services.next_position(work=work),
-    )
-
-
 def scan_batches(work) -> list:
     """
-    Пачки, приложенные к этой работе, — новая первой.
+    Пачки, приложенные к этой работе раньше, — новая первой.
 
-    Их бывает несколько, и это не мусор: стопку пересканируют, потерянный лист
-    доносят отдельным файлом. Выбрасывать прежнюю ради новой значило бы решать
-    за учителя, какая из них настоящая, — а это как раз то, ради чего он их и
-    открывает.
+    **Новых пачек больше не прикладывают.** Хранили их целиком, и на живой
+    пачке это упёрлось сразу в два предела: скан класса весит от тридцати до
+    двухсот мегабайт, а сервер принимает запрос в двадцать пять и хранит файл
+    в двадцать. Да и лежала пачка дважды — каждая её страница уже есть в
+    работе какого-то ученика. Теперь «все работы одним файлом» собирает
+    браузер по кнопке, из работ учеников, и нигде это не хранится.
+
+    Приложенные до этого решения остаются и показываются: удалять чужие файлы
+    ради новой идеи незачем. Их бывает несколько, и это не мусор: стопку
+    пересканировали, потерянный лист донесли отдельным файлом.
 
     Пачку называет признак `is_batch`, а не «скрыто от класса»: скрытыми
     бывают и ответы к контрольной, и в таблице результатов им делать нечего.
@@ -1932,26 +1897,15 @@ def scan_spend(work) -> dict:
     }
 
 
-def scan_apply(work, *, data: bytes, by=None) -> dict:
+def scan_packets(work) -> tuple[list, list]:
     """
-    Применить разобранную пачку: страницы ученикам, баллы в оценки.
+    Прочитанные страницы и пакеты, у которых есть хозяин.
 
-    Одной транзакцией, и вот почему именно тут это важнее обычного: половина
-    применённой пачки — это часть класса с работами и оценками, а часть без, и
-    какая именно, снаружи не видно. Строки страниц после успеха удаляются:
-    работа сделана, дальше про неё отвечают вложения и оценки.
-
-    **Листы условий уезжают в PDF ученика вместе с его решением.** Иначе он
-    открывает свои ответы без вопросов — половину документа, — а ради того,
-    чтобы он видел работу целиком, скан ему и отдают.
-
-    **Сама пачка остаётся у работы** (`attach_batch`) — той же транзакцией и
-    только для учителя. Раньше она не оставалась нигде, и второй заход к той же
-    стопке требовал найти её на диске.
+    Одна дверь на оба шага записи — приём работы ученика и завершение
+    разбора. Раскладка считается на каждый запрос, и спроси её шаги порознь,
+    они однажды разошлись бы в том, кого считать хозяином.
     """
-    from django.db import transaction
-
-    from . import scanning, splitting
+    from . import scanning
 
     pages = scan_pages(work)
     if not pages:
@@ -1961,35 +1915,107 @@ def scan_apply(work, *, data: bytes, by=None) -> dict:
             field="file",
         )
 
-    total = splitting.read_pages(data)
-    roster = {person.id: person for person in scan_roster(work)}
     packets = [
         packet
-        for packet in scanning.arrange(pages, list(roster.values()))
+        for packet in scanning.arrange(pages, scan_roster(work))
         if packet.student_id is not None
     ]
-
-    for packet in packets:
-        if packet.student_id not in roster:
-            api_error(
-                Codes.SPLIT_NOT_IN_COURSE,
-                "That student does not study in this course.",
-                field="plan",
-            )
-        for page in packet.all_pages:
-            if page.index >= total:
-                api_error(
-                    Codes.SPLIT_OUT_OF_RANGE,
-                    f"Page {page.index + 1} is outside the file, which has {total}.",
-                    field="file",
-                    pages=total,
-                )
-
     if not packets:
         api_error(
             Codes.SPLIT_EMPTY,
             "No page has an owner: say whose pages these are.",
             field="plan",
+        )
+    return pages, packets
+
+
+def scan_piece(work, *, student_id: int, data: bytes, by=None) -> dict:
+    """
+    Принять работу одного ученика, нарезанную в браузере.
+
+    Пачка целиком сюда не доезжает: скан класса весит от тридцати до двухсот
+    мегабайт, и одним запросом его не принять — ни по пределу тела запроса, ни
+    по памяти воркера, которых два на весь прод. Браузер страницы и так
+    рисует, раскладку по ученикам знает от нас же (`scan_state`), поэтому
+    режет он, а сюда приезжают куски по несколько мегабайт.
+
+    Работа может приехать **несколькими файлами**: кусок тяжелее предела
+    браузер делит пополам. Поэтому дверь принимает файл, а не «работу
+    ученика целиком», и зовут её столько раз, сколько вышло кусков.
+
+    Оценки здесь не пишутся — их пишет завершение (`scan_apply`), всем
+    разом. Файл без оценки — состояние видимое и поправимое, мастер
+    продолжит с места обрыва; оценки у половины класса — нет.
+
+    Чей кусок, решает раскладка, а не присланное: ученик, которому пачка
+    ничего не назначила, файла не получит.
+    """
+    from files.services import UploadRefused
+
+    from . import splitting
+
+    _, packets = scan_packets(work)
+    if student_id not in {packet.student_id for packet in packets}:
+        api_error(
+            Codes.SCAN_PIECE_UNEXPECTED,
+            "The pile has no pages for that student.",
+            field="student",
+        )
+
+    try:
+        pages = splitting.read_pages(data)
+    except splitting.SplitError as error:
+        api_error(Codes.FILE_NOT_PDF, str(error), field="file")
+
+    try:
+        piece = attach_piece(work, student_id, data=data, by=by)
+    except UploadRefused as refused:
+        api_error(refused.code, refused.detail, field="file", **refused.params)
+
+    return {"student": student_id, "attachment": piece.pk, "pages": pages}
+
+
+def scan_apply(work, *, by=None) -> dict:
+    """
+    Завершить разбор: баллы в оценки, прочитанное — долой.
+
+    Файлы к этому шагу уже у учеников (`scan_piece`), и проверяется это
+    первым: завершить разбор, пока чья-то работа не доехала, значило бы
+    удалить прочитанное о ней и оставить человека с оценкой без бумаги.
+    Отказ называет, скольких не хватает; мастер досылает и зовёт снова.
+
+    Оценки пишутся **одной транзакцией на весь класс**, вместе с удалением
+    прочитанных страниц. Прежде той же транзакцией шли и файлы; теперь они
+    приезжают порознь, потому что целиком пачка не приезжает вовсе. Что из
+    прежней гарантии осталось: не бывает класса, где половине оценки
+    выставлены, а половине нет.
+
+    **Листы условий уезжают в PDF ученика вместе с его решением** — режет их
+    туда браузер (`all_pages` пакета). Иначе ученик открывает свои ответы без
+    вопросов, то есть половину документа.
+    """
+    from django.db import transaction
+    from files.models import Attachment
+
+    from . import scanning
+
+    pages, packets = scan_packets(work)
+
+    served = set(
+        Attachment.objects.filter(
+            student_work__work=work,
+            student_work__student_id__in=[packet.student_id for packet in packets],
+            kind="file",
+        ).values_list("student_work__student_id", flat=True)
+    )
+    missing = [packet.student_id for packet in packets if packet.student_id not in served]
+    if missing:
+        api_error(
+            Codes.SCAN_PIECES_MISSING,
+            f"{len(missing)} students have pages in the pile and no file yet.",
+            field="file",
+            count=len(missing),
+            students=missing,
         )
 
     questions = list(work.tasks.all())
@@ -1999,13 +2025,6 @@ def scan_apply(work, *, data: bytes, by=None) -> dict:
     graded = 0
     with transaction.atomic():
         for packet in packets:
-            attach_pages(
-                work,
-                packet.student_id,
-                data=data,
-                numbers=[page.index + 1 for page in packet.all_pages],
-                by=by,
-            )
             marks, _ = scanning.merge_marks(packet.pages)
             if marks and questions:
                 grade(
@@ -2020,33 +2039,12 @@ def scan_apply(work, *, data: bytes, by=None) -> dict:
                 )
                 graded += 1
 
-        # Пачка целиком — той же транзакцией, что и нарезанное из неё.
-        #
-        # А вот отказ хранилища её не отменяет, и это разница по существу.
-        # Пачка весит столько же, сколько все куски вместе, и упереться в
-        # предел файла или в квоту школы может **только** она: куски меньше.
-        # Уронить из-за неё применение значило бы отдать оценки и работы
-        # заложником удобства — при том что удобство это наше, а оценки
-        # учительские. Поэтому отказ называется в ответе, а не поднимается.
-        from files.services import UploadRefused
-
-        try:
-            batch = attach_batch(work, data=data, name=batch_name(work), by=by)
-        except UploadRefused as refused:
-            batch, refusal = None, refused.code
-        else:
-            refusal = None
-
         work.scan_pages.all().delete()
 
     return {
         "students": len(packets),
         "graded": graded,
         "pages": len(pages),
-        "batch": batch.pk if batch else None,
-        # почему пачка не сохранилась, если не сохранилась: «слишком большой
-        # файл» и «кончилась квота школы» чинятся по-разному
-        "batch_refused": refusal,
     }
 
 

@@ -275,6 +275,12 @@ class Codes:
     AI_LIMIT_NEGATIVE = "ai_limit_negative"
     SCAN_PAGE_UNKNOWN = "scan_page_unknown"
     SCAN_NOTHING_READ = "scan_nothing_read"
+    # Работа прислана ученику, которому пачка ничего не назначила. Чей кусок,
+    # решает раскладка на сервере, а не присланное браузером.
+    SCAN_PIECE_UNEXPECTED = "scan_piece_unexpected"
+    # Разбор завершают, а чьи-то работы ещё не доехали. Завершить значило бы
+    # удалить прочитанное о них и оставить оценку без бумаги.
+    SCAN_PIECES_MISSING = "scan_pieces_missing"
 
     # банк задач
     BANK_READ_ONLY = "bank_read_only"

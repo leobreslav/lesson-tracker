@@ -36,7 +36,7 @@ from .serializers import (
     GradeSerializer,
     QuestionsSerializer,
     ReassignSerializer,
-    ScanApplySerializer,
+    ScanPieceSerializer,
     ScanPageSerializer,
     ScanQuestionsSerializer,
     ScanReadSerializer,
@@ -422,29 +422,39 @@ class WorkViewSet(CourseScopedViewSet):
         )
         return Response(services.apply_questions(work, by=request.user, found=found))
 
-    @action(detail=True, methods=["post"], url_path="scan/apply")
-    def scan_apply(self, request, pk=None):
+    @action(detail=True, methods=["post"], url_path="scan/piece")
+    def scan_piece(self, request, pk=None):
         """
-        Применить разобранную пачку: страницы ученикам, баллы в оценки.
+        Работа одного ученика, нарезанная в браузере из пачки.
 
-        Файл присылается второй раз — резать-то нечего: исходник мы не храним,
-        и это решение, а не забывчивость. У браузера он всё ещё в руках, так
-        что второй отправки это стоит ровно ничего.
+        Пачка целиком сюда не приезжает: скан класса весит от тридцати до
+        двухсот мегабайт, а кусок одного ученика — несколько. Зовут дверь по
+        разу на кусок, по порядку; оценок она не пишет — их пишет завершение.
         """
         work = self.get_object()
 
-        form = ScanApplySerializer(data=request.data)
+        form = ScanPieceSerializer(data=request.data)
         form.is_valid(raise_exception=True)
-        upload = form.validated_data["file"]
         return Response(
-            services.scan_apply(
+            services.scan_piece(
                 work,
-                data=upload.read(),
-                # имя загруженного файла сюда не едет: пачку называет работа
-                # (`services.batch_name`), а не сканер
+                student_id=form.validated_data["student"],
+                data=form.validated_data["file"].read(),
                 by=request.user,
             )
         )
+
+    @action(detail=True, methods=["post"], url_path="scan/apply")
+    def scan_apply(self, request, pk=None):
+        """
+        Завершить разбор: баллы в оценки, прочитанное долой.
+
+        Файла тут нет: работы учеников приехали раньше, по одной
+        (`scan/piece/`). Дверь проверяет, что приехали все, и отказывает,
+        называя, скольких не хватает.
+        """
+        work = self.get_object()
+        return Response(services.scan_apply(work, by=request.user))
 
     @action(detail=True, methods=["post"])
     def reassign(self, request, pk=None):

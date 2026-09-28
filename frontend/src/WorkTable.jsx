@@ -9,12 +9,15 @@ import ScaleDialog from './ScaleDialog'
 import SplitDialog from './SplitDialog'
 import TaskBrief from './TaskBrief'
 import {
+  fetchFileBytes,
   fetchWorkTable,
   gradeStudent,
   openAttachment,
+  saveBytes,
   saveScale,
   splitScan,
 } from './api'
+import { join } from './scanPieces'
 import { POLL_MS } from './polling'
 
 /**
@@ -54,6 +57,7 @@ export default function WorkTable({ workId: id, refreshKey = 0 }) {
   const [column, setColumn] = useState(null) // {task}
   const [grading, setGrading] = useState(null) // {student}
   const [viewing, setViewing] = useState(null) // {student, photo}
+  const [joining, setJoining] = useState(null) // {done, total} — сборка общего PDF
   const [scaling, setScaling] = useState(false)
   const [question, setQuestion] = useState(null) // условие задачи с листа
   const [splitting, setSplitting] = useState(false)
@@ -137,6 +141,30 @@ export default function WorkTable({ workId: id, refreshKey = 0 }) {
    * нём — это дверь, через которую файл прикладывают.
    */
   const graded = scale.graded
+
+  // Работы учеников файлами PDF, в порядке таблицы: из них собирается «все
+  // работы одним файлом». Снимки с телефона сюда не идут — это картинки, а
+  // не страницы, и в общий PDF они легли бы чужим форматом
+  const allPapers = table.students.flatMap((student) =>
+    (student.papers ?? []).filter((paper) => paper.pdf && paper.kind !== 'link'),
+  )
+
+  const downloadAll = async () => {
+    setError(null)
+    setJoining({ done: 0, total: allPapers.length })
+    try {
+      const files = []
+      for (const paper of allPapers) {
+        files.push(await fetchFileBytes(paper.id))
+        setJoining({ done: files.length, total: allPapers.length })
+      }
+      saveBytes(await join(files), table.work.pile_name)
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setJoining(null)
+    }
+  }
   /* У бумажной работы задач нет по определению, а вопросы есть — они и есть
      критерии шкалы. Столбцы по ним отвечают на то, ради чего таблицу и
      открывают: кто что решил и с чем не справился класс. */
@@ -411,8 +439,56 @@ export default function WorkTable({ workId: id, refreshKey = 0 }) {
               * прямо в строке, потому что «PDF работы» рядом виден ученику, и
               * разницу человек обязан видеть без догадок.
               */}
-            {(table.batches ?? []).length > 0 && (
+            {(allPapers.length > 0 || (table.batches ?? []).length > 0) && (
               <tfoot>
+                {/*
+                  * Все работы одним файлом — собирает браузер, по просьбе.
+                  *
+                  * Хранилась пачка целиком, и на живой пачке это упёрлось в
+                  * пределы сервера: скан класса весит от тридцати до двухсот
+                  * мегабайт. Да и лежала она дважды — каждая её страница уже
+                  * есть в работе какого-то ученика. Теперь файл складывается
+                  * из этих работ в момент, когда о нём попросили, и нигде не
+                  * хранится.
+                  *
+                  * Порядок в нём — порядок таблицы, по фамилии, а не порядок
+                  * сканирования: стопку сдают как придётся, а ищут в файле
+                  * человека.
+                  */}
+                {allPapers.length > 0 && (
+                  <tr className="batch-row">
+                    <th className="who">
+                      {t('paper.allWorks')}
+                      <span className="hint">
+                        {' '}
+                        {joining
+                          ? t('paper.joining', {
+                              done: joining.done,
+                              total: joining.total,
+                            })
+                          : t('paper.allWorksHint')}
+                      </span>
+                      {joining && (
+                        <progress value={joining.done} max={joining.total || 1} />
+                      )}
+                    </th>
+                    {table.tasks.length > 0 && <td colSpan={table.tasks.length} />}
+                    <td className="mark paper">
+                      <button
+                        type="button"
+                        className="link"
+                        title={t('paper.download', { name: table.work.pile_name })}
+                        aria-label={t('paper.download', { name: table.work.pile_name })}
+                        disabled={busy || Boolean(joining)}
+                        onClick={downloadAll}
+                      >
+                        ⬇
+                      </button>
+                    </td>
+                    {graded && <td className="mark" />}
+                    {table.tasks.length > 0 && <td className="total" />}
+                  </tr>
+                )}
                 {table.batches.map((batch) => (
                   <tr key={batch.id} className="batch-row">
                     <th className="who">

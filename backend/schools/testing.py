@@ -250,6 +250,34 @@ def make_work(teacher, course, *, title="Контрольная", opens=None, cl
     )
 
 
+def make_pile(work, by, *, name="pile.pdf", data=b"%PDF-1.4 pile"):
+    """
+    Отсканированная пачка целиком, приложенная к работе.
+
+    Приложение таких больше не заводит: пачка до сервера не доезжает, а «все
+    работы одним файлом» собирает браузер. Но заведённые раньше лежат в
+    базах школ, показываются в таблице результатов и обязаны оставаться
+    невидимыми классу — поэтому фикстура есть, а двери в приложении нет.
+    """
+    from files import services as file_services
+    from files.models import Attachment
+
+    stored, _ = file_services.store_upload(
+        upload=SimpleUploadedFile(name, data, content_type="application/pdf"),
+        school=work.course.school,
+        user=by,
+    )
+    return Attachment.objects.create(
+        work=work,
+        kind="file",
+        stored_file=stored,
+        staff_only=True,
+        is_batch=True,
+        title=name,
+        position=file_services.next_position(work=work),
+    )
+
+
 def make_task(work, question="Сколько будет 2+2?", answers=("4",), position=0):
     """
     Ячейка работы вместе с условием.
