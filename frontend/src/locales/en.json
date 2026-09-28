@@ -1453,7 +1453,7 @@
     "summativeHint": "A formative work is graded however you like and does not count.",
     "slot": "Lesson",
     "noSlot": "No lesson",
-    "slotNumber": "lesson {{number}}",
+    "slotNumber": "Period {{number}}",
     "slotHint": "The lesson this work's grades belong to — it is the column they stand in in the gradebook. Left empty, the work still shows, but as a column of its own at the end, without a date.",
     "files": "Files of this assignment",
     "addFile": "Attach a file",
