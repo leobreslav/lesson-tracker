@@ -38,6 +38,7 @@ import SchoolReference from './SchoolReference'
 import SchoolStudents from './SchoolStudents'
 import Works from './Works'
 import WorkEdit from './WorkEdit'
+import WorkScans from './WorkScans'
 import SchoolTeachers from './SchoolTeachers'
 import StartHere, { hasSteps } from './StartHere'
 import Feedback from './Feedback'
@@ -239,6 +240,9 @@ export default function App() {
               остался в закладках и в истории браузера */}
           <Route path="/works/:id" element={guarded(WorkEdit)} />
           <Route path="/works/:id/edit" element={<WorkEditMoved />} />
+          {/* разбор сканов — страницей, а не окном: работа там на полчаса, и
+              в окне она не помещалась ни по месту, ни по существу */}
+          <Route path="/works/:id/scans" element={guarded(WorkScans)} />
           {/* переписка: один экран на учителя, ученика и родителя —
               собеседник природы разговора не меняет */}
           <Route path="/talks" element={guarded(Messenger)} />

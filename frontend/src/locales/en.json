@@ -1761,6 +1761,8 @@
     "conflict": "the same question twice: {{list}}",
     "apply": "Write it all down",
     "applyNeedsFile": "Point at the PDF and write it all down",
+    "backToWork": "← Back to «{{name}}»",
+    "backToWorkUnnamed": "← Back to the work",
     "openingFile": "Opening the file…",
     "sendingPiece": "Sending the work of student {{done}} of {{total}}: {{name}}",
     "writingMarks": "Writing the marks down…",

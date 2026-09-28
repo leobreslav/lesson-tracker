@@ -2,7 +2,6 @@ import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useNavigate, useParams } from 'react-router-dom'
 import BlankDialog from './BlankDialog'
-import ScanWizard from './ScanWizard'
 import Switch from './Switch'
 import TaskList from './TaskList'
 import WorkContent from './WorkContent'
@@ -65,7 +64,6 @@ export default function WorkEdit() {
   const [renaming, setRenaming] = useState(null)
   const [preview, setPreview] = useState(false)
   const [settings, setSettings] = useState(false)
-  const [scanning, setScanning] = useState(false)
   const [blank, setBlank] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
@@ -255,8 +253,17 @@ export default function WorkEdit() {
               жила только в списке работ, и это значило вот что: учитель,
               открывший работу, чтобы завести под бланк пятнадцать ячеек,
               должен был уйти со страницы обратно в список, чтобы принести
-              туда пачку. Одна работа — одно место, откуда с ней работают. */}
-          <button type="button" className="secondary" onClick={() => setScanning(true)}>
+              туда пачку. Одна работа — одно место, откуда с ней работают.
+
+              Ведёт кнопка на свою страницу, а не открывает окно: разбор
+              пачки — работа на полчаса, и в окне ей было тесно. Вернувшись,
+              страница работы читает всё заново, так что заведённые мастером
+              ячейки и записанные оценки на ней видны без отдельной заботы */}
+          <button
+            type="button"
+            className="secondary"
+            onClick={() => navigate(`/works/${work.id}/scans`)}
+          >
             {t('scan.open')}
           </button>
 
@@ -381,20 +388,6 @@ export default function WorkEdit() {
         кнопку».
       */}
       <WorkTable workId={work.id} refreshKey={tableStamp} />
-
-      {scanning && (
-        <ScanWizard
-          work={work}
-          /* Перечитываем и на закрытии, не только на «применить»: мастер
-             заводит ячейки первым же шагом, и закрытый на полпути он оставлял
-             бы на экране прежний список задач. */
-          onClose={() => {
-            setScanning(false)
-            loadTasks()
-          }}
-          onDone={() => loadTasks()}
-        />
-      )}
 
       {blank && (
         <BlankDialog

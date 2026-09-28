@@ -4,7 +4,6 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import EmptyState from './EmptyState'
 import CourseShowcase from './CourseShowcase'
 import BlankDialog from './BlankDialog'
-import ScanWizard from './ScanWizard'
 import WorkNameDialog from './WorkNameDialog'
 import { blankWork } from './WorkForm'
 import {
@@ -35,7 +34,6 @@ export default function Works({ onLoggedOut }) {
   const [courses, setCourses] = useState(null)
   const [works, setWorks] = useState(null)
   const [naming, setNaming] = useState(false)
-  const [scanning, setScanning] = useState(null)
   const [blank, setBlank] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
@@ -377,7 +375,9 @@ export default function Works({ onLoggedOut }) {
                         type="button"
                         className="secondary compact"
                         disabled={busy}
-                        onClick={() => setScanning(work)}
+                        /* разбор сканов — своя страница: работа там на
+                           полчаса, и в окне поверх списка ей было тесно */
+                        onClick={() => navigate(`/works/${work.id}/scans`)}
                       >
                         {t('scan.open')}
                       </button>
@@ -402,25 +402,6 @@ export default function Works({ onLoggedOut }) {
       )}
 
       {blank && <BlankDialog onClose={() => setBlank(false)} />}
-
-      {scanning && (
-        <ScanWizard
-          work={scanning}
-          /* Перечитываем и на закрытии, не только на «применить». Мастер
-             пишет в базу задолго до конца: первым шагом он заводит ячейки
-             работы — пятнадцать штук или сколько заказали, — и делает это
-             сразу, потому что дальше в них ложатся баллы с бланка. Закрытие
-             без перечитывания оставляло на экране прежний список, и работа
-             выглядела пустой, хотя ячейки уже были: следующая заведённая
-             руками задача получала номер 15 из ниоткуда. Стоит это одного
-             запроса — против экрана, который врёт о содержимом базы. */
-          onClose={() => {
-            setScanning(null)
-            run(() => Promise.resolve())
-          }}
-          onDone={() => reload()}
-        />
-      )}
 
       {naming && (
         <WorkNameDialog

@@ -15,9 +15,11 @@ from django.test import SimpleTestCase
 
 from .scanning import (
     CELLS,
+    Packet,
     Page,
     Person,
     arrange,
+    pile_contradicts,
     group,
     merge_marks,
     classify,
@@ -668,6 +670,91 @@ class PacketTests(SimpleTestCase):
             [one.index for one in mine[0].pages],
             "далёкие пакеты одного ученика слиты через всю пачку",
         )
+
+    def test_a_page_the_human_named_keeps_its_owner_across_the_pile(self):
+        """
+        Сказанное человеком сильнее правила про далёкого двойника.
+
+        Правило написано про спор двух **прочитанных** имён: один ученик не
+        владеет двумя блоками врозь, значит одно из чтений неверно, и имя
+        снимается у слабейшего. Слово человека — не чтение, и мериться с
+        чтением силой ему не с чем.
+
+        Найдено на живой пачке из восьмидесяти листов. Страница подписана
+        одним именем, «Alisa», учитель назвал хозяйку кнопкой — а экран
+        ответил «пока никто — вы сами так сказали»: решение записалось, а
+        раскладка тут же сняла имя, потому что у ученицы уже был блок в
+        другом месте пачки, прочитанный с фамилией, то есть увереннее.
+        Снаружи это выглядело как кнопка, которая не работает.
+        """
+        named = page(5, "Fil", "", {5: 3})
+        named.student_id, named.decided_by_human = 2, True
+        pages = [
+            page(0, headerless=True),
+            page(1, "Fil", "Burmov", {0: 1}),
+            page(2, headerless=True),
+            page(3, "Peter", "Tibora", {0: 2}),
+            page(4, headerless=True),
+            named,
+        ]
+
+        packets = arrange(pages, ROSTER)
+        mine = [p for p in packets if 5 in [one.index for one in p.pages]]
+
+        self.assertEqual(len(mine), 1)
+        self.assertEqual(mine[0].student_id, 2, "с названной человеком страницы снято имя")
+
+    def test_the_named_page_joins_the_student_s_other_pages(self):
+        """
+        Работа у человека одна, и названная страница входит в неё же.
+
+        Два пакета одного ученика в ответе значили бы две работы: оценки
+        второго переписали бы оценки первого, а в таблице проверки ученик
+        показывался бы по последнему из них. Первый блок при этом имени не
+        теряет — его прочитали верно, и наказывать чтение за слово человека
+        не за что.
+        """
+        named = page(5, "Fil", "", {5: 3})
+        named.student_id, named.decided_by_human = 2, True
+        pages = [
+            page(0, headerless=True),
+            page(1, "Fil", "Burmov", {0: 1}),
+            page(2, headerless=True),
+            page(3, "Peter", "Tibora", {0: 2}),
+            page(4, headerless=True),
+            named,
+        ]
+
+        packets = arrange(pages, ROSTER)
+        his = [p for p in packets if p.student_id == 2]
+
+        self.assertEqual(len(his), 1)
+        self.assertEqual(sorted(one.index for one in his[0].pages), [1, 5])
+        # сосед между ними остался при своём
+        self.assertEqual(
+            [[one.index for one in p.pages] for p in packets if p.student_id == 3],
+            [[3]],
+        )
+
+    def test_a_human_naming_a_page_does_not_switch_the_deduction_off(self):
+        """
+        Названная человеком страница — не противоречие в пачке.
+
+        Противоречие выключает вычет по остатку на **всю** пачку: оно значит,
+        что листы сдвинуты, и остаток даст уверенно неверный ответ. Слово
+        человека о сдвиге не говорит ничего. Считай мы его противоречием,
+        одно нажатие снимало бы имена со всех страниц, названных вычетом, —
+        человек назначил одну страницу и получил пять новых вопросов.
+        """
+        named = page(5, "Fil", "", {5: 3})
+        named.student_id, named.decided_by_human = 2, True
+        far = [
+            Packet(pages=[page(1, "Fil", "Burmov")], student_id=2),
+            Packet(pages=[page(3, "Peter", "Tibora")], student_id=3),
+            Packet(pages=[named], student_id=2, decided_by_human=True),
+        ]
+
+        self.assertFalse(pile_contradicts(far))
 
     def test_a_signed_page_does_not_travel_across_the_pile(self):
         """

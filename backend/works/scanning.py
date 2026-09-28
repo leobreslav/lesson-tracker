@@ -892,9 +892,14 @@ def pile_contradicts(packets: list[Packet]) -> bool:
     if any(packet.overlaps for packet in packets):
         return True
 
+    # Блок, названный человеком, в этот счёт не входит. Противоречие — это два
+    # **чтения**, которые не могут быть верны разом; слово человека о сдвиге
+    # листов не говорит ничего. Считай мы его противоречием, одно нажатие
+    # выключало бы вычет на всю пачку и снимало имена со всех страниц,
+    # названных по остатку: человек назначил одну и получил пять новых вопросов.
     seen: dict = {}
     for number, packet in enumerate(packets):
-        if packet.student_id is None:
+        if packet.student_id is None or packet.decided_by_human:
             continue
         if packet.student_id in seen and number - seen[packet.student_id] > 1:
             return True
@@ -995,13 +1000,24 @@ def packets_without_duplicates(packets: list[Packet], roster: list[Person] | Non
 
         was, first = seen[packet.student_id]
         # соседи — те, между которыми нет чужого пакета
-        if len(out) and out[-1] is first:
+        adjacent = len(out) and out[-1] is first
+        # Названное человеком сливается **через всю пачку**, и это не
+        # послабление правилу, а его граница. Правило про далёкого двойника —
+        # спор двух прочитанных имён: одно из чтений неверно, и имя снимается
+        # у слабейшего. Слово человека — не чтение, и силой с чтением оно не
+        # мерится. Пока разницы не было, названная кнопкой страница теряла
+        # хозяина тут же, в следующем ответе сервера: подписана она была
+        # одним именем, а другой блок той же ученицы прочитался с фамилией.
+        # На экране это выглядело как кнопка, которая не работает.
+        named = packet.decided_by_human or first.decided_by_human
+        if adjacent or named:
             first.pages += packet.pages
             first.conditions += packet.conditions
             # пометки едут вместе со страницами: слияние не повод потерять
             # «этот лист положен догадкой» или «этот забран по своей подписи»
             first.by_fit += packet.by_fit
             first.signed_apart += packet.signed_apart
+            first.decided_by_human |= packet.decided_by_human
             continue
 
         # врозь: имя снимается у того, чьё чтение слабее

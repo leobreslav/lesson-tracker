@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
-import Modal from './Modal'
 // крошечный модуль с миллиметрами бланка; pdfjs за собой не тянет, в отличие
 // от scanSheet.js, который грузится лениво
 import { GRID, gridInStrip } from './blankGeometry'
@@ -41,6 +40,19 @@ import { PageOutside, openSource, pagesOf, pieces } from './scanPieces'
  *
  * Страницы не хранятся на сервере, а прочитанное хранится: чтение стоит денег,
  * и закрытая вкладка не должна стоить их второй раз.
+ *
+ * **Мастер живёт на своей странице, а не в окне** (`WorkScans.jsx`,
+ * `/works/:id/scans`). Окном он был, и окну задавали жёсткую высоту, чтобы оно
+ * не прыгало между шагами. А содержимое внутри сжималось под эту высоту — и в
+ * невысоком окне браузера блоки становились ниже собственного содержимого:
+ * строка из нижнего ряда ложилась поверх выпадающего списка из бокового,
+ * лист прокручивался внутри окна, которое само прокручивалось внутри экрана.
+ * Работа тут долгая — тридцать страниц, на каждой посмотреть, назначить,
+ * перейти, — и ей нужна страница целиком: своя прокрутка, свой адрес, своя
+ * кнопка «назад» в браузере.
+ *
+ * Сам мастер про это не знает: он отдаёт содержимое, а рамку ему даёт тот,
+ * кто его зовёт.
  */
 export default function ScanWizard({ work, onClose, onDone }) {
   const { t } = useTranslation()
@@ -347,12 +359,12 @@ export default function ScanWizard({ work, onClose, onDone }) {
   const byIndex = Object.fromEntries(pages.map((page) => [page.index, page]))
 
   return (
-    <Modal
-      onClose={onClose}
-      title={t('scan.title', { name: work.title })}
-      className="wide"
-    >
-      {error && <p className="error">{error}</p>}
+    <>
+      {error && (
+        <p className="error" role="alert">
+          {error}
+        </p>
+      )}
 
       {stage === 'loading' && <p className="hint">{t('common.loading')}</p>}
 
@@ -458,6 +470,7 @@ export default function ScanWizard({ work, onClose, onDone }) {
           onDecide={decide}
           onFlip={flip}
           canFlip={Boolean(file)}
+          hasFile={Boolean(file)}
           onFix={fix}
           onNext={() => setStage('check')}
           onBack={() => setStage('file')}
@@ -476,7 +489,7 @@ export default function ScanWizard({ work, onClose, onDone }) {
           onApply={finish}
         />
       )}
-    </Modal>
+    </>
   )
 }
 
@@ -1006,6 +1019,15 @@ function PagesStep({
   // значит раздать половину класса и потерять остальных
   reading = false,
   canFlip,
+  // Есть ли у браузера сам PDF. От этого зависит, что сказать на месте
+  // картинки: «чтение до неё не дошло» или «файла в руках нет».
+  //
+  // Пропа здесь не было, а строка ниже им пользовалась, — и шаг падал с
+  // `hasFile is not defined` ровно тогда, когда к прочитанной пачке
+  // возвращались без файла: пока файл есть, картинка рисуется, и до этой
+  // строки дело не доходит. Сборка такого не ловит, а путь без файла никто
+  // не проходил руками
+  hasFile = false,
   onDecide,
   onFlip,
   onFix,

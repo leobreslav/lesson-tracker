@@ -1811,6 +1811,8 @@
     "conflict": "одна задача дважды: {{list}}",
     "apply": "Записать всё",
     "applyNeedsFile": "Указать PDF и записать всё",
+    "backToWork": "← К работе «{{name}}»",
+    "backToWorkUnnamed": "← К работе",
     "openingFile": "Открываю файл…",
     "sendingPiece": "Отправляю работу ученика {{done}} из {{total}}: {{name}}",
     "writingMarks": "Записываю оценки…",
