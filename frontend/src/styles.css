@@ -288,6 +288,15 @@ body {
     min-width: 6rem;
   }
 
+  /* Дата со временем («Открыть · Закрыть») — исключение снизу: ужатое до
+     6rem, поле схлопывало дату до «09/2». Ниже 14rem оно уходит строкой
+     ниже; две такие колонки в окне на 30rem по-прежнему встают рядом.
+     `div` в селекторе ради веса: `:is()` выше весит как самый тяжёлый из
+     перечисленных, то есть как `input:not():not()` */
+  & > div.field-with-hint:has(> .date-time) {
+    min-width: 14rem;
+  }
+
   /* Поле с поиском по списку — исключение: в нём одно имя, и растянутое
      на всю карточку оно читается как ошибка вёрстки. Поэтому 24rem — это
      **потолок**, а не заданная ширина: в форме создания курса таких полей
@@ -1962,6 +1971,10 @@ button.chip.active:hover:not(:disabled) {
    * объявляет свой `margin` явно, — и её правило сильнее этого.
    */
   margin: auto;
+  /* рамку браузер держит в `100% - 2em`, а тело окна считалось от `100vw`
+     и без своих полей — на телефоне тело выходило на 30px шире рамки, и
+     всё окно ехало за правый край. Обе ширины теперь от одного запаса */
+  max-width: calc(100vw - 2rem);
   /* padding нулевой: только так клик по фону отличим от клика по форме */
   padding: 0;
   border: none;
@@ -1988,7 +2001,8 @@ button.chip.active:hover:not(:disabled) {
 }
 
 .modal-body {
-  width: min(30rem, calc(100vw - 3rem));
+  /* 2.5rem — собственные поля тела: ширина здесь без них, а рамка — с ними */
+  width: min(30rem, calc(100vw - 2rem - 2.5rem));
   max-height: calc(100vh - var(--modal-inset) * 2);
   overflow-y: auto;
   padding: 1.25rem;
@@ -2057,7 +2071,7 @@ button.modal-close:hover {
 /* полка планов: строка тут — название, описание и три действия, и в
    тридцати ремах они складываются в гармошку */
 .modal-body.shelf {
-  width: min(46rem, calc(100vw - 3rem));
+  width: min(46rem, calc(100vw - 2rem - 2.5rem));
 }
 
 /*
@@ -2268,7 +2282,7 @@ h4.shelf-group:first-of-type {
 
 /* сетке вставки нужна ширина: три колонки в узком окне обрезают названия */
 .modal-body.paste-window {
-  width: min(44rem, calc(100vw - 3rem));
+  width: min(44rem, calc(100vw - 2rem - 2.5rem));
 }
 
 /* ячейка сетки — не поле окна: рамку рисует сама таблица, иначе на пятистах
@@ -2297,7 +2311,7 @@ h4.shelf-group:first-of-type {
  * отжимал бы имя в перенос, пока справа пусто.
  */
 .modal-body.roster-window {
-  width: min(38rem, calc(100vw - 3rem));
+  width: min(38rem, calc(100vw - 2rem - 2.5rem));
 }
 
 .roster {
@@ -2423,6 +2437,20 @@ h4.shelf-group:first-of-type {
   border: 1px solid #c6c6c6;
   border-radius: 4px;
   background: #fff;
+}
+
+/* подпись слева и список справа («Занятие [ … ]») стоят подряд без пробела,
+   и переносить браузеру негде: длинный список уезжал за край окна. Ряд
+   переносится — не влез рядом с подписью, встаёт под ней, но не шире окна */
+.modal-body label.field:has(> select) {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem 0.6rem;
+}
+
+.modal-body label.field:has(> select) > select {
+  min-width: 0;
 }
 
 /* поле с подписью сверху — колонка во всю ширину окна, и селект в ней тоже:
@@ -4351,6 +4379,18 @@ button.chip.active:hover:not(:disabled) {
   text-decoration: line-through;
 }
 
+/* на телефоне предмет (8rem) и люди (10rem) не сжимались, а у названия
+   нижней границы нет — оно схлопывалось в ноль, и строка курса оставалась
+   без имени, а кнопки уезжали за край. Здесь сжимаются все три, с
+   многоточием, и первым делом держится название. Меняется сама переменная:
+   ею же размечена раскрытая карточка, и зоны должны совпадать */
+@media (max-width: 30rem) {
+  :root {
+    --course-columns: 1.5rem minmax(5rem, 1.4fr) 1.25rem minmax(0, 1fr)
+      minmax(0, 1fr);
+  }
+}
+
 .course-head {
   display: grid;
   grid-template-columns: var(--course-columns) auto;
@@ -5655,7 +5695,10 @@ button.compact,
    ответов оказываются шириной в него */
 .task-list li {
   display: grid;
-  grid-template-columns: 1.75rem 1fr;
+  /* `minmax(0, …)`, а не голое `1fr`: то не бывает уже своего содержимого,
+     и ряд кнопок задачи (невидимых до наведения, но место занимающих)
+     растягивал колонку на телефоне шире экрана — ехала вся страница */
+  grid-template-columns: 1.75rem minmax(0, 1fr);
   align-items: baseline;
 }
 
@@ -5722,12 +5765,15 @@ button.compact,
    условие занимает всё остальное */
 .task-head {
   display: flex;
+  flex-wrap: wrap;
   align-items: baseline;
   gap: 0.5rem;
 }
 
+/* не хватает места рядом с условием — кнопки уходят под него, а не за край */
 .task-head .task-question {
-  flex: 1;
+  flex: 1 1 12rem;
+  min-width: 0;
 }
 
 .task-list .answers {
@@ -5739,6 +5785,7 @@ button.compact,
 
 .task-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 0.4rem;
 }
 
@@ -7753,6 +7800,20 @@ button.day-head:hover {
   gap: 0.6rem;
 }
 
+/* на телефоне панель — во всю ширину. Полоса страницы слева там ничего не
+   показывает, а отнимает ровно столько, что тумблер, «Сохранить» и крестик
+   перестают помещаться в строке заголовка и крестик уезжает за край */
+@media (max-width: 30rem) {
+  .modal.sheet {
+    max-width: 100vw;
+    border-radius: 0;
+  }
+
+  .modal-body.sheet {
+    width: 100vw;
+  }
+}
+
 /*
  * Шапка панели урока: название, «Правка/Просмотр» и состояние черновика.
  *
@@ -7802,6 +7863,27 @@ button.day-head:hover {
   padding: 0.5rem 1.25rem 0.75rem;
   background: #fff;
   border-bottom: 1px solid #eee;
+}
+
+/* на телефоне заголовок панели («Урок 5 плана (курс)») в одну строку с
+   тумблером, «Сохранить» и крестиком не помещается и ужимался до одного
+   знака. Он уходит второй строкой, во всю ширину, а прижатая шапка урока
+   встаёт ниже на эту строку: 1.75rem роста плюс 0.25rem зазора. Стоит после
+   базовых правил — медиазапрос веса не добавляет */
+@media (max-width: 30rem) {
+  .modal-body.sheet > .modal-head {
+    flex-wrap: wrap;
+    row-gap: 0.25rem;
+  }
+
+  .modal-body.sheet > .modal-head h3 {
+    order: 1;
+    flex: 1 0 100%;
+  }
+
+  .modal-body.sheet .lesson-head {
+    top: 3.25rem;
+  }
 }
 
 input.lesson-title {
