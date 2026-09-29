@@ -54,6 +54,7 @@ export default function SchoolCourses() {
   const [roster, setRoster] = useState(null) // у какого курса открыт состав
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
+  const [cardError, setCardError] = useState(null) // {course, message}
 
   const handleError = useCallback(
     (err) => {
@@ -87,14 +88,27 @@ export default function SchoolCourses() {
     reload().catch(handleError)
   }, [reload, handleError])
 
-  const run = async (request) => {
+  /*
+   * Отказ действия на карточке курса показывается на самой карточке.
+   *
+   * Общая строка ошибки стоит над списком, а карточку раскрывают внизу
+   * длинного списка: отказ назначения («час занят», «курс уже ведут»)
+   * появлялся за краем экрана, и снаружи это выглядело как кнопка, которая
+   * ничего не делает, плюс 400 в консоли.
+   */
+  const run = async (request, course = null) => {
     setBusy(true)
     setError(null)
+    setCardError(null)
     try {
       await request()
       await reload()
     } catch (err) {
-      handleError(err)
+      if (course !== null && err.status !== 401) {
+        setCardError({ course, message: err.message })
+      } else {
+        handleError(err)
+      }
     } finally {
       setBusy(false)
     }
@@ -181,10 +195,12 @@ export default function SchoolCourses() {
     const teacherId = assigning[course.id]
     if (!teacherId || busy) return
 
-    run(() =>
-      createAssignment(course.id, Number(teacherId)).then(() =>
-        setAssigning((current) => ({ ...current, [course.id]: '' })),
-      ),
+    run(
+      () =>
+        createAssignment(course.id, Number(teacherId)).then(() =>
+          setAssigning((current) => ({ ...current, [course.id]: '' })),
+        ),
+      course.id,
     )
   }
 
@@ -205,14 +221,17 @@ export default function SchoolCourses() {
     const person = namedMethodist(course)
     if (!person || busy) return
 
-    run(() =>
-      createMethodist(course.id, person.id).then(() =>
-        setNaming((current) => ({ ...current, [course.id]: '' })),
-      ),
+    run(
+      () =>
+        createMethodist(course.id, person.id).then(() =>
+          setNaming((current) => ({ ...current, [course.id]: '' })),
+        ),
+      course.id,
     )
   }
 
-  const dropMethodist = (row) => run(() => deleteMethodist(row))
+  const dropMethodist = (course, row) =>
+    run(() => deleteMethodist(row), course.id)
 
   /**
    * Take a teacher off a course.
@@ -233,7 +252,7 @@ export default function SchoolCourses() {
         if (!window.confirm(`${err.message}\n\n${t('school.teachers.keepsWork')}`)) return
         return deleteAssignment(link, { force: true })
       })
-    })
+    }, course.id)
 
   if (years === null) {
     return <p>{error ? <span className="error">{error}</span> : t('common.loading')}</p>
@@ -560,7 +579,7 @@ export default function SchoolCourses() {
                                     name: person.name,
                                   })}
                                   disabled={busy}
-                                  onClick={() => dropMethodist(person.row)}
+                                  onClick={() => dropMethodist(course, person.row)}
                                 >
                                   ✕
                                 </button>
@@ -632,6 +651,14 @@ export default function SchoolCourses() {
                         </div>
                       </div>
                     </div>
+                  )}
+
+                  {/* под плашками, а не среди них: у плашек общая сетка
+                      строк на троих, и четвёртый ребёнок её бы сломал */}
+                  {open && cardError?.course === course.id && (
+                    <p className="error course-error" role="alert">
+                      {cardError.message}
+                    </p>
                   )}
                 </li>
               )
