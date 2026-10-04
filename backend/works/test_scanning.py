@@ -1174,3 +1174,86 @@ class MarkSheetRuleTests(SimpleTestCase):
         _, blank = marks_rule([mark_sheet(0), page(1, "Shahar", "Jerbi", {0: 9, 15: 4})])
 
         self.assertEqual(troubles(blank, 1, 5, 3), [])
+
+
+class LabelMatchingTests(SimpleTestCase):
+    """
+    Тестовый алгоритм: клетка опознаётся по подписи, вписанной над ней.
+
+    Неверно прочитанная подпись отдаёт балл чужой задаче **уверенно и
+    молча**, поэтому сверка строгая: только с подписями этой работы, и только
+    единственное совпадение. Всё прочее — вопрос человеку.
+    """
+
+    LABELS = ["1a", "1b", "2", "3а"]  # последняя — с кириллической «а»
+
+    def test_case_spaces_and_punctuation_do_not_matter(self):
+        from .scanning import match_label
+
+        self.assertEqual(match_label("1A", self.LABELS), (0, False))
+        self.assertEqual(match_label(" 1 b. ", self.LABELS), (1, False))
+
+    def test_cyrillic_and_latin_look_alikes_are_one_letter(self):
+        from .scanning import match_label
+
+        # учитель написал латинскую a, а работа знает кириллическую — и наоборот
+        self.assertEqual(match_label("3a", self.LABELS), (3, False))
+        self.assertEqual(match_label("1а", self.LABELS), (0, False))
+
+    def test_a_handwriting_slip_matches_only_when_unique_and_says_so(self):
+        from .scanning import match_label
+
+        # «lb» — единица, прочитанная как l: подходит одна задача, но не дословно
+        self.assertEqual(match_label("lb", self.LABELS), (1, True))
+
+    def test_a_label_the_work_does_not_have_matches_nothing(self):
+        from .scanning import match_label
+
+        self.assertEqual(match_label("4c", self.LABELS), (None, False))
+        self.assertEqual(match_label("", self.LABELS), (None, False))
+
+    def test_two_questions_under_one_writing_is_a_question_not_a_choice(self):
+        from .scanning import match_label
+
+        self.assertEqual(match_label("1a", ["1a", "1 A"]), (None, False))
+
+    def test_marks_land_on_their_questions_in_any_order(self):
+        from .scanning import cells_from_tiles, tiles_from_reading
+
+        texts = ["2", "1b", "", ""] + [""] * 12
+        values = [3, 1, None, None] + [None] * 11 + [4]
+        tiles = tiles_from_reading(texts, values, self.LABELS)
+
+        self.assertEqual(cells_from_tiles(tiles, len(self.LABELS)), [None, 1, 3, None, 4])
+
+    def test_an_unsigned_page_falls_back_to_the_place_of_the_cell(self):
+        """Учитель не подписал этот лист — баллы по месту, как в прежнем алгоритме."""
+        from .scanning import cells_from_tiles, tiles_from_reading
+
+        tiles = tiles_from_reading([""] * 16, [2, None, 1] + [None] * 13, self.LABELS)
+
+        self.assertEqual(cells_from_tiles(tiles, len(self.LABELS)), [2, None, 1, None, None])
+
+    def test_a_doubtful_label_is_shown_to_a_human(self):
+        from .scanning import cells_from_tiles, tiles_from_reading
+
+        texts = ["4c", "1a", "1a", "lb"] + [""] * 12
+        values = [2, 1, 3, 1] + [None] * 12
+        tiles = tiles_from_reading(texts, values, self.LABELS)
+        labelled = Page(
+            index=0,
+            first="Fil",
+            surname="Burmov",
+            cells=cells_from_tiles(tiles, len(self.LABELS)),
+            ours=True,
+            by_labels=True,
+            tiles=tiles,
+        )
+
+        found = troubles(labelled, 2, 5, len(self.LABELS))
+
+        self.assertIn("label_unknown", found)
+        self.assertIn("label_twice", found)
+        self.assertIn("label_guessed", found)
+        # балл под неузнанной подписью не достаётся никому
+        self.assertNotIn(2, labelled.cells[:4])

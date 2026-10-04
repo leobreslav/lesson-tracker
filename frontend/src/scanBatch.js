@@ -18,6 +18,7 @@ import {
   ENOUGH_LINES,
   MARKS_ENOUGH,
   cutForReading,
+  cutLabelledForReading,
   cutMarksForReading,
   extractHeader,
   extractMarks,
@@ -149,6 +150,50 @@ export function readingSheet(image, h, fix = null) {
   return assembled(name, cells, cellLabel)
 }
 
+/**
+ * Картинка тестового алгоритма: у каждой плитки над клеткой — её полоса
+ * подписи, как на бумаге. Красная метка по-прежнему называет **физическую**
+ * клетку (`Q3`), а задачу называет вписанная подпись (`2b`): по ней сервер и
+ * узнаёт, чей это балл (`scanning.match_label`).
+ *
+ * Плитка вдвое выше обычной, поэтому колонок восемь: шестнадцать плиток
+ * встают в два ряда, и картинка не вытягивается в высоту.
+ */
+export function labelledSheet(image, h, fix = null) {
+  const { name, cells, labels } = cutLabelledForReading(image, h, fix)
+  const columns = 8
+  const side = TILE.height - TILE.pad * 2
+  const tile = { width: Math.floor(STRIP_WIDTH / columns), height: side * 2 + TILE.pad * 3 }
+  const rows = Math.ceil(cells.length / columns)
+
+  const canvas = document.createElement('canvas')
+  canvas.width = Math.max(name.width, tile.width * columns)
+  canvas.height = name.height + rows * tile.height
+  const context = canvas.getContext('2d')
+  context.fillStyle = '#fff'
+  context.fillRect(0, 0, canvas.width, canvas.height)
+  context.drawImage(toCanvas(name), 0, 0)
+
+  context.font = 'bold 26px sans-serif'
+  context.textBaseline = 'middle'
+  cells.forEach((cell, index) => {
+    const left = (index % columns) * tile.width
+    const top = name.height + Math.floor(index / columns) * tile.height
+
+    context.strokeStyle = '#000'
+    context.lineWidth = 1
+    context.strokeRect(left + 0.5, top + 0.5, tile.width - 1, tile.height - 1)
+
+    context.fillStyle = '#c00'
+    context.fillText(cellLabel(index), left + TILE.pad * 2, top + tile.height / 2)
+
+    context.drawImage(toCanvas(labels[index]), left + TILE.label, top + TILE.pad, side, side)
+    context.drawImage(toCanvas(cell), left + TILE.label, top + TILE.pad * 2 + side, side, side)
+  })
+
+  return canvas
+}
+
 /*
  * У листа баллов плиток больше — до девяноста шести, — и в шесть колонок они
  * вытянули бы картинку в три с лишним раза выше ширины, а Anthropic ужал бы её
@@ -239,7 +284,16 @@ export async function fingerprint(blob) {
 export async function readPage(
   book,
   number,
-  { send, blank, questions, tasks = 0, turn = 0, first = false, namesOnly = false } = {},
+  {
+    send,
+    blank,
+    questions,
+    tasks = 0,
+    turn = 0,
+    first = false,
+    namesOnly = false,
+    byLabels = false,
+  } = {},
 ) {
   const { image, canvas } = await drawPage(book, number, RENDER_WIDTH, turn)
 
@@ -313,7 +367,16 @@ export async function readPage(
      * даёт другую картинку и другой отпечаток — значит читается заново, и это
      * честно: за неё и правда платят второй раз, ради верного чтения.
      */
-    const full = await scaledJpeg(readingSheet(image, found.h, found.fix), 1568, 0.9)
+    // Тестовый алгоритм — своя картинка: клетка вместе с подписью над ней.
+    // Отпечаток у неё свой, и это честно: прочитанное прежним алгоритмом
+    // клеткам по подписям не отвечает, и кэш его не отдаст
+    const full = await scaledJpeg(
+      byLabels
+        ? labelledSheet(image, found.h, found.fix)
+        : readingSheet(image, found.h, found.fix),
+      1568,
+      0.9,
+    )
     const plain = await scaledJpeg(toCanvas(found.strip), 1568, 0.9)
     /*
      * В пачке уже был лист баллов — значит баллы ставили на нём, и клетки
@@ -333,6 +396,8 @@ export async function readPage(
       plain,
       mark: await fingerprint(full),
       cells: !namesOnly,
+      // клеток бланка не в счёт — и подписям над ними стоять не над чем
+      labels: byLabels && !namesOnly,
     })
   } else if (!worthReading && blank) {
     // Шапки нет — читать нечего и платить не за что, но сказать серверу
@@ -416,7 +481,10 @@ async function readMarkSheet(image, canvas, code, { index, send, blank, tasks, t
  * выброшенная клетка не оплачивается. Вернувшемуся к пачке помнить ничего не
  * надо: обход снова идёт по всем страницам, прочитанные отдаются из кэша.
  */
-export async function walk(file, { onPage, send, blank, questions, tasks = 0, stop } = {}) {
+export async function walk(
+  file,
+  { onPage, send, blank, questions, tasks = 0, byLabels = false, stop } = {},
+) {
   const book = await openBook(file)
   const pages = []
   // первый ряд условий — тот, что встретился до первого листа решения
@@ -433,6 +501,7 @@ export async function walk(file, { onPage, send, blank, questions, tasks = 0, st
       tasks,
       first: !seenAnswer,
       namesOnly: marks,
+      byLabels,
     })
     const worthReading = page.readable
 

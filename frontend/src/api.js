@@ -1063,7 +1063,17 @@ export const resetScan = (work) =>
 
 export const readScanPage = (
   work,
-  { index, blob, plain, mark, second = true, reader = '', sheet = 'answer', cells = true },
+  {
+    index,
+    blob,
+    plain,
+    mark,
+    second = true,
+    reader = '',
+    sheet = 'answer',
+    cells = true,
+    labels = false,
+  },
 ) => {
   const form = new FormData()
   form.append('index', index)
@@ -1072,6 +1082,8 @@ export const readScanPage = (
   form.append('sheet', sheet)
   // Читать ли клетки: нет, когда в пачке уже был лист баллов (`walk`)
   form.append('cells', cells ? 'true' : 'false')
+  // Тестовый алгоритм: клетка по подписи над ней, а не по месту
+  form.append('labels', labels ? 'true' : 'false')
   form.append('strip', blob, `strip-${index}.jpg`)
   // Та же шапка как на бумаге. По ней читают имя: распознаватель на собранном
   // листе склеивает строку имени с первым рядом плиток. Необязательна — без

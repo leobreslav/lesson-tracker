@@ -1496,6 +1496,11 @@ def scan_pages(work) -> list:
     from .scanning import Page, cells_on, fold, marks_rule
 
     known = remembered_writings(work)
+    # у страницы по подписям клетки по задачам работы, и их столько же плюс сумма
+    by_task = work.tasks.count() + 1
+
+    def count(row):
+        return by_task if row.by_labels else cells_on(row.sheet)
 
     return marks_rule(
         [
@@ -1504,7 +1509,9 @@ def scan_pages(work) -> list:
                 index=row.index,
                 first=row.first_name,
                 surname=row.surname,
-                cells=(list(row.cells) + [None] * cells_on(row.sheet))[: cells_on(row.sheet)],
+                cells=(list(row.cells) + [None] * count(row))[: count(row)],
+                by_labels=row.by_labels,
+                tiles=row.tiles or [],
                 guess=row.guess,
                 headerless=row.headerless,
                 ours=row.ours,
@@ -1661,6 +1668,11 @@ def scan_state(work) -> dict:
                 # человек должен это видеть, а не гадать, куда делся балл
                 "sheet": page.sheet,
                 "cells_ignored": page.cells_ignored,
+                # Тестовый алгоритм: клетки по подписям. Экран ставит под
+                # каждой клеткой скана её подпись и балл — колонка в колонку,
+                # — поэтому едут плитки, а не одни баллы по задачам
+                "by_labels": page.by_labels,
+                "tiles": page.tiles,
                 "headerless": page.headerless,
                 "student": owner,
                 # «Условия в начале работы»: лист уедет в начало PDF каждого
@@ -2102,7 +2114,9 @@ def scan_apply(work, *, by=None) -> dict:
     }
 
 
-def save_scan_reading(work, *, index: int, fingerprint: str, data: dict, sheet: str = "answer"):
+def save_scan_reading(
+    work, *, index: int, fingerprint: str, data: dict, sheet: str = "answer", by_labels=False
+):
     """
     Положить прочитанное. Решение человека при этом не трогается.
 
@@ -2118,6 +2132,17 @@ def save_scan_reading(work, *, index: int, fingerprint: str, data: dict, sheet: 
     row.guess = data.get("guess", "")
     row.cells = data.get("values") or []
     row.sheet = sheet
+    # Тестовый алгоритм: клетки узнаны по подписям. Подписи сверяются здесь,
+    # с именами вопросов работы, — модель их не знает, — и баллы ложатся по
+    # задачам, а не по местам на бумаге.
+    row.by_labels = bool(by_labels)
+    row.tiles = []
+    if by_labels:
+        from .scanning import cells_from_tiles, tiles_from_reading
+
+        names = question_names(work)
+        row.tiles = tiles_from_reading(data.get("tile_labels"), data.get("values"), names)
+        row.cells = cells_from_tiles(row.tiles, len(names))
     row.ours = True
     row.model = data.get("model", "")
     # Что увидел второй читатель. Кладём и тогда, когда он не ответил: «его не
@@ -2154,7 +2179,7 @@ def mark_headerless(work, *, index: int, ours: bool = False, sheet: str | None =
     return row
 
 
-def edit_scan_page(work, *, index: int, student=UNSET, cells=None, dropped=None):
+def edit_scan_page(work, *, index: int, student=UNSET, cells=None, dropped=None, tiles=None):
     """
     Правка страницы человеком: чья она, что в клетках и в пачке ли она вовсе.
 
@@ -2169,10 +2194,32 @@ def edit_scan_page(work, *, index: int, student=UNSET, cells=None, dropped=None)
     разных слова, и верно последнее. Оставь мы её убранной, назначенная
     страница молча не попала бы ученику в работу.
     """
-    from .scanning import cells_on
+    from .scanning import cells_from_tiles, cells_on
 
     row, _ = ScanPage.objects.get_or_create(work=work, index=index)
     fields = []
+    # Клетки страницы по подписям собираются из плиток и только из них:
+    # правка по позициям мимо плиток развела бы то, что человек видит под
+    # сканом, и то, что уедет в оценки.
+    if row.by_labels and tiles is None:
+        cells = None
+    # Страница по подписям правится плитками: человек выбрал задачу над
+    # клеткой или поправил балл в ней. Прочитанная подпись остаётся — её
+    # показывают рядом, — а «узнана не дословно» снимается: теперь сказал
+    # человек. Баллы по задачам пересобираются из плиток, а не правятся
+    # отдельно, иначе экран и оценки разошлись бы.
+    if tiles is not None and row.by_labels:
+        known = (list(row.tiles) + [{}] * len(tiles))[: max(len(tiles), len(row.tiles))]
+        merged = []
+        for place, tile in enumerate(known):
+            edit = tiles[place] if place < len(tiles) else None
+            tile = {"text": "", "task": None, "value": None, "guessed": False, **tile}
+            if edit is not None:
+                tile.update(task=edit["task"], value=edit["value"], guessed=False)
+            merged.append(tile)
+        row.tiles = merged
+        cells = cells_from_tiles(merged, len(question_names(work)))
+        fields.append("tiles")
     if dropped is not None:
         row.dropped = bool(dropped)
         fields.append("dropped")
@@ -2186,7 +2233,7 @@ def edit_scan_page(work, *, index: int, student=UNSET, cells=None, dropped=None)
         row.dropped = False
         fields.append("dropped")
     if cells is not None:
-        count = cells_on(row.sheet)
+        count = len(question_names(work)) + 1 if row.by_labels else cells_on(row.sheet)
         row.cells = (list(cells) + [None] * count)[:count]
         fields.append("cells")
         # Человек вписал балл — значит перед ним сетка баллов, то есть лист

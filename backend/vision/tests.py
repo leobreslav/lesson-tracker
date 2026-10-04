@@ -1635,3 +1635,33 @@ class MarkSheetCellsTests(SimpleTestCase):
 
         self.assertEqual(len(reading["values"]), 16)
         self.assertEqual((reading["values"][0], reading["values"][14], reading["values"][15]), (2, 1, 3))
+
+
+class LabelledReadingTests(SimpleTestCase):
+    """
+    Тестовый алгоритм: модель называет подпись над клеткой буква в букву.
+
+    Списка подписей работы в подсказке нет нарочно — подсказанное
+    подставляется вместо увиденного, — а правила про имя и цифру те же.
+    """
+
+    def test_the_prompt_takes_nothing_and_keeps_the_rules(self):
+        from inspect import signature
+
+        prompt = client._labels_prompt()
+
+        self.assertEqual(list(signature(client._labels_prompt).parameters), [])
+        self.assertIn("EXACTLY as written", prompt)
+        self.assertIn("never adjust a mark", prompt)
+
+    def test_each_cell_gets_its_label_by_the_red_name_of_the_tile(self):
+        labels = client.labels_from_marks(
+            [{"cell": "Q2", "label": " 1b ", "value": 3}, {"cell": "Q5", "label": "2", "value": None}]
+        )
+
+        self.assertEqual((labels[1], labels[4], labels[0]), ("1b", "2", ""))
+
+    def test_an_empty_cell_with_a_label_is_recorded_without_a_mark(self):
+        values = client.values_from_marks([{"cell": "Q5", "label": "2", "value": None}])
+
+        self.assertIsNone(values[4])

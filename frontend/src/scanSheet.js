@@ -28,7 +28,7 @@
 // из тестов ровно там, где код станет разделителем блоков.
 import jsQR from 'jsqr'
 
-import { CODE_PREFIX, GRID, HEADER, HEADER_MARKS, MARKS, PAGE, QR, STRIP, STRIP_WIDTH, cellRect, headerCorners, markCellRect, markGrid, markRowRect, nameRow, sheetCorners, stripHeight } from './blankGeometry.js'
+import { CELL_INSET, CODE_PREFIX, GRID, HEADER, HEADER_MARKS, MARKS, PAGE, QR, STRIP, STRIP_WIDTH, cellRect, headerCorners, markCellRect, markGrid, markRowRect, nameRow, sheetCorners, stripHeight } from './blankGeometry.js'
 
 /** Оттенки серого одной плоскостью: дальше всё считается по ней. */
 export function toGray(image) {
@@ -1119,6 +1119,60 @@ export function cutForReading(image, h, fix = null) {
       withoutStrayInk(warp(image, h, fixed(cellRect(index), fix), CELL_SIDE, CELL_SIDE)),
     ),
   }
+}
+
+/**
+ * Тестовый алгоритм: клетка опознаётся по подписи над ней. К имени и клеткам
+ * добавляются **полосы подписей** — над каждой клеткой своя.
+ *
+ * Полоса и клетка режутся порознь, а не одним куском: чужие хвосты из клетки
+ * стираются (`withoutStrayInk`), и в полосе подписи то же правило стёрло бы
+ * край «1a», доходящий до рамки, — а подпись тут и есть то, ради чего режем.
+ */
+export function cutLabelledForReading(image, h, fix = null) {
+  const { name, cells } = cutForReading(image, h, fix)
+  const labels = Array.from({ length: GRID.cells }, (_, index) => {
+    const cell = cellRect(index)
+    const band = { x: cell.x, y: GRID.y + CELL_INSET, width: cell.width, height: GRID.labelHeight - CELL_INSET }
+    return withoutCellNumber(warp(image, h, fixed(band, fix), CELL_SIDE, CELL_SIDE), band)
+  })
+  return { name, cells, labels }
+}
+
+/**
+ * Где на полосе подписи напечатан номер клетки: левый верхний угол,
+ * миллиметры от рамки клетки. Сам номер (5 pt, отступ 0.6 мм) кончается
+ * около 2.6 мм вправо и 2.4 мм вниз — остальное запас на промах выпрямления.
+ * По высоте запас больше: полоса начинается на миллиметр ниже рамки, и при
+ * промахе вверх на полмиллиметра низ номера подходит к краю угла вплотную —
+ * при трёх миллиметрах оставалась десятая доля, при трёх с половиной —
+ * больше половины миллиметра.
+ */
+const NUMBER_CORNER = { width: 4.5, height: 3.5 }
+
+/**
+ * Закрасить номер клетки белым — только угол, а не всю полосу.
+ *
+ * Модель прочла бы его вместе с подписью: «1» и «1a» — это «11a». Резать
+ * верх полосы целиком было хуже вдвойне: запас до номера выходил почти
+ * нулевым — промах в полмиллиметра, и в кадр попадал его хвост, — а почерк,
+ * поднявшийся высоко, терял верх букв по всей ширине клетки. Номер же
+ * занимает один угол, и закрашивается ровно он, с запасом со всех сторон.
+ *
+ * `band` — откуда вырезана полоса, миллиметры листа: угол считается от рамки
+ * клетки, а полоса начинается на `CELL_INSET` внутри неё.
+ */
+function withoutCellNumber(tile, band) {
+  const right = ((NUMBER_CORNER.width - CELL_INSET) / band.width) * tile.width
+  const bottom = ((NUMBER_CORNER.height - CELL_INSET) / band.height) * tile.height
+  const data = new Uint8ClampedArray(tile.data)
+  for (let y = 0; y < Math.min(tile.height, Math.ceil(bottom)); y += 1) {
+    for (let x = 0; x < Math.min(tile.width, Math.ceil(right)); x += 1) {
+      const at = (y * tile.width + x) * 4
+      data[at] = data[at + 1] = data[at + 2] = 255
+    }
+  }
+  return { data, width: tile.width, height: tile.height }
 }
 
 /**

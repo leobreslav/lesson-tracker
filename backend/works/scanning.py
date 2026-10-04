@@ -21,6 +21,7 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field, replace
 from difflib import SequenceMatcher
 
@@ -44,6 +45,109 @@ MARK_CELLS = 96
 def cells_on(sheet: str) -> int:
     """Сколько клеток на листе: у бланка шестнадцать, у листа баллов девяносто шесть."""
     return MARK_CELLS if sheet == MARKS else CELLS
+
+
+# ---- тестовый алгоритм: клетка по подписи ----------------------------------
+#
+# Клетка бланка опознаётся не по месту, а по подписи, которую учитель вписал
+# над ней: «1a», «2b». Баллы тогда могут стоять в любом порядке, и задачи
+# работы — разъехаться по страницам.
+#
+# Опасность тут одна, и она худшего рода: неверно прочитанная подпись отдаёт
+# балл другой задаче **уверенно и молча**. Поэтому подпись сверяется только с
+# подписями этой работы, и сверка строгая: регистр, пробелы и знаки — не
+# в счёт, похожие кириллица и латиница — одно и то же. Сошлось с одной
+# задачей — она; иначе пробуем ещё раз, приравняв то, что почерк путает
+# (`1` и `l`, `0` и `o`), и принимаем только **единственное** совпадение — с
+# пометкой «посмотрите глазами». Не сошлось и так — клетка ничья, и её решает
+# человек.
+#
+# Список подписей модели не показывают (`vision.client._labels_prompt`):
+# подсказанное подставляется вместо увиденного — так однажды список класса
+# подменил фамилию.
+
+# Кириллица, которую от латиницы на глаз не отличить, — и б, которой учитель
+# зовёт вторую подзадачу так же, как латинской b.
+_SAME_LETTERS = str.maketrans("авесорхукмтнб", "abecopxykmthb")
+# Что почерк путает: единица с l и i, ноль с o, двойка с z, пятёрка с s.
+_HANDWRITING = str.maketrans("lio|zs", "110125")
+_NOT_LABEL = re.compile(r"[\s.,:;()\[\]_\-—–'\"`]+")
+
+
+def fold_label(text: str) -> str:
+    """Подпись к виду, в котором её сравнивают: «1 А.» и «1a» — одно и то же."""
+    return _NOT_LABEL.sub("", (text or "").lower()).translate(_SAME_LETTERS)
+
+
+def match_label(text: str, labels: list[str]) -> tuple[int | None, bool]:
+    """
+    Прочитанная подпись -> (позиция задачи или None, «узнана не дословно»).
+
+    Совпадение принимается только единственное: две задачи, подходящие под
+    одно написание, — это вопрос человеку, а не выбор.
+    """
+    written = fold_label(text)
+    if not written:
+        return None, False
+
+    exact = [at for at, label in enumerate(labels) if fold_label(label) == written]
+    if len(exact) == 1:
+        return exact[0], False
+    if exact:
+        return None, False
+
+    loose = written.translate(_HANDWRITING)
+    near = [
+        at for at, label in enumerate(labels) if fold_label(label).translate(_HANDWRITING) == loose
+    ]
+    if len(near) == 1:
+        return near[0], True
+    return None, False
+
+
+def tiles_from_reading(texts: list, values: list, labels: list[str]) -> list[dict]:
+    """
+    Прочитанное над клетками и в них -> плитки страницы с узнанными задачами.
+
+    Последняя клетка — сумма, подписи у неё нет. **Подписей на странице нет
+    вовсе — клетки по месту**, как в прежнем алгоритме: учитель не подписал
+    этот лист, и отказать ему в баллах значило бы наказать за то, чего
+    раньше не требовали.
+    """
+    texts = (list(texts or []) + [""] * CELLS)[:CELLS]
+    values = (list(values or []) + [None] * CELLS)[:CELLS]
+    signed = any((text or "").strip() for text in texts[:QUESTIONS])
+
+    tiles = []
+    for place in range(CELLS):
+        text = (texts[place] or "").strip()
+        if place == QUESTIONS:
+            task, guessed = None, False
+        elif signed:
+            task, guessed = match_label(text, labels)
+        else:
+            task, guessed = (place if place < len(labels) else None), False
+        tiles.append({"text": text, "task": task, "value": values[place], "guessed": guessed})
+    return tiles
+
+
+def cells_from_tiles(tiles: list[dict], questions: int) -> list:
+    """
+    Плитки -> баллы по задачам работы и сумма последней.
+
+    Так страница по подписям становится обычной страницей с клетками по
+    позициям, и дальше её ведёт то же, что прежнюю: сведение по ученику,
+    конфликты, оценки. Плитка без узнанной задачи балла не даёт — она ждёт
+    человека (`troubles` называет её).
+    """
+    cells: list = [None] * (questions + 1)
+    for place, tile in enumerate(tiles[:QUESTIONS]):
+        task, value = tile.get("task"), tile.get("value")
+        if task is not None and value is not None and 0 <= task < questions:
+            cells[task] = value
+    if len(tiles) > QUESTIONS:
+        cells[questions] = tiles[QUESTIONS].get("value")
+    return cells
 
 
 def fold(first: str, surname: str) -> str:
@@ -214,6 +318,10 @@ class Page:
     # на нём (`marks_rule`). Прочитанное остаётся на месте — человеку его
     # показывают, — а раскладка и оценки его не видят.
     cells_ignored: bool = False
+    # Тестовый алгоритм: клетки узнаны по подписям, и `cells` уже по задачам
+    # работы (`cells_from_tiles`), а `tiles` — физические клетки страницы.
+    by_labels: bool = False
+    tiles: list = field(default_factory=list)
 
     @property
     def named(self) -> bool:
@@ -225,8 +333,11 @@ class Page:
         Сколько клеток задач на этом листе: пятнадцать или девяносто пять.
 
         По листу, а не по длине списка: прочитанное бывает короче, и длина
-        объявила бы последнюю клетку суммой.
+        объявила бы последнюю клетку суммой. Исключение — страница по
+        подписям: её клетки уже по задачам работы, и их ровно столько.
         """
+        if self.by_labels:
+            return max(0, len(self.cells) - 1)
         return MARK_QUESTIONS if self.sheet == MARKS else QUESTIONS
 
     @property
@@ -1159,6 +1270,18 @@ def troubles(
         counted = sum(page.cells[q] for q in page.answered)
         if total != counted:
             out.append("sum_mismatch")
+    # Тестовый алгоритм: клетка по подписи. Каждая из трёх пометок — про то,
+    # что подпись могла отдать балл не той задаче, а это ошибка молчаливая:
+    # такие страницы человек видит всегда.
+    if page.by_labels and not page.cells_ignored:
+        scored = [tile for tile in page.tiles[:QUESTIONS] if tile.get("value") is not None]
+        if any(tile.get("task") is None for tile in scored):
+            out.append("label_unknown")
+        tasks = [tile["task"] for tile in scored if tile.get("task") is not None]
+        if len(tasks) != len(set(tasks)):
+            out.append("label_twice")
+        if any(tile.get("guessed") for tile in scored):
+            out.append("label_guessed")
     return out
 
 

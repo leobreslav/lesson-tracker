@@ -664,6 +664,10 @@ class ScanReadSerializer(serializers.Serializer):
     # платить за их чтение незачем. Тогда на картинке одна строка имени.
     # Решает браузер по ходу пачки; умолчание — читать, как читали всегда.
     cells = serializers.BooleanField(required=False, default=True)
+    # Тестовый алгоритм: клетка опознаётся по подписи над ней, а не по месту.
+    # Включает его человек на шаге выбора файла, подтвердив подписи работы;
+    # умолчание — прежний алгоритм, он главный.
+    labels = serializers.BooleanField(required=False, default=False)
 
     def validate_reader(self, name):
         from vision import services as vision_services
@@ -705,6 +709,25 @@ class ScanPageSerializer(serializers.Serializer):
         allow_empty=True,
         max_length=96,
     )
+    # Страница по подписям правится плитками — физическими клетками по
+    # порядку: какой это задаче (`task`, позиция или null) и какой балл.
+    # Баллы по задачам сервер пересобирает из них сам.
+    tiles = serializers.ListField(
+        child=serializers.DictField(), required=False, allow_empty=True, max_length=16
+    )
+
+    def validate_tiles(self, tiles):
+        def number(value, top):
+            if value is None:
+                return None
+            if isinstance(value, bool) or not isinstance(value, int) or not 0 <= value <= top:
+                raise serializers.ValidationError("A tile holds a task position and a mark.")
+            return value
+
+        return [
+            {"task": number(tile.get("task"), 999), "value": number(tile.get("value"), 99)}
+            for tile in tiles
+        ]
 
     def validate_student(self, value):
         if value is None:

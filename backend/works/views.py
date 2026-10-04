@@ -345,6 +345,11 @@ class WorkViewSet(CourseScopedViewSet):
         index = form.validated_data["index"]
         fingerprint = form.validated_data.get("fingerprint") or ""
         sheet = form.validated_data["sheet"]
+        labels = (
+            form.validated_data["labels"]
+            and sheet == scanning.ANSWER
+            and form.validated_data["cells"]
+        )
 
         known = work.scan_pages.filter(index=index).first()
         if known and fingerprint and known.fingerprint == fingerprint:
@@ -366,10 +371,13 @@ class WorkViewSet(CourseScopedViewSet):
             # ноль — одна строка имени: в пачке лист баллов, клетки бланка
             # не в счёт, и читать их значило бы платить за выброшенное
             cell_count=scanning.cells_on(sheet) if form.validated_data["cells"] else 0,
+            # тестовый алгоритм — только у бланка, чьи клетки в счёт: у листа
+            # баллов своя нумерация, а без клеток подписям не над чем стоять
+            with_labels=labels,
         )
 
         services.save_scan_reading(
-            work, index=index, fingerprint=fingerprint, data=data, sheet=sheet
+            work, index=index, fingerprint=fingerprint, data=data, sheet=sheet, by_labels=labels
         )
         return Response(services.scan_state(work) | {"cached": False})
 

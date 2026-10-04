@@ -78,6 +78,10 @@ export default function ScanWizard({ work, onClose, onDone }) {
    * вписаны учителем печатными буквами, спорить не о чем, а платить пришлось
    * бы вдвое. */
   const [second, setSecond] = useState(true)
+  /* Тестовый алгоритм: клетка по подписи над ней, а не по месту. Выключен по
+   * умолчанию — прежний алгоритм главный, — и включается только после того,
+   * как человек подтвердил подписи работы (`FileStep`). */
+  const [byLabels, setByLabels] = useState(false)
   /* Кем читать имя. Пустая строка — «кем умеете»: контур возьмёт первого
    * доступного сам, и это верное умолчание, потому что порядок предпочтения
    * знает он, а не экран. Человек перебивает его выбором, когда хочет
@@ -154,7 +158,7 @@ export default function ScanWizard({ work, onClose, onDone }) {
     }
   }
 
-  const start = async (chosen, alsoQuestions, alsoSecond = true, byReader = '') => {
+  const start = async (chosen, alsoQuestions, alsoSecond = true, byReader = '', labelled = false) => {
     if (!chosen) return
     setFile(chosen)
     setQuestions(null)
@@ -182,13 +186,14 @@ export default function ScanWizard({ work, onClose, onDone }) {
         stop: () => stop.current,
         // сколько задач в работе: столько плиток листа баллов и поедет
         tasks: scale.length,
+        byLabels: labelled,
         onPage: (page, count) => {
           seen.push(page)
           setPages([...seen])
           setDone(seen.length)
           setTotal(count)
         },
-        send: async ({ index, blob, plain, mark, sheet, cells }) => {
+        send: async ({ index, blob, plain, mark, sheet, cells, labels }) => {
           const answer = await readScanPage(work.id, {
             index,
             blob,
@@ -196,6 +201,7 @@ export default function ScanWizard({ work, onClose, onDone }) {
             mark,
             sheet,
             cells,
+            labels,
             second: alsoSecond,
             reader: byReader,
           })
@@ -262,7 +268,9 @@ export default function ScanWizard({ work, onClose, onDone }) {
         tasks: scale.length,
         // в пачке есть лист баллов — клетки бланков не в счёт, читается имя
         namesOnly: Boolean(state?.marks_sheet),
-        send: async ({ index: at, blob, plain, mark, sheet, cells }) => {
+        // перевёрнутая страница читается тем же алгоритмом, каким читалась
+        byLabels: Boolean(state?.pages?.find((row) => row.index === index)?.by_labels),
+        send: async ({ index: at, blob, plain, mark, sheet, cells, labels }) => {
           setState(
             await readScanPage(work.id, {
               index: at,
@@ -271,6 +279,7 @@ export default function ScanWizard({ work, onClose, onDone }) {
               mark,
               sheet,
               cells,
+              labels,
               second,
               reader,
             }),
@@ -297,6 +306,10 @@ export default function ScanWizard({ work, onClose, onDone }) {
 
   const fix = async (index, cells) =>
     run(async () => setState(await editScanPage(work.id, { index, cells })))
+
+  // страница по подписям правится плитками: задача над клеткой и балл в ней
+  const fixTiles = async (index, tiles) =>
+    run(async () => setState(await editScanPage(work.id, { index, tiles })))
 
   /* Убрать страницу из пачки или вернуть её. Пустой оборот, титульный лист
      сканера, чужой листок: хозяина такой странице не назначишь, а «ничья»
@@ -426,14 +439,18 @@ export default function ScanWizard({ work, onClose, onDone }) {
           отмеченными, и уехать на сервер должно ровно показанное. */}
       {stage === 'file' && (
         <FileStep
-          onPick={(chosen, byReader, alsoSecond) =>
+          onPick={(chosen, byReader, alsoSecond, labelled) =>
             start(
               chosen,
               readQuestions && (state?.model_reachable ?? true),
               alsoSecond,
               byReader,
+              labelled,
             )
           }
+          names={scale.map((question) => question.name ?? question.label ?? '')}
+          byLabels={byLabels}
+          onByLabels={setByLabels}
           busy={busy}
           readQuestions={readQuestions}
           onReadQuestions={setReadQuestions}
@@ -509,6 +526,7 @@ export default function ScanWizard({ work, onClose, onDone }) {
           hasFile={Boolean(file)}
           onDrop={drop}
           onFix={fix}
+          onTiles={fixTiles}
           onNext={() => setStage('check')}
           onBack={() => setStage('file')}
         />
@@ -521,6 +539,7 @@ export default function ScanWizard({ work, onClose, onDone }) {
           busy={busy}
           sending={sending}
           onFix={fix}
+          onTiles={fixTiles}
           onBack={() => setStage('pages')}
           hasFile={Boolean(file)}
           onApply={finish}
@@ -704,11 +723,22 @@ function FileStep({
   onReader,
   second,
   onSecond,
+  names = [],
+  byLabels = false,
+  onByLabels,
   onBack,
   onForward,
 }) {
   const { t } = useTranslation()
   const [over, setOver] = useState(false)
+  /* Тестовый алгоритм включается только подтверждёнными подписями: сверяет
+   * их сервер с этим самым списком, и подпись, которой в работе нет, клетку
+   * не опознает. Подтверждают каждый раз заново — список мог поменяться на
+   * шаге вопросов минуту назад. */
+  const [labelsConfirmed, setLabelsConfirmed] = useState(false)
+  // читает подписи только модель: распознаватели видят плитку текстом
+  const modelAble = readers.some((one) => one.name === 'anthropic' && one.able)
+  const labelled = byLabels && labelsConfirmed && names.length > 0 && modelAble
 
   /* Вопросов человеку два, и оба простые: **кто читает** — модель или
    * Yandex, — и **звать ли поверх него Mathpix**.
@@ -752,7 +782,7 @@ function FileStep({
     const chosen = await onTake(batch)
     if (!chosen) return
     if (afresh && read > 0) await onReset()
-    onPick(chosen, readerUsed, secondUsed)
+    onPick(chosen, readerUsed, secondUsed, labelled)
   }
 
   return (
@@ -902,6 +932,54 @@ function FileStep({
       </div>
 
       {/*
+        * Тестовый алгоритм: клетка по подписи над ней, а не по месту.
+        *
+        * Прежний остаётся главным и выбран по умолчанию; этот включают руками,
+        * и только **подтвердив подписи**: сервер сверяет вписанное над клеткой
+        * с этим списком, и подпись, которой в нём нет, балла не даст. Список —
+        * имена вопросов работы, те же, что в её таблице; правят их на шаге
+        * вопросов, иначе на бумаге и в таблице окажутся разные имена.
+        */}
+      <div className="reader-choice">
+        <label className={names.length && modelAble ? 'checkbox' : 'checkbox off'}>
+          <input
+            type="checkbox"
+            checked={byLabels && names.length > 0 && modelAble}
+            disabled={busy || !names.length || !modelAble}
+            onChange={(event) => {
+              onByLabels(event.target.checked)
+              setLabelsConfirmed(false)
+            }}
+          />
+          {t('scan.byLabels')}
+          {!names.length && <span className="hint">{t('scan.byLabelsNoQuestions')}</span>}
+          {names.length > 0 && !modelAble && (
+            <span className="hint">{t('scan.byLabelsNoModel')}</span>
+          )}
+        </label>
+        <p className="hint">{t('scan.byLabelsHint')}</p>
+        {byLabels && names.length > 0 && modelAble && (
+          <>
+            <p className="hint">
+              {t('scan.byLabelsList', { list: names.join(', ') })}
+            </p>
+            <label className="checkbox">
+              <input
+                type="checkbox"
+                checked={labelsConfirmed}
+                disabled={busy}
+                onChange={(event) => setLabelsConfirmed(event.target.checked)}
+              />
+              {t('scan.byLabelsConfirm')}
+            </label>
+            {!labelsConfirmed && (
+              <p className="hint warning">{t('scan.byLabelsUnconfirmed')}</p>
+            )}
+          </>
+        )}
+      </div>
+
+      {/*
         * Начать пачку заново.
         *
         * Стояла эта кнопка строчной ссылкой в конце серой подсказки, среди
@@ -990,7 +1068,7 @@ function FileStep({
         onDrop={(event) => {
           event.preventDefault()
           setOver(false)
-          onPick(event.dataTransfer.files[0], readerUsed, secondUsed)
+          onPick(event.dataTransfer.files[0], readerUsed, secondUsed, labelled)
         }}
       >
         {/* поле спрятано, а не убрано: нажатие по зоне доходит до него
@@ -1007,7 +1085,7 @@ function FileStep({
           accept="application/pdf"
           hidden
           disabled={busy}
-          onChange={(event) => onPick(event.target.files[0], readerUsed, secondUsed)}
+          onChange={(event) => onPick(event.target.files[0], readerUsed, secondUsed, labelled)}
         />
         <span>{t('scan.pick')}</span>
       </label>
@@ -1069,6 +1147,7 @@ function PagesStep({
   onDecide,
   onFlip,
   onFix,
+  onTiles,
   onNext,
   onBack,
 }) {
@@ -1327,6 +1406,16 @@ function PagesStep({
               самих клеток, иначе цифра, не доехавшая до журнала, выглядит
               потерянной */}
           {row.cells_ignored && <p className="hint">{t('scan.cellsIgnored')}</p>}
+          {/* Тестовый алгоритм — свои поля: под клеткой скана её подпись и
+              балл. Прежний ряд ниже не тронут: он главный */}
+          {row.by_labels && !row.cells_ignored ? (
+            <TileFields
+              row={row}
+              names={state.question_names ?? []}
+              busy={busy}
+              onTiles={onTiles}
+            />
+          ) : (
           <div
             className="scan-cells"
             style={
@@ -1424,6 +1513,7 @@ function PagesStep({
               </label>
             ))}
           </div>
+          )}
         </div>
       )}
 
@@ -1813,7 +1903,7 @@ function SpendLine({ spend }) {
  * заставлять смотреть на тридцать уверенных строк значит превращать проверку
  * в ритуал. Но возможность посмотреть есть, и цифры правятся на месте.
  */
-function CheckStep({ state, pages, busy, sending, hasFile, onFix, onBack, onApply }) {
+function CheckStep({ state, pages, busy, sending, hasFile, onFix, onTiles, onBack, onApply }) {
   const { t } = useTranslation()
   const [open, setOpen] = useState(null)
   const picker = useRef(null)
@@ -1824,7 +1914,8 @@ function CheckStep({ state, pages, busy, sending, hasFile, onFix, onBack, onAppl
   const nameOfQuestion = (number) =>
     state.question_names?.[number - 1] ?? String(number)
 
-  const cellsOf = (index) => state.pages.find((page) => page.index === index)?.cells ?? []
+  const rowOf = (index) => state.pages.find((page) => page.index === index)
+  const cellsOf = (index) => rowOf(index)?.cells ?? []
 
   return (
     <section className="scan-step scan-check">
@@ -1915,6 +2006,21 @@ function CheckStep({ state, pages, busy, sending, hasFile, onFix, onBack, onAppl
           <div className="scan-sheet">
             {pages[open]?.preview && <img src={pages[open].preview} alt="" />}
           </div>
+          {/* Страница по подписям правится так же, как на шаге страниц:
+              полоска шапки, под каждой её клеткой — подпись и балл. Поля по
+              задачам работы здесь развели бы глаз по строке: «2b» на бумаге
+              во второй клетке, а в списке задач — в шестом поле */}
+          {rowOf(open)?.by_labels && !rowOf(open)?.cells_ignored ? (
+            <div className="scan-header-block">
+              {pages[open]?.strip && <img className="scan-strip" src={pages[open].strip} alt="" />}
+              <TileFields
+                row={rowOf(open)}
+                names={state.question_names ?? []}
+                busy={busy}
+                onTiles={onTiles}
+              />
+            </div>
+          ) : (
           <div className="row">
             {questions.map((number) => (
               <label key={number} className="scan-cell">
@@ -1935,6 +2041,7 @@ function CheckStep({ state, pages, busy, sending, hasFile, onFix, onBack, onAppl
               </label>
             ))}
           </div>
+          )}
         </div>
       )}
 
@@ -2007,5 +2114,122 @@ function CheckStep({ state, pages, busy, sending, hasFile, onFix, onBack, onAppl
         </button>
       </div>
     </section>
+  )
+}
+
+/**
+ * Поля страницы, прочитанной по подписям (тестовый алгоритм): под каждой
+ * клеткой скана — её подпись и балл, колонка в колонку с напечатанными.
+ *
+ * Глаз ходит **только вертикально**: клетка на скане, под ней задача, под
+ * ней балл. Сверять приходится именно эту тройку — подпись могла быть
+ * прочитана не так и отдать балл чужой задаче, — и раскладка по задачам
+ * работы, где «2b» стоит в шестой колонке, а на бумаге во второй, заставила
+ * бы глаз бегать по строке.
+ *
+ * Задачу выбирают из подписей работы, а не вписывают: сверяется подпись
+ * только с ними (`scanning.match_label`), и свободный текст тут был бы ещё
+ * одним местом, где «1a» и «1а» разъезжаются. Прочитанное над клеткой видно
+ * подсказкой у поля — если оно не узналось, то и вместо выбора.
+ */
+function TileFields({ row, names, busy, onTiles }) {
+  const { t } = useTranslation()
+  const tiles = Array.from({ length: GRID.cells }, (_, place) => ({
+    text: '',
+    task: null,
+    value: null,
+    guessed: false,
+    ...(row.tiles?.[place] ?? {}),
+  }))
+  const [draft, setDraft] = useState(null)
+
+  const send = (place, change) =>
+    onTiles(
+      row.index,
+      tiles.map((tile, at) => {
+        const next = at === place ? { ...tile, ...change } : tile
+        return { task: next.task, value: next.value }
+      }),
+    )
+
+  const commit = (place) => {
+    if (!draft || draft.place !== place) return
+    setDraft(null)
+    const value = draft.value === '' ? null : Number(draft.value)
+    if (value !== tiles[place].value) send(place, { value })
+  }
+
+  // одна задача в двух клетках страницы — обе колонки подсвечены: какая из
+  // них настоящая, видно только по бумаге
+  const taken = {}
+  for (const tile of tiles.slice(0, GRID.cells - 1)) {
+    if (tile.task !== null && tile.value !== null) taken[tile.task] = (taken[tile.task] ?? 0) + 1
+  }
+
+  return (
+    <div
+      className="scan-cells scan-tiles"
+      style={{
+        marginLeft: `${gridInStrip().left * 100}%`,
+        width: `${gridInStrip().width * 100}%`,
+        gridTemplateColumns: `repeat(${GRID.cells}, minmax(0, 1fr))`,
+      }}
+    >
+      {tiles.map((tile, place) => {
+        const sum = place === GRID.cells - 1
+        const unknown = !sum && tile.task === null && (tile.value !== null || tile.text)
+        return (
+          <div
+            key={place}
+            className={[
+              'scan-box',
+              unknown ? 'disputed' : '',
+              tile.guessed || taken[tile.task] > 1 ? 'too-big' : '',
+            ]
+              .filter(Boolean)
+              .join(' ')}
+          >
+            {sum ? (
+              <span>{t('scan.pageSum')}</span>
+            ) : (
+              <select
+                value={tile.task ?? ''}
+                disabled={busy}
+                // прочитанное над клеткой — подсказкой: глазу видно, что
+                // увидела модель, даже когда задача уже выбрана
+                title={tile.text ? t('scan.labelRead', { text: tile.text }) : undefined}
+                aria-label={t('scan.labelOfCell', { cell: place + 1 })}
+                onChange={(event) =>
+                  send(place, {
+                    task: event.target.value === '' ? null : Number(event.target.value),
+                  })
+                }
+              >
+                <option value="">{unknown && tile.text ? `?${tile.text}` : '—'}</option>
+                {names.map((name, at) => (
+                  <option key={at} value={at}>
+                    {name}
+                  </option>
+                ))}
+              </select>
+            )}
+            <input
+              type="text"
+              inputMode="numeric"
+              autoComplete="off"
+              maxLength={2}
+              disabled={busy}
+              value={draft?.place === place ? draft.value : (tile.value ?? '')}
+              aria-label={sum ? t('scan.pageSum') : t('scan.markOfCell', { cell: place + 1 })}
+              onChange={(event) => setDraft({ place, value: digits(event.target.value) })}
+              onBlur={() => commit(place)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') event.currentTarget.blur()
+              }}
+            />
+          </div>
+        )
+      })}
+    </div>
   )
 }

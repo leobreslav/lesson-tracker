@@ -8718,6 +8718,32 @@ button.dropzone:hover:not(:disabled) {
   font-variant-numeric: tabular-nums;
 }
 
+/* Тестовый алгоритм: над баллом — выбор задачи, то есть подпись клетки. Стоит
+   на месте серой подписи `Q1` и выглядит так же, чтобы колонка оставалась
+   одной клеткой: что над баллом, то и на скане над ним. Стрелки списка
+   спрятаны — в колонке шириной в два знака им места нет, а раскрывается
+   список и без них. */
+.scan-tiles .scan-box select {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  height: 1.6rem;
+  padding: 0;
+  border: none;
+  border-bottom: 1px solid #c6c6c6;
+  border-radius: 0;
+  background: #f2f2f2;
+  font-size: 0.75rem;
+  text-align: center;
+  text-align-last: center;
+  appearance: none;
+  color: #202124;
+}
+
+.scan-tiles .scan-box.disputed select {
+  color: #b3261e;
+}
+
 /* стрелки числового поля съедают всю ширину клетки — в ряду из шестнадцати
    их некуда девать, а набирают тут одну цифру */
 .scan-box input::-webkit-outer-spin-button,

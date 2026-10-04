@@ -298,6 +298,85 @@ def read_questions(
     return out, message.usage.input_tokens, message.usage.output_tokens
 
 
+def _labels_tool() -> dict:
+    """
+    Схема ответа тестового алгоритма: у клетки ещё и подпись над ней.
+
+    Записью идёт **каждая** подписанная клетка, даже пустая: экран ставит
+    подпись над её полем, и пустая клетка с подписью «3b» — это сведение
+    «задачу 3b не оценили», а не пустое место.
+    """
+    tool = copy.deepcopy(_HEADER_TOOL)
+    marks = tool["input_schema"]["properties"]["marks"]
+    marks["description"] = (
+        "one entry per tile that has a handwritten label above the cell or a "
+        "handwritten digit in it. Tiles with neither are left out. Order does not matter."
+    )
+    item = marks["items"]
+    item["properties"]["label"] = {
+        "type": "string",
+        "description": (
+            "the handwritten label in the band ABOVE the cell, exactly as written, "
+            "e.g. '1a', '2b', '3'; EMPTY string if the band is blank"
+        ),
+    }
+    item["properties"]["value"] = {
+        "type": ["integer", "null"],
+        "description": "the handwritten digit IN the cell; null if the cell is empty",
+    }
+    item["required"] = ["cell", "label", "value"]
+    return tool
+
+
+def _labels_prompt() -> str:
+    """
+    Тестовый алгоритм: клетка опознаётся по подписи, вписанной над ней.
+
+    Правила про имя и цифру те же, что у бланка (`_system_prompt`), слово в
+    слово. Новое одно — подпись, и про неё то же правило, что про имя: буква в
+    букву, как написано. **Списка подписей работы здесь нет нарочно**:
+    подсказанное подставляется вместо увиденного, и сверяет подпись с работой
+    сервер (`works.scanning.match_label`), а не модель.
+    """
+    return (
+        "You are given a picture assembled from one school answer sheet. At the "
+        "top is the name row, with printed labels 'First name:', 'Surname:', "
+        "'Grade:', 'Date:' and handwriting on the rules after them. Below it are "
+        "16 tiles, one per cell of the marks grid. Each tile shows a RED label we "
+        "printed — 'Q1' to 'Q15', and 'SUM' for the page total — and, next to it, "
+        "that cell cut out of the sheet with the band above it: in the upper part "
+        "the teacher may have handwritten a short label of the question, like "
+        "'1a', '2b' or '7'; in the lower part, a mark.\n"
+        "Report the handwritten First name and Surname SEPARATELY, letter by "
+        "letter, EXACTLY as written — do not correct them into a more plausible "
+        "name. If a field is not filled in, return an EMPTY string for it; never "
+        "invent a name. The handwriting varies: sometimes the teacher fills it in, "
+        "not the student. Ignore Grade.\n"
+        "For every tile with a handwritten label or a handwritten digit, report the "
+        "red label of the tile, the handwritten label in the upper part exactly as "
+        "written, character by character, and the digit in the lower part (null if "
+        "there is none). Do not guess a label from its neighbours: if the band is "
+        "blank, return an empty label. The tiles are already cut apart, so what is "
+        "drawn in a tile belongs to it and to no other. Report the digit you "
+        "actually see: never adjust a mark to fit a range you expect, and never "
+        "turn an unexpected digit into a more likely one. 'SUM' is the page total, "
+        "not a question: it has no label, may be larger than any single mark, and "
+        "is often left blank."
+    )
+
+
+def labels_from_marks(marks) -> list[str]:
+    """Названные клетки -> подписи над шестнадцатью клетками по местам."""
+    labels = [""] * CELLS
+    for one in marks or []:
+        if not isinstance(one, dict):
+            continue
+        place = cell_index(one.get("cell"))
+        if place is not None and isinstance(one.get("label"), str):
+            labels[place] = one["label"].strip()
+    return labels
+
+
 def _names_prompt() -> str:
     """
     Одна строка имени бланка — когда баллы в пачке ставили на листе баллов.
@@ -524,8 +603,12 @@ def read_header(
     candidates: list[str] | None = None,
     model: str = prices.HAIKU,
     cells: int = CELLS,
+    with_labels: bool = False,
 ) -> tuple[dict, int, int]:
     """
+    `with_labels` — тестовый алгоритм: плитка несёт и подпись над клеткой,
+    и ответ называет её (`tile_labels`). Только у бланка, только моделью.
+
     `cells` — сколько клеток на этом листе: у бланка ответов шестнадцать, у
     листа баллов `MARK_CELLS`, ноль — одна строка имени бланка, чьи клетки
     не в счёт. От него зависят подсказка, схема ответа и длина списка
@@ -564,27 +647,34 @@ def read_header(
             + names
         )
 
+    # Выбор листа — здесь, а не параметром подсказки: у подсказки параметров
+    # нет нарочно (`PromptTests`), иначе через них однажды вернётся «ожидаемый
+    # ответ».
+    #
+    # Запись о клетке стоит около дюжины токенов: шестнадцать влезают в
+    # пятьсот, а девяносто пять листа баллов — нет, и ответ оборвался бы на
+    # середине сетки; с подписью запись вдвое длиннее. Платят за выданное, а не
+    # за потолок.
+    if with_labels:
+        prompt, tool, ceiling = _labels_prompt(), _labels_tool(), 1000
+    elif cells == CELLS:
+        prompt, tool, ceiling = _system_prompt(), _HEADER_TOOL, 500
+    elif cells:
+        prompt, tool, ceiling = _marks_prompt(), _header_tool(cells), 2000
+    else:
+        prompt, tool, ceiling = _names_prompt(), _header_tool(0), 500
+
     message = _ask(
         model=model,
-        # Запись о клетке стоит около дюжины токенов: шестнадцать влезают в
-        # пятьсот, а девяносто пять листа баллов — нет, и ответ оборвался бы
-        # на середине сетки. Платят за выданное, а не за потолок.
-        max_tokens=2000 if cells > CELLS else 500,
+        max_tokens=ceiling,
         system=[
             {
                 "type": "text",
-                # Выбор листа — здесь, а не параметром подсказки: у подсказки
-                # параметров нет нарочно (`PromptTests`), иначе через них
-                # однажды вернётся «ожидаемый ответ»
-                "text": (
-                    _system_prompt()
-                    if cells == CELLS
-                    else _marks_prompt() if cells else _names_prompt()
-                ),
+                "text": prompt,
                 "cache_control": {"type": "ephemeral"},
             }
         ],
-        tools=[_header_tool(cells)],
+        tools=[tool],
         tool_choice={"type": "tool", "name": _HEADER_TOOL["name"]},
         messages=[
             {
@@ -617,14 +707,13 @@ def read_header(
 
     values = values_from_marks(data.get("marks"), cells)
 
-    return (
-        {
-            "first_name": (data.get("first_name") or "").strip(),
-            "surname": (data.get("surname") or "").strip(),
-            "date": (data.get("date") or "").strip(),
-            "guess": (data.get("guess") or "").strip(),
-            "values": values,
-        },
-        message.usage.input_tokens,
-        message.usage.output_tokens,
-    )
+    reading = {
+        "first_name": (data.get("first_name") or "").strip(),
+        "surname": (data.get("surname") or "").strip(),
+        "date": (data.get("date") or "").strip(),
+        "guess": (data.get("guess") or "").strip(),
+        "values": values,
+    }
+    if with_labels:
+        reading["tile_labels"] = labels_from_marks(data.get("marks"))
+    return reading, message.usage.input_tokens, message.usage.output_tokens

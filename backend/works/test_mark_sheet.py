@@ -218,3 +218,99 @@ class MarkSheetPileTests(SchoolTestMixin, APITestCase):
         self.assertEqual(answer.status_code, 200, answer.content)
         self.assertEqual(seen["cell_count"], MARK_CELLS)
         self.assertEqual(ScanPage.objects.get(work=self.work, index=0).sheet, "marks")
+
+
+class LabelledPageTests(SchoolTestMixin, APITestCase):
+    """
+    Тестовый алгоритм по всей дороге: дверь чтения, плитки, правка, оценки.
+
+    Прежний алгоритм не меняется — это сторожат все прежние тесты разбора;
+    здесь — что новый доезжает до журнала по задачам, а не по местам.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.year = make_year(self.school)
+        self.course = make_course(self.school, self.year)
+        self.work = make_work(self.user, self.course)
+        services.set_questions(
+            self.work,
+            [{"question": f"Задача {n}", "maximum": 5, "label": label}
+             for n, label in enumerate(["1a", "1b", "2"], start=1)],
+            by=self.user,
+        )
+        self.student.first_name, self.student.last_name = "Fil", "Burmov"
+        self.student.save()
+        enrol(self.student, self.course, by=self.admin)
+        self.client.force_authenticate(self.user)
+
+    def read(self, labels, values, flag="true"):
+        from works import views
+
+        seen = {}
+
+        def reading(**kwargs):
+            seen.update(kwargs)
+            return {"first_name": "Fil", "surname": "Burmov", "values": values, "tile_labels": labels}
+
+        with patch.object(views.vision_services, "read_and_charge", reading):
+            answer = self.client.post(
+                reverse("work-scan-read", args=[self.work.pk]),
+                {
+                    "index": 0,
+                    "strip": SimpleUploadedFile("strip.jpg", b"picture"),
+                    "fingerprint": "f0",
+                    "labels": flag,
+                },
+                format="multipart",
+            )
+        self.assertEqual(answer.status_code, 200, answer.content)
+        return seen
+
+    def test_the_door_asks_for_labels_and_the_marks_land_on_their_questions(self):
+        seen = self.read(["2", "1a"] + [""] * 14, [4, 1] + [None] * 13 + [5])
+
+        self.assertTrue(seen["with_labels"])
+        row = ScanPage.objects.get(work=self.work, index=0)
+        self.assertTrue(row.by_labels)
+        # «2» во второй клетке на бумаге — третья задача работы
+        self.assertEqual(row.cells, [1, None, 4, 5])
+        state = self.client.get(reverse("work-scan-state", args=[self.work.pk])).json()
+        self.assertEqual(state["students"][0]["marks"], {"1": 1, "3": 4})
+        self.assertEqual(state["pages"][0]["tiles"][0]["text"], "2")
+
+    def test_the_main_algorithm_is_untouched_when_the_box_is_not_ticked(self):
+        seen = self.read(None, [4, 1] + [None] * 14, flag="false")
+
+        self.assertFalse(seen["with_labels"])
+        row = ScanPage.objects.get(work=self.work, index=0)
+        self.assertFalse(row.by_labels)
+        self.assertEqual(row.cells[:2], [4, 1])
+
+    def test_a_human_picks_the_question_of_a_cell_and_the_marks_follow(self):
+        self.read(["4c"] + [""] * 15, [3] + [None] * 15)
+        tiles = [{"task": None, "value": None}] * 16
+        tiles = [{"task": 1, "value": 3}] + tiles[1:]
+
+        self.client.post(
+            reverse("work-scan-page", args=[self.work.pk]),
+            {"index": 0, "tiles": tiles},
+            format="json",
+        )
+
+        row = ScanPage.objects.get(work=self.work, index=0)
+        self.assertEqual(row.cells, [None, 3, None, None])
+        # прочитанное остаётся рядом: человек видит, что модель увидела «4c»
+        self.assertEqual(row.tiles[0]["text"], "4c")
+
+    def test_a_direct_cell_edit_cannot_bypass_the_tiles(self):
+        """Правка по позициям мимо плиток развела бы скан и оценки."""
+        self.read(["1a"] + [""] * 15, [2] + [None] * 15)
+
+        self.client.post(
+            reverse("work-scan-page", args=[self.work.pk]),
+            {"index": 0, "cells": [5, 5, 5, 5]},
+            format="json",
+        )
+
+        self.assertEqual(ScanPage.objects.get(work=self.work, index=0).cells[0], 2)

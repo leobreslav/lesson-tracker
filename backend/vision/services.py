@@ -172,6 +172,7 @@ def read_and_charge(
     reader: str = "",
     second: bool = True,
     cell_count: int = CELLS,
+    with_labels: bool = False,
 ) -> dict:
     """
     Прочитать полоску и записать трату. Одна дверь: считать, не заплатив, нельзя.
@@ -237,15 +238,19 @@ def read_and_charge(
         purpose=purpose,
         chosen=reader,
         cell_count=cell_count,
+        with_labels=with_labels,
     )
 
+    # Тестовый алгоритм читает подписи над клетками, а Mathpix плитки видит
+    # текстом: подпись «2» рядом с баллом «3» у него неотличима от «23».
+    # Свидетель, который не умеет различить главное, тут не свидетель.
     cells = second_reading(
         school,
         user,
         work,
         image,
         media_type,
-        asked=second,
+        asked=second and not with_labels,
         cell_count=cell_count,
     )
     if cells.get("error"):
@@ -328,6 +333,7 @@ def name_reading(
     purpose: str,
     chosen: str,
     cell_count: int = CELLS,
+    with_labels: bool = False,
 ) -> dict:
     """
     Прочитать имя. Кем — решает человек; чем закончить, если он не смог, — мы.
@@ -355,6 +361,11 @@ def name_reading(
     order = name_readers()
     if chosen in order:
         order = [chosen] + [one for one in order if one != chosen]
+    # Тестовый алгоритм читает только модель: распознаватели видят плитку
+    # текстом и подпись над клеткой от балла в ней не отличают. Включает его
+    # человек сам, на шаге выбора файла, и экран там говорит, кто читает.
+    if with_labels:
+        order = [one for one in order if one == ANTHROPIC]
 
     # Чем кончился обход, решает **последнее слово**, а не длина списка:
     # «до модели не достучаться» и «читатель промолчал» чинятся по-разному, и
@@ -374,6 +385,7 @@ def name_reading(
                     candidates=candidates,
                     model=model,
                     cells=cell_count,
+                    with_labels=with_labels,
                 )
             except client.ModelUnreachable:
                 # Неудавшийся вызов не стоил ничего: платят за токены, а
