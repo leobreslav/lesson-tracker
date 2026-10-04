@@ -28,7 +28,7 @@
 // из тестов ровно там, где код станет разделителем блоков.
 import jsQR from 'jsqr'
 
-import { CODE_PREFIX, GRID, HEADER, HEADER_MARKS, PAGE, QR, STRIP, STRIP_WIDTH, cellRect, headerCorners, nameRow, sheetCorners, stripHeight } from './blankGeometry.js'
+import { CODE_PREFIX, GRID, HEADER, HEADER_MARKS, MARKS, PAGE, QR, STRIP, STRIP_WIDTH, cellRect, headerCorners, markCellRect, markGrid, markRowRect, nameRow, sheetCorners, stripHeight } from './blankGeometry.js'
 
 /** Оттенки серого одной плоскостью: дальше всё считается по ней. */
 export function toGray(image) {
@@ -511,8 +511,11 @@ function fitLine(pairs) {
  *
  * `null` значит «уточнять не по чему»: линий нашлось слишком мало, и подгонка
  * по трём случайным теням была бы хуже, чем её отсутствие.
+ *
+ * `grid` — какая сетка ищется: шапка бланка по умолчанию или линейка листа
+ * баллов (`markGrid`). Сетка у них одна, разное только то, где она стоит.
  */
-export function gridFix(strip, rect) {
+export function gridFix(strip, rect, grid = GRID) {
   const { gray, width, height } = toGray(strip)
   const mmX = (px) => rect.x + (rect.width * px) / width
   const mmY = (px) => rect.y + (rect.height * px) / height
@@ -521,8 +524,8 @@ export function gridFix(strip, rect) {
 
   const verticals = darkBands(gray, width, height, { across: true }).map(mmX)
   const pairs = []
-  for (let cell = 0; cell <= GRID.cells; cell += 1) {
-    const want = GRID.x + cell * GRID.cellWidth
+  for (let cell = 0; cell <= grid.cells; cell += 1) {
+    const want = grid.x + cell * grid.cellWidth
     let best = null
     for (const found of verticals) {
       const gap = Math.abs(found - want)
@@ -533,7 +536,7 @@ export function gridFix(strip, rect) {
 
   const horizontals = darkBands(gray, width, height, { across: false }).map(mmY)
   const rows = []
-  for (const want of [GRID.y, GRID.y + GRID.labelHeight, GRID.y + GRID.height]) {
+  for (const want of [grid.y, grid.y + grid.labelHeight, grid.y + grid.height]) {
     let best = null
     for (const found of horizontals) {
       const gap = Math.abs(found - want)
@@ -617,12 +620,17 @@ export function crossedByRules(gray, width, from, to, level) {
   return false
 }
 
-export function gridScore(strip) {
+/**
+ * Сколько границ сетки встало на печатные места. `rect` — откуда вырезана
+ * полоска, `grid` — какая сетка в ней: шапка бланка по умолчанию, линейка
+ * листа баллов у маркгрида.
+ */
+export function gridScore(strip, rect = HEADER, grid = GRID) {
   const { gray, width, height } = toGray(strip)
 
   // полоса клеток: под подписями Q1..Σ и до низа сетки
-  const top = Math.round(((GRID.y + GRID.labelHeight - HEADER.y) / HEADER.height) * height)
-  const bottom = Math.round(((GRID.y + GRID.height - HEADER.y) / HEADER.height) * height)
+  const top = Math.round(((grid.y + grid.labelHeight - rect.y) / rect.height) * height)
+  const bottom = Math.round(((grid.y + grid.height - rect.y) / rect.height) * height)
   const rows = Math.max(1, bottom - top)
 
   // Средняя яркость столбца, а не «доля тёмных точек ниже порога». Порог тут
@@ -648,11 +656,11 @@ export function gridScore(strip) {
   // с шапки, и счёт ей не нужен (`crossedByRules`).
   if (crossedByRules(gray, width, top, bottom, level)) return 0
 
-  const near = Math.max(3, Math.round((1.2 / HEADER.width) * width))
+  const near = Math.max(3, Math.round((1.2 / rect.width) * width))
   let matched = 0
-  for (let cell = 0; cell <= GRID.cells; cell += 1) {
-    const mm = GRID.x + cell * GRID.cellWidth
-    const at = Math.round(((mm - HEADER.x) / HEADER.width) * width)
+  for (let cell = 0; cell <= grid.cells; cell += 1) {
+    const mm = grid.x + cell * grid.cellWidth
+    const at = Math.round(((mm - rect.x) / rect.width) * width)
     for (let dx = -near; dx <= near; dx += 1) {
       if (solid[at + dx]) {
         matched += 1
@@ -843,7 +851,7 @@ const TRY_WIDTH = 512
  */
 const CODE_MISS = 40
 
-function putsCodeInPlace(h, image, code) {
+function putsCodeInPlace(h, image, code, places = QR.at) {
   if (!code) return true
 
   const middle = code.corners.reduce(
@@ -852,20 +860,18 @@ function putsCodeInPlace(h, image, code) {
   )
   const near = (CODE_MISS * image.width) / PAGE.width
 
-  return QR.at.some((one) => {
+  return places.some((one) => {
     const at = project(h, one.x + QR.size / 2, one.y + QR.size / 2)
     return Math.hypot(at.x - middle.x, at.y - middle.y) < near
   })
 }
 
-export function extractHeader(image) {
+export function extractHeader(image, code = findCode(image)) {
   const small = shrink(toGray(image))
-  // Коды ищутся **до** меток и один раз на страницу: их места нужны, чтобы
-  // вычеркнуть из меток «глаза» самих кодов, а звать декодер на каждого
-  // кандидата значило бы платить за одно и то же по десять раз.
   // Код ищется один раз на страницу: декодер идёт по четвертям кадра, и звать
   // его на каждого кандидата значило бы платить за одно и то же по десять раз.
-  const code = findCode(image)
+  // Найденный приходит параметром, если страницу уже спросили, не лист ли это
+  // баллов (`readPage`), — по той же причине.
   const marks = findMarks(small)
   const candidates = quads(marks, small)
 
@@ -1113,6 +1119,145 @@ export function cutForReading(image, h, fix = null) {
       withoutStrayInk(warp(image, h, fixed(cellRect(index), fix), CELL_SIDE, CELL_SIDE)),
     ),
   }
+}
+
+/**
+ * Ниже этого счёта лист баллов не считается выпрямленным: двенадцать границ из
+ * семнадцати в каждой из шести линеек, как у шапки бланка (`ENOUGH_LINES`).
+ *
+ * Счёт по всем линейкам, а не по заполненным: сетка напечатана целиком, и
+ * пустая линейка доказывает выпрямление не хуже исписанной.
+ */
+export const MARKS_ENOUGH = ENOUGH_LINES * MARKS.rows
+
+/**
+ * Лист баллов с фотографии страницы: гомография и поправка каждой линейки.
+ *
+ * Возвращает `{h, fixes, score}` или `null`, если ни один кандидат не положил
+ * код листа туда, где он напечатан.
+ *
+ * **Кандидаты те же, что у шапки бланка**, и по той же причине: угловые метки
+ * стоят там же, а лист со сканера лежит ровно, и поиск меток на нём умеет
+ * ошибаться (`extractHeader`). Полос меток вокруг шапки тут нет — у листа их
+ * шесть пар, по одной между линейками, — и они не нужны: подгонка каждой
+ * линейки по её собственной сетке точнее любой пары меток.
+ *
+ * **Отбраковывает кандидата код**, а не строка имени: коды стоят вверху, и
+ * перевёрнутое выпрямление кладёт их на четверть метра мимо. Сетка же
+ * симметрична, и перевёрнутый лист набрал бы тот же счёт.
+ *
+ * **Поправка у каждой линейки своя.** Лист бывает сфотографирован, а не
+ * отсканирован, и одна поправка на шесть линеек размазала бы ошибку по всем:
+ * плоским лист остаётся на полосе, а не на странице.
+ */
+export function extractMarks(image, code) {
+  const small = shrink(toGray(image))
+  const marks = findMarks(small)
+  const nominal = sheetCorners()
+  const tries = []
+
+  const consider = (from, to) => {
+    const h = homography(from, to)
+    if (!h) return
+    if (!putsCodeInPlace(h, image, code, MARKS.codes)) return
+
+    let score = 0
+    const fixes = []
+    for (let row = 0; row < MARKS.rows; row += 1) {
+      const grid = markGrid(row)
+      const rect = markRowRect(row)
+      const height = Math.round((TRY_WIDTH * rect.height) / rect.width)
+      const strip = warp(image, h, rect, TRY_WIDTH, height)
+
+      let best = gridScore(strip, rect, grid)
+      let fix = null
+      const found = gridFix(strip, rect, grid)
+      if (found) {
+        const better = gridScore(warp(image, h, fixed(rect, found), TRY_WIDTH, height), rect, grid)
+        if (better >= best) {
+          best = better
+          fix = found
+        }
+      }
+      score += best
+      fixes.push(fix)
+    }
+    tries.push({ h, fixes, score })
+  }
+
+  for (const quad of quads(marks, small)) {
+    for (let turn = 0; turn < 4; turn += 1) {
+      const turned = quad.slice(turn).concat(quad.slice(0, turn))
+      consider(
+        nominal,
+        turned.map((point) => ({ x: point.x * small.step, y: point.y * small.step })),
+      )
+    }
+  }
+
+  const page = [
+    { x: 0, y: 0 },
+    { x: PAGE.width, y: 0 },
+    { x: PAGE.width, y: PAGE.height },
+    { x: 0, y: PAGE.height },
+  ]
+  const frame = [
+    { x: 0, y: 0 },
+    { x: image.width, y: 0 },
+    { x: image.width, y: image.height },
+    { x: 0, y: image.height },
+  ]
+  for (let turn = 0; turn < 4; turn += 1) {
+    consider(page, frame.slice(turn).concat(frame.slice(0, turn)))
+  }
+
+  if (!tries.length) return null
+  return tries.reduce((one, two) => (two.score > one.score ? two : one))
+}
+
+/**
+ * Разрезать лист баллов на то, что уезжает на чтение: строку имени и клетки.
+ *
+ * Клетки — только `indexes`: те, что есть у работы, и сумма. Девяносто шесть
+ * плиток у работы из двадцати задач — это семьдесят пять пустых квадратов,
+ * за которые платят пикселями картинки и вниманием читателя.
+ *
+ * Строке имени достаётся поправка первой линейки: она ближе всех, а своей
+ * сетки у строки имени нет.
+ */
+export function cutMarksForReading(image, found, indexes) {
+  const { h, fixes } = found
+  // Строка имени — с запасом вокруг рамки: промах выпрямления на миллиметр
+  // иначе срезал бы край почерка, а выглядело бы это как плохое чтение имени
+  const box = MARKS.name
+  const row = fixed({ x: box.x - 2.5, y: box.y - 1, width: box.width + 5, height: box.height + 2 }, fixes[0])
+  const rowHeight = Math.round((STRIP_WIDTH * row.height) / row.width)
+  return {
+    name: warp(image, h, row, STRIP_WIDTH, rowHeight),
+    cells: indexes.map((index) =>
+      withoutStrayInk(
+        warp(
+          image,
+          h,
+          fixed(markCellRect(index), fixes[Math.floor(index / GRID.cells)]),
+          CELL_SIDE,
+          CELL_SIDE,
+        ),
+      ),
+    ),
+  }
+}
+
+/**
+ * Лист баллов «как на бумаге» — от строки имени до низа последней нужной
+ * линейки. По нему читают имя: распознаватель на собранном листе склеивает
+ * строку имени с первым рядом плиток (`readPage`).
+ */
+export function marksPlain(image, found, lastRow) {
+  const bottom = markGrid(lastRow).y + markGrid(lastRow).height + 2
+  const rect = { x: HEADER.x, y: MARKS.name.y - 4, width: HEADER.width, height: bottom - MARKS.name.y + 4 }
+  const height = Math.round((STRIP_WIDTH * rect.height) / rect.width)
+  return warp(image, found.h, fixed(rect, found.fixes[0]), STRIP_WIDTH, height)
 }
 
 export { HEADER, headerCorners }

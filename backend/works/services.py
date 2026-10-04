@@ -1486,28 +1486,37 @@ def remember_writing(work, row) -> None:
 
 
 def scan_pages(work) -> list:
-    """Строки страниц из базы в объекты разбора."""
-    from .scanning import CELLS, Page, fold
+    """
+    Строки страниц из базы в объекты разбора — уже с правилом листа баллов.
+
+    Правило стоит здесь, а не у каждого, кто раскладывает: через эту дверь
+    идут экран, приём работы ученика и завершение, и спроси они правило
+    порознь, однажды разошлись бы в том, откуда в пачке баллы.
+    """
+    from .scanning import Page, cells_on, fold, marks_rule
 
     known = remembered_writings(work)
 
-    return [
-        Page(
-            alias_id=known.get(fold(row.first_name, row.surname)),
-            index=row.index,
-            first=row.first_name,
-            surname=row.surname,
-            cells=(list(row.cells) + [None] * CELLS)[:CELLS],
-            guess=row.guess,
-            headerless=row.headerless,
-            ours=row.ours,
-            student_id=row.student_id,
-            decided_by_human=row.decided_by_human,
-            dropped=row.dropped,
-            second=row.second or {},
-        )
-        for row in work.scan_pages.all()
-    ]
+    return marks_rule(
+        [
+            Page(
+                alias_id=known.get(fold(row.first_name, row.surname)),
+                index=row.index,
+                first=row.first_name,
+                surname=row.surname,
+                cells=(list(row.cells) + [None] * cells_on(row.sheet))[: cells_on(row.sheet)],
+                guess=row.guess,
+                headerless=row.headerless,
+                ours=row.ours,
+                student_id=row.student_id,
+                decided_by_human=row.decided_by_human,
+                dropped=row.dropped,
+                second=row.second or {},
+                sheet=row.sheet,
+            )
+            for row in work.scan_pages.all()
+        ]
+    )
 
 
 def in_the_pile(pages: list) -> list:
@@ -1647,6 +1656,11 @@ def scan_state(work) -> dict:
                 "first_name": page.first,
                 "surname": page.surname,
                 "cells": page.cells,
+                # Бланк или лист баллов, и в счёт ли клетки: в пачке с листом
+                # баллов клетки бланков показываются, но никуда не едут, и
+                # человек должен это видеть, а не гадать, куда делся балл
+                "sheet": page.sheet,
+                "cells_ignored": page.cells_ignored,
                 "headerless": page.headerless,
                 "student": owner,
                 # «Условия в начале работы»: лист уедет в начало PDF каждого
@@ -1806,6 +1820,11 @@ def scan_state(work) -> dict:
         # тогда клетки зовутся своими номерами
         "question_names": names,
         "max_mark": limit,
+        # В пачке есть лист баллов: баллы берутся с него, а клетки бланков не
+        # в счёт (`scanning.marks_rule`). Экран говорит об этом одной строкой
+        # — иначе прочитанная, но не поехавшая в оценки цифра на бланке
+        # выглядела бы потерянной
+        "marks_sheet": any(page.sheet == scanning.MARKS and not page.dropped for page in pages),
         # Листов условий столько, сколько их в пачке, а не сколько раз они
         # розданы: общий ряд лежит в каждом пакете, и сумма по пакетам
         # объявляла бы два листа условий на тринадцать работ двадцатью шестью.
@@ -2083,7 +2102,7 @@ def scan_apply(work, *, by=None) -> dict:
     }
 
 
-def save_scan_reading(work, *, index: int, fingerprint: str, data: dict):
+def save_scan_reading(work, *, index: int, fingerprint: str, data: dict, sheet: str = "answer"):
     """
     Положить прочитанное. Решение человека при этом не трогается.
 
@@ -2098,6 +2117,7 @@ def save_scan_reading(work, *, index: int, fingerprint: str, data: dict):
     row.date_text = data.get("date", "")
     row.guess = data.get("guess", "")
     row.cells = data.get("values") or []
+    row.sheet = sheet
     row.ours = True
     row.model = data.get("model", "")
     # Что увидел второй читатель. Кладём и тогда, когда он не ответил: «его не
@@ -2111,7 +2131,7 @@ def save_scan_reading(work, *, index: int, fingerprint: str, data: dict):
 UNSET = object()
 
 
-def mark_headerless(work, *, index: int, ours: bool = False):
+def mark_headerless(work, *, index: int, ours: bool = False, sheet: str | None = None):
     """
     Записать, что на странице шапки не нашлось, и наш ли это лист.
 
@@ -2123,7 +2143,14 @@ def mark_headerless(work, *, index: int, ours: bool = False):
     row, _ = ScanPage.objects.get_or_create(work=work, index=index)
     row.headerless = True
     row.ours = ours
-    row.save(update_fields=["headerless", "ours"])
+    fields = ["headerless", "ours"]
+    # Код листа баллов нашёлся, а сетка — нет. Такой лист всё равно решает,
+    # откуда в пачке баллы (`scanning.marks_rule`), поэтому лист записывается
+    # и у непрочитанного
+    if sheet:
+        row.sheet = sheet
+        fields.append("sheet")
+    row.save(update_fields=fields)
     return row
 
 
@@ -2142,7 +2169,7 @@ def edit_scan_page(work, *, index: int, student=UNSET, cells=None, dropped=None)
     разных слова, и верно последнее. Оставь мы её убранной, назначенная
     страница молча не попала бы ученику в работу.
     """
-    from .scanning import CELLS
+    from .scanning import cells_on
 
     row, _ = ScanPage.objects.get_or_create(work=work, index=index)
     fields = []
@@ -2159,7 +2186,8 @@ def edit_scan_page(work, *, index: int, student=UNSET, cells=None, dropped=None)
         row.dropped = False
         fields.append("dropped")
     if cells is not None:
-        row.cells = (list(cells) + [None] * CELLS)[:CELLS]
+        count = cells_on(row.sheet)
+        row.cells = (list(cells) + [None] * count)[:count]
         fields.append("cells")
         # Человек вписал балл — значит перед ним сетка баллов, то есть лист
         # решения, что бы ни решил поиск шапки. Без этого проставленные руками

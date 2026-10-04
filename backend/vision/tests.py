@@ -57,7 +57,35 @@ class PromptTests(SimpleTestCase):
         from inspect import signature
 
         self.assertEqual(list(signature(client._system_prompt).parameters), [])
+        self.assertEqual(list(signature(client._marks_prompt).parameters), [])
+        self.assertEqual(list(signature(client._names_prompt).parameters), [])
         self.assertNotIn("max_mark", signature(client.read_header).parameters)
+
+    def test_the_name_only_reading_keeps_the_rules_and_asks_for_no_marks(self):
+        """
+        Бланк в пачке с листом баллов читается одной строкой имени. Правила про
+        имя те же, а клеток модель не называет: их на картинке нет, и
+        выдуманная клетка ушла бы в спор с читателем, которого не было.
+        """
+        prompt = client._names_prompt()
+        tool = client._header_tool(0)
+
+        self.assertIn("EXACTLY as written", prompt)
+        self.assertNotIn("marks", tool["input_schema"]["required"])
+        self.assertEqual(client.values_from_marks([{"cell": "Q1", "value": 3}], 0), [])
+
+    def test_the_mark_sheet_prompt_keeps_the_same_rules(self):
+        """
+        Лист баллов — другой лист, а не другие правила: имя буква в букву,
+        цифра какая есть. Ослабь одно из них только здесь, и ошибка, выведенная
+        на бланке, вернулась бы на листе, где баллов вшестеро больше.
+        """
+        prompt = client._marks_prompt()
+
+        self.assertIn("never adjust a mark", prompt)
+        self.assertIn("EXACTLY as written", prompt)
+        self.assertNotIn("look again", prompt)
+        self.assertNotIn("between 0 and", prompt)
 
 
 class CellLabelTests(SimpleTestCase):
@@ -1560,3 +1588,50 @@ class ModelOutOfReachTests(PretendsThereIsAKey, SchoolTestMixin, APITestCase):
 
         self.assertFalse(reach.reachable(services.YANDEX))
         self.assertNotIn(services.YANDEX, services.name_readers())
+
+
+class MarkSheetCellsTests(SimpleTestCase):
+    """
+    Лист баллов читается тем же устройством, что бланк, — с другим числом клеток.
+
+    Подписи на плитках у него `Q1`…`Q95` и `SUM`, и на своё место должна
+    попасть каждая: сорок первая задача, уехавшая в никуда, — это балл, который
+    не появится в журнале, и никто не узнает почему. А на бланке та же `Q40`
+    обязана остаться чужой: пятнадцать клеток там не перестали быть пятнадцатью.
+    """
+
+    def test_a_label_past_fifteen_lands_in_its_place_on_the_mark_sheet(self):
+        self.assertEqual(client.cell_index("Q40", client.MARK_CELLS), 39)
+        self.assertEqual(client.cell_index("SUM", client.MARK_CELLS), 95)
+
+    def test_the_same_label_is_foreign_on_the_answer_sheet(self):
+        self.assertIsNone(client.cell_index("Q40"))
+        self.assertEqual(client.cell_index("SUM"), 15)
+
+    def test_the_model_answer_fills_the_long_list(self):
+        values = client.values_from_marks(
+            [{"cell": "Q2", "value": 1}, {"cell": "Q40", "value": 3}, {"cell": "SUM", "value": 4}],
+            client.MARK_CELLS,
+        )
+
+        self.assertEqual(len(values), 96)
+        self.assertEqual((values[1], values[39], values[95]), (1, 3, 4))
+
+    def test_a_recognizer_answer_fills_the_long_list(self):
+        reading = strip.reading_from(
+            ["First name Anna Surname Petrova Grade Date", "Q1 2 Q17 1 Q40 3 SUM 6"],
+            reader="mathpix",
+            cells=client.MARK_CELLS,
+        )
+
+        self.assertEqual(reading["surname"], "Petrova")
+        self.assertEqual(
+            (reading["values"][0], reading["values"][16], reading["values"][39], reading["values"][95]),
+            (2, 1, 3, 6),
+        )
+
+    def test_the_answer_sheet_reading_is_unchanged(self):
+        reading = strip.reading_from(["Anna Petrova", "Q1 2 Q15 1 SUM 3"], reader="mathpix")
+
+        self.assertEqual(len(reading["values"]), 16)
+        self.assertEqual((reading["values"][0], reading["values"][14], reading["values"][15]), (2, 1, 3))

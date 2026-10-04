@@ -25,10 +25,12 @@ import re
 
 from .client import CELLS, cell_index
 
-# Подпись над плиткой: `Q1`..`Q15` и сумма. Сигму распознаватели пишут то
-# знаком, то латехом, поэтому обе формы.
+# Подпись над плиткой: `Q1`..`Q15` у бланка, `Q1`..`Q95` у листа баллов, и
+# сумма. Сигму распознаватели пишут то знаком, то латехом, поэтому обе формы.
+# Номер берётся любой двузначный: лишний (`Q40` на бланке) отсеет `cell_index`
+# по числу клеток листа, а не регулярка, — иначе их пришлось бы держать две.
 LABEL = re.compile(
-    r"(?:\bQ\s*(?:1[0-5]|[1-9])\b|\bSUM\b|\bTOTAL\b|Σ|\\Sigma\b)",
+    r"(?:\bQ\s*(?:[1-9]\d?)\b|\bSUM\b|\bTOTAL\b|Σ|\\Sigma\b)",
     re.IGNORECASE,
 )
 
@@ -75,7 +77,7 @@ def clean(text: str) -> str:
     return NOISE.sub(" ", STRUCTURE.sub(" ", text or ""))
 
 
-def reading_from(lines: list[str], *, reader: str) -> dict:
+def reading_from(lines: list[str], *, reader: str, cells: int = CELLS) -> dict:
     """
     Строки -> то же самое, что возвращает чтение моделью.
 
@@ -94,7 +96,7 @@ def reading_from(lines: list[str], *, reader: str) -> dict:
         "first_name": first,
         "surname": surname,
         "date": date,
-        "values": values_from(tiles),
+        "values": values_from(tiles, cells),
         # Строка имени как есть: человеку показываем прочитанное, а не наш
         # разбор его на графы. Разбор мог и не сойтись.
         "text": clean(head).strip(),
@@ -137,7 +139,7 @@ def names_from(head: str) -> tuple[str, str, str]:
     return values.get("first name", ""), values.get("surname", ""), values.get("date", "")
 
 
-def values_from(tiles: str) -> list:
+def values_from(tiles: str, cells: int = CELLS) -> list:
     """
     Плитки -> шестнадцать значений по местам.
 
@@ -159,10 +161,10 @@ def values_from(tiles: str) -> list:
     как прочитанный балл. Цифра клетки стоит в самой клетке: перевод строки,
     `\\\\` и линейка — это уже не она.
     """
-    values: list = [None] * CELLS
+    values: list = [None] * cells
     marks = list(LABEL.finditer(tiles))
     for number, mark in enumerate(marks):
-        place = cell_index(mark.group().replace("\\Sigma", "Σ"))
+        place = cell_index(mark.group().replace("\\Sigma", "Σ"), cells)
         if place is None:
             continue
         end = marks[number + 1].start() if number + 1 < len(marks) else len(tiles)

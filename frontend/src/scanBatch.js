@@ -13,8 +13,17 @@
  * платить нечем — картинку всё равно ужимает Anthropic.
  */
 
-import { GRID, PAGE, STRIP_WIDTH, cellLabel } from './blankGeometry'
-import { ENOUGH_LINES, cutForReading, extractHeader } from './scanSheet'
+import { GRID, MARKS, PAGE, STRIP_WIDTH, cellLabel, isMarkSheetCode, markCellLabel } from './blankGeometry'
+import {
+  ENOUGH_LINES,
+  MARKS_ENOUGH,
+  cutForReading,
+  cutMarksForReading,
+  extractHeader,
+  extractMarks,
+  findCodes,
+  marksPlain,
+} from './scanSheet'
 
 /**
  * Ширина отрисовки страницы. Полоска занимает 190 мм из 210, и хочется, чтобы
@@ -137,14 +146,36 @@ const TILE = { width: Math.floor(STRIP_WIDTH / TILE_COLUMNS), height: 128, label
  */
 export function readingSheet(image, h, fix = null) {
   const { name, cells } = cutForReading(image, h, fix)
+  return assembled(name, cells, cellLabel)
+}
+
+/*
+ * У листа баллов плиток больше — до девяноста шести, — и в шесть колонок они
+ * вытянули бы картинку в три с лишним раза выше ширины, а Anthropic ужал бы её
+ * по длинной стороне вместе со строкой имени. В восемь колонок плитка всё ещё
+ * вмещает подпись и клетку (74 + 120 точек).
+ */
+const MARK_COLUMNS = 8
+
+/**
+ * Картинка листа баллов на чтение: строка имени и плитки нужных клеток,
+ * каждая со своей подписью — `Q23`, а не «восьмая во второй строке».
+ */
+export function marksSheet(image, found, indexes) {
+  const { name, cells } = cutMarksForReading(image, found, indexes)
+  return assembled(name, cells, (at) => markCellLabel(indexes[at]), MARK_COLUMNS)
+}
+
+function assembled(name, cells, labelOf, columns = TILE_COLUMNS) {
+  const tile = { ...TILE, width: Math.floor(STRIP_WIDTH / columns) }
 
   // строка имени идёт в свою натуральную величину, без ужатия
   const nameHeight = name.height
-  const rows = Math.ceil(cells.length / TILE_COLUMNS)
+  const rows = Math.ceil(cells.length / columns)
 
   const canvas = document.createElement('canvas')
-  canvas.width = Math.max(name.width, TILE.width * TILE_COLUMNS)
-  canvas.height = nameHeight + rows * TILE.height
+  canvas.width = Math.max(name.width, tile.width * columns)
+  canvas.height = nameHeight + rows * tile.height
   const context = canvas.getContext('2d')
   context.fillStyle = '#fff'
   context.fillRect(0, 0, canvas.width, canvas.height)
@@ -154,18 +185,18 @@ export function readingSheet(image, h, fix = null) {
   context.font = 'bold 26px sans-serif'
   context.textBaseline = 'middle'
   cells.forEach((cell, index) => {
-    const left = (index % TILE_COLUMNS) * TILE.width
-    const top = nameHeight + Math.floor(index / TILE_COLUMNS) * TILE.height
+    const left = (index % columns) * tile.width
+    const top = nameHeight + Math.floor(index / columns) * tile.height
 
     context.strokeStyle = '#000'
     context.lineWidth = 1
-    context.strokeRect(left + 0.5, top + 0.5, TILE.width - 1, TILE.height - 1)
+    context.strokeRect(left + 0.5, top + 0.5, tile.width - 1, tile.height - 1)
 
     context.fillStyle = '#c00'
-    context.fillText(cellLabel(index), left + TILE.pad * 2, top + TILE.height / 2)
+    context.fillText(labelOf(index), left + tile.pad * 2, top + tile.height / 2)
 
-    const side = TILE.height - TILE.pad * 2
-    context.drawImage(toCanvas(cell), left + TILE.label, top + TILE.pad, side, side)
+    const side = tile.height - tile.pad * 2
+    context.drawImage(toCanvas(cell), left + tile.label, top + tile.pad, side, side)
   })
 
   return canvas
@@ -205,9 +236,24 @@ export async function fingerprint(blob) {
  * заново, только с другим углом. Двух копий этого пути быть не должно: они
  * разойдутся молча, и половина пачки станет читаться иначе, чем другая.
  */
-export async function readPage(book, number, { send, blank, questions, turn = 0, first = false } = {}) {
+export async function readPage(
+  book,
+  number,
+  { send, blank, questions, tasks = 0, turn = 0, first = false, namesOnly = false } = {},
+) {
   const { image, canvas } = await drawPage(book, number, RENDER_WIDTH, turn)
-  const found = extractHeader(image)
+
+  // Коды декодируются один раз на страницу, и первым делом: по их содержимому
+  // видно, бланк это или лист баллов, а читаются они по разной геометрии.
+  // Шапке бланка найденный код передаётся готовым — звать декодер второй раз
+  // за тем же самым незачем.
+  const codes = findCodes(image)
+  const markCode = codes.find((one) => isMarkSheetCode(one.payload))
+  if (markCode) {
+    return readMarkSheet(image, canvas, markCode, { index: number - 1, send, blank, tasks, turn })
+  }
+
+  const found = extractHeader(image, codes[0] ?? null)
   const enough = found && found.score >= ENOUGH_LINES
 
   const page = {
@@ -267,13 +313,26 @@ export async function readPage(book, number, { send, blank, questions, turn = 0,
      * даёт другую картинку и другой отпечаток — значит читается заново, и это
      * честно: за неё и правда платят второй раз, ради верного чтения.
      */
-    const blob = await scaledJpeg(readingSheet(image, found.h, found.fix), 1568, 0.9)
+    const full = await scaledJpeg(readingSheet(image, found.h, found.fix), 1568, 0.9)
     const plain = await scaledJpeg(toCanvas(found.strip), 1568, 0.9)
+    /*
+     * В пачке уже был лист баллов — значит баллы ставили на нём, и клетки
+     * этого бланка не в счёт (`scanning.marks_rule`). Читать их — платить за
+     * выброшенное, поэтому уезжает одна строка имени.
+     *
+     * **Отпечаток при этом — по полной картинке**, как всегда. Он ключ кэша:
+     * посчитай его по укороченной, и вернувшийся к пачке человек заплатил бы
+     * второй раз за все страницы, прочитанные целиком в прошлый заход.
+     */
+    const blob = namesOnly
+      ? await scaledJpeg(toCanvas(cutForReading(image, found.h, found.fix).name), 1568, 0.9)
+      : full
     page.sent = await send({
       index: page.index,
       blob,
       plain,
-      mark: await fingerprint(blob),
+      mark: await fingerprint(full),
+      cells: !namesOnly,
     })
   } else if (!worthReading && blank) {
     // Шапки нет — читать нечего и платить не за что, но сказать серверу
@@ -294,11 +353,75 @@ export async function readPage(book, number, { send, blank, questions, turn = 0,
   return page
 }
 
-export async function walk(file, { onPage, send, blank, questions, stop } = {}) {
+/**
+ * Лист баллов: прочитать имя и клетки задач работы.
+ *
+ * Свой путь, а не ветка внутри шапки бланка: геометрия другая целиком — шесть
+ * линеек вместо одной, коды вверху, строка имени в клетках, — и общего у них
+ * только устройство картинки на чтение (`assembled`).
+ *
+ * `tasks` — сколько задач в работе: столько плиток и поедет, плюс сумма.
+ * Работа без заведённых задач читается всеми девяноста пятью — лучше лишние
+ * пустые плитки, чем потерянный балл.
+ *
+ * Читается, если код нашёлся на своём месте хоть при каком-нибудь выпрямлении,
+ * — как бланк с найденным кодом (`readPage`): лист наш, и читать на нём есть
+ * что, даже если сетка сошлась хуже порога. Не сошлось ничего — лист всё
+ * равно записывается листом баллов: и непрочитанный, он решает, откуда в
+ * пачке берутся баллы.
+ */
+async function readMarkSheet(image, canvas, code, { index, send, blank, tasks, turn }) {
+  const found = extractMarks(image, code)
+  const questions = tasks > 0 ? Math.min(tasks, MARKS.questions) : MARKS.questions
+  const indexes = [...Array(questions).keys(), MARKS.questions]
+  const sheet = found ? marksSheet(image, found, indexes) : null
+
+  const page = {
+    index,
+    sheet: 'marks',
+    score: found?.score ?? 0,
+    need: MARKS_ENOUGH,
+    enough: Boolean(found && found.score >= MARKS_ENOUGH),
+    turn,
+    ours: true,
+    code: code.payload,
+    preview: canvas.toDataURL('image/jpeg', 0.5),
+    // экрану показывается собранная картинка, а не полоска: шесть линеек
+    // в одну полоску не лягут, а плитки подписаны теми же Q23, что и поля
+    strip: sheet ? sheet.toDataURL('image/jpeg', 0.8) : null,
+    readable: Boolean(found),
+  }
+
+  if (found && send) {
+    const lastRow = Math.floor((questions - 1) / GRID.cells)
+    const blob = await scaledJpeg(sheet, 1568, 0.9)
+    const plain = await scaledJpeg(toCanvas(marksPlain(image, found, lastRow)), 1568, 0.9)
+    page.sent = await send({ index, blob, plain, mark: await fingerprint(blob), sheet: 'marks' })
+  } else if (!found && blank) {
+    await blank(index, true, 'marks')
+  }
+  return page
+}
+
+/**
+ * С первого листа баллов бланки читаются одной строкой имени, до конца пачки.
+ *
+ * Лист баллов значит, что у работы задач больше, чем клеток на бланке, и
+ * клетки бланков не в счёт ни у кого (`scanning.marks_rule`) — читать их
+ * значит платить за выброшенное. Имя же читать надо: по нему узнаётся, что
+ * начался чужой лист. Галочки на это не нужно, пачка говорит сама.
+ *
+ * Пачку складывают всегда одинаково — условия, лист баллов, бланки, блок на
+ * ученика, — поэтому лист баллов встречается раньше любого бланка, и ни одна
+ * выброшенная клетка не оплачивается. Вернувшемуся к пачке помнить ничего не
+ * надо: обход снова идёт по всем страницам, прочитанные отдаются из кэша.
+ */
+export async function walk(file, { onPage, send, blank, questions, tasks = 0, stop } = {}) {
   const book = await openBook(file)
   const pages = []
   // первый ряд условий — тот, что встретился до первого листа решения
   let seenAnswer = false
+  let marks = false
 
   for (let number = 1; number <= book.numPages; number += 1) {
     if (stop?.()) break
@@ -307,11 +430,14 @@ export async function walk(file, { onPage, send, blank, questions, stop } = {}) 
       send,
       blank,
       questions,
+      tasks,
       first: !seenAnswer,
+      namesOnly: marks,
     })
     const worthReading = page.readable
 
     if (worthReading) seenAnswer = true
+    if (page.sheet === 'marks') marks = true
 
     pages.push(page)
     onPage?.(page, book.numPages)

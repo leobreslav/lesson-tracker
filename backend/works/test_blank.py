@@ -114,3 +114,64 @@ class BlankViewTests(SchoolTestMixin, APITestCase):
 
         self.assertEqual(answer.status_code, 400)
         self.assertEqual(answer.data["code"], "blank_labels_invalid")
+
+
+class MarkSheetRenderTests(APITestCase):
+    """
+    Лист баллов с подписями: та же надпечатка, шесть линеек.
+
+    Подпись девяносто пятой задачи, вставшая над чужой клеткой, хуже пустой —
+    учитель поставит балл не туда, и на бумаге этого не заметит никто.
+    """
+
+    def marks_positions(self, labels):
+        layer = PdfReader(BytesIO(blank.overlay(blank.clean(labels, 95), blank.MARKS))).pages[0]
+        stream = layer.get_contents().get_data().decode("latin1")
+        return [
+            (float(x) * MM, PAGE_HEIGHT - float(y) * MM)
+            for x, y in re.findall(r"BT ([\d.]+) ([\d.]+) Td", stream)
+        ]
+
+    def test_each_label_sits_in_its_own_row_and_column(self):
+        labels = [""] * 95
+        labels[0], labels[16], labels[94] = "1a", "5b", "19e"
+
+        found = self.marks_positions(labels)
+
+        for (x, y), index in zip(found, (0, 16, 94)):
+            row, column = divmod(index, blank.PER_ROW)
+            band = blank.MARK_ROW_Y + row * blank.MARK_ROW_PITCH
+            self.assertEqual(cell_of(x), column, (index, x))
+            self.assertGreater(y, band, (index, y))
+            self.assertLess(y, band + blank.LABEL_HEIGHT, (index, y))
+
+    def test_the_mark_sheet_is_one_page(self):
+        texts = page_texts(blank.render(["Жук"], blank.MARKS))
+
+        self.assertEqual(len(texts), 1)
+        self.assertIn("Жук", texts[0])
+
+    def test_there_are_ninety_five_cells_and_not_more(self):
+        from config.errors import ApiError
+
+        with self.assertRaises(ApiError):
+            blank.render([""] * 96, blank.MARKS)
+
+    def test_an_unknown_sheet_is_refused_and_not_taken_for_the_blank(self):
+        from config.errors import ApiError
+
+        with self.assertRaises(ApiError):
+            blank.render([], "poster")
+
+
+class MarkSheetViewTests(SchoolTestMixin, APITestCase):
+    def test_a_teacher_gets_the_mark_sheet_under_its_own_name(self):
+        self.client.force_authenticate(self.user)
+
+        answer = self.client.post(
+            reverse("work-blank"), {"labels": ["1a"], "sheet": "marks"}, format="json"
+        )
+
+        self.assertEqual(answer.status_code, 200)
+        self.assertIn("mark-sheet.pdf", answer["Content-Disposition"])
+        self.assertEqual(len(page_texts(answer.content)), 1)

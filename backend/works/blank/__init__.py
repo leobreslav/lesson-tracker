@@ -31,6 +31,7 @@ from pypdf import PdfReader, PdfWriter
 
 HERE = Path(__file__).resolve().parent
 TEMPLATE = HERE / "blank_form.pdf"
+MARK_TEMPLATE = HERE / "mark_sheet.pdf"
 FONT = HERE / "DejaVuSans.ttf"
 
 # Геометрия сетки баллов, миллиметры от левого верхнего угла листа. Те же
@@ -40,6 +41,32 @@ GRID_Y = 19.3
 CELL_WIDTH = 11.5625
 LABEL_HEIGHT = 11.5
 QUESTIONS = 15
+
+# Лист баллов (маркгрид): шесть линеек той же сетки, по шестнадцать клеток,
+# нумерация сквозная, последняя клетка последней линейки — сумма. Те же числа,
+# что `MARKS` в blankGeometry.js; сверяет их тот же узловой тест.
+MARK_ROW_Y = 57
+MARK_ROW_PITCH = 37
+MARK_ROWS = 6
+MARK_QUESTIONS = 95
+PER_ROW = 16
+
+# Какие бывают листы. Ключ приходит из запроса (`sheet`), поэтому список
+# закрытый: незнакомое имя — отказ, а не молча бланк ответов.
+ANSWER = "answer"
+MARKS = "marks"
+SHEETS = {
+    ANSWER: {"template": TEMPLATE, "questions": QUESTIONS, "file": "blank.pdf"},
+    MARKS: {"template": MARK_TEMPLATE, "questions": MARK_QUESTIONS, "file": "mark-sheet.pdf"},
+}
+
+
+def cell_origin(sheet, index):
+    """Левый верхний угол полосы подписи клетки `index` (с нуля) на листе."""
+    if sheet == MARKS:
+        row, column = divmod(index, PER_ROW)
+        return GRID_X + column * CELL_WIDTH, MARK_ROW_Y + row * MARK_ROW_PITCH
+    return GRID_X + index * CELL_WIDTH, GRID_Y
 
 # Длина подписи — та же, что у `Task.label`: подпись на бумаге и имя вопроса в
 # системе — одно и то же, и влезать должно одно и то же.
@@ -89,14 +116,27 @@ def fit(pdf, text):
     return None
 
 
-def clean(labels):
-    """Пятнадцать строк из присланного; отказ — с кодом и названной подписью."""
-    if not isinstance(labels, list) or len(labels) > QUESTIONS:
+def sheet_of(sheet):
+    """Имя листа из запроса -> само имя; пустое — бланк ответов, чужое — отказ."""
+    sheet = sheet or ANSWER
+    if sheet not in SHEETS:
         api_error(
             Codes.BLANK_LABELS_INVALID,
-            f"Labels must be a list of at most {QUESTIONS} strings.",
-            field="labels",
+            f"Unknown sheet «{sheet}».",
+            field="sheet",
             count=QUESTIONS,
+        )
+    return sheet
+
+
+def clean(labels, questions=QUESTIONS):
+    """Строки подписей из присланного; отказ — с кодом и названной подписью."""
+    if not isinstance(labels, list) or len(labels) > questions:
+        api_error(
+            Codes.BLANK_LABELS_INVALID,
+            f"Labels must be a list of at most {questions} strings.",
+            field="labels",
+            count=questions,
         )
     cleaned = []
     for label in labels:
@@ -105,15 +145,15 @@ def clean(labels):
         if not isinstance(label, str):
             api_error(
                 Codes.BLANK_LABELS_INVALID,
-                f"Labels must be a list of at most {QUESTIONS} strings.",
+                f"Labels must be a list of at most {questions} strings.",
                 field="labels",
-                count=QUESTIONS,
+                count=questions,
             )
         cleaned.append(" ".join(label.split()))
-    return cleaned + [""] * (QUESTIONS - len(cleaned))
+    return cleaned + [""] * (questions - len(cleaned))
 
 
-def overlay(labels):
+def overlay(labels, sheet=ANSWER):
     """Прозрачная страница A4 с подписями на своих местах."""
     pdf = FPDF(unit="mm", format="A4")
     pdf.set_auto_page_break(False)
@@ -136,20 +176,33 @@ def overlay(labels):
         size, lines = fitted
         pdf.set_font("DejaVu", size=size)
         line = size * PT * LEADING
-        top = GRID_Y + TOP + (LABEL_HEIGHT - TOP - BOTTOM - line * len(lines)) / 2
+        left, band = cell_origin(sheet, index)
+        top = band + TOP + (LABEL_HEIGHT - TOP - BOTTOM - line * len(lines)) / 2
         for number, text in enumerate(lines):
-            pdf.set_xy(GRID_X + index * CELL_WIDTH + SIDE, top + number * line)
+            pdf.set_xy(left + SIDE, top + number * line)
             pdf.cell(CELL_WIDTH - 2 * SIDE, line, text, align="C")
 
     return bytes(pdf.output())
 
 
-def render(labels):
-    """Бланк целиком — обе страницы, лицо и оборот, с одними подписями."""
-    labels = clean(labels)
-    layer = PdfReader(BytesIO(overlay(labels))).pages[0]
+def file_name(sheet=ANSWER):
+    """Как назвать скачанный файл: по листу, а не одним именем на оба."""
+    return SHEETS[sheet_of(sheet)]["file"]
 
-    writer = PdfWriter(clone_from=PdfReader(TEMPLATE))
+
+def render(labels, sheet=ANSWER):
+    """
+    Лист целиком с подписями: у бланка ответов обе страницы (лицо и оборот),
+    у листа баллов одна.
+
+    Подложка у каждого своя, а надпечатка одна: полоса подписи у маркгрида та
+    же, что в шапке бланка, отличается только то, где стоит линейка.
+    """
+    sheet = sheet_of(sheet)
+    labels = clean(labels, SHEETS[sheet]["questions"])
+    layer = PdfReader(BytesIO(overlay(labels, sheet))).pages[0]
+
+    writer = PdfWriter(clone_from=PdfReader(SHEETS[sheet]["template"]))
     for page in writer.pages:
         page.merge_page(layer)
 

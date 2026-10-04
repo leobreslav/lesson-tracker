@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next'
 
 // крошечный модуль с миллиметрами бланка; pdfjs за собой не тянет, в отличие
 // от scanSheet.js, который грузится лениво
-import { GRID, gridInStrip } from './blankGeometry'
+import { GRID, MARKS, gridInStrip } from './blankGeometry'
 import { dollars } from './money'
 import {
   applyScan,
@@ -180,18 +180,22 @@ export default function ScanWizard({ work, onClose, onDone }) {
          заново — отдельная кнопка, потому что это разрушительное действие. */
       const collected = await walk(chosen, {
         stop: () => stop.current,
+        // сколько задач в работе: столько плиток листа баллов и поедет
+        tasks: scale.length,
         onPage: (page, count) => {
           seen.push(page)
           setPages([...seen])
           setDone(seen.length)
           setTotal(count)
         },
-        send: async ({ index, blob, plain, mark }) => {
+        send: async ({ index, blob, plain, mark, sheet, cells }) => {
           const answer = await readScanPage(work.id, {
             index,
             blob,
             plain,
             mark,
+            sheet,
+            cells,
             second: alsoSecond,
             reader: byReader,
           })
@@ -200,8 +204,8 @@ export default function ScanWizard({ work, onClose, onDone }) {
           setState(withDecisions(answer))
           return true
         },
-        blank: async (index, ours) =>
-          setState(withDecisions(await markHeaderless(work.id, index, ours))),
+        blank: async (index, ours, sheet) =>
+          setState(withDecisions(await markHeaderless(work.id, index, ours, sheet))),
         questions: alsoQuestions
           ? async (sheet) => {
               const answer = await readScanQuestions(work.id, sheet)
@@ -255,11 +259,26 @@ export default function ScanWizard({ work, onClose, onDone }) {
       const book = await openBook(file)
       const page = await readPage(book, index + 1, {
         turn,
-        send: async ({ index: at, blob, plain, mark }) => {
-          setState(await readScanPage(work.id, { index: at, blob, plain, mark, second, reader }))
+        tasks: scale.length,
+        // в пачке есть лист баллов — клетки бланков не в счёт, читается имя
+        namesOnly: Boolean(state?.marks_sheet),
+        send: async ({ index: at, blob, plain, mark, sheet, cells }) => {
+          setState(
+            await readScanPage(work.id, {
+              index: at,
+              blob,
+              plain,
+              mark,
+              sheet,
+              cells,
+              second,
+              reader,
+            }),
+          )
           return true
         },
-        blank: async (at, ours) => setState(await markHeaderless(work.id, at, ours)),
+        blank: async (at, ours, sheet) =>
+          setState(await markHeaderless(work.id, at, ours, sheet)),
       })
       setTurns((was) => ({ ...was, [index]: turn }))
       setPages((was) => was.map((one) => (one.index === index ? page : one)))
@@ -1124,6 +1143,23 @@ function PagesStep({
   const nameOfQuestion = (number) => state.question_names?.[number - 1] ?? String(number)
 
   /*
+   * Лист баллов показывает не все девяносто шесть клеток, а клетки задач
+   * работы и сумму — ровно те, что уехали на чтение плитками (`readMarkSheet`).
+   * Бумажную сетку из шести линеек под картинкой не повторить, а семьдесят
+   * пустых полей у работы из двадцати задач спрятали бы те, что важны.
+   * Работа без заведённых задач показывает все: лучше лишние поля, чем балл,
+   * которому негде встать.
+   */
+  const marksPage = row?.sheet === 'marks'
+  const sumAt = marksPage ? MARKS.questions : GRID.cells - 1
+  const positions = marksPage
+    ? [
+        ...Array(Math.min(state.question_names?.length || MARKS.questions, MARKS.questions)).keys(),
+        MARKS.questions,
+      ]
+    : Array.from({ length: GRID.cells }, (_, position) => position)
+
+  /*
    * Страницу читали двое, и они прочитали разное.
    *
    * Одна модель ошибается **молча**: «Denis» становится «Misha», страница
@@ -1140,8 +1176,11 @@ function PagesStep({
   const disputedCells = new Set(
     differs.filter((code) => code.startsWith('cell:')).map((code) => Number(code.slice(5))),
   )
+  // сумма бланка — за страницу, сумма листа баллов — за работу
   const labelOfCell = (position) =>
-    position === GRID.cells - 1 ? t('scan.pageSum') : `Q${position + 1}`
+    position === sumAt
+      ? t(marksPage ? 'scan.workSum' : 'scan.pageSum')
+      : `Q${position + 1}`
   const secondSaw = () => {
     const parts = []
     if (differs.includes('name')) {
@@ -1184,7 +1223,7 @@ function PagesStep({
     const was = cells[position] ?? ''
     setDraft(null)
     if (String(was) === draft.value) return
-    const next = [...(row?.cells ?? Array(16).fill(null))]
+    const next = [...(row?.cells ?? Array(sumAt + 1).fill(null))]
     next[position] = draft.value === '' ? null : Number(draft.value)
     onFix(here.index, next)
   }
@@ -1192,6 +1231,11 @@ function PagesStep({
   return (
     <section className="scan-step scan-review">
       <SpendLine spend={state.spend} />
+
+      {/* В пачке лист баллов: баллы берутся с него, а бланки дают только
+          имена. Правило меняет, откуда в журнале цифры, и человек узнаёт
+          о нём до применения, а не по пустым клеткам бланков */}
+      {state.marks_sheet && <p className="hint">{t('scan.marksSheetLine')}</p>}
 
       {/* сколько листов условий нашлось — по ним и разрезана пачка */}
       {state.conditions > 0 && (
@@ -1278,20 +1322,33 @@ function PagesStep({
           {byIndex[here?.index]?.strip && byIndex[here.index].readable && (
             <img className="scan-strip" src={byIndex[here.index].strip} alt="" />
           )}
+          {/* Бланк в пачке с листом баллов: клетки прочитаны и видны, но в
+              оценки не едут — баллы ставили на листе. Сказать это надо у
+              самих клеток, иначе цифра, не доехавшая до журнала, выглядит
+              потерянной */}
+          {row.cells_ignored && <p className="hint">{t('scan.cellsIgnored')}</p>}
           <div
             className="scan-cells"
-            style={{
-              marginLeft: `${gridInStrip().left * 100}%`,
-              width: `${gridInStrip().width * 100}%`,
-              gridTemplateColumns: `repeat(${GRID.cells}, minmax(0, 1fr))`,
-            }}
+            style={
+              /* У бланка поля стоят под своими клетками полоски, колонка в
+                 колонку. У листа баллов полоски нет — над полями собранная
+                 картинка, — и поля идут сеткой по шестнадцать, как линейки
+                 на бумаге */
+              marksPage
+                ? { gridTemplateColumns: `repeat(${GRID.cells}, minmax(0, 1fr))` }
+                : {
+                    marginLeft: `${gridInStrip().left * 100}%`,
+                    width: `${gridInStrip().width * 100}%`,
+                    gridTemplateColumns: `repeat(${GRID.cells}, minmax(0, 1fr))`,
+                  }
+            }
           >
-            {Array.from({ length: GRID.cells }, (_, position) => (
+            {positions.map((position, slot) => (
               <label
                 key={position}
                 className={[
                   'scan-box',
-                  position >= state.questions && position < GRID.cells - 1 ? 'beyond' : '',
+                  position >= state.questions && position !== sumAt ? 'beyond' : '',
                   // «балл выше максимума» — пометка без предмета: сказано, что
                   // такой балл есть, а какой и где, приходилось искать глазами
                   // по шестнадцати клеткам
@@ -1307,9 +1364,7 @@ function PagesStep({
                   .filter(Boolean)
                   .join(' ')}
               >
-                <span>
-                  {position === GRID.cells - 1 ? t('scan.pageSum') : `Q${position + 1}`}
-                </span>
+                <span>{labelOfCell(position)}</span>
                 {/* Текстовое поле с цифровой клавиатурой, а не числовое.
                     Причина в стрелках: у числового поля браузер не отдаёт
                     положение курсора, и понять, упёрся ли он в край, нечем.
@@ -1347,17 +1402,19 @@ function PagesStep({
                        Уход снимает фокус, а снятый фокус записывает балл —
                        отдельной записи стрелке не нужно */
                     const field = event.currentTarget
+                    // соседи — по ряду полей, а не по номерам клеток: у листа
+                    // баллов за двадцатой задачей сразу идёт сумма
                     const to = neighbour({
                       key: event.key,
                       start: field.selectionStart,
                       end: field.selectionEnd,
                       length: field.value.length,
-                      position,
-                      count: GRID.cells,
+                      position: slot,
+                      count: positions.length,
                     })
                     if (to === null) return
                     event.preventDefault()
-                    const next = boxes.current[to]
+                    const next = boxes.current[positions[to]]
                     next?.focus()
                     // содержимое выделено: набранная цифра заменит прежнюю,
                     // а не припишется к ней

@@ -21,7 +21,7 @@ from django.db.models import Sum
 from config.errors import Codes, api_error, api_unavailable
 
 from . import agreement, client, mathpix, merge, prices, reach, yandex
-from .client import read_header, read_questions
+from .client import CELLS, read_header, read_questions
 from .models import AiSpend
 
 # Кто может читать имя. Имена человеческие, а не названия моделей: по ним
@@ -171,6 +171,7 @@ def read_and_charge(
     purpose: str = AiSpend.SCAN_HEADER,
     reader: str = "",
     second: bool = True,
+    cell_count: int = CELLS,
 ) -> dict:
     """
     Прочитать полоску и записать трату. Одна дверь: считать, не заплатив, нельзя.
@@ -235,6 +236,7 @@ def read_and_charge(
         model=model,
         purpose=purpose,
         chosen=reader,
+        cell_count=cell_count,
     )
 
     cells = second_reading(
@@ -244,6 +246,7 @@ def read_and_charge(
         image,
         media_type,
         asked=second,
+        cell_count=cell_count,
     )
     if cells.get("error"):
         names["second"] = cells
@@ -268,6 +271,7 @@ def second_reading(
     media_type: str,
     *,
     asked: bool = True,
+    cell_count: int = CELLS,
 ) -> dict:
     """
     Позвать второго свидетеля — Mathpix — и записать трату. Не позвался — не беда.
@@ -303,7 +307,7 @@ def second_reading(
     if not has_budget(school):
         return {"reader": MATHPIX, "error": "no_budget"}
 
-    answer = mathpix.read_strip(image, media_type=media_type)
+    answer = mathpix.read_strip(image, media_type=media_type, cells=cell_count)
     if answer.get("error") == "unreachable":
         reach.remember_unreachable(MATHPIX)
     if not answer.get("error"):
@@ -323,6 +327,7 @@ def name_reading(
     model: str,
     purpose: str,
     chosen: str,
+    cell_count: int = CELLS,
 ) -> dict:
     """
     Прочитать имя. Кем — решает человек; чем закончить, если он не смог, — мы.
@@ -368,6 +373,7 @@ def name_reading(
                     media_type=media_type,
                     candidates=candidates,
                     model=model,
+                    cells=cell_count,
                 )
             except client.ModelUnreachable:
                 # Неудавшийся вызов не стоил ничего: платят за токены, а
@@ -385,7 +391,7 @@ def name_reading(
         # читает по бумаге, а на собранном листе склеивает её с первым рядом
         # плиток. Измерено живой пачкой — «Миронова» приезжала «Леилоновой».
         module, priced = (yandex, prices.YANDEX)
-        data = module.read_strip(plain, media_type=media_type)
+        data = module.read_strip(plain, media_type=media_type, cells=cell_count)
         if data.get("error"):
             # Запоминается только «не дозвонились»: остальные отказы приходят
             # мгновенно и ждать себя не заставляют, а этот стоит двадцати
@@ -410,9 +416,13 @@ def name_reading(
         # И клетки ему тоже по полоске: на собранном листе табличная модель не
         # увидела ни одной цифры, на полоске — часть. Сетку она узнаёт по
         # печатным линиям, а на собранном листе их нет.
-        cells = _yandex_cells(school, user, work, plain, media_type, purpose)
-        if cells:
-            data["values"] = cells
+        # Клеток не просили — в пачке лист баллов, и клетки бланка не в счёт
+        # (`works.scanning.marks_rule`): второй запрос за ними был бы оплачен
+        # и выброшен
+        if cell_count:
+            cells = _yandex_cells(school, user, work, plain, media_type, purpose, cell_count)
+            if cells:
+                data["values"] = cells
         return data
 
     # Читателей нет вовсе и ключа нет — это «не настроено», а не «не
@@ -438,7 +448,9 @@ def name_reading(
     )
 
 
-def _yandex_cells(school, user, work, image, media_type, purpose) -> list | None:
+def _yandex_cells(
+    school, user, work, image, media_type, purpose, cell_count=CELLS
+) -> list | None:
     """
     Клетки той же полоски моделью для таблиц. Не вышло — не беда.
 
@@ -451,7 +463,7 @@ def _yandex_cells(school, user, work, image, media_type, purpose) -> list | None
     """
     if not has_budget(school):
         return None
-    answer = yandex.read_cells(image, media_type=media_type)
+    answer = yandex.read_cells(image, media_type=media_type, cells=cell_count)
     if answer.get("error"):
         if answer["error"] == "unreachable":
             reach.remember_unreachable(YANDEX)

@@ -5639,6 +5639,22 @@ button.compact,
   gap: 0.5rem;
 }
 
+/* Девяносто пять клеток листа баллов в пять колонок — девятнадцать рядов
+   прокрутки. Восемь колонок вдвое короче, а подпись в клетке всё равно
+   короткая: «1a», «12b». Высота ограничена, чтобы кнопка скачать не уезжала
+   за край окна */
+.blank-labels-marks {
+  grid-template-columns: repeat(8, minmax(0, 1fr));
+  max-height: 55vh;
+  overflow-y: auto;
+}
+
+@media (max-width: 600px) {
+  .blank-labels-marks {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
 .blank-label {
   display: flex;
   flex-direction: column;

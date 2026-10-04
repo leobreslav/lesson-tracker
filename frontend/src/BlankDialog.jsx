@@ -3,8 +3,17 @@ import { useTranslation } from 'react-i18next'
 import Modal from './Modal'
 import { downloadBlank } from './api'
 
-const CELLS = 15
 const MAX_LABEL = 16
+
+/**
+ * Листов два, и окно у них одно: бланк ответов с пятнадцатью клетками в шапке
+ * и лист баллов (маркгрид) с девяноста пятью — для работ, где задач больше.
+ * Различаются они числом клеток и словами, а подпись в клетке одна и та же.
+ */
+const SHEETS = {
+  answer: { cells: 15, title: 'blank.title', hint: 'blank.hint', extra: 'blank.extra' },
+  marks: { cells: 95, title: 'blank.marksTitle', hint: 'blank.marksHint', extra: 'blank.marksExtra' },
+}
 
 /**
  * Окно бланка с подписями: пятнадцать клеток, в каждую — имя задачи.
@@ -21,11 +30,15 @@ const MAX_LABEL = 16
  * Пустая клетка остаётся пустой полосой, как на обычном бланке: подпись
  * вписывают рукой.
  */
-export default function BlankDialog({ initial = [], extra = 0, fileName, onClose }) {
+export default function BlankDialog({ sheet = 'answer', initial = [], fileName, onClose }) {
   const { t } = useTranslation()
+  const kind = SHEETS[sheet]
   const [labels, setLabels] = useState(() =>
-    Array.from({ length: CELLS }, (_, index) => (initial[index] ?? '').slice(0, MAX_LABEL)),
+    Array.from({ length: kind.cells }, (_, index) => (initial[index] ?? '').slice(0, MAX_LABEL)),
   )
+  // задач больше, чем клеток листа: считается здесь, по тому же числу клеток,
+  // которым окно и рисуется, — иначе у двух листов разошлось бы «сколько влезло»
+  const extra = Math.max(0, initial.length - kind.cells)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
 
@@ -39,7 +52,7 @@ export default function BlankDialog({ initial = [], extra = 0, fileName, onClose
     setBusy(true)
     setError(null)
     try {
-      await downloadBlank(labels, fileName)
+      await downloadBlank(labels, fileName, sheet)
     } catch (failure) {
       setError(failure)
     } finally {
@@ -50,13 +63,13 @@ export default function BlankDialog({ initial = [], extra = 0, fileName, onClose
   const invalid = error?.code === 'blank_label_too_long' ? error.params?.cell : null
 
   return (
-    <Modal onClose={onClose} title={t('blank.title')}>
+    <Modal onClose={onClose} title={t(kind.title)}>
       <form onSubmit={submit}>
-        <p className="hint">{t('blank.hint')}</p>
+        <p className="hint">{t(kind.hint)}</p>
 
         {/* Клетки идут в том же порядке, что на листе, и подписаны тем же
             номером, что стоит в углу клетки на бумаге */}
-        <div className="blank-labels">
+        <div className={sheet === 'marks' ? 'blank-labels blank-labels-marks' : 'blank-labels'}>
           {labels.map((label, index) => (
             <label key={index} className="blank-label">
               <span>{index + 1}</span>
@@ -73,7 +86,7 @@ export default function BlankDialog({ initial = [], extra = 0, fileName, onClose
 
         {/* Задач больше, чем клеток, — сказать сразу, а не оставить человека
             гадать, куда делась шестнадцатая */}
-        {extra > 0 && <p className="hint warning">{t('blank.extra', { count: extra })}</p>}
+        {extra > 0 && <p className="hint warning">{t(kind.extra, { count: extra })}</p>}
 
         {error && (
           <p className="error" role="alert">

@@ -21,7 +21,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from difflib import SequenceMatcher
 
 # Ниже этого сходства (0..100) имя вообще не считается похожим.
@@ -32,6 +32,18 @@ MARGIN = 12
 
 QUESTIONS = 15
 CELLS = 16
+
+# Лист баллов (маркгрид): девяносто пять задач и сумма за работу. Ставит на нём
+# баллы учитель, когда пятнадцати клеток шапки бланка работе мало.
+ANSWER = "answer"
+MARKS = "marks"
+MARK_QUESTIONS = 95
+MARK_CELLS = 96
+
+
+def cells_on(sheet: str) -> int:
+    """Сколько клеток на листе: у бланка шестнадцать, у листа баллов девяносто шесть."""
+    return MARK_CELLS if sheet == MARKS else CELLS
 
 
 def fold(first: str, surname: str) -> str:
@@ -196,19 +208,75 @@ class Page:
     # Заполняется там, где живёт база, — разбор остаётся чистыми функциями и
     # ходит только по тому, что ему дали.
     alias_id: int | None = None
+    # Бланк ответов или лист баллов (`ANSWER`/`MARKS`).
+    sheet: str = ANSWER
+    # Клетки этой страницы не в счёт: в пачке есть лист баллов, и баллы ставили
+    # на нём (`marks_rule`). Прочитанное остаётся на месте — человеку его
+    # показывают, — а раскладка и оценки его не видят.
+    cells_ignored: bool = False
 
     @property
     def named(self) -> bool:
         return bool((self.first or "").strip() or (self.surname or "").strip())
 
     @property
+    def questions(self) -> int:
+        """
+        Сколько клеток задач на этом листе: пятнадцать или девяносто пять.
+
+        По листу, а не по длине списка: прочитанное бывает короче, и длина
+        объявила бы последнюю клетку суммой.
+        """
+        return MARK_QUESTIONS if self.sheet == MARKS else QUESTIONS
+
+    @property
     def answered(self) -> set:
         """Номера задач (с нуля), за которые на странице стоит балл."""
-        return {q for q in range(QUESTIONS) if self.cells[q] is not None}
+        if self.cells_ignored:
+            return set()
+        return {
+            q for q in range(min(self.questions, len(self.cells))) if self.cells[q] is not None
+        }
 
     @property
     def page_sum(self) -> int | None:
-        return self.cells[QUESTIONS] if len(self.cells) > QUESTIONS else None
+        if self.cells_ignored or len(self.cells) <= self.questions:
+            return None
+        return self.cells[self.questions]
+
+
+def marks_rule(pages: list[Page]) -> list[Page]:
+    """
+    Есть в пачке лист баллов — клетки бланков не в счёт. У всех бланков.
+
+    Лист баллов учитель заводит, когда пятнадцати клеток шапки работе мало, и
+    баллы тогда ставит **на нём**. Значит у этой работы бланк баллов не держит
+    в принципе — клеток на нём меньше, чем задач, — и цифра в его клетке не
+    балл: черновая отметка, номер задачи, вписанный не туда, балл, потом
+    переписанный на лист. Сложить её с листом значило бы получить конфликт там,
+    где его нет, или балл там, где его не ставили.
+
+    **На всю пачку, а не на блок ученика**, и это решение заказчика, а не
+    упрощение. Было правило «за листом баллов до следующих условий»: ученик без
+    листа получал баллы со своих бланков. Но у работы, ради которой лист
+    заведён, баллы с бланка неполны у любого — пятнадцать клеток из двадцати,
+    — и честнее показать пустоту, которую впишут руками, чем выдать треть
+    работы за всю.
+
+    Бланки в такой пачке дают одно — **имя**. По нему раскладка и узнаёт, что
+    начался чужой лист, — новый ученик опознаётся по подписи, клетки для этого
+    не нужны, — а их клеток не видит ни раскладка (покрытие задач, «две
+    страницы на одну задачу»), ни оценки. Прочитанное при этом остаётся на
+    странице: экран его показывает. Браузер знает то же (`walk`): с первого
+    листа баллов клетки бланков не читаются вовсе.
+
+    Лист считается, **даже если сам не прочитался**: нашёлся его код, а сетка
+    нет. Иначе баллы молча взялись бы с бланков. Убранный из пачки лист не
+    считается: его в пачке нет.
+    """
+    if not any(page.sheet == MARKS and not page.dropped for page in pages):
+        return pages
+    return [page if page.sheet == MARKS else replace(page, cells_ignored=True) for page in pages]
 
 
 def candidates_for(page: Page, roster: list[Person]) -> list[tuple[Person, float]]:
@@ -1070,14 +1138,22 @@ def troubles(
     # Ради этой пометки второй читатель и заведён.
     if page.second.get("differs"):
         out.append("readers_differ")
-    if any(page.cells[q] is not None for q in range(questions, QUESTIONS)):
-        out.append("beyond_questions")
-    if max_mark:
-        for q in range(questions):
-            value = page.cells[q]
-            if value is not None and value > max_mark:
-                out.append("mark_too_big")
-                break
+    # Клетки, которых работа не знает, и балл выше максимума проверяются по
+    # клеткам **этого листа**: у бланка их пятнадцать, у листа баллов
+    # девяносто пять. Клетки, которые не в счёт (`marks_rule`), не проверяются
+    # вовсе — звать смотреть на то, что никуда не поедет, незачем.
+    if not page.cells_ignored:
+        if any(
+            page.cells[q] is not None
+            for q in range(questions, min(page.questions, len(page.cells)))
+        ):
+            out.append("beyond_questions")
+        if max_mark:
+            for q in range(min(questions, page.questions, len(page.cells))):
+                value = page.cells[q]
+                if value is not None and value > max_mark:
+                    out.append("mark_too_big")
+                    break
     total = page.page_sum
     if total is not None:
         counted = sum(page.cells[q] for q in page.answered)

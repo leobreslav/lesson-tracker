@@ -1029,3 +1029,148 @@ class CommonConditionsTests(SimpleTestCase):
         packets = arrange(pages, ROSTER)
 
         self.assertGreater(len(packets), 2)
+
+
+def mark_sheet(index, first="", surname="", marks=None, headerless=False, dropped=False):
+    from .scanning import MARK_CELLS, MARKS
+
+    cells = [None] * MARK_CELLS
+    for question, value in (marks or {}).items():
+        cells[question] = value
+    return Page(
+        index=index,
+        first=first,
+        surname=surname,
+        cells=cells,
+        headerless=headerless,
+        ours=True,
+        dropped=dropped,
+        sheet=MARKS,
+    )
+
+
+class MarkSheetRuleTests(SimpleTestCase):
+    """
+    Лист баллов в пачке забирает баллы себе, а бланкам оставляет имена.
+
+    Учитель заводит лист баллов, когда пятнадцати клеток шапки мало, и ставит
+    баллы **на нём**. Цифра в клетке бланка в такой пачке — не балл: черновая
+    отметка, номер задачи не там, балл, потом переписанный на лист. Сложи её с
+    листом — и выйдет конфликт там, где его нет, или балл, которого не ставили.
+    Без листа баллов не меняется ничего: на этом держится вся прежняя пачка.
+
+    Пачку складывают всегда одинаково: условия, лист баллов (если есть),
+    бланки — блок на ученика. Но правило на всю пачку: лист баллов значит, что
+    у работы больше задач, чем клеток на бланке, и бланк неполон у любого.
+    """
+
+    def test_without_a_mark_sheet_nothing_changes(self):
+        from .scanning import marks_rule
+
+        pages = [page(0, "Shahar", "Jerbi", {0: 1}), page(1, "Fil", "Burmov", {1: 2})]
+
+        self.assertIs(marks_rule(pages), pages)
+
+    def test_marks_come_from_the_mark_sheet_and_the_blanks_only_give_names(self):
+        from .scanning import marks_rule
+
+        pages = marks_rule(
+            [
+                page(0, headerless=True),
+                mark_sheet(1, "Shahar", "Jerbi", {0: 3, 20: 2}),
+                page(2, "Shahar", "Jerbi", {0: 1, 1: 2}),
+                page(3, headerless=True),
+                mark_sheet(4, "Fil", "Burmov", {30: 4}),
+                page(5, "Fil", "Burmov", {0: 1}),
+            ]
+        )
+        packets = {packet.student_id: packet for packet in arrange(pages, ROSTER)}
+
+        # бланк лёг к своему листу баллов — по имени, а не по клеткам
+        self.assertEqual(sorted(p.index for p in packets[1].pages), [1, 2])
+        self.assertEqual(sorted(p.index for p in packets[2].pages), [4, 5])
+        # и баллы — только с листа: единица бланка за первую задачу не
+        # спорит с тройкой листа, её просто нет
+        self.assertEqual(merge_marks(packets[1].pages), ({0: 3, 20: 2}, []))
+        self.assertEqual(merge_marks(packets[2].pages), ({30: 4}, []))
+
+    def test_a_blank_gives_no_marks_even_to_a_student_without_a_mark_sheet(self):
+        """
+        Лист баллов в пачке значит, что задач больше, чем клеток на бланке. С
+        бланка ученика без листа пришла бы треть работы под видом всей — честнее
+        пустота, которую впишут руками.
+        """
+        from .scanning import marks_rule
+
+        pages = marks_rule(
+            [
+                page(0, headerless=True),
+                mark_sheet(1, "Shahar", "Jerbi", {0: 3}),
+                page(2, "Shahar", "Jerbi", {0: 1}),
+                page(3, headerless=True),
+                page(4, "Fil", "Burmov", {0: 2, 1: 1}),
+            ]
+        )
+
+        self.assertTrue(pages[2].cells_ignored)
+        self.assertTrue(pages[4].cells_ignored)
+        self.assertEqual(pages[4].answered, set())
+
+    def test_a_foreign_blank_after_a_mark_sheet_is_a_new_student_by_name(self):
+        """
+        Чужой лист посреди пачки узнаётся по подписи, и клетки для этого не
+        нужны: бланк Фила, лёгший сразу за листом баллов Шахара, — работа Фила,
+        а не продолжение работы Шахара. Баллов у Фила при этом нет: бланк их не
+        держит.
+        """
+        from .scanning import marks_rule
+
+        pages = marks_rule(
+            [
+                mark_sheet(0, "Shahar", "Jerbi", {0: 3}),
+                page(1, "Shahar", "Jerbi"),
+                page(2, "Fil", "Burmov", {0: 2}),
+            ]
+        )
+        packets = {packet.student_id: packet for packet in arrange(pages, ROSTER)}
+
+        self.assertEqual(sorted(p.index for p in packets[1].pages), [0, 1])
+        self.assertEqual(sorted(p.index for p in packets[2].pages), [2])
+        self.assertEqual(merge_marks(packets[2].pages), ({}, []))
+
+    def test_an_unread_mark_sheet_still_takes_the_marks_away_from_the_blanks(self):
+        """
+        Код листа нашёлся, сетка — нет. Баллы с бланков тут взялись бы молча
+        ровно у того, кому учитель ставил их на листе; непрочитанный же лист
+        человек видит и впишет руками.
+        """
+        from .scanning import marks_rule
+
+        pages = marks_rule([mark_sheet(0, headerless=True), page(1, "Shahar", "Jerbi", {0: 1})])
+
+        self.assertTrue(pages[1].cells_ignored)
+        self.assertEqual(pages[1].answered, set())
+
+    def test_a_dropped_mark_sheet_is_not_in_the_pile(self):
+        from .scanning import marks_rule
+
+        pages = [mark_sheet(0, dropped=True), page(1, "Shahar", "Jerbi", {0: 1})]
+
+        self.assertIs(marks_rule(pages), pages)
+
+    def test_the_mark_sheet_is_checked_against_its_own_ninety_five_cells(self):
+        # задача 21 работы из тридцати — своя клетка, а не «лишняя»
+        self.assertNotIn(
+            "beyond_questions", troubles(mark_sheet(0, "Shahar", "Jerbi", {20: 2}), 1, 5, 30)
+        )
+        # сорок первая у работы из тридцати — лишняя, как пятнадцатая на бланке
+        self.assertIn(
+            "beyond_questions", troubles(mark_sheet(0, "Shahar", "Jerbi", {40: 2}), 1, 5, 30)
+        )
+
+    def test_cells_that_do_not_count_are_not_questioned(self):
+        from .scanning import marks_rule
+
+        _, blank = marks_rule([mark_sheet(0), page(1, "Shahar", "Jerbi", {0: 9, 15: 4})])
+
+        self.assertEqual(troubles(blank, 1, 5, 3), [])

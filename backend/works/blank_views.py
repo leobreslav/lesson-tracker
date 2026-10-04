@@ -17,12 +17,18 @@ from . import blank
 
 
 class BlankView(APIView):
-    """POST `{labels: [...]}` → PDF бланка с этими подписями над клетками."""
+    """
+    POST `{labels: [...], sheet}` → PDF листа с этими подписями над клетками.
+
+    `sheet` — какой лист: `answer` (бланк ответов, пятнадцать клеток, по
+    умолчанию) или `marks` (лист баллов, девяносто пять).
+    """
 
     permission_classes = [IsAuthenticated, IsSchoolMember, IsTeacher]
 
     def post(self, request):
-        content = blank.render(request.data.get("labels", []))
+        sheet = request.data.get("sheet") or blank.ANSWER
+        content = blank.render(request.data.get("labels", []), sheet)
         response = HttpResponse(content, content_type="application/pdf")
-        response["Content-Disposition"] = 'attachment; filename="blank.pdf"'
+        response["Content-Disposition"] = f'attachment; filename="{blank.file_name(sheet)}"'
         return response

@@ -13,6 +13,7 @@
 from __future__ import annotations
 
 import base64
+import copy
 import logging
 
 from django.conf import settings
@@ -26,7 +27,14 @@ logger = logging.getLogger(__name__)
 # Сколько клеток в сетке бланка. Пятнадцать заданий и сумма за страницу.
 CELLS = 16
 
-def cell_index(label: str) -> int | None:
+# Сколько клеток на листе баллов (маркгриде): девяносто пять задач и сумма.
+# Лист читается тем же устройством — строка имени и плитки с красными
+# подписями, — и отличается только числом плиток, поэтому всё, что знает про
+# клетки, принимает это число параметром, а умолчание остаётся бланком.
+MARK_CELLS = 96
+
+
+def cell_index(label: str, cells: int = CELLS) -> int | None:
     """
     Подпись над клеткой -> её место в списке из шестнадцати. Неизвестная — None.
 
@@ -42,19 +50,19 @@ def cell_index(label: str) -> int | None:
         text = text[1:]
     if text.isdigit():
         number = int(text)
-        return number - 1 if 1 <= number <= CELLS - 1 else None
-    return CELLS - 1 if any(
+        return number - 1 if 1 <= number <= cells - 1 else None
+    return cells - 1 if any(
         # подпись уже приведена к нижнему регистру, поэтому сигма одна
         word in text for word in ("sum", "total", "σ", "pg")
     ) else None
 
 
-def cell_label(place: int) -> str:
+def cell_label(place: int, cells: int = CELLS) -> str:
     """Место в списке -> подпись, какой она напечатана на бланке."""
-    return "SUM" if place == CELLS - 1 else f"Q{place + 1}"
+    return "SUM" if place == cells - 1 else f"Q{place + 1}"
 
 
-def values_from_marks(marks) -> list:
+def values_from_marks(marks, cells: int = CELLS) -> list:
     """
     Названные клетки -> шестнадцать значений по местам.
 
@@ -71,11 +79,11 @@ def values_from_marks(marks) -> list:
 
     Пустые клетки не называются вовсе: их отсутствие и есть пустота.
     """
-    values: list = [None] * CELLS
+    values: list = [None] * cells
     for one in marks or []:
         if not isinstance(one, dict):
             continue
-        place = cell_index(one.get("cell"))
+        place = cell_index(one.get("cell"), cells)
         value = one.get("value")
         if place is None or not isinstance(value, int) or isinstance(value, bool):
             continue
@@ -137,6 +145,36 @@ _HEADER_TOOL = {
         "required": ["first_name", "surname", "marks"],
     },
 }
+
+
+def _header_tool(cells: int = CELLS) -> dict:
+    """
+    Схема ответа под этот лист. У бланка — прежняя, слово в слово.
+
+    Отличается у листа баллов одно описание: какие подписи бывают на плитках.
+    Сказать модели «'Q1'..'Q15'» на листе, где плиток сорок, значит подсказать
+    ей, что сорок первой не бывает, — а всё, что подсказывает ожидаемый ответ,
+    подставляется вместо увиденного (см. `_system_prompt`).
+    """
+    if cells == CELLS:
+        return _HEADER_TOOL
+    tool = copy.deepcopy(_HEADER_TOOL)
+    if not cells:
+        # Одна строка имени: плиток на картинке нет, и называть нечего.
+        # Поле остаётся в схеме — разбор ответа общий, — но обязательным быть
+        # перестаёт, чтобы модель не выдумывала клетки, которых не видит
+        tool["input_schema"]["properties"]["marks"]["description"] = (
+            "always an empty list: this picture has no tiles"
+        )
+        tool["input_schema"]["required"] = ["first_name", "surname"]
+        return tool
+    tool["input_schema"]["properties"]["marks"]["items"]["properties"]["cell"][
+        "description"
+    ] = (
+        "the RED label of the tile this digit is in, copied as printed: "
+        f"'Q1'..'Q{cells - 1}', or 'SUM' for the total of the work"
+    )
+    return tool
 
 
 _QUESTIONS_TOOL = {
@@ -258,6 +296,61 @@ def read_questions(
         )
 
     return out, message.usage.input_tokens, message.usage.output_tokens
+
+
+def _names_prompt() -> str:
+    """
+    Одна строка имени бланка — когда баллы в пачке ставили на листе баллов.
+
+    Клетки такого бланка не в счёт (`works.scanning.marks_rule`), и платить за
+    их чтение незачем: на картинке одна строка имени, а правила про имя те же,
+    что у полного бланка (`_system_prompt`), слово в слово.
+    """
+    return (
+        "You are given the name row of one school answer sheet, with printed "
+        "labels 'First name:', 'Surname:', 'Grade:', 'Date:' and handwriting on "
+        "the rules after them. There are no marks on this picture.\n"
+        "Report the handwritten First name and Surname SEPARATELY, letter by "
+        "letter, EXACTLY as written — do not correct them into a more plausible "
+        "name. If a field is not filled in, return an EMPTY string for it; never "
+        "invent a name. The handwriting varies: sometimes the teacher fills it in, "
+        "not the student. Ignore Grade. Leave the list of marks empty."
+    )
+
+
+def _marks_prompt() -> str:
+    """
+    Лист баллов: тот же разговор, что про бланк, о другом листе.
+
+    Правила те же, и по тем же причинам (`_system_prompt`): имя буква в букву,
+    цифра какая есть, пустое не называть. Меняется описание бумаги: имя
+    вписано в клетки, а не на линейки, плиток столько, сколько задач в работе,
+    и сумма — итог работы, а не страницы. Числа плиток в тексте нет нарочно:
+    оно меняется от работы к работе, а текст кэшируется, и подписи на плитках
+    модель всё равно читает, а не считает.
+    """
+    return (
+        "You are given a picture assembled from one teacher's mark sheet: the "
+        "marks of one student for one piece of work. At the top is the name row, "
+        "with printed labels 'First name', 'Surname', 'Grade', 'Date' in the corners "
+        "of boxes and handwriting inside the boxes. Below it are tiles, one per cell "
+        "of the marks grid that this work uses. Each tile shows a RED label we "
+        "printed — 'Q1', 'Q2' and so on, and 'SUM' for the total of the work — and, "
+        "next to it, that cell cut out of the sheet. A cell holds at most one "
+        "handwritten number, in pen of any colour, and many cells are empty.\n"
+        "Report the handwritten First name and Surname SEPARATELY, letter by "
+        "letter, EXACTLY as written — do not correct them into a more plausible "
+        "name. If a field is not filled in, return an EMPTY string for it; never "
+        "invent a name. Ignore Grade.\n"
+        "For every tile whose cell has a handwritten number, report the red label "
+        "of that tile and the number. The tiles are already cut apart, so a number "
+        "belongs to the tile it is drawn in and to no other — do not look for it "
+        "in a row or count anything. Leave empty tiles out entirely. Report the "
+        "number you actually see: never adjust a mark to fit a range you expect, "
+        "and never turn an unexpected digit into a more likely one. 'SUM' is the "
+        "total, not a question: it may be larger than any single mark, and it is "
+        "often left blank."
+    )
 
 
 def _system_prompt() -> str:
@@ -430,8 +523,14 @@ def read_header(
     media_type: str = "image/jpeg",
     candidates: list[str] | None = None,
     model: str = prices.HAIKU,
+    cells: int = CELLS,
 ) -> tuple[dict, int, int]:
     """
+    `cells` — сколько клеток на этом листе: у бланка ответов шестнадцать, у
+    листа баллов `MARK_CELLS`, ноль — одна строка имени бланка, чьи клетки
+    не в счёт. От него зависят подсказка, схема ответа и длина списка
+    значений, а не устройство чтения.
+
     Полоска шапки -> (данные, входных токенов, выходных).
 
     **Список класса и прочитанное имя — разные поля, и это выведено опытом.**
@@ -467,15 +566,25 @@ def read_header(
 
     message = _ask(
         model=model,
-        max_tokens=500,
+        # Запись о клетке стоит около дюжины токенов: шестнадцать влезают в
+        # пятьсот, а девяносто пять листа баллов — нет, и ответ оборвался бы
+        # на середине сетки. Платят за выданное, а не за потолок.
+        max_tokens=2000 if cells > CELLS else 500,
         system=[
             {
                 "type": "text",
-                "text": _system_prompt(),
+                # Выбор листа — здесь, а не параметром подсказки: у подсказки
+                # параметров нет нарочно (`PromptTests`), иначе через них
+                # однажды вернётся «ожидаемый ответ»
+                "text": (
+                    _system_prompt()
+                    if cells == CELLS
+                    else _marks_prompt() if cells else _names_prompt()
+                ),
                 "cache_control": {"type": "ephemeral"},
             }
         ],
-        tools=[_HEADER_TOOL],
+        tools=[_header_tool(cells)],
         tool_choice={"type": "tool", "name": _HEADER_TOOL["name"]},
         messages=[
             {
@@ -483,7 +592,10 @@ def read_header(
                 "content": [
                     {
                         "type": "text",
-                        "text": "Read the name and the marks grid." + hint,
+                        "text": (
+                            "Read the name and the marks grid." if cells else "Read the name."
+                        )
+                        + hint,
                     },
                     {
                         "type": "image",
@@ -503,7 +615,7 @@ def read_header(
         if block.type == "tool_use":
             data = block.input
 
-    values = values_from_marks(data.get("marks"))
+    values = values_from_marks(data.get("marks"), cells)
 
     return (
         {

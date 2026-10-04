@@ -775,7 +775,23 @@ class ScanPage(models.Model):
     # листа» неразличимы, а это очень разные события: первое — норма, второе —
     # потерянная работа ученика.
     ours = models.BooleanField("our blank, by the mark in the corner", default=False)
-    # Шестнадцать значений: Q1..Q15 и сумма за страницу. null — пустая клетка.
+    # Какой это лист. Бланк ответов пишет ученик, лист баллов (маркгрид) —
+    # учитель, для работ длиннее пятнадцати задач. Узнаётся по коду в углу, а
+    # не по виду: сетка у обоих одна и та же.
+    #
+    # От этого зависит не только число клеток. Лист баллов в пачке значит, что
+    # баллы ставили **на нём**, и клетки бланков тогда не считаются вовсе — ни
+    # в оценки, ни в раскладку (`scanning.marks_rule`).
+    ANSWER = "answer"
+    MARKS = "marks"
+    sheet = models.CharField(
+        "which sheet",
+        max_length=8,
+        choices=[(ANSWER, "answer sheet"), (MARKS, "mark sheet")],
+        default=ANSWER,
+    )
+    # Значения клеток: у бланка шестнадцать (Q1..Q15 и сумма за страницу), у
+    # листа баллов девяносто шесть (Q1..Q95 и сумма за работу). null — пусто.
     cells = models.JSONField("cells as read", default=list, blank=True)
     model = models.CharField("model that read it", max_length=64, blank=True)
     # Что увидел на той же полоске второй читатель и в чём он не сошёлся с

@@ -173,8 +173,23 @@ export default function Works({ onLoggedOut }) {
           можно и без работы: контрольную ещё не завели, а печатать пачку
           надо сегодня */}
       <p>
-        <button type="button" className="secondary" onClick={() => setBlank(true)}>
+        <button type="button" className="secondary" onClick={() => setBlank('answer')}>
           {t('blank.withLabels')}
+        </button>
+      </p>
+      {/* Лист баллов — для работ длиннее пятнадцати задач. Учитель ставит
+          баллы на нём, а не в шапке бланка; ученик пишет на обычном бланке.
+          Строка устроена так же, как у бланка: чистый лист ссылкой, подписи
+          кнопкой */}
+      <p className="hint">
+        <a href="/mark-sheet.pdf" target="_blank" rel="noreferrer">
+          {t('scan.printMarkSheet')}
+        </a>{' '}
+        {t('scan.printMarkSheetHint')}
+      </p>
+      <p>
+        <button type="button" className="secondary" onClick={() => setBlank('marks')}>
+          {t('blank.marksWithLabels')}
         </button>
       </p>
     </>
@@ -401,7 +416,13 @@ export default function Works({ onLoggedOut }) {
         </>
       )}
 
-      {blank && <BlankDialog onClose={() => setBlank(false)} />}
+      {blank && (
+        <BlankDialog
+          sheet={blank}
+          fileName={blank === 'marks' ? 'mark-sheet.pdf' : 'blank.pdf'}
+          onClose={() => setBlank(false)}
+        />
+      )}
 
       {naming && (
         <WorkNameDialog

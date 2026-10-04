@@ -1740,7 +1740,13 @@
     "withLabels": "Add question labels before downloading…",
     "download": "Download PDF",
     "extra_one": "The work has {{count}} more question than the blank has cells — it is not on the blank.",
-    "extra_other": "The work has {{count}} more questions than the blank has cells — they are not on the blank."
+    "extra_other": "The work has {{count}} more questions than the blank has cells — they are not on the blank.",
+    "marksTitle": "Mark sheet with question labels",
+    "marksHint": "The mark sheet is for works with more than 15 questions: the teacher writes the student's name and the marks on it, and the marks on the answer sheets of the pile are then ignored. In the pile it goes after the question sheets and before the student's answer sheets. Labels are printed in the band above each cell; an empty cell stays blank.",
+    "marksForWork": "Mark sheet for this work",
+    "marksWithLabels": "Add question labels to the mark sheet…",
+    "marksExtra_one": "The work has {{count}} more question than the mark sheet has cells — it is not on the sheet.",
+    "marksExtra_other": "The work has {{count}} more questions than the mark sheet has cells — they are not on the sheet."
   },
   "scan": {
     "open": "Scans",
@@ -1814,6 +1820,8 @@
     "questionsSet_other": "{{count}} questions",
     "spent": "Spent so far: {{spent}} of {{limit}} this month",
     "printBlank": "Print the blank",
+    "printMarkSheet": "Print the mark sheet",
+    "printMarkSheetHint": "— for works with more than 15 questions: the teacher puts one student's marks on it, and the pile's marks are read off the mark sheets instead of the blanks. In the pile it goes after the question sheets and before the student's answer sheets.",
     "alreadyRead_one": "{{count}} page from an earlier upload is still here.",
     "alreadyRead_other": "{{count}} pages from an earlier upload are still here.",
     "startOver": "Start the pile over",
@@ -1861,6 +1869,9 @@
     },
     "byHand": "— you said so yourself",
     "pageSum": "Σ",
+    "workSum": "Σ",
+    "cellsIgnored": "The pile has mark sheets, so marks are taken only from them: this answer sheet has fewer cells than the work has questions. Its cells are shown but not counted.",
+    "marksSheetLine": "The pile has mark sheets: marks come only from them, and the answer sheets only tell whose pages are whose — they have fewer cells than the work has questions.",
     "batchSpend_one": "This pile has cost {{amount}}, {{count}} reading.",
     "batchSpend_other": "This pile has cost {{amount}}, {{count}} readings.",
     "workSpend": "{{amount}} on this assignment all told",

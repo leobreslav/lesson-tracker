@@ -51,7 +51,7 @@ def configured() -> bool:
     )
 
 
-def read_strip(image: bytes, *, media_type: str = "image/jpeg") -> dict:
+def read_strip(image: bytes, *, media_type: str = "image/jpeg", cells: int = strip.CELLS) -> dict:
     """
     Собранная картинка шапки -> что увидел второй читатель.
 
@@ -99,7 +99,7 @@ def read_strip(image: bytes, *, media_type: str = "image/jpeg") -> dict:
     if payload.get("error"):
         return {"reader": "mathpix", "error": "refused"}
 
-    return strip.reading_from(lines_of(payload), reader="mathpix")
+    return strip.reading_from(lines_of(payload), reader="mathpix", cells=cells)
 
 
 def lines_of(payload: dict) -> list[str]:

@@ -652,7 +652,7 @@ export const downloadPlan = async (
  * подпись), и разбирается тем же `humanMessage`, чтобы окно показало фразу
  * словаря, а не «ошибка 400».
  */
-export const downloadBlank = async (labels, name = 'blank.pdf') => {
+export const downloadBlank = async (labels, name = 'blank.pdf', sheet = 'answer') => {
   const token = getToken()
   let response
   try {
@@ -662,7 +662,8 @@ export const downloadBlank = async (labels, name = 'blank.pdf') => {
         'Content-Type': 'application/json',
         ...(token ? { Authorization: `Token ${token}` } : {}),
       },
-      body: JSON.stringify({ labels }),
+      // `sheet` — бланк ответов (`answer`) или лист баллов (`marks`)
+      body: JSON.stringify({ labels, sheet }),
     })
   } catch {
     throw new ApiError(i18n.t('errors.offline'), 0, 'offline', null)
@@ -1062,10 +1063,15 @@ export const resetScan = (work) =>
 
 export const readScanPage = (
   work,
-  { index, blob, plain, mark, second = true, reader = '' },
+  { index, blob, plain, mark, second = true, reader = '', sheet = 'answer', cells = true },
 ) => {
   const form = new FormData()
   form.append('index', index)
+  // Бланк ответов или лист баллов: узнаёт браузер по коду в углу, а серверу
+  // это решает, сколько плиток на картинке и что про них сказать читателю
+  form.append('sheet', sheet)
+  // Читать ли клетки: нет, когда в пачке уже был лист баллов (`walk`)
+  form.append('cells', cells ? 'true' : 'false')
   form.append('strip', blob, `strip-${index}.jpg`)
   // Та же шапка как на бумаге. По ней читают имя: распознаватель на собранном
   // листе склеивает строку имени с первым рядом плиток. Необязательна — без
@@ -1082,10 +1088,12 @@ export const readScanPage = (
   return request(`/api/works/${work}/scan/read/`, { method: 'POST', body: form })
 }
 
-export const markHeaderless = (work, index, ours) =>
+// `sheet` — только у листа баллов, чей код нашёлся, а сетка нет: такой лист
+// и непрочитанным решает, откуда в пачке баллы
+export const markHeaderless = (work, index, ours, sheet = null) =>
   request(`/api/works/${work}/scan/page/`, {
     method: 'POST',
-    body: { index, headerless: true, ours },
+    body: sheet ? { index, headerless: true, ours, sheet } : { index, headerless: true, ours },
   })
 
 export const editScanPage = (work, fields) =>

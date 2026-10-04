@@ -26,7 +26,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from . import assembling, journal, photos, services, statements, threads, track
+from . import assembling, journal, photos, scanning, services, statements, threads, track
 from .models import Thread
 from vision import services as vision_services
 from .models import Submission, Task, Work
@@ -344,6 +344,7 @@ class WorkViewSet(CourseScopedViewSet):
         form.is_valid(raise_exception=True)
         index = form.validated_data["index"]
         fingerprint = form.validated_data.get("fingerprint") or ""
+        sheet = form.validated_data["sheet"]
 
         known = work.scan_pages.filter(index=index).first()
         if known and fingerprint and known.fingerprint == fingerprint:
@@ -362,10 +363,13 @@ class WorkViewSet(CourseScopedViewSet):
             candidates=[person.full for person in services.scan_roster(work)],
             reader=form.validated_data["reader"],
             second=form.validated_data["second"],
+            # ноль — одна строка имени: в пачке лист баллов, клетки бланка
+            # не в счёт, и читать их значило бы платить за выброшенное
+            cell_count=scanning.cells_on(sheet) if form.validated_data["cells"] else 0,
         )
 
         services.save_scan_reading(
-            work, index=index, fingerprint=fingerprint, data=data
+            work, index=index, fingerprint=fingerprint, data=data, sheet=sheet
         )
         return Response(services.scan_state(work) | {"cached": False})
 
@@ -393,8 +397,9 @@ class WorkViewSet(CourseScopedViewSet):
         form.is_valid(raise_exception=True)
         fields = dict(form.validated_data)
         ours = fields.pop("ours", False)
+        sheet = fields.pop("sheet", None)
         if fields.pop("headerless", False):
-            services.mark_headerless(work, index=fields["index"], ours=ours)
+            services.mark_headerless(work, index=fields["index"], ours=ours, sheet=sheet)
         else:
             services.edit_scan_page(work, **fields)
         return Response(services.scan_state(work))

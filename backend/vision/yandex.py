@@ -81,7 +81,7 @@ def configured() -> bool:
     return bool(getattr(settings, "YANDEX_OCR_API_KEY", ""))
 
 
-def read_cells(image: bytes, *, media_type: str = "image/jpeg") -> dict:
+def read_cells(image: bytes, *, media_type: str = "image/jpeg", cells: int = strip.CELLS) -> dict:
     """
     Та же картинка, но моделью для таблиц: ради плиток с баллами.
 
@@ -90,11 +90,15 @@ def read_cells(image: bytes, *, media_type: str = "image/jpeg") -> dict:
     слияние по своей графе (`merge.py`). Имя из него не берут — модель для
     таблиц строку имени разбирает как придётся.
     """
-    return read_strip(image, media_type=media_type, model=TABLE)
+    return read_strip(image, media_type=media_type, model=TABLE, cells=cells)
 
 
 def read_strip(
-    image: bytes, *, media_type: str = "image/jpeg", model: str = HANDWRITTEN
+    image: bytes,
+    *,
+    media_type: str = "image/jpeg",
+    model: str = HANDWRITTEN,
+    cells: int = strip.CELLS,
 ) -> dict:
     """
     Собранная картинка шапки -> что увидел этот читатель.
@@ -147,7 +151,7 @@ def read_strip(
         # поняли ответ». Молчаливо вернуть пустую шапку значило бы свалить на
         # бумагу чужую беду.
         return {"reader": "yandex", "error": "unreadable"}
-    return strip.reading_from(lines, reader="yandex")
+    return strip.reading_from(lines, reader="yandex", cells=cells)
 
 
 def whole_number(value) -> int:

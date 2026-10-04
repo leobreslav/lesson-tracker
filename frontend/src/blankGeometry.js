@@ -209,3 +209,70 @@ export function cellRect(index) {
 export function cellLabel(index) {
   return index === GRID.cells - 1 ? 'SUM' : `Q${index + 1}`
 }
+
+/**
+ * Лист баллов (маркгрид), `blank/mark_sheet.tex`: те же числа, записанные
+ * дважды, и сторожит их тот же `blankGeometry.test.js`.
+ *
+ * Лист учителя для работ длиннее пятнадцати задач: шесть линеек **той же**
+ * сетки, что в шапке бланка, по шестнадцать клеток, нумерация сквозная,
+ * последняя клетка последней линейки — сумма за работу. Угловые метки стоят
+ * там же, где у бланка (`CORNERS`), поэтому поиск четвёрки по углам общий.
+ *
+ * Отличают его от бланка коды: они **вверху**, и в них роль `M` вместо `A`.
+ * Первая линейка нарочно ниже места шапки бланка (19.3 мм), а коды — не на
+ * месте кодов бланка: совпади лист с бланком хоть в одном, его прочли бы как
+ * бланк ответов, по чужой геометрии и молча.
+ */
+export const MARKS = {
+  rowY: 57,
+  rowPitch: 37,
+  rows: 6,
+  /** Задач на листе; клеток на одну больше — сумма. */
+  questions: 95,
+  /** Строка имени: клетки First name / Surname / Grade / Date во всю ширину. */
+  name: { x: 12.5, y: 36, width: 185, height: 14 },
+  /** Левые верхние углы обоих кодов. Размер тот же, что у кодов бланка. */
+  codes: [
+    { x: 15.7, y: 12.2 },
+    { x: 177.5, y: 12.2 },
+  ],
+}
+
+/** Код листа баллов: `LT/<поколение>/M`. Поколение не важно, роль — да. */
+export function isMarkSheetCode(payload) {
+  return /^LT\/\d+\/M$/.test(String(payload ?? ''))
+}
+
+/** Сетка линейки `row` листа баллов — та же `GRID`, стоящая ниже. */
+export function markGrid(row) {
+  return { ...GRID, y: MARKS.rowY + row * MARKS.rowPitch }
+}
+
+/**
+ * Где линейку ищут и оценивают: сама сетка и по четыре миллиметра сверху и
+ * снизу, по ширине — как `HEADER`. Запас нужен уточнению по сетке: верхняя и
+ * нижняя линии обязаны попасть в кадр и после промаха меток.
+ */
+export function markRowRect(row) {
+  const grid = markGrid(row)
+  return { x: HEADER.x, y: grid.y - 4, width: HEADER.width, height: grid.height + 8 }
+}
+
+/** Клетка `index` (с нуля, сумма — 95) листа баллов, без подписи над ней. */
+export function markCellRect(index) {
+  const row = Math.floor(index / GRID.cells)
+  const grid = markGrid(row)
+  const column = index % GRID.cells
+  return {
+    x: grid.x + column * grid.cellWidth + CELL_INSET,
+    y: grid.y + grid.labelHeight + CELL_INSET,
+    width: grid.cellWidth - CELL_INSET * 2,
+    height: grid.height - grid.labelHeight - CELL_INSET * 2,
+  }
+}
+
+/** Подпись клетки листа баллов: Q1…Q95 и сумма. */
+export function markCellLabel(index) {
+  return index === MARKS.questions ? 'SUM' : `Q${index + 1}`
+}

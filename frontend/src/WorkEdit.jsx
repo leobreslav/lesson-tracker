@@ -270,9 +270,18 @@ export default function WorkEdit() {
           {/* Бланк этой работы — рядом со сканами: одно идёт до контрольной,
               другое после, и оба про бумагу. Подписи берутся из имён задач,
               поэтому клетка на листе и вопрос в таблице называются одинаково */}
-          <button type="button" className="secondary" onClick={() => setBlank(true)}>
+          <button type="button" className="secondary" onClick={() => setBlank('answer')}>
             {t('blank.forWork')}
           </button>
+
+          {/* Лист баллов — для работ, которым пятнадцати клеток бланка мало.
+              Кнопка видна только им: остальным он не нужен, а лишняя кнопка
+              в шапке страницы — это ещё одна, которую надо прочитать */}
+          {tasks.length > 15 && (
+            <button type="button" className="secondary" onClick={() => setBlank('marks')}>
+              {t('blank.marksForWork')}
+            </button>
+          )}
 
           {/* Настройки — кнопкой, и стоит она у заголовка, а не над заданием:
               рядом с текстом она читалась бы как что-то, что с этим текстом
@@ -391,12 +400,12 @@ export default function WorkEdit() {
 
       {blank && (
         <BlankDialog
+          sheet={blank}
           /* Своё имя, а не `name`: безымянный вопрос зовётся номером, а номер
              на бумаге и так стоит в углу клетки — крупная «3» под мелкой «3»
              это шум, а не подпись */
           initial={tasks.map((task) => task.label ?? '')}
-          extra={Math.max(0, tasks.length - 15)}
-          fileName={`${work.title}.pdf`}
+          fileName={blank === 'marks' ? `${work.title} — marks.pdf` : `${work.title}.pdf`}
           onClose={() => setBlank(false)}
         />
       )}

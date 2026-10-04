@@ -652,6 +652,18 @@ class ScanReadSerializer(serializers.Serializer):
     # клиент мог отстать от сервера на одну выкатку, и ронять из-за этого
     # пачку, за половину которой уже заплачено, — плохой обмен.
     reader = serializers.CharField(required=False, allow_blank=True, default="")
+    # Какой лист приехал: бланк ответов или лист баллов. Узнаёт браузер — по
+    # содержимому кода в углу (`LT/3/A` или `LT/3/M`), — и от этого зависит,
+    # сколько плиток на картинке и что про них сказать читателю. Умолчание —
+    # бланк: клиент, отставший на выкатку, листа баллов не знает вовсе.
+    sheet = serializers.ChoiceField(
+        choices=["answer", "marks"], required=False, default="answer"
+    )
+    # Читать ли клетки. Нет — когда в пачке уже встретился лист баллов: баллы
+    # ставили на нём, клетки бланков не в счёт (`scanning.marks_rule`), и
+    # платить за их чтение незачем. Тогда на картинке одна строка имени.
+    # Решает браузер по ходу пачки; умолчание — читать, как читали всегда.
+    cells = serializers.BooleanField(required=False, default=True)
 
     def validate_reader(self, name):
         from vision import services as vision_services
@@ -680,12 +692,18 @@ class ScanPageSerializer(serializers.Serializer):
     ours = serializers.BooleanField(required=False)
     # убрать страницу из пачки или вернуть её: пустой оборот, чужой листок
     dropped = serializers.BooleanField(required=False)
+    # Какой это лист, когда шапки не прочитали: код листа баллов нашёлся, а
+    # сетка — нет. Знать это надо и о непрочитанном листе: он один решает,
+    # откуда в пачке берутся баллы (`scanning.marks_rule`).
+    sheet = serializers.ChoiceField(choices=["answer", "marks"], required=False)
     student = serializers.IntegerField(required=False, allow_null=True)
+    # шестнадцать у бланка, девяносто шесть у листа баллов; лишнее отрежет
+    # правка по листу самой страницы
     cells = serializers.ListField(
         child=serializers.IntegerField(allow_null=True, min_value=0, max_value=99),
         required=False,
         allow_empty=True,
-        max_length=16,
+        max_length=96,
     )
 
     def validate_student(self, value):
